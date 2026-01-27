@@ -11,7 +11,16 @@ export async function GET() {
 
     const items = await db.menuItem.findMany({
       where: { isActive: true },
-      orderBy: { sortOrder: 'asc' }
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        modifierGroups: {
+          include: {
+            modifierGroup: {
+              select: { id: true, name: true }
+            }
+          }
+        }
+      }
     })
 
     return NextResponse.json({
@@ -29,7 +38,14 @@ export async function GET() {
         price: Number(item.price),
         description: item.description,
         isActive: item.isActive,
-        isAvailable: item.isAvailable
+        isAvailable: item.isAvailable,
+        commissionType: item.commissionType,
+        commissionValue: item.commissionValue ? Number(item.commissionValue) : null,
+        modifierGroupCount: item.modifierGroups.length,
+        modifierGroups: item.modifierGroups.map(mg => ({
+          id: mg.modifierGroup.id,
+          name: mg.modifierGroup.name
+        }))
       }))
     })
   } catch (error) {

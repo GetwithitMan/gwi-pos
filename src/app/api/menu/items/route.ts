@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, price, description, categoryId } = body
+    const { name, price, description, categoryId, commissionType, commissionValue } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -47,6 +47,8 @@ export async function POST(request: NextRequest) {
         price,
         description: description || null,
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
+        commissionType: commissionType || null,
+        commissionValue: commissionValue ?? null,
       }
     })
 
@@ -57,7 +59,9 @@ export async function POST(request: NextRequest) {
       price: Number(item.price),
       description: item.description,
       isActive: item.isActive,
-      isAvailable: item.isAvailable
+      isAvailable: item.isAvailable,
+      commissionType: item.commissionType,
+      commissionValue: item.commissionValue ? Number(item.commissionValue) : null,
     })
   } catch (error) {
     console.error('Failed to create item:', error)

@@ -8,7 +8,7 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, price, description, isAvailable } = body
+    const { name, price, description, isAvailable, commissionType, commissionValue } = body
 
     const item = await db.menuItem.update({
       where: { id },
@@ -17,6 +17,8 @@ export async function PUT(
         ...(price !== undefined && { price }),
         ...(description !== undefined && { description }),
         ...(isAvailable !== undefined && { isAvailable }),
+        ...(commissionType !== undefined && { commissionType: commissionType || null }),
+        ...(commissionValue !== undefined && { commissionValue: commissionValue ?? null }),
       }
     })
 
@@ -27,7 +29,9 @@ export async function PUT(
       price: Number(item.price),
       description: item.description,
       isActive: item.isActive,
-      isAvailable: item.isAvailable
+      isAvailable: item.isAvailable,
+      commissionType: item.commissionType,
+      commissionValue: item.commissionValue ? Number(item.commissionValue) : null,
     })
   } catch (error) {
     console.error('Failed to update item:', error)

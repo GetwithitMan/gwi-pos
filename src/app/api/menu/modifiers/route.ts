@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 
 // GET all modifier groups with their modifiers
@@ -34,10 +35,16 @@ export async function GET() {
           name: mod.name,
           displayName: mod.displayName,
           price: Number(mod.price),
-          preModifier: mod.preModifier,
+          upsellPrice: mod.upsellPrice ? Number(mod.upsellPrice) : null,
+          allowedPreModifiers: mod.allowedPreModifiers as string[] | null,
+          extraPrice: mod.extraPrice ? Number(mod.extraPrice) : null,
+          extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
           sortOrder: mod.sortOrder,
           isDefault: mod.isDefault,
           isActive: mod.isActive,
+          childModifierGroupId: mod.childModifierGroupId,
+          commissionType: mod.commissionType,
+          commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
         })),
         linkedItems: group.menuItems.map(link => ({
           id: link.menuItem.id,
@@ -92,10 +99,16 @@ export async function POST(request: NextRequest) {
         isRequired: isRequired || false,
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         modifiers: modifiers?.length ? {
-          create: modifiers.map((mod: { name: string; price: number; preModifier?: string }, index: number) => ({
+          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number }, index: number) => ({
             name: mod.name,
             price: mod.price || 0,
-            preModifier: mod.preModifier || null,
+            upsellPrice: mod.upsellPrice ?? null,
+            allowedPreModifiers: mod.allowedPreModifiers?.length ? mod.allowedPreModifiers : Prisma.DbNull,
+            extraPrice: mod.extraPrice ?? null,
+            extraUpsellPrice: mod.extraUpsellPrice ?? null,
+            childModifierGroupId: mod.childModifierGroupId || null,
+            commissionType: mod.commissionType || null,
+            commissionValue: mod.commissionValue ?? null,
             sortOrder: index,
           }))
         } : undefined
@@ -116,7 +129,13 @@ export async function POST(request: NextRequest) {
         id: mod.id,
         name: mod.name,
         price: Number(mod.price),
-        preModifier: mod.preModifier,
+        upsellPrice: mod.upsellPrice ? Number(mod.upsellPrice) : null,
+        allowedPreModifiers: mod.allowedPreModifiers as string[] | null,
+        extraPrice: mod.extraPrice ? Number(mod.extraPrice) : null,
+        extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
+        childModifierGroupId: mod.childModifierGroupId,
+        commissionType: mod.commissionType,
+        commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
       }))
     })
   } catch (error) {

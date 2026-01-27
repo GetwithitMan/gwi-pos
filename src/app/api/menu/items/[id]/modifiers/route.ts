@@ -37,8 +37,12 @@ export async function GET(
           name: mod.name,
           displayName: mod.displayName,
           price: Number(mod.price),
-          preModifier: mod.preModifier,
+          upsellPrice: mod.upsellPrice ? Number(mod.upsellPrice) : null,
+          allowedPreModifiers: mod.allowedPreModifiers as string[] | null,
+          extraPrice: mod.extraPrice ? Number(mod.extraPrice) : null,
+          extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
           isDefault: mod.isDefault,
+          childModifierGroupId: mod.childModifierGroupId,
         }))
       }))
     })

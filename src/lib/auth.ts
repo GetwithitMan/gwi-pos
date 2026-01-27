@@ -87,10 +87,23 @@ export const PERMISSIONS = {
   VIEW_REPORTS: 'reports.view',
   VIEW_LABOR: 'reports.labor',
   VIEW_SALES: 'reports.sales',
+  VIEW_COMMISSION: 'reports.commission',
 
   // Settings
   EDIT_SETTINGS: 'settings.edit',
+  TOGGLE_DUAL_PRICING: 'settings.dual_pricing',
 
-  // Admin
+  // Admin levels
   ADMIN: 'admin',
+  SUPER_ADMIN: 'super_admin',
 } as const
+
+// Check if user has super admin privileges
+export function isSuperAdmin(permissions: string[]): boolean {
+  return permissions.includes('super_admin') || permissions.includes('*')
+}
+
+// Check if user has admin privileges (includes super admin)
+export function isAdmin(permissions: string[]): boolean {
+  return permissions.includes('admin') || permissions.includes('super_admin') || permissions.includes('*')
+}

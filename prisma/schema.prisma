@@ -308,6 +308,10 @@ model MenuItem {
   // Type
   itemType    String   @default("standard") // standard, combo, timed
 
+  // Commission (Skill 29)
+  commissionType   String?  // 'fixed' | 'percent' | null
+  commissionValue  Decimal? @db.Decimal(10, 2)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -346,6 +350,9 @@ model ModifierGroup {
   modifiers   Modifier[]
   menuItems   MenuItemModifierGroup[]
 
+  // Modifiers that use this group as a sub-modifier
+  parentModifiers Modifier[] @relation("SubModifier")
+
   @@index([locationId])
 }
 
@@ -359,10 +366,21 @@ model Modifier {
 
   // Pricing
   price       Decimal  @db.Decimal(10, 2) @default(0)
+  upsellPrice Decimal? @db.Decimal(10, 2) // Special price when offered as upsell
   cost        Decimal? @db.Decimal(10, 2)
 
   // Pre-modifier support (Skill 32)
-  preModifier String?  // "no", "lite", "extra", "side"
+  allowedPreModifiers Json?    // Array of allowed prefixes: ["no", "lite", "extra", "side"]
+  extraPrice          Decimal? @db.Decimal(10, 2) // Price when "extra" is selected
+  extraUpsellPrice    Decimal? @db.Decimal(10, 2) // Upsell price for "extra"
+
+  // Sub-modifier support - when selected, prompts for additional modifiers
+  childModifierGroupId String?
+  childModifierGroup   ModifierGroup? @relation("SubModifier", fields: [childModifierGroupId], references: [id])
+
+  // Commission (Skill 29)
+  commissionType   String?  // 'fixed' | 'percent' | null
+  commissionValue  Decimal? @db.Decimal(10, 2)
 
   // Display
   sortOrder   Int      @default(0)
@@ -375,6 +393,7 @@ model Modifier {
   orderItemModifiers OrderItemModifier[]
 
   @@index([modifierGroupId])
+  @@index([childModifierGroupId])
 }
 
 model MenuItemModifierGroup {
@@ -544,8 +563,21 @@ model Order {
   tipTotal    Decimal  @db.Decimal(10, 2) @default(0)
   total       Decimal  @db.Decimal(10, 2) @default(0)
 
+  // Dual Pricing (Skill 31)
+  primaryPaymentMethod String?  // 'cash' | 'card' - determines which price applies
+
+  // Commission (Skill 29)
+  commissionTotal Decimal @db.Decimal(10, 2) @default(0)
+
   // Notes
   notes       String?
+
+  // Bar Tab Pre-auth (Skill 21)
+  preAuthId         String?   // Reference to pre-auth transaction
+  preAuthAmount     Decimal?  @db.Decimal(10, 2)
+  preAuthLast4      String?   // Last 4 digits of held card
+  preAuthCardBrand  String?   // Visa, Mastercard, etc.
+  preAuthExpiresAt  DateTime? // When the hold expires
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -562,6 +594,7 @@ model Order {
   @@index([status])
   @@index([openedAt])
   @@index([orderNumber, locationId])
+  @@index([orderType])
 }
 
 model OrderItem {
@@ -602,6 +635,9 @@ model OrderItem {
   modifierTotal Decimal @db.Decimal(10, 2) @default(0)
   itemTotal     Decimal @db.Decimal(10, 2) @default(0)
 
+  // Commission (Skill 29)
+  commissionAmount Decimal? @db.Decimal(10, 2)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -626,6 +662,9 @@ model OrderItemModifier {
 
   quantity    Int       @default(1)
 
+  // Commission (Skill 29)
+  commissionAmount Decimal? @db.Decimal(10, 2)
+
   createdAt   DateTime  @default(now())
 
   @@index([orderItemId])
@@ -639,6 +678,7 @@ model Payment {
   id          String   @id @default(cuid())
   orderId     String
   order       Order    @relation(fields: [orderId], references: [id])
+  employeeId  String?  // Who processed the payment
 
   // Payment details
   amount      Decimal  @db.Decimal(10, 2)
@@ -647,6 +687,11 @@ model Payment {
 
   // Method
   paymentMethod String  // cash, credit, debit, gift_card, house_account
+
+  // Cash details
+  amountTendered Decimal? @db.Decimal(10, 2)  // Amount given by customer
+  changeGiven    Decimal? @db.Decimal(10, 2)  // Change returned
+  roundingAdjustment Decimal? @db.Decimal(10, 2)  // Amount rounded (+ or -)
 
   // Card details (if card)
   cardBrand     String?
@@ -657,10 +702,16 @@ model Payment {
   // Status
   status      String   @default("completed") // pending, completed, refunded, voided
 
+  // Refund tracking
+  refundedAmount  Decimal  @db.Decimal(10, 2) @default(0)
+  refundedAt      DateTime?
+  refundReason    String?
+
   processedAt DateTime @default(now())
 
   @@index([orderId])
   @@index([processedAt])
+  @@index([employeeId])
 }
 
 // ============================================

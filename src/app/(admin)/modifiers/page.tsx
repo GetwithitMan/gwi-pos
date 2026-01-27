@@ -12,9 +12,15 @@ interface Modifier {
   name: string
   displayName?: string
   price: number
-  preModifier?: string
+  upsellPrice?: number | null
+  allowedPreModifiers?: string[] | null
+  extraPrice?: number | null
+  extraUpsellPrice?: number | null
   isDefault: boolean
   isActive: boolean
+  childModifierGroupId?: string | null
+  commissionType?: string | null
+  commissionValue?: number | null
 }
 
 interface ModifierGroup {
@@ -68,7 +74,7 @@ export default function ModifiersPage() {
     minSelections: number
     maxSelections: number
     isRequired: boolean
-    modifiers: { id?: string; name: string; price: number; preModifier?: string; isDefault?: boolean; isActive?: boolean }[]
+    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null }[]
   }) => {
     try {
       const method = editingGroup ? 'PUT' : 'POST'
@@ -225,31 +231,69 @@ export default function ModifiersPage() {
 
                 <h4 className="font-semibold mb-3">Modifiers</h4>
                 <div className="space-y-2">
-                  {selectedGroup.modifiers.map(mod => (
-                    <div
-                      key={mod.id}
-                      className={`flex items-center justify-between p-3 rounded border ${
-                        mod.isActive ? 'bg-white' : 'bg-gray-100 opacity-60'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {mod.isDefault && (
-                          <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded">
-                            Default
-                          </span>
+                  {selectedGroup.modifiers.map(mod => {
+                    const childGroup = mod.childModifierGroupId
+                      ? modifierGroups.find(g => g.id === mod.childModifierGroupId)
+                      : null
+                    return (
+                      <div
+                        key={mod.id}
+                        className={`p-3 rounded border ${
+                          mod.isActive ? 'bg-white' : 'bg-gray-100 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {mod.isDefault && (
+                              <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded">
+                                Default
+                              </span>
+                            )}
+                            {mod.allowedPreModifiers && mod.allowedPreModifiers.length > 0 && (
+                              <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded">
+                                {mod.allowedPreModifiers.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')}
+                              </span>
+                            )}
+                            <span className={mod.isActive ? 'font-medium' : 'line-through'}>{mod.name}</span>
+                          </div>
+                          <div className="text-right flex flex-wrap items-center justify-end gap-1">
+                            <span className={mod.price > 0 ? 'text-green-600 font-medium' : 'text-gray-400'}>
+                              {mod.price > 0 ? `+${formatCurrency(mod.price)}` : 'No charge'}
+                            </span>
+                            {mod.upsellPrice !== null && mod.upsellPrice !== undefined && (
+                              <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                                Upsell: {formatCurrency(mod.upsellPrice)}
+                              </span>
+                            )}
+                            {mod.extraPrice !== null && mod.extraPrice !== undefined && (
+                              <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">
+                                Extra: +{formatCurrency(mod.extraPrice)}
+                              </span>
+                            )}
+                            {mod.extraUpsellPrice !== null && mod.extraUpsellPrice !== undefined && (
+                              <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                                Extra Upsell: {formatCurrency(mod.extraUpsellPrice)}
+                              </span>
+                            )}
+                            {mod.commissionType && mod.commissionValue && (
+                              <span className="text-xs bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                                Comm: {mod.commissionType === 'fixed' ? formatCurrency(mod.commissionValue) : `${mod.commissionValue}%`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {childGroup && (
+                          <div className="mt-2 ml-4 flex items-center gap-2 text-sm text-gray-600">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                            </svg>
+                            <span>Prompts: <strong>{childGroup.name}</strong></span>
+                            <span className="text-gray-400">({childGroup.modifiers.length} options)</span>
+                          </div>
                         )}
-                        {mod.preModifier && (
-                          <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded">
-                            {mod.preModifier}
-                          </span>
-                        )}
-                        <span className={mod.isActive ? '' : 'line-through'}>{mod.name}</span>
                       </div>
-                      <span className={mod.price > 0 ? 'text-green-600 font-medium' : 'text-gray-400'}>
-                        {mod.price > 0 ? `+${formatCurrency(mod.price)}` : 'No charge'}
-                      </span>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
 
                 {selectedGroup.linkedItems.length > 0 && (
@@ -281,6 +325,7 @@ export default function ModifiersPage() {
       {showGroupModal && (
         <ModifierGroupModal
           group={editingGroup}
+          allGroups={modifierGroups}
           onSave={handleSaveGroup}
           onClose={() => {
             setShowGroupModal(false)
@@ -295,17 +340,19 @@ export default function ModifiersPage() {
 // Modifier Group Modal Component
 function ModifierGroupModal({
   group,
+  allGroups,
   onSave,
   onClose,
 }: {
   group: ModifierGroup | null
+  allGroups: ModifierGroup[]
   onSave: (data: {
     name: string
     displayName?: string
     minSelections: number
     maxSelections: number
     isRequired: boolean
-    modifiers: { id?: string; name: string; price: number; preModifier?: string; isDefault?: boolean; isActive?: boolean }[]
+    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null }[]
   }) => void
   onClose: () => void
 }) {
@@ -318,25 +365,54 @@ function ModifierGroupModal({
     id?: string
     name: string
     price: number
-    preModifier?: string
+    upsellPrice?: number | null
+    allowedPreModifiers?: string[] | null
+    extraPrice?: number | null
+    extraUpsellPrice?: number | null
     isDefault?: boolean
     isActive?: boolean
+    childModifierGroupId?: string | null
+    commissionType?: string | null
+    commissionValue?: number | null
   }[]>(
     group?.modifiers.map(m => ({
       id: m.id,
       name: m.name,
       price: m.price,
-      preModifier: m.preModifier,
+      upsellPrice: m.upsellPrice,
+      allowedPreModifiers: m.allowedPreModifiers,
+      extraPrice: m.extraPrice,
+      extraUpsellPrice: m.extraUpsellPrice,
       isDefault: m.isDefault,
       isActive: m.isActive,
+      childModifierGroupId: m.childModifierGroupId,
+      commissionType: m.commissionType,
+      commissionValue: m.commissionValue,
     })) || []
   )
 
+  // Filter out the current group from selectable child groups to prevent circular references
+  const availableChildGroups = allGroups.filter(g => g.id !== group?.id)
+
   const addModifier = () => {
-    setModifiers([...modifiers, { name: '', price: 0, isDefault: false, isActive: true }])
+    setModifiers([...modifiers, { name: '', price: 0, upsellPrice: null, allowedPreModifiers: null, extraPrice: null, extraUpsellPrice: null, isDefault: false, isActive: true, childModifierGroupId: null, commissionType: null, commissionValue: null }])
   }
 
-  const updateModifier = (index: number, field: string, value: string | number | boolean) => {
+  const togglePreModifier = (index: number, prefix: string) => {
+    const updated = [...modifiers]
+    const current = updated[index].allowedPreModifiers || []
+    if (current.includes(prefix)) {
+      updated[index].allowedPreModifiers = current.filter(p => p !== prefix)
+      if (updated[index].allowedPreModifiers?.length === 0) {
+        updated[index].allowedPreModifiers = null
+      }
+    } else {
+      updated[index].allowedPreModifiers = [...current, prefix]
+    }
+    setModifiers(updated)
+  }
+
+  const updateModifier = (index: number, field: string, value: string | number | boolean | null) => {
     const updated = [...modifiers]
     updated[index] = { ...updated[index], [field]: value }
     setModifiers(updated)
@@ -431,54 +507,162 @@ function ModifierGroupModal({
                 + Add Modifier
               </Button>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {modifiers.map((mod, index) => (
-                <div key={index} className="flex gap-2 items-center">
-                  <input
-                    type="text"
-                    value={mod.name}
-                    onChange={e => updateModifier(index, 'name', e.target.value)}
-                    className="flex-1 border rounded-lg px-3 py-2"
-                    placeholder="Modifier name"
-                  />
-                  <div className="w-24">
+                <div key={index} className="border rounded-lg p-3 bg-gray-50">
+                  {/* Show labels only on first modifier */}
+                  {index === 0 && (
+                    <div className="flex gap-2 items-center mb-1 text-xs text-gray-500 font-medium">
+                      <div className="flex-1">Name</div>
+                      <div className="w-20 text-center">Price</div>
+                      <div className="w-20 text-center">Upsell $</div>
+                      <div className="w-16"></div>
+                      <div className="w-6"></div>
+                    </div>
+                  )}
+                  <div className="flex gap-2 items-center mb-2">
                     <input
-                      type="number"
-                      value={mod.price}
-                      onChange={e => updateModifier(index, 'price', parseFloat(e.target.value) || 0)}
-                      className="w-full border rounded-lg px-3 py-2"
-                      placeholder="Price"
-                      step="0.01"
-                      min="0"
+                      type="text"
+                      value={mod.name}
+                      onChange={e => updateModifier(index, 'name', e.target.value)}
+                      className="flex-1 border rounded-lg px-3 py-2"
+                      placeholder="Modifier name"
                     />
+                    <div className="w-20">
+                      <input
+                        type="number"
+                        value={mod.price}
+                        onChange={e => updateModifier(index, 'price', parseFloat(e.target.value) || 0)}
+                        className="w-full border rounded-lg px-2 py-2 text-sm text-center"
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                    <div className="w-20">
+                      <input
+                        type="number"
+                        value={mod.upsellPrice ?? ''}
+                        onChange={e => updateModifier(index, 'upsellPrice', e.target.value ? parseFloat(e.target.value) : null)}
+                        className="w-full border rounded-lg px-2 py-2 text-sm bg-green-50 text-center"
+                        placeholder="—"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                    <label className="flex items-center gap-1 text-sm whitespace-nowrap w-16">
+                      <input
+                        type="checkbox"
+                        checked={mod.isDefault || false}
+                        onChange={e => updateModifier(index, 'isDefault', e.target.checked)}
+                      />
+                      Default
+                    </label>
+                    <button
+                      onClick={() => removeModifier(index)}
+                      className="text-red-500 hover:text-red-700 p-1 w-6"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
-                  <select
-                    value={mod.preModifier || ''}
-                    onChange={e => updateModifier(index, 'preModifier', e.target.value)}
-                    className="border rounded-lg px-2 py-2 text-sm"
-                  >
-                    <option value="">No prefix</option>
-                    <option value="no">No</option>
-                    <option value="lite">Lite</option>
-                    <option value="extra">Extra</option>
-                    <option value="side">Side</option>
-                  </select>
-                  <label className="flex items-center gap-1 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={mod.isDefault || false}
-                      onChange={e => updateModifier(index, 'isDefault', e.target.checked)}
-                    />
-                    Default
-                  </label>
-                  <button
-                    onClick={() => removeModifier(index)}
-                    className="text-red-500 hover:text-red-700 p-1"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  {/* Prefix options row */}
+                  <div className="flex items-center gap-4 mb-2 text-sm">
+                    <span className="text-gray-500 whitespace-nowrap">Prefixes:</span>
+                    {['no', 'lite', 'extra', 'side'].map(prefix => (
+                      <label key={prefix} className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={mod.allowedPreModifiers?.includes(prefix) || false}
+                          onChange={() => togglePreModifier(index, prefix)}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span className="capitalize">{prefix}</span>
+                      </label>
+                    ))}
+                    {mod.allowedPreModifiers?.includes('extra') && (
+                      <div className="border-l pl-3 ml-2 flex items-center gap-2">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] text-gray-400">Extra $</span>
+                          <input
+                            type="number"
+                            value={mod.extraPrice ?? ''}
+                            onChange={e => updateModifier(index, 'extraPrice', e.target.value ? parseFloat(e.target.value) : null)}
+                            className="w-16 border rounded px-2 py-1 text-sm text-center"
+                            placeholder="—"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[10px] text-gray-400">Extra Upsell $</span>
+                          <input
+                            type="number"
+                            value={mod.extraUpsellPrice ?? ''}
+                            onChange={e => updateModifier(index, 'extraUpsellPrice', e.target.value ? parseFloat(e.target.value) : null)}
+                            className="w-16 border rounded px-2 py-1 text-sm bg-green-50 text-center"
+                            placeholder="—"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Sub-modifier group selection */}
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-500">Sub-modifier:</span>
+                    <select
+                      value={mod.childModifierGroupId || ''}
+                      onChange={e => updateModifier(index, 'childModifierGroupId', e.target.value || null)}
+                      className="flex-1 border rounded-lg px-2 py-1.5 text-sm bg-white"
+                    >
+                      <option value="">None - no follow-up options</option>
+                      {availableChildGroups.map(g => (
+                        <option key={g.id} value={g.id}>
+                          {g.name} ({g.modifiers.length} options)
+                        </option>
+                      ))}
+                    </select>
+                    {mod.childModifierGroupId && (
+                      <span className="text-blue-600 text-xs">
+                        Will prompt for additional choices
+                      </span>
+                    )}
+                  </div>
+                  {/* Commission row */}
+                  <div className="flex items-center gap-2 text-sm mt-2 pt-2 border-t border-gray-200">
+                    <span className="text-gray-500">Commission:</span>
+                    <select
+                      value={mod.commissionType || ''}
+                      onChange={e => {
+                        updateModifier(index, 'commissionType', e.target.value || null)
+                        if (!e.target.value) updateModifier(index, 'commissionValue', null)
+                      }}
+                      className="border rounded-lg px-2 py-1.5 text-sm bg-white"
+                    >
+                      <option value="">None</option>
+                      <option value="fixed">Fixed $</option>
+                      <option value="percent">Percent %</option>
+                    </select>
+                    {mod.commissionType && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-gray-400">
+                          {mod.commissionType === 'fixed' ? '$' : '%'}
+                        </span>
+                        <input
+                          type="number"
+                          value={mod.commissionValue ?? ''}
+                          onChange={e => updateModifier(index, 'commissionValue', e.target.value ? parseFloat(e.target.value) : null)}
+                          className="w-16 border rounded px-2 py-1 text-sm text-center"
+                          placeholder="0"
+                          step={mod.commissionType === 'fixed' ? '0.01' : '0.1'}
+                          min="0"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
               {modifiers.length === 0 && (

@@ -23,6 +23,20 @@ interface MenuItem {
   description?: string
   isActive: boolean
   isAvailable: boolean
+  modifierGroupCount?: number
+  modifierGroups?: { id: string; name: string }[]
+  commissionType?: string | null
+  commissionValue?: number | null
+}
+
+interface ModifierGroup {
+  id: string
+  name: string
+  displayName?: string
+  minSelections: number
+  maxSelections: number
+  isRequired: boolean
+  modifiers: { id: string; name: string; price: number }[]
 }
 
 export default function MenuManagementPage() {
@@ -30,6 +44,7 @@ export default function MenuManagementPage() {
   const { employee, isAuthenticated } = useAuthStore()
   const [categories, setCategories] = useState<Category[]>([])
   const [items, setItems] = useState<MenuItem[]>([])
+  const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
@@ -47,14 +62,23 @@ export default function MenuManagementPage() {
 
   const loadMenu = async () => {
     try {
-      const response = await fetch('/api/menu')
-      if (response.ok) {
-        const data = await response.json()
+      const [menuResponse, modifiersResponse] = await Promise.all([
+        fetch('/api/menu'),
+        fetch('/api/menu/modifiers')
+      ])
+
+      if (menuResponse.ok) {
+        const data = await menuResponse.json()
         setCategories(data.categories)
         setItems(data.items)
         if (data.categories.length > 0 && !selectedCategory) {
           setSelectedCategory(data.categories[0].id)
         }
+      }
+
+      if (modifiersResponse.ok) {
+        const modData = await modifiersResponse.json()
+        setModifierGroups(modData.modifierGroups)
       }
     } catch (error) {
       console.error('Failed to load menu:', error)
@@ -86,20 +110,34 @@ export default function MenuManagementPage() {
     }
   }
 
-  const handleSaveItem = async (itemData: Partial<MenuItem>) => {
+  const handleSaveItem = async (itemData: Partial<MenuItem> & { modifierGroupIds?: string[] }) => {
     try {
       const method = editingItem ? 'PUT' : 'POST'
       const url = editingItem
         ? `/api/menu/items/${editingItem.id}`
         : '/api/menu/items'
 
+      const { modifierGroupIds, ...itemFields } = itemData
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...itemData, categoryId: selectedCategory }),
+        body: JSON.stringify({ ...itemFields, categoryId: selectedCategory }),
       })
 
       if (response.ok) {
+        const savedItem = await response.json()
+        const itemId = editingItem?.id || savedItem.id
+
+        // Save modifier group links if provided
+        if (modifierGroupIds !== undefined && itemId) {
+          await fetch(`/api/menu/items/${itemId}/modifiers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modifierGroupIds }),
+          })
+        }
+
         loadMenu()
         setShowItemModal(false)
         setEditingItem(null)
@@ -296,6 +334,22 @@ export default function MenuManagementPage() {
                         <p className="text-lg font-bold text-blue-600 mb-2">
                           {formatCurrency(item.price)}
                         </p>
+                        {item.modifierGroupCount && item.modifierGroupCount > 0 && (
+                          <p className="text-xs text-purple-600 mb-2">
+                            <svg className="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                            </svg>
+                            {item.modifierGroupCount} modifier group{item.modifierGroupCount > 1 ? 's' : ''}
+                          </p>
+                        )}
+                        {item.commissionType && item.commissionValue && (
+                          <p className="text-xs text-indigo-600 mb-2">
+                            <svg className="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Comm: {item.commissionType === 'fixed' ? formatCurrency(item.commissionValue) : `${item.commissionValue}%`}
+                          </p>
+                        )}
                         {item.description && (
                           <p className="text-sm text-gray-500 mb-3 line-clamp-2">
                             {item.description}
@@ -358,6 +412,7 @@ export default function MenuManagementPage() {
       {showItemModal && (
         <ItemModal
           item={editingItem}
+          modifierGroups={modifierGroups}
           onSave={handleSaveItem}
           onClose={() => {
             setShowItemModal(false)
@@ -440,20 +495,54 @@ function CategoryModal({
 // Item Modal Component
 function ItemModal({
   item,
+  modifierGroups,
   onSave,
   onClose
 }: {
   item: MenuItem | null
-  onSave: (data: Partial<MenuItem>) => void
+  modifierGroups: ModifierGroup[]
+  onSave: (data: Partial<MenuItem> & { modifierGroupIds?: string[] }) => void
   onClose: () => void
 }) {
   const [name, setName] = useState(item?.name || '')
   const [price, setPrice] = useState(item?.price?.toString() || '')
   const [description, setDescription] = useState(item?.description || '')
+  const [commissionType, setCommissionType] = useState<string>(item?.commissionType || '')
+  const [commissionValue, setCommissionValue] = useState<string>(
+    item?.commissionValue?.toString() || ''
+  )
+  const [selectedModifierGroupIds, setSelectedModifierGroupIds] = useState<string[]>(
+    item?.modifierGroups?.map(g => g.id) || []
+  )
+  const [isLoadingModifiers, setIsLoadingModifiers] = useState(false)
+
+  // Load existing modifier group links when editing
+  useEffect(() => {
+    if (item?.id) {
+      setIsLoadingModifiers(true)
+      fetch(`/api/menu/items/${item.id}/modifiers`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.modifierGroups) {
+            setSelectedModifierGroupIds(data.modifierGroups.map((g: { id: string }) => g.id))
+          }
+        })
+        .catch(console.error)
+        .finally(() => setIsLoadingModifiers(false))
+    }
+  }, [item?.id])
+
+  const toggleModifierGroup = (groupId: string) => {
+    setSelectedModifierGroupIds(prev =>
+      prev.includes(groupId)
+        ? prev.filter(id => id !== groupId)
+        : [...prev, groupId]
+    )
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <CardHeader>
           <CardTitle>{item ? 'Edit Item' : 'New Item'}</CardTitle>
         </CardHeader>
@@ -494,6 +583,95 @@ function ItemModal({
               rows={2}
             />
           </div>
+
+          {/* Commission Section */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Commission (optional)</label>
+            <div className="flex gap-3 items-start">
+              <div className="flex-1">
+                <select
+                  value={commissionType}
+                  onChange={(e) => {
+                    setCommissionType(e.target.value)
+                    if (!e.target.value) setCommissionValue('')
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">No commission</option>
+                  <option value="fixed">Fixed amount ($)</option>
+                  <option value="percent">Percentage (%)</option>
+                </select>
+              </div>
+              {commissionType && (
+                <div className="w-32">
+                  <div className="relative">
+                    <span className="absolute left-3 top-2 text-gray-500">
+                      {commissionType === 'fixed' ? '$' : '%'}
+                    </span>
+                    <input
+                      type="number"
+                      step={commissionType === 'fixed' ? '0.01' : '0.1'}
+                      min="0"
+                      value={commissionValue}
+                      onChange={(e) => setCommissionValue(e.target.value)}
+                      className="w-full pl-7 pr-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+            {commissionType && (
+              <p className="text-xs text-gray-500 mt-1">
+                {commissionType === 'fixed'
+                  ? 'Employee earns this fixed amount per sale'
+                  : 'Employee earns this percentage of the sale price'}
+              </p>
+            )}
+          </div>
+
+          {/* Modifier Groups Section */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Modifier Groups</label>
+            {isLoadingModifiers ? (
+              <p className="text-sm text-gray-500">Loading modifiers...</p>
+            ) : modifierGroups.length === 0 ? (
+              <p className="text-sm text-gray-500">
+                No modifier groups available. Create them in the Modifiers section.
+              </p>
+            ) : (
+              <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-2">
+                {modifierGroups.map(group => (
+                  <label
+                    key={group.id}
+                    className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-gray-50 ${
+                      selectedModifierGroupIds.includes(group.id) ? 'bg-blue-50 border border-blue-200' : ''
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedModifierGroupIds.includes(group.id)}
+                      onChange={() => toggleModifierGroup(group.id)}
+                      className="w-4 h-4"
+                    />
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{group.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {group.modifiers.length} options
+                        {group.isRequired && <span className="text-red-500 ml-1">(Required)</span>}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+            {selectedModifierGroupIds.length > 0 && (
+              <p className="text-xs text-gray-500 mt-1">
+                {selectedModifierGroupIds.length} modifier group(s) selected
+              </p>
+            )}
+          </div>
+
           <div className="flex gap-2 pt-4">
             <Button variant="outline" className="flex-1" onClick={onClose}>
               Cancel
@@ -505,7 +683,10 @@ function ItemModal({
               onClick={() => onSave({
                 name,
                 price: parseFloat(price),
-                description: description || undefined
+                description: description || undefined,
+                commissionType: commissionType || null,
+                commissionValue: commissionValue ? parseFloat(commissionValue) : null,
+                modifierGroupIds: selectedModifierGroupIds,
               })}
             >
               {item ? 'Save Changes' : 'Create Item'}

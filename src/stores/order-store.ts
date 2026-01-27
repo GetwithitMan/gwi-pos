@@ -1,24 +1,32 @@
 import { create } from 'zustand'
 
+interface OrderItemModifier {
+  id: string
+  name: string
+  price: number
+  preModifier?: string
+  depth: number  // 0 = top-level, 1 = child, 2 = grandchild, etc.
+  parentModifierId?: string  // ID of parent modifier if this is a child
+  commissionAmount?: number  // Commission earned on this modifier
+}
+
 interface OrderItem {
   id: string
   menuItemId: string
   name: string
   price: number
   quantity: number
-  modifiers: {
-    id: string
-    name: string
-    price: number
-    preModifier?: string
-  }[]
+  modifiers: OrderItemModifier[]
   specialNotes?: string
   seatNumber?: number
   courseNumber?: number
+  commissionAmount?: number  // Commission earned on this item
+  sentToKitchen?: boolean  // Track if this item has been sent to kitchen
 }
 
 interface Order {
   id?: string
+  orderNumber?: number  // For display purposes
   orderType: 'dine_in' | 'takeout' | 'delivery' | 'bar_tab'
   tableId?: string
   tableName?: string
@@ -30,6 +38,37 @@ interface Order {
   taxTotal: number
   total: number
   notes?: string
+  primaryPaymentMethod?: 'cash' | 'card'
+  commissionTotal: number  // Total commission for the order
+}
+
+interface LoadedOrderData {
+  id: string
+  orderNumber?: number
+  orderType: Order['orderType']
+  tableId?: string
+  tabName?: string
+  guestCount: number
+  items: {
+    id: string
+    menuItemId: string
+    name: string
+    price: number
+    quantity: number
+    itemTotal: number
+    specialNotes?: string | null
+    modifiers: {
+      id: string
+      modifierId: string
+      name: string
+      price: number
+      preModifier?: string | null
+    }[]
+  }[]
+  subtotal: number
+  taxTotal: number
+  total: number
+  notes?: string
 }
 
 interface OrderState {
@@ -38,12 +77,14 @@ interface OrderState {
 
   // Actions
   startOrder: (orderType: Order['orderType'], options?: { tableId?: string; tableName?: string; tabName?: string; guestCount?: number }) => void
+  loadOrder: (orderData: LoadedOrderData) => void
   addItem: (item: Omit<OrderItem, 'id'>) => void
   updateItem: (itemId: string, updates: Partial<OrderItem>) => void
   removeItem: (itemId: string) => void
   updateQuantity: (itemId: string, quantity: number) => void
   setGuestCount: (count: number) => void
   setNotes: (notes: string) => void
+  setPaymentMethod: (method: 'cash' | 'card') => void
   applyDiscount: (amount: number) => void
   calculateTotals: () => void
   clearOrder: () => void
@@ -73,6 +114,45 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         discountTotal: 0,
         taxTotal: 0,
         total: 0,
+        commissionTotal: 0,
+      },
+    })
+  },
+
+  loadOrder: (orderData) => {
+    // Convert API order data to store format - mark existing items as sent to kitchen
+    const items: OrderItem[] = orderData.items.map(item => ({
+      id: item.id,
+      menuItemId: item.menuItemId,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      specialNotes: item.specialNotes || undefined,
+      sentToKitchen: true, // Items from database have already been sent
+      modifiers: item.modifiers.map(mod => ({
+        id: mod.modifierId,
+        name: mod.name,
+        price: mod.price,
+        preModifier: mod.preModifier || undefined,
+        depth: 0,
+      })),
+    }))
+
+    set({
+      currentOrder: {
+        id: orderData.id,
+        orderNumber: orderData.orderNumber,
+        orderType: orderData.orderType,
+        tableId: orderData.tableId,
+        tabName: orderData.tabName,
+        guestCount: orderData.guestCount,
+        items,
+        subtotal: orderData.subtotal,
+        discountTotal: 0,
+        taxTotal: orderData.taxTotal,
+        total: orderData.total,
+        notes: orderData.notes,
+        commissionTotal: 0,
       },
     })
   },
@@ -159,6 +239,18 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     })
   },
 
+  setPaymentMethod: (method) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+
+    set({
+      currentOrder: {
+        ...currentOrder,
+        primaryPaymentMethod: method,
+      },
+    })
+  },
+
   applyDiscount: (amount) => {
     const { currentOrder } = get()
     if (!currentOrder) return
@@ -176,11 +268,22 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const { currentOrder } = get()
     if (!currentOrder) return
 
-    const subtotal = currentOrder.items.reduce((sum, item) => {
+    let subtotal = 0
+    let commissionTotal = 0
+
+    currentOrder.items.forEach(item => {
       const itemPrice = item.price * item.quantity
       const modifiersPrice = item.modifiers.reduce((modSum, mod) => modSum + mod.price, 0) * item.quantity
-      return sum + itemPrice + modifiersPrice
-    }, 0)
+      subtotal += itemPrice + modifiersPrice
+
+      // Calculate commission for item
+      const itemCommission = (item.commissionAmount || 0) * item.quantity
+      const modifiersCommission = item.modifiers.reduce(
+        (modSum, mod) => modSum + (mod.commissionAmount || 0),
+        0
+      ) * item.quantity
+      commissionTotal += itemCommission + modifiersCommission
+    })
 
     const afterDiscount = subtotal - currentOrder.discountTotal
     const taxTotal = Math.round(afterDiscount * TAX_RATE * 100) / 100
@@ -192,6 +295,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         subtotal: Math.round(subtotal * 100) / 100,
         taxTotal,
         total,
+        commissionTotal: Math.round(commissionTotal * 100) / 100,
       },
     })
   },

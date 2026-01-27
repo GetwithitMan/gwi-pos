@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 
 // GET single modifier group with modifiers
@@ -45,10 +46,16 @@ export async function GET(
         name: mod.name,
         displayName: mod.displayName,
         price: Number(mod.price),
-        preModifier: mod.preModifier,
+        upsellPrice: mod.upsellPrice ? Number(mod.upsellPrice) : null,
+        allowedPreModifiers: mod.allowedPreModifiers as string[] | null,
+        extraPrice: mod.extraPrice ? Number(mod.extraPrice) : null,
+        extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
         sortOrder: mod.sortOrder,
         isDefault: mod.isDefault,
         isActive: mod.isActive,
+        childModifierGroupId: mod.childModifierGroupId,
+        commissionType: mod.commissionType,
+        commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
       })),
       linkedItems: modifierGroup.menuItems.map(link => ({
         id: link.menuItem.id,
@@ -110,9 +117,15 @@ export async function PUT(
           id?: string
           name: string
           price?: number
-          preModifier?: string
+          upsellPrice?: number | null
+          allowedPreModifiers?: string[] | null
+          extraPrice?: number | null
+          extraUpsellPrice?: number | null
           isDefault?: boolean
           isActive?: boolean
+          childModifierGroupId?: string | null
+          commissionType?: string | null
+          commissionValue?: number | null
         }
 
         if (mod.id && existingIds.has(mod.id)) {
@@ -122,7 +135,13 @@ export async function PUT(
             data: {
               name: mod.name,
               price: mod.price ?? 0,
-              preModifier: mod.preModifier || null,
+              upsellPrice: mod.upsellPrice ?? null,
+              allowedPreModifiers: mod.allowedPreModifiers?.length ? mod.allowedPreModifiers : Prisma.DbNull,
+              extraPrice: mod.extraPrice ?? null,
+              extraUpsellPrice: mod.extraUpsellPrice ?? null,
+              childModifierGroupId: mod.childModifierGroupId || null,
+              commissionType: mod.commissionType || null,
+              commissionValue: mod.commissionValue ?? null,
               isDefault: mod.isDefault ?? false,
               isActive: mod.isActive ?? true,
               sortOrder: i,
@@ -135,7 +154,13 @@ export async function PUT(
               modifierGroupId: id,
               name: mod.name,
               price: mod.price ?? 0,
-              preModifier: mod.preModifier || null,
+              upsellPrice: mod.upsellPrice ?? null,
+              allowedPreModifiers: mod.allowedPreModifiers?.length ? mod.allowedPreModifiers : Prisma.DbNull,
+              extraPrice: mod.extraPrice ?? null,
+              extraUpsellPrice: mod.extraUpsellPrice ?? null,
+              childModifierGroupId: mod.childModifierGroupId || null,
+              commissionType: mod.commissionType || null,
+              commissionValue: mod.commissionValue ?? null,
               isDefault: mod.isDefault ?? false,
               isActive: mod.isActive ?? true,
               sortOrder: i,
@@ -166,7 +191,13 @@ export async function PUT(
         id: mod.id,
         name: mod.name,
         price: Number(mod.price),
-        preModifier: mod.preModifier,
+        upsellPrice: mod.upsellPrice ? Number(mod.upsellPrice) : null,
+        allowedPreModifiers: mod.allowedPreModifiers as string[] | null,
+        extraPrice: mod.extraPrice ? Number(mod.extraPrice) : null,
+        extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
+        childModifierGroupId: mod.childModifierGroupId,
+        commissionType: mod.commissionType,
+        commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
         isDefault: mod.isDefault,
         isActive: mod.isActive,
       }))
