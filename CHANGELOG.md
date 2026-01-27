@@ -8,6 +8,26 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Sales Reports (Skill 42) - 2026-01-27
+- `src/app/api/reports/sales/route.ts` - Sales report API:
+  - Summary metrics (gross sales, net, tax, tips, order count, avg order value)
+  - Payment method breakdown (cash vs card with percentages)
+  - Sales by day with orders, gross, tax, tips, net totals
+  - Sales by hour with visual bar chart
+  - Sales by category with quantity and percentage
+  - Top 20 selling items
+  - Sales by employee with percentage of total
+  - Date range filtering
+- `src/app/(admin)/reports/sales/page.tsx` - Sales report UI:
+  - Tabbed interface (Summary, By Day, By Hour, Categories, Top Items, Employees)
+  - Summary cards with key metrics
+  - Payment method visualization
+  - Daily sales table with totals
+  - Hourly bar chart visualization
+  - Category and item tables
+  - Employee sales ranking
+- Link added to POS menu dropdown
+
 #### Item Notes UI (Skill 10 Complete) - 2026-01-27
 - Special instructions text area in modifier modal:
   - 200 character limit with counter
@@ -311,6 +331,7 @@ All notable changes to this project will be documented in this file.
 | 30 | Payment Processing | Done | Cash/card, tips, rounding |
 | 31 | Dual Pricing | Done | Cash discount program |
 | 36 | Tax Calculations | Partial | Settings UI only, tax rules not implemented |
+| 42 | Sales Reports | Done | Summary, daily, hourly, category, item, employee reports |
 | 46 | Commission Reports | Done | By employee, date range, drill-down |
 
 ---

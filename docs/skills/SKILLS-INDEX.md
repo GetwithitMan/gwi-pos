@@ -105,7 +105,7 @@
 ### Reporting
 | Skill | Name | Status | Dependencies | Notes |
 |-------|------|--------|--------------|-------|
-| 42 | Sales Reports | TODO | 30 | Daily/weekly/monthly |
+| 42 | Sales Reports | DONE | 30 | Summary, daily, hourly, category, item, employee |
 | 43 | Labor Reports | TODO | 01 | Hours, costs |
 | 44 | Product Mix | TODO | 42 | Item performance |
 | 45 | Void Reports | TODO | 34 | Loss tracking |
@@ -195,12 +195,11 @@ Based on current implementation, these are the next foundational skills needed:
 - Unlocks: Better kitchen communication
 - **Completed:** Notes input in modifier modal + quick edit button on items
 
-### Priority 4: Sales Reports
+### Priority 4: Sales Reports ✓ COMPLETED
 **Skill 42: Sales Reports** - Business intelligence
 - Dependencies: 30 (done)
 - Unlocks: 44, dashboard insights
-- Why: Owners need to see sales performance
-- **We have:** Order data, payment data, commission reports
+- **Completed:** Summary, daily, hourly, category, item, employee reports with tabs
 
 ### Priority 5: Employee Time Tracking
 **Skill 47: Clock In/Out** - Employee time management
@@ -228,6 +227,7 @@ Based on current implementation, these are the next foundational skills needed:
 | 09 | Features & Config | Settings admin, dual pricing toggle, tax rate |
 | 10 | Item Notes | Special instructions: modifier modal input, quick edit button |
 | 20 | Bar Tabs | Tab create/view/edit, items, close |
+| 42 | Sales Reports | Summary, daily, hourly, category, item, employee views |
 | 21 | Pre-auth | Card hold on tab, release, expiration |
 | 29 | Commissioned Items | Item/modifier commissions, reports |
 | 30 | Payment Processing | Cash/card payments, tips, rounding, simulated card |
