@@ -14,6 +14,7 @@ interface KDSItem {
   completedAt: string | null
   resendCount: number
   lastResentAt: string | null
+  resendNote: string | null
   modifiers: { id: string; name: string }[]
 }
 
@@ -410,6 +411,15 @@ function KDSContent() {
                                 </span>
                               )}
                             </div>
+
+                            {/* Resend Note - shows why item was resent */}
+                            {item.resendNote && (
+                              <div className={`mt-1 text-sm font-medium ${
+                                item.isCompleted ? 'text-gray-600' : 'text-red-400'
+                              }`}>
+                                📝 {item.resendNote}
+                              </div>
+                            )}
 
                             {/* Modifiers */}
                             {item.modifiers.length > 0 && (

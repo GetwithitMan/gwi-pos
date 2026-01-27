@@ -671,6 +671,7 @@ model OrderItem {
   // Resend tracking
   resendCount   Int       @default(0)
   lastResentAt  DateTime?
+  resendNote    String?   // Note from server when resending (e.g., "Make it well done")
 
   // Special requests (Skill 48)
   specialNotes String?

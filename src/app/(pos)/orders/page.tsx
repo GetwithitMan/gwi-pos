@@ -320,6 +320,15 @@ export default function OrdersPage() {
 
   // Handle resending an item to the kitchen (KDS)
   const handleResendItem = async (itemId: string, itemName: string) => {
+    // Prompt for an optional note
+    const resendNote = prompt(
+      `Resend "${itemName}" to kitchen?\n\nOptional: Add a note for the kitchen (e.g., "Make it well done")`,
+      ''
+    )
+
+    // If user clicked Cancel, abort
+    if (resendNote === null) return
+
     try {
       const response = await fetch('/api/kds', {
         method: 'PUT',
@@ -327,11 +336,13 @@ export default function OrdersPage() {
         body: JSON.stringify({
           itemIds: [itemId],
           action: 'resend',
+          resendNote: resendNote.trim() || undefined,
         }),
       })
 
       if (response.ok) {
-        alert(`"${itemName}" resent to kitchen!\n\nIt will appear with a RESEND badge on KDS.`)
+        const noteMsg = resendNote.trim() ? `\nNote: "${resendNote.trim()}"` : ''
+        alert(`"${itemName}" resent to kitchen!${noteMsg}\n\nIt will appear with a RESEND badge on KDS.`)
       } else {
         alert('Failed to resend item')
       }
@@ -774,6 +785,18 @@ export default function OrdersPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
               Prep Stations
+            </button>
+            <button
+              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+              onClick={() => {
+                router.push('/tables')
+                setShowMenu(false)
+              }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+              </svg>
+              Tables
             </button>
             <button
               className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
