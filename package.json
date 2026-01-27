@@ -7,9 +7,18 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "db:seed": "dotenv -e .env.local -- tsx prisma/seed.ts",
+    "db:migrate": "dotenv -e .env.local -- prisma migrate dev",
+    "db:push": "dotenv -e .env.local -- prisma db push",
+    "db:studio": "dotenv -e .env.local -- prisma studio"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "@prisma/adapter-neon": "^7.3.0",
     "@prisma/client": "^7.3.0",
     "@tanstack/react-query": "^5.90.20",
     "bcryptjs": "^3.0.3",
@@ -31,10 +40,12 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.5",
     "prisma": "^7.3.0",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

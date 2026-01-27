@@ -1,13 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-// import { db } from '@/lib/db'
-
-// Shared in-memory store
-let demoCategories = [
-  { id: 'cat-1', name: 'Appetizers', color: '#ef4444', isActive: true },
-  { id: 'cat-2', name: 'Entrees', color: '#3b82f6', isActive: true },
-  { id: 'cat-3', name: 'Drinks', color: '#22c55e', isActive: true },
-  { id: 'cat-4', name: 'Desserts', color: '#a855f7', isActive: true },
-]
+import { db } from '@/lib/db'
 
 export async function PUT(
   request: NextRequest,
@@ -18,29 +10,20 @@ export async function PUT(
     const body = await request.json()
     const { name, color } = body
 
-    // Database version:
-    // const category = await db.category.update({
-    //   where: { id },
-    //   data: { name, color }
-    // })
-    // return NextResponse.json(category)
+    const category = await db.category.update({
+      where: { id },
+      data: {
+        ...(name && { name }),
+        ...(color && { color }),
+      }
+    })
 
-    // Demo mode
-    const index = demoCategories.findIndex(c => c.id === id)
-    if (index === -1) {
-      return NextResponse.json(
-        { error: 'Category not found' },
-        { status: 404 }
-      )
-    }
-
-    demoCategories[index] = {
-      ...demoCategories[index],
-      name: name || demoCategories[index].name,
-      color: color || demoCategories[index].color,
-    }
-
-    return NextResponse.json(demoCategories[index])
+    return NextResponse.json({
+      id: category.id,
+      name: category.name,
+      color: category.color,
+      isActive: category.isActive
+    })
   } catch (error) {
     console.error('Failed to update category:', error)
     return NextResponse.json(
@@ -57,20 +40,19 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Database version:
-    // await db.category.delete({ where: { id } })
-    // return NextResponse.json({ success: true })
+    // Check if category has items
+    const itemCount = await db.menuItem.count({
+      where: { categoryId: id }
+    })
 
-    // Demo mode
-    const index = demoCategories.findIndex(c => c.id === id)
-    if (index === -1) {
+    if (itemCount > 0) {
       return NextResponse.json(
-        { error: 'Category not found' },
-        { status: 404 }
+        { error: 'Cannot delete category with items. Move or delete items first.' },
+        { status: 400 }
       )
     }
 
-    demoCategories.splice(index, 1)
+    await db.category.delete({ where: { id } })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Failed to delete category:', error)

@@ -1,13 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-// import { db } from '@/lib/db'
-
-// In-memory store for demo mode
-let demoCategories = [
-  { id: 'cat-1', name: 'Appetizers', color: '#ef4444', isActive: true },
-  { id: 'cat-2', name: 'Entrees', color: '#3b82f6', isActive: true },
-  { id: 'cat-3', name: 'Drinks', color: '#22c55e', isActive: true },
-  { id: 'cat-4', name: 'Desserts', color: '#a855f7', isActive: true },
-]
+import { db } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,26 +13,37 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Database version:
-    // const category = await db.category.create({
-    //   data: {
-    //     locationId: 'demo-location-1', // Get from auth
-    //     name,
-    //     color: color || '#3b82f6',
-    //   }
-    // })
-    // return NextResponse.json(category)
-
-    // Demo mode
-    const newCategory = {
-      id: `cat-${Date.now()}`,
-      name,
-      color: color || '#3b82f6',
-      isActive: true,
+    // Get the location (for now using first location)
+    const location = await db.location.findFirst()
+    if (!location) {
+      return NextResponse.json(
+        { error: 'No location found' },
+        { status: 400 }
+      )
     }
-    demoCategories.push(newCategory)
 
-    return NextResponse.json(newCategory)
+    // Get max sort order
+    const maxSortOrder = await db.category.aggregate({
+      where: { locationId: location.id },
+      _max: { sortOrder: true }
+    })
+
+    const category = await db.category.create({
+      data: {
+        locationId: location.id,
+        name: name.trim(),
+        color: color || '#3b82f6',
+        sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
+      }
+    })
+
+    return NextResponse.json({
+      id: category.id,
+      name: category.name,
+      color: category.color,
+      isActive: category.isActive,
+      itemCount: 0
+    })
   } catch (error) {
     console.error('Failed to create category:', error)
     return NextResponse.json(
@@ -49,5 +52,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
-export { demoCategories }

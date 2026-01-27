@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-// import { authenticateEmployee } from '@/lib/auth'
-// import { db } from '@/lib/db'
+import { db } from '@/lib/db'
+import { compare } from 'bcryptjs'
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,58 +13,60 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // TODO: Get locationId from request headers/cookies once multi-location is set up
-    // For now, use a demo response
+    // Get all active employees and check PIN
+    const employees = await db.employee.findMany({
+      where: { isActive: true },
+      include: {
+        role: true,
+        location: true,
+      }
+    })
 
-    // Demo employee for testing (remove once database is connected)
-    if (pin === '1234') {
-      return NextResponse.json({
-        employee: {
-          id: 'demo-employee-1',
-          firstName: 'Demo',
-          lastName: 'User',
-          displayName: 'Demo U.',
-          role: {
-            id: 'demo-role-1',
-            name: 'Manager',
-          },
-          location: {
-            id: 'demo-location-1',
-            name: 'Demo Location',
-          },
-          permissions: ['admin'],
-        },
-      })
+    // Find employee with matching PIN
+    let matchedEmployee = null
+    for (const employee of employees) {
+      const pinMatch = await compare(pin, employee.pin)
+      if (pinMatch) {
+        matchedEmployee = employee
+        break
+      }
     }
 
-    // Uncomment once database is set up:
-    // const locationId = request.headers.get('x-location-id') || 'default'
-    // const employee = await authenticateEmployee(locationId, pin)
-    //
-    // if (!employee) {
-    //   return NextResponse.json(
-    //     { error: 'Invalid PIN' },
-    //     { status: 401 }
-    //   )
-    // }
-    //
-    // // Log the login
-    // await db.auditLog.create({
-    //   data: {
-    //     locationId: employee.location.id,
-    //     employeeId: employee.id,
-    //     action: 'login',
-    //     entityType: 'employee',
-    //     entityId: employee.id,
-    //   },
-    // })
-    //
-    // return NextResponse.json({ employee })
+    if (!matchedEmployee) {
+      return NextResponse.json(
+        { error: 'Invalid PIN' },
+        { status: 401 }
+      )
+    }
 
-    return NextResponse.json(
-      { error: 'Invalid PIN' },
-      { status: 401 }
-    )
+    // Log the login
+    await db.auditLog.create({
+      data: {
+        locationId: matchedEmployee.locationId,
+        employeeId: matchedEmployee.id,
+        action: 'login',
+        entityType: 'employee',
+        entityId: matchedEmployee.id,
+      },
+    })
+
+    return NextResponse.json({
+      employee: {
+        id: matchedEmployee.id,
+        firstName: matchedEmployee.firstName,
+        lastName: matchedEmployee.lastName,
+        displayName: matchedEmployee.displayName || `${matchedEmployee.firstName} ${matchedEmployee.lastName.charAt(0)}.`,
+        role: {
+          id: matchedEmployee.role.id,
+          name: matchedEmployee.role.name,
+        },
+        location: {
+          id: matchedEmployee.location.id,
+          name: matchedEmployee.location.name,
+        },
+        permissions: matchedEmployee.role.permissions as string[],
+      },
+    })
   } catch (error) {
     console.error('Login error:', error)
     return NextResponse.json(
