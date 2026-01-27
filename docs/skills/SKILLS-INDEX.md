@@ -42,7 +42,7 @@
 | 06 | Tipping | DONE | 09 | Tip suggestions, custom entry |
 | 07 | Send to Kitchen | PARTIAL | 02 | **UI done, orders save, sent/new tracking - needs KDS** |
 | 08 | Receipt Printing | TODO | 09 | Print formatting |
-| 10 | Item Notes | PARTIAL | 02 | **Schema ready, needs UI** |
+| 10 | Item Notes | DONE | 02 | Schema + UI: modifier modal + quick edit |
 
 ### Payment (Build Together)
 | Skill | Name | Status | Dependencies | Notes |
@@ -189,12 +189,11 @@ Based on current implementation, these are the next foundational skills needed:
 - Why: Dine-in orders need table assignment and tracking
 - **We have:** Order types include dine_in, Open Orders panel shows table orders
 
-### Priority 3: Item Notes
+### Priority 3: Item Notes ✓ COMPLETED
 **Skill 10: Item Notes** - Special instructions for kitchen
 - Dependencies: 02 (done)
 - Unlocks: Better kitchen communication
-- Why: Database already has specialNotes field, just needs UI
-- **We have:** Schema with OrderItem.specialNotes
+- **Completed:** Notes input in modifier modal + quick edit button on items
 
 ### Priority 4: Sales Reports
 **Skill 42: Sales Reports** - Business intelligence
@@ -227,6 +226,7 @@ Based on current implementation, these are the next foundational skills needed:
 | 06 | Tipping | Suggested %, custom amount, per-method |
 | 07 | Send to Kitchen | **PARTIAL:** UI, order save, sent/new item tracking (no KDS yet) |
 | 09 | Features & Config | Settings admin, dual pricing toggle, tax rate |
+| 10 | Item Notes | Special instructions: modifier modal input, quick edit button |
 | 20 | Bar Tabs | Tab create/view/edit, items, close |
 | 21 | Pre-auth | Card hold on tab, release, expiration |
 | 29 | Commissioned Items | Item/modifier commissions, reports |

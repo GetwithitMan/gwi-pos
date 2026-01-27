@@ -77,6 +77,7 @@ export default function OrdersPage() {
     id: string
     menuItemId: string
     modifiers: { id: string; name: string; price: number; depth: number; parentModifierId?: string }[]
+    specialNotes?: string
   } | null>(null)
 
   // Dual pricing state
@@ -123,6 +124,10 @@ export default function OrdersPage() {
 
   // Open orders count for badge
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
+
+  // Item notes modal state (for quick note editing)
+  const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
+  const [editingNotesText, setEditingNotesText] = useState('')
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -481,7 +486,7 @@ export default function OrdersPage() {
     }
   }
 
-  const handleAddItemWithModifiers = (modifiers: SelectedModifier[]) => {
+  const handleAddItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string) => {
     if (!selectedItem) return
 
     const modifierTotal = modifiers.reduce((sum, mod) => sum + mod.price, 0)
@@ -491,6 +496,7 @@ export default function OrdersPage() {
       name: selectedItem.name,
       price: selectedItem.price,
       quantity: 1,
+      specialNotes,
       modifiers: modifiers.map(mod => ({
         id: mod.id,
         name: mod.preModifier
@@ -517,7 +523,10 @@ export default function OrdersPage() {
 
     if (menuItem.modifierGroupCount && menuItem.modifierGroupCount > 0) {
       setSelectedItem(menuItem)
-      setEditingOrderItem(orderItem)
+      setEditingOrderItem({
+        ...orderItem,
+        specialNotes: orderItem.specialNotes,
+      })
       setLoadingModifiers(true)
       setShowModifierModal(true)
 
@@ -535,13 +544,14 @@ export default function OrdersPage() {
     }
   }
 
-  const handleUpdateItemWithModifiers = (modifiers: SelectedModifier[]) => {
+  const handleUpdateItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string) => {
     if (!selectedItem || !editingOrderItem) return
 
     const modifierTotal = modifiers.reduce((sum, mod) => sum + mod.price, 0)
 
     updateItem(editingOrderItem.id, {
       price: selectedItem.price,
+      specialNotes,
       modifiers: modifiers.map(mod => ({
         id: mod.id,
         name: mod.preModifier
@@ -558,6 +568,22 @@ export default function OrdersPage() {
     setSelectedItem(null)
     setItemModifierGroups([])
     setEditingOrderItem(null)
+  }
+
+  // Quick notes editing for any item
+  const handleOpenNotesEditor = (itemId: string, currentNotes?: string) => {
+    setEditingNotesItemId(itemId)
+    setEditingNotesText(currentNotes || '')
+  }
+
+  const handleSaveNotes = () => {
+    if (editingNotesItemId) {
+      updateItem(editingNotesItemId, {
+        specialNotes: editingNotesText.trim() || undefined,
+      })
+    }
+    setEditingNotesItemId(null)
+    setEditingNotesText('')
   }
 
   const filteredItems = menuItems.filter(
@@ -908,6 +934,18 @@ export default function OrdersPage() {
                         <span className="font-medium">
                           {formatCurrency((item.price + item.modifiers.reduce((sum, m) => sum + m.price, 0)) * item.quantity)}
                         </span>
+                        {/* Notes button */}
+                        {!item.sentToKitchen && (
+                          <button
+                            className={`p-1 ${item.specialNotes ? 'text-orange-500 hover:text-orange-700' : 'text-gray-400 hover:text-gray-600'}`}
+                            onClick={() => handleOpenNotesEditor(item.id, item.specialNotes)}
+                            title={item.specialNotes ? 'Edit note' : 'Add note'}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                            </svg>
+                          </button>
+                        )}
                         <button
                           className="text-red-500 hover:text-red-700 p-1"
                           onClick={() => removeItem(item.id)}
@@ -1077,6 +1115,7 @@ export default function OrdersPage() {
           loading={loadingModifiers}
           editingItem={editingOrderItem}
           dualPricing={dualPricing}
+          initialNotes={editingOrderItem?.specialNotes}
           onConfirm={editingOrderItem ? handleUpdateItemWithModifiers : handleAddItemWithModifiers}
           onCancel={() => {
             setShowModifierModal(false)
@@ -1127,6 +1166,51 @@ export default function OrdersPage() {
         onPayTab={handlePayTab}
       />
 
+      {/* Quick Notes Modal */}
+      {editingNotesItemId && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="p-4 border-b bg-gray-50">
+              <h2 className="text-lg font-bold">Special Instructions</h2>
+              <p className="text-sm text-gray-500">Add notes for the kitchen</p>
+            </div>
+            <div className="p-4">
+              <textarea
+                value={editingNotesText}
+                onChange={(e) => setEditingNotesText(e.target.value)}
+                placeholder="E.g., no onions, extra sauce, allergy info..."
+                className="w-full p-3 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                rows={3}
+                maxLength={200}
+                autoFocus
+              />
+              <div className="text-xs text-gray-400 text-right mt-1">
+                {editingNotesText.length}/200
+              </div>
+            </div>
+            <div className="p-4 border-t bg-gray-50 flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setEditingNotesItemId(null)
+                  setEditingNotesText('')
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={handleSaveNotes}
+              >
+                Save Note
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Payment Modal */}
       {showPaymentModal && (
         <PaymentModal
@@ -1174,6 +1258,7 @@ function ModifierModal({
   dualPricing,
   onConfirm,
   onCancel,
+  initialNotes,
 }: {
   item: MenuItem
   modifierGroups: ModifierGroup[]
@@ -1184,8 +1269,9 @@ function ModifierModal({
     modifiers: { id: string; name: string; price: number; preModifier?: string; depth: number; parentModifierId?: string }[]
   } | null
   dualPricing: DualPricingSettings
-  onConfirm: (modifiers: SelectedModifier[]) => void
+  onConfirm: (modifiers: SelectedModifier[], specialNotes?: string) => void
   onCancel: () => void
+  initialNotes?: string
 }) {
   // Helper to format price with dual pricing
   const formatModPrice = (price: number) => {
@@ -1210,6 +1296,8 @@ function ModifierModal({
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({})
   // Track if we've initialized from editing item
   const [initialized, setInitialized] = useState(false)
+  // Special notes/instructions for the item
+  const [specialNotes, setSpecialNotes] = useState(initialNotes || '')
 
   // Initialize with existing modifiers when editing, or defaults for new items
   useEffect(() => {
@@ -1649,6 +1737,25 @@ function ModifierModal({
                   {renderModifierGroup(group, depth, parentModifierName)}
                 </div>
               ))}
+
+              {/* Special Notes/Instructions */}
+              <div className="pt-4 border-t">
+                <label className="block font-semibold mb-2">
+                  Special Instructions
+                  <span className="text-gray-400 text-sm font-normal ml-2">(optional)</span>
+                </label>
+                <textarea
+                  value={specialNotes}
+                  onChange={(e) => setSpecialNotes(e.target.value)}
+                  placeholder="E.g., no onions, extra sauce, allergy info..."
+                  className="w-full p-3 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={2}
+                  maxLength={200}
+                />
+                <div className="text-xs text-gray-400 text-right mt-1">
+                  {specialNotes.length}/200
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1674,7 +1781,7 @@ function ModifierModal({
               variant="primary"
               className="flex-1"
               disabled={!canConfirm()}
-              onClick={() => onConfirm(getAllSelectedModifiers())}
+              onClick={() => onConfirm(getAllSelectedModifiers(), specialNotes.trim() || undefined)}
             >
               {editingItem ? 'Update Order' : 'Add to Order'}
             </Button>

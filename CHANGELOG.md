@@ -8,6 +8,38 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Item Notes UI (Skill 10 Complete) - 2026-01-27
+- Special instructions text area in modifier modal:
+  - 200 character limit with counter
+  - Pre-populated when editing existing item
+  - Sent to kitchen with order
+- Quick notes button on order items:
+  - Chat bubble icon next to each item (orange when has note)
+  - Opens simple notes editor modal
+  - Works for all items, including those without modifiers
+- Notes display in order panel:
+  - Shows "Note: {text}" below item in orange
+  - Kitchen receives notes with order
+
+### Fixed
+
+#### Layout Scrolling Issue - 2026-01-27
+- `src/app/(pos)/orders/page.tsx` - Fixed whole-screen scrolling when adding items:
+  - Changed main container from `min-h-screen` to `h-screen overflow-hidden`
+  - Added `h-full overflow-hidden` to left and right panels
+  - Order items section scrolls independently within fixed viewport
+  - Payment and "Send to Kitchen" buttons stay locked at bottom
+
+#### Roles API Permissions Error - 2026-01-27
+- `src/app/api/roles/route.ts` - Fixed `permissions.includes is not a function` error:
+  - Added `getPermissionsArray()` helper to safely handle JSON permissions field
+  - Handles arrays (return directly), JSON strings (parse), and null/undefined (empty array)
+- `src/app/api/roles/[id]/route.ts` - Same fix applied:
+  - Added `getPermissionsArray()` helper
+  - All endpoints now safely coerce permissions to array
+
+### Added
+
 #### Employee Management (Skill 01) - 2026-01-27
 - `src/app/api/employees/route.ts` - Employee list and create API:
   - GET - List employees by location with optional inactive filter
@@ -272,7 +304,7 @@ All notable changes to this project will be documented in this file.
 | 06 | Tipping | Done | Tip settings and payment flow |
 | 07 | Send to Kitchen | Partial | UI complete, orders save, no KDS integration yet |
 | 09 | Features & Config | Done | Settings foundation |
-| 10 | Item Notes | Partial | Schema supports specialNotes, no UI yet |
+| 10 | Item Notes | Done | Schema + UI: modifier modal, quick edit, display |
 | 20 | Bar Tabs | Done | Create/view/edit/pay tabs |
 | 21 | Pre-auth | Done | Card hold on tab open |
 | 29 | Commissioned Items | Done | Item/modifier commissions |
@@ -313,6 +345,7 @@ Based on building, these skills should be added to the index:
 
 | Date | Version | URL | Notes |
 |------|---------|-----|-------|
+| 2026-01-27 | - | https://gwi-pos.vercel.app | Fixed layout scrolling, roles permissions array fix |
 | 2026-01-27 | - | https://gwi-pos.vercel.app | Open orders panel, sent item tracking, order updates |
 | 2026-01-27 | - | https://gwi-pos.vercel.app | Fix order creation, send to kitchen, payments |
 | 2026-01-27 | - | https://gwi-pos.vercel.app | Initial dual pricing, commission, settings |
