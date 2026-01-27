@@ -586,9 +586,9 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex">
+    <div className="h-screen bg-gray-100 flex overflow-hidden">
       {/* Left Panel - Menu */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* Header */}
         <header className="bg-white border-b px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -743,7 +743,7 @@ export default function OrdersPage() {
       </div>
 
       {/* Right Panel - Order */}
-      <div className="w-80 bg-white border-l flex flex-col">
+      <div className="w-80 bg-white border-l flex flex-col h-full overflow-hidden">
         {/* Order Header */}
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
