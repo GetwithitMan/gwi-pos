@@ -664,6 +664,10 @@ model OrderItem {
   // Kitchen status
   kitchenStatus String @default("pending") // pending, cooking, ready, delivered
 
+  // KDS completion tracking
+  isCompleted   Boolean   @default(false)
+  completedAt   DateTime?
+
   // Special requests (Skill 48)
   specialNotes String?
 

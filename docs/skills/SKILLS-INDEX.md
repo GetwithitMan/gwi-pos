@@ -40,7 +40,7 @@
 | 04 | Modifiers | DONE | 03 | Nested modifiers, pre-modifiers |
 | 05 | Order Review | PARTIAL | 02 | Order panel has items/totals, no separate review screen |
 | 06 | Tipping | DONE | 09 | Tip suggestions, custom entry |
-| 07 | Send to Kitchen | PARTIAL | 02 | **UI done, orders save, sent/new tracking - needs KDS** |
+| 07 | Send to Kitchen | DONE | 02 | Orders save, sent/new tracking, KDS integration |
 | 08 | Receipt Printing | TODO | 09 | Print formatting |
 | 10 | Item Notes | DONE | 02 | Schema + UI: modifier modal + quick edit |
 
@@ -80,9 +80,9 @@
 | Skill | Name | Status | Dependencies | Notes |
 |-------|------|--------|--------------|-------|
 | NEW | Prep Stations | DONE | - | KDS routing: station types, category/item assignment |
-| 23 | KDS Display | TODO | 07, Prep Stations | Kitchen screens |
-| 24 | Bump Bar | TODO | 23 | Order completion |
-| 25 | Expo Station | TODO | 23 | Order coordination |
+| 23 | KDS Display | DONE | 07, Prep Stations | Full KDS screen: item bump, station filter, fullscreen |
+| 24 | Bump Bar | TODO | 23 | Physical bump bar hardware |
+| 25 | Expo Station | PARTIAL | 23 | Expo mode works via showAllItems toggle |
 | 26 | Prep Tickets | TODO | 07 | Prep station routing |
 
 ### Pricing & Discounts
@@ -176,12 +176,11 @@ Skills that can be developed simultaneously (no dependencies on each other):
 
 Based on current implementation, these are the next foundational skills needed:
 
-### Priority 1: Kitchen Display System (KDS)
+### Priority 1: Kitchen Display System (KDS) ✓ COMPLETED
 **Skill 23: KDS Display** - Complete the kitchen integration
-- Dependencies: 07 (partial - UI done)
+- Dependencies: 07 (done)
 - Unlocks: 24, 25, 26
-- Why: Send to Kitchen UI is done, need the actual kitchen screen
-- **We have:** Order save, sent item tracking, resend icon placeholder
+- **Completed:** Full KDS screen with station filtering, item/order bump, time status, fullscreen mode
 
 ### Priority 2: Table Management
 **Skill 16: Table Layout** - Foundation for dine-in service
@@ -223,8 +222,9 @@ Based on current implementation, these are the next foundational skills needed:
 | 01 | Employee Management | CRUD API, role assignment, PIN auth, admin UI |
 | 02 | Quick Order Entry | Order creation, save to DB, update existing orders |
 | 06 | Tipping | Suggested %, custom amount, per-method |
-| 07 | Send to Kitchen | **PARTIAL:** UI, order save, sent/new item tracking (no KDS yet) |
+| 07 | Send to Kitchen | Order save, sent/new item tracking, KDS integration |
 | 09 | Features & Config | Settings admin, dual pricing toggle, tax rate |
+| 23 | KDS Display | Full kitchen screen: station filter, item bump, time status, fullscreen |
 | 10 | Item Notes | Special instructions: modifier modal input, quick edit button |
 | 20 | Bar Tabs | Tab create/view/edit, items, close |
 | 42 | Sales Reports | Summary, daily, hourly, category, item, employee views |

@@ -8,6 +8,28 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### KDS Display (Skill 23) - 2026-01-27
+- `src/app/api/kds/route.ts` - KDS orders API:
+  - GET orders filtered by station (using PrepStation routing)
+  - Items filtered by prepStationId (item override > category assignment)
+  - Time status calculation (fresh < 8min, aging 8-15min, late > 15min)
+  - PUT to mark items complete/uncomplete/bump order
+- `src/app/(kds)/kds/page.tsx` - Full KDS display:
+  - Dark theme optimized for kitchen monitors
+  - Order cards with time status color (green/yellow/red with pulse)
+  - Order type badges (dine in, takeout, delivery, bar)
+  - Item click to bump (complete), click again to uncomplete
+  - Modifier display in yellow
+  - Special notes display in orange with warning icon
+  - "BUMP ORDER" button to complete all items at once
+  - Station selector dropdown
+  - Show/hide completed toggle
+  - Fullscreen mode support
+  - Auto-refresh every 5 seconds
+  - Live clock display in footer
+  - Link from POS menu dropdown
+- `src/app/(kds)/layout.tsx` - KDS route group layout
+
 #### Prep Stations / KDS Routing (New Skill) - 2026-01-27
 - Database schema: `PrepStation` model for kitchen routing
   - Station types: kitchen, bar, expo, prep
@@ -350,7 +372,7 @@ All notable changes to this project will be documented in this file.
 | 04 | Modifiers | Done | Nested modifiers, pre-modifiers |
 | 05 | Order Review | Partial | Order panel shows items/totals, no separate review screen |
 | 06 | Tipping | Done | Tip settings and payment flow |
-| 07 | Send to Kitchen | Partial | UI complete, orders save, no KDS integration yet |
+| 07 | Send to Kitchen | Done | UI + orders save + KDS integration |
 | 09 | Features & Config | Done | Settings foundation |
 | 10 | Item Notes | Done | Schema + UI: modifier modal, quick edit, display |
 | 20 | Bar Tabs | Done | Create/view/edit/pay tabs |
@@ -362,6 +384,7 @@ All notable changes to this project will be documented in this file.
 | 42 | Sales Reports | Done | Summary, daily, hourly, category, item, employee reports |
 | 47 | Clock In/Out | Done | Clock in/out, breaks, hours calculation, modal UI |
 | NEW | Prep Stations | Done | KDS routing: station types, category/item assignment |
+| 23 | KDS Display | Done | Kitchen screens with item bump, station filter, fullscreen |
 | 46 | Commission Reports | Done | By employee, date range, drill-down |
 
 ---
