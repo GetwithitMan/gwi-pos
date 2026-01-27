@@ -1,0 +1,881 @@
+// GWI POS Database Schema
+// Version: 1.0.0
+// Based on Skills Documentation
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// ORGANIZATION & LOCATIONS (Skill 53)
+// ============================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  locations Location[]
+}
+
+model Location {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  name           String
+  address        String?
+  phone          String?
+  timezone       String       @default("America/New_York")
+  isActive       Boolean      @default(true)
+
+  // Settings
+  settings       Json         @default("{}")
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Relations
+  employees      Employee[]
+  roles          Role[]
+  categories     Category[]
+  menuItems      MenuItem[]
+  modifierGroups ModifierGroup[]
+  orders         Order[]
+  tables         Table[]
+  sections       Section[]
+  drawers        Drawer[]
+  shifts         Shift[]
+  timeClock      TimeClockEntry[]
+  discountRules  DiscountRule[]
+
+  @@index([organizationId])
+}
+
+// ============================================
+// EMPLOYEES & ROLES (Skill 05)
+// ============================================
+
+model Role {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String   // Server, Bartender, Manager, Admin
+  permissions Json     @default("[]") // Array of permission strings
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employees   Employee[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+model Employee {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  roleId      String
+  role        Role     @relation(fields: [roleId], references: [id])
+
+  // Identity
+  firstName   String
+  lastName    String
+  displayName String?
+  email       String?
+  phone       String?
+
+  // Authentication
+  pin         String   // 4-6 digit PIN (hashed)
+  password    String?  // Optional password for admin access (hashed)
+
+  // Employment
+  hourlyRate  Decimal? @db.Decimal(10, 2)
+  hireDate    DateTime @default(now())
+  isActive    Boolean  @default(true)
+
+  // Settings
+  color       String?  // For floor plan display
+  avatarUrl   String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  orders         Order[]
+  timeClockEntries TimeClockEntry[]
+  shifts         Shift[]
+  voidLogs       VoidLog[]
+  auditLogs      AuditLog[]
+  sections       SectionAssignment[]
+
+  @@unique([locationId, pin])
+  @@index([locationId])
+  @@index([roleId])
+}
+
+// ============================================
+// TIME CLOCK (Skill 45)
+// ============================================
+
+model TimeClockEntry {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+
+  clockIn     DateTime  @default(now())
+  clockOut    DateTime?
+
+  // Break tracking
+  breakStart  DateTime?
+  breakEnd    DateTime?
+  breakMinutes Int      @default(0)
+
+  // Totals
+  regularHours   Decimal? @db.Decimal(5, 2)
+  overtimeHours  Decimal? @db.Decimal(5, 2)
+
+  // Cash drawer
+  drawerCountIn  Json?    // {denominations, total}
+  drawerCountOut Json?
+
+  notes       String?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([clockIn])
+}
+
+// ============================================
+// SHIFTS & DRAWER MANAGEMENT (Skill 37)
+// ============================================
+
+model Shift {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id])
+
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+
+  // Cash management
+  startingCash   Decimal  @db.Decimal(10, 2)
+  expectedCash   Decimal? @db.Decimal(10, 2)
+  actualCash     Decimal? @db.Decimal(10, 2)
+  variance       Decimal? @db.Decimal(10, 2)
+
+  // Sales summary
+  totalSales     Decimal? @db.Decimal(10, 2)
+  cashSales      Decimal? @db.Decimal(10, 2)
+  cardSales      Decimal? @db.Decimal(10, 2)
+  tipsDeclared   Decimal? @db.Decimal(10, 2)
+
+  notes       String?
+  status      String   @default("open") // open, closed
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([startedAt])
+}
+
+model Drawer {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String   // "Drawer 1", "Bar Drawer"
+  deviceId    String?  // Associated terminal
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  paidInOuts  PaidInOut[]
+
+  @@index([locationId])
+}
+
+model PaidInOut {
+  id          String   @id @default(cuid())
+  drawerId    String
+  drawer      Drawer   @relation(fields: [drawerId], references: [id])
+
+  type        String   // "in" or "out"
+  amount      Decimal  @db.Decimal(10, 2)
+  reason      String
+  reference   String?  // Check number, vendor, etc.
+
+  employeeId  String
+  approvedBy  String?  // Manager who approved
+
+  createdAt   DateTime @default(now())
+
+  @@index([drawerId])
+  @@index([createdAt])
+}
+
+// ============================================
+// MENU PROGRAMMING (Skill 03)
+// ============================================
+
+model Category {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String
+  displayName String?
+  description String?
+  color       String?
+  imageUrl    String?
+
+  // Display
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  showOnPOS   Boolean  @default(true)
+  showOnline  Boolean  @default(true)
+
+  // Kitchen routing
+  defaultPrinterId String?
+  courseNumber     Int?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  menuItems   MenuItem[]
+
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model MenuItem {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id])
+
+  // Identity
+  name        String
+  displayName String?
+  description String?
+  sku         String?
+  imageUrl    String?
+
+  // Pricing
+  price       Decimal  @db.Decimal(10, 2)
+  cost        Decimal? @db.Decimal(10, 2) // For profit tracking
+
+  // Tax
+  taxRate     Decimal? @db.Decimal(5, 4) // Override location default
+  isTaxExempt Boolean  @default(false)
+
+  // Display & Behavior
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  showOnPOS   Boolean  @default(true)
+  showOnline  Boolean  @default(true)
+
+  // Kitchen
+  printerId   String?  // Override category printer
+  prepTime    Int?     // Minutes
+  courseNumber Int?    // Override category course
+
+  // Inventory
+  trackInventory Boolean @default(false)
+  currentStock   Int?
+  lowStockAlert  Int?
+  isAvailable    Boolean @default(true) // 86'd when false
+
+  // Type
+  itemType    String   @default("standard") // standard, combo, timed
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  modifierGroups MenuItemModifierGroup[]
+  orderItems     OrderItem[]
+  upsellTriggers UpsellConfig[] @relation("TriggerItem")
+  upsellSuggestions UpsellConfig[] @relation("SuggestionItem")
+  comboComponents ComboComponent[]
+
+  @@unique([locationId, sku])
+  @@index([locationId])
+  @@index([categoryId])
+  @@index([isActive, showOnPOS])
+}
+
+model ModifierGroup {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String
+  displayName String?
+
+  // Requirements
+  minSelections Int     @default(0)
+  maxSelections Int     @default(1)
+  isRequired    Boolean @default(false)
+
+  // Display
+  sortOrder   Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  modifiers   Modifier[]
+  menuItems   MenuItemModifierGroup[]
+
+  @@index([locationId])
+}
+
+model Modifier {
+  id               String        @id @default(cuid())
+  modifierGroupId  String
+  modifierGroup    ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  name        String
+  displayName String?
+
+  // Pricing
+  price       Decimal  @db.Decimal(10, 2) @default(0)
+  cost        Decimal? @db.Decimal(10, 2)
+
+  // Pre-modifier support (Skill 32)
+  preModifier String?  // "no", "lite", "extra", "side"
+
+  // Display
+  sortOrder   Int      @default(0)
+  isDefault   Boolean  @default(false)
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItemModifiers OrderItemModifier[]
+
+  @@index([modifierGroupId])
+}
+
+model MenuItemModifierGroup {
+  id              String        @id @default(cuid())
+  menuItemId      String
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierGroupId String
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  sortOrder       Int           @default(0)
+
+  @@unique([menuItemId, modifierGroupId])
+}
+
+// ============================================
+// COMBO MEALS (Skill 59)
+// ============================================
+
+model ComboTemplate {
+  id          String   @id @default(cuid())
+  menuItemId  String   @unique // Links to MenuItem with itemType="combo"
+
+  basePrice   Decimal  @db.Decimal(10, 2)
+  comparePrice Decimal? @db.Decimal(10, 2) // A la carte total for savings display
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  components  ComboComponent[]
+}
+
+model ComboComponent {
+  id              String        @id @default(cuid())
+  comboTemplateId String
+  comboTemplate   ComboTemplate @relation(fields: [comboTemplateId], references: [id], onDelete: Cascade)
+
+  slotName    String   // "entree", "side", "drink"
+  displayName String   // "Choose Your Side"
+  sortOrder   Int      @default(0)
+
+  isRequired     Boolean @default(true)
+  minSelections  Int     @default(1)
+  maxSelections  Int     @default(1)
+
+  defaultItemId  String?
+  defaultItem    MenuItem? @relation(fields: [defaultItemId], references: [id])
+
+  createdAt   DateTime @default(now())
+
+  options     ComboComponentOption[]
+}
+
+model ComboComponentOption {
+  id              String         @id @default(cuid())
+  comboComponentId String
+  comboComponent   ComboComponent @relation(fields: [comboComponentId], references: [id], onDelete: Cascade)
+
+  menuItemId  String
+  upcharge    Decimal  @db.Decimal(10, 2) @default(0)
+  sortOrder   Int      @default(0)
+  isAvailable Boolean  @default(true)
+
+  @@unique([comboComponentId, menuItemId])
+}
+
+// ============================================
+// TABLES & FLOOR PLAN (Skill 55)
+// ============================================
+
+model Section {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String   // "Bar", "Patio", "Main Floor"
+  color       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tables      Table[]
+  assignments SectionAssignment[]
+
+  @@index([locationId])
+}
+
+model SectionAssignment {
+  id          String   @id @default(cuid())
+  sectionId   String
+  section     Section  @relation(fields: [sectionId], references: [id])
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+
+  assignedAt  DateTime @default(now())
+  unassignedAt DateTime?
+
+  @@index([sectionId])
+  @@index([employeeId])
+}
+
+model Table {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  sectionId   String?
+  section     Section? @relation(fields: [sectionId], references: [id])
+
+  name        String   // "Table 1", "Bar 3", "Patio A"
+  capacity    Int      @default(4)
+
+  // Floor plan position
+  posX        Int      @default(0)
+  posY        Int      @default(0)
+  width       Int      @default(100)
+  height      Int      @default(100)
+  shape       String   @default("rectangle") // rectangle, circle, square
+
+  // Status
+  status      String   @default("available") // available, occupied, reserved, dirty
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orders      Order[]
+
+  @@index([locationId])
+  @@index([sectionId])
+  @@index([status])
+}
+
+// ============================================
+// ORDERS (Skill 04)
+// ============================================
+
+model Order {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+
+  // Order identification
+  orderNumber Int      // Sequential per location per day
+  displayNumber String? // Displayed number (e.g., "A23")
+
+  // Type & Context
+  orderType   String   @default("dine_in") // dine_in, takeout, delivery, bar_tab
+  tableId     String?
+  table       Table?   @relation(fields: [tableId], references: [id])
+  guestCount  Int      @default(1)
+  tabName     String?  // For bar tabs
+
+  // Status
+  status      String   @default("open") // open, sent, paid, closed, voided
+
+  // Timing
+  openedAt    DateTime @default(now())
+  sentAt      DateTime?
+  paidAt      DateTime?
+  closedAt    DateTime?
+
+  // Totals
+  subtotal    Decimal  @db.Decimal(10, 2) @default(0)
+  discountTotal Decimal @db.Decimal(10, 2) @default(0)
+  taxTotal    Decimal  @db.Decimal(10, 2) @default(0)
+  tipTotal    Decimal  @db.Decimal(10, 2) @default(0)
+  total       Decimal  @db.Decimal(10, 2) @default(0)
+
+  // Notes
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  items       OrderItem[]
+  payments    Payment[]
+  discounts   OrderDiscount[]
+  voidLogs    VoidLog[]
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([tableId])
+  @@index([status])
+  @@index([openedAt])
+  @@index([orderNumber, locationId])
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId  String
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
+
+  // Item details (snapshot at time of order)
+  name        String
+  price       Decimal  @db.Decimal(10, 2)
+  quantity    Int      @default(1)
+
+  // Seat tracking (Skill 24)
+  seatNumber  Int?
+
+  // Course (Skill 14)
+  courseNumber Int?
+  courseStatus String  @default("pending") // pending, fired, ready, served
+
+  // Hold & Fire (Skill 15)
+  isHeld      Boolean  @default(false)
+  holdUntil   DateTime?
+  firedAt     DateTime?
+
+  // Kitchen status
+  kitchenStatus String @default("pending") // pending, cooking, ready, delivered
+
+  // Special requests (Skill 48)
+  specialNotes String?
+
+  // Status
+  status      String   @default("active") // active, voided, comped
+  voidReason  String?
+
+  // Totals
+  modifierTotal Decimal @db.Decimal(10, 2) @default(0)
+  itemTotal     Decimal @db.Decimal(10, 2) @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  modifiers   OrderItemModifier[]
+
+  @@index([orderId])
+  @@index([menuItemId])
+  @@index([kitchenStatus])
+}
+
+model OrderItemModifier {
+  id           String    @id @default(cuid())
+  orderItemId  String
+  orderItem    OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifierId   String
+  modifier     Modifier  @relation(fields: [modifierId], references: [id])
+
+  // Snapshot
+  name        String
+  price       Decimal   @db.Decimal(10, 2)
+  preModifier String?   // "no", "lite", "extra", "side"
+
+  quantity    Int       @default(1)
+
+  createdAt   DateTime  @default(now())
+
+  @@index([orderItemId])
+}
+
+// ============================================
+// PAYMENTS (Skill 30)
+// ============================================
+
+model Payment {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+
+  // Payment details
+  amount      Decimal  @db.Decimal(10, 2)
+  tipAmount   Decimal  @db.Decimal(10, 2) @default(0)
+  totalAmount Decimal  @db.Decimal(10, 2)
+
+  // Method
+  paymentMethod String  // cash, credit, debit, gift_card, house_account
+
+  // Card details (if card)
+  cardBrand     String?
+  cardLast4     String?
+  authCode      String?
+  transactionId String?
+
+  // Status
+  status      String   @default("completed") // pending, completed, refunded, voided
+
+  processedAt DateTime @default(now())
+
+  @@index([orderId])
+  @@index([processedAt])
+}
+
+// ============================================
+// DISCOUNTS (Skills 18, 60)
+// ============================================
+
+model DiscountRule {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String
+  displayText String
+  description String?
+
+  // Type
+  discountType String  // bogo, quantity, mix_match, threshold, time_based, manual
+
+  // Trigger conditions
+  triggerConfig Json   // Category IDs, item IDs, quantities, etc.
+
+  // Discount
+  discountConfig Json  // Percent, amount, fixed price, apply_to
+
+  // Schedule (optional)
+  scheduleConfig Json? // Days, times, date range
+
+  // Rules
+  priority    Int      @default(0)
+  isStackable Boolean  @default(true)
+  requiresApproval Boolean @default(false)
+  maxPerOrder Int?
+
+  isActive    Boolean  @default(true)
+  isAutomatic Boolean  @default(false) // Auto-apply vs manual
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  appliedDiscounts OrderDiscount[]
+
+  @@index([locationId])
+  @@index([isActive, isAutomatic])
+}
+
+model OrderDiscount {
+  id             String       @id @default(cuid())
+  orderId        String
+  order          Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  discountRuleId String?
+  discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
+
+  name        String
+  amount      Decimal  @db.Decimal(10, 2)
+  percent     Decimal? @db.Decimal(5, 2)
+
+  // Who applied it
+  appliedBy   String?  // Employee ID if manual
+  isAutomatic Boolean  @default(false)
+
+  reason      String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+}
+
+// ============================================
+// UPSELL PROMPTS (Skill 58)
+// ============================================
+
+model UpsellConfig {
+  id          String   @id @default(cuid())
+  locationId  String
+
+  // Trigger
+  triggerType String   // item, category, order_condition
+  triggerItemId String?
+  triggerItem   MenuItem? @relation("TriggerItem", fields: [triggerItemId], references: [id])
+  triggerCategoryId String?
+  triggerCondition Json?
+
+  // Suggestion
+  suggestionType String // item, category, combo, upgrade
+  suggestionItemId String?
+  suggestionItem   MenuItem? @relation("SuggestionItem", fields: [suggestionItemId], references: [id])
+  suggestionCategoryId String?
+
+  // Display
+  promptText  String
+  displayMode String   @default("inline") // inline, popup, toast
+  showPrice   Boolean  @default(true)
+
+  // Timing
+  triggerOnAdd Boolean @default(true)
+  triggerBeforeSend Boolean @default(false)
+  triggerAtPayment Boolean @default(false)
+
+  // Status
+  isActive    Boolean  @default(true)
+  priority    Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  events      UpsellEvent[]
+
+  @@index([locationId])
+}
+
+model UpsellEvent {
+  id            String       @id @default(cuid())
+  upsellConfigId String
+  upsellConfig   UpsellConfig @relation(fields: [upsellConfigId], references: [id])
+
+  orderId     String
+  employeeId  String
+
+  wasShown    Boolean  @default(true)
+  wasAccepted Boolean  @default(false)
+  wasDismissed Boolean @default(false)
+
+  addedAmount Decimal? @db.Decimal(10, 2)
+
+  createdAt   DateTime @default(now())
+
+  @@index([upsellConfigId])
+  @@index([createdAt])
+}
+
+// ============================================
+// VOIDS & AUDIT (Skill 19)
+// ============================================
+
+model VoidLog {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+
+  voidType    String   // item, order
+  itemId      String?  // If item void
+  amount      Decimal  @db.Decimal(10, 2)
+  reason      String
+
+  approvedById String?
+  approvedAt   DateTime?
+
+  createdAt   DateTime @default(now())
+
+  @@index([orderId])
+  @@index([employeeId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  locationId  String
+  employeeId  String?
+  employee    Employee? @relation(fields: [employeeId], references: [id])
+
+  action      String   // login, logout, order_created, item_voided, etc.
+  entityType  String?  // order, employee, menu_item, etc.
+  entityId    String?
+  details     Json?    // Before/after values
+
+  ipAddress   String?
+  userAgent   String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================
+// TIPPING (Skill 06)
+// ============================================
+
+model TipPool {
+  id          String   @id @default(cuid())
+  locationId  String
+
+  name        String   // "Bar Pool", "Server Pool"
+  description String?
+
+  // Distribution rules
+  distributionType String // equal, hours, points
+  eligibleRoles    Json   // Array of role IDs
+
+  isActive    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  entries     TipPoolEntry[]
+
+  @@index([locationId])
+}
+
+model TipPoolEntry {
+  id          String   @id @default(cuid())
+  tipPoolId   String
+  tipPool     TipPool  @relation(fields: [tipPoolId], references: [id])
+
+  shiftDate   DateTime @db.Date
+  totalAmount Decimal  @db.Decimal(10, 2)
+
+  // Distributions
+  distributions Json   // [{employeeId, amount, hours, points}]
+
+  createdAt   DateTime @default(now())
+
+  @@index([tipPoolId])
+  @@index([shiftDate])
+}
