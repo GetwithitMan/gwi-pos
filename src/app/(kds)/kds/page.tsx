@@ -12,6 +12,8 @@ interface KDSItem {
   specialNotes: string | null
   isCompleted: boolean
   completedAt: string | null
+  resendCount: number
+  lastResentAt: string | null
   modifiers: { id: string; name: string }[]
 }
 
@@ -401,6 +403,12 @@ function KDSContent() {
                             <div className={`font-medium ${item.isCompleted ? 'line-through text-gray-500' : 'text-white'}`}>
                               <span className="text-blue-400 mr-2">{item.quantity}x</span>
                               {item.name}
+                              {/* RESEND badge */}
+                              {item.resendCount > 0 && (
+                                <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded animate-pulse">
+                                  🔄 RESEND{item.resendCount > 1 ? ` x${item.resendCount}` : ''}
+                                </span>
+                              )}
                             </div>
 
                             {/* Modifiers */}

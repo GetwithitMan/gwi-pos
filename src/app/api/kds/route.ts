@@ -149,6 +149,8 @@ export async function GET(request: NextRequest) {
           specialNotes: item.specialNotes,
           isCompleted: item.isCompleted || false,
           completedAt: item.completedAt?.toISOString() || null,
+          resendCount: item.resendCount || 0,
+          lastResentAt: item.lastResentAt?.toISOString() || null,
           modifiers: item.modifiers.map(mod => ({
             id: mod.id,
             name: mod.preModifier
@@ -180,13 +182,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// PUT - Mark item(s) as complete (bump)
+// PUT - Mark item(s) as complete (bump) or resend
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { itemIds, action } = body as {
       itemIds: string[]
-      action: 'complete' | 'uncomplete' | 'bump_order'
+      action: 'complete' | 'uncomplete' | 'bump_order' | 'resend'
     }
 
     if (!itemIds || itemIds.length === 0) {
@@ -223,6 +225,19 @@ export async function PUT(request: NextRequest) {
           completedAt: now,
         },
       })
+    } else if (action === 'resend') {
+      // Resend items to kitchen - increment count and reset completion
+      for (const itemId of itemIds) {
+        await db.orderItem.update({
+          where: { id: itemId },
+          data: {
+            resendCount: { increment: 1 },
+            lastResentAt: now,
+            isCompleted: false,
+            completedAt: null,
+          },
+        })
+      }
     }
 
     return NextResponse.json({

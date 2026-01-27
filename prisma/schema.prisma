@@ -668,6 +668,10 @@ model OrderItem {
   isCompleted   Boolean   @default(false)
   completedAt   DateTime?
 
+  // Resend tracking
+  resendCount   Int       @default(0)
+  lastResentAt  DateTime?
+
   // Special requests (Skill 48)
   specialNotes String?
 

@@ -318,6 +318,29 @@ export default function OrdersPage() {
     }
   }
 
+  // Handle resending an item to the kitchen (KDS)
+  const handleResendItem = async (itemId: string, itemName: string) => {
+    try {
+      const response = await fetch('/api/kds', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemIds: [itemId],
+          action: 'resend',
+        }),
+      })
+
+      if (response.ok) {
+        alert(`"${itemName}" resent to kitchen!\n\nIt will appear with a RESEND badge on KDS.`)
+      } else {
+        alert('Failed to resend item')
+      }
+    } catch (error) {
+      console.error('Failed to resend item:', error)
+      alert('Failed to resend item')
+    }
+  }
+
   // Handle selecting an open order to continue working on it
   const handleSelectOpenOrder = (order: OpenOrder) => {
     // Load the order into the current order state
@@ -912,7 +935,7 @@ export default function OrdersPage() {
                               {/* Printer icon to resend */}
                               <button
                                 className="w-5 h-5 text-gray-400 hover:text-blue-600"
-                                onClick={() => alert(`Resend "${item.name}" to kitchen\n\n(KDS integration coming soon)`)}
+                                onClick={() => handleResendItem(item.id, item.name)}
                                 title="Resend to kitchen"
                               >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
