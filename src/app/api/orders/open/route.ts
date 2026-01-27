@@ -58,6 +58,9 @@ export async function GET(request: NextRequest) {
           quantity: item.quantity,
           itemTotal: Number(item.itemTotal),
           specialNotes: item.specialNotes,
+          isCompleted: item.isCompleted,
+          completedAt: item.completedAt?.toISOString() || null,
+          resendCount: item.resendCount,
           modifiers: item.modifiers.map(mod => ({
             id: mod.id,
             modifierId: mod.modifierId,

@@ -26,6 +26,9 @@ interface OpenOrder {
     quantity: number
     itemTotal: number
     specialNotes: string | null
+    isCompleted?: boolean
+    completedAt?: string | null
+    resendCount?: number
     modifiers: {
       id: string
       modifierId: string

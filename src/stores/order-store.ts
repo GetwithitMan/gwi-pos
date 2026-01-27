@@ -22,6 +22,9 @@ interface OrderItem {
   courseNumber?: number
   commissionAmount?: number  // Commission earned on this item
   sentToKitchen?: boolean  // Track if this item has been sent to kitchen
+  isCompleted?: boolean  // KDS completion status (kitchen marked done)
+  completedAt?: string  // When kitchen marked it done
+  resendCount?: number  // How many times resent to kitchen
 }
 
 interface Order {
@@ -57,6 +60,9 @@ interface LoadedOrderData {
     quantity: number
     itemTotal: number
     specialNotes?: string | null
+    isCompleted?: boolean
+    completedAt?: string | null
+    resendCount?: number
     modifiers: {
       id: string
       modifierId: string
@@ -129,6 +135,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       quantity: item.quantity,
       specialNotes: item.specialNotes || undefined,
       sentToKitchen: true, // Items from database have already been sent
+      isCompleted: item.isCompleted || false,
+      completedAt: item.completedAt || undefined,
+      resendCount: item.resendCount || 0,
       modifiers: item.modifiers.map(mod => ({
         id: mod.modifierId,
         name: mod.name,

@@ -966,8 +966,18 @@ export default function OrdersPage() {
                             disabled={!canEdit || item.sentToKitchen}
                           >
                             {item.name}
-                            {item.sentToKitchen && (
+                            {item.sentToKitchen && !item.isCompleted && (
                               <span className="ml-2 text-xs text-green-600 font-normal">Sent</span>
+                            )}
+                            {item.isCompleted && (
+                              <span className="ml-2 px-1.5 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">
+                                ✓ MADE
+                                {item.completedAt && (
+                                  <span className="ml-1 text-green-600">
+                                    {new Date(item.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </span>
                             )}
                             {canEdit && !item.sentToKitchen && (
                               <svg className="w-3 h-3 inline ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
