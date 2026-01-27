@@ -54,6 +54,7 @@ model Location {
   shifts         Shift[]
   timeClock      TimeClockEntry[]
   discountRules  DiscountRule[]
+  prepStations   PrepStation[]
 
   @@index([organizationId])
 }
@@ -233,6 +234,41 @@ model PaidInOut {
 }
 
 // ============================================
+// PREP STATIONS / KDS ROUTING
+// ============================================
+
+model PrepStation {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String   // "Kitchen", "Bar", "Expo", "Grill", "Fryer"
+  displayName String?
+  color       String?  // For KDS display theming
+
+  // Station type
+  stationType String   @default("kitchen") // kitchen, bar, expo, prep
+
+  // Display settings
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+
+  // KDS settings
+  showAllItems   Boolean @default(false) // Expo sees all items
+  autoComplete   Int?    // Auto-complete after X seconds (for non-interactive)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations - categories and items assigned to this station
+  categories  Category[]
+  menuItems   MenuItem[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+// ============================================
 // MENU PROGRAMMING (Skill 03)
 // ============================================
 
@@ -254,8 +290,9 @@ model Category {
   showOnline  Boolean  @default(true)
 
   // Kitchen routing
-  defaultPrinterId String?
-  courseNumber     Int?
+  prepStationId String?
+  prepStation   PrepStation? @relation(fields: [prepStationId], references: [id])
+  courseNumber  Int?
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -263,6 +300,7 @@ model Category {
   menuItems   MenuItem[]
 
   @@index([locationId])
+  @@index([prepStationId])
   @@index([sortOrder])
 }
 
@@ -295,9 +333,10 @@ model MenuItem {
   showOnline  Boolean  @default(true)
 
   // Kitchen
-  printerId   String?  // Override category printer
-  prepTime    Int?     // Minutes
-  courseNumber Int?    // Override category course
+  prepStationId String?       // Override category station
+  prepStation   PrepStation?  @relation(fields: [prepStationId], references: [id])
+  prepTime      Int?          // Minutes
+  courseNumber  Int?          // Override category course
 
   // Inventory
   trackInventory Boolean @default(false)
@@ -325,6 +364,7 @@ model MenuItem {
   @@unique([locationId, sku])
   @@index([locationId])
   @@index([categoryId])
+  @@index([prepStationId])
   @@index([isActive, showOnPOS])
 }
 

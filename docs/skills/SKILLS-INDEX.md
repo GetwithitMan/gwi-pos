@@ -79,7 +79,8 @@
 ### Kitchen Display
 | Skill | Name | Status | Dependencies | Notes |
 |-------|------|--------|--------------|-------|
-| 23 | KDS Display | TODO | 07 | Kitchen screens |
+| NEW | Prep Stations | DONE | - | KDS routing: station types, category/item assignment |
+| 23 | KDS Display | TODO | 07, Prep Stations | Kitchen screens |
 | 24 | Bump Bar | TODO | 23 | Order completion |
 | 25 | Expo Station | TODO | 23 | Order coordination |
 | 26 | Prep Tickets | TODO | 07 | Prep station routing |
@@ -114,7 +115,7 @@
 ### Employee Features
 | Skill | Name | Status | Dependencies | Notes |
 |-------|------|--------|--------------|-------|
-| 47 | Clock In/Out | TODO | 01 | Time tracking |
+| 47 | Clock In/Out | DONE | 01 | Clock in/out, breaks, hours, modal UI |
 | 48 | Breaks | TODO | 47 | Break management |
 | 49 | Cash Drawer | TODO | 01, 30 | Drawer assignment |
 | 50 | Shift Close | TODO | 49 | End of day |
@@ -201,12 +202,11 @@ Based on current implementation, these are the next foundational skills needed:
 - Unlocks: 44, dashboard insights
 - **Completed:** Summary, daily, hourly, category, item, employee reports with tabs
 
-### Priority 5: Employee Time Tracking
+### Priority 5: Employee Time Tracking ✓ COMPLETED
 **Skill 47: Clock In/Out** - Employee time management
 - Dependencies: 01 (done)
 - Unlocks: 43, 48, 50
-- Why: Required for labor reports and shift management
-- **We have:** Employee system, login tracking
+- **Completed:** Clock in/out, breaks, hours calculation, modal UI on POS
 
 ### Priority 6: Order Splitting
 **Skill 14: Order Splitting** - Split checks between guests
@@ -228,6 +228,8 @@ Based on current implementation, these are the next foundational skills needed:
 | 10 | Item Notes | Special instructions: modifier modal input, quick edit button |
 | 20 | Bar Tabs | Tab create/view/edit, items, close |
 | 42 | Sales Reports | Summary, daily, hourly, category, item, employee views |
+| 47 | Clock In/Out | Clock in/out, breaks, hours calculation, modal on POS |
+| NEW | Prep Stations | KDS routing: station types, category/item assignment |
 | 21 | Pre-auth | Card hold on tab, release, expiration |
 | 29 | Commissioned Items | Item/modifier commissions, reports |
 | 30 | Payment Processing | Cash/card payments, tips, rounding, simulated card |

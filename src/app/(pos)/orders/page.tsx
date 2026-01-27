@@ -12,6 +12,7 @@ import { PaymentModal } from '@/components/payment/PaymentModal'
 import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
 import { NewTabModal } from '@/components/tabs/NewTabModal'
 import { TabDetailModal } from '@/components/tabs/TabDetailModal'
+import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
 import type { DualPricingSettings, PaymentSettings } from '@/lib/settings'
 
 interface Category {
@@ -128,6 +129,9 @@ export default function OrdersPage() {
   // Item notes modal state (for quick note editing)
   const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
   const [editingNotesText, setEditingNotesText] = useState('')
+
+  // Time clock modal state
+  const [showTimeClockModal, setShowTimeClockModal] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -711,6 +715,31 @@ export default function OrdersPage() {
               </svg>
               Commission Report
             </button>
+            <hr className="my-1" />
+            <button
+              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+              onClick={() => {
+                setShowTimeClockModal(true)
+                setShowMenu(false)
+              }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Time Clock
+            </button>
+            <button
+              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+              onClick={() => {
+                router.push('/prep-stations')
+                setShowMenu(false)
+              }}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              Prep Stations
+            </button>
             <button
               className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
               onClick={() => {
@@ -1257,6 +1286,15 @@ export default function OrdersPage() {
           onPaymentComplete={handlePaymentComplete}
         />
       )}
+
+      {/* Time Clock Modal */}
+      <TimeClockModal
+        isOpen={showTimeClockModal}
+        onClose={() => setShowTimeClockModal(false)}
+        employeeId={employee?.id || ''}
+        employeeName={employee?.displayName || `${employee?.firstName} ${employee?.lastName}` || ''}
+        locationId={employee?.location?.id || ''}
+      />
     </div>
   )
 }

@@ -8,6 +8,34 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+#### Prep Stations / KDS Routing (New Skill) - 2026-01-27
+- Database schema: `PrepStation` model for kitchen routing
+  - Station types: kitchen, bar, expo, prep
+  - Category and item assignment relations
+  - Display settings (showAllItems for expo, autoComplete)
+- `src/app/api/prep-stations/route.ts` - List/create stations
+- `src/app/api/prep-stations/[id]/route.ts` - Get/update/delete, assign categories
+- `src/app/(admin)/prep-stations/page.tsx` - Admin UI:
+  - Station cards with type badges
+  - Color customization
+  - Assignment modal for categories and item overrides
+  - Expo mode toggle (show all items)
+- Link in POS menu dropdown
+
+#### Clock In/Out (Skill 47) - 2026-01-27
+- Uses existing `TimeClockEntry` schema
+- `src/app/api/time-clock/route.ts` - Time clock API:
+  - Clock in/out
+  - Start/end break
+  - Automatic hours calculation (regular + overtime)
+  - Entry listing with filters
+- `src/components/time-clock/TimeClockModal.tsx` - Time clock UI:
+  - Live elapsed time display
+  - Clock in/out buttons
+  - Break start/end
+  - Shift summary on clock out (hours, pay estimate)
+- Accessible from POS menu dropdown
+
 #### Sales Reports (Skill 42) - 2026-01-27
 - `src/app/api/reports/sales/route.ts` - Sales report API:
   - Summary metrics (gross sales, net, tax, tips, order count, avg order value)
@@ -332,6 +360,8 @@ All notable changes to this project will be documented in this file.
 | 31 | Dual Pricing | Done | Cash discount program |
 | 36 | Tax Calculations | Partial | Settings UI only, tax rules not implemented |
 | 42 | Sales Reports | Done | Summary, daily, hourly, category, item, employee reports |
+| 47 | Clock In/Out | Done | Clock in/out, breaks, hours calculation, modal UI |
+| NEW | Prep Stations | Done | KDS routing: station types, category/item assignment |
 | 46 | Commission Reports | Done | By employee, date range, drill-down |
 
 ---
