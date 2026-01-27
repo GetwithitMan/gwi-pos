@@ -2,6 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
 
+// Helper to safely get permissions as an array
+function getPermissionsArray(permissions: unknown): string[] {
+  if (Array.isArray(permissions)) {
+    return permissions
+  }
+  if (typeof permissions === 'string') {
+    try {
+      const parsed = JSON.parse(permissions)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
 // GET - List all roles for a location
 export async function GET(request: NextRequest) {
   try {
@@ -29,7 +45,7 @@ export async function GET(request: NextRequest) {
       roles: roles.map(role => ({
         id: role.id,
         name: role.name,
-        permissions: role.permissions as string[],
+        permissions: getPermissionsArray(role.permissions),
         employeeCount: role._count.employees,
         createdAt: role.createdAt.toISOString(),
       })),
@@ -92,7 +108,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       id: role.id,
       name: role.name,
-      permissions: role.permissions as string[],
+      permissions: getPermissionsArray(role.permissions),
       createdAt: role.createdAt.toISOString(),
     })
   } catch (error) {
