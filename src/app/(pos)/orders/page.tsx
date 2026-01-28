@@ -6,58 +6,29 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { formatCurrency, formatTime } from '@/lib/utils'
-import { calculateCardPrice } from '@/lib/pricing'
+import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
 import { PaymentModal } from '@/components/payment/PaymentModal'
+import { SplitCheckModal } from '@/components/payment/SplitCheckModal'
+import { DiscountModal } from '@/components/orders/DiscountModal'
+import { CompVoidModal } from '@/components/orders/CompVoidModal'
+import { ItemTransferModal } from '@/components/orders/ItemTransferModal'
+import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
 import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
 import { NewTabModal } from '@/components/tabs/NewTabModal'
 import { TabDetailModal } from '@/components/tabs/TabDetailModal'
+import { TabTransferModal } from '@/components/tabs/TabTransferModal'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
-import type { DualPricingSettings, PaymentSettings } from '@/lib/settings'
-
-interface Category {
-  id: string
-  name: string
-  color: string
-}
-
-interface MenuItem {
-  id: string
-  categoryId: string
-  name: string
-  price: number
-  isAvailable: boolean
-  modifierGroupCount?: number
-}
-
-interface ModifierGroup {
-  id: string
-  name: string
-  displayName?: string
-  minSelections: number
-  maxSelections: number
-  isRequired: boolean
-  modifiers: {
-    id: string
-    name: string
-    price: number
-    upsellPrice?: number | null
-    allowedPreModifiers?: string[] | null
-    extraPrice?: number | null
-    isDefault: boolean
-    childModifierGroupId?: string | null
-  }[]
-}
-
-interface SelectedModifier {
-  id: string
-  name: string
-  price: number
-  preModifier?: string
-  childModifierGroupId?: string | null
-  depth: number  // 0 = top-level, 1 = child, 2 = grandchild, etc.
-  parentModifierId?: string  // ID of parent modifier if this is a child
-}
+import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
+import { ShiftCloseoutModal } from '@/components/shifts/ShiftCloseoutModal'
+import { ReceiptModal } from '@/components/receipt'
+import { SeatCourseHoldControls, ItemBadges } from '@/components/orders/SeatCourseHoldControls'
+import { CourseOverviewPanel } from '@/components/orders/CourseOverviewPanel'
+import { ModifierModal } from '@/components/modifiers/ModifierModal'
+import { AddToWaitlistModal } from '@/components/entertainment/AddToWaitlistModal'
+import { OrderSettingsModal } from '@/components/orders/OrderSettingsModal'
+import type { Category, MenuItem, ModifierGroup, SelectedModifier } from '@/types'
 
 export default function OrdersPage() {
   const router = useRouter()
@@ -81,41 +52,60 @@ export default function OrdersPage() {
     specialNotes?: string
   } | null>(null)
 
-  // Dual pricing state
-  const [dualPricing, setDualPricing] = useState<DualPricingSettings>({
-    enabled: true,
-    model: 'card_surcharge',
-    cardSurchargePercent: 4.0,
-    applyToCredit: true,
-    applyToDebit: true,
-    showBothPrices: true,
-    showSavingsMessage: true,
-  })
-  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>({
-    acceptCash: true,
-    acceptCredit: true,
-    acceptDebit: true,
-    acceptGiftCards: false,
-    acceptHouseAccounts: false,
-    cashRounding: 'none',
-    roundingDirection: 'nearest',
-    enablePreAuth: true,
-    defaultPreAuthAmount: 50,
-    preAuthExpirationDays: 7,
-    processor: 'none',
-    testMode: true,
-  })
+  // Settings loaded from API via custom hook
+  const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings } = useOrderSettings()
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('cash')
 
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [orderToPayId, setOrderToPayId] = useState<string | null>(null)
 
+  // Receipt modal state
+  const [showReceiptModal, setShowReceiptModal] = useState(false)
+  const [receiptOrderId, setReceiptOrderId] = useState<string | null>(null)
+
+  // Split check modal state
+  const [showSplitModal, setShowSplitModal] = useState(false)
+  const [splitPaymentAmount, setSplitPaymentAmount] = useState<number | null>(null)
+  const [evenSplitAmounts, setEvenSplitAmounts] = useState<{ splitNumber: number; amount: number }[] | null>(null)
+  const [currentSplitIndex, setCurrentSplitIndex] = useState(0)
+
+  // Discount modal state
+  const [showDiscountModal, setShowDiscountModal] = useState(false)
+  const [appliedDiscounts, setAppliedDiscounts] = useState<{ id: string; name: string; amount: number; percent?: number | null }[]>([])
+
+  // Comp/Void modal state
+  const [showCompVoidModal, setShowCompVoidModal] = useState(false)
+  const [compVoidItem, setCompVoidItem] = useState<{
+    id: string
+    name: string
+    quantity: number
+    price: number
+    modifiers: { name: string; price: number }[]
+    status?: string
+    voidReason?: string
+  } | null>(null)
+
+  // Item Transfer modal state
+  const [showItemTransferModal, setShowItemTransferModal] = useState(false)
+
+  // Split Ticket Manager state
+  const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
+
+  // Entertainment waitlist modal state
+  const [showWaitlistModal, setShowWaitlistModal] = useState(false)
+  const [waitlistMenuItem, setWaitlistMenuItem] = useState<MenuItem | null>(null)
+
+  // Order settings modal state
+  const [showOrderSettingsModal, setShowOrderSettingsModal] = useState(false)
+
   // Tabs panel state
   const [showTabsPanel, setShowTabsPanel] = useState(false)
   const [showNewTabModal, setShowNewTabModal] = useState(false)
   const [showTabDetailModal, setShowTabDetailModal] = useState(false)
+  const [showTabTransferModal, setShowTabTransferModal] = useState(false)
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null)
+  const [selectedTabName, setSelectedTabName] = useState<string | null>(null)
   const [tabsRefreshTrigger, setTabsRefreshTrigger] = useState(0)
 
   // Saved order state
@@ -133,6 +123,77 @@ export default function OrdersPage() {
   // Time clock modal state
   const [showTimeClockModal, setShowTimeClockModal] = useState(false)
 
+  // Shift management state
+  const [currentShift, setCurrentShift] = useState<{
+    id: string
+    startedAt: string
+    startingCash: number
+    employee: { id: string; name: string }
+  } | null>(null)
+  const [showShiftStartModal, setShowShiftStartModal] = useState(false)
+  const [showShiftCloseoutModal, setShowShiftCloseoutModal] = useState(false)
+  const [shiftChecked, setShiftChecked] = useState(false)
+
+  // Combo selection state
+  const [showComboModal, setShowComboModal] = useState(false)
+  const [selectedComboItem, setSelectedComboItem] = useState<MenuItem | null>(null)
+  const [comboTemplate, setComboTemplate] = useState<{
+    id: string
+    basePrice: number
+    comparePrice?: number
+    components: {
+      id: string
+      slotName: string
+      displayName: string
+      isRequired: boolean
+      minSelections: number
+      maxSelections: number
+      menuItemId?: string | null
+      menuItem?: {
+        id: string
+        name: string
+        price: number
+        modifierGroups?: {
+          modifierGroup: {
+            id: string
+            name: string
+            displayName?: string | null
+            minSelections: number
+            maxSelections: number
+            isRequired: boolean
+            modifiers: {
+              id: string
+              name: string
+              price: number
+              childModifierGroupId?: string | null
+            }[]
+          }
+        }[]
+      } | null
+      itemPriceOverride?: number | null
+      modifierPriceOverrides?: Record<string, number> | null
+      // Legacy fields
+      options: { id: string; menuItemId: string; name: string; upcharge: number }[]
+    }[]
+  } | null>(null)
+  // comboSelections maps componentId -> groupId -> modifierIds
+  const [comboSelections, setComboSelections] = useState<Record<string, Record<string, string[]>>>({})
+
+  // Timed rental state
+  const [showTimedRentalModal, setShowTimedRentalModal] = useState(false)
+  const [selectedTimedItem, setSelectedTimedItem] = useState<MenuItem | null>(null)
+  const [selectedRateType, setSelectedRateType] = useState<'per15Min' | 'per30Min' | 'perHour'>('perHour')
+  const [activeSessions, setActiveSessions] = useState<{
+    id: string
+    menuItemId: string
+    menuItemName: string
+    startedAt: string
+    rateType: string
+    rateAmount: number
+    orderItemId?: string
+  }[]>([])
+  const [loadingSession, setLoadingSession] = useState(false)
+
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login')
@@ -140,9 +201,57 @@ export default function OrdersPage() {
   }, [isAuthenticated, router])
 
   useEffect(() => {
-    loadMenu()
-    loadSettings()
-  }, [])
+    if (employee?.location?.id) {
+      loadMenu()
+      loadActiveSessions()
+    }
+  }, [employee?.location?.id])
+
+  const loadActiveSessions = async () => {
+    if (!employee?.location?.id) return
+    try {
+      const params = new URLSearchParams({ locationId: employee.location.id, status: 'active' })
+      const response = await fetch(`/api/timed-sessions?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setActiveSessions(data.sessions || [])
+      }
+    } catch (error) {
+      console.error('Failed to load active sessions:', error)
+    }
+  }
+
+  // Check for open shift on load
+  useEffect(() => {
+    if (employee?.id && employee?.location?.id && !shiftChecked) {
+      checkOpenShift()
+    }
+  }, [employee?.id, employee?.location?.id, shiftChecked])
+
+  const checkOpenShift = async () => {
+    if (!employee?.id || !employee?.location?.id) return
+    try {
+      const params = new URLSearchParams({
+        locationId: employee.location.id,
+        employeeId: employee.id,
+        status: 'open',
+      })
+      const response = await fetch(`/api/shifts?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.shifts && data.shifts.length > 0) {
+          setCurrentShift(data.shifts[0])
+        } else {
+          // No open shift - prompt to start one
+          setShowShiftStartModal(true)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to check shift:', error)
+    } finally {
+      setShiftChecked(true)
+    }
+  }
 
   // Load open orders count
   useEffect(() => {
@@ -165,23 +274,6 @@ export default function OrdersPage() {
     }
   }
 
-  const loadSettings = async () => {
-    try {
-      const response = await fetch('/api/settings')
-      if (response.ok) {
-        const data = await response.json()
-        if (data.dualPricing) {
-          setDualPricing(data.dualPricing)
-        }
-        if (data.payments) {
-          setPaymentSettings(data.payments)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load settings:', error)
-    }
-  }
-
   useEffect(() => {
     if (!currentOrder) {
       startOrder('dine_in', { guestCount: 1 })
@@ -189,8 +281,10 @@ export default function OrdersPage() {
   }, [currentOrder, startOrder])
 
   const loadMenu = async () => {
+    if (!employee?.location?.id) return
     try {
-      const response = await fetch('/api/menu')
+      const params = new URLSearchParams({ locationId: employee.location.id })
+      const response = await fetch(`/api/menu?${params}`)
       if (response.ok) {
         const data = await response.json()
         setCategories(data.categories)
@@ -378,7 +472,10 @@ export default function OrdersPage() {
 
   // Payment handlers
   const handleOpenPayment = async () => {
-    if (!currentOrder?.items.length) return
+    // Allow payment if there are items OR if the order has a total (split orders)
+    const hasItems = currentOrder?.items.length && currentOrder.items.length > 0
+    const hasSplitTotal = currentOrder?.total && currentOrder.total > 0 && !hasItems
+    if (!hasItems && !hasSplitTotal) return
 
     // If order hasn't been saved yet, save it first
     let orderId = savedOrderId
@@ -401,12 +498,335 @@ export default function OrdersPage() {
   }
 
   const handlePaymentComplete = () => {
+    // Check if we're doing an even split with more guests
+    if (evenSplitAmounts && currentSplitIndex < evenSplitAmounts.length - 1) {
+      // Move to next guest
+      setCurrentSplitIndex(prev => prev + 1)
+      setSplitPaymentAmount(evenSplitAmounts[currentSplitIndex + 1].amount)
+      // Keep payment modal open for next guest
+      return
+    }
+
+    // All payments complete - show receipt
+    const paidOrderId = orderToPayId || savedOrderId
     setShowPaymentModal(false)
+
+    if (paidOrderId) {
+      setReceiptOrderId(paidOrderId)
+      setShowReceiptModal(true)
+    }
+
+    // Reset payment state
     setOrderToPayId(null)
+    setSplitPaymentAmount(null)
+    setEvenSplitAmounts(null)
+    setCurrentSplitIndex(0)
+    setTabsRefreshTrigger(prev => prev + 1)
+  }
+
+  const handleReceiptClose = () => {
+    setShowReceiptModal(false)
+    setReceiptOrderId(null)
+    // Clear order after receipt is dismissed
     setSavedOrderId(null)
     setOrderSent(false)
     clearOrder()
+  }
+
+  // Handle order settings save (tab name, guests, gratuity)
+  const handleOrderSettingsSave = async (settings: {
+    tabName?: string
+    guestCount?: number
+    tipTotal?: number
+    separateChecks?: boolean
+  }) => {
+    if (!savedOrderId) return
+
+    const response = await fetch(`/api/orders/${savedOrderId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    })
+
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.error || 'Failed to save settings')
+    }
+
+    // Reload the order from API to get updated values
+    const orderResponse = await fetch(`/api/orders/${savedOrderId}`)
+    if (orderResponse.ok) {
+      const orderData = await orderResponse.json()
+      loadOrder(orderData)
+    }
+
+    // Refresh tabs panel
     setTabsRefreshTrigger(prev => prev + 1)
+  }
+
+  // Handle split check result
+  const handleSplitComplete = (result: {
+    type: 'even' | 'by_item' | 'custom_amount' | 'split_item'
+    originalOrderId: string
+    splits?: { splitNumber: number; amount: number }[]
+    newOrderId?: string
+    newOrderNumber?: number
+    splitAmount?: number
+    itemSplits?: { itemId: string; itemName: string; splitNumber: number; amount: number }[]
+  }) => {
+    setShowSplitModal(false)
+
+    if (result.type === 'even' && result.splits) {
+      // Store the split amounts and start payment flow
+      setEvenSplitAmounts(result.splits)
+      setCurrentSplitIndex(0)
+      setSplitPaymentAmount(result.splits[0].amount)
+      setOrderToPayId(result.originalOrderId)
+      setShowPaymentModal(true)
+    } else if (result.type === 'split_item' && result.splits) {
+      // Split single item among guests - same payment flow as even split
+      setEvenSplitAmounts(result.splits)
+      setCurrentSplitIndex(0)
+      setSplitPaymentAmount(result.splits[0].amount)
+      setOrderToPayId(result.originalOrderId)
+      setShowPaymentModal(true)
+    } else if (result.type === 'by_item') {
+      // Reload the current order to reflect changes
+      alert(`New check #${result.newOrderNumber} created with selected items.\n\nView it in Open Orders.`)
+      setTabsRefreshTrigger(prev => prev + 1)
+      // Clear current order since items were moved
+      clearOrder()
+      setSavedOrderId(null)
+    } else if (result.type === 'custom_amount' && result.splitAmount) {
+      // Open payment modal with custom amount
+      setSplitPaymentAmount(result.splitAmount)
+      setOrderToPayId(result.originalOrderId)
+      setShowPaymentModal(true)
+    }
+  }
+
+  // Handle navigating to a different split order
+  const handleNavigateToSplit = async (splitOrderId: string) => {
+    try {
+      const response = await fetch(`/api/orders/${splitOrderId}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch split order')
+      }
+      const orderData = await response.json()
+
+      // Load the split order into the current order state
+      loadOrder({
+        id: orderData.id,
+        orderNumber: orderData.orderNumber,
+        orderType: orderData.orderType,
+        tableId: orderData.tableId || undefined,
+        tabName: orderData.tabName || undefined,
+        guestCount: orderData.guestCount || 1,
+        status: orderData.status,
+        items: orderData.items.map((item: {
+          id: string
+          menuItemId: string
+          name: string
+          price: number
+          quantity: number
+          specialNotes?: string
+          isCompleted?: boolean
+          seatNumber?: number
+          sentToKitchen?: boolean
+          modifiers?: { id: string; modifierId: string; name: string; price: number; preModifier?: string }[]
+        }) => ({
+          id: item.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          price: Number(item.price),
+          quantity: item.quantity,
+          specialNotes: item.specialNotes || '',
+          isCompleted: item.isCompleted || false,
+          seatNumber: item.seatNumber,
+          sentToKitchen: item.sentToKitchen || false,
+          modifiers: (item.modifiers || []).map(mod => ({
+            id: mod.id,
+            modifierId: mod.modifierId,
+            name: mod.name,
+            price: Number(mod.price),
+            preModifier: mod.preModifier,
+          })),
+        })),
+        subtotal: Number(orderData.subtotal) || 0,
+        discountTotal: Number(orderData.discountTotal) || 0,
+        taxTotal: Number(orderData.taxTotal) || 0,
+        total: Number(orderData.total) || 0,
+      })
+
+      // Update saved order ID
+      setSavedOrderId(splitOrderId)
+      setOrderSent(orderData.status === 'sent' || orderData.status === 'in_progress')
+
+      // Close the tabs panel if open
+      setShowTabsPanel(false)
+    } catch (error) {
+      console.error('Failed to navigate to split order:', error)
+      alert('Failed to load split order')
+    }
+  }
+
+  // Handle opening split check
+  const handleOpenSplit = async () => {
+    if (!currentOrder?.items.length) return
+
+    // If order hasn't been saved yet, save it first
+    let orderId = savedOrderId
+    if (!orderId) {
+      setIsSendingOrder(true)
+      try {
+        orderId = await saveOrderToDatabase()
+        if (orderId) {
+          setSavedOrderId(orderId)
+        }
+      } finally {
+        setIsSendingOrder(false)
+      }
+    }
+
+    if (orderId) {
+      setOrderToPayId(orderId)
+      setShowSplitModal(true)
+    }
+  }
+
+  // Handle opening split ticket manager (to create separate tickets)
+  const handleOpenSplitTicket = async () => {
+    if (!currentOrder?.items.length) return
+
+    // If order hasn't been saved yet, save it first
+    let orderId = savedOrderId
+    if (!orderId) {
+      setIsSendingOrder(true)
+      try {
+        orderId = await saveOrderToDatabase()
+        if (orderId) {
+          setSavedOrderId(orderId)
+        }
+      } finally {
+        setIsSendingOrder(false)
+      }
+    }
+
+    if (orderId) {
+      setShowSplitTicketManager(true)
+    }
+  }
+
+  // Handle split ticket completion
+  const handleSplitTicketComplete = () => {
+    // Clear the current order and reload
+    clearOrder()
+    setSavedOrderId(null)
+    setOrderSent(false)
+    setAppliedDiscounts([])
+    setShowSplitTicketManager(false)
+  }
+
+  // Handle opening discount modal
+  const handleOpenDiscount = async () => {
+    if (!currentOrder?.items.length) return
+
+    // If order hasn't been saved yet, save it first
+    let orderId = savedOrderId
+    if (!orderId) {
+      setIsSendingOrder(true)
+      try {
+        orderId = await saveOrderToDatabase()
+        if (orderId) {
+          setSavedOrderId(orderId)
+        }
+      } finally {
+        setIsSendingOrder(false)
+      }
+    }
+
+    if (orderId) {
+      // Load existing discounts for this order
+      try {
+        const response = await fetch(`/api/orders/${orderId}/discount`)
+        if (response.ok) {
+          const data = await response.json()
+          setAppliedDiscounts(data.discounts || [])
+        }
+      } catch (err) {
+        console.error('Failed to load discounts:', err)
+      }
+      setOrderToPayId(orderId)
+      setShowDiscountModal(true)
+    }
+  }
+
+  // Handle discount applied
+  const handleDiscountApplied = (newTotals: {
+    discountTotal: number
+    taxTotal: number
+    total: number
+  }) => {
+    // Reload the order discounts
+    if (orderToPayId) {
+      fetch(`/api/orders/${orderToPayId}/discount`)
+        .then(res => res.json())
+        .then(data => {
+          setAppliedDiscounts(data.discounts || [])
+        })
+        .catch(console.error)
+    }
+    // Trigger a refresh of the tabs/orders to update totals
+    setTabsRefreshTrigger(prev => prev + 1)
+  }
+
+  // Comp/Void handlers
+  const handleOpenCompVoid = async (item: {
+    id: string
+    name: string
+    quantity: number
+    price: number
+    modifiers: { id: string; name: string; price: number }[]
+    status?: string
+    voidReason?: string
+  }) => {
+    // If order hasn't been saved yet, save it first
+    let orderId = savedOrderId
+    if (!orderId) {
+      setIsSendingOrder(true)
+      try {
+        orderId = await saveOrderToDatabase()
+        if (orderId) {
+          setSavedOrderId(orderId)
+        }
+      } finally {
+        setIsSendingOrder(false)
+      }
+    }
+
+    if (orderId) {
+      setOrderToPayId(orderId)
+      setCompVoidItem({
+        ...item,
+        modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price })),
+      })
+      setShowCompVoidModal(true)
+    }
+  }
+
+  const handleCompVoidComplete = (result: {
+    action: 'comp' | 'void' | 'restore'
+    orderTotals: {
+      subtotal: number
+      discountTotal: number
+      taxTotal: number
+      total: number
+    }
+  }) => {
+    // Trigger a refresh to update order display
+    setTabsRefreshTrigger(prev => prev + 1)
+    setShowCompVoidModal(false)
+    setCompVoidItem(null)
   }
 
   // Tab handlers
@@ -492,8 +912,53 @@ export default function OrdersPage() {
     setShowPaymentModal(true)
   }
 
+  const handleTransferTab = (tabId: string, tabName?: string) => {
+    setSelectedTabId(tabId)
+    setSelectedTabName(tabName || null)
+    setShowTabTransferModal(true)
+  }
+
+  const handleTabTransferComplete = (newEmployee: { id: string; name: string }) => {
+    // Refresh tabs panel to show updated assignment
+    setTabsRefreshTrigger((prev) => prev + 1)
+  }
+
   const handleAddItem = async (item: MenuItem) => {
     if (!item.isAvailable) return
+
+    // Handle combo items
+    if (item.itemType === 'combo') {
+      setSelectedComboItem(item)
+      setComboSelections({})
+      setShowComboModal(true)
+
+      // Load combo template
+      try {
+        const response = await fetch(`/api/combos/${item.id}`)
+        if (response.ok) {
+          const data = await response.json()
+          setComboTemplate(data.template)
+        }
+      } catch (error) {
+        console.error('Failed to load combo template:', error)
+      }
+      return
+    }
+
+    // Handle timed rental items
+    if (item.itemType === 'timed_rental') {
+      // If item is in use, show waitlist modal instead
+      if (item.entertainmentStatus === 'in_use') {
+        setWaitlistMenuItem(item)
+        setShowWaitlistModal(true)
+        return
+      }
+      // Otherwise show the normal rental modal
+      setSelectedTimedItem(item)
+      setSelectedRateType('perHour')
+      setShowTimedRentalModal(true)
+      return
+    }
 
     // Check if item has modifiers
     if (item.modifierGroupCount && item.modifierGroupCount > 0) {
@@ -551,6 +1016,200 @@ export default function OrdersPage() {
     setSelectedItem(null)
     setItemModifierGroups([])
     setEditingOrderItem(null)
+  }
+
+  // Handle adding combo to order
+  const handleAddComboToOrder = () => {
+    if (!selectedComboItem || !comboTemplate) return
+
+    // Calculate total with upcharges and build modifiers for KDS display
+    let totalUpcharge = 0
+    const comboModifiers: SelectedModifier[] = []
+
+    for (const component of comboTemplate.components) {
+      // New structure: component has menuItem with modifierGroups
+      if (component.menuItem) {
+        // Add the item itself as a modifier line for KDS
+        comboModifiers.push({
+          id: `combo-item-${component.id}`,
+          name: component.displayName,
+          price: 0, // Item price is included in combo base
+          depth: 0,
+        })
+
+        // Process each modifier group for this item
+        const componentSelections = comboSelections[component.id] || {}
+        for (const mg of component.menuItem.modifierGroups || []) {
+          const groupSelections = componentSelections[mg.modifierGroup.id] || []
+          for (const modifierId of groupSelections) {
+            const modifier = mg.modifierGroup.modifiers.find(m => m.id === modifierId)
+            if (modifier) {
+              // Check for price override - in combos, modifiers are included ($0) unless explicitly set as upcharge
+              const overridePrice = component.modifierPriceOverrides?.[modifier.id]
+              const price = overridePrice !== undefined ? overridePrice : 0
+              totalUpcharge += price
+              comboModifiers.push({
+                id: `combo-${component.id}-${modifier.id}`,
+                name: `  - ${modifier.name}`,
+                price: price,
+                depth: 1,
+              })
+            }
+          }
+        }
+      } else if (component.options && component.options.length > 0) {
+        // Legacy: use options array (flat structure)
+        const selections = (comboSelections[component.id] as unknown as string[]) || []
+        for (const optionId of selections) {
+          const option = component.options.find(o => o.id === optionId)
+          if (option) {
+            totalUpcharge += option.upcharge
+            comboModifiers.push({
+              id: `combo-${component.id}-${option.id}`,
+              name: `${component.displayName}: ${option.name}`,
+              price: option.upcharge,
+              depth: 0,
+            })
+          }
+        }
+      }
+    }
+
+    addItem({
+      menuItemId: selectedComboItem.id,
+      name: selectedComboItem.name,
+      price: comboTemplate.basePrice,  // Base price only - modifier upcharges are added separately
+      quantity: 1,
+      modifiers: comboModifiers,
+    })
+
+    setShowComboModal(false)
+    setSelectedComboItem(null)
+    setComboTemplate(null)
+    setComboSelections({})
+  }
+
+  // Handle starting a timed rental session
+  const handleStartTimedSession = async () => {
+    if (!selectedTimedItem || !employee?.location?.id) return
+
+    const pricing = selectedTimedItem.timedPricing as { per15Min?: number; per30Min?: number; perHour?: number; minimum?: number } | null
+
+    // Get the rate - try selected type first, then fall back
+    let rateAmount = selectedTimedItem.price
+    if (pricing) {
+      rateAmount = pricing[selectedRateType] || pricing.perHour || pricing.per30Min || pricing.per15Min || selectedTimedItem.price
+    }
+
+    setLoadingSession(true)
+    try {
+      const response = await fetch('/api/timed-sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: employee.location.id,
+          menuItemId: selectedTimedItem.id,
+          rateType: selectedRateType,
+          rateAmount,
+          startedById: employee.id,
+        }),
+      })
+
+      if (response.ok) {
+        const session = await response.json()
+
+        // Add to active sessions tracking
+        setActiveSessions(prev => [...prev, {
+          id: session.id,
+          menuItemId: selectedTimedItem.id,
+          menuItemName: selectedTimedItem.name,
+          startedAt: session.startedAt,
+          rateType: selectedRateType,
+          rateAmount,
+        }])
+
+        // Add a placeholder item to the order showing active session
+        const rateLabel = selectedRateType.replace('per', '').replace('Min', ' min').replace('Hour', '/hr')
+        addItem({
+          menuItemId: selectedTimedItem.id,
+          name: `⏱️ ${selectedTimedItem.name} (Active)`,
+          price: 0, // Price calculated when stopped
+          quantity: 1,
+          modifiers: [],
+          specialNotes: `Session ID: ${session.id} | Rate: ${formatCurrency(rateAmount)}${rateLabel}`,
+        })
+
+        setShowTimedRentalModal(false)
+        setSelectedTimedItem(null)
+
+        // Refresh menu to update entertainment item status
+        loadMenu()
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to start session')
+      }
+    } catch (error) {
+      console.error('Failed to start timed session:', error)
+      alert('Failed to start session')
+    } finally {
+      setLoadingSession(false)
+    }
+  }
+
+  // Handle stopping a timed session and billing
+  const handleStopTimedSession = async (sessionId: string) => {
+    if (!confirm('Stop this session and calculate charges?')) return
+
+    try {
+      const response = await fetch(`/api/timed-sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop' }),
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        const session = activeSessions.find(s => s.id === sessionId)
+
+        if (session) {
+          // Find the order item with session ID in notes
+          const orderItem = currentOrder?.items.find(item =>
+            item.specialNotes?.includes(`Session ID: ${sessionId}`)
+          )
+
+          if (orderItem) {
+            // Update the existing placeholder item with final price
+            updateItem(orderItem.id, {
+              name: `${session.menuItemName} (${result.totalMinutes} min)`,
+              price: result.totalAmount || result.totalCharge,
+              specialNotes: `Billed: ${result.totalMinutes} min @ ${formatCurrency(session.rateAmount)}`,
+            })
+          } else if (currentOrder) {
+            // Add a new item to the current order with the final charges
+            addItem({
+              menuItemId: session.menuItemId,
+              name: `${session.menuItemName} (${result.totalMinutes} min)`,
+              price: result.totalAmount || result.totalCharge,
+              quantity: 1,
+              modifiers: [],
+              specialNotes: `Billed: ${result.totalMinutes} min @ ${formatCurrency(session.rateAmount)}`,
+            })
+          }
+        }
+
+        // Remove from active sessions
+        setActiveSessions(prev => prev.filter(s => s.id !== sessionId))
+
+        // Refresh menu to update entertainment item status
+        loadMenu()
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to stop session')
+      }
+    } catch (error) {
+      console.error('Failed to stop session:', error)
+      alert('Failed to stop session')
+    }
   }
 
   // Handle editing an existing order item
@@ -631,16 +1290,20 @@ export default function OrdersPage() {
     item => item.categoryId === selectedCategory && !item.isAvailable
   )
 
-  // Helper to format dual price display
-  const formatDualPrice = (cashPrice: number) => {
-    if (!dualPricing.enabled || !dualPricing.showBothPrices) {
-      return formatCurrency(cashPrice)
+  // Helper to format price display - shows both card and cash prices when dual pricing enabled
+  const discountPercent = dualPricing.cashDiscountPercent || 4.0
+  const formatItemPrice = (storedPrice: number) => {
+    if (!dualPricing.enabled) {
+      return <span className="text-sm font-medium">{formatCurrency(storedPrice)}</span>
     }
-    const cardPrice = calculateCardPrice(cashPrice, dualPricing.cardSurchargePercent)
+    // Stored price is cash price, calculate card price
+    const cashPrice = storedPrice
+    const cardPrice = calculateCardPrice(storedPrice, discountPercent)
     return (
-      <span className="flex flex-col items-center text-xs">
-        <span className="text-green-600">{formatCurrency(cashPrice)} cash</span>
-        <span className="text-gray-500">{formatCurrency(cardPrice)} card</span>
+      <span className="text-xs">
+        <span className="text-gray-700">{formatCurrency(cardPrice)}</span>
+        <span className="text-gray-400 mx-1">-</span>
+        <span className="text-green-600">{formatCurrency(cashPrice)}</span>
       </span>
     )
   }
@@ -762,6 +1425,20 @@ export default function OrdersPage() {
               </svg>
               Time Clock
             </button>
+            {currentShift && (
+              <button
+                className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 text-orange-600"
+                onClick={() => {
+                  setShowShiftCloseoutModal(true)
+                  setShowMenu(false)
+                }}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                Close Shift
+              </button>
+            )}
             <button
               className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
               onClick={() => {
@@ -840,17 +1517,31 @@ export default function OrdersPage() {
         {/* Menu Items Grid */}
         <div className="flex-1 p-4 overflow-y-auto">
           <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-            {filteredItems.map(item => (
-              <Button
-                key={item.id}
-                variant="outline"
-                className="h-28 flex flex-col items-center justify-center gap-1 hover:bg-blue-50 hover:border-blue-500"
-                onClick={() => handleAddItem(item)}
-              >
-                <span className="font-semibold text-gray-900 text-center leading-tight">{item.name}</span>
-                {formatDualPrice(item.price)}
-              </Button>
-            ))}
+            {filteredItems.map(item => {
+              const isInUse = item.itemType === 'timed_rental' && item.entertainmentStatus === 'in_use'
+              return (
+                <Button
+                  key={item.id}
+                  variant="outline"
+                  className={`h-28 flex flex-col items-center justify-center gap-1 relative ${
+                    isInUse
+                      ? 'bg-red-50 border-red-300 hover:bg-red-100 hover:border-red-400'
+                      : 'hover:bg-blue-50 hover:border-blue-500'
+                  }`}
+                  onClick={() => handleAddItem(item)}
+                >
+                  {isInUse && (
+                    <span className="absolute top-1 right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded font-medium">
+                      IN USE
+                    </span>
+                  )}
+                  <span className={`font-semibold text-center leading-tight ${isInUse ? 'text-red-800' : 'text-gray-900'}`}>
+                    {item.name}
+                  </span>
+                  {formatItemPrice(item.price)}
+                </Button>
+              )
+            })}
             {unavailableItems.map(item => (
               <Button
                 key={item.id}
@@ -859,7 +1550,7 @@ export default function OrdersPage() {
                 disabled
               >
                 <span className="font-semibold text-gray-900 text-center leading-tight">{item.name}</span>
-                {formatDualPrice(item.price)}
+                {formatItemPrice(item.price)}
                 <span className="absolute top-1 right-1 bg-red-500 text-white text-xs px-1 rounded">86</span>
               </Button>
             ))}
@@ -873,13 +1564,22 @@ export default function OrdersPage() {
         <div className="p-4 border-b">
           <div className="flex items-center justify-between">
             {savedOrderId && currentOrder ? (
-              // Show order identifier for existing orders
-              <div>
-                <h2 className="font-semibold text-lg">
-                  {currentOrder.tabName || `Order #${currentOrder.orderNumber || savedOrderId.slice(-6).toUpperCase()}`}
-                </h2>
+              // Show order identifier for existing orders - CLICKABLE to edit settings
+              <div
+                className="cursor-pointer hover:bg-gray-100 rounded-lg p-2 -m-2 transition-colors group"
+                onClick={() => setShowOrderSettingsModal(true)}
+              >
+                <div className="flex items-center gap-2">
+                  <h2 className="font-semibold text-lg">
+                    {currentOrder.tabName || `Order #${currentOrder.orderNumber || savedOrderId.slice(-6).toUpperCase()}`}
+                  </h2>
+                  <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                </div>
                 <span className="text-sm text-gray-500 capitalize">
                   {currentOrder.orderType.replace('_', ' ')}
+                  {currentOrder.guestCount > 1 && ` • ${currentOrder.guestCount} guests`}
                 </span>
               </div>
             ) : (
@@ -927,10 +1627,22 @@ export default function OrdersPage() {
         {/* Order Items */}
         <div className="flex-1 overflow-y-auto p-4">
           {currentOrder?.items.length === 0 ? (
-            <div className="text-center text-gray-400 py-8">
-              <p>No items yet</p>
-              <p className="text-sm">Tap menu items to add</p>
-            </div>
+            currentOrder?.total && currentOrder.total > 0 ? (
+              // Split order with no items - show split info
+              <div className="text-center py-8">
+                <div className="bg-blue-50 rounded-lg p-4 mb-4">
+                  <p className="text-blue-800 font-semibold text-lg">Split Check</p>
+                  <p className="text-blue-600 text-sm">Order #{currentOrder.orderNumber}</p>
+                </div>
+                <p className="text-2xl font-bold text-gray-800">{formatCurrency(currentOrder.total)}</p>
+                <p className="text-sm text-gray-500 mt-2">This is a split portion of the original order</p>
+              </div>
+            ) : (
+              <div className="text-center text-gray-400 py-8">
+                <p>No items yet</p>
+                <p className="text-sm">Tap menu items to add</p>
+              </div>
+            )
           ) : (
             <div className="space-y-2">
               {currentOrder?.items.map(item => {
@@ -989,7 +1701,14 @@ export default function OrdersPage() {
                             disabled={!canEdit || item.sentToKitchen}
                           >
                             {item.name}
-                            {item.sentToKitchen && !item.isCompleted && (
+                            {/* Inline badges for seat/course/hold */}
+                            <ItemBadges
+                              seatNumber={item.seatNumber}
+                              courseNumber={item.courseNumber}
+                              courseStatus={item.courseStatus}
+                              isHeld={item.isHeld}
+                            />
+                            {item.sentToKitchen && !item.isCompleted && !item.isHeld && (
                               <span className="ml-2 text-xs text-green-600 font-normal">Sent</span>
                             )}
                             {item.isCompleted && (
@@ -1038,6 +1757,25 @@ export default function OrdersPage() {
                             Note: {item.specialNotes}
                           </div>
                         )}
+                        {/* Seat/Course/Hold Controls */}
+                        {savedOrderId && (
+                          <SeatCourseHoldControls
+                            orderId={savedOrderId}
+                            itemId={item.id}
+                            itemName={item.name}
+                            seatNumber={item.seatNumber}
+                            courseNumber={item.courseNumber}
+                            courseStatus={item.courseStatus}
+                            isHeld={item.isHeld}
+                            holdUntil={item.holdUntil}
+                            firedAt={item.firedAt}
+                            sentToKitchen={item.sentToKitchen}
+                            guestCount={currentOrder?.guestCount || 4}
+                            onUpdate={(updates) => {
+                              updateItem(item.id, updates)
+                            }}
+                          />
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="font-medium">
@@ -1055,14 +1793,29 @@ export default function OrdersPage() {
                             </svg>
                           </button>
                         )}
-                        <button
-                          className="text-red-500 hover:text-red-700 p-1"
-                          onClick={() => removeItem(item.id)}
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
+                        {/* Comp/Void button for sent items */}
+                        {item.sentToKitchen && (
+                          <button
+                            className="text-orange-500 hover:text-orange-700 p-1"
+                            onClick={() => handleOpenCompVoid(item)}
+                            title="Comp or Void"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                        )}
+                        {/* Delete button (only for unsent items) */}
+                        {!item.sentToKitchen && (
+                          <button
+                            className="text-red-500 hover:text-red-700 p-1"
+                            onClick={() => removeItem(item.id)}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
                   </Card>
@@ -1070,69 +1823,131 @@ export default function OrdersPage() {
               })}
             </div>
           )}
+
         </div>
 
-        {/* Payment Method Toggle */}
+        {/* Course Manager Panel */}
+        {savedOrderId && currentOrder && (
+          <CourseOverviewPanel
+            orderId={savedOrderId}
+            onCourseUpdate={() => {
+              // Refresh the order to get updated course statuses
+              if (savedOrderId) {
+                fetch(`/api/orders/${savedOrderId}`)
+                  .then(res => res.json())
+                  .then(data => {
+                    if (data.items) {
+                      // Update items in the store with new course statuses
+                      data.items.forEach((item: { id: string; courseStatus?: string; isHeld?: boolean; firedAt?: string }) => {
+                        updateItem(item.id, {
+                          courseStatus: item.courseStatus as 'pending' | 'fired' | 'ready' | 'served' | undefined,
+                          isHeld: item.isHeld,
+                          firedAt: item.firedAt,
+                        })
+                      })
+                    }
+                  })
+                  .catch(console.error)
+              }
+            }}
+          />
+        )}
+
+        {/* Payment Method Toggle with Totals */}
         {dualPricing.enabled && (
           <div className="border-t p-3 bg-gray-50">
-            <div className="flex gap-2">
-              <Button
-                variant={paymentMethod === 'cash' ? 'primary' : 'ghost'}
-                size="sm"
-                className={`flex-1 ${paymentMethod === 'cash' ? 'bg-green-600 hover:bg-green-700' : ''}`}
-                onClick={() => setPaymentMethod('cash')}
-              >
-                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-                Cash
-              </Button>
-              <Button
-                variant={paymentMethod === 'card' ? 'primary' : 'ghost'}
-                size="sm"
-                className="flex-1"
-                onClick={() => setPaymentMethod('card')}
-              >
-                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                </svg>
-                Card (+{dualPricing.cardSurchargePercent}%)
-              </Button>
-            </div>
+            {(() => {
+              // Calculate both totals for display on buttons
+              const storedSubtotal = currentOrder?.subtotal || 0
+              const discountPct = dualPricing.cashDiscountPercent || 4.0
+              const cardSubtotal = calculateCardPrice(storedSubtotal, discountPct)
+              const discount = currentOrder?.discountTotal || 0
+
+              // Card total calculation
+              const cardTaxableAmount = cardSubtotal - discount
+              const cardTax = cardTaxableAmount * taxRate
+              const cardUnroundedTotal = cardTaxableAmount + cardTax
+              const cardTotal = applyPriceRounding(cardUnroundedTotal, priceRounding, 'card')
+
+              // Cash total calculation (with cash discount)
+              const cashDiscountAmount = cardSubtotal - storedSubtotal
+              const cashTaxableAmount = cardSubtotal - cashDiscountAmount - discount
+              const cashTax = cashTaxableAmount * taxRate
+              const cashUnroundedTotal = cashTaxableAmount + cashTax
+              const cashTotal = applyPriceRounding(cashUnroundedTotal, priceRounding, 'cash')
+
+              return (
+                <div className="flex gap-2">
+                  <Button
+                    variant={paymentMethod === 'cash' ? 'primary' : 'ghost'}
+                    size="sm"
+                    className={`flex-1 flex-col py-2 h-auto ${paymentMethod === 'cash' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                    onClick={() => setPaymentMethod('cash')}
+                  >
+                    <div className="flex items-center">
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      Cash
+                    </div>
+                    <div className={`text-sm font-bold ${paymentMethod === 'cash' ? 'text-white' : 'text-green-600'}`}>
+                      {formatCurrency(cashTotal)}
+                    </div>
+                  </Button>
+                  <Button
+                    variant={paymentMethod === 'card' ? 'primary' : 'ghost'}
+                    size="sm"
+                    className="flex-1 flex-col py-2 h-auto"
+                    onClick={() => setPaymentMethod('card')}
+                  >
+                    <div className="flex items-center">
+                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                      </svg>
+                      Card
+                    </div>
+                    <div className={`text-sm font-bold ${paymentMethod === 'card' ? 'text-white' : 'text-blue-600'}`}>
+                      {formatCurrency(cardTotal)}
+                    </div>
+                  </Button>
+                </div>
+              )
+            })()}
           </div>
         )}
 
-        {/* Order Totals */}
+        {/* Order Totals - Card price is displayed, cash gets discount */}
         <div className="border-t p-4 space-y-2">
           {(() => {
-            const subtotal = currentOrder?.subtotal || 0
-            const cardSubtotal = dualPricing.enabled && paymentMethod === 'card'
-              ? calculateCardPrice(subtotal, dualPricing.cardSurchargePercent)
-              : subtotal
+            const storedSubtotal = currentOrder?.subtotal || 0  // Stored as cash price
+            const discountPct = dualPricing.cashDiscountPercent || 4.0
+            // Convert to card price for display
+            const cardSubtotal = dualPricing.enabled
+              ? calculateCardPrice(storedSubtotal, discountPct)
+              : storedSubtotal
+            // Cash discount brings it back to original price
+            const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash'
+              ? cardSubtotal - storedSubtotal
+              : 0
             const discount = currentOrder?.discountTotal || 0
-            const taxableAmount = cardSubtotal - discount
-            const tax = taxableAmount * 0.08
-            const total = taxableAmount + tax
+            const taxableAmount = cardSubtotal - cashDiscountAmount - discount
+            const tax = taxableAmount * taxRate
+            const gratuity = currentOrder?.tipTotal || 0
+            const unroundedTotal = taxableAmount + tax + gratuity
+            // Apply price rounding if enabled
+            const total = applyPriceRounding(unroundedTotal, priceRounding, paymentMethod)
+            const roundingAdjustment = total - unroundedTotal
 
             return (
               <>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Subtotal</span>
-                  <div className="text-right">
-                    {dualPricing.enabled && paymentMethod === 'card' && subtotal !== cardSubtotal ? (
-                      <>
-                        <span className="line-through text-gray-400 mr-2">{formatCurrency(subtotal)}</span>
-                        <span>{formatCurrency(cardSubtotal)}</span>
-                      </>
-                    ) : (
-                      <span>{formatCurrency(subtotal)}</span>
-                    )}
-                  </div>
+                  <span>{formatCurrency(cardSubtotal)}</span>
                 </div>
-                {dualPricing.enabled && paymentMethod === 'card' && (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Card surcharge ({dualPricing.cardSurchargePercent}%)</span>
-                    <span>+{formatCurrency(cardSubtotal - subtotal)}</span>
+                {dualPricing.enabled && paymentMethod === 'cash' && cashDiscountAmount > 0 && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>Cash Discount ({discountPct}%)</span>
+                    <span>-{formatCurrency(cashDiscountAmount)}</span>
                   </div>
                 )}
                 {discount > 0 && (
@@ -1142,18 +1957,30 @@ export default function OrdersPage() {
                   </div>
                 )}
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Tax (8%)</span>
+                  <span className="text-gray-500">Tax ({(taxRate * 100).toFixed(1)}%)</span>
                   <span>{formatCurrency(tax)}</span>
                 </div>
+                {(currentOrder?.tipTotal || 0) > 0 && (
+                  <div className="flex justify-between text-sm text-blue-600">
+                    <span>Gratuity</span>
+                    <span>{formatCurrency(currentOrder?.tipTotal || 0)}</span>
+                  </div>
+                )}
+                {priceRounding.enabled && Math.abs(roundingAdjustment) > 0.001 && (
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>Rounding</span>
+                    <span>{roundingAdjustment >= 0 ? '+' : ''}{formatCurrency(roundingAdjustment)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-lg pt-2 border-t">
                   <span>Total</span>
                   <span className={paymentMethod === 'cash' && dualPricing.enabled ? 'text-green-600' : ''}>
                     {formatCurrency(total)}
                   </span>
                 </div>
-                {dualPricing.enabled && dualPricing.showSavingsMessage && paymentMethod === 'cash' && subtotal > 0 && (
+                {dualPricing.enabled && dualPricing.showSavingsMessage && paymentMethod === 'cash' && storedSubtotal > 0 && (
                   <div className="text-xs text-green-600 text-center">
-                    You save {formatCurrency(calculateCardPrice(subtotal, dualPricing.cardSurchargePercent) - subtotal)} by paying with cash!
+                    You save {formatCurrency(cashDiscountAmount)} by paying with cash!
                   </div>
                 )}
               </>
@@ -1183,11 +2010,39 @@ export default function OrdersPage() {
               </Button>
             )
           })()}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-5 gap-2">
             <Button
               variant="outline"
               size="md"
               disabled={!currentOrder?.items.length}
+              onClick={handleOpenDiscount}
+              className="text-sm"
+            >
+              Disc
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              disabled={!currentOrder?.items.length || !savedOrderId}
+              onClick={() => setShowItemTransferModal(true)}
+              className="text-sm"
+            >
+              Move
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              disabled={!currentOrder?.items.length || !savedOrderId}
+              onClick={handleOpenSplitTicket}
+              className="text-sm"
+              title="Split order into separate tickets"
+            >
+              Split
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              disabled={!currentOrder?.items.length && !(currentOrder?.total && currentOrder.total > 0)}
               onClick={handleOpenPayment}
             >
               Pay
@@ -1199,6 +2054,7 @@ export default function OrdersPage() {
                 clearOrder()
                 setSavedOrderId(null)
                 setOrderSent(false)
+                setAppliedDiscounts([])
               }}
               disabled={!currentOrder?.items.length}
             >
@@ -1235,6 +2091,321 @@ export default function OrdersPage() {
         />
       )}
 
+      {/* Combo Selection Modal */}
+      {showComboModal && selectedComboItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden">
+            <div className="p-4 border-b bg-orange-50">
+              <h2 className="text-lg font-bold text-orange-800">{selectedComboItem.name}</h2>
+              <p className="text-sm text-orange-600">
+                {comboTemplate?.comparePrice && (
+                  <span className="line-through mr-2">{formatCurrency(comboTemplate.comparePrice)}</span>
+                )}
+                <span className="font-bold">{formatCurrency(comboTemplate?.basePrice || selectedComboItem.price)}</span>
+                {comboTemplate?.comparePrice && (
+                  <span className="ml-2 text-green-600">
+                    Save {formatCurrency(comboTemplate.comparePrice - (comboTemplate?.basePrice || 0))}!
+                  </span>
+                )}
+              </p>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {!comboTemplate ? (
+                <p className="text-gray-500 text-center py-8">Loading combo options...</p>
+              ) : comboTemplate.components.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No customization options</p>
+              ) : (
+                <div className="space-y-6">
+                  {comboTemplate.components.map(component => {
+                    // New structure: component has menuItem with modifierGroups
+                    if (component.menuItem) {
+                      return (
+                        <div key={component.id} className="border rounded-lg p-3 bg-gray-50">
+                          <h3 className="font-semibold text-gray-800 mb-3 flex items-center">
+                            <span className="bg-orange-500 text-white px-2 py-0.5 rounded text-sm mr-2">
+                              {component.displayName}
+                            </span>
+                            {component.itemPriceOverride !== null && component.itemPriceOverride !== undefined && (
+                              <span className="text-sm font-normal text-green-600">
+                                (Included)
+                              </span>
+                            )}
+                          </h3>
+
+                          {/* Show modifier groups for this item */}
+                          {component.menuItem.modifierGroups && component.menuItem.modifierGroups.length > 0 ? (
+                            <div className="space-y-4">
+                              {component.menuItem.modifierGroups.map(mg => {
+                                const group = mg.modifierGroup
+                                const componentSelections = comboSelections[component.id] || {}
+                                const groupSelections = componentSelections[group.id] || []
+
+                                return (
+                                  <div key={group.id}>
+                                    <p className="text-sm text-gray-600 mb-2">
+                                      {group.displayName || group.name}
+                                      {group.isRequired && <span className="text-red-500 ml-1">*</span>}
+                                      {group.maxSelections > 1 && (
+                                        <span className="text-xs text-gray-400 ml-1">
+                                          (up to {group.maxSelections})
+                                        </span>
+                                      )}
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {group.modifiers.map(mod => {
+                                        const isSelected = groupSelections.includes(mod.id)
+                                        // In combos, modifiers are included ($0) unless explicitly set as upcharge
+                                        const overridePrice = component.modifierPriceOverrides?.[mod.id]
+                                        const displayPrice = overridePrice !== undefined ? overridePrice : 0
+
+                                        return (
+                                          <button
+                                            key={mod.id}
+                                            onClick={() => {
+                                              setComboSelections(prev => {
+                                                const compSelections = prev[component.id] || {}
+                                                const current = compSelections[group.id] || []
+
+                                                let newGroupSelections: string[]
+                                                if (isSelected) {
+                                                  newGroupSelections = current.filter(id => id !== mod.id)
+                                                } else if (group.maxSelections === 1) {
+                                                  newGroupSelections = [mod.id]
+                                                } else if (current.length < group.maxSelections) {
+                                                  newGroupSelections = [...current, mod.id]
+                                                } else {
+                                                  return prev
+                                                }
+
+                                                return {
+                                                  ...prev,
+                                                  [component.id]: {
+                                                    ...compSelections,
+                                                    [group.id]: newGroupSelections,
+                                                  },
+                                                }
+                                              })
+                                            }}
+                                            className={`p-2 rounded border-2 text-left text-sm transition-colors ${
+                                              isSelected
+                                                ? 'border-orange-500 bg-orange-50'
+                                                : 'border-gray-200 hover:border-gray-300 bg-white'
+                                            }`}
+                                          >
+                                            <span className="font-medium">{mod.name}</span>
+                                            {displayPrice > 0 && (
+                                              <span className="text-green-600 text-xs ml-1">
+                                                +{formatCurrency(displayPrice)}
+                                              </span>
+                                            )}
+                                          </button>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-400 italic">No modifiers for this item</p>
+                          )}
+                        </div>
+                      )
+                    }
+
+                    // Legacy: use options array
+                    if (component.options && component.options.length > 0) {
+                      return (
+                        <div key={component.id}>
+                          <h3 className="font-semibold text-gray-800 mb-2">
+                            {component.displayName}
+                            {component.isRequired && <span className="text-red-500 ml-1">*</span>}
+                          </h3>
+                          <div className="grid grid-cols-2 gap-2">
+                            {component.options.map(option => {
+                              const legacySelections = (comboSelections[component.id] as unknown as string[]) || []
+                              const isSelected = legacySelections.includes(option.id)
+                              return (
+                                <button
+                                  key={option.id}
+                                  onClick={() => {
+                                    setComboSelections(prev => {
+                                      const current = (prev[component.id] as unknown as string[]) || []
+                                      let newSelections: string[]
+                                      if (isSelected) {
+                                        newSelections = current.filter(id => id !== option.id)
+                                      } else if (component.maxSelections === 1) {
+                                        newSelections = [option.id]
+                                      } else if (current.length < component.maxSelections) {
+                                        newSelections = [...current, option.id]
+                                      } else {
+                                        return prev
+                                      }
+                                      return { ...prev, [component.id]: newSelections as unknown as Record<string, string[]> }
+                                    })
+                                  }}
+                                  className={`p-3 rounded-lg border-2 text-left transition-colors ${
+                                    isSelected
+                                      ? 'border-orange-500 bg-orange-50'
+                                      : 'border-gray-200 hover:border-gray-300'
+                                  }`}
+                                >
+                                  <span className="font-medium">{option.name}</span>
+                                  {option.upcharge > 0 && (
+                                    <span className="text-green-600 text-sm ml-1">+{formatCurrency(option.upcharge)}</span>
+                                  )}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    return null
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t bg-gray-50 flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowComboModal(false)
+                  setSelectedComboItem(null)
+                  setComboTemplate(null)
+                  setComboSelections({})
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleAddComboToOrder}
+                className="flex-1 bg-orange-500 hover:bg-orange-600"
+              >
+                Add to Order
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Timed Rental Modal */}
+      {showTimedRentalModal && selectedTimedItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+            <div className="p-4 border-b bg-purple-50">
+              <h2 className="text-lg font-bold text-purple-800">{selectedTimedItem.name}</h2>
+              <p className="text-sm text-purple-600">Start a timed session</p>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Rate
+                </label>
+                <div className="space-y-2">
+                  {/* Show available rates from timedPricing, or fallback to base price */}
+                  {selectedTimedItem.timedPricing?.per15Min ? (
+                    <button
+                      onClick={() => setSelectedRateType('per15Min')}
+                      className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
+                        selectedRateType === 'per15Min'
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span>Per 15 minutes</span>
+                      <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.per15Min)}</span>
+                    </button>
+                  ) : null}
+                  {selectedTimedItem.timedPricing?.per30Min ? (
+                    <button
+                      onClick={() => setSelectedRateType('per30Min')}
+                      className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
+                        selectedRateType === 'per30Min'
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span>Per 30 minutes</span>
+                      <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.per30Min)}</span>
+                    </button>
+                  ) : null}
+                  {selectedTimedItem.timedPricing?.perHour ? (
+                    <button
+                      onClick={() => setSelectedRateType('perHour')}
+                      className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
+                        selectedRateType === 'perHour'
+                          ? 'border-purple-500 bg-purple-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span>Per hour</span>
+                      <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.perHour)}</span>
+                    </button>
+                  ) : null}
+                  {/* Fallback: If no timedPricing rates, show base price per hour */}
+                  {!selectedTimedItem.timedPricing?.per15Min &&
+                   !selectedTimedItem.timedPricing?.per30Min &&
+                   !selectedTimedItem.timedPricing?.perHour && (
+                    <button
+                      onClick={() => setSelectedRateType('perHour')}
+                      className="w-full p-3 rounded-lg border-2 text-left flex justify-between items-center border-purple-500 bg-purple-50"
+                    >
+                      <span>Per hour (base rate)</span>
+                      <span className="font-bold">{formatCurrency(selectedTimedItem.price)}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+              {selectedTimedItem.timedPricing?.minimum && (
+                <p className="text-sm text-gray-500 mb-4">
+                  Minimum: {selectedTimedItem.timedPricing.minimum} minutes
+                </p>
+              )}
+            </div>
+            <div className="p-4 border-t bg-gray-50 flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowTimedRentalModal(false)
+                  setSelectedTimedItem(null)
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleStartTimedSession}
+                disabled={loadingSession}
+                className="flex-1 bg-purple-500 hover:bg-purple-600"
+              >
+                {loadingSession ? 'Starting...' : 'Start Timer'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Entertainment Waitlist Modal */}
+      {showWaitlistModal && waitlistMenuItem && (
+        <AddToWaitlistModal
+          isOpen={showWaitlistModal}
+          onClose={() => {
+            setShowWaitlistModal(false)
+            setWaitlistMenuItem(null)
+          }}
+          locationId={employee?.location?.id}
+          employeeId={employee?.id}
+          menuItemId={waitlistMenuItem.id}
+          menuItemName={waitlistMenuItem.name}
+          onSuccess={() => {
+            // Optionally refresh menu or show success message
+          }}
+        />
+      )}
+
       {/* Open Orders Panel Slide-out */}
       {showTabsPanel && (
         <>
@@ -1249,6 +2420,10 @@ export default function OrdersPage() {
               onSelectOrder={handleSelectOpenOrder}
               onNewTab={handleNewTab}
               refreshTrigger={tabsRefreshTrigger}
+              onViewReceipt={(orderId) => {
+                setReceiptOrderId(orderId)
+                setShowReceiptModal(true)
+              }}
             />
           </div>
         </>
@@ -1273,6 +2448,25 @@ export default function OrdersPage() {
         tabId={selectedTabId}
         onAddItems={handleAddItemsToTab}
         onPayTab={handlePayTab}
+        onTransferTab={(tabId) => {
+          setShowTabDetailModal(false)
+          handleTransferTab(tabId)
+        }}
+      />
+
+      {/* Tab Transfer Modal */}
+      <TabTransferModal
+        isOpen={showTabTransferModal}
+        onClose={() => {
+          setShowTabTransferModal(false)
+          setSelectedTabId(null)
+          setSelectedTabName(null)
+        }}
+        tabId={selectedTabId || ''}
+        tabName={selectedTabName}
+        currentEmployeeId={employee?.id || ''}
+        locationId={employee?.location?.id || ''}
+        onTransferComplete={handleTabTransferComplete}
       />
 
       {/* Quick Notes Modal */}
@@ -1327,31 +2521,189 @@ export default function OrdersPage() {
           onClose={() => {
             setShowPaymentModal(false)
             setOrderToPayId(null)
+            setSplitPaymentAmount(null)
+            setEvenSplitAmounts(null)
+            setCurrentSplitIndex(0)
           }}
           orderId={orderToPayId}
           orderTotal={(() => {
-            const subtotal = currentOrder?.subtotal || 0
-            const cardSubtotal = dualPricing.enabled && paymentMethod === 'card'
-              ? calculateCardPrice(subtotal, dualPricing.cardSurchargePercent)
-              : subtotal
+            // If we have a split payment amount, use that
+            if (splitPaymentAmount !== null) {
+              return splitPaymentAmount
+            }
+            // For split orders (no items but has total), use the stored total
+            if (currentOrder && currentOrder.items.length === 0 && currentOrder.total > 0) {
+              return currentOrder.total
+            }
+            const storedSubtotal = currentOrder?.subtotal || 0  // Stored as cash price
+            const discountPct = dualPricing.cashDiscountPercent || 4.0
+            const cardSubtotal = dualPricing.enabled ? calculateCardPrice(storedSubtotal, discountPct) : storedSubtotal
+            const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash' ? cardSubtotal - storedSubtotal : 0
             const discount = currentOrder?.discountTotal || 0
-            const taxableAmount = cardSubtotal - discount
-            const tax = taxableAmount * 0.08
+            const taxableAmount = cardSubtotal - cashDiscountAmount - discount
+            const tax = taxableAmount * taxRate
             return taxableAmount + tax
           })()}
           remainingBalance={(() => {
-            const subtotal = currentOrder?.subtotal || 0
-            const cardSubtotal = dualPricing.enabled && paymentMethod === 'card'
-              ? calculateCardPrice(subtotal, dualPricing.cardSurchargePercent)
-              : subtotal
+            if (splitPaymentAmount !== null) {
+              return splitPaymentAmount
+            }
+            const storedSubtotal = currentOrder?.subtotal || 0  // Stored as cash price
+            const discountPct = dualPricing.cashDiscountPercent || 4.0
+            const cardSubtotal = dualPricing.enabled ? calculateCardPrice(storedSubtotal, discountPct) : storedSubtotal
+            const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash' ? cardSubtotal - storedSubtotal : 0
             const discount = currentOrder?.discountTotal || 0
-            const taxableAmount = cardSubtotal - discount
-            const tax = taxableAmount * 0.08
+            const taxableAmount = cardSubtotal - cashDiscountAmount - discount
+            const tax = taxableAmount * taxRate
             return taxableAmount + tax
           })()}
           dualPricing={dualPricing}
           paymentSettings={paymentSettings}
           onPaymentComplete={handlePaymentComplete}
+        />
+      )}
+
+      {/* Order Settings Modal */}
+      {showOrderSettingsModal && savedOrderId && currentOrder && (
+        <OrderSettingsModal
+          isOpen={showOrderSettingsModal}
+          onClose={() => setShowOrderSettingsModal(false)}
+          orderId={savedOrderId}
+          currentTabName={currentOrder.tabName || ''}
+          currentGuestCount={currentOrder.guestCount}
+          currentTipTotal={currentOrder.tipTotal || 0}
+          currentSeparateChecks={false}
+          orderTotal={currentOrder.subtotal || 0}
+          onSave={handleOrderSettingsSave}
+        />
+      )}
+
+      {/* Split Check Modal */}
+      {showSplitModal && currentOrder && savedOrderId && (
+        <SplitCheckModal
+          isOpen={showSplitModal}
+          onClose={() => {
+            setShowSplitModal(false)
+          }}
+          orderId={savedOrderId}
+          orderNumber={currentOrder.orderNumber || 0}
+          orderTotal={(() => {
+            const subtotal = currentOrder.subtotal || 0
+            const tax = subtotal * taxRate
+            return subtotal + tax
+          })()}
+          paidAmount={0}
+          items={currentOrder.items.map(item => ({
+            id: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price,
+            itemTotal: (item.price + item.modifiers.reduce((sum, m) => sum + m.price, 0)) * item.quantity,
+            modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price })),
+          }))}
+          onSplitComplete={handleSplitComplete}
+          onNavigateToSplit={handleNavigateToSplit}
+        />
+      )}
+
+      {/* Discount Modal */}
+      {showDiscountModal && currentOrder && savedOrderId && employee && (
+        <DiscountModal
+          isOpen={showDiscountModal}
+          onClose={() => setShowDiscountModal(false)}
+          orderId={savedOrderId}
+          orderSubtotal={currentOrder.subtotal || 0}
+          locationId={employee.location?.id || ''}
+          employeeId={employee.id}
+          appliedDiscounts={appliedDiscounts}
+          onDiscountApplied={handleDiscountApplied}
+        />
+      )}
+
+      {/* Comp/Void Modal */}
+      {showCompVoidModal && savedOrderId && compVoidItem && employee && (
+        <CompVoidModal
+          isOpen={showCompVoidModal}
+          onClose={() => {
+            setShowCompVoidModal(false)
+            setCompVoidItem(null)
+          }}
+          orderId={savedOrderId}
+          item={compVoidItem}
+          employeeId={employee.id}
+          onComplete={handleCompVoidComplete}
+        />
+      )}
+
+      {/* Item Transfer Modal */}
+      {showItemTransferModal && savedOrderId && employee && (
+        <ItemTransferModal
+          isOpen={showItemTransferModal}
+          onClose={() => setShowItemTransferModal(false)}
+          currentOrderId={savedOrderId}
+          items={currentOrder?.items.map((item) => ({
+            id: item.id,
+            tempId: item.id, // Use id as tempId for compatibility
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            modifiers: item.modifiers.map((mod) => ({
+              name: mod.name,
+              price: mod.price,
+            })),
+            sent: item.sentToKitchen,
+          })) || []}
+          locationId={employee.location?.id || ''}
+          employeeId={employee.id}
+          onTransferComplete={async (transferredItemIds) => {
+            // Reload the order from the database to get updated items
+            try {
+              const response = await fetch(`/api/orders/${savedOrderId}`)
+              if (response.ok) {
+                const orderData = await response.json()
+                loadOrder({
+                  id: orderData.id,
+                  orderNumber: orderData.orderNumber,
+                  orderType: orderData.orderType,
+                  tableId: orderData.tableId || undefined,
+                  tabName: orderData.tabName || undefined,
+                  guestCount: orderData.guestCount,
+                  items: orderData.items,
+                  subtotal: orderData.subtotal,
+                  taxTotal: orderData.taxTotal,
+                  total: orderData.total,
+                  notes: orderData.notes,
+                })
+              }
+            } catch (error) {
+              console.error('Failed to reload order:', error)
+            }
+          }}
+        />
+      )}
+
+      {/* Split Ticket Manager */}
+      {showSplitTicketManager && savedOrderId && currentOrder && (
+        <SplitTicketManager
+          isOpen={showSplitTicketManager}
+          onClose={() => setShowSplitTicketManager(false)}
+          orderId={savedOrderId}
+          orderNumber={currentOrder.orderNumber || 0}
+          items={currentOrder.items.map(item => ({
+            id: item.id,
+            tempId: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            modifiers: item.modifiers.map(mod => ({
+              name: mod.name,
+              price: mod.price,
+            })),
+          }))}
+          orderDiscount={appliedDiscounts.reduce((sum, d) => sum + d.amount, 0)}
+          taxRate={taxRate}
+          roundTo={priceRounding.enabled ? priceRounding.increment : 'none'}
+          onSplitComplete={handleSplitTicketComplete}
         />
       )}
 
@@ -1363,549 +2715,51 @@ export default function OrdersPage() {
         employeeName={employee?.displayName || `${employee?.firstName} ${employee?.lastName}` || ''}
         locationId={employee?.location?.id || ''}
       />
-    </div>
-  )
-}
 
-// Modifier Selection Modal Component with nested child support
-function ModifierModal({
-  item,
-  modifierGroups,
-  loading,
-  editingItem,
-  dualPricing,
-  onConfirm,
-  onCancel,
-  initialNotes,
-}: {
-  item: MenuItem
-  modifierGroups: ModifierGroup[]
-  loading: boolean
-  editingItem?: {
-    id: string
-    menuItemId: string
-    modifiers: { id: string; name: string; price: number; preModifier?: string; depth: number; parentModifierId?: string }[]
-  } | null
-  dualPricing: DualPricingSettings
-  onConfirm: (modifiers: SelectedModifier[], specialNotes?: string) => void
-  onCancel: () => void
-  initialNotes?: string
-}) {
-  // Helper to format price with dual pricing
-  const formatModPrice = (price: number) => {
-    if (price === 0) return 'Included'
-    if (!dualPricing.enabled || !dualPricing.showBothPrices) {
-      return `+${formatCurrency(price)}`
-    }
-    const cardPrice = calculateCardPrice(price, dualPricing.cardSurchargePercent)
-    return (
-      <span className="text-xs">
-        <span className="text-green-600">+{formatCurrency(price)}</span>
-        <span className="text-gray-400"> / </span>
-        <span className="text-gray-500">+{formatCurrency(cardPrice)}</span>
-      </span>
-    )
-  }
-  // All selections keyed by groupId
-  const [selections, setSelections] = useState<Record<string, SelectedModifier[]>>({})
-  // Cache of loaded child modifier groups
-  const [childGroups, setChildGroups] = useState<Record<string, ModifierGroup>>({})
-  // Track which child groups are currently loading
-  const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({})
-  // Track if we've initialized from editing item
-  const [initialized, setInitialized] = useState(false)
-  // Special notes/instructions for the item
-  const [specialNotes, setSpecialNotes] = useState(initialNotes || '')
-
-  // Initialize with existing modifiers when editing, or defaults for new items
-  useEffect(() => {
-    if (initialized || modifierGroups.length === 0) return
-
-    const initial: Record<string, SelectedModifier[]> = {}
-
-    if (editingItem && editingItem.modifiers.length > 0) {
-      // Pre-populate from existing order item modifiers
-      // We need to match modifiers to their groups
-      editingItem.modifiers.forEach(existingMod => {
-        // Find which group this modifier belongs to
-        for (const group of modifierGroups) {
-          const matchingMod = group.modifiers.find(m => m.id === existingMod.id)
-          if (matchingMod) {
-            if (!initial[group.id]) initial[group.id] = []
-            initial[group.id].push({
-              id: existingMod.id,
-              name: matchingMod.name, // Use the original name without preModifier
-              price: existingMod.price,
-              preModifier: existingMod.preModifier,
-              childModifierGroupId: matchingMod.childModifierGroupId,
-              depth: existingMod.depth || 0,
-              parentModifierId: existingMod.parentModifierId,
+      {/* Shift Start Modal */}
+      <ShiftStartModal
+        isOpen={showShiftStartModal}
+        onClose={() => setShowShiftStartModal(false)}
+        employeeId={employee?.id || ''}
+        employeeName={employee?.displayName || `${employee?.firstName} ${employee?.lastName}` || ''}
+        locationId={employee?.location?.id || ''}
+        onShiftStarted={(shiftId) => {
+          // Fetch the shift data
+          fetch(`/api/shifts/${shiftId}`)
+            .then(res => res.json())
+            .then(data => {
+              setCurrentShift({
+                id: data.shift.id,
+                startedAt: data.shift.startedAt,
+                startingCash: data.shift.startingCash,
+                employee: data.shift.employee,
+              })
             })
-            break
-          }
-        }
-        // Also check child groups that might already be loaded
-        for (const [groupId, childGroup] of Object.entries(childGroups)) {
-          const matchingMod = childGroup.modifiers.find(m => m.id === existingMod.id)
-          if (matchingMod) {
-            if (!initial[groupId]) initial[groupId] = []
-            initial[groupId].push({
-              id: existingMod.id,
-              name: matchingMod.name,
-              price: existingMod.price,
-              preModifier: existingMod.preModifier,
-              childModifierGroupId: matchingMod.childModifierGroupId,
-              depth: existingMod.depth || 0,
-              parentModifierId: existingMod.parentModifierId,
-            })
-            break
-          }
-        }
-      })
-    } else {
-      // New item - use defaults
-      modifierGroups.forEach(group => {
-        const defaults = group.modifiers
-          .filter(mod => mod.isDefault)
-          .map(mod => ({
-            id: mod.id,
-            name: mod.name,
-            price: mod.price,
-            childModifierGroupId: mod.childModifierGroupId,
-            depth: 0,
-            parentModifierId: undefined,
-          }))
-        if (defaults.length > 0) {
-          initial[group.id] = defaults
-        }
-      })
-    }
+            .catch(err => console.error('Failed to fetch shift:', err))
+        }}
+      />
 
-    setSelections(initial)
-    setInitialized(true)
-  }, [modifierGroups, editingItem, childGroups, initialized])
+      {/* Shift Closeout Modal */}
+      {currentShift && (
+        <ShiftCloseoutModal
+          isOpen={showShiftCloseoutModal}
+          onClose={() => setShowShiftCloseoutModal(false)}
+          shift={currentShift}
+          onCloseoutComplete={() => {
+            setCurrentShift(null)
+            // Optionally log out or redirect
+          }}
+        />
+      )}
 
-  // Load a child modifier group by ID
-  const loadChildGroup = async (groupId: string) => {
-    if (childGroups[groupId] || loadingChildren[groupId]) return
-
-    setLoadingChildren(prev => ({ ...prev, [groupId]: true }))
-    try {
-      const response = await fetch(`/api/menu/modifiers/${groupId}`)
-      if (response.ok) {
-        const data = await response.json()
-        setChildGroups(prev => ({ ...prev, [groupId]: data }))
-      }
-    } catch (error) {
-      console.error('Failed to load child modifier group:', error)
-    } finally {
-      setLoadingChildren(prev => ({ ...prev, [groupId]: false }))
-    }
-  }
-
-  // When a modifier with a child is selected, load the child group
-  useEffect(() => {
-    Object.values(selections).flat().forEach(sel => {
-      if (sel.childModifierGroupId && !childGroups[sel.childModifierGroupId]) {
-        loadChildGroup(sel.childModifierGroupId)
-      }
-    })
-  }, [selections])
-
-  // When editing, match child modifiers once their groups are loaded
-  useEffect(() => {
-    if (!editingItem || !initialized) return
-
-    // Find unmatched child modifiers (depth > 0 that aren't yet in selections)
-    const unmatchedChildMods = editingItem.modifiers.filter(existingMod => {
-      if ((existingMod.depth || 0) === 0) return false // Skip top-level
-      // Check if already matched
-      for (const sels of Object.values(selections)) {
-        if (sels.some(s => s.id === existingMod.id)) return false
-      }
-      return true
-    })
-
-    if (unmatchedChildMods.length === 0) return
-
-    // Try to match them to loaded child groups
-    const newSelections = { ...selections }
-    let changed = false
-
-    unmatchedChildMods.forEach(existingMod => {
-      for (const [groupId, childGroup] of Object.entries(childGroups)) {
-        const matchingMod = childGroup.modifiers.find(m => m.id === existingMod.id)
-        if (matchingMod) {
-          if (!newSelections[groupId]) newSelections[groupId] = []
-          // Check if not already added
-          if (!newSelections[groupId].some(s => s.id === existingMod.id)) {
-            newSelections[groupId].push({
-              id: existingMod.id,
-              name: matchingMod.name,
-              price: existingMod.price,
-              preModifier: existingMod.preModifier,
-              childModifierGroupId: matchingMod.childModifierGroupId,
-              depth: existingMod.depth || 0,
-              parentModifierId: existingMod.parentModifierId,
-            })
-            changed = true
-          }
-          break
-        }
-      }
-    })
-
-    if (changed) {
-      setSelections(newSelections)
-    }
-  }, [childGroups, editingItem, initialized, selections])
-
-  // Calculate the depth of a group (0 for top-level, 1+ for children)
-  const getGroupDepth = (groupId: string): number => {
-    // Check if this is a top-level group
-    if (modifierGroups.some(g => g.id === groupId)) {
-      return 0
-    }
-    // It's a child group, find its parent
-    for (const [parentGroupId, sels] of Object.entries(selections)) {
-      for (const sel of sels) {
-        if (sel.childModifierGroupId === groupId) {
-          return getGroupDepth(parentGroupId) + 1
-        }
-      }
-    }
-    return 0
-  }
-
-  // Find the parent modifier ID for a group
-  const getParentModifierId = (groupId: string): string | undefined => {
-    for (const [, sels] of Object.entries(selections)) {
-      for (const sel of sels) {
-        if (sel.childModifierGroupId === groupId) {
-          return sel.id
-        }
-      }
-    }
-    return undefined
-  }
-
-  const toggleModifier = (
-    group: ModifierGroup,
-    modifier: ModifierGroup['modifiers'][0],
-    preModifier?: string
-  ) => {
-    const current = selections[group.id] || []
-    const existingIndex = current.findIndex(s => s.id === modifier.id)
-
-    let price = modifier.price
-    if (preModifier === 'extra' && modifier.extraPrice) {
-      price = modifier.extraPrice
-    } else if (preModifier === 'no') {
-      price = 0
-    }
-
-    // Calculate depth and parent for this modifier
-    const depth = getGroupDepth(group.id)
-    const parentModifierId = getParentModifierId(group.id)
-
-    if (existingIndex >= 0) {
-      // Remove if already selected - also remove any child selections
-      const removedMod = current[existingIndex]
-      const newSelections = { ...selections }
-      newSelections[group.id] = current.filter(s => s.id !== modifier.id)
-
-      // Remove child group selections if any
-      if (removedMod.childModifierGroupId) {
-        delete newSelections[removedMod.childModifierGroupId]
-        // Recursively remove nested children
-        const removeNestedChildren = (parentGroupId: string) => {
-          const parentSelections = newSelections[parentGroupId] || []
-          parentSelections.forEach(sel => {
-            if (sel.childModifierGroupId) {
-              delete newSelections[sel.childModifierGroupId]
-              removeNestedChildren(sel.childModifierGroupId)
-            }
-          })
-        }
-        removeNestedChildren(removedMod.childModifierGroupId)
-      }
-
-      setSelections(newSelections)
-    } else {
-      // Add modifier with depth and parent info
-      const newMod: SelectedModifier = {
-        id: modifier.id,
-        name: modifier.name,
-        price,
-        preModifier,
-        childModifierGroupId: modifier.childModifierGroupId,
-        depth,
-        parentModifierId,
-      }
-
-      if (group.maxSelections === 1) {
-        // Single select - replace and remove old child selections
-        const oldSelection = current[0]
-        const newSelections = { ...selections }
-
-        if (oldSelection?.childModifierGroupId) {
-          delete newSelections[oldSelection.childModifierGroupId]
-        }
-
-        newSelections[group.id] = [newMod]
-        setSelections(newSelections)
-      } else if (current.length < group.maxSelections) {
-        // Multi-select - add if under max
-        setSelections({
-          ...selections,
-          [group.id]: [...current, newMod],
-        })
-      }
-    }
-  }
-
-  const updatePreModifier = (groupId: string, modifierId: string, preModifier: string, modifier: ModifierGroup['modifiers'][0]) => {
-    const current = selections[groupId] || []
-    const updated = current.map(s => {
-      if (s.id === modifierId) {
-        let price = modifier.price
-        if (preModifier === 'extra' && modifier.extraPrice) {
-          price = modifier.extraPrice
-        } else if (preModifier === 'no') {
-          price = 0
-        }
-        // Maintain depth and parentModifierId
-        return { ...s, preModifier, price, depth: s.depth, parentModifierId: s.parentModifierId }
-      }
-      return s
-    })
-    setSelections({ ...selections, [groupId]: updated })
-  }
-
-  const isSelected = (groupId: string, modifierId: string) => {
-    return (selections[groupId] || []).some(s => s.id === modifierId)
-  }
-
-  const getSelectedModifier = (groupId: string, modifierId: string) => {
-    return (selections[groupId] || []).find(s => s.id === modifierId)
-  }
-
-  // Get all active child groups that should be displayed
-  const getActiveChildGroups = (): { group: ModifierGroup; parentModifierName: string; depth: number }[] => {
-    const result: { group: ModifierGroup; parentModifierName: string; depth: number }[] = []
-
-    const findChildren = (groupId: string, parentName: string, depth: number) => {
-      const groupSelections = selections[groupId] || []
-      groupSelections.forEach(sel => {
-        if (sel.childModifierGroupId && childGroups[sel.childModifierGroupId]) {
-          const childGroup = childGroups[sel.childModifierGroupId]
-          result.push({ group: childGroup, parentModifierName: sel.name, depth })
-          // Recursively find children of children
-          findChildren(sel.childModifierGroupId, sel.name, depth + 1)
-        }
-      })
-    }
-
-    // Start from top-level groups
-    modifierGroups.forEach(group => {
-      findChildren(group.id, '', 1)
-    })
-
-    return result
-  }
-
-  const canConfirm = () => {
-    // Check all top-level required groups
-    const topLevelOk = modifierGroups.every(group => {
-      if (!group.isRequired) return true
-      const selected = selections[group.id] || []
-      return selected.length >= group.minSelections
-    })
-
-    // Check all active child groups that are required
-    const activeChildren = getActiveChildGroups()
-    const childrenOk = activeChildren.every(({ group }) => {
-      if (!group.isRequired) return true
-      const selected = selections[group.id] || []
-      return selected.length >= group.minSelections
-    })
-
-    return topLevelOk && childrenOk
-  }
-
-  const getAllSelectedModifiers = (): SelectedModifier[] => {
-    return Object.values(selections).flat()
-  }
-
-  const totalPrice = item.price + getAllSelectedModifiers().reduce((sum, mod) => sum + mod.price, 0)
-
-  const activeChildGroups = getActiveChildGroups()
-
-  // Render a single modifier group
-  const renderModifierGroup = (group: ModifierGroup, indent: number = 0, parentLabel?: string) => (
-    <div key={group.id} className={indent > 0 ? 'ml-4 pl-4 border-l-2 border-blue-200' : ''}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold">
-          {parentLabel && (
-            <span className="text-blue-600 text-sm mr-2">{parentLabel} →</span>
-          )}
-          {group.displayName || group.name}
-          {group.isRequired && <span className="text-red-500 ml-1">*</span>}
-        </h3>
-        <span className="text-sm text-gray-500">
-          {group.minSelections === group.maxSelections
-            ? `Select ${group.minSelections}`
-            : `Select ${group.minSelections}-${group.maxSelections}`}
-        </span>
-      </div>
-      <div className="space-y-2">
-        {group.modifiers.map(modifier => {
-          const selected = isSelected(group.id, modifier.id)
-          const selectedMod = getSelectedModifier(group.id, modifier.id)
-          const hasPreModifiers = modifier.allowedPreModifiers && modifier.allowedPreModifiers.length > 0
-          const hasChild = modifier.childModifierGroupId
-          const childLoading = modifier.childModifierGroupId ? loadingChildren[modifier.childModifierGroupId] : false
-
-          return (
-            <div key={modifier.id}>
-              <button
-                className={`w-full p-3 rounded-lg border text-left transition-colors ${
-                  selected
-                    ? 'bg-blue-50 border-blue-500'
-                    : 'bg-white border-gray-200 hover:border-gray-300'
-                }`}
-                onClick={() => toggleModifier(group, modifier)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={selected ? 'font-medium text-blue-700' : ''}>
-                      {modifier.name}
-                    </span>
-                    {hasChild && (
-                      <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
-                        + options
-                      </span>
-                    )}
-                  </div>
-                  <span className={modifier.price > 0 ? '' : 'text-gray-400'}>
-                    {formatModPrice(modifier.price)}
-                  </span>
-                </div>
-              </button>
-
-              {/* Pre-modifier buttons when selected */}
-              {selected && hasPreModifiers && (
-                <div className="flex gap-2 mt-2 ml-4">
-                  {modifier.allowedPreModifiers?.map(pre => (
-                    <button
-                      key={pre}
-                      className={`px-3 py-1 rounded text-sm border ${
-                        selectedMod?.preModifier === pre
-                          ? 'bg-purple-100 border-purple-500 text-purple-700'
-                          : 'bg-gray-50 border-gray-300 hover:bg-gray-100'
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        updatePreModifier(group.id, modifier.id, pre, modifier)
-                      }}
-                    >
-                      {pre.charAt(0).toUpperCase() + pre.slice(1)}
-                      {pre === 'extra' && modifier.extraPrice && (
-                        <span className="ml-1 text-green-600">+{formatCurrency(modifier.extraPrice)}</span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Loading indicator for child group */}
-              {selected && hasChild && childLoading && (
-                <div className="ml-4 mt-2 text-sm text-gray-500">Loading options...</div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b bg-gray-50">
-          <h2 className="text-xl font-bold">{item.name}</h2>
-          <p className="text-gray-500">{formatCurrency(item.price)}</p>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {loading ? (
-            <div className="text-center py-8 text-gray-500">Loading modifiers...</div>
-          ) : modifierGroups.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">No modifiers available</div>
-          ) : (
-            <div className="space-y-6">
-              {/* Top-level modifier groups */}
-              {modifierGroups.map(group => renderModifierGroup(group))}
-
-              {/* Child modifier groups (nested) */}
-              {activeChildGroups.map(({ group, parentModifierName, depth }) => (
-                <div key={group.id} className="pt-4 border-t">
-                  {renderModifierGroup(group, depth, parentModifierName)}
-                </div>
-              ))}
-
-              {/* Special Notes/Instructions */}
-              <div className="pt-4 border-t">
-                <label className="block font-semibold mb-2">
-                  Special Instructions
-                  <span className="text-gray-400 text-sm font-normal ml-2">(optional)</span>
-                </label>
-                <textarea
-                  value={specialNotes}
-                  onChange={(e) => setSpecialNotes(e.target.value)}
-                  placeholder="E.g., no onions, extra sauce, allergy info..."
-                  className="w-full p-3 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  rows={2}
-                  maxLength={200}
-                />
-                <div className="text-xs text-gray-400 text-right mt-1">
-                  {specialNotes.length}/200
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t bg-gray-50">
-          <div className="flex items-center justify-between mb-3">
-            <span className="font-semibold">Total</span>
-            {dualPricing.enabled && dualPricing.showBothPrices ? (
-              <div className="text-right">
-                <div className="text-lg font-bold text-green-600">{formatCurrency(totalPrice)} cash</div>
-                <div className="text-sm text-gray-500">{formatCurrency(calculateCardPrice(totalPrice, dualPricing.cardSurchargePercent))} card</div>
-              </div>
-            ) : (
-              <span className="text-xl font-bold text-blue-600">{formatCurrency(totalPrice)}</span>
-            )}
-          </div>
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              className="flex-1"
-              disabled={!canConfirm()}
-              onClick={() => onConfirm(getAllSelectedModifiers(), specialNotes.trim() || undefined)}
-            >
-              {editingItem ? 'Update Order' : 'Add to Order'}
-            </Button>
-          </div>
-        </div>
-      </div>
+      {/* Receipt Modal */}
+      <ReceiptModal
+        isOpen={showReceiptModal}
+        onClose={handleReceiptClose}
+        orderId={receiptOrderId}
+        locationId={employee?.location?.id || ''}
+        receiptSettings={receiptSettings}
+      />
     </div>
   )
 }

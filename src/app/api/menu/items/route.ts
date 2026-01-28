@@ -4,7 +4,21 @@ import { db } from '@/lib/db'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, price, description, categoryId, commissionType, commissionValue } = body
+    const {
+      name,
+      price,
+      description,
+      categoryId,
+      commissionType,
+      commissionValue,
+      availableFrom,
+      availableTo,
+      availableDays,
+      // Pour size options for liquor items
+      pourSizes,
+      defaultPourSize,
+      applyPourToModifiers,
+    } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -49,6 +63,13 @@ export async function POST(request: NextRequest) {
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         commissionType: commissionType || null,
         commissionValue: commissionValue ?? null,
+        availableFrom: availableFrom || null,
+        availableTo: availableTo || null,
+        availableDays: availableDays || null,
+        // Pour size options
+        pourSizes: pourSizes || null,
+        defaultPourSize: defaultPourSize || null,
+        applyPourToModifiers: applyPourToModifiers || false,
       }
     })
 
@@ -62,6 +83,9 @@ export async function POST(request: NextRequest) {
       isAvailable: item.isAvailable,
       commissionType: item.commissionType,
       commissionValue: item.commissionValue ? Number(item.commissionValue) : null,
+      availableFrom: item.availableFrom,
+      availableTo: item.availableTo,
+      availableDays: item.availableDays,
     })
   } catch (error) {
     console.error('Failed to create item:', error)

@@ -53,6 +53,7 @@ export async function PUT(request: NextRequest) {
       dualPricing: { ...currentSettings.dualPricing, ...(settings.dualPricing || {}) },
       tips: { ...currentSettings.tips, ...(settings.tips || {}) },
       receipts: { ...currentSettings.receipts, ...(settings.receipts || {}) },
+      loyalty: { ...currentSettings.loyalty, ...(settings.loyalty || {}) },
     })
 
     // Update location

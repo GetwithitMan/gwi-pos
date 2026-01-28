@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { LocationSettings, DEFAULT_SETTINGS } from '@/lib/settings'
-import { formatCurrency, calculateCardPrice } from '@/lib/pricing'
+import { formatCurrency, calculateCashPrice } from '@/lib/pricing'
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<LocationSettings>(DEFAULT_SETTINGS)
@@ -75,6 +75,13 @@ export default function SettingsPage() {
     }))
   }
 
+  const updatePriceRounding = (updates: Partial<LocationSettings['priceRounding']>) => {
+    setSettings(prev => ({
+      ...prev,
+      priceRounding: { ...prev.priceRounding, ...updates },
+    }))
+  }
+
   const updateTips = (updates: Partial<LocationSettings['tips']>) => {
     setSettings(prev => ({
       ...prev,
@@ -82,9 +89,68 @@ export default function SettingsPage() {
     }))
   }
 
+  const updateLoyalty = (updates: Partial<LocationSettings['loyalty']>) => {
+    setSettings(prev => ({
+      ...prev,
+      loyalty: { ...prev.loyalty, ...updates },
+    }))
+  }
+
+  const updateHappyHour = (updates: Partial<LocationSettings['happyHour']>) => {
+    setSettings(prev => ({
+      ...prev,
+      happyHour: { ...prev.happyHour, ...updates },
+    }))
+  }
+
+  const updateHappyHourSchedule = (index: number, updates: Partial<LocationSettings['happyHour']['schedules'][0]>) => {
+    setSettings(prev => ({
+      ...prev,
+      happyHour: {
+        ...prev.happyHour,
+        schedules: prev.happyHour.schedules.map((s, i) =>
+          i === index ? { ...s, ...updates } : s
+        ),
+      },
+    }))
+  }
+
+  const addHappyHourSchedule = () => {
+    setSettings(prev => ({
+      ...prev,
+      happyHour: {
+        ...prev.happyHour,
+        schedules: [
+          ...prev.happyHour.schedules,
+          { dayOfWeek: [1, 2, 3, 4, 5], startTime: '16:00', endTime: '18:00' },
+        ],
+      },
+    }))
+  }
+
+  const removeHappyHourSchedule = (index: number) => {
+    setSettings(prev => ({
+      ...prev,
+      happyHour: {
+        ...prev.happyHour,
+        schedules: prev.happyHour.schedules.filter((_, i) => i !== index),
+      },
+    }))
+  }
+
+  const toggleDayOfWeek = (scheduleIndex: number, day: number) => {
+    const schedule = settings.happyHour.schedules[scheduleIndex]
+    const newDays = schedule.dayOfWeek.includes(day)
+      ? schedule.dayOfWeek.filter(d => d !== day)
+      : [...schedule.dayOfWeek, day].sort()
+    updateHappyHourSchedule(scheduleIndex, { dayOfWeek: newDays })
+  }
+
   // Calculate example prices for display
+  // Cash price is what you enter, card price is calculated (adds the fee)
   const exampleCashPrice = 10.00
-  const exampleCardPrice = calculateCardPrice(exampleCashPrice, settings.dualPricing.cardSurchargePercent)
+  const discountPercent = settings.dualPricing.cashDiscountPercent || 4.0
+  const exampleCardPrice = Math.round(exampleCashPrice * (1 + discountPercent / 100) * 100) / 100
 
   if (isLoading) {
     return (
@@ -124,12 +190,12 @@ export default function SettingsPage() {
       </header>
 
       <div className="max-w-4xl mx-auto p-6 space-y-6">
-        {/* Dual Pricing Section */}
+        {/* Cash Discount Program Section */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-lg font-semibold">Dual Pricing</h2>
-              <p className="text-sm text-gray-500">Show different prices for cash vs card payments</p>
+              <h2 className="text-lg font-semibold">Cash Discount Program</h2>
+              <p className="text-sm text-gray-500">Card price is the default - cash customers receive a discount</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -144,10 +210,10 @@ export default function SettingsPage() {
 
           {settings.dualPricing.enabled && (
             <div className="space-y-4 border-t pt-4">
-              {/* Card Surcharge Percentage */}
+              {/* Cash Discount Percentage */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Card Surcharge Percentage
+                  Cash Discount Percentage
                   {!isSuperAdmin && (
                     <span className="ml-2 text-xs text-orange-600">(Super Admin only)</span>
                   )}
@@ -158,22 +224,22 @@ export default function SettingsPage() {
                     step="0.1"
                     min="0"
                     max="10"
-                    value={settings.dualPricing.cardSurchargePercent}
-                    onChange={(e) => updateDualPricing({ cardSurchargePercent: parseFloat(e.target.value) || 0 })}
+                    value={settings.dualPricing.cashDiscountPercent || 4.0}
+                    onChange={(e) => updateDualPricing({ cashDiscountPercent: parseFloat(e.target.value) || 0 })}
                     disabled={!isSuperAdmin}
                     className={`w-24 px-3 py-2 border rounded-lg ${!isSuperAdmin ? 'bg-gray-100 text-gray-500' : ''}`}
                   />
                   <span className="text-gray-500">%</span>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Example: {formatCurrency(exampleCashPrice)} cash / {formatCurrency(exampleCardPrice)} card
+                  You enter: {formatCurrency(exampleCashPrice)} → Card price: {formatCurrency(exampleCardPrice)} (displayed) → Cash discount: -{formatCurrency(exampleCardPrice - exampleCashPrice)}
                 </p>
               </div>
 
-              {/* Apply To */}
+              {/* Card Types */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Apply Surcharge To
+                  Card Types (full price)
                 </label>
                 <div className="flex gap-4">
                   <label className="flex items-center gap-2">
@@ -195,6 +261,9 @@ export default function SettingsPage() {
                     <span className="text-sm">Debit Cards</span>
                   </label>
                 </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Checked = pays full card price. Unchecked = receives cash discount.
+                </p>
               </div>
 
               {/* Display Options */}
@@ -206,22 +275,118 @@ export default function SettingsPage() {
                   <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      checked={settings.dualPricing.showBothPrices}
-                      onChange={(e) => updateDualPricing({ showBothPrices: e.target.checked })}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm">Show both prices on POS menu</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
                       checked={settings.dualPricing.showSavingsMessage}
                       onChange={(e) => updateDualPricing({ showSavingsMessage: e.target.checked })}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-sm">Show &quot;Save by paying cash&quot; message</span>
+                    <span className="text-sm">Show &quot;Save by paying cash&quot; message at checkout</span>
                   </label>
                 </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Price Rounding Section */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold">Price Rounding</h2>
+              <p className="text-sm text-gray-500">Round totals for easier cash handling</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.priceRounding?.enabled || false}
+                onChange={(e) => updatePriceRounding({ enabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {settings.priceRounding?.enabled && (
+            <div className="space-y-4 border-t pt-4">
+              {/* Rounding Increment */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Round to nearest
+                </label>
+                <select
+                  value={settings.priceRounding.increment}
+                  onChange={(e) => updatePriceRounding({ increment: e.target.value as LocationSettings['priceRounding']['increment'] })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="none">No rounding</option>
+                  <option value="0.05">$0.05 (nickel)</option>
+                  <option value="0.10">$0.10 (dime)</option>
+                  <option value="0.25">$0.25 (quarter)</option>
+                  <option value="0.50">$0.50 (half dollar)</option>
+                  <option value="1.00">$1.00 (dollar)</option>
+                </select>
+              </div>
+
+              {/* Rounding Direction */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Rounding direction
+                </label>
+                <div className="flex gap-4">
+                  {(['nearest', 'up', 'down'] as const).map(dir => (
+                    <label key={dir} className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="roundingDirection"
+                        checked={settings.priceRounding.direction === dir}
+                        onChange={() => updatePriceRounding({ direction: dir })}
+                        className="text-blue-600"
+                      />
+                      <span className="text-sm capitalize">{dir}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Apply To */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Apply rounding to
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.priceRounding.applyToCash}
+                      onChange={(e) => updatePriceRounding({ applyToCash: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">Cash payments</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.priceRounding.applyToCard}
+                      onChange={(e) => updatePriceRounding({ applyToCard: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">Card payments</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Example */}
+              <div className="bg-gray-50 p-3 rounded-lg">
+                <p className="text-sm text-gray-600">
+                  Example: $16.47 → {formatCurrency(
+                    settings.priceRounding.increment === 'none'
+                      ? 16.47
+                      : settings.priceRounding.direction === 'up'
+                        ? Math.ceil(16.47 / parseFloat(settings.priceRounding.increment)) * parseFloat(settings.priceRounding.increment)
+                        : settings.priceRounding.direction === 'down'
+                          ? Math.floor(16.47 / parseFloat(settings.priceRounding.increment)) * parseFloat(settings.priceRounding.increment)
+                          : Math.round(16.47 / parseFloat(settings.priceRounding.increment)) * parseFloat(settings.priceRounding.increment)
+                  )}
+                </p>
               </div>
             </div>
           )}
@@ -319,6 +484,369 @@ export default function SettingsPage() {
                   <option value="subtotal">Subtotal (before tax)</option>
                   <option value="total">Total (after tax)</option>
                 </select>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Loyalty Program Section */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold">Loyalty Program</h2>
+              <p className="text-sm text-gray-500">Reward customers with points</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.loyalty.enabled}
+                onChange={(e) => updateLoyalty({ enabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          {settings.loyalty.enabled && (
+            <div className="space-y-6 border-t pt-4">
+              {/* Points Earning */}
+              <div>
+                <h3 className="font-medium text-gray-900 mb-3">Points Earning</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-gray-700 w-40">Points per $1 spent:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={settings.loyalty.pointsPerDollar}
+                      onChange={(e) => updateLoyalty({ pointsPerDollar: parseFloat(e.target.value) || 0 })}
+                      className="w-20 px-3 py-2 border rounded-lg"
+                    />
+                    <span className="text-sm text-gray-500">points</span>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-gray-700 w-40">Minimum order to earn:</label>
+                    <span className="text-gray-500">$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={settings.loyalty.minimumEarnAmount}
+                      onChange={(e) => updateLoyalty({ minimumEarnAmount: parseFloat(e.target.value) || 0 })}
+                      className="w-20 px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.loyalty.earnOnSubtotal}
+                      onChange={(e) => updateLoyalty({ earnOnSubtotal: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">Earn on subtotal (before tax)</span>
+                  </label>
+
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.loyalty.earnOnTips}
+                      onChange={(e) => updateLoyalty({ earnOnTips: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">Include tips in earning calculation</span>
+                  </label>
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-gray-700 w-40">Welcome bonus:</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={settings.loyalty.welcomeBonus}
+                      onChange={(e) => updateLoyalty({ welcomeBonus: parseInt(e.target.value) || 0 })}
+                      className="w-20 px-3 py-2 border rounded-lg"
+                    />
+                    <span className="text-sm text-gray-500">points for new customers</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Points Redemption */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-medium text-gray-900">Points Redemption</h3>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.loyalty.redemptionEnabled}
+                      onChange={(e) => updateLoyalty({ redemptionEnabled: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">Allow redemption</span>
+                  </label>
+                </div>
+
+                {settings.loyalty.redemptionEnabled && (
+                  <div className="space-y-3 pl-4 border-l-2 border-blue-200">
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-gray-700 w-40">Points per $1 value:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={settings.loyalty.pointsPerDollarRedemption}
+                        onChange={(e) => updateLoyalty({ pointsPerDollarRedemption: parseInt(e.target.value) || 100 })}
+                        className="w-20 px-3 py-2 border rounded-lg"
+                      />
+                      <span className="text-sm text-gray-500">points = $1</span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-gray-700 w-40">Minimum to redeem:</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={settings.loyalty.minimumRedemptionPoints}
+                        onChange={(e) => updateLoyalty({ minimumRedemptionPoints: parseInt(e.target.value) || 0 })}
+                        className="w-20 px-3 py-2 border rounded-lg"
+                      />
+                      <span className="text-sm text-gray-500">points</span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-gray-700 w-40">Max % of order:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        step="1"
+                        value={settings.loyalty.maximumRedemptionPercent}
+                        onChange={(e) => updateLoyalty({ maximumRedemptionPercent: parseInt(e.target.value) || 50 })}
+                        className="w-20 px-3 py-2 border rounded-lg"
+                      />
+                      <span className="text-sm text-gray-500">%</span>
+                    </div>
+
+                    <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                      Example: {settings.loyalty.pointsPerDollarRedemption} points = $1.00 discount
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Display Options */}
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={settings.loyalty.showPointsOnReceipt}
+                  onChange={(e) => updateLoyalty({ showPointsOnReceipt: e.target.checked })}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">Show loyalty points on receipt</span>
+              </label>
+            </div>
+          )}
+        </Card>
+
+        {/* Happy Hour Settings */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Happy Hour / Time-Based Pricing</h2>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.happyHour.enabled}
+                onChange={(e) => updateHappyHour({ enabled: e.target.checked })}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm">Enabled</span>
+            </label>
+          </div>
+
+          {settings.happyHour.enabled && (
+            <div className="space-y-6">
+              {/* Name */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm text-gray-700 w-28">Display Name:</label>
+                <input
+                  type="text"
+                  value={settings.happyHour.name}
+                  onChange={(e) => updateHappyHour({ name: e.target.value })}
+                  className="flex-1 max-w-xs px-3 py-2 border rounded-lg"
+                  placeholder="Happy Hour"
+                />
+              </div>
+
+              {/* Schedules */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-medium text-gray-900">Schedules</h3>
+                  <Button variant="outline" size="sm" onClick={addHappyHourSchedule}>
+                    Add Schedule
+                  </Button>
+                </div>
+                <div className="space-y-4">
+                  {settings.happyHour.schedules.map((schedule, index) => (
+                    <div key={index} className="p-4 border rounded-lg bg-gray-50">
+                      <div className="flex justify-between items-start mb-3">
+                        <span className="text-sm font-medium">Schedule {index + 1}</span>
+                        {settings.happyHour.schedules.length > 1 && (
+                          <button
+                            onClick={() => removeHappyHourSchedule(index)}
+                            className="text-red-500 hover:text-red-700 text-sm"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Days */}
+                      <div className="mb-3">
+                        <label className="text-xs text-gray-500 block mb-1">Days</label>
+                        <div className="flex gap-1">
+                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, dayIndex) => (
+                            <button
+                              key={day}
+                              onClick={() => toggleDayOfWeek(index, dayIndex)}
+                              className={`px-2 py-1 text-xs rounded ${
+                                schedule.dayOfWeek.includes(dayIndex)
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-gray-200 text-gray-600'
+                              }`}
+                            >
+                              {day}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Times */}
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Start</label>
+                          <input
+                            type="time"
+                            value={schedule.startTime}
+                            onChange={(e) => updateHappyHourSchedule(index, { startTime: e.target.value })}
+                            className="px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                        <span className="mt-5">to</span>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">End</label>
+                          <input
+                            type="time"
+                            value={schedule.endTime}
+                            onChange={(e) => updateHappyHourSchedule(index, { endTime: e.target.value })}
+                            className="px-2 py-1 border rounded text-sm"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Discount Settings */}
+              <div>
+                <h3 className="font-medium text-gray-900 mb-3">Discount</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-gray-700 w-28">Discount Type:</label>
+                    <select
+                      value={settings.happyHour.discountType}
+                      onChange={(e) => updateHappyHour({ discountType: e.target.value as 'percent' | 'fixed' })}
+                      className="px-3 py-2 border rounded-lg"
+                    >
+                      <option value="percent">Percentage Off</option>
+                      <option value="fixed">Fixed Amount Off</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-gray-700 w-28">Discount Value:</label>
+                    <div className="relative">
+                      {settings.happyHour.discountType === 'fixed' && (
+                        <span className="absolute left-3 top-2 text-gray-500">$</span>
+                      )}
+                      <input
+                        type="number"
+                        min="0"
+                        step={settings.happyHour.discountType === 'percent' ? '1' : '0.01'}
+                        value={settings.happyHour.discountValue}
+                        onChange={(e) => updateHappyHour({ discountValue: parseFloat(e.target.value) || 0 })}
+                        className={`w-24 px-3 py-2 border rounded-lg ${settings.happyHour.discountType === 'fixed' ? 'pl-7' : ''}`}
+                      />
+                    </div>
+                    {settings.happyHour.discountType === 'percent' && (
+                      <span className="text-sm text-gray-500">% off</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm text-gray-700 w-28">Applies To:</label>
+                    <select
+                      value={settings.happyHour.appliesTo}
+                      onChange={(e) => updateHappyHour({ appliesTo: e.target.value as 'all' | 'categories' | 'items' })}
+                      className="px-3 py-2 border rounded-lg"
+                    >
+                      <option value="all">All Items</option>
+                      <option value="categories">Specific Categories</option>
+                      <option value="items">Specific Items</option>
+                    </select>
+                  </div>
+
+                  {settings.happyHour.appliesTo !== 'all' && (
+                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                      Note: Select specific {settings.happyHour.appliesTo} from the Menu page to include them in happy hour pricing.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Display Options */}
+              <div>
+                <h3 className="font-medium text-gray-900 mb-3">Display</h3>
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.happyHour.showBadge}
+                      onChange={(e) => updateHappyHour({ showBadge: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">Show &ldquo;{settings.happyHour.name}&rdquo; badge on items</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={settings.happyHour.showOriginalPrice}
+                      onChange={(e) => updateHappyHour({ showOriginalPrice: e.target.checked })}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-sm">Show original price (crossed out)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Example */}
+              <div className="p-4 bg-blue-50 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">Example</h4>
+                <div className="text-sm text-blue-700">
+                  A $10.00 item during {settings.happyHour.name} would be:
+                  <span className="font-bold ml-1">
+                    {settings.happyHour.discountType === 'percent'
+                      ? formatCurrency(10 * (1 - settings.happyHour.discountValue / 100))
+                      : formatCurrency(Math.max(0, 10 - settings.happyHour.discountValue))}
+                  </span>
+                  {settings.happyHour.showOriginalPrice && (
+                    <span className="line-through ml-2 text-blue-400">$10.00</span>
+                  )}
+                </div>
               </div>
             </div>
           )}

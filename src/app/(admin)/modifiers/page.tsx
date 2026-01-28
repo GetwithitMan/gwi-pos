@@ -7,6 +7,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 
+// Modifier type definitions
+const MODIFIER_TYPES = [
+  { value: 'universal', label: 'Universal', color: '#6b7280', description: 'Available to all item types' },
+  { value: 'food', label: 'Food', color: '#22c55e', description: 'Food item modifiers (cooking temps, sides, etc.)' },
+  { value: 'liquor', label: 'Liquor', color: '#8b5cf6', description: 'Spirit/drink modifiers (brands, mixers, etc.)' },
+  { value: 'retail', label: 'Retail', color: '#f59e0b', description: 'Retail item modifiers (sizes, colors, etc.)' },
+  { value: 'entertainment', label: 'Entertainment', color: '#f97316', description: 'Entertainment modifiers (add-ons, upgrades)' },
+  { value: 'combo', label: 'Combo', color: '#ec4899', description: 'Combo/bundle modifiers' },
+]
+
 interface Modifier {
   id: string
   name: string
@@ -27,6 +37,7 @@ interface ModifierGroup {
   id: string
   name: string
   displayName?: string
+  modifierTypes: string[]
   minSelections: number
   maxSelections: number
   isRequired: boolean
@@ -42,10 +53,11 @@ export default function ModifiersPage() {
   const [selectedGroup, setSelectedGroup] = useState<ModifierGroup | null>(null)
   const [showGroupModal, setShowGroupModal] = useState(false)
   const [editingGroup, setEditingGroup] = useState<ModifierGroup | null>(null)
+  const [typeFilter, setTypeFilter] = useState<string>('all')
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/modifiers')
       return
     }
     loadModifiers()
@@ -71,6 +83,7 @@ export default function ModifiersPage() {
   const handleSaveGroup = async (groupData: {
     name: string
     displayName?: string
+    modifierTypes: string[]
     minSelections: number
     maxSelections: number
     isRequired: boolean
@@ -151,33 +164,70 @@ export default function ModifiersPage() {
       <div className="flex">
         {/* Sidebar - Modifier Groups List */}
         <div className="w-80 bg-white border-r min-h-[calc(100vh-73px)] p-4">
+          {/* Type Filter */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Type</label>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All Types</option>
+              {MODIFIER_TYPES.map(type => (
+                <option key={type.value} value={type.value}>{type.label}</option>
+              ))}
+            </select>
+          </div>
+
           <div className="space-y-2">
             {modifierGroups.length === 0 ? (
               <p className="text-gray-500 text-center py-8">No modifier groups yet</p>
             ) : (
-              modifierGroups.map(group => (
-                <div
-                  key={group.id}
-                  className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                    selectedGroup?.id === group.id
-                      ? 'bg-blue-50 border-2 border-blue-500'
-                      : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
-                  }`}
-                  onClick={() => setSelectedGroup(group)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium">{group.name}</h3>
-                      <p className="text-sm text-gray-500">
-                        {group.modifiers.length} options
-                        {group.isRequired && (
-                          <span className="ml-2 text-red-500">Required</span>
-                        )}
-                      </p>
+              modifierGroups
+                .filter(group => typeFilter === 'all' || (group.modifierTypes || ['universal']).includes(typeFilter))
+                .map(group => {
+                  const groupTypes = group.modifierTypes || ['universal']
+                  return (
+                    <div
+                      key={group.id}
+                      className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                        selectedGroup?.id === group.id
+                          ? 'bg-blue-50 border-2 border-blue-500'
+                          : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
+                      }`}
+                      onClick={() => setSelectedGroup(group)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <h3 className="font-medium truncate mr-1">{group.name}</h3>
+                            {groupTypes.slice(0, 2).map(type => {
+                              const typeInfo = MODIFIER_TYPES.find(t => t.value === type) || MODIFIER_TYPES[0]
+                              return (
+                                <span
+                                  key={type}
+                                  className="px-1.5 py-0.5 text-[10px] font-medium rounded text-white flex-shrink-0"
+                                  style={{ backgroundColor: typeInfo.color }}
+                                >
+                                  {typeInfo.label}
+                                </span>
+                              )
+                            })}
+                            {groupTypes.length > 2 && (
+                              <span className="text-[10px] text-gray-500">+{groupTypes.length - 2}</span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500">
+                            {group.modifiers.length} options
+                            {group.isRequired && (
+                              <span className="ml-2 text-red-500">Required</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))
+                  )
+                })
             )}
           </div>
         </div>
@@ -188,7 +238,23 @@ export default function ModifiersPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle>{selectedGroup.name}</CardTitle>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <CardTitle>{selectedGroup.name}</CardTitle>
+                    <div className="flex gap-1">
+                      {(selectedGroup.modifierTypes || ['universal']).map(type => {
+                        const typeInfo = MODIFIER_TYPES.find(t => t.value === type) || MODIFIER_TYPES[0]
+                        return (
+                          <span
+                            key={type}
+                            className="px-2 py-1 text-xs font-medium rounded-full text-white"
+                            style={{ backgroundColor: typeInfo.color }}
+                          >
+                            {typeInfo.label}
+                          </span>
+                        )
+                      })}
+                    </div>
+                  </div>
                   {selectedGroup.displayName && (
                     <p className="text-sm text-gray-500">Display: {selectedGroup.displayName}</p>
                   )}
@@ -349,6 +415,7 @@ function ModifierGroupModal({
   onSave: (data: {
     name: string
     displayName?: string
+    modifierTypes: string[]
     minSelections: number
     maxSelections: number
     isRequired: boolean
@@ -358,6 +425,7 @@ function ModifierGroupModal({
 }) {
   const [name, setName] = useState(group?.name || '')
   const [displayName, setDisplayName] = useState(group?.displayName || '')
+  const [modifierTypes, setModifierTypes] = useState<string[]>(group?.modifierTypes || ['universal'])
   const [minSelections, setMinSelections] = useState(group?.minSelections || 0)
   const [maxSelections, setMaxSelections] = useState(group?.maxSelections || 1)
   const [isRequired, setIsRequired] = useState(group?.isRequired || false)
@@ -424,14 +492,29 @@ function ModifierGroupModal({
 
   const handleSubmit = () => {
     if (!name.trim()) return
+    if (modifierTypes.length === 0) {
+      setModifierTypes(['universal'])
+    }
     onSave({
       name: name.trim(),
       displayName: displayName.trim() || undefined,
+      modifierTypes: modifierTypes.length > 0 ? modifierTypes : ['universal'],
       minSelections,
       maxSelections,
       isRequired,
       modifiers: modifiers.filter(m => m.name.trim()),
     })
+  }
+
+  const toggleModifierType = (typeValue: string) => {
+    if (modifierTypes.includes(typeValue)) {
+      // Don't allow removing the last type
+      if (modifierTypes.length > 1) {
+        setModifierTypes(modifierTypes.filter(t => t !== typeValue))
+      }
+    } else {
+      setModifierTypes([...modifierTypes, typeValue])
+    }
   }
 
   return (
@@ -463,6 +546,50 @@ function ModifierGroupModal({
                 className="w-full border rounded-lg px-3 py-2"
                 placeholder="e.g., How would you like it cooked?"
               />
+            </div>
+          </div>
+
+          {/* Modifier Types Selection (Multiple) */}
+          <div>
+            <label className="block text-sm font-medium mb-2">Modifier Types (select all that apply)</label>
+            <div className="grid grid-cols-3 gap-2">
+              {MODIFIER_TYPES.map(type => {
+                const isSelected = modifierTypes.includes(type.value)
+                return (
+                  <label
+                    key={type.value}
+                    className={`flex items-center gap-2 p-3 border rounded-lg cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'border-2 bg-opacity-10'
+                        : 'hover:bg-gray-50 border'
+                    }`}
+                    style={isSelected ? { borderColor: type.color, backgroundColor: `${type.color}15` } : {}}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleModifierType(type.value)}
+                      className="sr-only"
+                    />
+                    <span
+                      className={`w-4 h-4 rounded flex-shrink-0 flex items-center justify-center ${
+                        isSelected ? 'text-white' : 'border-2 border-gray-300'
+                      }`}
+                      style={isSelected ? { backgroundColor: type.color } : {}}
+                    >
+                      {isSelected && (
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-medium text-sm">{type.label}</div>
+                      <div className="text-xs text-gray-500 truncate">{type.description}</div>
+                    </div>
+                  </label>
+                )
+              })}
             </div>
           </div>
 

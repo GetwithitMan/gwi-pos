@@ -1,57 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { createOrderSchema, validateRequest } from '@/lib/validations'
 
 // POST - Create a new order
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const {
-      employeeId,
-      locationId,
-      orderType,
-      tableId,
-      tabName,
-      guestCount,
-      items,
-      notes,
-    } = body as {
-      employeeId: string
-      locationId: string
-      orderType: 'dine_in' | 'takeout' | 'delivery' | 'bar_tab'
-      tableId?: string
-      tabName?: string
-      guestCount?: number
-      items: {
-        menuItemId: string
-        name: string
-        price: number
-        quantity: number
-        modifiers: {
-          modifierId: string
-          name: string
-          price: number
-          preModifier?: string
-        }[]
-        specialNotes?: string
-        seatNumber?: number
-        courseNumber?: number
-      }[]
-      notes?: string
-    }
 
-    if (!employeeId || !locationId) {
+    // Validate request body
+    const validation = validateRequest(createOrderSchema, body)
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'Employee ID and Location ID are required' },
+        { error: validation.error },
         { status: 400 }
       )
     }
 
-    if (!items || items.length === 0) {
-      return NextResponse.json(
-        { error: 'Order must have at least one item' },
-        { status: 400 }
-      )
-    }
+    const { employeeId, locationId, orderType, tableId, tabName, guestCount, items, notes } = validation.data
 
     // Get next order number for today
     const today = new Date()
@@ -76,6 +41,12 @@ export async function POST(request: NextRequest) {
     let subtotal = 0
     let commissionTotal = 0
 
+    // Helper to check if a string is a valid CUID (for real modifier IDs)
+    const isValidModifierId = (id: string) => {
+      // CUIDs are typically 25 chars starting with 'c', combo IDs start with 'combo-'
+      return id && !id.startsWith('combo-') && id.length >= 20
+    }
+
     const orderItems = items.map(item => {
       const itemTotal = item.price * item.quantity
       const modifiersTotal = item.modifiers.reduce((sum, mod) => sum + mod.price, 0) * item.quantity
@@ -92,11 +63,15 @@ export async function POST(request: NextRequest) {
         courseNumber: item.courseNumber || null,
         modifiers: {
           create: item.modifiers.map(mod => ({
-            modifierId: mod.modifierId,
+            // Set modifierId to null for combo selections (they have synthetic IDs)
+            modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
             name: mod.name,
             price: mod.price,
             quantity: 1,
             preModifier: mod.preModifier || null,
+            // Spirit selection fields (Liquor Builder)
+            spiritTier: mod.spiritTier || null,
+            linkedBottleProductId: mod.linkedBottleProductId || null,
           })),
         },
       }
@@ -191,14 +166,15 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// GET - List orders (for order history, kitchen display, etc.)
+// GET - List orders with pagination (for order history, kitchen display, etc.)
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const status = searchParams.get('status')
     const employeeId = searchParams.get('employeeId')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'))
 
     if (!locationId) {
       return NextResponse.json(
@@ -230,6 +206,7 @@ export async function GET(request: NextRequest) {
         payments: true,
       },
       orderBy: { createdAt: 'desc' },
+      skip: offset,
       take: limit,
     })
 

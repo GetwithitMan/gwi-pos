@@ -8,13 +8,14 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, color } = body
+    const { name, color, categoryType } = body
 
     const category = await db.category.update({
       where: { id },
       data: {
         ...(name && { name }),
         ...(color && { color }),
+        ...(categoryType && { categoryType }),
       }
     })
 
@@ -22,6 +23,7 @@ export async function PUT(
       id: category.id,
       name: category.name,
       color: category.color,
+      categoryType: category.categoryType,
       isActive: category.isActive
     })
   } catch (error) {

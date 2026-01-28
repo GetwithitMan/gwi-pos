@@ -10,11 +10,27 @@ export async function GET() {
       include: {
         modifiers: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            linkedBottleProduct: {
+              select: {
+                id: true,
+                name: true,
+                pourCost: true,
+              },
+            },
+          },
         },
         menuItems: {
           include: {
             menuItem: {
               select: { id: true, name: true }
+            }
+          }
+        },
+        spiritConfig: {
+          include: {
+            spiritCategory: {
+              select: { id: true, name: true, displayName: true }
             }
           }
         }
@@ -26,10 +42,19 @@ export async function GET() {
         id: group.id,
         name: group.name,
         displayName: group.displayName,
+        modifierTypes: (group.modifierTypes as string[]) || ['universal'],
         minSelections: group.minSelections,
         maxSelections: group.maxSelections,
         isRequired: group.isRequired,
         sortOrder: group.sortOrder,
+        isSpiritGroup: group.isSpiritGroup,
+        spiritConfig: group.spiritConfig ? {
+          spiritCategoryId: group.spiritConfig.spiritCategoryId,
+          spiritCategoryName: group.spiritConfig.spiritCategory.displayName || group.spiritConfig.spiritCategory.name,
+          upsellEnabled: group.spiritConfig.upsellEnabled,
+          upsellPromptText: group.spiritConfig.upsellPromptText,
+          defaultTier: group.spiritConfig.defaultTier,
+        } : null,
         modifiers: group.modifiers.map(mod => ({
           id: mod.id,
           name: mod.name,
@@ -45,6 +70,14 @@ export async function GET() {
           childModifierGroupId: mod.childModifierGroupId,
           commissionType: mod.commissionType,
           commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
+          // Spirit fields
+          spiritTier: mod.spiritTier,
+          linkedBottleProductId: mod.linkedBottleProductId,
+          linkedBottleProduct: mod.linkedBottleProduct ? {
+            id: mod.linkedBottleProduct.id,
+            name: mod.linkedBottleProduct.name,
+            pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
+          } : null,
         })),
         linkedItems: group.menuItems.map(link => ({
           id: link.menuItem.id,
@@ -65,7 +98,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, displayName, minSelections, maxSelections, isRequired, modifiers } = body
+    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, modifiers } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -94,6 +127,7 @@ export async function POST(request: NextRequest) {
         locationId: location.id,
         name: name.trim(),
         displayName: displayName?.trim() || null,
+        modifierTypes: modifierTypes || ['universal'],
         minSelections: minSelections || 0,
         maxSelections: maxSelections || 1,
         isRequired: isRequired || false,
@@ -122,6 +156,7 @@ export async function POST(request: NextRequest) {
       id: modifierGroup.id,
       name: modifierGroup.name,
       displayName: modifierGroup.displayName,
+      modifierTypes: (modifierGroup.modifierTypes as string[]) || ['universal'],
       minSelections: modifierGroup.minSelections,
       maxSelections: modifierGroup.maxSelections,
       isRequired: modifierGroup.isRequired,

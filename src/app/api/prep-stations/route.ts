@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     const existing = await db.prepStation.findFirst({
       where: {
         locationId,
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
       },
     })
 

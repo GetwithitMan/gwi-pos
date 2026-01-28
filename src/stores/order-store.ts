@@ -20,6 +20,10 @@ interface OrderItem {
   specialNotes?: string
   seatNumber?: number
   courseNumber?: number
+  courseStatus?: 'pending' | 'fired' | 'ready' | 'served'
+  isHeld?: boolean
+  holdUntil?: string
+  firedAt?: string
   commissionAmount?: number  // Commission earned on this item
   sentToKitchen?: boolean  // Track if this item has been sent to kitchen
   isCompleted?: boolean  // KDS completion status (kitchen marked done)
@@ -39,6 +43,7 @@ interface Order {
   subtotal: number
   discountTotal: number
   taxTotal: number
+  tipTotal?: number  // Gratuity amount
   total: number
   notes?: string
   primaryPaymentMethod?: 'cash' | 'card'
@@ -52,6 +57,7 @@ interface LoadedOrderData {
   tableId?: string
   tabName?: string
   guestCount: number
+  status?: string
   items: {
     id: string
     menuItemId: string
@@ -60,6 +66,12 @@ interface LoadedOrderData {
     quantity: number
     itemTotal: number
     specialNotes?: string | null
+    seatNumber?: number | null
+    courseNumber?: number | null
+    courseStatus?: string | null
+    isHeld?: boolean
+    holdUntil?: string | null
+    firedAt?: string | null
     isCompleted?: boolean
     completedAt?: string | null
     resendCount?: number
@@ -72,7 +84,9 @@ interface LoadedOrderData {
     }[]
   }[]
   subtotal: number
+  discountTotal?: number
   taxTotal: number
+  tipTotal?: number
   total: number
   notes?: string
 }
@@ -134,6 +148,12 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       price: item.price,
       quantity: item.quantity,
       specialNotes: item.specialNotes || undefined,
+      seatNumber: item.seatNumber || undefined,
+      courseNumber: item.courseNumber || undefined,
+      courseStatus: (item.courseStatus as OrderItem['courseStatus']) || undefined,
+      isHeld: item.isHeld || false,
+      holdUntil: item.holdUntil || undefined,
+      firedAt: item.firedAt || undefined,
       sentToKitchen: true, // Items from database have already been sent
       isCompleted: item.isCompleted || false,
       completedAt: item.completedAt || undefined,
@@ -159,6 +179,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         subtotal: orderData.subtotal,
         discountTotal: 0,
         taxTotal: orderData.taxTotal,
+        tipTotal: orderData.tipTotal || 0,
         total: orderData.total,
         notes: orderData.notes,
         commissionTotal: 0,

@@ -78,7 +78,7 @@ export default function RolesPage() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/roles')
     }
   }, [isAuthenticated, router])
 

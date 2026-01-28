@@ -17,6 +17,22 @@ export async function GET(
             modifiers: {
               where: { isActive: true },
               orderBy: { sortOrder: 'asc' },
+              include: {
+                linkedBottleProduct: {
+                  select: {
+                    id: true,
+                    name: true,
+                    pourCost: true,
+                  },
+                },
+              },
+            },
+            spiritConfig: {
+              include: {
+                spiritCategory: {
+                  select: { id: true, name: true, displayName: true }
+                }
+              }
             }
           }
         }
@@ -32,6 +48,14 @@ export async function GET(
         minSelections: link.modifierGroup.minSelections,
         maxSelections: link.modifierGroup.maxSelections,
         isRequired: link.modifierGroup.isRequired,
+        isSpiritGroup: link.modifierGroup.isSpiritGroup,
+        spiritConfig: link.modifierGroup.spiritConfig ? {
+          spiritCategoryId: link.modifierGroup.spiritConfig.spiritCategoryId,
+          spiritCategoryName: link.modifierGroup.spiritConfig.spiritCategory.displayName || link.modifierGroup.spiritConfig.spiritCategory.name,
+          upsellEnabled: link.modifierGroup.spiritConfig.upsellEnabled,
+          upsellPromptText: link.modifierGroup.spiritConfig.upsellPromptText,
+          defaultTier: link.modifierGroup.spiritConfig.defaultTier,
+        } : null,
         modifiers: link.modifierGroup.modifiers.map(mod => ({
           id: mod.id,
           name: mod.name,
@@ -43,6 +67,14 @@ export async function GET(
           extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
           isDefault: mod.isDefault,
           childModifierGroupId: mod.childModifierGroupId,
+          // Spirit fields
+          spiritTier: mod.spiritTier,
+          linkedBottleProductId: mod.linkedBottleProductId,
+          linkedBottleProduct: mod.linkedBottleProduct ? {
+            id: mod.linkedBottleProduct.id,
+            name: mod.linkedBottleProduct.name,
+            pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
+          } : null,
         }))
       }))
     })

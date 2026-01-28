@@ -17,7 +17,7 @@ function getPermissionsArray(permissions: unknown): string[] {
   return []
 }
 
-// GET - Get role details
+// GET - Get a single role by ID
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -28,14 +28,8 @@ export async function GET(
     const role = await db.role.findUnique({
       where: { id },
       include: {
-        employees: {
-          where: { isActive: true },
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
+        _count: {
+          select: { employees: true },
         },
       },
     })
@@ -48,14 +42,14 @@ export async function GET(
     }
 
     return NextResponse.json({
-      id: role.id,
-      name: role.name,
-      permissions: getPermissionsArray(role.permissions),
-      employees: role.employees.map(emp => ({
-        id: emp.id,
-        name: emp.displayName || `${emp.firstName} ${emp.lastName}`,
-      })),
-      createdAt: role.createdAt.toISOString(),
+      role: {
+        id: role.id,
+        name: role.name,
+        permissions: getPermissionsArray(role.permissions),
+        employeeCount: role._count.employees,
+        createdAt: role.createdAt.toISOString(),
+        updatedAt: role.updatedAt.toISOString(),
+      },
     })
   } catch (error) {
     console.error('Failed to fetch role:', error)
@@ -66,7 +60,7 @@ export async function GET(
   }
 }
 
-// PUT - Update role
+// PUT - Update a role
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -79,6 +73,7 @@ export async function PUT(
       permissions?: string[]
     }
 
+    // Check role exists
     const existing = await db.role.findUnique({
       where: { id },
     })
@@ -95,8 +90,8 @@ export async function PUT(
       const duplicate = await db.role.findFirst({
         where: {
           locationId: existing.locationId,
-          name: { equals: name, mode: 'insensitive' },
-          id: { not: id },
+          name: { equals: name },
+          NOT: { id },
         },
       })
 
@@ -108,26 +103,21 @@ export async function PUT(
       }
     }
 
-    const updateData: Record<string, unknown> = {}
-    if (name !== undefined) updateData.name = name
-    if (permissions !== undefined) updateData.permissions = permissions
-
     const role = await db.role.update({
       where: { id },
-      data: updateData,
-      include: {
-        _count: {
-          select: { employees: true },
-        },
+      data: {
+        ...(name !== undefined && { name }),
+        ...(permissions !== undefined && { permissions }),
       },
     })
 
     return NextResponse.json({
-      id: role.id,
-      name: role.name,
-      permissions: getPermissionsArray(role.permissions),
-      employeeCount: role._count.employees,
-      updatedAt: role.updatedAt.toISOString(),
+      role: {
+        id: role.id,
+        name: role.name,
+        permissions: getPermissionsArray(role.permissions),
+        updatedAt: role.updatedAt.toISOString(),
+      },
     })
   } catch (error) {
     console.error('Failed to update role:', error)
@@ -138,7 +128,7 @@ export async function PUT(
   }
 }
 
-// DELETE - Delete role
+// DELETE - Delete a role
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -146,6 +136,7 @@ export async function DELETE(
   try {
     const { id } = await params
 
+    // Check role exists and get employee count
     const role = await db.role.findUnique({
       where: { id },
       include: {
@@ -162,15 +153,17 @@ export async function DELETE(
       )
     }
 
-    // Don't allow deleting role with active employees
+    // Prevent deletion if employees are assigned
     if (role._count.employees > 0) {
       return NextResponse.json(
         { error: `Cannot delete role with ${role._count.employees} assigned employee(s). Reassign them first.` },
-        { status: 400 }
+        { status: 409 }
       )
     }
 
-    await db.role.delete({ where: { id } })
+    await db.role.delete({
+      where: { id },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

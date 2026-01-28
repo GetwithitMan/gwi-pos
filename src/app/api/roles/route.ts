@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
     const existing = await db.role.findFirst({
       where: {
         locationId,
-        name: { equals: name, mode: 'insensitive' },
+        name: { equals: name },
       },
     })
 

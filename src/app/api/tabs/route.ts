@@ -3,19 +3,23 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { generateFakeAuthCode, generateFakeTransactionId, calculatePreAuthExpiration } from '@/lib/payment'
 
-// GET - List all open tabs
+// GET - List open tabs with pagination
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const employeeId = searchParams.get('employeeId')
     const status = searchParams.get('status') || 'open'
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
+    const offset = Math.max(0, parseInt(searchParams.get('offset') || '0'))
+
+    const where = {
+      orderType: 'bar_tab' as const,
+      status: status === 'all' ? undefined : status,
+      ...(employeeId ? { employeeId } : {}),
+    }
 
     const tabs = await db.order.findMany({
-      where: {
-        orderType: 'bar_tab',
-        status: status === 'all' ? undefined : status,
-        ...(employeeId ? { employeeId } : {}),
-      },
+      where,
       include: {
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
@@ -28,6 +32,8 @@ export async function GET(request: NextRequest) {
         payments: true,
       },
       orderBy: { openedAt: 'desc' },
+      skip: offset,
+      take: limit,
     })
 
     return NextResponse.json({

@@ -4,7 +4,7 @@ import { compare } from 'bcryptjs'
 
 export async function POST(request: NextRequest) {
   try {
-    const { pin } = await request.json()
+    const { pin, locationId } = await request.json()
 
     if (!pin || pin.length < 4) {
       return NextResponse.json(
@@ -13,9 +13,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get all active employees and check PIN
+    // Build query filter - scope by location if provided for better performance
+    // Note: PINs are hashed so we must compare each one (can't query directly)
+    const whereClause: { isActive: boolean; locationId?: string } = { isActive: true }
+    if (locationId) {
+      whereClause.locationId = locationId
+    }
+
+    // Get active employees (scoped by location if provided)
     const employees = await db.employee.findMany({
-      where: { isActive: true },
+      where: whereClause,
       include: {
         role: true,
         location: true,

@@ -77,7 +77,7 @@ export default function TablesPage() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/tables')
     }
   }, [isAuthenticated, router])
 

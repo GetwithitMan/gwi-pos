@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPin } from '@/lib/auth'
+import { createEmployeeSchema, validateRequest } from '@/lib/validations'
 
-// GET - List all employees for a location
+// GET - List employees for a location with pagination
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const includeInactive = searchParams.get('includeInactive') === 'true'
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1'))
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '50')))
+    const skip = (page - 1) * limit
 
     if (!locationId) {
       return NextResponse.json(
@@ -16,11 +20,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    const where = {
+      locationId,
+      ...(includeInactive ? {} : { isActive: true }),
+    }
+
+    // Get total count for pagination
+    const total = await db.employee.count({ where })
+
     const employees = await db.employee.findMany({
-      where: {
-        locationId,
-        ...(includeInactive ? {} : { isActive: true }),
-      },
+      where,
       include: {
         role: {
           select: {
@@ -34,6 +43,8 @@ export async function GET(request: NextRequest) {
         { isActive: 'desc' },
         { firstName: 'asc' },
       ],
+      skip,
+      take: limit,
     })
 
     return NextResponse.json({
@@ -56,6 +67,12 @@ export async function GET(request: NextRequest) {
         avatarUrl: emp.avatarUrl,
         createdAt: emp.createdAt.toISOString(),
       })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     })
   } catch (error) {
     console.error('Failed to fetch employees:', error)
@@ -70,47 +87,17 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const {
-      locationId,
-      firstName,
-      lastName,
-      displayName,
-      email,
-      phone,
-      pin,
-      roleId,
-      hourlyRate,
-      hireDate,
-      color,
-    } = body as {
-      locationId: string
-      firstName: string
-      lastName: string
-      displayName?: string
-      email?: string
-      phone?: string
-      pin: string
-      roleId: string
-      hourlyRate?: number
-      hireDate?: string
-      color?: string
-    }
 
-    // Validate required fields
-    if (!locationId || !firstName || !lastName || !pin || !roleId) {
+    // Validate request body
+    const validation = validateRequest(createEmployeeSchema, body)
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'Location ID, first name, last name, PIN, and role are required' },
+        { error: validation.error },
         { status: 400 }
       )
     }
 
-    // Validate PIN format (4-6 digits)
-    if (!/^\d{4,6}$/.test(pin)) {
-      return NextResponse.json(
-        { error: 'PIN must be 4-6 digits' },
-        { status: 400 }
-      )
-    }
+    const { locationId, firstName, lastName, displayName, email, phone, pin, roleId, hourlyRate, hireDate, color } = validation.data
 
     // Check if role exists and belongs to location
     const role = await db.role.findFirst({

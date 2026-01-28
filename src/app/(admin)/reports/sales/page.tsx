@@ -47,7 +47,7 @@ export default function SalesReportPage() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/reports/sales')
       return
     }
     if (employee?.location?.id) {

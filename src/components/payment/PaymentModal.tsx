@@ -23,15 +23,33 @@ interface PaymentModalProps {
 }
 
 interface PendingPayment {
-  method: 'cash' | 'credit' | 'debit'
+  method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account'
   amount: number
   tipAmount: number
   amountTendered?: number
   cardBrand?: string
   cardLast4?: string
+  giftCardId?: string
+  giftCardNumber?: string
+  houseAccountId?: string
 }
 
-type PaymentStep = 'method' | 'cash' | 'card' | 'tip' | 'confirm'
+interface GiftCardInfo {
+  id: string
+  cardNumber: string
+  currentBalance: number
+  status: string
+}
+
+interface HouseAccountInfo {
+  id: string
+  name: string
+  currentBalance: number
+  creditLimit: number
+  status: string
+}
+
+type PaymentStep = 'method' | 'cash' | 'card' | 'tip' | 'confirm' | 'gift_card' | 'house_account'
 
 // Default tip settings
 const DEFAULT_TIP_SETTINGS: TipSettings = {
@@ -59,7 +77,7 @@ export function PaymentModal({
   // Use subtotal from props or default to orderTotal
   const effectiveSubtotal = subtotal ?? orderTotal
   const [step, setStep] = useState<PaymentStep>('method')
-  const [selectedMethod, setSelectedMethod] = useState<'cash' | 'credit' | 'debit' | null>(null)
+  const [selectedMethod, setSelectedMethod] = useState<'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | null>(null)
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([])
   const [tipAmount, setTipAmount] = useState(0)
   const [customTip, setCustomTip] = useState('')
@@ -74,15 +92,28 @@ export function PaymentModal({
   const [cardLast4, setCardLast4] = useState('')
   const [cardBrand, setCardBrand] = useState('visa')
 
+  // Gift card state
+  const [giftCardNumber, setGiftCardNumber] = useState('')
+  const [giftCardInfo, setGiftCardInfo] = useState<GiftCardInfo | null>(null)
+  const [giftCardLoading, setGiftCardLoading] = useState(false)
+  const [giftCardError, setGiftCardError] = useState<string | null>(null)
+
+  // House account state
+  const [houseAccounts, setHouseAccounts] = useState<HouseAccountInfo[]>([])
+  const [selectedHouseAccount, setSelectedHouseAccount] = useState<HouseAccountInfo | null>(null)
+  const [houseAccountSearch, setHouseAccountSearch] = useState('')
+  const [houseAccountsLoading, setHouseAccountsLoading] = useState(false)
+
   // Calculate amounts
   const alreadyPaid = existingPayments.reduce((sum, p) => sum + p.totalAmount, 0)
   const pendingTotal = pendingPayments.reduce((sum, p) => sum + p.amount + p.tipAmount, 0)
   const remainingBeforeTip = orderTotal - alreadyPaid - pendingTotal
 
-  // Apply dual pricing
-  const cashTotal = remainingBeforeTip
+  // Apply dual pricing - card price is displayed, cash gets discount
+  const discountPercent = dualPricing.cashDiscountPercent || 4.0
+  const cashTotal = remainingBeforeTip  // Original/stored price
   const cardTotal = dualPricing.enabled
-    ? calculateCardPrice(remainingBeforeTip, dualPricing.cardSurchargePercent)
+    ? calculateCardPrice(remainingBeforeTip, discountPercent)
     : remainingBeforeTip
 
   const currentTotal = selectedMethod === 'cash' ? cashTotal : cardTotal
@@ -91,18 +122,107 @@ export function PaymentModal({
   // Quick cash amounts
   const quickAmounts = getQuickCashAmounts(totalWithTip)
 
-  const handleSelectMethod = (method: 'cash' | 'credit' | 'debit') => {
+  const handleSelectMethod = (method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account') => {
     setSelectedMethod(method)
     setTipAmount(0)
     setCustomTip('')
+    setError(null)
 
-    if (tipSettings.enabled) {
+    if (method === 'gift_card') {
+      setGiftCardNumber('')
+      setGiftCardInfo(null)
+      setGiftCardError(null)
+      setStep('gift_card')
+    } else if (method === 'house_account') {
+      setSelectedHouseAccount(null)
+      setHouseAccountSearch('')
+      loadHouseAccounts()
+      setStep('house_account')
+    } else if (tipSettings.enabled) {
       setStep('tip')
     } else if (method === 'cash') {
       setStep('cash')
     } else {
       setStep('card')
     }
+  }
+
+  const loadHouseAccounts = async () => {
+    setHouseAccountsLoading(true)
+    try {
+      const response = await fetch(`/api/house-accounts?locationId=${orderId?.split('-')[0] || ''}&status=active`)
+      if (response.ok) {
+        const data = await response.json()
+        setHouseAccounts(data)
+      }
+    } catch {
+      console.error('Failed to load house accounts')
+    } finally {
+      setHouseAccountsLoading(false)
+    }
+  }
+
+  const lookupGiftCard = async () => {
+    if (!giftCardNumber.trim()) {
+      setGiftCardError('Please enter a gift card number')
+      return
+    }
+
+    setGiftCardLoading(true)
+    setGiftCardError(null)
+
+    try {
+      const response = await fetch(`/api/gift-cards/${giftCardNumber.trim().toUpperCase()}`)
+      if (!response.ok) {
+        const data = await response.json()
+        setGiftCardError(data.error || 'Gift card not found')
+        setGiftCardInfo(null)
+        return
+      }
+
+      const data = await response.json()
+      if (data.status !== 'active') {
+        setGiftCardError(`Gift card is ${data.status}`)
+        setGiftCardInfo(null)
+        return
+      }
+
+      setGiftCardInfo(data)
+    } catch {
+      setGiftCardError('Failed to lookup gift card')
+      setGiftCardInfo(null)
+    } finally {
+      setGiftCardLoading(false)
+    }
+  }
+
+  const handleGiftCardPayment = () => {
+    if (!giftCardInfo) return
+
+    const maxAmount = Math.min(giftCardInfo.currentBalance, totalWithTip)
+
+    const payment: PendingPayment = {
+      method: 'gift_card',
+      amount: maxAmount,
+      tipAmount: 0, // Tips handled separately
+      giftCardId: giftCardInfo.id,
+      giftCardNumber: giftCardInfo.cardNumber,
+    }
+    setPendingPayments([...pendingPayments, payment])
+    processPayments([...pendingPayments, payment])
+  }
+
+  const handleHouseAccountPayment = () => {
+    if (!selectedHouseAccount) return
+
+    const payment: PendingPayment = {
+      method: 'house_account',
+      amount: currentTotal,
+      tipAmount,
+      houseAccountId: selectedHouseAccount.id,
+    }
+    setPendingPayments([...pendingPayments, payment])
+    processPayments([...pendingPayments, payment])
   }
 
   const handleSelectTip = (percent: number | null) => {
@@ -172,6 +292,9 @@ export function PaymentModal({
             amountTendered: p.amountTendered,
             cardBrand: p.cardBrand,
             cardLast4: p.cardLast4,
+            giftCardId: p.giftCardId,
+            giftCardNumber: p.giftCardNumber,
+            houseAccountId: p.houseAccountId,
           })),
         }),
       })
@@ -252,7 +375,7 @@ export function PaymentModal({
             <div className="space-y-3">
               <h3 className="font-medium mb-2">Select Payment Method</h3>
 
-              {dualPricing.enabled && dualPricing.showBothPrices && (
+              {dualPricing.enabled && (
                 <div className="text-sm text-gray-600 mb-3 p-2 bg-green-50 rounded">
                   <span className="text-green-700 font-medium">Cash: {formatCurrency(cashTotal)}</span>
                   <span className="mx-2">|</span>
@@ -290,9 +413,6 @@ export function PaymentModal({
                     <div>Credit Card</div>
                     <div className="text-sm text-gray-500 font-normal">
                       {formatCurrency(cardTotal)}
-                      {dualPricing.enabled && (
-                        <span className="ml-2">(+{dualPricing.cardSurchargePercent}%)</span>
-                      )}
                     </div>
                   </div>
                 </Button>
@@ -309,6 +429,38 @@ export function PaymentModal({
                     <div>Debit Card</div>
                     <div className="text-sm text-gray-500 font-normal">
                       {formatCurrency(cardTotal)}
+                    </div>
+                  </div>
+                </Button>
+              )}
+
+              {paymentSettings.acceptGiftCards && (
+                <Button
+                  variant="outline"
+                  className="w-full h-16 text-lg justify-start gap-4"
+                  onClick={() => handleSelectMethod('gift_card')}
+                >
+                  <span className="text-2xl">🎁</span>
+                  <div className="text-left">
+                    <div>Gift Card</div>
+                    <div className="text-sm text-gray-500 font-normal">
+                      Enter gift card number
+                    </div>
+                  </div>
+                </Button>
+              )}
+
+              {paymentSettings.acceptHouseAccounts && (
+                <Button
+                  variant="outline"
+                  className="w-full h-16 text-lg justify-start gap-4"
+                  onClick={() => handleSelectMethod('house_account')}
+                >
+                  <span className="text-2xl">🏢</span>
+                  <div className="text-left">
+                    <div>House Account</div>
+                    <div className="text-sm text-gray-500 font-normal">
+                      Charge to account
                     </div>
                   </div>
                 </Button>
@@ -513,6 +665,194 @@ export function PaymentModal({
                   disabled={isProcessing || cardLast4.length !== 4}
                 >
                   {isProcessing ? 'Processing...' : 'Process Payment'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: Gift Card Payment */}
+          {step === 'gift_card' && (
+            <div className="space-y-3">
+              <h3 className="font-medium mb-2">Gift Card Payment</h3>
+
+              <div className="p-3 bg-purple-50 rounded-lg mb-3">
+                <div className="flex justify-between font-bold text-lg">
+                  <span>Amount Due</span>
+                  <span>{formatCurrency(totalWithTip)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-600 block mb-1">Gift Card Number</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={giftCardNumber}
+                    onChange={(e) => setGiftCardNumber(e.target.value.toUpperCase())}
+                    className="flex-1 px-3 py-2 border rounded-lg uppercase"
+                    placeholder="GC-XXXX-XXXX-XXXX"
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={lookupGiftCard}
+                    disabled={giftCardLoading || !giftCardNumber.trim()}
+                  >
+                    {giftCardLoading ? 'Looking...' : 'Lookup'}
+                  </Button>
+                </div>
+              </div>
+
+              {giftCardError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {giftCardError}
+                </div>
+              )}
+
+              {giftCardInfo && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="text-sm text-gray-600 mb-1">Card: {giftCardInfo.cardNumber}</div>
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Available Balance:</span>
+                    <span className="text-xl font-bold text-green-600">
+                      {formatCurrency(giftCardInfo.currentBalance)}
+                    </span>
+                  </div>
+                  {giftCardInfo.currentBalance < totalWithTip && (
+                    <div className="mt-2 text-sm text-amber-600">
+                      Partial payment of {formatCurrency(giftCardInfo.currentBalance)} will be applied.
+                      Remaining: {formatCurrency(totalWithTip - giftCardInfo.currentBalance)}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setStep('method')}
+                  disabled={isProcessing}
+                >
+                  Back
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={handleGiftCardPayment}
+                  disabled={isProcessing || !giftCardInfo || giftCardInfo.currentBalance === 0}
+                >
+                  {isProcessing ? 'Processing...' : giftCardInfo && giftCardInfo.currentBalance >= totalWithTip
+                    ? 'Pay Full Amount'
+                    : giftCardInfo
+                      ? `Pay ${formatCurrency(Math.min(giftCardInfo.currentBalance, totalWithTip))}`
+                      : 'Apply Gift Card'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Step: House Account Payment */}
+          {step === 'house_account' && (
+            <div className="space-y-3">
+              <h3 className="font-medium mb-2">House Account</h3>
+
+              <div className="p-3 bg-blue-50 rounded-lg mb-3">
+                <div className="flex justify-between font-bold text-lg">
+                  <span>Amount to Charge</span>
+                  <span>{formatCurrency(totalWithTip)}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-sm text-gray-600 block mb-1">Search Account</label>
+                <input
+                  type="text"
+                  value={houseAccountSearch}
+                  onChange={(e) => setHouseAccountSearch(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Search by name..."
+                />
+              </div>
+
+              {houseAccountsLoading ? (
+                <div className="text-center py-4 text-gray-500">Loading accounts...</div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto border rounded-lg divide-y">
+                  {houseAccounts
+                    .filter(acc =>
+                      !houseAccountSearch ||
+                      acc.name.toLowerCase().includes(houseAccountSearch.toLowerCase())
+                    )
+                    .map(account => {
+                      const availableCredit = account.creditLimit > 0
+                        ? account.creditLimit - account.currentBalance
+                        : Infinity
+                      const canCharge = availableCredit >= totalWithTip
+
+                      return (
+                        <button
+                          key={account.id}
+                          className={`w-full p-3 text-left hover:bg-gray-50 ${
+                            selectedHouseAccount?.id === account.id ? 'bg-blue-50' : ''
+                          } ${!canCharge ? 'opacity-50' : ''}`}
+                          onClick={() => canCharge && setSelectedHouseAccount(account)}
+                          disabled={!canCharge}
+                        >
+                          <div className="font-medium">{account.name}</div>
+                          <div className="text-sm text-gray-500 flex justify-between">
+                            <span>Balance: {formatCurrency(account.currentBalance)}</span>
+                            <span>
+                              {account.creditLimit > 0
+                                ? `Limit: ${formatCurrency(account.creditLimit)}`
+                                : 'No limit'}
+                            </span>
+                          </div>
+                          {!canCharge && (
+                            <div className="text-xs text-red-500 mt-1">
+                              Insufficient credit available
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })}
+                  {houseAccounts.length === 0 && (
+                    <div className="p-4 text-center text-gray-500">
+                      No house accounts available
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedHouseAccount && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="font-medium">{selectedHouseAccount.name}</div>
+                  <div className="text-sm text-gray-600">
+                    Current balance: {formatCurrency(selectedHouseAccount.currentBalance)}
+                    {selectedHouseAccount.creditLimit > 0 && (
+                      <span className="ml-2">
+                        (Available: {formatCurrency(selectedHouseAccount.creditLimit - selectedHouseAccount.currentBalance)})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setStep('method')}
+                  disabled={isProcessing}
+                >
+                  Back
+                </Button>
+                <Button
+                  variant="primary"
+                  className="flex-1"
+                  onClick={handleHouseAccountPayment}
+                  disabled={isProcessing || !selectedHouseAccount}
+                >
+                  {isProcessing ? 'Processing...' : 'Charge to Account'}
                 </Button>
               </div>
             </div>

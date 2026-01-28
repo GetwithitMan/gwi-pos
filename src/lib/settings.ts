@@ -3,12 +3,18 @@
 
 export interface DualPricingSettings {
   enabled: boolean
-  model: 'cash_discount' | 'card_surcharge'
-  cardSurchargePercent: number
-  applyToCredit: boolean
-  applyToDebit: boolean
-  showBothPrices: boolean
-  showSavingsMessage: boolean
+  cashDiscountPercent: number      // % discount for paying with cash (e.g., 4 = 4% off)
+  applyToCredit: boolean           // Apply card pricing to credit cards
+  applyToDebit: boolean            // Apply card pricing to debit cards
+  showSavingsMessage: boolean      // Show "Save $X by paying with cash" message
+}
+
+export interface PriceRoundingSettings {
+  enabled: boolean
+  increment: 'none' | '0.05' | '0.10' | '0.25' | '0.50' | '1.00'  // Round to nearest X
+  direction: 'nearest' | 'up' | 'down'   // Rounding direction
+  applyToCash: boolean             // Apply rounding to cash payments (default: true)
+  applyToCard: boolean             // Apply rounding to card payments (default: false)
 }
 
 export interface TaxSettings {
@@ -51,12 +57,62 @@ export interface PaymentSettings {
   testMode: boolean
 }
 
+export interface LoyaltySettings {
+  // Master switch
+  enabled: boolean
+
+  // Points earning
+  pointsPerDollar: number          // e.g., 1 point per $1 spent
+  earnOnSubtotal: boolean          // true = before tax, false = after tax
+  earnOnTips: boolean              // include tips in earning calculation
+  minimumEarnAmount: number        // minimum order to earn points (e.g., $5)
+
+  // Points redemption
+  redemptionEnabled: boolean       // allow using points for payment
+  pointsPerDollarRedemption: number // e.g., 100 points = $1
+  minimumRedemptionPoints: number  // minimum points to redeem (e.g., 100)
+  maximumRedemptionPercent: number // max % of order payable with points (e.g., 50)
+
+  // Rewards/Tiers (optional)
+  showPointsOnReceipt: boolean
+  welcomeBonus: number             // points given when customer is created
+}
+
+export interface HappyHourSchedule {
+  dayOfWeek: number[]              // 0-6, Sunday-Saturday
+  startTime: string                // HH:MM format
+  endTime: string                  // HH:MM format
+}
+
+export interface HappyHourSettings {
+  // Master switch
+  enabled: boolean
+  name: string                     // Display name, e.g., "Happy Hour" or "Early Bird"
+
+  // Schedule
+  schedules: HappyHourSchedule[]   // Multiple schedules supported
+
+  // Pricing
+  discountType: 'percent' | 'fixed' // Discount type
+  discountValue: number            // Percent off (e.g., 20) or fixed amount (e.g., 2)
+  appliesTo: 'all' | 'categories' | 'items' // What it applies to
+  categoryIds: string[]            // If appliesTo is 'categories'
+  itemIds: string[]                // If appliesTo is 'items'
+
+  // Display
+  showBadge: boolean               // Show "Happy Hour" badge on items
+  showOriginalPrice: boolean       // Show original price crossed out
+}
+
 export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
+  priceRounding: PriceRoundingSettings
   tips: TipSettings
   receipts: ReceiptSettings
   payments: PaymentSettings
+  loyalty: LoyaltySettings
+  happyHour: HappyHourSettings
 }
 
 // Default settings for new locations
@@ -67,12 +123,17 @@ export const DEFAULT_SETTINGS: LocationSettings = {
   },
   dualPricing: {
     enabled: true,
-    model: 'card_surcharge',
-    cardSurchargePercent: 4.0,
+    cashDiscountPercent: 4.0,       // 4% discount for cash payments
     applyToCredit: true,
     applyToDebit: true,
-    showBothPrices: true,
     showSavingsMessage: true,
+  },
+  priceRounding: {
+    enabled: false,
+    increment: 'none',              // none, 0.05, 0.10, 0.25, 0.50, 1.00
+    direction: 'nearest',           // nearest, up, down
+    applyToCash: true,              // Apply to cash payments
+    applyToCard: false,             // Apply to card payments
   },
   tips: {
     enabled: true,
@@ -99,6 +160,37 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     processor: 'none',
     testMode: true,
   },
+  loyalty: {
+    enabled: false,
+    pointsPerDollar: 1,
+    earnOnSubtotal: true,
+    earnOnTips: false,
+    minimumEarnAmount: 0,
+    redemptionEnabled: true,
+    pointsPerDollarRedemption: 100,
+    minimumRedemptionPoints: 100,
+    maximumRedemptionPercent: 50,
+    showPointsOnReceipt: true,
+    welcomeBonus: 0,
+  },
+  happyHour: {
+    enabled: false,
+    name: 'Happy Hour',
+    schedules: [
+      {
+        dayOfWeek: [1, 2, 3, 4, 5], // Monday-Friday
+        startTime: '16:00',
+        endTime: '18:00',
+      },
+    ],
+    discountType: 'percent',
+    discountValue: 20,
+    appliesTo: 'all',
+    categoryIds: [],
+    itemIds: [],
+    showBadge: true,
+    showOriginalPrice: true,
+  },
 }
 
 // Merge partial settings with defaults
@@ -114,6 +206,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ...DEFAULT_SETTINGS.dualPricing,
       ...(partial.dualPricing || {}),
     },
+    priceRounding: {
+      ...DEFAULT_SETTINGS.priceRounding,
+      ...(partial.priceRounding || {}),
+    },
     tips: {
       ...DEFAULT_SETTINGS.tips,
       ...(partial.tips || {}),
@@ -126,6 +222,90 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ...DEFAULT_SETTINGS.payments,
       ...(partial.payments || {}),
     },
+    loyalty: {
+      ...DEFAULT_SETTINGS.loyalty,
+      ...(partial.loyalty || {}),
+    },
+    happyHour: {
+      ...DEFAULT_SETTINGS.happyHour,
+      ...(partial.happyHour || {}),
+      schedules: (partial.happyHour?.schedules?.length)
+        ? partial.happyHour.schedules
+        : DEFAULT_SETTINGS.happyHour.schedules,
+    },
+  }
+}
+
+// Check if happy hour is currently active
+export function isHappyHourActive(settings: HappyHourSettings): boolean {
+  if (!settings.enabled) return false
+
+  const now = new Date()
+  const currentDay = now.getDay() // 0-6, Sunday-Saturday
+  const currentTimeMinutes = now.getHours() * 60 + now.getMinutes()
+
+  for (const schedule of settings.schedules) {
+    if (!schedule.dayOfWeek.includes(currentDay)) continue
+
+    const [startHour, startMin] = schedule.startTime.split(':').map(Number)
+    const [endHour, endMin] = schedule.endTime.split(':').map(Number)
+
+    const startMinutes = startHour * 60 + startMin
+    const endMinutes = endHour * 60 + endMin
+
+    // Handle overnight schedules (e.g., 22:00 - 02:00)
+    if (endMinutes < startMinutes) {
+      // Schedule spans midnight
+      if (currentTimeMinutes >= startMinutes || currentTimeMinutes <= endMinutes) {
+        return true
+      }
+    } else {
+      // Normal schedule
+      if (currentTimeMinutes >= startMinutes && currentTimeMinutes <= endMinutes) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
+
+// Calculate happy hour price for an item
+export function getHappyHourPrice(
+  originalPrice: number,
+  settings: HappyHourSettings,
+  itemId?: string,
+  categoryId?: string
+): { price: number; isDiscounted: boolean } {
+  if (!settings.enabled || !isHappyHourActive(settings)) {
+    return { price: originalPrice, isDiscounted: false }
+  }
+
+  // Check if item qualifies for happy hour
+  let qualifies = false
+  if (settings.appliesTo === 'all') {
+    qualifies = true
+  } else if (settings.appliesTo === 'categories' && categoryId) {
+    qualifies = settings.categoryIds.includes(categoryId)
+  } else if (settings.appliesTo === 'items' && itemId) {
+    qualifies = settings.itemIds.includes(itemId)
+  }
+
+  if (!qualifies) {
+    return { price: originalPrice, isDiscounted: false }
+  }
+
+  // Apply discount
+  let discountedPrice: number
+  if (settings.discountType === 'percent') {
+    discountedPrice = originalPrice * (1 - settings.discountValue / 100)
+  } else {
+    discountedPrice = Math.max(0, originalPrice - settings.discountValue)
+  }
+
+  return {
+    price: Math.round(discountedPrice * 100) / 100,
+    isDiscounted: true,
   }
 }
 

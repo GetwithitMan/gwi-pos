@@ -46,17 +46,50 @@ interface MenuItem {
   recipeIngredientCount?: number
   totalPourCost?: number | null
   profitMargin?: number | null
+  // Pour size options
+  pourSizes?: Record<string, number> | null  // { shot: 1.0, double: 2.0, etc. }
+  defaultPourSize?: string | null
+  applyPourToModifiers?: boolean
 }
 
 interface ModifierGroup {
   id: string
   name: string
   displayName?: string
+  modifierTypes: string[]
   minSelections: number
   maxSelections: number
   isRequired: boolean
   modifiers: { id: string; name: string; price: number }[]
 }
+
+// Modifier type definitions for filtering
+const MODIFIER_TYPES = [
+  { value: 'universal', label: 'Universal', color: '#6b7280' },
+  { value: 'food', label: 'Food', color: '#22c55e' },
+  { value: 'liquor', label: 'Liquor', color: '#8b5cf6' },
+  { value: 'retail', label: 'Retail', color: '#f59e0b' },
+  { value: 'entertainment', label: 'Entertainment', color: '#f97316' },
+  { value: 'combo', label: 'Combo', color: '#ec4899' },
+]
+
+// Map category types to their primary modifier type
+const CATEGORY_TO_MODIFIER_TYPE: Record<string, string> = {
+  food: 'food',
+  drinks: 'food',
+  liquor: 'liquor',
+  entertainment: 'entertainment',
+  combos: 'combo',
+  retail: 'retail',
+}
+
+// Pour size configurations for liquor items
+const POUR_SIZES = [
+  { value: 'shot', label: 'Shot', multiplier: 1.0, description: 'Standard pour' },
+  { value: 'double', label: 'Double', multiplier: 2.0, description: '2x price' },
+  { value: 'tall', label: 'Tall', multiplier: 1.5, description: '1.5x price (more mixer)' },
+  { value: 'short', label: 'Short', multiplier: 0.75, description: '0.75x price (less pour)' },
+]
 
 export default function MenuManagementPage() {
   const router = useRouter()
@@ -662,6 +695,28 @@ function ItemModal({
   )
   const [isLoadingModifiers, setIsLoadingModifiers] = useState(false)
 
+  // Modifier type filters - for liquor, default to liquor only; others get primary + universal
+  const primaryModType = CATEGORY_TO_MODIFIER_TYPE[categoryType] || 'food'
+  const isLiquorCategory = categoryType === 'liquor'
+  const [enabledModifierTypes, setEnabledModifierTypes] = useState<string[]>(
+    isLiquorCategory ? ['liquor'] : ['universal', primaryModType]
+  )
+
+  // Filter modifier groups by enabled types (check if any of group's types match enabled types)
+  const filteredModifierGroups = modifierGroups.filter(
+    group => {
+      const groupTypes = group.modifierTypes || ['universal']
+      return groupTypes.some(type => enabledModifierTypes.includes(type))
+    }
+  )
+
+  // Pour size options for liquor items
+  const [enabledPourSizes, setEnabledPourSizes] = useState<Record<string, number>>(
+    item?.pourSizes || { shot: 1.0 }
+  )
+  const [defaultPourSize, setDefaultPourSize] = useState(item?.defaultPourSize || 'shot')
+  const [applyPourToModifiers, setApplyPourToModifiers] = useState(item?.applyPourToModifiers || false)
+
   // Timed pricing for entertainment items
   const [isTimedItem, setIsTimedItem] = useState(item?.itemType === 'timed_rental')
   const [per15Min, setPer15Min] = useState(item?.timedPricing?.per15Min?.toString() || '')
@@ -705,6 +760,11 @@ function ItemModal({
         }
       : null
 
+    // Pour sizes only for liquor items
+    const pourSizesData = isLiquorCategory && Object.keys(enabledPourSizes).length > 0
+      ? enabledPourSizes
+      : null
+
     onSave({
       name,
       price: parseFloat(price),
@@ -715,7 +775,25 @@ function ItemModal({
       commissionType: commissionType || null,
       commissionValue: commissionValue ? parseFloat(commissionValue) : null,
       modifierGroupIds: selectedModifierGroupIds,
+      // Liquor pour sizes
+      pourSizes: pourSizesData,
+      defaultPourSize: isLiquorCategory ? defaultPourSize : null,
+      applyPourToModifiers: isLiquorCategory ? applyPourToModifiers : false,
     })
+  }
+
+  const togglePourSize = (size: string, multiplier: number) => {
+    const newSizes = { ...enabledPourSizes }
+    if (newSizes[size]) {
+      delete newSizes[size]
+      // If we removed the default, set a new default
+      if (defaultPourSize === size && Object.keys(newSizes).length > 0) {
+        setDefaultPourSize(Object.keys(newSizes)[0])
+      }
+    } else {
+      newSizes[size] = multiplier
+    }
+    setEnabledPourSizes(newSizes)
   }
 
   return (
@@ -894,40 +972,183 @@ function ItemModal({
             )}
           </div>
 
-          {/* Modifier Groups Section - only for non-entertainment or non-timed items */}
-          {(!isEntertainment || !isTimedItem) && (
-            <div>
-              <label className="block text-sm font-medium mb-2">Modifier Groups</label>
-              {isLoadingModifiers ? (
-                <p className="text-sm text-gray-500">Loading modifiers...</p>
-              ) : modifierGroups.length === 0 ? (
-                <p className="text-sm text-gray-500">
-                  No modifier groups available. Create them in the Modifiers section.
-                </p>
-              ) : (
-                <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-2">
-                  {modifierGroups.map(group => (
+          {/* Pour Size Options - only for liquor items */}
+          {isLiquorCategory && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <label className="block text-sm font-medium mb-2 text-purple-800">
+                Pour Size Quick Buttons
+              </label>
+              <p className="text-xs text-purple-600 mb-3">
+                Enable quick pour options for this drink. Price multipliers are applied to the base price.
+              </p>
+
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {POUR_SIZES.map(size => {
+                  const isEnabled = enabledPourSizes[size.value] !== undefined
+                  return (
                     <label
-                      key={group.id}
-                      className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-gray-50 ${
-                        selectedModifierGroupIds.includes(group.id) ? 'bg-blue-50 border border-blue-200' : ''
+                      key={size.value}
+                      className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition-colors ${
+                        isEnabled
+                          ? 'border-purple-500 bg-purple-100'
+                          : 'border-gray-200 hover:bg-gray-50'
                       }`}
                     >
                       <input
                         type="checkbox"
-                        checked={selectedModifierGroupIds.includes(group.id)}
-                        onChange={() => toggleModifierGroup(group.id)}
-                        className="w-4 h-4"
+                        checked={isEnabled}
+                        onChange={() => togglePourSize(size.value, size.multiplier)}
+                        className="w-4 h-4 text-purple-600"
                       />
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{group.name}</p>
-                        <p className="text-xs text-gray-500">
-                          {group.modifiers.length} options
-                          {group.isRequired && <span className="text-red-500 ml-1">(Required)</span>}
-                        </p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">{size.label}</span>
+                          <span className="text-xs text-purple-600">{size.multiplier}x</span>
+                        </div>
+                        <p className="text-xs text-gray-500">{size.description}</p>
                       </div>
                     </label>
-                  ))}
+                  )
+                })}
+              </div>
+
+              {Object.keys(enabledPourSizes).length > 1 && (
+                <div className="mb-3">
+                  <label className="block text-xs font-medium mb-1 text-purple-700">Default Pour</label>
+                  <select
+                    value={defaultPourSize}
+                    onChange={(e) => setDefaultPourSize(e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    {Object.keys(enabledPourSizes).map(size => {
+                      const sizeInfo = POUR_SIZES.find(s => s.value === size)
+                      return (
+                        <option key={size} value={size}>
+                          {sizeInfo?.label || size}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+              )}
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={applyPourToModifiers}
+                  onChange={(e) => setApplyPourToModifiers(e.target.checked)}
+                  className="w-4 h-4 text-purple-600"
+                />
+                <span className="text-sm text-purple-800">Apply multiplier to spirit modifiers too</span>
+              </label>
+              <p className="text-xs text-purple-600 mt-1 ml-6">
+                When checked, a double will also double the upcharge for premium spirits
+              </p>
+            </div>
+          )}
+
+          {/* Modifier Groups Section - only for non-entertainment or non-timed items */}
+          {(!isEntertainment || !isTimedItem) && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium">Modifier Groups</label>
+                {/* Compact type filter - dropdown to add more types */}
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    {enabledModifierTypes.map(type => {
+                      const typeInfo = MODIFIER_TYPES.find(t => t.value === type)
+                      if (!typeInfo) return null
+                      return (
+                        <span
+                          key={type}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full text-white"
+                          style={{ backgroundColor: typeInfo.color }}
+                        >
+                          {typeInfo.label}
+                          {enabledModifierTypes.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setEnabledModifierTypes(enabledModifierTypes.filter(t => t !== type))}
+                              className="hover:bg-white/20 rounded-full p-0.5"
+                            >
+                              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </span>
+                      )
+                    })}
+                  </div>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value && !enabledModifierTypes.includes(e.target.value)) {
+                        setEnabledModifierTypes([...enabledModifierTypes, e.target.value])
+                      }
+                    }}
+                    className="text-xs px-2 py-1 border rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">+ Add type</option>
+                    {MODIFIER_TYPES.filter(t => !enabledModifierTypes.includes(t.value)).map(type => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {isLoadingModifiers ? (
+                <p className="text-sm text-gray-500">Loading modifiers...</p>
+              ) : filteredModifierGroups.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  {modifierGroups.length === 0
+                    ? 'No modifier groups available. Create them in the Modifiers section.'
+                    : 'No modifier groups match the selected types.'}
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-2">
+                  {filteredModifierGroups.map(group => {
+                    const groupTypes = group.modifierTypes || ['universal']
+                    return (
+                      <label
+                        key={group.id}
+                        className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-gray-50 ${
+                          selectedModifierGroupIds.includes(group.id) ? 'bg-blue-50 border border-blue-200' : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedModifierGroupIds.includes(group.id)}
+                          onChange={() => toggleModifierGroup(group.id)}
+                          className="w-4 h-4"
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-1">
+                            <p className="font-medium text-sm">{group.name}</p>
+                            {groupTypes.slice(0, 2).map(type => {
+                              const typeInfo = MODIFIER_TYPES.find(t => t.value === type) || MODIFIER_TYPES[0]
+                              return (
+                                <span
+                                  key={type}
+                                  className="px-1 py-0.5 text-[9px] font-medium rounded text-white"
+                                  style={{ backgroundColor: typeInfo.color }}
+                                >
+                                  {typeInfo.label}
+                                </span>
+                              )
+                            })}
+                            {groupTypes.length > 2 && (
+                              <span className="text-[9px] text-gray-400">+{groupTypes.length - 2}</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500">
+                            {group.modifiers.length} options
+                            {group.isRequired && <span className="text-red-500 ml-1">(Required)</span>}
+                          </p>
+                        </div>
+                      </label>
+                    )
+                  })}
                 </div>
               )}
               {selectedModifierGroupIds.length > 0 && (

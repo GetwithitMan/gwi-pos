@@ -39,7 +39,7 @@ interface CommissionReport {
 
 export default function CommissionReportPage() {
   const router = useRouter()
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, employee } = useAuthStore()
   const [report, setReport] = useState<CommissionReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [startDate, setStartDate] = useState(() => {
@@ -54,16 +54,21 @@ export default function CommissionReportPage() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/reports/commission')
       return
     }
-    loadReport()
-  }, [isAuthenticated, router])
+    if (employee?.location?.id) {
+      loadReport()
+    }
+  }, [isAuthenticated, router, employee?.location?.id])
 
   const loadReport = async () => {
+    if (!employee?.location?.id) return
+
     setIsLoading(true)
     try {
       const params = new URLSearchParams()
+      params.append('locationId', employee.location.id)
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)
 

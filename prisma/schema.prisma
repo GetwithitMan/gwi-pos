@@ -3,12 +3,12 @@
 // Based on Skills Documentation
 
 generator client {
-  provider   = "prisma-client-js"
-  engineType = "binary"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ============================================
@@ -36,7 +36,7 @@ model Location {
   isActive Boolean @default(true)
 
   // Settings
-  settings Json @default("{}")
+  settings Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -93,13 +93,13 @@ model Customer {
 
   // Preferences
   notes String? // Allergies, preferences, etc.
-  tags  String[] // VIP, Regular, etc.
+  tags  Json? // VIP, Regular, etc.
 
   // Loyalty (Skill 52 foundation)
   loyaltyPoints Int       @default(0)
-  totalSpent    Decimal   @default(0) @db.Decimal(10, 2)
+  totalSpent    Decimal   @default(0) 
   totalOrders   Int       @default(0)
-  averageTicket Decimal   @default(0) @db.Decimal(10, 2)
+  averageTicket Decimal   @default(0) 
   lastVisit     DateTime?
 
   // Marketing
@@ -132,7 +132,7 @@ model Role {
   location   Location @relation(fields: [locationId], references: [id])
 
   name        String // Server, Bartender, Manager, Admin
-  permissions Json   @default("[]") // Array of permission strings
+  permissions Json? // Array of permission strings
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -162,7 +162,7 @@ model Employee {
   password String? // Optional password for admin access (hashed)
 
   // Employment
-  hourlyRate Decimal? @db.Decimal(10, 2)
+  hourlyRate Decimal? 
   hireDate   DateTime @default(now())
   isActive   Boolean  @default(true)
 
@@ -206,8 +206,8 @@ model TimeClockEntry {
   breakMinutes Int       @default(0)
 
   // Totals
-  regularHours  Decimal? @db.Decimal(5, 2)
-  overtimeHours Decimal? @db.Decimal(5, 2)
+  regularHours  Decimal? 
+  overtimeHours Decimal? 
 
   // Cash drawer
   drawerCountIn  Json? // {denominations, total}
@@ -238,16 +238,16 @@ model Shift {
   endedAt   DateTime?
 
   // Cash management
-  startingCash Decimal  @db.Decimal(10, 2)
-  expectedCash Decimal? @db.Decimal(10, 2)
-  actualCash   Decimal? @db.Decimal(10, 2)
-  variance     Decimal? @db.Decimal(10, 2)
+  startingCash Decimal  
+  expectedCash Decimal? 
+  actualCash   Decimal? 
+  variance     Decimal? 
 
   // Sales summary
-  totalSales   Decimal? @db.Decimal(10, 2)
-  cashSales    Decimal? @db.Decimal(10, 2)
-  cardSales    Decimal? @db.Decimal(10, 2)
-  tipsDeclared Decimal? @db.Decimal(10, 2)
+  totalSales   Decimal? 
+  cashSales    Decimal? 
+  cardSales    Decimal? 
+  tipsDeclared Decimal? 
 
   notes  String?
   status String  @default("open") // open, closed
@@ -283,7 +283,7 @@ model PaidInOut {
   drawer   Drawer @relation(fields: [drawerId], references: [id])
 
   type      String // "in" or "out"
-  amount    Decimal @db.Decimal(10, 2)
+  amount    Decimal 
   reason    String
   reference String? // Check number, vendor, etc.
 
@@ -387,11 +387,11 @@ model MenuItem {
   imageUrl    String?
 
   // Pricing
-  price Decimal  @db.Decimal(10, 2)
-  cost  Decimal? @db.Decimal(10, 2) // For profit tracking
+  price Decimal  
+  cost  Decimal?  // For profit tracking
 
   // Tax
-  taxRate     Decimal? @db.Decimal(5, 4) // Override location default
+  taxRate     Decimal?  // Override location default
   isTaxExempt Boolean  @default(false)
 
   // Display & Behavior
@@ -435,7 +435,13 @@ model MenuItem {
 
   // Commission (Skill 29)
   commissionType  String? // 'fixed' | 'percent' | null
-  commissionValue Decimal? @db.Decimal(10, 2)
+  commissionValue Decimal?
+
+  // Liquor Pour Sizes - quick pricing options for liquor items
+  // Stores enabled pour sizes and their multipliers: { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
+  pourSizes            Json?
+  defaultPourSize      String?  // Default selection: 'shot', 'double', 'tall', 'short'
+  applyPourToModifiers Boolean @default(false) // Apply pour multiplier to spirit modifiers too
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -467,6 +473,9 @@ model ModifierGroup {
 
   name        String
   displayName String?
+
+  // Modifier Types: food, liquor, retail, entertainment, combo, universal (can have multiple)
+  modifierTypes Json @default("[\"universal\"]")
 
   // Requirements
   minSelections Int     @default(0)
@@ -506,14 +515,14 @@ model Modifier {
   displayName String?
 
   // Pricing
-  price       Decimal  @default(0) @db.Decimal(10, 2)
-  upsellPrice Decimal? @db.Decimal(10, 2) // Special price when offered as upsell
-  cost        Decimal? @db.Decimal(10, 2)
+  price       Decimal  @default(0) 
+  upsellPrice Decimal?  // Special price when offered as upsell
+  cost        Decimal? 
 
   // Pre-modifier support (Skill 32)
   allowedPreModifiers Json? // Array of allowed prefixes: ["no", "lite", "extra", "side"]
-  extraPrice          Decimal? @db.Decimal(10, 2) // Price when "extra" is selected
-  extraUpsellPrice    Decimal? @db.Decimal(10, 2) // Upsell price for "extra"
+  extraPrice          Decimal?  // Price when "extra" is selected
+  extraUpsellPrice    Decimal?  // Upsell price for "extra"
 
   // Sub-modifier support - when selected, prompts for additional modifiers
   childModifierGroupId String?
@@ -521,13 +530,13 @@ model Modifier {
 
   // Commission (Skill 29)
   commissionType  String? // 'fixed' | 'percent' | null
-  commissionValue Decimal? @db.Decimal(10, 2)
+  commissionValue Decimal? 
 
   // Liquor Builder - Spirit fields
   spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
   linkedBottleProductId String? // Links to bottle inventory
   linkedBottleProduct   BottleProduct? @relation(fields: [linkedBottleProductId], references: [id])
-  pourSizeOz            Decimal?       @db.Decimal(4, 2) // Override default pour size
+  pourSizeOz            Decimal?        // Override default pour size
 
   // Display
   sortOrder Int     @default(0)
@@ -564,8 +573,8 @@ model ComboTemplate {
   id         String @id @default(cuid())
   menuItemId String @unique // Links to MenuItem with itemType="combo"
 
-  basePrice    Decimal  @db.Decimal(10, 2)
-  comparePrice Decimal? @db.Decimal(10, 2) // A la carte total for savings display
+  basePrice    Decimal  
+  comparePrice Decimal?  // A la carte total for savings display
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -591,7 +600,7 @@ model ComboComponent {
   menuItem   MenuItem? @relation("ComboComponentItem", fields: [menuItemId], references: [id])
 
   // Price override for the item itself (null = use item's default price)
-  itemPriceOverride Decimal? @db.Decimal(10, 2)
+  itemPriceOverride Decimal? 
 
   // Per-modifier price overrides: { "modifierId": 0.00, ... }
   modifierPriceOverrides Json?
@@ -599,7 +608,7 @@ model ComboComponent {
   // Legacy fields (kept for backward compatibility)
   modifierGroupId String?
   modifierGroup   ModifierGroup? @relation(fields: [modifierGroupId], references: [id])
-  priceOverride   Decimal?       @db.Decimal(10, 2)
+  priceOverride   Decimal?       
   defaultItemId   String?
   defaultItem     MenuItem?      @relation("ComboComponentDefault", fields: [defaultItemId], references: [id])
 
@@ -618,7 +627,7 @@ model ComboComponentOption {
 
   menuItemId  String
   menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
-  upcharge    Decimal  @default(0) @db.Decimal(10, 2)
+  upcharge    Decimal  @default(0) 
   sortOrder   Int      @default(0)
   isAvailable Boolean  @default(true)
 
@@ -755,24 +764,24 @@ model Order {
   closedAt DateTime?
 
   // Totals
-  subtotal      Decimal @default(0) @db.Decimal(10, 2)
-  discountTotal Decimal @default(0) @db.Decimal(10, 2)
-  taxTotal      Decimal @default(0) @db.Decimal(10, 2)
-  tipTotal      Decimal @default(0) @db.Decimal(10, 2)
-  total         Decimal @default(0) @db.Decimal(10, 2)
+  subtotal      Decimal @default(0) 
+  discountTotal Decimal @default(0) 
+  taxTotal      Decimal @default(0) 
+  tipTotal      Decimal @default(0) 
+  total         Decimal @default(0) 
 
   // Dual Pricing (Skill 31)
   primaryPaymentMethod String? // 'cash' | 'card' - determines which price applies
 
   // Commission (Skill 29)
-  commissionTotal Decimal @default(0) @db.Decimal(10, 2)
+  commissionTotal Decimal @default(0) 
 
   // Notes
   notes String?
 
   // Bar Tab Pre-auth (Skill 21)
   preAuthId        String? // Reference to pre-auth transaction
-  preAuthAmount    Decimal?  @db.Decimal(10, 2)
+  preAuthAmount    Decimal?  
   preAuthLast4     String? // Last 4 digits of held card
   preAuthCardBrand String? // Visa, Mastercard, etc.
   preAuthExpiresAt DateTime? // When the hold expires
@@ -806,7 +815,7 @@ model OrderItem {
 
   // Item details (snapshot at time of order)
   name     String
-  price    Decimal @db.Decimal(10, 2)
+  price    Decimal 
   quantity Int     @default(1)
 
   // Seat tracking (Skill 24)
@@ -846,11 +855,11 @@ model OrderItem {
   voidReason String?
 
   // Totals
-  modifierTotal Decimal @default(0) @db.Decimal(10, 2)
-  itemTotal     Decimal @default(0) @db.Decimal(10, 2)
+  modifierTotal Decimal @default(0) 
+  itemTotal     Decimal @default(0) 
 
   // Commission (Skill 29)
-  commissionAmount Decimal? @db.Decimal(10, 2)
+  commissionAmount Decimal? 
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -871,13 +880,13 @@ model OrderItemModifier {
 
   // Snapshot
   name        String
-  price       Decimal @db.Decimal(10, 2)
+  price       Decimal 
   preModifier String? // "no", "lite", "extra", "side"
 
   quantity Int @default(1)
 
   // Commission (Skill 29)
-  commissionAmount Decimal? @db.Decimal(10, 2)
+  commissionAmount Decimal? 
 
   // Liquor Builder - Spirit snapshot for reporting
   spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
@@ -900,17 +909,17 @@ model Payment {
   employeeId String? // Who processed the payment
 
   // Payment details
-  amount      Decimal @db.Decimal(10, 2)
-  tipAmount   Decimal @default(0) @db.Decimal(10, 2)
-  totalAmount Decimal @db.Decimal(10, 2)
+  amount      Decimal 
+  tipAmount   Decimal @default(0) 
+  totalAmount Decimal 
 
   // Method
   paymentMethod String // cash, credit, debit, gift_card, house_account
 
   // Cash details
-  amountTendered     Decimal? @db.Decimal(10, 2) // Amount given by customer
-  changeGiven        Decimal? @db.Decimal(10, 2) // Change returned
-  roundingAdjustment Decimal? @db.Decimal(10, 2) // Amount rounded (+ or -)
+  amountTendered     Decimal?  // Amount given by customer
+  changeGiven        Decimal?  // Change returned
+  roundingAdjustment Decimal?  // Amount rounded (+ or -)
 
   // Card details (if card)
   cardBrand     String?
@@ -922,7 +931,7 @@ model Payment {
   status String @default("completed") // pending, completed, refunded, voided
 
   // Refund tracking
-  refundedAmount Decimal   @default(0) @db.Decimal(10, 2)
+  refundedAmount Decimal   @default(0) 
   refundedAt     DateTime?
   refundReason   String?
 
@@ -949,12 +958,12 @@ model Coupon {
 
   // Discount type
   discountType  String // 'percent' | 'fixed' | 'free_item'
-  discountValue Decimal @db.Decimal(10, 2) // Percent or dollar amount
+  discountValue Decimal  // Percent or dollar amount
   freeItemId    String? // If discountType is 'free_item'
 
   // Restrictions
-  minimumOrder    Decimal? @db.Decimal(10, 2) // Minimum order total
-  maximumDiscount Decimal? @db.Decimal(10, 2) // Cap on discount amount
+  minimumOrder    Decimal?  // Minimum order total
+  maximumDiscount Decimal?  // Cap on discount amount
   appliesTo       String   @default("order") // 'order' | 'category' | 'item'
   categoryIds     Json? // If appliesTo is 'category'
   itemIds         Json? // If appliesTo is 'item'
@@ -991,7 +1000,7 @@ model CouponRedemption {
   orderId    String
   customerId String? // If linked to customer
 
-  discountAmount Decimal @db.Decimal(10, 2)
+  discountAmount Decimal 
 
   redeemedAt DateTime @default(now())
   redeemedBy String? // Employee who applied
@@ -1017,7 +1026,7 @@ model Reservation {
   partySize  Int
 
   // Timing
-  reservationDate DateTime @db.Date
+  reservationDate DateTime 
   reservationTime String // HH:MM format
   duration        Int      @default(90) // Minutes
 
@@ -1107,8 +1116,8 @@ model OrderDiscount {
   discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
 
   name    String
-  amount  Decimal  @db.Decimal(10, 2)
-  percent Decimal? @db.Decimal(5, 2)
+  amount  Decimal  
+  percent Decimal? 
 
   // Who applied it
   appliedBy   String? // Employee ID if manual
@@ -1176,7 +1185,7 @@ model UpsellEvent {
   wasAccepted  Boolean @default(false)
   wasDismissed Boolean @default(false)
 
-  addedAmount Decimal? @db.Decimal(10, 2)
+  addedAmount Decimal? 
 
   createdAt DateTime @default(now())
 
@@ -1197,7 +1206,7 @@ model VoidLog {
 
   voidType String // item, order
   itemId   String? // If item void
-  amount   Decimal @db.Decimal(10, 2)
+  amount   Decimal 
   reason   String
 
   approvedById String?
@@ -1262,8 +1271,8 @@ model TipPoolEntry {
   tipPoolId String
   tipPool   TipPool @relation(fields: [tipPoolId], references: [id])
 
-  shiftDate   DateTime @db.Date
-  totalAmount Decimal  @db.Decimal(10, 2)
+  shiftDate   DateTime 
+  totalAmount Decimal  
 
   // Distributions
   distributions Json // [{employeeId, amount, hours, points}]
@@ -1288,8 +1297,8 @@ model GiftCard {
   pin        String? // Optional PIN for security
 
   // Balance
-  initialBalance Decimal @db.Decimal(10, 2)
-  currentBalance Decimal @db.Decimal(10, 2)
+  initialBalance Decimal 
+  currentBalance Decimal 
 
   // Status
   status String @default("active") // active, depleted, expired, frozen
@@ -1330,9 +1339,9 @@ model GiftCardTransaction {
   type String // purchase, redemption, reload, refund, adjustment
 
   // Amounts
-  amount        Decimal @db.Decimal(10, 2)
-  balanceBefore Decimal @db.Decimal(10, 2)
-  balanceAfter  Decimal @db.Decimal(10, 2)
+  amount        Decimal 
+  balanceBefore Decimal 
+  balanceAfter  Decimal 
 
   // Reference
   orderId    String? // Order where used
@@ -1363,8 +1372,8 @@ model HouseAccount {
   address     String?
 
   // Credit settings
-  creditLimit    Decimal @default(0) @db.Decimal(10, 2)
-  currentBalance Decimal @default(0) @db.Decimal(10, 2) // Positive = owes money
+  creditLimit    Decimal @default(0) 
+  currentBalance Decimal @default(0)  // Positive = owes money
   paymentTerms   Int     @default(30) // Days until due
 
   // Status
@@ -1404,9 +1413,9 @@ model HouseAccountTransaction {
   type String // charge, payment, adjustment, credit
 
   // Amounts
-  amount        Decimal @db.Decimal(10, 2)
-  balanceBefore Decimal @db.Decimal(10, 2)
-  balanceAfter  Decimal @db.Decimal(10, 2)
+  amount        Decimal 
+  balanceBefore Decimal 
+  balanceAfter  Decimal 
 
   // Reference
   orderId         String? // Order that was charged
@@ -1445,11 +1454,11 @@ model TimedSession {
 
   // Calculated on close
   totalMinutes Int?
-  totalCharge  Decimal? @db.Decimal(10, 2)
+  totalCharge  Decimal? 
 
   // Billing
   rateType   String  @default("hourly") // per15Min, per30Min, hourly, custom
-  rateAmount Decimal @db.Decimal(10, 2)
+  rateAmount Decimal 
 
   // Status
   status String @default("active") // active, paused, completed, cancelled
@@ -1492,7 +1501,7 @@ model EntertainmentWaitlist {
   tabName String?
 
   // Deposit to hold position (optional)
-  depositAmount    Decimal? @db.Decimal(10, 2)
+  depositAmount    Decimal? 
   depositMethod    String? // 'cash', 'card'
   depositCardLast4 String?
   depositRefunded  Boolean  @default(false)
@@ -1567,7 +1576,7 @@ model Event {
   eventType String @default("dinner_show") // dinner_show, concert, private_event, special_occasion
 
   // Timing
-  eventDate DateTime @db.Date
+  eventDate DateTime 
   doorsOpen String // HH:MM format
   startTime String // HH:MM format
   endTime   String? // HH:MM format (optional)
@@ -1591,7 +1600,7 @@ model Event {
   isActive Boolean @default(true)
 
   // Settings stored as JSON for flexibility
-  settings Json @default("{}")
+  settings Json?
 
   // Reservation Conflict Handling
   reservationConflictsHandled Boolean @default(false)
@@ -1622,8 +1631,8 @@ model EventPricingTier {
   color       String? // For floor plan display
 
   // Pricing
-  price      Decimal @db.Decimal(10, 2)
-  serviceFee Decimal @default(0) @db.Decimal(10, 2)
+  price      Decimal 
+  serviceFee Decimal @default(0) 
 
   // Quantity limits
   quantityAvailable Int? // null = unlimited
@@ -1697,10 +1706,10 @@ model Ticket {
   customer      Customer? @relation(fields: [customerId], references: [id])
 
   // Pricing Snapshot (at time of purchase)
-  basePrice  Decimal @db.Decimal(10, 2)
-  serviceFee Decimal @default(0) @db.Decimal(10, 2)
-  taxAmount  Decimal @default(0) @db.Decimal(10, 2)
-  totalPrice Decimal @db.Decimal(10, 2)
+  basePrice  Decimal 
+  serviceFee Decimal @default(0) 
+  taxAmount  Decimal @default(0) 
+  totalPrice Decimal 
 
   // Status
   status String @default("available") // available, held, sold, checked_in, cancelled, refunded
@@ -1724,7 +1733,7 @@ model Ticket {
   cancelledAt  DateTime?
   cancelReason String?
   refundedAt   DateTime?
-  refundAmount Decimal? @db.Decimal(10, 2)
+  refundAmount Decimal? 
   refundedBy   String? // Employee ID
 
   // Notes
@@ -1752,7 +1761,7 @@ model TaxRule {
   locationId String
 
   name String // "State Tax", "City Tax", "Alcohol Tax"
-  rate Decimal @db.Decimal(5, 4) // 0.0825 = 8.25%
+  rate Decimal  // 0.0825 = 8.25%
 
   // Application rules
   appliesTo   String @default("all") // all, category, item
@@ -1800,8 +1809,8 @@ model InventoryTransaction {
   reason        String? // For adjustments/waste
 
   // Cost tracking
-  unitCost  Decimal? @db.Decimal(10, 2)
-  totalCost Decimal? @db.Decimal(10, 2)
+  unitCost  Decimal? 
+  totalCost Decimal? 
 
   createdAt DateTime @default(now())
 
@@ -1913,13 +1922,13 @@ model BottleProduct {
 
   // Bottle specs
   bottleSizeMl Int // 1750, 750, 1000
-  bottleSizeOz Decimal? @db.Decimal(6, 2) // Auto-calculated from mL
-  unitCost     Decimal  @db.Decimal(10, 2) // Cost per bottle ($25.99)
+  bottleSizeOz Decimal?  // Auto-calculated from mL
+  unitCost     Decimal   // Cost per bottle ($25.99)
 
   // Pour calculation (uses location default or override)
-  pourSizeOz     Decimal? @db.Decimal(4, 2) // Override location default
+  pourSizeOz     Decimal?  // Override location default
   poursPerBottle Int? // Auto-calculated: bottleSizeMl / pourSizeMl
-  pourCost       Decimal? @db.Decimal(10, 4) // Auto-calculated: unitCost / poursPerBottle
+  pourCost       Decimal?  // Auto-calculated: unitCost / poursPerBottle
 
   // Inventory - tracks bottles on hand
   currentStock  Int     @default(0) // Number of bottles in inventory
@@ -1948,8 +1957,8 @@ model RecipeIngredient {
   bottleProduct   BottleProduct @relation(fields: [bottleProductId], references: [id])
 
   // Pour amount
-  pourCount       Decimal  @default(1) @db.Decimal(4, 2) // 1 pour, 0.5 pour, 2 pours
-  pourSizeOz      Decimal? @db.Decimal(4, 2) // Override location default
+  pourCount       Decimal  @default(1)  // 1 pour, 0.5 pour, 2 pours
+  pourSizeOz      Decimal?  // Override location default
   isRequired      Boolean  @default(true)
   isSubstitutable Boolean  @default(true) // Can swap for different tier (premium upgrade)
 
@@ -2001,7 +2010,7 @@ model SpiritUpsellEvent {
   upsellModifierId String // Premium spirit modifier ID
   upsellTier       String // 'premium', 'top_shelf', etc.
   upsellBottleName String // "Patron Silver"
-  priceDifference  Decimal @db.Decimal(10, 2)
+  priceDifference  Decimal 
 
   // Outcome
   wasShown    Boolean @default(true)

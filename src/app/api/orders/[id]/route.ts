@@ -57,6 +57,8 @@ export async function GET(
           name: mod.name,
           price: Number(mod.price),
           preModifier: mod.preModifier,
+          spiritTier: mod.spiritTier,
+          linkedBottleProductId: mod.linkedBottleProductId,
         })),
       })),
       subtotal: Number(order.subtotal),
@@ -92,6 +94,7 @@ export async function PUT(
       tabName,
       guestCount,
       notes,
+      tipTotal,
     } = body as {
       items?: {
         menuItemId: string
@@ -103,12 +106,16 @@ export async function PUT(
           name: string
           price: number
           preModifier?: string
+          // Spirit selection fields (Liquor Builder)
+          spiritTier?: string
+          linkedBottleProductId?: string
         }[]
         specialNotes?: string
       }[]
       tabName?: string
       guestCount?: number
       notes?: string
+      tipTotal?: number
     }
 
     // Get existing order
@@ -137,6 +144,33 @@ export async function PUT(
     // If items are provided, delete existing and re-create
     // This is simpler than trying to diff items
     if (items && items.length > 0) {
+      // Get existing items to check for entertainment items being removed
+      const existingItems = await db.orderItem.findMany({
+        where: { orderId: id },
+        select: { menuItemId: true },
+      })
+      const existingMenuItemIds = new Set(existingItems.map(i => i.menuItemId))
+      const newMenuItemIds = new Set(items.map(i => i.menuItemId))
+
+      // Find entertainment items that are being removed
+      const removedMenuItemIds = [...existingMenuItemIds].filter(itemId => !newMenuItemIds.has(itemId))
+
+      // Reset entertainment status for removed items
+      if (removedMenuItemIds.length > 0) {
+        await db.menuItem.updateMany({
+          where: {
+            id: { in: removedMenuItemIds },
+            itemType: 'timed_rental',
+            currentOrderId: id,
+          },
+          data: {
+            entertainmentStatus: 'available',
+            currentOrderId: null,
+            currentOrderItemId: null,
+          },
+        })
+      }
+
       // Delete existing items
       await db.orderItemModifier.deleteMany({
         where: {
@@ -148,6 +182,12 @@ export async function PUT(
       await db.orderItem.deleteMany({
         where: { orderId: id },
       })
+
+      // Helper to check if a string is a valid CUID (for real modifier IDs)
+      const isValidModifierId = (modId: string) => {
+        // CUIDs are typically 25 chars starting with 'c', combo IDs start with 'combo-'
+        return modId && !modId.startsWith('combo-') && modId.length >= 20
+      }
 
       // Calculate new totals
       let subtotal = 0
@@ -165,11 +205,15 @@ export async function PUT(
           specialNotes: item.specialNotes || null,
           modifiers: {
             create: item.modifiers.map(mod => ({
-              modifierId: mod.modifierId,
+              // Set modifierId to null for combo selections (they have synthetic IDs)
+              modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
               name: mod.name,
               price: mod.price,
               quantity: 1,
               preModifier: mod.preModifier || null,
+              // Spirit selection fields (Liquor Builder)
+              spiritTier: mod.spiritTier || null,
+              linkedBottleProductId: mod.linkedBottleProductId || null,
             })),
           },
         }
@@ -203,10 +247,28 @@ export async function PUT(
           items: {
             include: {
               modifiers: true,
+              menuItem: {
+                select: { id: true, itemType: true },
+              },
             },
           },
         },
       })
+
+      // Mark entertainment items as in_use
+      const entertainmentItems = updatedOrder.items.filter(
+        item => item.menuItem?.itemType === 'timed_rental'
+      )
+      for (const item of entertainmentItems) {
+        await db.menuItem.update({
+          where: { id: item.menuItemId },
+          data: {
+            entertainmentStatus: 'in_use',
+            currentOrderId: id,
+            currentOrderItemId: item.id,
+          },
+        })
+      }
 
       return NextResponse.json({
         id: updatedOrder.id,
@@ -239,12 +301,23 @@ export async function PUT(
     }
 
     // If no items, just update metadata
+    // Calculate new total if tipTotal is being updated
+    let newTotal = undefined
+    if (tipTotal !== undefined) {
+      const subtotal = Number(existingOrder.subtotal)
+      const taxTotal = Number(existingOrder.taxTotal)
+      const discountTotal = Number(existingOrder.discountTotal)
+      newTotal = Math.round((subtotal + taxTotal - discountTotal + tipTotal) * 100) / 100
+    }
+
     const updatedOrder = await db.order.update({
       where: { id },
       data: {
         tabName: tabName !== undefined ? tabName : undefined,
         guestCount: guestCount !== undefined ? guestCount : undefined,
         notes: notes !== undefined ? notes : undefined,
+        tipTotal: tipTotal !== undefined ? tipTotal : undefined,
+        total: newTotal !== undefined ? newTotal : undefined,
       },
       include: {
         employee: {
@@ -264,6 +337,8 @@ export async function PUT(
       status: updatedOrder.status,
       tabName: updatedOrder.tabName,
       guestCount: updatedOrder.guestCount,
+      tipTotal: Number(updatedOrder.tipTotal),
+      total: Number(updatedOrder.total),
     })
   } catch (error) {
     console.error('Failed to update order:', error)

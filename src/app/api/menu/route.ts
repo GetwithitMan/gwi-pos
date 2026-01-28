@@ -109,7 +109,11 @@ export async function GET(request: NextRequest) {
         hasRecipe: item.hasRecipe,
         recipeIngredientCount: item.recipeIngredientCount,
         totalPourCost: item.totalPourCost,
-        profitMargin: item.profitMargin
+        profitMargin: item.profitMargin,
+        // Pour size options
+        pourSizes: item.pourSizes as Record<string, number> | null,
+        defaultPourSize: item.defaultPourSize,
+        applyPourToModifiers: item.applyPourToModifiers
       }))
     })
   } catch (error) {

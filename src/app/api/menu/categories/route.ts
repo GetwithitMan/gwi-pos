@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, color } = body
+    const { name, color, categoryType } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
         locationId: location.id,
         name: name.trim(),
         color: color || '#3b82f6',
+        categoryType: categoryType || 'food',
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
       }
     })
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       id: category.id,
       name: category.name,
       color: category.color,
+      categoryType: category.categoryType,
       isActive: category.isActive,
       itemCount: 0
     })

@@ -63,7 +63,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/employees')
     }
   }, [isAuthenticated, router])
 

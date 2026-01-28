@@ -40,11 +40,11 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       whereClause.OR = [
-        { ticketNumber: { contains: search, mode: 'insensitive' } },
-        { barcode: { contains: search, mode: 'insensitive' } },
-        { customerName: { contains: search, mode: 'insensitive' } },
-        { customerEmail: { contains: search, mode: 'insensitive' } },
-        { customerPhone: { contains: search, mode: 'insensitive' } },
+        { ticketNumber: { contains: search } },
+        { barcode: { contains: search } },
+        { customerName: { contains: search } },
+        { customerEmail: { contains: search } },
+        { customerPhone: { contains: search } },
       ]
     }
 

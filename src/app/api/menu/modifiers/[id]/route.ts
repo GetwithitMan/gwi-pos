@@ -37,6 +37,7 @@ export async function GET(
       id: modifierGroup.id,
       name: modifierGroup.name,
       displayName: modifierGroup.displayName,
+      modifierTypes: (modifierGroup.modifierTypes as string[]) || ['universal'],
       minSelections: modifierGroup.minSelections,
       maxSelections: modifierGroup.maxSelections,
       isRequired: modifierGroup.isRequired,
@@ -79,7 +80,7 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, displayName, minSelections, maxSelections, isRequired, modifiers } = body
+    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, modifiers } = body
 
     // Update modifier group
     const modifierGroup = await db.modifierGroup.update({
@@ -87,6 +88,7 @@ export async function PUT(
       data: {
         ...(name !== undefined && { name }),
         ...(displayName !== undefined && { displayName }),
+        ...(modifierTypes !== undefined && { modifierTypes }),
         ...(minSelections !== undefined && { minSelections }),
         ...(maxSelections !== undefined && { maxSelections }),
         ...(isRequired !== undefined && { isRequired }),
@@ -184,6 +186,7 @@ export async function PUT(
       id: updated!.id,
       name: updated!.name,
       displayName: updated!.displayName,
+      modifierTypes: (updated!.modifierTypes as string[]) || ['universal'],
       minSelections: updated!.minSelections,
       maxSelections: updated!.maxSelections,
       isRequired: updated!.isRequired,

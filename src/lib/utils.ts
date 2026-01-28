@@ -42,22 +42,3 @@ export function generateOrderNumber(): string {
   const number = Math.floor(Math.random() * 99) + 1
   return `${letter}${number.toString().padStart(2, '0')}`
 }
-
-export function calculateTax(subtotal: number, taxRate: number): number {
-  return Math.round(subtotal * taxRate * 100) / 100
-}
-
-export function debounce<T extends (...args: unknown[]) => unknown>(
-  fn: T,
-  delay: number
-): (...args: Parameters<T>) => void {
-  let timeoutId: NodeJS.Timeout
-  return (...args: Parameters<T>) => {
-    clearTimeout(timeoutId)
-    timeoutId = setTimeout(() => fn(...args), delay)
-  }
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}

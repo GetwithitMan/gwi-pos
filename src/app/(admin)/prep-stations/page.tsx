@@ -69,7 +69,7 @@ export default function PrepStationsPage() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/prep-stations')
       return
     }
     if (employee?.location?.id) {
