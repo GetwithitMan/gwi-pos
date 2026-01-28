@@ -7,10 +7,20 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 
+// Category types for reporting and item builder selection
+const CATEGORY_TYPES = [
+  { value: 'food', label: 'Food', color: '#22c55e', description: 'Kitchen items, appetizers, entrees' },
+  { value: 'drinks', label: 'Drinks', color: '#3b82f6', description: 'Non-alcoholic beverages' },
+  { value: 'liquor', label: 'Liquor', color: '#8b5cf6', description: 'Beer, wine, spirits' },
+  { value: 'entertainment', label: 'Entertainment', color: '#f97316', description: 'Pool tables, darts, games - timed billing' },
+  { value: 'combos', label: 'Combos', color: '#ec4899', description: 'Bundled items' },
+]
+
 interface Category {
   id: string
   name: string
   color: string
+  categoryType: string
   itemCount: number
   isActive: boolean
 }
@@ -23,10 +33,19 @@ interface MenuItem {
   description?: string
   isActive: boolean
   isAvailable: boolean
+  itemType?: string
+  timedPricing?: { per15Min?: number; per30Min?: number; perHour?: number; minimum?: number } | null
+  minimumMinutes?: number | null
   modifierGroupCount?: number
   modifierGroups?: { id: string; name: string }[]
   commissionType?: string | null
   commissionValue?: number | null
+  // Liquor Builder fields
+  isLiquorItem?: boolean
+  hasRecipe?: boolean
+  recipeIngredientCount?: number
+  totalPourCost?: number | null
+  profitMargin?: number | null
 }
 
 interface ModifierGroup {
@@ -54,7 +73,7 @@ export default function MenuManagementPage() {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/menu')
       return
     }
     loadMenu()
@@ -184,6 +203,7 @@ export default function MenuManagementPage() {
   }
 
   const filteredItems = items.filter(item => item.categoryId === selectedCategory)
+  const selectedCategoryData = categories.find(c => c.id === selectedCategory)
 
   if (!isAuthenticated) return null
 
@@ -206,6 +226,12 @@ export default function MenuManagementPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
             </svg>
             Modifiers
+          </Button>
+          <Button variant="outline" onClick={() => router.push('/liquor-builder')}>
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+            </svg>
+            Liquor Builder
           </Button>
           <div className="text-sm text-gray-500">
             {employee?.displayName} · {employee?.role.name}
@@ -239,54 +265,65 @@ export default function MenuManagementPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {categories.map(category => (
-                <div
-                  key={category.id}
-                  className={`p-3 rounded-lg cursor-pointer transition-all ${
-                    selectedCategory === category.id
-                      ? 'bg-blue-50 border-2 border-blue-500'
-                      : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
-                  }`}
-                  onClick={() => setSelectedCategory(category.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-4 h-4 rounded"
-                        style={{ backgroundColor: category.color }}
-                      />
-                      <span className="font-medium">{category.name}</span>
+              {categories.map(category => {
+                const typeInfo = CATEGORY_TYPES.find(t => t.value === category.categoryType)
+                return (
+                  <div
+                    key={category.id}
+                    className={`p-3 rounded-lg cursor-pointer transition-all ${
+                      selectedCategory === category.id
+                        ? 'bg-blue-50 border-2 border-blue-500'
+                        : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
+                    }`}
+                    onClick={() => setSelectedCategory(category.id)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-4 h-4 rounded"
+                          style={{ backgroundColor: category.color }}
+                        />
+                        <span className="font-medium">{category.name}</span>
+                      </div>
+                      <span className="text-sm text-gray-500">{category.itemCount}</span>
                     </div>
-                    <span className="text-sm text-gray-500">{category.itemCount}</span>
+                    {typeInfo && (
+                      <span
+                        className="text-xs px-1.5 py-0.5 rounded mt-1 inline-block"
+                        style={{ backgroundColor: typeInfo.color + '20', color: typeInfo.color }}
+                      >
+                        {typeInfo.label}
+                      </span>
+                    )}
+                    {selectedCategory === category.id && (
+                      <div className="flex gap-2 mt-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingCategory(category)
+                            setShowCategoryModal(true)
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteCategory(category.id)
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    )}
                   </div>
-                  {selectedCategory === category.id && (
-                    <div className="flex gap-2 mt-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setEditingCategory(category)
-                          setShowCategoryModal(true)
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleDeleteCategory(category.id)
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>
@@ -296,9 +333,25 @@ export default function MenuManagementPage() {
           {selectedCategory ? (
             <>
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold">
-                  {categories.find(c => c.id === selectedCategory)?.name} Items
-                </h2>
+                <div>
+                  <h2 className="text-xl font-semibold">
+                    {selectedCategoryData?.name} Items
+                  </h2>
+                  {selectedCategoryData?.categoryType === 'entertainment' && (
+                    <p className="text-sm text-orange-600">Entertainment items support timed billing</p>
+                  )}
+                  {selectedCategoryData?.categoryType === 'liquor' && (
+                    <p className="text-sm text-purple-600">
+                      Liquor items support recipe tracking.{' '}
+                      <button
+                        onClick={() => router.push('/liquor-builder')}
+                        className="underline hover:text-purple-800"
+                      >
+                        Manage in Liquor Builder
+                      </button>
+                    </p>
+                  )}
+                </div>
                 <Button
                   variant="primary"
                   onClick={() => {
@@ -334,6 +387,20 @@ export default function MenuManagementPage() {
                         <p className="text-lg font-bold text-blue-600 mb-2">
                           {formatCurrency(item.price)}
                         </p>
+                        {/* Timed pricing display */}
+                        {item.itemType === 'timed_rental' && item.timedPricing && (
+                          <div className="text-xs text-orange-600 mb-2 space-y-0.5">
+                            {item.timedPricing.per15Min && (
+                              <p>15 min: {formatCurrency(item.timedPricing.per15Min)}</p>
+                            )}
+                            {item.timedPricing.per30Min && (
+                              <p>30 min: {formatCurrency(item.timedPricing.per30Min)}</p>
+                            )}
+                            {item.timedPricing.perHour && (
+                              <p>Hour: {formatCurrency(item.timedPricing.perHour)}</p>
+                            )}
+                          </div>
+                        )}
                         {item.modifierGroupCount && item.modifierGroupCount > 0 && (
                           <p className="text-xs text-purple-600 mb-2">
                             <svg className="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -350,12 +417,41 @@ export default function MenuManagementPage() {
                             Comm: {item.commissionType === 'fixed' ? formatCurrency(item.commissionValue) : `${item.commissionValue}%`}
                           </p>
                         )}
+                        {/* Liquor item recipe info */}
+                        {item.isLiquorItem && (
+                          <div className="mb-2">
+                            {item.hasRecipe ? (
+                              <div className="bg-purple-50 rounded p-2 text-xs">
+                                <div className="flex items-center justify-between text-purple-700">
+                                  <span>{item.recipeIngredientCount} ingredient{item.recipeIngredientCount !== 1 ? 's' : ''}</span>
+                                  <span className={`font-medium ${
+                                    (item.profitMargin || 0) >= 70 ? 'text-green-600' :
+                                    (item.profitMargin || 0) >= 50 ? 'text-yellow-600' : 'text-red-600'
+                                  }`}>
+                                    {item.profitMargin}% margin
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between mt-1 text-purple-600">
+                                  <span>Pour cost: {formatCurrency(item.totalPourCost || 0)}</span>
+                                  <span>Profit: {formatCurrency(item.price - (item.totalPourCost || 0))}</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-xs text-orange-600">
+                                <svg className="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                                No recipe set
+                              </p>
+                            )}
+                          </div>
+                        )}
                         {item.description && (
                           <p className="text-sm text-gray-500 mb-3 line-clamp-2">
                             {item.description}
                           </p>
                         )}
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -366,6 +462,16 @@ export default function MenuManagementPage() {
                           >
                             Edit
                           </Button>
+                          {item.isLiquorItem && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-purple-600 border-purple-300 hover:bg-purple-50"
+                              onClick={() => router.push(`/liquor-builder?item=${item.id}`)}
+                            >
+                              Recipe
+                            </Button>
+                          )}
                           <Button
                             variant={item.isAvailable ? 'outline' : 'primary'}
                             size="sm"
@@ -409,9 +515,10 @@ export default function MenuManagementPage() {
       )}
 
       {/* Item Modal */}
-      {showItemModal && (
+      {showItemModal && selectedCategoryData && (
         <ItemModal
           item={editingItem}
+          categoryType={selectedCategoryData.categoryType}
           modifierGroups={modifierGroups}
           onSave={handleSaveItem}
           onClose={() => {
@@ -436,6 +543,7 @@ function CategoryModal({
 }) {
   const [name, setName] = useState(category?.name || '')
   const [color, setColor] = useState(category?.color || '#3b82f6')
+  const [categoryType, setCategoryType] = useState(category?.categoryType || 'food')
 
   const colors = [
     '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -460,12 +568,47 @@ function CategoryModal({
               autoFocus
             />
           </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">Category Type</label>
+            <div className="space-y-2">
+              {CATEGORY_TYPES.map(type => (
+                <label
+                  key={type.value}
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer border-2 transition-all ${
+                    categoryType === type.value
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="categoryType"
+                    value={type.value}
+                    checked={categoryType === type.value}
+                    onChange={(e) => setCategoryType(e.target.value)}
+                    className="w-4 h-4"
+                  />
+                  <div
+                    className="w-4 h-4 rounded"
+                    style={{ backgroundColor: type.color }}
+                  />
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{type.label}</p>
+                    <p className="text-xs text-gray-500">{type.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium mb-2">Color</label>
             <div className="flex gap-2 flex-wrap">
               {colors.map(c => (
                 <button
                   key={c}
+                  type="button"
                   className={`w-10 h-10 rounded-lg ${color === c ? 'ring-2 ring-offset-2 ring-blue-500' : ''}`}
                   style={{ backgroundColor: c }}
                   onClick={() => setColor(c)}
@@ -473,6 +616,7 @@ function CategoryModal({
               ))}
             </div>
           </div>
+
           <div className="flex gap-2 pt-4">
             <Button variant="outline" className="flex-1" onClick={onClose}>
               Cancel
@@ -481,7 +625,7 @@ function CategoryModal({
               variant="primary"
               className="flex-1"
               disabled={!name.trim()}
-              onClick={() => onSave({ name, color })}
+              onClick={() => onSave({ name, color, categoryType })}
             >
               {category ? 'Save Changes' : 'Create Category'}
             </Button>
@@ -495,11 +639,13 @@ function CategoryModal({
 // Item Modal Component
 function ItemModal({
   item,
+  categoryType,
   modifierGroups,
   onSave,
   onClose
 }: {
   item: MenuItem | null
+  categoryType: string
   modifierGroups: ModifierGroup[]
   onSave: (data: Partial<MenuItem> & { modifierGroupIds?: string[] }) => void
   onClose: () => void
@@ -515,6 +661,16 @@ function ItemModal({
     item?.modifierGroups?.map(g => g.id) || []
   )
   const [isLoadingModifiers, setIsLoadingModifiers] = useState(false)
+
+  // Timed pricing for entertainment items
+  const [isTimedItem, setIsTimedItem] = useState(item?.itemType === 'timed_rental')
+  const [per15Min, setPer15Min] = useState(item?.timedPricing?.per15Min?.toString() || '')
+  const [per30Min, setPer30Min] = useState(item?.timedPricing?.per30Min?.toString() || '')
+  const [perHour, setPerHour] = useState(item?.timedPricing?.perHour?.toString() || '')
+  const [minimumMinutes, setMinimumMinutes] = useState(item?.minimumMinutes?.toString() || '15')
+
+  // Show entertainment builder if category is entertainment OR item is already a timed rental
+  const isEntertainment = categoryType === 'entertainment' || item?.itemType === 'timed_rental'
 
   // Load existing modifier group links when editing
   useEffect(() => {
@@ -540,6 +696,28 @@ function ItemModal({
     )
   }
 
+  const handleSave = () => {
+    const timedPricing = isEntertainment && isTimedItem
+      ? {
+          per15Min: per15Min ? parseFloat(per15Min) : undefined,
+          per30Min: per30Min ? parseFloat(per30Min) : undefined,
+          perHour: perHour ? parseFloat(perHour) : undefined,
+        }
+      : null
+
+    onSave({
+      name,
+      price: parseFloat(price),
+      description: description || undefined,
+      itemType: isEntertainment && isTimedItem ? 'timed_rental' : 'standard',
+      timedPricing,
+      minimumMinutes: isEntertainment && isTimedItem && minimumMinutes ? parseInt(minimumMinutes) : null,
+      commissionType: commissionType || null,
+      commissionValue: commissionValue ? parseFloat(commissionValue) : null,
+      modifierGroupIds: selectedModifierGroupIds,
+    })
+  }
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -554,12 +732,13 @@ function ItemModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="e.g., Buffalo Wings"
+              placeholder={isEntertainment ? 'e.g., Pool Table 1' : 'e.g., Buffalo Wings'}
               autoFocus
             />
           </div>
+
           <div>
-            <label className="block text-sm font-medium mb-1">Price</label>
+            <label className="block text-sm font-medium mb-1">Base Price</label>
             <div className="relative">
               <span className="absolute left-3 top-2 text-gray-500">$</span>
               <input
@@ -573,6 +752,91 @@ function ItemModal({
               />
             </div>
           </div>
+
+          {/* Entertainment/Timed Pricing Section */}
+          {isEntertainment && (
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <label className="flex items-center gap-2 cursor-pointer mb-3">
+                <input
+                  type="checkbox"
+                  checked={isTimedItem}
+                  onChange={(e) => setIsTimedItem(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="font-medium text-orange-800">Enable Timed Billing</span>
+              </label>
+
+              {isTimedItem && (
+                <div className="space-y-3">
+                  <p className="text-sm text-orange-700">
+                    Set rates for different time increments. Leave blank to skip that option.
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-orange-700 mb-1">Per 15 min</label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-2 text-gray-500 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={per15Min}
+                          onChange={(e) => setPer15Min(e.target.value)}
+                          className="w-full pl-6 pr-2 py-2 border rounded text-sm"
+                          placeholder="5.00"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-orange-700 mb-1">Per 30 min</label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-2 text-gray-500 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={per30Min}
+                          onChange={(e) => setPer30Min(e.target.value)}
+                          className="w-full pl-6 pr-2 py-2 border rounded text-sm"
+                          placeholder="8.00"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-orange-700 mb-1">Per Hour</label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-2 text-gray-500 text-sm">$</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={perHour}
+                          onChange={(e) => setPerHour(e.target.value)}
+                          className="w-full pl-6 pr-2 py-2 border rounded text-sm"
+                          placeholder="15.00"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-orange-700 mb-1">Minimum Minutes</label>
+                    <select
+                      value={minimumMinutes}
+                      onChange={(e) => setMinimumMinutes(e.target.value)}
+                      className="w-full px-3 py-2 border rounded text-sm"
+                    >
+                      <option value="15">15 minutes</option>
+                      <option value="30">30 minutes</option>
+                      <option value="60">1 hour</option>
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium mb-1">Description (optional)</label>
             <textarea
@@ -630,47 +894,49 @@ function ItemModal({
             )}
           </div>
 
-          {/* Modifier Groups Section */}
-          <div>
-            <label className="block text-sm font-medium mb-2">Modifier Groups</label>
-            {isLoadingModifiers ? (
-              <p className="text-sm text-gray-500">Loading modifiers...</p>
-            ) : modifierGroups.length === 0 ? (
-              <p className="text-sm text-gray-500">
-                No modifier groups available. Create them in the Modifiers section.
-              </p>
-            ) : (
-              <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-2">
-                {modifierGroups.map(group => (
-                  <label
-                    key={group.id}
-                    className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-gray-50 ${
-                      selectedModifierGroupIds.includes(group.id) ? 'bg-blue-50 border border-blue-200' : ''
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedModifierGroupIds.includes(group.id)}
-                      onChange={() => toggleModifierGroup(group.id)}
-                      className="w-4 h-4"
-                    />
-                    <div className="flex-1">
-                      <p className="font-medium text-sm">{group.name}</p>
-                      <p className="text-xs text-gray-500">
-                        {group.modifiers.length} options
-                        {group.isRequired && <span className="text-red-500 ml-1">(Required)</span>}
-                      </p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            )}
-            {selectedModifierGroupIds.length > 0 && (
-              <p className="text-xs text-gray-500 mt-1">
-                {selectedModifierGroupIds.length} modifier group(s) selected
-              </p>
-            )}
-          </div>
+          {/* Modifier Groups Section - only for non-entertainment or non-timed items */}
+          {(!isEntertainment || !isTimedItem) && (
+            <div>
+              <label className="block text-sm font-medium mb-2">Modifier Groups</label>
+              {isLoadingModifiers ? (
+                <p className="text-sm text-gray-500">Loading modifiers...</p>
+              ) : modifierGroups.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No modifier groups available. Create them in the Modifiers section.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-2">
+                  {modifierGroups.map(group => (
+                    <label
+                      key={group.id}
+                      className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-gray-50 ${
+                        selectedModifierGroupIds.includes(group.id) ? 'bg-blue-50 border border-blue-200' : ''
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedModifierGroupIds.includes(group.id)}
+                        onChange={() => toggleModifierGroup(group.id)}
+                        className="w-4 h-4"
+                      />
+                      <div className="flex-1">
+                        <p className="font-medium text-sm">{group.name}</p>
+                        <p className="text-xs text-gray-500">
+                          {group.modifiers.length} options
+                          {group.isRequired && <span className="text-red-500 ml-1">(Required)</span>}
+                        </p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {selectedModifierGroupIds.length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {selectedModifierGroupIds.length} modifier group(s) selected
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-2 pt-4">
             <Button variant="outline" className="flex-1" onClick={onClose}>
@@ -680,14 +946,7 @@ function ItemModal({
               variant="primary"
               className="flex-1"
               disabled={!name.trim() || !price}
-              onClick={() => onSave({
-                name,
-                price: parseFloat(price),
-                description: description || undefined,
-                commissionType: commissionType || null,
-                commissionValue: commissionValue ? parseFloat(commissionValue) : null,
-                modifierGroupIds: selectedModifierGroupIds,
-              })}
+              onClick={handleSave}
             >
               {item ? 'Save Changes' : 'Create Item'}
             </Button>
