@@ -168,15 +168,15 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // More detailed time overlap check
+      // More detailed time overlap check using minutes from midnight
       if (conflictingReservation) {
-        const existingStart = parseInt(conflictingReservation.reservationTime.replace(':', ''))
-        const existingEnd = existingStart + (conflictingReservation.duration * 100 / 60)
-        const newStart = parseInt(reservationTime.replace(':', ''))
-        const newEnd = newStart + ((duration || 90) * 100 / 60)
+        const existingStart = parseTimeToMinutes(conflictingReservation.reservationTime)
+        const existingEnd = existingStart + conflictingReservation.duration
+        const newStart = parseTimeToMinutes(reservationTime)
+        const newEnd = newStart + (duration || 90)
 
-        // Check overlap
-        if (!(newEnd <= existingStart || newStart >= existingEnd)) {
+        // Check overlap: reservations overlap if one starts before the other ends
+        if (newStart < existingEnd && newEnd > existingStart) {
           return NextResponse.json(
             { error: 'Table has a conflicting reservation at this time' },
             { status: 400 }

@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
         totalCapacity,
         reservedCapacity,
         settings,
-        status: conflicts.length > 0 ? 'draft' : 'draft', // Always start as draft
+        status: 'draft', // Events always start as draft, must be published explicitly
         reservationConflictsHandled: conflicts.length === 0,
         createdBy,
         pricingTiers: {

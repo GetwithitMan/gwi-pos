@@ -241,7 +241,7 @@ export async function POST(
             basePrice: pricingTier.price,
             serviceFee: pricingTier.serviceFee,
             taxAmount: 0, // Would calculate based on location tax settings
-            totalPrice: pricingTier.price.add(pricingTier.serviceFee),
+            totalPrice: Number(pricingTier.price) + Number(pricingTier.serviceFee),
             status: 'held',
             heldAt: now,
             heldUntil: holdUntil,

@@ -135,15 +135,15 @@ export async function DELETE(
       )
     }
 
-    // Check if seat has any sold tickets
-    const soldTickets = await db.ticket.count({
+    // Check if seat has any active tickets (sold, held, or checked in)
+    const activeTickets = await db.ticket.count({
       where: {
         seatId,
-        status: { in: ['sold', 'held'] },
+        status: { in: ['sold', 'held', 'checked_in'] },
       },
     })
 
-    if (soldTickets > 0) {
+    if (activeTickets > 0) {
       return NextResponse.json(
         { error: 'Cannot delete seat with active tickets' },
         { status: 400 }
