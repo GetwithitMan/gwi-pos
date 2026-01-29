@@ -203,10 +203,13 @@ export interface EntertainmentItem {
   status: 'available' | 'in_use' | 'maintenance'
   currentOrder: {
     orderId: string
+    orderItemId: string | null
     tabName: string
     orderNumber: number
     displayNumber: string | null
   } | null
+  // Also track this at the item level for easier access
+  currentOrderItemId?: string | null
   timeInfo: {
     type: 'block' | 'per_minute'
     blockMinutes?: number

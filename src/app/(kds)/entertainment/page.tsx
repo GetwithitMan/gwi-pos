@@ -10,7 +10,7 @@ import { AddToWaitlistModal } from '@/components/entertainment/AddToWaitlistModa
 import { SeatFromWaitlistModal } from '@/components/entertainment/SeatFromWaitlistModal'
 import type { EntertainmentItem, WaitlistEntry } from '@/lib/entertainment'
 
-const REFRESH_INTERVAL = 5000 // 5 seconds
+const REFRESH_INTERVAL = 3000 // 3 seconds - faster refresh for real-time updates
 
 export default function EntertainmentKDSPage() {
   const router = useRouter()
@@ -41,9 +41,25 @@ export default function EntertainmentKDSPage() {
     if (!locationId) return
 
     try {
-      const response = await fetch(`/api/entertainment/status?locationId=${locationId}`)
+      // Add timestamp to prevent any caching
+      const timestamp = Date.now()
+      const url = `/api/entertainment/status?locationId=${locationId}&_t=${timestamp}`
+      console.log('Fetching entertainment status:', url)
+      const response = await fetch(url, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+        },
+      })
       if (response.ok) {
         const data = await response.json()
+        console.log('Entertainment status received:', data.items.map((i: EntertainmentItem) => ({
+          id: i.id,
+          name: i.displayName,
+          status: i.status,
+          hasOrder: !!i.currentOrder,
+        })))
         setItems(data.items)
         // Collect all waitlist entries from all items
         const waitlistEntries: WaitlistEntry[] = data.items.flatMap((item: EntertainmentItem) =>
@@ -69,9 +85,34 @@ export default function EntertainmentKDSPage() {
   // Initial load and polling
   useEffect(() => {
     if (locationId) {
+      // Fetch immediately on mount
       fetchStatus()
+
+      // Set up polling interval
       const interval = setInterval(fetchStatus, REFRESH_INTERVAL)
-      return () => clearInterval(interval)
+
+      // Also refresh when page becomes visible (user switches back to tab)
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          console.log('Page became visible, refreshing entertainment status')
+          fetchStatus()
+        }
+      }
+
+      // Refresh when window gets focus
+      const handleFocus = () => {
+        console.log('Window focused, refreshing entertainment status')
+        fetchStatus()
+      }
+
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+      window.addEventListener('focus', handleFocus)
+
+      return () => {
+        clearInterval(interval)
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+        window.removeEventListener('focus', handleFocus)
+      }
     }
   }, [locationId, fetchStatus])
 
@@ -86,19 +127,63 @@ export default function EntertainmentKDSPage() {
     const item = items.find(i => i.id === itemId)
     if (!item?.currentOrder) return
 
-    // Find the order item ID - we'll need to extend the block time
+    // Get the order item ID from the entertainment item
+    // First try from item level, then from currentOrder
+    const orderItemId = item.currentOrderItemId || item.currentOrder.orderItemId
+
+    if (!orderItemId) {
+      // Fallback: fetch the order to find the entertainment item
+      try {
+        const orderResponse = await fetch(`/api/orders/${item.currentOrder.orderId}`)
+        if (!orderResponse.ok) {
+          alert('Could not find order details')
+          return
+        }
+        const orderData = await orderResponse.json()
+        const entertainmentItem = orderData.items?.find(
+          (i: { menuItemId: string }) => i.menuItemId === itemId
+        )
+        if (!entertainmentItem?.id) {
+          alert('Could not find entertainment item in order')
+          return
+        }
+        // Extend using the found order item ID
+        const response = await fetch('/api/entertainment/block-time', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderItemId: entertainmentItem.id,
+            additionalMinutes: 30,
+          }),
+        })
+
+        if (response.ok) {
+          fetchStatus()
+        } else {
+          const data = await response.json()
+          alert(data.error || 'Failed to extend time')
+        }
+        return
+      } catch (err) {
+        console.error('Error extending time:', err)
+        alert('Failed to extend time')
+        return
+      }
+    }
+
+    // Use the direct orderItemId if available
     try {
       const response = await fetch('/api/entertainment/block-time', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          orderItemId: item.currentOrder.orderId, // This should be the orderItemId
-          additionalMinutes: 30, // Default extend by 30 minutes
+          orderItemId,
+          additionalMinutes: 30,
         }),
       })
 
       if (response.ok) {
-        fetchStatus() // Refresh
+        fetchStatus()
       } else {
         const data = await response.json()
         alert(data.error || 'Failed to extend time')
@@ -113,22 +198,50 @@ export default function EntertainmentKDSPage() {
   const handleStopSession = async (itemId: string) => {
     if (!confirm('Are you sure you want to stop this session?')) return
 
-    try {
-      // Reset the entertainment item status
-      const response = await fetch('/api/entertainment/status', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          menuItemId: itemId,
-          status: 'available',
-        }),
-      })
+    const item = items.find(i => i.id === itemId)
+    if (!item) return
 
-      if (response.ok) {
-        fetchStatus() // Refresh
+    try {
+      // Get the order item ID to properly stop the session
+      const orderItemId = item.currentOrderItemId || item.currentOrder?.orderItemId
+      console.log('Stopping session for item:', itemId, 'orderItemId:', orderItemId)
+
+      if (orderItemId) {
+        // Stop the block time via the proper endpoint (also updates MenuItem status)
+        const response = await fetch(`/api/entertainment/block-time?orderItemId=${orderItemId}`, {
+          method: 'DELETE',
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          console.log('Block time stopped:', result)
+          await fetchStatus() // Refresh and wait for it
+        } else {
+          const data = await response.json()
+          console.error('Failed to stop block time:', data)
+          alert(data.error || 'Failed to stop session')
+        }
       } else {
-        const data = await response.json()
-        alert(data.error || 'Failed to stop session')
+        // Fallback: just reset the entertainment item status directly
+        console.log('No orderItemId, using fallback PATCH')
+        const response = await fetch('/api/entertainment/status', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            menuItemId: itemId,
+            status: 'available',
+          }),
+        })
+
+        if (response.ok) {
+          const result = await response.json()
+          console.log('Status updated via fallback:', result)
+          await fetchStatus() // Refresh and wait for it
+        } else {
+          const data = await response.json()
+          console.error('Failed to update status:', data)
+          alert(data.error || 'Failed to stop session')
+        }
       }
     } catch (err) {
       console.error('Error stopping session:', err)

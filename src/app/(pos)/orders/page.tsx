@@ -1,12 +1,36 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+} from '@dnd-kit/sortable'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
+import { usePOSDisplay } from '@/hooks/usePOSDisplay'
+import { usePOSLayout } from '@/hooks/usePOSLayout'
+import { POSDisplaySettingsModal } from '@/components/orders/POSDisplaySettings'
+import { ModeToggle } from '@/components/pos/ModeToggle'
+import { SortableCategoryButton } from '@/components/pos/SortableCategoryButton'
+import { FavoritesBar } from '@/components/pos/FavoritesBar'
+import { CategoryColorPicker } from '@/components/pos/CategoryColorPicker'
+import { MenuItemColorPicker } from '@/components/pos/MenuItemColorPicker'
 import { formatCurrency, formatTime } from '@/lib/utils'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
 import { PaymentModal } from '@/components/payment/PaymentModal'
@@ -24,10 +48,13 @@ import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
 import { ShiftCloseoutModal } from '@/components/shifts/ShiftCloseoutModal'
 import { ReceiptModal } from '@/components/receipt'
 import { SeatCourseHoldControls, ItemBadges } from '@/components/orders/SeatCourseHoldControls'
+import { EntertainmentSessionControls } from '@/components/orders/EntertainmentSessionControls'
 import { CourseOverviewPanel } from '@/components/orders/CourseOverviewPanel'
 import { ModifierModal } from '@/components/modifiers/ModifierModal'
 import { AddToWaitlistModal } from '@/components/entertainment/AddToWaitlistModal'
 import { OrderSettingsModal } from '@/components/orders/OrderSettingsModal'
+import { AdminNav } from '@/components/admin/AdminNav'
+import { TablePickerModal } from '@/components/orders/TablePickerModal'
 import type { Category, MenuItem, ModifierGroup, SelectedModifier } from '@/types'
 
 export default function OrdersPage() {
@@ -39,6 +66,14 @@ export default function OrdersPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showMenu, setShowMenu] = useState(false)
+  const [showAdminNav, setShowAdminNav] = useState(false)
+  const [showTablePicker, setShowTablePicker] = useState(false)
+
+  // Check if user has admin/manager permissions
+  // Handle both array permissions (new format) and role name check
+  const permissionsArray = Array.isArray(employee?.permissions) ? employee.permissions : []
+  const isManager = employee?.role?.name && ['Manager', 'Owner', 'Admin'].includes(employee.role.name) ||
+    permissionsArray.some(p => ['admin', 'manage_menu', 'manage_employees'].includes(p))
 
   // Modifier selection state
   const [showModifierModal, setShowModifierModal] = useState(false)
@@ -54,7 +89,50 @@ export default function OrdersPage() {
 
   // Settings loaded from API via custom hook
   const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings } = useOrderSettings()
+  const { settings: displaySettings, menuItemClass, gridColsClass, orderPanelClass, categorySize, categoryColorMode, categoryButtonBgColor, categoryButtonTextColor, showPriceOnMenuItems, updateSetting, updateSettings } = usePOSDisplay()
+
+  // POS Layout (Bar/Food mode, favorites, category order)
+  // All logged-in employees can customize their personal layout colors
+  // This is a fun personalization feature for servers
+  const hasLayoutPermission = !!employee?.id
+  const {
+    currentMode,
+    setMode,
+    favorites,
+    addFavorite,
+    removeFavorite,
+    reorderFavorites,
+    canCustomize,
+    layout,
+    categoryOrder,
+    setCategoryOrder,
+    categoryColors,
+    setCategoryColor,
+    resetCategoryColor,
+    resetAllCategoryColors,
+    menuItemColors,
+    setMenuItemStyle,
+    resetMenuItemStyle,
+    resetAllMenuItemStyles,
+  } = usePOSLayout({
+    employeeId: employee?.id,
+    locationId: employee?.location?.id,
+    permissions: hasLayoutPermission ? { posLayout: ['customize_personal'] } : undefined,
+  })
+
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('cash')
+
+  // Display settings modal
+  const [showDisplaySettings, setShowDisplaySettings] = useState(false)
+  const [showSettingsDropdown, setShowSettingsDropdown] = useState(false)
+  const [isEditingFavorites, setIsEditingFavorites] = useState(false)
+  const [isEditingMenuItems, setIsEditingMenuItems] = useState(false)
+
+  // Category color picker state
+  const [colorPickerCategory, setColorPickerCategory] = useState<Category | null>(null)
+
+  // Menu item color picker state
+  const [colorPickerMenuItem, setColorPickerMenuItem] = useState<MenuItem | null>(null)
 
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -128,7 +206,8 @@ export default function OrdersPage() {
     id: string
     startedAt: string
     startingCash: number
-    employee: { id: string; name: string }
+    employee: { id: string; name: string; roleId?: string }
+    locationId?: string
   } | null>(null)
   const [showShiftStartModal, setShowShiftStartModal] = useState(false)
   const [showShiftCloseoutModal, setShowShiftCloseoutModal] = useState(false)
@@ -200,12 +279,65 @@ export default function OrdersPage() {
     }
   }, [isAuthenticated, router])
 
+  // Load menu with cache-busting
+  const loadMenu = useCallback(async () => {
+    if (!employee?.location?.id) return
+    try {
+      const timestamp = Date.now()
+      const params = new URLSearchParams({ locationId: employee.location.id, _t: timestamp.toString() })
+      const response = await fetch(`/api/menu?${params}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setCategories(data.categories)
+        setMenuItems([...data.items]) // Force new array reference
+        if (data.categories.length > 0 && !selectedCategory) {
+          setSelectedCategory(data.categories[0].id)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load menu:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [employee?.location?.id, selectedCategory])
+
   useEffect(() => {
     if (employee?.location?.id) {
       loadMenu()
       loadActiveSessions()
     }
-  }, [employee?.location?.id])
+  }, [employee?.location?.id, loadMenu])
+
+  // Auto-refresh menu when viewing Entertainment category (for real-time status)
+  const selectedCategoryData = categories.find(c => c.id === selectedCategory)
+  useEffect(() => {
+    if (selectedCategoryData?.categoryType !== 'entertainment') return
+
+    // Poll every 3 seconds for entertainment status changes
+    const interval = setInterval(() => {
+      loadMenu()
+    }, 3000)
+
+    // Also refresh on visibility/focus changes
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadMenu()
+      }
+    }
+    const handleFocus = () => loadMenu()
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [selectedCategoryData?.categoryType, loadMenu])
 
   const loadActiveSessions = async () => {
     if (!employee?.location?.id) return
@@ -240,7 +372,15 @@ export default function OrdersPage() {
       if (response.ok) {
         const data = await response.json()
         if (data.shifts && data.shifts.length > 0) {
-          setCurrentShift(data.shifts[0])
+          // Enrich shift data with roleId and locationId for tip distribution
+          setCurrentShift({
+            ...data.shifts[0],
+            employee: {
+              ...data.shifts[0].employee,
+              roleId: employee?.role?.id,
+            },
+            locationId: employee?.location?.id,
+          })
         } else {
           // No open shift - prompt to start one
           setShowShiftStartModal(true)
@@ -279,26 +419,6 @@ export default function OrdersPage() {
       startOrder('dine_in', { guestCount: 1 })
     }
   }, [currentOrder, startOrder])
-
-  const loadMenu = async () => {
-    if (!employee?.location?.id) return
-    try {
-      const params = new URLSearchParams({ locationId: employee.location.id })
-      const response = await fetch(`/api/menu?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setCategories(data.categories)
-        setMenuItems(data.items)
-        if (data.categories.length > 0) {
-          setSelectedCategory(data.categories[0].id)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load menu:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const handleLogout = () => {
     clearOrder()
@@ -352,7 +472,8 @@ export default function OrdersPage() {
           employeeId: employee.id,
           locationId: employee.location?.id,
           orderType: currentOrder.orderType,
-          tabName: currentOrder.tabName,
+          tableId: currentOrder.tableId,
+          tabName: currentOrder.tabName || currentOrder.tableName,
           guestCount: currentOrder.guestCount,
           items: currentOrder.items.map(item => ({
             menuItemId: item.menuItemId,
@@ -393,6 +514,9 @@ export default function OrdersPage() {
     try {
       const orderId = await saveOrderToDatabase()
       if (orderId) {
+        // Start timers for any entertainment/timed rental items
+        await startEntertainmentTimers(orderId)
+
         // Show brief confirmation
         const orderNum = orderId.slice(-6).toUpperCase()
 
@@ -409,6 +533,39 @@ export default function OrdersPage() {
       }
     } finally {
       setIsSendingOrder(false)
+    }
+  }
+
+  // Start timers for entertainment items when order is sent
+  const startEntertainmentTimers = async (orderId: string) => {
+    try {
+      // Fetch the order to get item IDs
+      const response = await fetch(`/api/orders/${orderId}`)
+      if (!response.ok) return
+
+      const orderData = await response.json()
+
+      // Find entertainment items that need timers started
+      for (const item of orderData.items || []) {
+        const menuItem = menuItems.find(m => m.id === item.menuItemId)
+
+        // Check if this is a timed_rental item without block time started
+        if (menuItem?.itemType === 'timed_rental' && !item.blockTimeStartedAt) {
+          const blockMinutes = menuItem.blockTimeMinutes || 60
+
+          // Start the block time
+          await fetch('/api/entertainment/block-time', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderItemId: item.id,
+              minutes: blockMinutes,
+            }),
+          })
+        }
+      }
+    } catch (err) {
+      console.error('Failed to start entertainment timers:', err)
     }
   }
 
@@ -454,6 +611,7 @@ export default function OrdersPage() {
       orderNumber: order.orderNumber,
       orderType: order.orderType,
       tableId: order.tableId || undefined,
+      tableName: order.table?.name || undefined,
       tabName: order.tabName || undefined,
       guestCount: order.guestCount,
       items: order.items,
@@ -620,6 +778,7 @@ export default function OrdersPage() {
         orderNumber: orderData.orderNumber,
         orderType: orderData.orderType,
         tableId: orderData.tableId || undefined,
+        tableName: orderData.tableName || undefined,
         tabName: orderData.tabName || undefined,
         guestCount: orderData.guestCount || 1,
         status: orderData.status,
@@ -885,6 +1044,7 @@ export default function OrdersPage() {
         orderNumber: tabData.orderNumber,
         orderType: tabData.orderType,
         tableId: tabData.tableId || undefined,
+        tableName: tabData.tableName || undefined,
         tabName: tabData.tabName || undefined,
         guestCount: tabData.guestCount,
         items: tabData.items,
@@ -989,15 +1149,22 @@ export default function OrdersPage() {
     }
   }
 
-  const handleAddItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string) => {
+  const handleAddItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number) => {
     if (!selectedItem) return
 
-    const modifierTotal = modifiers.reduce((sum, mod) => sum + mod.price, 0)
+    // Apply pour multiplier to base price
+    const basePrice = pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price
+    const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
+
+    // Build item name with pour size
+    const itemName = pourSize
+      ? `${selectedItem.name} (${pourSize.charAt(0).toUpperCase() + pourSize.slice(1)})`
+      : selectedItem.name
 
     addItem({
       menuItemId: selectedItem.id,
-      name: selectedItem.name,
-      price: selectedItem.price,
+      name: itemName,
+      price: basePrice,
       quantity: 1,
       specialNotes,
       modifiers: modifiers.map(mod => ({
@@ -1005,7 +1172,7 @@ export default function OrdersPage() {
         name: mod.preModifier
           ? `${mod.preModifier.charAt(0).toUpperCase() + mod.preModifier.slice(1)} ${mod.name}`
           : mod.name,
-        price: mod.price,
+        price: applyToMods ? mod.price * pourMultiplier : mod.price,
         preModifier: mod.preModifier,
         depth: mod.depth,
         parentModifierId: mod.parentModifierId,
@@ -1241,20 +1408,28 @@ export default function OrdersPage() {
     }
   }
 
-  const handleUpdateItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string) => {
+  const handleUpdateItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number) => {
     if (!selectedItem || !editingOrderItem) return
 
-    const modifierTotal = modifiers.reduce((sum, mod) => sum + mod.price, 0)
+    // Apply pour multiplier to base price
+    const basePrice = pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price
+    const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
+
+    // Build item name with pour size
+    const itemName = pourSize
+      ? `${selectedItem.name} (${pourSize.charAt(0).toUpperCase() + pourSize.slice(1)})`
+      : selectedItem.name
 
     updateItem(editingOrderItem.id, {
-      price: selectedItem.price,
+      name: itemName,
+      price: basePrice,
       specialNotes,
       modifiers: modifiers.map(mod => ({
         id: mod.id,
         name: mod.preModifier
           ? `${mod.preModifier.charAt(0).toUpperCase() + mod.preModifier.slice(1)} ${mod.name}`
           : mod.name,
-        price: mod.price,
+        price: applyToMods ? mod.price * pourMultiplier : mod.price,
         preModifier: mod.preModifier,
         depth: mod.depth,
         parentModifierId: mod.parentModifierId,
@@ -1281,6 +1456,71 @@ export default function OrdersPage() {
     }
     setEditingNotesItemId(null)
     setEditingNotesText('')
+  }
+
+  // State for editing categories order
+  const [isEditingCategories, setIsEditingCategories] = useState(false)
+
+  // DnD sensors for category reordering
+  const categorySensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  )
+
+  // Sort categories based on custom order or default mode-based sorting
+  const sortedCategories = useMemo(() => {
+    // If there's a custom order saved, use it
+    if (categoryOrder && categoryOrder.length > 0) {
+      const orderedCategories: Category[] = []
+      const remainingCategories = [...categories]
+
+      // Add categories in the saved order
+      for (const id of categoryOrder) {
+        const index = remainingCategories.findIndex(c => c.id === id)
+        if (index !== -1) {
+          orderedCategories.push(remainingCategories[index])
+          remainingCategories.splice(index, 1)
+        }
+      }
+
+      // Add any new categories that aren't in the saved order
+      return [...orderedCategories, ...remainingCategories]
+    }
+
+    // Default sorting by mode
+    const barTypes = ['liquor', 'drinks', 'cocktails', 'beer', 'wine']
+    const foodTypes = ['food', 'combos', 'appetizers', 'entrees']
+
+    return [...categories].sort((a, b) => {
+      const aType = a.categoryType || 'food'
+      const bType = b.categoryType || 'food'
+
+      if (currentMode === 'bar') {
+        const aIsBar = barTypes.includes(aType)
+        const bIsBar = barTypes.includes(bType)
+        if (aIsBar && !bIsBar) return -1
+        if (!aIsBar && bIsBar) return 1
+      } else {
+        const aIsFood = foodTypes.includes(aType) || !barTypes.includes(aType)
+        const bIsFood = foodTypes.includes(bType) || !barTypes.includes(bType)
+        if (aIsFood && !bIsFood) return -1
+        if (!aIsFood && bIsFood) return 1
+      }
+
+      return 0
+    })
+  }, [categories, currentMode, categoryOrder])
+
+  // Handle category drag end
+  const handleCategoryDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (over && active.id !== over.id) {
+      const oldIndex = sortedCategories.findIndex(c => c.id === active.id)
+      const newIndex = sortedCategories.findIndex(c => c.id === over.id)
+      const newOrder = arrayMove(sortedCategories, oldIndex, newIndex).map(c => c.id)
+      setCategoryOrder(newOrder)
+    }
   }
 
   const filteredItems = menuItems.filter(
@@ -1313,21 +1553,58 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="h-screen bg-gray-100 flex overflow-hidden">
+    <div className={`h-screen flex overflow-hidden transition-colors duration-500 ${
+      currentMode === 'bar'
+        ? 'bg-gradient-to-br from-slate-100 via-blue-50 to-cyan-50'
+        : 'bg-gradient-to-br from-slate-100 via-orange-50 to-amber-50'
+    }`}>
       {/* Left Panel - Menu */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* Header */}
-        <header className="bg-white border-b px-4 py-3 flex items-center justify-between">
+        <header className="bg-white/80 backdrop-blur-xl border-b border-white/30 shadow-lg shadow-black/5 px-6 py-4 flex items-center justify-between overflow-visible relative z-50">
           <div className="flex items-center gap-4">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">GWI</span>
-            </div>
-            <div>
-              <p className="font-semibold text-gray-900">{employee.displayName}</p>
-              <p className="text-sm text-gray-500">{employee.role.name}</p>
-            </div>
+            {/* GWI Icon - clickable for managers/owners to open admin sidebar */}
+            {isManager ? (
+              <button
+                onClick={() => setShowAdminNav(!showAdminNav)}
+                className="flex items-center gap-4 hover:opacity-90 transition-all duration-200"
+              >
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all duration-300 ${
+                  currentMode === 'bar'
+                    ? 'bg-gradient-to-br from-blue-500 to-cyan-500 shadow-blue-500/30'
+                    : 'bg-gradient-to-br from-orange-500 to-amber-500 shadow-orange-500/30'
+                }`}>
+                  <span className="text-white font-bold text-sm drop-shadow">GWI</span>
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">{employee.displayName}</p>
+                  <p className="text-sm text-gray-500">{employee.role.name}</p>
+                </div>
+              </button>
+            ) : (
+              <div className="flex items-center gap-4">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all duration-300 ${
+                  currentMode === 'bar'
+                    ? 'bg-gradient-to-br from-blue-500 to-cyan-500 shadow-blue-500/30'
+                    : 'bg-gradient-to-br from-orange-500 to-amber-500 shadow-orange-500/30'
+                }`}>
+                  <span className="text-white font-bold text-sm drop-shadow">GWI</span>
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">{employee.displayName}</p>
+                  <p className="text-sm text-gray-500">{employee.role.name}</p>
+                </div>
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-3">
+
+          {/* Bar/Food Mode Toggle */}
+          <ModeToggle
+            currentMode={currentMode}
+            onModeChange={setMode}
+          />
+
+          <div className="flex items-center gap-3 overflow-visible">
             <Button
               variant={showTabsPanel ? 'primary' : openOrdersCount > 0 ? 'outline' : 'ghost'}
               size="sm"
@@ -1344,6 +1621,122 @@ export default function OrdersPage() {
                 </span>
               )}
             </Button>
+            <div className="relative">
+              <Button
+                variant={showSettingsDropdown || isEditingFavorites || isEditingCategories || isEditingMenuItems ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => setShowSettingsDropdown(!showSettingsDropdown)}
+                title="Layout Settings"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </Button>
+
+              {/* Settings Dropdown */}
+              {showSettingsDropdown && (
+                <div className="absolute top-full right-0 mt-2 bg-white rounded-2xl shadow-2xl shadow-black/20 border border-gray-200 z-[9999] py-3 min-w-[220px]">
+                  <button
+                    type="button"
+                    className="w-full px-4 py-2.5 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium"
+                    onClick={() => {
+                      setShowDisplaySettings(true)
+                      setShowSettingsDropdown(false)
+                    }}
+                  >
+                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Display Settings
+                  </button>
+
+                  {canCustomize && (
+                    <>
+                      <div className="border-t border-gray-200 my-2" />
+                      <button
+                        type="button"
+                        className={`w-full px-4 py-2.5 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium ${isEditingFavorites ? 'bg-blue-50 text-blue-600' : ''}`}
+                        onClick={() => {
+                          setIsEditingFavorites(!isEditingFavorites)
+                          setIsEditingCategories(false)
+                          setShowSettingsDropdown(false)
+                        }}
+                      >
+                        <svg className={`w-5 h-5 ${isEditingFavorites ? 'text-blue-500' : 'text-gray-500'}`} fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                        {isEditingFavorites ? '✓ Done Editing Favorites' : 'Edit Favorites'}
+                      </button>
+                      <button
+                        type="button"
+                        className={`w-full px-4 py-2.5 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium ${isEditingCategories ? 'bg-blue-50 text-blue-600' : ''}`}
+                        onClick={() => {
+                          setIsEditingCategories(!isEditingCategories)
+                          setIsEditingFavorites(false)
+                          setShowSettingsDropdown(false)
+                        }}
+                      >
+                        <svg className={`w-5 h-5 ${isEditingCategories ? 'text-blue-500' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                        </svg>
+                        {isEditingCategories ? '✓ Done Reordering' : 'Reorder Categories'}
+                      </button>
+
+                      {/* Customize Menu Items */}
+                      <button
+                        type="button"
+                        className={`w-full px-4 py-2.5 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium ${isEditingMenuItems ? 'bg-purple-50 text-purple-600' : ''}`}
+                        onClick={() => {
+                          setIsEditingMenuItems(!isEditingMenuItems)
+                          setIsEditingCategories(false)
+                          setIsEditingFavorites(false)
+                          setShowSettingsDropdown(false)
+                        }}
+                      >
+                        <svg className={`w-5 h-5 ${isEditingMenuItems ? 'text-purple-500' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                        </svg>
+                        {isEditingMenuItems ? '✓ Done Customizing Items' : 'Customize Item Colors'}
+                      </button>
+
+                      {/* Divider */}
+                      <div className="my-2 border-t border-gray-200" />
+
+                      {/* Reset All Category Colors */}
+                      <button
+                        type="button"
+                        className="w-full px-4 py-2.5 text-left hover:bg-red-50 flex items-center gap-3 text-sm font-medium text-red-600"
+                        onClick={() => {
+                          resetAllCategoryColors()
+                          setShowSettingsDropdown(false)
+                        }}
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Reset All Category Colors
+                      </button>
+
+                      {/* Reset All Item Styles */}
+                      <button
+                        type="button"
+                        className="w-full px-4 py-2.5 text-left hover:bg-red-50 flex items-center gap-3 text-sm font-medium text-red-600"
+                        onClick={() => {
+                          resetAllMenuItemStyles()
+                          setShowSettingsDropdown(false)
+                        }}
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Reset All Item Styles
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
             <Button
               variant="ghost"
               size="sm"
@@ -1361,58 +1754,9 @@ export default function OrdersPage() {
           </div>
         </header>
 
-        {/* Dropdown Menu */}
+        {/* Dropdown Menu - Employee items only (admin items moved to AdminNav) */}
         {showMenu && (
-          <div className="absolute top-16 right-4 bg-white rounded-lg shadow-lg border z-50 py-2 min-w-[200px]">
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => {
-                router.push('/menu')
-                setShowMenu(false)
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
-              Menu Management
-            </button>
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => {
-                router.push('/employees')
-                setShowMenu(false)
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-              Employees
-            </button>
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => {
-                router.push('/reports/sales')
-                setShowMenu(false)
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              Sales Report
-            </button>
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => {
-                router.push('/reports/commission')
-                setShowMenu(false)
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Commission Report
-            </button>
-            <hr className="my-1" />
+          <div className="absolute top-20 right-6 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/15 border border-white/30 z-50 py-3 min-w-[220px]">
             <button
               className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
               onClick={() => {
@@ -1439,119 +1783,349 @@ export default function OrdersPage() {
                 Close Shift
               </button>
             )}
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => {
-                router.push('/kds')
-                setShowMenu(false)
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              Kitchen Display (KDS)
-            </button>
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => {
-                router.push('/prep-stations')
-                setShowMenu(false)
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              Prep Stations
-            </button>
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => {
-                router.push('/tables')
-                setShowMenu(false)
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-              </svg>
-              Tables
-            </button>
-            <button
-              className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
-              onClick={() => {
-                router.push('/settings')
-                setShowMenu(false)
-              }}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              Settings
-            </button>
           </div>
         )}
 
-        {/* Categories */}
-        <div className="bg-white border-b px-4 py-2 flex gap-2 overflow-x-auto">
-          {isLoading ? (
-            <div className="text-gray-400 py-2">Loading menu...</div>
-          ) : (
-            categories.map(category => (
-              <Button
-                key={category.id}
-                variant={selectedCategory === category.id ? 'primary' : 'outline'}
-                size="md"
-                onClick={() => setSelectedCategory(category.id)}
-                style={{
-                  backgroundColor: selectedCategory === category.id ? category.color : undefined,
-                  borderColor: category.color,
-                  color: selectedCategory === category.id ? 'white' : category.color,
-                }}
+        {/* Favorites Bar */}
+        {layout.showFavoritesBar && (
+          <FavoritesBar
+            favoriteIds={favorites}
+            menuItems={menuItems}
+            onItemClick={handleAddItem}
+            onReorder={reorderFavorites}
+            onRemove={removeFavorite}
+            canEdit={canCustomize}
+            currentMode={currentMode}
+            showPrices={showPriceOnMenuItems}
+            isEditing={isEditingFavorites}
+          />
+        )}
+
+        {/* Categories - Mode Buttons Left, Categories Right */}
+        <div className="bg-white/60 backdrop-blur-md border-b border-white/30 px-4 py-3">
+          <div className="flex gap-4">
+            {/* Mode Buttons - Stacked Vertically */}
+            <div className="flex flex-col gap-2 shrink-0">
+              <button
+                onClick={() => setMode('bar')}
+                className={`
+                  flex items-center justify-center gap-2 px-5 py-2 rounded-xl font-semibold text-sm
+                  transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
+                  min-w-[90px]
+                  ${currentMode === 'bar'
+                    ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg shadow-blue-500/30 border border-white/20'
+                    : 'bg-white/70 backdrop-blur-sm text-blue-600 border border-blue-300/50 hover:bg-blue-50/80'
+                  }
+                `}
               >
-                {category.name}
-              </Button>
-            ))
-          )}
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                BAR
+              </button>
+              <button
+                onClick={() => setMode('food')}
+                className={`
+                  flex items-center justify-center gap-2 px-5 py-2 rounded-xl font-semibold text-sm
+                  transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]
+                  min-w-[90px]
+                  ${currentMode === 'food'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-lg shadow-orange-500/30 border border-white/20'
+                    : 'bg-white/70 backdrop-blur-sm text-orange-600 border border-orange-300/50 hover:bg-orange-50/80'
+                  }
+                `}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                </svg>
+                FOOD
+              </button>
+            </div>
+
+            {/* Divider */}
+            <div className="w-px bg-gray-300/50 self-stretch" />
+
+            {/* Category Buttons - Draggable when editing */}
+            <div className="flex-1 flex flex-col gap-2">
+              <DndContext
+                sensors={categorySensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleCategoryDragEnd}
+              >
+                <SortableContext
+                  items={sortedCategories.map(c => c.id)}
+                  strategy={rectSortingStrategy}
+                >
+                  <div className="flex flex-col gap-2">
+                    {isLoading ? (
+                      <div className="text-gray-400 py-2">Loading menu...</div>
+                    ) : (
+                      <>
+                        {/* Priority Row - First 7 categories with bigger buttons */}
+                        <div className="flex flex-wrap gap-2">
+                          {sortedCategories.slice(0, 7).map((category, index) => {
+                            const isSelected = selectedCategory === category.id
+                            // Check for per-category custom colors first, then global, then category default
+                            const customColors = categoryColors[category.id]
+                            const baseColor = customColors?.bgColor || categoryButtonBgColor || category.color || '#3B82F6'
+                            const textColor = customColors?.textColor || categoryButtonTextColor
+                            const unselectedBgColor = customColors?.unselectedBgColor
+                            const unselectedTextColor = customColors?.unselectedTextColor
+                            const hasCustomColor = !!(customColors?.bgColor || customColors?.textColor || customColors?.unselectedBgColor || customColors?.unselectedTextColor)
+
+                            // Calculate styles based on color mode - with glass enhancements
+                            const getCategoryStyles = (isPriority: boolean) => {
+                              const baseStyles = {
+                                transition: 'all 0.2s ease-out',
+                                width: isPriority ? '140px' : '100px', // Bigger width for priority
+                                minHeight: isPriority ? '48px' : '36px',
+                              }
+
+                              switch (categoryColorMode) {
+                                case 'subtle':
+                                  return {
+                                    ...baseStyles,
+                                    backgroundColor: isSelected ? baseColor : (unselectedBgColor || `${baseColor}15`),
+                                    borderColor: isSelected ? baseColor : `${baseColor}40`,
+                                    color: isSelected ? (textColor || 'white') : (unselectedTextColor || textColor || baseColor),
+                                    boxShadow: isSelected ? `0 10px 40px ${baseColor}30` : (unselectedBgColor ? `0 4px 15px ${baseColor}20` : undefined),
+                                  }
+                                case 'outline':
+                                  return {
+                                    ...baseStyles,
+                                    backgroundColor: isSelected ? `${baseColor}15` : (unselectedBgColor || 'rgba(255,255,255,0.6)'),
+                                    borderColor: baseColor,
+                                    color: isSelected ? (textColor || baseColor) : (unselectedTextColor || textColor || baseColor),
+                                    boxShadow: isSelected ? `inset 0 0 0 2px ${baseColor}, 0 4px 20px ${baseColor}20` : (unselectedBgColor ? `0 4px 15px ${baseColor}15` : undefined),
+                                  }
+                                default: // 'solid' - now with gradient and glow
+                                  return {
+                                    ...baseStyles,
+                                    background: isSelected
+                                      ? `linear-gradient(135deg, ${baseColor} 0%, ${baseColor}dd 100%)`
+                                      : (unselectedBgColor || 'rgba(255,255,255,0.7)'),
+                                    borderColor: isSelected ? 'transparent' : `${baseColor}50`,
+                                    color: isSelected ? (textColor || 'white') : (unselectedTextColor || textColor || baseColor),
+                                    boxShadow: isSelected ? `0 10px 40px ${baseColor}35` : (unselectedBgColor ? `0 4px 15px ${baseColor}20` : '0 2px 8px rgba(0,0,0,0.05)'),
+                                    backdropFilter: isSelected ? undefined : (unselectedBgColor ? undefined : 'blur(8px)'),
+                                  }
+                              }
+                            }
+
+                            return (
+                              <SortableCategoryButton
+                                key={category.id}
+                                category={category}
+                                isSelected={isSelected}
+                                isEditing={isEditingCategories}
+                                categorySize={categorySize}
+                                isPriority={true}
+                                getCategoryStyles={getCategoryStyles}
+                                onClick={() => !isEditingCategories && setSelectedCategory(category.id)}
+                                onColorClick={() => setColorPickerCategory(category)}
+                                hasCustomColor={hasCustomColor}
+                              />
+                            )
+                          })}
+                        </div>
+
+                        {/* Secondary Row - Remaining categories with smaller buttons */}
+                        {sortedCategories.length > 7 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {sortedCategories.slice(7).map((category, index) => {
+                              const isSelected = selectedCategory === category.id
+                              // Check for per-category custom colors first, then global, then category default
+                              const customColors = categoryColors[category.id]
+                              const baseColor = customColors?.bgColor || categoryButtonBgColor || category.color || '#3B82F6'
+                              const textColor = customColors?.textColor || categoryButtonTextColor
+                              const unselectedBgColor = customColors?.unselectedBgColor
+                              const unselectedTextColor = customColors?.unselectedTextColor
+                              const hasCustomColor = !!(customColors?.bgColor || customColors?.textColor || customColors?.unselectedBgColor || customColors?.unselectedTextColor)
+
+                              // Calculate styles based on color mode - with glass enhancements
+                              const getCategoryStyles = (isPriority: boolean) => {
+                                const baseStyles = {
+                                  transition: 'all 0.2s ease-out',
+                                  width: isPriority ? '140px' : '100px', // Smaller width for secondary
+                                  minHeight: isPriority ? '48px' : '36px',
+                                }
+
+                                switch (categoryColorMode) {
+                                  case 'subtle':
+                                    return {
+                                      ...baseStyles,
+                                      backgroundColor: isSelected ? baseColor : (unselectedBgColor || `${baseColor}10`),
+                                      borderColor: isSelected ? baseColor : `${baseColor}30`,
+                                      color: isSelected ? (textColor || 'white') : (unselectedTextColor || textColor || baseColor),
+                                      boxShadow: isSelected ? `0 8px 30px ${baseColor}25` : (unselectedBgColor ? `0 3px 12px ${baseColor}15` : undefined),
+                                    }
+                                  case 'outline':
+                                    return {
+                                      ...baseStyles,
+                                      backgroundColor: isSelected ? `${baseColor}10` : (unselectedBgColor || 'rgba(255,255,255,0.5)'),
+                                      borderColor: `${baseColor}80`,
+                                      color: isSelected ? (textColor || baseColor) : (unselectedTextColor || textColor || baseColor),
+                                      boxShadow: isSelected ? `inset 0 0 0 2px ${baseColor}, 0 4px 15px ${baseColor}15` : (unselectedBgColor ? `0 3px 12px ${baseColor}10` : undefined),
+                                    }
+                                  default: // 'solid'
+                                    return {
+                                      ...baseStyles,
+                                      background: isSelected
+                                        ? `linear-gradient(135deg, ${baseColor} 0%, ${baseColor}dd 100%)`
+                                        : (unselectedBgColor || 'rgba(255,255,255,0.6)'),
+                                      borderColor: isSelected ? 'transparent' : `${baseColor}40`,
+                                      color: isSelected ? (textColor || 'white') : (unselectedTextColor || textColor || baseColor),
+                                      boxShadow: isSelected ? `0 8px 30px ${baseColor}30` : (unselectedBgColor ? `0 3px 12px ${baseColor}15` : '0 1px 4px rgba(0,0,0,0.04)'),
+                                      backdropFilter: isSelected ? undefined : (unselectedBgColor ? undefined : 'blur(6px)'),
+                                    }
+                                }
+                              }
+
+                              return (
+                                <SortableCategoryButton
+                                  key={category.id}
+                                  category={category}
+                                  isSelected={isSelected}
+                                  isEditing={isEditingCategories}
+                                  categorySize={categorySize}
+                                  isPriority={false}
+                                  getCategoryStyles={getCategoryStyles}
+                                  onClick={() => !isEditingCategories && setSelectedCategory(category.id)}
+                                  onColorClick={() => setColorPickerCategory(category)}
+                                  hasCustomColor={hasCustomColor}
+                                />
+                              )
+                            })}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </SortableContext>
+              </DndContext>
+
+            </div>
+          </div>
         </div>
 
         {/* Menu Items Grid */}
         <div className="flex-1 p-4 overflow-y-auto">
-          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div className={`grid ${gridColsClass} gap-3`}>
             {filteredItems.map(item => {
               const isInUse = item.itemType === 'timed_rental' && item.entertainmentStatus === 'in_use'
+              const isFavorite = favorites.includes(item.id)
+              const hoverColor = currentMode === 'bar' ? 'blue' : 'orange'
+
+              // Get custom styles for this menu item
+              const customStyle = menuItemColors[item.id]
+              const hasCustomStyle = !!(customStyle?.bgColor || customStyle?.textColor || customStyle?.popEffect)
+
+              // Calculate custom button styles
+              const getItemStyles = (): React.CSSProperties => {
+                if (!customStyle) return {}
+
+                const styles: React.CSSProperties = {}
+                const effectColor = customStyle.glowColor || customStyle.bgColor || '#3B82F6'
+
+                if (customStyle.bgColor) {
+                  styles.backgroundColor = customStyle.bgColor
+                }
+                if (customStyle.textColor) {
+                  styles.color = customStyle.textColor
+                }
+
+                // Apply pop effects
+                if (customStyle.popEffect === 'glow' || customStyle.popEffect === 'all') {
+                  styles.boxShadow = `0 8px 25px ${effectColor}50`
+                }
+                if (customStyle.popEffect === 'border' || customStyle.popEffect === 'all') {
+                  styles.borderColor = effectColor
+                  styles.borderWidth = '2px'
+                }
+                if (customStyle.popEffect === 'larger' || customStyle.popEffect === 'all') {
+                  styles.transform = 'scale(1.08)'
+                  styles.zIndex = 10
+                }
+
+                return styles
+              }
+
               return (
-                <Button
-                  key={item.id}
-                  variant="outline"
-                  className={`h-28 flex flex-col items-center justify-center gap-1 relative ${
-                    isInUse
-                      ? 'bg-red-50 border-red-300 hover:bg-red-100 hover:border-red-400'
-                      : 'hover:bg-blue-50 hover:border-blue-500'
-                  }`}
-                  onClick={() => handleAddItem(item)}
-                >
-                  {isInUse && (
-                    <span className="absolute top-1 right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded font-medium">
-                      IN USE
+                <div key={item.id} className="relative">
+                  <Button
+                    variant="glassOutline"
+                    className={`${menuItemClass} w-full flex flex-col items-center justify-center gap-1 relative
+                      ${!customStyle?.bgColor ? 'bg-white/70 backdrop-blur-sm' : ''}
+                      ${!customStyle?.popEffect?.includes('border') ? 'border border-white/40' : ''}
+                      shadow-md shadow-black/5
+                      hover:bg-white/90 hover:shadow-lg hover:scale-[1.02]
+                      active:scale-[0.98] transition-all duration-200
+                      ${isInUse
+                        ? 'bg-red-50/80 border-red-300/50 shadow-red-500/10 hover:bg-red-100/80'
+                        : `hover:border-${hoverColor}-300/50 hover:shadow-${hoverColor}-500/10`
+                      }`}
+                    style={getItemStyles()}
+                    onClick={() => !isEditingMenuItems && handleAddItem(item)}
+                    onContextMenu={(e) => {
+                      if (!canCustomize) return
+                      e.preventDefault()
+                      if (isFavorite) {
+                        removeFavorite(item.id)
+                      } else {
+                        addFavorite(item.id)
+                      }
+                    }}
+                  >
+                    {/* Favorite star indicator with glow */}
+                    {isFavorite && (
+                      <span className="absolute top-2 left-2 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.6)]">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                      </span>
+                    )}
+                    {isInUse && (
+                      <span className="absolute top-2 right-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs px-2 py-0.5 rounded-full font-semibold shadow-lg shadow-red-500/30">
+                        IN USE
+                      </span>
+                    )}
+                    <span className={`font-semibold text-center leading-tight ${isInUse ? 'text-red-800' : ''}`} style={customStyle?.textColor ? { color: customStyle.textColor } : {}}>
+                      {item.name}
                     </span>
+                    {showPriceOnMenuItems && formatItemPrice(item.price)}
+                  </Button>
+
+                  {/* Edit button when in edit mode */}
+                  {isEditingMenuItems && (
+                    <button
+                      type="button"
+                      onClick={() => setColorPickerMenuItem(item)}
+                      className={`absolute -top-2 -right-2 w-7 h-7 rounded-full flex items-center justify-center text-white text-xs shadow-lg z-20 ${
+                        hasCustomStyle ? 'bg-purple-500 hover:bg-purple-600' : 'bg-gray-500 hover:bg-gray-600'
+                      }`}
+                      title="Customize style"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                      </svg>
+                    </button>
                   )}
-                  <span className={`font-semibold text-center leading-tight ${isInUse ? 'text-red-800' : 'text-gray-900'}`}>
-                    {item.name}
-                  </span>
-                  {formatItemPrice(item.price)}
-                </Button>
+                </div>
               )
             })}
             {unavailableItems.map(item => (
               <Button
                 key={item.id}
-                variant="outline"
-                className="h-28 flex flex-col items-center justify-center gap-1 opacity-50 cursor-not-allowed relative"
+                variant="glassOutline"
+                className={`${menuItemClass} flex flex-col items-center justify-center gap-1 opacity-50 cursor-not-allowed relative
+                  bg-white/40 backdrop-blur-sm border border-white/30`}
                 disabled
               >
                 <span className="font-semibold text-gray-900 text-center leading-tight">{item.name}</span>
-                {formatItemPrice(item.price)}
-                <span className="absolute top-1 right-1 bg-red-500 text-white text-xs px-1 rounded">86</span>
+                {showPriceOnMenuItems && formatItemPrice(item.price)}
+                <span className="absolute top-2 right-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs px-2 py-0.5 rounded-full font-semibold shadow-md">86</span>
               </Button>
             ))}
           </div>
@@ -1559,9 +2133,9 @@ export default function OrdersPage() {
       </div>
 
       {/* Right Panel - Order */}
-      <div className="w-80 bg-white border-l flex flex-col h-full overflow-hidden">
+      <div className={`${orderPanelClass} bg-white/80 backdrop-blur-xl border-l border-white/30 shadow-xl shadow-black/5 flex flex-col h-full overflow-hidden`}>
         {/* Order Header */}
-        <div className="p-4 border-b">
+        <div className="p-5 border-b border-white/30 bg-gradient-to-r from-gray-50/50 to-white/50">
           <div className="flex items-center justify-between">
             {savedOrderId && currentOrder ? (
               // Show order identifier for existing orders - CLICKABLE to edit settings
@@ -1571,7 +2145,9 @@ export default function OrdersPage() {
               >
                 <div className="flex items-center gap-2">
                   <h2 className="font-semibold text-lg">
-                    {currentOrder.tabName || `Order #${currentOrder.orderNumber || savedOrderId.slice(-6).toUpperCase()}`}
+                    {currentOrder.tableName
+                      ? `Table ${currentOrder.tableName}`
+                      : currentOrder.tabName || `Order #${currentOrder.orderNumber || savedOrderId.slice(-6).toUpperCase()}`}
                   </h2>
                   <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -1583,16 +2159,23 @@ export default function OrdersPage() {
                 </span>
               </div>
             ) : (
-              // Show "New Order" for new orders
+              // Show "New Order" for new orders - display table name if selected
               <div>
-                <h2 className="font-semibold text-lg">New Order</h2>
+                <h2 className="font-semibold text-lg">
+                  {currentOrder?.tableName ? `Table ${currentOrder.tableName}` : 'New Order'}
+                </h2>
                 <span className="text-sm text-gray-500 capitalize">
                   {currentOrder?.orderType.replace('_', ' ') || 'Select type'}
+                  {currentOrder?.guestCount && currentOrder.guestCount > 1 && ` • ${currentOrder.guestCount} guests`}
                 </span>
               </div>
             )}
             {savedOrderId && (
-              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded">
+              <span className={`px-3 py-1 text-xs font-semibold rounded-full shadow-md ${
+                currentMode === 'bar'
+                  ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-blue-500/25'
+                  : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-orange-500/25'
+              }`}>
                 Open
               </span>
             )}
@@ -1602,7 +2185,7 @@ export default function OrdersPage() {
               <Button
                 variant={currentOrder?.orderType === 'dine_in' ? 'primary' : 'ghost'}
                 size="sm"
-                onClick={() => startOrder('dine_in')}
+                onClick={() => setShowTablePicker(true)}
               >
                 Table
               </Button>
@@ -1818,6 +2401,59 @@ export default function OrdersPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* Entertainment Session Controls - for timed rental items */}
+                    {(item.blockTimeMinutes || item.blockTimeStartedAt || item.blockTimeExpiresAt || menuItemInfo?.itemType === 'timed_rental') && (
+                      <EntertainmentSessionControls
+                        orderItemId={item.id}
+                        menuItemId={item.menuItemId}
+                        itemName={item.name}
+                        blockTimeMinutes={item.blockTimeMinutes || null}
+                        blockTimeStartedAt={item.blockTimeStartedAt || null}
+                        blockTimeExpiresAt={item.blockTimeExpiresAt || null}
+                        isTimedRental={menuItemInfo?.itemType === 'timed_rental'}
+                        defaultBlockMinutes={menuItemInfo?.blockTimeMinutes || 60}
+                        onSessionEnded={() => {
+                          // Refresh the order using loadOrder
+                          if (savedOrderId) {
+                            fetch(`/api/orders/${savedOrderId}`)
+                              .then(res => res.json())
+                              .then(data => {
+                                if (data.id) {
+                                  loadOrder(data)
+                                }
+                              })
+                              .catch(console.error)
+                          }
+                        }}
+                        onTimerStarted={() => {
+                          // Refresh the order using loadOrder
+                          if (savedOrderId) {
+                            fetch(`/api/orders/${savedOrderId}`)
+                              .then(res => res.json())
+                              .then(data => {
+                                if (data.id) {
+                                  loadOrder(data)
+                                }
+                              })
+                              .catch(console.error)
+                          }
+                        }}
+                        onTimeExtended={() => {
+                          // Refresh the order using loadOrder
+                          if (savedOrderId) {
+                            fetch(`/api/orders/${savedOrderId}`)
+                              .then(res => res.json())
+                              .then(data => {
+                                if (data.id) {
+                                  loadOrder(data)
+                                }
+                              })
+                              .catch(console.error)
+                          }
+                        }}
+                      />
+                    )}
                   </Card>
                 )
               })}
@@ -2063,6 +2699,19 @@ export default function OrdersPage() {
           </div>
         </div>
       </div>
+
+      {/* Admin Navigation Sidebar */}
+      {showAdminNav && (
+        <>
+          {/* Overlay */}
+          <div
+            className="fixed inset-0 bg-black/30 z-40"
+            onClick={() => setShowAdminNav(false)}
+          />
+          {/* Admin Nav - positioned over the overlay */}
+          <AdminNav forceOpen={true} onClose={() => setShowAdminNav(false)} permissions={employee?.permissions || []} />
+        </>
+      )}
 
       {/* Click outside to close menu */}
       {showMenu && (
@@ -2514,6 +3163,18 @@ export default function OrdersPage() {
         </div>
       )}
 
+      {/* Table Picker Modal */}
+      {showTablePicker && employee?.location?.id && (
+        <TablePickerModal
+          locationId={employee.location.id}
+          onSelect={(tableId, tableName, guestCount) => {
+            startOrder('dine_in', { tableId, tableName, guestCount })
+            setShowTablePicker(false)
+          }}
+          onCancel={() => setShowTablePicker(false)}
+        />
+      )}
+
       {/* Payment Modal */}
       {showPaymentModal && (
         <PaymentModal
@@ -2560,6 +3221,7 @@ export default function OrdersPage() {
           dualPricing={dualPricing}
           paymentSettings={paymentSettings}
           onPaymentComplete={handlePaymentComplete}
+          employeeId={employee?.id}
         />
       )}
 
@@ -2666,6 +3328,7 @@ export default function OrdersPage() {
                   orderNumber: orderData.orderNumber,
                   orderType: orderData.orderType,
                   tableId: orderData.tableId || undefined,
+                  tableName: orderData.tableName || undefined,
                   tabName: orderData.tabName || undefined,
                   guestCount: orderData.guestCount,
                   items: orderData.items,
@@ -2732,7 +3395,11 @@ export default function OrdersPage() {
                 id: data.shift.id,
                 startedAt: data.shift.startedAt,
                 startingCash: data.shift.startingCash,
-                employee: data.shift.employee,
+                employee: {
+                  ...data.shift.employee,
+                  roleId: employee?.role?.id,
+                },
+                locationId: employee?.location?.id,
               })
             })
             .catch(err => console.error('Failed to fetch shift:', err))
@@ -2749,6 +3416,7 @@ export default function OrdersPage() {
             setCurrentShift(null)
             // Optionally log out or redirect
           }}
+          permissions={permissionsArray}
         />
       )}
 
@@ -2760,6 +3428,48 @@ export default function OrdersPage() {
         locationId={employee?.location?.id || ''}
         receiptSettings={receiptSettings}
       />
+
+      {/* POS Display Settings Modal */}
+      <POSDisplaySettingsModal
+        isOpen={showDisplaySettings}
+        onClose={() => setShowDisplaySettings(false)}
+        settings={displaySettings}
+        onUpdate={updateSetting}
+        onBatchUpdate={updateSettings}
+      />
+
+      {/* Category Color Picker Modal */}
+      {colorPickerCategory && (
+        <CategoryColorPicker
+          isOpen={true}
+          onClose={() => setColorPickerCategory(null)}
+          categoryName={colorPickerCategory.name}
+          currentColors={categoryColors[colorPickerCategory.id] || {}}
+          defaultColor={colorPickerCategory.color || '#3B82F6'}
+          onSave={(colors) => {
+            setCategoryColor(colorPickerCategory.id, colors)
+          }}
+          onReset={() => {
+            resetCategoryColor(colorPickerCategory.id)
+          }}
+        />
+      )}
+
+      {/* Menu Item Color Picker Modal */}
+      {colorPickerMenuItem && (
+        <MenuItemColorPicker
+          isOpen={true}
+          onClose={() => setColorPickerMenuItem(null)}
+          itemName={colorPickerMenuItem.name}
+          currentStyle={menuItemColors[colorPickerMenuItem.id] || {}}
+          onSave={(style) => {
+            setMenuItemStyle(colorPickerMenuItem.id, style)
+          }}
+          onReset={() => {
+            resetMenuItemStyle(colorPickerMenuItem.id)
+          }}
+        />
+      )}
     </div>
   )
 }

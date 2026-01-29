@@ -158,6 +158,7 @@ export async function POST(
     // Create the discount record
     const discount = await db.orderDiscount.create({
       data: {
+        locationId: order.locationId,
         orderId,
         discountRuleId,
         name: discountName,

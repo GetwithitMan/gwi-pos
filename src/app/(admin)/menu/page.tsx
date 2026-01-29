@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -46,10 +46,14 @@ interface MenuItem {
   recipeIngredientCount?: number
   totalPourCost?: number | null
   profitMargin?: number | null
-  // Pour size options
-  pourSizes?: Record<string, number> | null  // { shot: 1.0, double: 2.0, etc. }
+  // Pour size options (new format with labels)
+  pourSizes?: Record<string, number | { label: string; multiplier: number }> | null
   defaultPourSize?: string | null
   applyPourToModifiers?: boolean
+  // Entertainment fields
+  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | null
+  currentOrderId?: string | null
+  blockTimeMinutes?: number | null
 }
 
 interface ModifierGroup {
@@ -84,12 +88,34 @@ const CATEGORY_TO_MODIFIER_TYPE: Record<string, string> = {
 }
 
 // Pour size configurations for liquor items
-const POUR_SIZES = [
-  { value: 'shot', label: 'Shot', multiplier: 1.0, description: 'Standard pour' },
-  { value: 'double', label: 'Double', multiplier: 2.0, description: '2x price' },
-  { value: 'tall', label: 'Tall', multiplier: 1.5, description: '1.5x price (more mixer)' },
-  { value: 'short', label: 'Short', multiplier: 0.75, description: '0.75x price (less pour)' },
-]
+const DEFAULT_POUR_SIZES: Record<string, { label: string; multiplier: number }> = {
+  standard: { label: 'Standard Pour', multiplier: 1.0 },
+  shot: { label: 'Shot', multiplier: 1.0 },
+  double: { label: 'Double', multiplier: 2.0 },
+  tall: { label: 'Tall', multiplier: 1.5 },
+  short: { label: 'Short', multiplier: 0.75 },
+}
+
+// Helper to convert old format (Record<string, number>) to new format
+function normalizePourSizes(data: Record<string, number | { label: string; multiplier: number }> | null): Record<string, { label: string; multiplier: number }> {
+  // Return empty object if no data - nothing selected by default
+  if (!data) return {}
+
+  const result: Record<string, { label: string; multiplier: number }> = {}
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === 'number') {
+      // Old format: just a multiplier number
+      result[key] = {
+        label: DEFAULT_POUR_SIZES[key]?.label || key.charAt(0).toUpperCase() + key.slice(1),
+        multiplier: value
+      }
+    } else {
+      // New format: { label, multiplier }
+      result[key] = value
+    }
+  }
+  return result
+}
 
 export default function MenuManagementPage() {
   const router = useRouter()
@@ -104,28 +130,37 @@ export default function MenuManagementPage() {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/menu')
-      return
-    }
-    loadMenu()
-  }, [isAuthenticated, router])
-
-  const loadMenu = async () => {
+  // Define loadMenu first so it can be used in useEffects
+  const loadMenu = useCallback(async () => {
     try {
+      // Add cache-busting for fresh entertainment status
+      const timestamp = Date.now()
+      console.log('[Menu] Loading menu data...', timestamp)
+
       const [menuResponse, modifiersResponse] = await Promise.all([
-        fetch('/api/menu'),
+        fetch(`/api/menu?_t=${timestamp}`, {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+          }
+        }),
         fetch('/api/menu/modifiers')
       ])
 
       if (menuResponse.ok) {
         const data = await menuResponse.json()
-        setCategories(data.categories)
-        setItems(data.items)
-        if (data.categories.length > 0 && !selectedCategory) {
-          setSelectedCategory(data.categories[0].id)
+        // Log entertainment item statuses for debugging
+        const entertainmentItems = data.items.filter((i: MenuItem) => i.itemType === 'timed_rental')
+        if (entertainmentItems.length > 0) {
+          console.log('[Menu] Entertainment items:', entertainmentItems.map((i: MenuItem) => ({
+            name: i.name,
+            status: i.entertainmentStatus
+          })))
         }
+        setCategories(data.categories)
+        // Force new array reference to ensure React re-renders
+        setItems([...data.items])
       }
 
       if (modifiersResponse.ok) {
@@ -137,7 +172,59 @@ export default function MenuManagementPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
+
+  // Initial load
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/menu')
+      return
+    }
+    loadMenu()
+  }, [isAuthenticated, router, loadMenu])
+
+  // Refresh menu when switching categories (especially for entertainment status updates)
+  useEffect(() => {
+    if (selectedCategory && !isLoading) {
+      console.log('[Menu] Category changed, refreshing')
+      loadMenu()
+    }
+  }, [selectedCategory, isLoading, loadMenu])
+
+  // Auto-refresh when viewing entertainment category (for real-time status updates)
+  const selectedCategoryType = categories.find(c => c.id === selectedCategory)?.categoryType
+  useEffect(() => {
+    if (selectedCategoryType !== 'entertainment') return
+
+    console.log('[Menu] Entertainment category selected, starting auto-refresh')
+
+    // Poll every 3 seconds for entertainment status changes
+    const interval = setInterval(() => {
+      console.log('[Menu] Auto-refresh triggered')
+      loadMenu()
+    }, 3000)
+
+    // Also refresh on visibility/focus changes
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Menu] Page visible, refreshing')
+        loadMenu()
+      }
+    }
+    const handleFocus = () => {
+      console.log('[Menu] Window focused, refreshing')
+      loadMenu()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [selectedCategoryType, loadMenu])
 
   const handleSaveCategory = async (categoryData: Partial<Category>) => {
     try {
@@ -420,6 +507,20 @@ export default function MenuManagementPage() {
                         <p className="text-lg font-bold text-blue-600 mb-2">
                           {formatCurrency(item.price)}
                         </p>
+                        {/* Entertainment status indicator */}
+                        {item.itemType === 'timed_rental' && (
+                          <div className={`text-xs font-bold mb-2 px-2 py-1 rounded inline-block ${
+                            item.entertainmentStatus === 'in_use'
+                              ? 'bg-red-100 text-red-700'
+                              : item.entertainmentStatus === 'maintenance'
+                              ? 'bg-gray-100 text-gray-700'
+                              : 'bg-green-100 text-green-700'
+                          }`}>
+                            {item.entertainmentStatus === 'in_use' ? '● IN USE' :
+                             item.entertainmentStatus === 'maintenance' ? '● MAINTENANCE' :
+                             '● AVAILABLE'}
+                          </div>
+                        )}
                         {/* Timed pricing display */}
                         {item.itemType === 'timed_rental' && item.timedPricing && (
                           <div className="text-xs text-orange-600 mb-2 space-y-0.5">
@@ -710,11 +811,11 @@ function ItemModal({
     }
   )
 
-  // Pour size options for liquor items
-  const [enabledPourSizes, setEnabledPourSizes] = useState<Record<string, number>>(
-    item?.pourSizes || { shot: 1.0 }
+  // Pour size options for liquor items - now stores { label, multiplier } for each
+  const [enabledPourSizes, setEnabledPourSizes] = useState<Record<string, { label: string; multiplier: number }>>(
+    normalizePourSizes(item?.pourSizes as Record<string, number | { label: string; multiplier: number }> | null)
   )
-  const [defaultPourSize, setDefaultPourSize] = useState(item?.defaultPourSize || 'shot')
+  const [defaultPourSize, setDefaultPourSize] = useState(item?.defaultPourSize || 'standard')
   const [applyPourToModifiers, setApplyPourToModifiers] = useState(item?.applyPourToModifiers || false)
 
   // Timed pricing for entertainment items
@@ -760,7 +861,7 @@ function ItemModal({
         }
       : null
 
-    // Pour sizes only for liquor items
+    // Pour sizes only for liquor items - save in new format with labels
     const pourSizesData = isLiquorCategory && Object.keys(enabledPourSizes).length > 0
       ? enabledPourSizes
       : null
@@ -782,7 +883,7 @@ function ItemModal({
     })
   }
 
-  const togglePourSize = (size: string, multiplier: number) => {
+  const togglePourSize = (size: string) => {
     const newSizes = { ...enabledPourSizes }
     if (newSizes[size]) {
       delete newSizes[size]
@@ -791,9 +892,31 @@ function ItemModal({
         setDefaultPourSize(Object.keys(newSizes)[0])
       }
     } else {
-      newSizes[size] = multiplier
+      // Add with default values
+      newSizes[size] = { ...DEFAULT_POUR_SIZES[size] }
     }
     setEnabledPourSizes(newSizes)
+  }
+
+  const updatePourSizeLabel = (size: string, label: string) => {
+    setEnabledPourSizes(prev => ({
+      ...prev,
+      [size]: { ...prev[size], label }
+    }))
+  }
+
+  const updatePourSizeMultiplier = (size: string, multiplier: number) => {
+    setEnabledPourSizes(prev => ({
+      ...prev,
+      [size]: { ...prev[size], multiplier }
+    }))
+  }
+
+  const resetPourSizeToDefault = (size: string) => {
+    setEnabledPourSizes(prev => ({
+      ...prev,
+      [size]: { ...DEFAULT_POUR_SIZES[size] }
+    }))
   }
 
   return (
@@ -979,35 +1102,89 @@ function ItemModal({
                 Pour Size Quick Buttons
               </label>
               <p className="text-xs text-purple-600 mb-3">
-                Enable quick pour options for this drink. Price multipliers are applied to the base price.
+                Enable quick pour options for this drink. Customize names and multipliers as needed.
               </p>
 
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                {POUR_SIZES.map(size => {
-                  const isEnabled = enabledPourSizes[size.value] !== undefined
+              <div className="space-y-2 mb-3">
+                {Object.entries(DEFAULT_POUR_SIZES).map(([sizeKey, defaults]) => {
+                  const isEnabled = enabledPourSizes[sizeKey] !== undefined
+                  const currentConfig = enabledPourSizes[sizeKey]
+                  const isCustomized = currentConfig && (
+                    currentConfig.label !== defaults.label ||
+                    currentConfig.multiplier !== defaults.multiplier
+                  )
+
                   return (
-                    <label
-                      key={size.value}
-                      className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition-colors ${
+                    <div
+                      key={sizeKey}
+                      className={`p-3 border rounded-lg transition-colors ${
                         isEnabled
                           ? 'border-purple-500 bg-purple-100'
-                          : 'border-gray-200 hover:bg-gray-50'
+                          : 'border-gray-200 bg-white'
                       }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isEnabled}
-                        onChange={() => togglePourSize(size.value, size.multiplier)}
-                        className="w-4 h-4 text-purple-600"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm">{size.label}</span>
-                          <span className="text-xs text-purple-600">{size.multiplier}x</span>
-                        </div>
-                        <p className="text-xs text-gray-500">{size.description}</p>
+                      <div className="flex items-center gap-3">
+                        {/* Enable checkbox */}
+                        <input
+                          type="checkbox"
+                          checked={isEnabled}
+                          onChange={() => togglePourSize(sizeKey)}
+                          className="w-4 h-4 text-purple-600 flex-shrink-0"
+                        />
+
+                        {isEnabled ? (
+                          <>
+                            {/* Editable label */}
+                            <input
+                              type="text"
+                              value={currentConfig?.label || ''}
+                              onChange={(e) => updatePourSizeLabel(sizeKey, e.target.value)}
+                              className="flex-1 px-2 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-purple-500 bg-white"
+                              placeholder="Button label"
+                            />
+
+                            {/* Editable multiplier */}
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                key={`${sizeKey}-${currentConfig?.multiplier}`}
+                                defaultValue={currentConfig?.multiplier || 1}
+                                onBlur={(e) => {
+                                  const num = parseFloat(e.target.value)
+                                  if (!isNaN(num) && num > 0) {
+                                    updatePourSizeMultiplier(sizeKey, num)
+                                  } else {
+                                    e.target.value = String(currentConfig?.multiplier || 1)
+                                  }
+                                }}
+                                className="w-14 px-1 py-1 text-sm border rounded focus:outline-none focus:ring-1 focus:ring-purple-500 text-center bg-white"
+                                placeholder="1.0"
+                              />
+                              <span className="text-xs text-purple-600">×</span>
+                            </div>
+
+                            {/* Reset checkbox */}
+                            {isCustomized && (
+                              <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer flex-shrink-0" title="Reset to default">
+                                <input
+                                  type="checkbox"
+                                  checked={false}
+                                  onChange={() => resetPourSizeToDefault(sizeKey)}
+                                  className="w-3 h-3"
+                                />
+                                <span>Reset</span>
+                              </label>
+                            )}
+                          </>
+                        ) : (
+                          <div className="flex-1 flex items-center justify-between text-gray-400">
+                            <span className="text-sm">{defaults.label}</span>
+                            <span className="text-xs">{defaults.multiplier}×</span>
+                          </div>
+                        )}
                       </div>
-                    </label>
+                    </div>
                   )
                 })}
               </div>
@@ -1020,14 +1197,11 @@ function ItemModal({
                     onChange={(e) => setDefaultPourSize(e.target.value)}
                     className="w-full px-2 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
                   >
-                    {Object.keys(enabledPourSizes).map(size => {
-                      const sizeInfo = POUR_SIZES.find(s => s.value === size)
-                      return (
-                        <option key={size} value={size}>
-                          {sizeInfo?.label || size}
-                        </option>
-                      )
-                    })}
+                    {Object.entries(enabledPourSizes).map(([sizeKey, config]) => (
+                      <option key={sizeKey} value={sizeKey}>
+                        {config.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}

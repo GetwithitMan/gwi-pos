@@ -3,6 +3,30 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Glassmorphism variables */
+  --glass-blur: 20px;
+  --glass-blur-md: 12px;
+  --glass-blur-sm: 8px;
+  --glass-border: rgba(255, 255, 255, 0.3);
+  --glass-border-light: rgba(255, 255, 255, 0.2);
+  --glass-bg: rgba(255, 255, 255, 0.8);
+  --glass-bg-light: rgba(255, 255, 255, 0.6);
+  --glass-bg-lighter: rgba(255, 255, 255, 0.4);
+
+  /* Glow shadows */
+  --shadow-glow-blue: 0 10px 40px rgba(59, 130, 246, 0.25);
+  --shadow-glow-blue-lg: 0 15px 50px rgba(59, 130, 246, 0.35);
+  --shadow-glow-orange: 0 10px 40px rgba(249, 115, 22, 0.25);
+  --shadow-glow-orange-lg: 0 15px 50px rgba(249, 115, 22, 0.35);
+  --shadow-glow-emerald: 0 10px 40px rgba(16, 185, 129, 0.25);
+  --shadow-glow-red: 0 10px 40px rgba(239, 68, 68, 0.25);
+
+  /* Gradient definitions */
+  --gradient-bar: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+  --gradient-food: linear-gradient(135deg, #f97316 0%, #fbbf24 100%);
+  --gradient-success: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  --gradient-danger: linear-gradient(135deg, #ef4444 0%, #f87171 100%);
 }
 
 @theme inline {
@@ -23,4 +47,75 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Glassmorphism utility classes */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+}
+
+.glass-light {
+  background: var(--glass-bg-light);
+  backdrop-filter: blur(var(--glass-blur-md));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md));
+  border: 1px solid var(--glass-border-light);
+}
+
+.glass-lighter {
+  background: var(--glass-bg-lighter);
+  backdrop-filter: blur(var(--glass-blur-sm));
+  -webkit-backdrop-filter: blur(var(--glass-blur-sm));
+  border: 1px solid var(--glass-border-light);
+}
+
+/* Glow effect classes */
+.glow-blue {
+  box-shadow: var(--shadow-glow-blue);
+}
+
+.glow-blue-lg {
+  box-shadow: var(--shadow-glow-blue-lg);
+}
+
+.glow-orange {
+  box-shadow: var(--shadow-glow-orange);
+}
+
+.glow-orange-lg {
+  box-shadow: var(--shadow-glow-orange-lg);
+}
+
+.glow-emerald {
+  box-shadow: var(--shadow-glow-emerald);
+}
+
+.glow-red {
+  box-shadow: var(--shadow-glow-red);
+}
+
+/* Gradient text utilities */
+.text-gradient-bar {
+  background: var(--gradient-bar);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-food {
+  background: var(--gradient-food);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Smooth transitions for glass effects */
+.glass-transition {
+  transition: all 0.2s ease-out;
+}
+
+.glass-transition:hover {
+  transform: translateY(-2px);
 }

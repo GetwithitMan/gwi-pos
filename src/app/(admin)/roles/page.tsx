@@ -8,12 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
-
-interface Permission {
-  key: string
-  value: string
-  category: string
-}
+import { PERMISSION_GROUPS, DEFAULT_ROLES, hasPermission } from '@/lib/auth'
 
 interface Role {
   id: string
@@ -23,47 +18,10 @@ interface Role {
   createdAt: string
 }
 
-// Permission categories for UI organization
-const PERMISSION_CATEGORIES = {
-  orders: 'Orders',
-  payments: 'Payments',
-  menu: 'Menu',
-  employees: 'Employees',
-  reports: 'Reports',
-  settings: 'Settings',
-}
-
-// Friendly permission names
-const PERMISSION_LABELS: Record<string, string> = {
-  'orders.create': 'Create Orders',
-  'orders.void_item': 'Void Items',
-  'orders.void_order': 'Void Orders',
-  'orders.apply_discount': 'Apply Discounts',
-  'orders.transfer': 'Transfer Orders',
-  'payments.process': 'Process Payments',
-  'payments.refund': 'Issue Refunds',
-  'payments.open_drawer': 'Open Cash Drawer',
-  'menu.view': 'View Menu',
-  'menu.edit': 'Edit Menu Items',
-  'menu.edit_prices': 'Edit Prices',
-  'employees.view': 'View Employees',
-  'employees.edit': 'Manage Employees',
-  'employees.clock_others': 'Clock In/Out Others',
-  'reports.view': 'View Basic Reports',
-  'reports.labor': 'View Labor Reports',
-  'reports.sales': 'View Sales Reports',
-  'reports.commission': 'View Commission Reports',
-  'settings.edit': 'Edit Settings',
-  'settings.dual_pricing': 'Manage Dual Pricing',
-  'admin': 'Administrator',
-  'super_admin': 'Super Administrator',
-}
-
 export default function RolesPage() {
   const router = useRouter()
   const { employee: currentEmployee, isAuthenticated } = useAuthStore()
   const [roles, setRoles] = useState<Role[]>([])
-  const [availablePermissions, setAvailablePermissions] = useState<Permission[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   // Modal state
@@ -75,6 +33,7 @@ export default function RolesPage() {
   // Form state
   const [roleName, setRoleName] = useState('')
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([])
+  const [expandedGroups, setExpandedGroups] = useState<string[]>(Object.keys(PERMISSION_GROUPS))
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -96,7 +55,6 @@ export default function RolesPage() {
       if (response.ok) {
         const data = await response.json()
         setRoles(data.roles)
-        setAvailablePermissions(data.availablePermissions || [])
       }
     } catch (err) {
       console.error('Failed to load roles:', err)
@@ -110,6 +68,7 @@ export default function RolesPage() {
     setRoleName('')
     setSelectedPermissions([])
     setError(null)
+    setExpandedGroups(Object.keys(PERMISSION_GROUPS))
     setShowModal(true)
   }
 
@@ -118,6 +77,7 @@ export default function RolesPage() {
     setRoleName(role.name)
     setSelectedPermissions(role.permissions)
     setError(null)
+    setExpandedGroups(Object.keys(PERMISSION_GROUPS))
     setShowModal(true)
   }
 
@@ -129,20 +89,39 @@ export default function RolesPage() {
     }
   }
 
-  const selectAllInCategory = (category: string) => {
-    const categoryPerms = availablePermissions
-      .filter(p => p.category === category)
-      .map(p => p.value)
-    const allSelected = categoryPerms.every(p => selectedPermissions.includes(p))
+  const toggleGroup = (groupName: string) => {
+    if (expandedGroups.includes(groupName)) {
+      setExpandedGroups(expandedGroups.filter(g => g !== groupName))
+    } else {
+      setExpandedGroups([...expandedGroups, groupName])
+    }
+  }
+
+  const selectAllInGroup = (groupName: string) => {
+    const group = PERMISSION_GROUPS[groupName as keyof typeof PERMISSION_GROUPS]
+    if (!group) return
+
+    const groupPerms = group.permissions.map(p => p.key)
+    const allSelected = groupPerms.every(p => selectedPermissions.includes(p))
 
     if (allSelected) {
-      setSelectedPermissions(selectedPermissions.filter(p => !categoryPerms.includes(p)))
+      setSelectedPermissions(selectedPermissions.filter(p => !groupPerms.includes(p)))
     } else {
       const newPerms = [...selectedPermissions]
-      categoryPerms.forEach(p => {
+      groupPerms.forEach(p => {
         if (!newPerms.includes(p)) newPerms.push(p)
       })
       setSelectedPermissions(newPerms)
+    }
+  }
+
+  const applyRoleTemplate = (templateName: string) => {
+    const template = DEFAULT_ROLES[templateName]
+    if (template) {
+      setSelectedPermissions([...template])
+      if (!roleName) {
+        setRoleName(templateName)
+      }
     }
   }
 
@@ -221,14 +200,29 @@ export default function RolesPage() {
     }
   }
 
-  // Group permissions by category
-  const groupedPermissions = availablePermissions.reduce((acc, perm) => {
-    if (!acc[perm.category]) {
-      acc[perm.category] = []
+  // Get permission count for a role
+  const getPermissionSummary = (permissions: string[]): string => {
+    if (permissions.includes('super_admin') || permissions.includes('*')) {
+      return 'Super Admin - Full Access'
     }
-    acc[perm.category].push(perm)
-    return acc
-  }, {} as Record<string, Permission[]>)
+    if (permissions.includes('admin')) {
+      return 'Admin - Full Access'
+    }
+
+    // Count by category
+    const counts: Record<string, number> = {}
+    for (const perm of permissions) {
+      const category = perm.split('.')[0]
+      counts[category] = (counts[category] || 0) + 1
+    }
+
+    const summary = Object.entries(counts)
+      .map(([cat, count]) => `${cat}: ${count}`)
+      .slice(0, 3)
+      .join(', ')
+
+    return permissions.length > 0 ? `${permissions.length} permissions (${summary})` : 'No permissions'
+  }
 
   if (!isAuthenticated || !currentEmployee) {
     return null
@@ -248,7 +242,10 @@ export default function RolesPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            <h1 className="text-2xl font-bold">Roles & Permissions</h1>
+            <div>
+              <h1 className="text-2xl font-bold">Roles & Permissions</h1>
+              <p className="text-sm text-gray-500">Manage employee access levels</p>
+            </div>
           </div>
           <Button variant="primary" onClick={openAddModal}>
             + Add Role
@@ -261,66 +258,95 @@ export default function RolesPage() {
         {isLoading ? (
           <div className="text-center py-12 text-gray-500">Loading roles...</div>
         ) : roles.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            No roles found. Create your first role to get started.
+          <div className="text-center py-12">
+            <div className="text-gray-400 mb-4">
+              <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            </div>
+            <p className="text-gray-500 mb-4">No roles found. Create your first role to get started.</p>
+            <Button variant="primary" onClick={openAddModal}>Create First Role</Button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {roles.map(role => (
               <Card key={role.id} className="p-4">
-                <div className="flex items-start justify-between">
+                <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="font-semibold text-lg">{role.name}</h3>
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                      {role.name}
+                      {(role.permissions.includes('admin') || role.permissions.includes('super_admin')) && (
+                        <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">
+                          {role.permissions.includes('super_admin') ? 'Super' : 'Admin'}
+                        </span>
+                      )}
+                    </h3>
                     <p className="text-sm text-gray-500">
-                      {role.employeeCount} employee{role.employeeCount !== 1 ? 's' : ''} assigned
+                      {role.employeeCount} employee{role.employeeCount !== 1 ? 's' : ''}
                     </p>
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      {role.permissions.includes('admin') || role.permissions.includes('super_admin') ? (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium">
-                          {role.permissions.includes('super_admin') ? 'Super Admin' : 'Admin'} - All Permissions
-                        </span>
-                      ) : (
-                        role.permissions.slice(0, 5).map(perm => (
-                          <span
-                            key={perm}
-                            className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs"
-                          >
-                            {PERMISSION_LABELS[perm] || perm}
-                          </span>
-                        ))
-                      )}
-                      {role.permissions.length > 5 && !role.permissions.includes('admin') && (
-                        <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">
-                          +{role.permissions.length - 5} more
-                        </span>
-                      )}
-                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => openEditModal(role)}>
-                      Edit
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => openEditModal(role)}
+                      className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                    <button
                       onClick={() => handleDelete(role)}
                       disabled={role.employeeCount > 0}
+                      className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      Delete
-                    </Button>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
+                </div>
+
+                <p className="text-sm text-gray-600 mb-3">
+                  {getPermissionSummary(role.permissions)}
+                </p>
+
+                {/* Permission badges - show first few */}
+                <div className="flex flex-wrap gap-1">
+                  {role.permissions.slice(0, 4).map(perm => {
+                    // Find the permission label
+                    let label = perm
+                    for (const group of Object.values(PERMISSION_GROUPS)) {
+                      const found = group.permissions.find(p => p.key === perm)
+                      if (found) {
+                        label = found.label
+                        break
+                      }
+                    }
+                    return (
+                      <span
+                        key={perm}
+                        className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
+                      >
+                        {label}
+                      </span>
+                    )
+                  })}
+                  {role.permissions.length > 4 && (
+                    <span className="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">
+                      +{role.permissions.length - 4} more
+                    </span>
+                  )}
                 </div>
               </Card>
             ))}
           </div>
         )}
 
-        {/* Quick Setup Tip */}
+        {/* Role Templates Info */}
         <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-          <h4 className="font-medium text-blue-900">Quick Setup</h4>
+          <h4 className="font-medium text-blue-900">Role Templates</h4>
           <p className="text-sm text-blue-700 mt-1">
-            Common roles: <strong>Admin</strong> (full access), <strong>Manager</strong> (reports + voids),
-            <strong> Server</strong> (orders + payments), <strong>Bartender</strong> (orders + tabs).
+            Quick templates available: <strong>Server</strong>, <strong>Bartender</strong>, <strong>Manager</strong>, <strong>Admin</strong>, <strong>Owner</strong>
           </p>
         </div>
       </div>
@@ -329,7 +355,7 @@ export default function RolesPage() {
       <Modal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        title={editingRole ? 'Edit Role' : 'Add Role'}
+        title={editingRole ? 'Edit Role' : 'Create New Role'}
         size="lg"
       >
         <div className="space-y-4">
@@ -351,95 +377,139 @@ export default function RolesPage() {
             />
           </div>
 
-          {/* Quick Presets */}
+          {/* Role Templates */}
           <div>
-            <Label>Quick Presets</Label>
-            <div className="flex gap-2 mt-1">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedPermissions(['admin'])}
-              >
-                Admin
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedPermissions([
-                  'orders.create', 'orders.void_item', 'orders.apply_discount', 'orders.transfer',
-                  'payments.process', 'payments.refund', 'payments.open_drawer',
-                  'menu.view', 'employees.view', 'reports.view', 'reports.sales',
-                ])}
-              >
-                Manager
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedPermissions([
-                  'orders.create', 'payments.process', 'menu.view',
-                ])}
-              >
-                Server
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedPermissions([
-                  'orders.create', 'payments.process', 'menu.view', 'payments.open_drawer',
-                ])}
-              >
-                Bartender
-              </Button>
+            <Label>Apply Template</Label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {Object.keys(DEFAULT_ROLES).map(templateName => (
+                <Button
+                  key={templateName}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => applyRoleTemplate(templateName)}
+                >
+                  {templateName}
+                </Button>
+              ))}
             </div>
           </div>
 
-          {/* Permissions */}
+          {/* Permissions by Group */}
           <div>
-            <Label>Permissions</Label>
-            <p className="text-xs text-gray-500 mb-2">
-              Selected: {selectedPermissions.length} permission{selectedPermissions.length !== 1 ? 's' : ''}
-            </p>
+            <div className="flex items-center justify-between mb-2">
+              <Label>Permissions</Label>
+              <span className="text-xs text-gray-500">
+                {selectedPermissions.length} selected
+              </span>
+            </div>
 
-            <div className="max-h-64 overflow-y-auto border rounded-lg">
-              {Object.entries(groupedPermissions).map(([category, perms]) => {
-                const categoryLabel = PERMISSION_CATEGORIES[category as keyof typeof PERMISSION_CATEGORIES] || category
-                const allSelected = perms.every(p => selectedPermissions.includes(p.value))
+            <div className="max-h-96 overflow-y-auto border rounded-lg divide-y">
+              {Object.entries(PERMISSION_GROUPS).map(([groupName, group]) => {
+                const groupPerms = group.permissions.map(p => p.key)
+                const selectedCount = groupPerms.filter(p => selectedPermissions.includes(p)).length
+                const allSelected = selectedCount === groupPerms.length
+                const someSelected = selectedCount > 0 && selectedCount < groupPerms.length
+                const isExpanded = expandedGroups.includes(groupName)
 
                 return (
-                  <div key={category} className="border-b last:border-0">
-                    <button
-                      type="button"
-                      className="w-full px-3 py-2 bg-gray-50 text-left font-medium text-sm flex items-center justify-between hover:bg-gray-100"
-                      onClick={() => selectAllInCategory(category)}
+                  <div key={groupName}>
+                    {/* Group Header */}
+                    <div
+                      className="px-3 py-2 bg-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-100"
+                      onClick={() => toggleGroup(groupName)}
                     >
-                      <span>{categoryLabel}</span>
-                      <span className={`text-xs ${allSelected ? 'text-green-600' : 'text-gray-400'}`}>
-                        {allSelected ? 'All selected' : 'Click to select all'}
-                      </span>
-                    </button>
-                    <div className="p-2 space-y-1">
-                      {perms.map(perm => (
-                        <label
-                          key={perm.value}
-                          className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 cursor-pointer"
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            selectAllInGroup(groupName)
+                          }}
+                          className={`w-4 h-4 rounded border flex items-center justify-center ${
+                            allSelected
+                              ? 'bg-blue-600 border-blue-600'
+                              : someSelected
+                              ? 'bg-blue-600 border-blue-600'
+                              : 'border-gray-300'
+                          }`}
                         >
-                          <input
-                            type="checkbox"
-                            checked={selectedPermissions.includes(perm.value)}
-                            onChange={() => togglePermission(perm.value)}
-                            className="rounded"
-                          />
-                          <span className="text-sm">
-                            {PERMISSION_LABELS[perm.value] || perm.value}
+                          {allSelected && (
+                            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                          {someSelected && !allSelected && (
+                            <div className="w-2 h-0.5 bg-white" />
+                          )}
+                        </button>
+                        <div>
+                          <span className="font-medium text-sm">{groupName}</span>
+                          <span className="ml-2 text-xs text-gray-500">
+                            ({selectedCount}/{groupPerms.length})
                           </span>
-                        </label>
-                      ))}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">{group.description}</span>
+                        <svg
+                          className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
                     </div>
+
+                    {/* Group Permissions */}
+                    {isExpanded && (
+                      <div className="p-2 space-y-1 bg-white">
+                        {group.permissions.map(perm => (
+                          <label
+                            key={perm.key}
+                            className="flex items-start gap-3 px-2 py-1.5 rounded hover:bg-gray-50 cursor-pointer group"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedPermissions.includes(perm.key)}
+                              onChange={() => togglePermission(perm.key)}
+                              className="mt-0.5 rounded border-gray-300"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm font-medium block">{perm.label}</span>
+                              <span className="text-xs text-gray-500">{perm.description}</span>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}
             </div>
+          </div>
+
+          {/* Admin Shortcut */}
+          <div className="p-3 bg-purple-50 rounded-lg">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedPermissions.includes('admin')}
+                onChange={() => {
+                  if (selectedPermissions.includes('admin')) {
+                    setSelectedPermissions(selectedPermissions.filter(p => p !== 'admin'))
+                  } else {
+                    setSelectedPermissions(['admin'])
+                  }
+                }}
+                className="rounded border-purple-300"
+              />
+              <div>
+                <span className="font-medium text-purple-900">Administrator Access</span>
+                <p className="text-xs text-purple-700">Grant full access to all features</p>
+              </div>
+            </label>
           </div>
 
           {/* Actions */}

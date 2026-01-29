@@ -205,7 +205,44 @@ export function SeatFromWaitlistModal({
         }
       }
 
-      // Mark the entertainment item as in_use
+      // Find the entertainment order item ID from the order
+      // We need to fetch the order to get the item ID that was just added
+      let currentOrderItemId: string | null = null
+      try {
+        const orderResponse = await fetch(`/api/orders/${tabId}`)
+        if (orderResponse.ok) {
+          const orderData = await orderResponse.json()
+          // Find the item that matches our entertainment item
+          const entertainmentItem = orderData.items?.find(
+            (item: { menuItemId: string }) => item.menuItemId === selectedItemId
+          )
+          if (entertainmentItem) {
+            currentOrderItemId = entertainmentItem.id
+          }
+        }
+      } catch (err) {
+        console.error('Failed to get order item ID:', err)
+      }
+
+      // Start the block time on the order item
+      // Use the entertainment item's default block time or 60 minutes
+      const blockMinutes = selectedItem.blockTimeMinutes || 60
+      if (currentOrderItemId) {
+        try {
+          await fetch('/api/entertainment/block-time', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderItemId: currentOrderItemId,
+              minutes: blockMinutes,
+            }),
+          })
+        } catch (err) {
+          console.error('Failed to start block time:', err)
+        }
+      }
+
+      // Mark the entertainment item as in_use (block-time POST already does this, but ensure it's set)
       await fetch('/api/entertainment/status', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -213,6 +250,7 @@ export function SeatFromWaitlistModal({
           menuItemId: selectedItemId,
           status: 'in_use',
           currentOrderId: tabId,
+          currentOrderItemId,
         }),
       })
 

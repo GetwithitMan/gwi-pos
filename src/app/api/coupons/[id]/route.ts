@@ -165,6 +165,7 @@ export async function PUT(
           // Create redemption record
           await db.couponRedemption.create({
             data: {
+              locationId: coupon.locationId,
               couponId: id,
               orderId,
               customerId,

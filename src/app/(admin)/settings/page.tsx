@@ -6,16 +6,21 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { LocationSettings, DEFAULT_SETTINGS } from '@/lib/settings'
 import { formatCurrency, calculateCashPrice } from '@/lib/pricing'
+import { useAuthStore } from '@/stores/auth-store'
+import { hasPermission, PERMISSIONS } from '@/lib/auth'
 
 export default function SettingsPage() {
+  const { employee } = useAuthStore()
   const [settings, setSettings] = useState<LocationSettings>(DEFAULT_SETTINGS)
   const [locationName, setLocationName] = useState('')
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
 
-  // For now, assume admin access. Later we'll check permissions.
-  const isSuperAdmin = true // TODO: Get from auth context
+  // Check if user has admin/settings permissions
+  const isSuperAdmin = employee?.role?.name === 'Owner' ||
+    employee?.role?.name === 'Admin' ||
+    hasPermission(employee?.permissions || [], PERMISSIONS.ADMIN)
 
   useEffect(() => {
     loadSettings()
@@ -857,6 +862,15 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold mb-4">Quick Links</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Link
+              href="/settings/tip-outs"
+              className="p-4 border rounded-lg hover:bg-gray-50 text-center"
+            >
+              <svg className="w-6 h-6 mx-auto mb-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span className="text-sm font-medium">Tip-Outs</span>
+            </Link>
+            <Link
               href="/menu"
               className="p-4 border rounded-lg hover:bg-gray-50 text-center"
             >
@@ -873,15 +887,6 @@ export default function SettingsPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
               </svg>
               <span className="text-sm font-medium">Modifiers</span>
-            </Link>
-            <Link
-              href="/orders"
-              className="p-4 border rounded-lg hover:bg-gray-50 text-center"
-            >
-              <svg className="w-6 h-6 mx-auto mb-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              <span className="text-sm font-medium">Orders</span>
             </Link>
             <Link
               href="/reports/commission"

@@ -153,6 +153,7 @@ export async function PUT(
           // Create new
           await db.modifier.create({
             data: {
+              locationId: modifierGroup.locationId,
               modifierGroupId: id,
               name: mod.name,
               price: mod.price ?? 0,

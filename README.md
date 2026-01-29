@@ -8,7 +8,11 @@ A modern, fast point-of-sale system built for bars and restaurants with a "fewes
 
 ### Demo Login
 
-PIN: `1234` (Demo Manager account)
+| Role | PIN |
+|------|-----|
+| Manager | `1234` |
+| Server | `2345` |
+| Bartender | `3456` |
 
 ## Features
 
@@ -62,10 +66,10 @@ PIN: `1234` (Demo Manager account)
 - **Language**: TypeScript
 - **Styling**: Tailwind CSS
 - **State Management**: Zustand
-- **ORM**: Prisma 7
-- **Database**: PostgreSQL (via Vercel Postgres)
+- **ORM**: Prisma 6
+- **Database**: SQLite (local file)
 - **Validation**: Zod
-- **Deployment**: Vercel
+- **Deployment**: Vercel or self-hosted Linux
 
 ## Project Structure
 
@@ -128,37 +132,45 @@ npm run dev
 
 4. Open http://localhost:3000
 
-## Database Setup (Vercel Postgres)
+## Database Setup (SQLite)
 
-### 1. Create Vercel Postgres Database
+The database is a local SQLite file - no external database setup required.
 
-1. Go to your [Vercel Dashboard](https://vercel.com/dashboard)
-2. Select the gwi-pos project
-3. Click **Storage** tab
-4. Click **Create Database** → **Postgres**
-5. Name it `gwi-pos-db` and create
-
-### 2. Connect Database to Project
-
-1. In the Storage tab, click on your database
-2. Click **Connect to Project**
-3. This automatically adds `DATABASE_URL` to environment variables
-
-### 3. Run Migrations
+### Initial Setup
 
 ```bash
-# Pull environment variables from Vercel
-vercel env pull .env.local
+# Install dependencies
+npm install
 
-# Run migrations
-npx prisma migrate deploy
+# Set up database and seed with demo data
+npm run setup
 ```
+
+### Database Commands
+
+```bash
+# Push schema changes
+npm run db:push
+
+# Seed demo data
+npm run db:seed
+
+# Reset database (delete and recreate)
+npm run reset
+
+# Open Prisma Studio (database browser)
+npm run db:studio
+```
+
+### Database File Location
+
+The SQLite database is stored at: `prisma/pos.db`
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_URL` | SQLite path: `file:./pos.db` |
 
 ## Development
 

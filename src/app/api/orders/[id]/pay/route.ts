@@ -101,6 +101,7 @@ export async function POST(
 
     for (const payment of payments) {
       let paymentRecord: {
+        locationId: string
         orderId: string
         employeeId: string | null
         amount: number
@@ -116,6 +117,7 @@ export async function POST(
         transactionId?: string
         status: string
       } = {
+        locationId: order.locationId,
         orderId,
         employeeId: employeeId || null,
         amount: payment.amount,
@@ -307,6 +309,7 @@ export async function POST(
             status: newBalance === 0 ? 'depleted' : 'active',
             transactions: {
               create: {
+                locationId: order.locationId,
                 type: 'redemption',
                 amount: -paymentAmount,
                 balanceBefore: cardBalance,
@@ -387,6 +390,7 @@ export async function POST(
             currentBalance: newBalance,
             transactions: {
               create: {
+                locationId: order.locationId,
                 type: 'charge',
                 amount: paymentAmount,
                 balanceBefore: currentBalance,

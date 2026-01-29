@@ -121,6 +121,7 @@ export async function POST(request: NextRequest) {
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         transactions: {
           create: {
+            locationId,
             type: 'purchase',
             amount,
             balanceBefore: 0,

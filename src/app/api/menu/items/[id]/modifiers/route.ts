@@ -49,6 +49,7 @@ export async function GET(
         maxSelections: link.modifierGroup.maxSelections,
         isRequired: link.modifierGroup.isRequired,
         isSpiritGroup: link.modifierGroup.isSpiritGroup,
+        modifierTypes: (link.modifierGroup.modifierTypes as string[]) || ['universal'],
         spiritConfig: link.modifierGroup.spiritConfig ? {
           spiritCategoryId: link.modifierGroup.spiritConfig.spiritCategoryId,
           spiritCategoryName: link.modifierGroup.spiritConfig.spiritCategory.displayName || link.modifierGroup.spiritConfig.spiritCategory.name,
@@ -104,6 +105,19 @@ export async function POST(
       )
     }
 
+    // Get menu item to get locationId
+    const menuItem = await db.menuItem.findUnique({
+      where: { id: menuItemId },
+      select: { locationId: true },
+    })
+
+    if (!menuItem) {
+      return NextResponse.json(
+        { error: 'Menu item not found' },
+        { status: 404 }
+      )
+    }
+
     // Remove existing links
     await db.menuItemModifierGroup.deleteMany({
       where: { menuItemId }
@@ -113,6 +127,7 @@ export async function POST(
     if (modifierGroupIds.length > 0) {
       await db.menuItemModifierGroup.createMany({
         data: modifierGroupIds.map((groupId: string, index: number) => ({
+          locationId: menuItem.locationId,
           menuItemId,
           modifierGroupId: groupId,
           sortOrder: index,

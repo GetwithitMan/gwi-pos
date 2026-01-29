@@ -175,6 +175,7 @@ export async function POST(request: NextRequest) {
     // Create the combo template
     const template = await prisma.comboTemplate.create({
       data: {
+        locationId,
         menuItemId: menuItem.id,
         basePrice: price,
         comparePrice,
@@ -190,6 +191,7 @@ export async function POST(request: NextRequest) {
             itemPriceOverride?: number
             modifierPriceOverrides?: Record<string, number>
           }, idx: number) => ({
+            locationId,
             slotName: comp.slotName,
             displayName: comp.displayName,
             sortOrder: comp.sortOrder ?? idx,

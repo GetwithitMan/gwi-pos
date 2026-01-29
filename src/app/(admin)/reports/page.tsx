@@ -1,0 +1,475 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { useAuthStore } from '@/stores/auth-store'
+import { formatCurrency } from '@/lib/utils'
+import { hasPermission, PERMISSIONS } from '@/lib/auth'
+
+interface TodayStats {
+  totalSales: number
+  orderCount: number
+  avgOrderValue: number
+  cashSales: number
+  cardSales: number
+  tipsCollected: number
+  laborHours: number
+  laborCost: number
+}
+
+interface ReportLink {
+  name: string
+  href: string
+  description: string
+  icon: React.ReactNode
+  permission?: string
+}
+
+interface ReportCategory {
+  title: string
+  reports: ReportLink[]
+}
+
+export default function ReportsHubPage() {
+  const router = useRouter()
+  const { employee, isAuthenticated } = useAuthStore()
+  const [stats, setStats] = useState<TodayStats | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const permissions = employee?.permissions || []
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/reports')
+      return
+    }
+    if (employee?.location?.id) {
+      loadTodayStats()
+    }
+  }, [isAuthenticated, router, employee?.location?.id])
+
+  const loadTodayStats = async () => {
+    if (!employee?.location?.id) return
+    setIsLoading(true)
+    try {
+      // Get today's date range
+      const today = new Date().toISOString().split('T')[0]
+      const params = new URLSearchParams({
+        locationId: employee.location.id,
+        startDate: today,
+        endDate: today,
+      })
+
+      const response = await fetch(`/api/reports/sales?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setStats({
+          totalSales: data.summary?.netSales || 0,
+          orderCount: data.summary?.orderCount || 0,
+          avgOrderValue: data.summary?.averageOrderValue || 0,
+          cashSales: data.summary?.cashSales || 0,
+          cardSales: data.summary?.cardSales || 0,
+          tipsCollected: data.summary?.tips || 0,
+          // Labor metrics require aggregating TimeClockEntry data
+          // Future enhancement: Add /api/reports/labor endpoint
+          laborHours: data.summary?.laborHours || 0,
+          laborCost: data.summary?.laborCost || 0,
+        })
+      }
+    } catch (error) {
+      console.error('Failed to load today stats:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Check if user can view a specific report
+  const canView = (permission?: string) => {
+    if (!permission) return true
+    return hasPermission(permissions, permission) ||
+           hasPermission(permissions, PERMISSIONS.REPORTS_VIEW) ||
+           hasPermission(permissions, 'admin') ||
+           hasPermission(permissions, 'super_admin')
+  }
+
+  // Report categories with permission requirements
+  const reportCategories: ReportCategory[] = [
+    {
+      title: 'Sales & Revenue',
+      reports: [
+        {
+          name: 'Sales Report',
+          href: '/reports/sales',
+          description: 'Gross sales, net sales, payment breakdown by day/hour',
+          permission: PERMISSIONS.REPORTS_SALES,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Product Mix',
+          href: '/reports/product-mix',
+          description: 'Best selling items, category performance',
+          permission: PERMISSIONS.REPORTS_PRODUCT_MIX,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Order History',
+          href: '/reports/order-history',
+          description: 'Individual order details and transaction history',
+          permission: PERMISSIONS.REPORTS_TABS,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          ),
+        },
+      ],
+    },
+    {
+      title: 'Team & Labor',
+      reports: [
+        {
+          name: 'Employee Performance',
+          href: '/reports/employees',
+          description: 'Sales by server, tips, hours worked',
+          permission: PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Commission Report',
+          href: '/reports/commission',
+          description: 'Commission earnings by employee',
+          permission: PERMISSIONS.REPORTS_COMMISSION,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Tips Report',
+          href: '/reports/tips',
+          description: 'Tip sharing, tip-outs, and banked tips',
+          permission: PERMISSIONS.REPORTS_COMMISSION,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          ),
+        },
+      ],
+    },
+    {
+      title: 'Operations',
+      reports: [
+        {
+          name: 'Voids & Comps',
+          href: '/reports/voids',
+          description: 'Voided items and comped orders tracking',
+          permission: PERMISSIONS.REPORTS_VOIDS,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Coupons & Discounts',
+          href: '/reports/coupons',
+          description: 'Coupon usage and discount tracking',
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Reservations',
+          href: '/reports/reservations',
+          description: 'Reservation history and no-shows',
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          ),
+        },
+      ],
+    },
+    {
+      title: 'Inventory & Liquor',
+      reports: [
+        {
+          name: 'Liquor & Spirits',
+          href: '/reports/liquor',
+          description: 'Pour costs, spirit sales, inventory levels',
+          permission: PERMISSIONS.REPORTS_INVENTORY,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          ),
+        },
+      ],
+    },
+  ]
+
+  // Filter categories to only show reports user can access
+  const filteredCategories = reportCategories
+    .map(category => ({
+      ...category,
+      reports: category.reports.filter(report => canView(report.permission)),
+    }))
+    .filter(category => category.reports.length > 0)
+
+  if (!isAuthenticated) return null
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* Header */}
+      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" onClick={() => router.push('/orders')}>
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to POS
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">Reports</h1>
+            <p className="text-sm text-gray-500">{employee?.location?.name}</p>
+          </div>
+        </div>
+      </header>
+
+      <div className="p-6 max-w-7xl mx-auto">
+        {/* Today's Quick Stats */}
+        <div className="mb-8">
+          <h2 className="text-lg font-semibold mb-4">Today&apos;s Overview</h2>
+          {isLoading ? (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[1, 2, 3, 4].map(i => (
+                <Card key={i}>
+                  <CardContent className="p-4">
+                    <div className="animate-pulse">
+                      <div className="h-4 bg-gray-200 rounded w-20 mb-2" />
+                      <div className="h-8 bg-gray-200 rounded w-24" />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : stats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-green-100 rounded-lg">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Today&apos;s Sales</p>
+                      <p className="text-2xl font-bold text-green-600">{formatCurrency(stats.totalSales)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Orders</p>
+                      <p className="text-2xl font-bold text-blue-600">{stats.orderCount}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-purple-100 rounded-lg">
+                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Avg. Order</p>
+                      <p className="text-2xl font-bold text-purple-600">{formatCurrency(stats.avgOrderValue)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 rounded-lg">
+                      <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Tips</p>
+                      <p className="text-2xl font-bold text-orange-600">{formatCurrency(stats.tipsCollected)}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
+
+        {/* Payment Breakdown */}
+        {stats && (stats.cashSales > 0 || stats.cardSales > 0) && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle className="text-base">Today&apos;s Payment Methods</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 bg-green-500 rounded-full" />
+                  <span className="text-sm text-gray-600">Cash</span>
+                  <span className="font-semibold">{formatCurrency(stats.cashSales)}</span>
+                  <span className="text-xs text-gray-400">
+                    ({stats.cashSales + stats.cardSales > 0
+                      ? Math.round((stats.cashSales / (stats.cashSales + stats.cardSales)) * 100)
+                      : 0}%)
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 bg-blue-500 rounded-full" />
+                  <span className="text-sm text-gray-600">Card</span>
+                  <span className="font-semibold">{formatCurrency(stats.cardSales)}</span>
+                  <span className="text-xs text-gray-400">
+                    ({stats.cashSales + stats.cardSales > 0
+                      ? Math.round((stats.cardSales / (stats.cashSales + stats.cardSales)) * 100)
+                      : 0}%)
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Report Categories */}
+        <div className="space-y-8">
+          {filteredCategories.map(category => (
+            <div key={category.title}>
+              <h2 className="text-lg font-semibold mb-4">{category.title}</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {category.reports.map(report => (
+                  <Link key={report.href} href={report.href}>
+                    <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-4">
+                          <div className="p-2 bg-gray-100 rounded-lg text-gray-600">
+                            {report.icon}
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="font-medium text-gray-900">{report.name}</h3>
+                            <p className="text-sm text-gray-500 mt-1">{report.description}</p>
+                          </div>
+                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* My Reports Section (always visible for personal stats) */}
+        <div className="mt-8 pt-8 border-t">
+          <h2 className="text-lg font-semibold mb-4">My Reports</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <Link href={`/reports/employees?employeeId=${employee?.id}`}>
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-medium text-gray-900">My Sales</h3>
+                      <p className="text-sm text-gray-500 mt-1">Your personal sales and performance</p>
+                    </div>
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link href={`/reports/commission?employeeId=${employee?.id}`}>
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-green-100 rounded-lg text-green-600">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-medium text-gray-900">My Commission</h3>
+                      <p className="text-sm text-gray-500 mt-1">Your commission earnings and tips</p>
+                    </div>
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+            <Link href={`/reports/tips?employeeId=${employee?.id}`}>
+              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-4">
+                    <div className="p-2 bg-orange-100 rounded-lg text-orange-600">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-medium text-gray-900">My Tips</h3>
+                      <p className="text-sm text-gray-500 mt-1">Your tip shares and banked tips</p>
+                    </div>
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

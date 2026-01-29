@@ -4,6 +4,390 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-01-28] Session 20
+
+### Database: Multi-Tenancy locationId Implementation
+
+Added `locationId` to all tables for proper multi-tenancy support. This is a foundational change that ensures all data can be properly scoped by location.
+
+**Tables Updated (22 new locationId columns):**
+- Order Details: `OrderItem`, `OrderItemModifier`, `Payment`, `OrderDiscount`
+- Menu: `Modifier`, `MenuItemModifierGroup`
+- Combos: `ComboTemplate`, `ComboComponent`, `ComboComponentOption`
+- Operations: `PaidInOut`, `SectionAssignment`, `VoidLog`, `Break`
+- Transactions: `CouponRedemption`, `GiftCardTransaction`, `HouseAccountTransaction`
+- Events: `EventPricingTier`, `EventTableConfig`, `UpsellEvent`
+- Tips: `TipPoolEntry`
+- Liquor Builder: `RecipeIngredient`, `SpiritModifierGroup`
+
+**Also added Location relations to:**
+- `TaxRule`, `InventoryTransaction`, `StockAlert` (had locationId but missing relation)
+
+**Migration:**
+- Created `prisma/migrations/add-location-ids.sql` for data migration
+- All existing records populated with locationId from parent records
+- Added indexes on all new locationId columns
+
+**Documentation:**
+- Updated CLAUDE.md with multi-tenancy requirements
+- All new models MUST include locationId
+- All queries MUST filter by locationId
+
+### Codebase Cleanup & Optimization
+
+Comprehensive codebase analysis and cleanup to reduce technical debt.
+
+**Removed Unused Dependencies:**
+- Removed `@types/uuid` from devDependencies (was never used)
+
+**Created Centralized API Client:**
+- New file: `src/lib/api-client.ts`
+- Typed methods for all 27+ API endpoint groups
+- Eliminates duplicate fetch patterns across 75+ files
+- Includes error handling, query string building, and consistent response parsing
+- Usage: `import { api } from '@/lib/api-client'` then `api.customers.list({ locationId })`
+
+**Extracted Components:**
+- `SortableCategoryButton` → `src/components/pos/SortableCategoryButton.tsx`
+- Created shared payment types → `src/components/payment/types.ts`
+
+**Fixed TODO Comments:**
+- Settings page: Fixed auth context to use proper permission checking via `useAuthStore`
+- Reports page: Updated labor metrics comments with implementation notes
+- Receipt route: Added basic loyalty points calculation for customers
+
+**Code Quality Findings (for future reference):**
+- Large files identified for future splitting:
+  - `orders/page.tsx` (3,574 lines) - Main POS interface
+  - `ShiftCloseoutModal.tsx` (953 lines)
+  - `SplitCheckModal.tsx` (882 lines)
+  - `PaymentModal.tsx` (874 lines)
+- All custom hooks (4) are actively used
+- All Zustand stores (2) are actively used
+- No dead API routes found
+
+---
+
+## [2026-01-28] Session 19
+
+### New Feature: POS Personalization - Category & Menu Item Customization (Skill 99)
+Each employee can personalize their POS interface with custom colors and effects for a fully customized experience.
+
+**Core Features:**
+
+1. **Category Button Colors** (per employee, per category)
+   - Custom selected background color
+   - Custom selected text color
+   - Custom unselected background color (makes buttons pop!)
+   - Custom unselected text color
+   - Access via gear icon → "Reorder Categories" → click paint icon on any category
+
+2. **Menu Item Styling** (per employee, per item)
+   - Custom background color
+   - Custom text color
+   - Pop effects: Glow, Larger, Border, or "All" (maximum pop!)
+   - Custom glow/border color
+   - Access via gear icon → "Customize Item Colors" → click paint icon on any item
+
+3. **Reset Options** (in gear dropdown)
+   - "Reset All Category Colors" - clears all category customizations
+   - "Reset All Item Styles" - clears all menu item customizations
+
+**Settings Storage:**
+- Stored in `Employee.posLayoutSettings` JSON field
+- `categoryColors: { [categoryId]: CategoryColorOverride }`
+- `menuItemColors: { [menuItemId]: MenuItemCustomization }`
+
+### New Feature: Glassmorphism UI Overhaul (Skill 100)
+Modern glass effect throughout the POS interface for a sleek, contemporary look.
+
+**Visual Enhancements:**
+- Frosted glass panels with backdrop blur
+- Soft gradients based on Bar/Food mode
+- Blue theme for Bar mode
+- Orange theme for Food mode
+- Smooth hover animations and transitions
+- Semi-transparent overlays with blur effects
+
+---
+
+## [2026-01-28] Session 18
+
+### New Feature: Tips & Commission Sharing System (Skill 98)
+Comprehensive tip sharing system with automatic role-based tip-outs, custom sharing, banked tips, and detailed reporting.
+
+**Core Features:**
+
+1. **Role-Based Tip-Outs**
+   - Configure automatic tip-out percentages by role (e.g., Server → Busser 3%, Server → Bartender 2%)
+   - Rules apply automatically at shift closeout
+   - Toggle rules active/inactive as needed
+   - Supports multiple rules per role
+
+2. **Custom Tip Sharing**
+   - One-off tip shares to specific employees during closeout
+   - Share fixed dollar amounts to any team member
+   - Add notes to custom shares for tracking
+
+3. **Tip Distribution at Closeout**
+   - New "Tips" step in shift closeout flow
+   - Shows gross tips collected during shift
+   - Auto-calculates role-based tip-outs
+   - Allows adding custom one-off shares
+   - Displays net tips (what server keeps)
+
+4. **Banked Tips System**
+   - Tips auto-bank when recipient is not on shift
+   - Tracks pending banked tips for payroll
+   - Supports collection at next clock-in or via payroll
+
+5. **Tip Collection Notification**
+   - Notification appears when clocked in with pending tips
+   - Shows breakdown of tips from each source
+   - One-click collection or dismiss for later
+
+6. **Tips Report**
+   - Comprehensive tips report at `/reports/tips`
+   - By Employee tab: gross, given, received, net tips
+   - Tip Shares tab: all tip share transactions
+   - Banked Tips tab: uncollected tips for payroll
+   - Filter by date range and employee
+   - Personal "My Tips" shortcut in reports hub
+
+7. **Tip Permissions**
+   - `tips.view_own` - See your own tips
+   - `tips.view_all` - See all employees' tips
+   - `tips.share` - Share tips to others
+   - `tips.collect` - Collect shared tips
+   - `tips.manage_rules` - Configure tip-out rules
+   - `tips.manage_bank` - Manage banked tips / payroll
+
+**Database Changes:**
+- Added `TipOutRule` model for automatic tip-out rules
+- Added `TipShare` model for tip distribution records
+- Added `TipBank` model for uncollected/banked tips
+- Added `isTipped` field to Role model
+- Added `grossTips`, `tipOutTotal`, `netTips` fields to Shift model
+
+### New Files Created
+| File | Purpose |
+|------|---------|
+| `src/app/(admin)/settings/tip-outs/page.tsx` | Tip-out rules configuration UI |
+| `src/app/api/tip-out-rules/route.ts` | CRUD API for tip-out rules |
+| `src/app/api/tip-out-rules/[id]/route.ts` | Single tip-out rule operations |
+| `src/app/api/employees/[id]/tips/route.ts` | Employee tip collection API |
+| `src/app/(admin)/reports/tips/page.tsx` | Tips report page |
+| `src/app/api/reports/tips/route.ts` | Tips report API |
+| `.claude/commands/tip-sharing.md` | Tip sharing skill documentation |
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `prisma/schema.prisma` | Added TipOutRule, TipShare, TipBank models |
+| `src/components/shifts/ShiftCloseoutModal.tsx` | Added tip distribution step |
+| `src/app/api/shifts/[id]/route.ts` | Process tip distribution on closeout |
+| `src/components/time-clock/TimeClockModal.tsx` | Added pending tips notification |
+| `src/app/(admin)/reports/page.tsx` | Added Tips Report links |
+| `src/app/(admin)/settings/page.tsx` | Added Tip-Outs link |
+| `src/lib/auth.ts` | Added tip permissions |
+| `src/components/payment/PaymentModal.tsx` | Added employeeId prop for tip tracking |
+| `src/app/(pos)/orders/page.tsx` | Pass employeeId to PaymentModal |
+
+### Bug Fixes
+
+1. **Tips Not Showing in Shift Closeout**
+   - **Issue**: Gross tips showed $0.00 at closeout even when tips were collected
+   - **Cause**: PaymentModal wasn't passing `employeeId` when processing payments, so tips weren't attributed to the employee
+   - **Fix**: Added `employeeId` prop to PaymentModal and included it in payment API requests
+
+2. **Tip-Outs Settings "No Location Found" Error**
+   - **Issue**: Tip-out rules settings page showed "No location found. Please log in again."
+   - **Cause**: Page was reading from wrong localStorage key instead of using auth store
+   - **Fix**: Updated page to use `useAuthStore` hook to get employee/location data
+
+3. **Improved Error Messages**
+   - Added detailed error messages to tip-out rules API for better debugging
+
+### New Skills Added
+| Skill | Name | Description |
+|-------|------|-------------|
+| 98 | Tip Sharing | Role-based tip-outs, custom sharing, banked tips |
+| - | Reports | General reports overview (sales, employees, tips, liquor) |
+
+---
+
+## [2026-01-28] Session 17
+
+### New Feature: POS Display Settings & Bar/Food Mode (Skills 96-97)
+Major POS UI overhaul with customizable display settings, Bar/Food mode toggle, and smart favorites bar.
+
+**Core Features:**
+
+1. **Bar/Food Mode Toggle**
+   - Prominent toggle in header to switch between Bar and Food modes
+   - Smooth animated transition between modes
+   - Categories auto-sort based on mode (drinks first in Bar, food first in Food)
+   - Remembers last used mode per employee
+
+2. **Smart Favorites Bar**
+   - Quick-access row for frequently used items
+   - Separate favorites per mode (bar favorites vs food favorites)
+   - Drag-and-drop reordering with @dnd-kit
+   - Right-click any menu item to add/remove from favorites
+   - Favorite items show star indicator
+   - Edit mode for managing favorites
+
+3. **Menu Item Size Options**
+   - Compact (64px) - Maximum items visible, minimal scrolling
+   - Normal (80px) - Balanced view (default, smaller than previous)
+   - Large (112px) - Original size, easier to tap
+
+4. **Grid Column Control**
+   - Configurable 3-6 columns per row
+   - Adapts to screen size and preference
+
+5. **Category Button Sizing**
+   - Small, Medium, Large options
+   - Affects category bar button sizes
+
+6. **Order Panel Width**
+   - Narrow (256px) - More menu space
+   - Normal (320px) - Default
+   - Wide (384px) - More order details
+
+7. **Category Color Modes**
+   - Solid - Full color background when selected
+   - Subtle - Light tint with colored border
+   - Outline - Border only with transparent background
+
+8. **Permission-Based Customization**
+   - New `posLayout` permission category
+   - Admins can customize global layouts
+   - Managers/employees can customize personal layouts (with permission)
+   - Personal settings stored per-employee
+
+**Dependencies Added:**
+- `@dnd-kit/core` - Drag-and-drop framework
+- `@dnd-kit/sortable` - Sortable lists
+- `@dnd-kit/utilities` - DnD utilities
+- `framer-motion` - Smooth animations
+
+### New Files Created
+| File | Purpose |
+|------|---------|
+| `src/hooks/usePOSDisplay.ts` | Hook for display settings (sizing, colors) |
+| `src/hooks/usePOSLayout.ts` | Hook for layout settings (mode, favorites, category order) |
+| `src/components/orders/POSDisplaySettings.tsx` | Display settings modal |
+| `src/components/pos/ModeToggle.tsx` | Bar/Food mode toggle component |
+| `src/components/pos/FavoritesBar.tsx` | Draggable favorites bar with @dnd-kit |
+| `src/app/api/employees/[id]/layout/route.ts` | Employee layout settings API |
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/lib/settings.ts` | Added `POSDisplaySettings` and `POSLayoutSettings` interfaces |
+| `src/app/(pos)/orders/page.tsx` | Integrated mode toggle, favorites bar, dynamic sizing |
+| `prisma/schema.prisma` | Added `posLayoutSettings` field to Employee model |
+| `prisma/seed.ts` | Added `posLayout` permission to roles |
+
+### Database Changes
+- Added `posLayoutSettings Json?` field to Employee model for personal layout preferences
+
+### New Skills Added
+| Skill | Name | Description |
+|-------|------|-------------|
+| 96 | POS Display Settings | Customizable sizing, colors, grid layout |
+| 97 | Bar/Food Mode | Mode toggle, favorites bar, category sorting |
+
+---
+
+## [2026-01-28] Session 16
+
+### New Feature: Entertainment Session Synchronization (Skill 95)
+Unified entertainment/timed rental session management across all POS views with auto-start timers and synchronized state.
+
+**Core Features:**
+
+1. **Four-System Synchronization**
+   - Entertainment KDS (`/kds/entertainment`) - Full session management view
+   - Open Orders Panel - Badge display and quick controls
+   - Orders Page - Inline session controls per item
+   - Orders Page Menu Grid - Shows IN USE badge on entertainment items
+   - All views auto-refresh every 3 seconds when viewing entertainment
+
+2. **Auto-Start Timers on Send**
+   - Timers automatically start when clicking "Send to Kitchen" or "Send to Tab"
+   - Uses item's `blockTimeMinutes` setting (default: 60 minutes)
+   - No manual timer start needed for typical workflow
+
+3. **Entertainment Session Controls Component**
+   - Countdown timer display with color-coded urgency (green → orange → red)
+   - "Extend Time" with quick options (+15, +30, +45, +60 min)
+   - "Stop Session" to end and release item
+   - "Start Timer" UI when timer not yet started
+   - Shows elapsed time for per-minute billing mode
+
+4. **Unified API Endpoints**
+   - All systems use same `/api/entertainment/block-time` endpoints
+   - POST - Start block time timer
+   - PATCH - Extend time
+   - DELETE - Stop session and release item
+   - Automatic MenuItem status sync (available/in_use)
+
+5. **Open Orders Enhancement**
+   - Entertainment badge on orders with active sessions
+   - Shows item name, elapsed/remaining time, status
+   - Quick access to session controls
+
+6. **Database Protection**
+   - Added backup/restore scripts to package.json
+   - Auto-backup before database reset
+   - Timestamped backups in `prisma/backups/`
+
+**Bug Fixes:**
+- Fixed `MenuItem.currentOrderId` storing wrong ID (was session.id, now order.id)
+- Fixed Orders page menu not refreshing entertainment status after stopping timer
+- Added auto-refresh (3 sec) to Orders page when viewing Entertainment category
+- Added cache-busting headers to all entertainment/menu API calls
+- Added `dynamic = 'force-dynamic'` to API routes to prevent Next.js caching
+- Fixed stale closure issue with useCallback for loadMenu functions
+- Fixed Entertainment KDS passing wrong parameter (orderId vs orderItemId)
+- Fixed SeatFromWaitlistModal not starting block time on seat
+- Fixed block time not showing on reopened orders
+
+### New Files Created
+| File | Purpose |
+|------|---------|
+| `src/components/orders/EntertainmentSessionControls.tsx` | Reusable session controls (timer, stop, extend) |
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/app/(pos)/orders/page.tsx` | Added `startEntertainmentTimers()`, integrated session controls |
+| `src/components/orders/OpenOrdersPanel.tsx` | Added auto-refresh (5s), entertainment badges |
+| `src/app/(kds)/entertainment/page.tsx` | Fixed DELETE endpoint usage, correct orderItemId |
+| `src/components/entertainment/SeatFromWaitlistModal.tsx` | Start block time when seating, pass orderItemId |
+| `src/app/api/orders/open/route.ts` | Added entertainment fields to items response |
+| `src/app/api/entertainment/status/route.ts` | Added orderItemId to response |
+| `src/stores/order-store.ts` | Added entertainment fields to OrderItem interface |
+| `src/app/api/orders/[id]/route.ts` | Added entertainment fields to GET response |
+| `src/types/index.ts` | Added `blockTimeMinutes` to MenuItem interface |
+| `src/app/api/menu/route.ts` | Added `blockTimeMinutes` to item response |
+| `package.json` | Added db:backup, db:restore, db:list-backups scripts |
+| `CLAUDE.md` | Added database protection documentation |
+
+### New Skills Added
+| Skill | Name | Description |
+|-------|------|-------------|
+| 95 | Entertainment Sessions | Session controls, auto-start timers, three-system sync |
+
+### Claude Commands Created
+| Command | Description |
+|---------|-------------|
+| `entertainment-sessions` | Managing entertainment/timed rental sessions |
+
+---
+
 ## [2026-01-28] Session 15
 
 ### New Feature: Liquor Builder & Spirit Selection System (Skill 94)

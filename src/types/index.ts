@@ -28,9 +28,18 @@ export interface MenuItem {
     perHour?: number
     minimum?: number
   }
-  // Entertainment item status
+  // Entertainment item fields
   entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | null
   currentOrderId?: string | null
+  blockTimeMinutes?: number | null  // Default block time for entertainment items
+  // Pour size options for liquor items (can be old or new format)
+  // Old format: { shot: 1.0, double: 2.0 }
+  // New format: { shot: { label: "Shot", multiplier: 1.0 }, double: { label: "Double", multiplier: 2.0 } }
+  pourSizes?: Record<string, number | { label: string; multiplier: number }> | null
+  defaultPourSize?: string | null
+  applyPourToModifiers?: boolean
+  // Liquor item flag
+  isLiquorItem?: boolean
 }
 
 /**
@@ -66,6 +75,8 @@ export interface ModifierGroup {
   maxSelections: number
   isRequired: boolean
   modifiers: Modifier[]
+  // Modifier types for filtering/coloring
+  modifierTypes?: string[]  // e.g., ['liquor'], ['food', 'combo'], etc.
   // Spirit group fields (Liquor Builder)
   isSpiritGroup?: boolean
   spiritConfig?: {

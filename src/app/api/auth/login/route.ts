@@ -57,6 +57,21 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Handle permissions - convert old object format to array if needed
+    let permissions: string[] = []
+    const rawPermissions = matchedEmployee.role.permissions
+
+    if (Array.isArray(rawPermissions)) {
+      // New format: already an array of permission strings
+      permissions = rawPermissions as string[]
+    } else if (rawPermissions && typeof rawPermissions === 'object') {
+      // Old format: object like {orders: ['create', 'read'], menu: ['read']}
+      // Convert to flat array for backwards compatibility, but also grant admin access for managers
+      if (matchedEmployee.role.name === 'Manager' || matchedEmployee.role.name === 'Owner') {
+        permissions = ['admin'] // Give full access to old manager roles
+      }
+    }
+
     return NextResponse.json({
       employee: {
         id: matchedEmployee.id,
@@ -71,7 +86,7 @@ export async function POST(request: NextRequest) {
           id: matchedEmployee.location.id,
           name: matchedEmployee.location.name,
         },
-        permissions: matchedEmployee.role.permissions as string[],
+        permissions,
       },
     })
   } catch (error) {

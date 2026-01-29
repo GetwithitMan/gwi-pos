@@ -20,6 +20,7 @@ interface PaymentModalProps {
   tipSettings?: TipSettings
   paymentSettings: PaymentSettings
   onPaymentComplete: () => void
+  employeeId?: string
 }
 
 interface PendingPayment {
@@ -70,6 +71,7 @@ export function PaymentModal({
   tipSettings = DEFAULT_TIP_SETTINGS,
   paymentSettings,
   onPaymentComplete,
+  employeeId,
 }: PaymentModalProps) {
   // Don't render if not open
   if (!isOpen) return null
@@ -296,6 +298,7 @@ export function PaymentModal({
             giftCardNumber: p.giftCardNumber,
             houseAccountId: p.houseAccountId,
           })),
+          employeeId,
         }),
       })
 

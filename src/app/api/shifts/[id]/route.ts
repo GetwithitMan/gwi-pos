@@ -84,11 +84,18 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { action, actualCash, tipsDeclared, notes } = body as {
+    const { action, actualCash, tipsDeclared, notes, tipDistribution } = body as {
       action: 'close' | 'update'
       actualCash?: number
       tipsDeclared?: number
       notes?: string
+      tipDistribution?: {
+        grossTips: number
+        tipOutTotal: number
+        netTips: number
+        roleTipOuts: { ruleId: string; toRoleId: string; amount: number }[]
+        customShares: { toEmployeeId: string; amount: number }[]
+      }
     }
 
     const shift = await db.shift.findUnique({
@@ -144,6 +151,10 @@ export async function PUT(
           cardSales: summary.cardSales,
           tipsDeclared: tipsDeclared || summary.totalTips,
           notes: notes || shift.notes,
+          // Tip distribution tracking
+          grossTips: tipDistribution?.grossTips || tipsDeclared || summary.totalTips,
+          tipOutTotal: tipDistribution?.tipOutTotal || 0,
+          netTips: tipDistribution?.netTips || tipsDeclared || summary.totalTips,
         },
         include: {
           employee: {
@@ -152,10 +163,21 @@ export async function PUT(
               firstName: true,
               lastName: true,
               displayName: true,
+              roleId: true,
             },
           },
         },
       })
+
+      // Process tip distribution if provided
+      if (tipDistribution) {
+        await processTipDistribution(
+          shift.locationId,
+          shift.employeeId,
+          updatedShift.id,
+          tipDistribution
+        )
+      }
 
       return NextResponse.json({
         shift: {
@@ -329,5 +351,139 @@ async function calculateShiftSummary(
     paymentCount,
     voidCount: voids,
     compCount: comps,
+  }
+}
+
+// Helper function to process tip distribution
+async function processTipDistribution(
+  locationId: string,
+  fromEmployeeId: string,
+  shiftId: string,
+  tipDistribution: {
+    grossTips: number
+    tipOutTotal: number
+    netTips: number
+    roleTipOuts: { ruleId: string; toRoleId: string; amount: number }[]
+    customShares: { toEmployeeId: string; amount: number }[]
+  }
+) {
+  // Get all currently clocked-in employees to determine if recipients are on shift
+  const activeShifts = await db.shift.findMany({
+    where: {
+      locationId,
+      status: 'open',
+    },
+    select: {
+      employeeId: true,
+      employee: {
+        select: {
+          id: true,
+          roleId: true,
+        },
+      },
+    },
+  })
+
+  const activeEmployeeIds = new Set(activeShifts.map(s => s.employeeId))
+  const activeEmployeesByRole = new Map<string, string>()
+
+  // Map roleId to first active employee with that role (for role-based tip-outs)
+  activeShifts.forEach(s => {
+    if (s.employee.roleId && !activeEmployeesByRole.has(s.employee.roleId)) {
+      activeEmployeesByRole.set(s.employee.roleId, s.employee.id)
+    }
+  })
+
+  // Process role-based tip-outs
+  for (const tipOut of tipDistribution.roleTipOuts) {
+    if (tipOut.amount <= 0) continue
+
+    // Find an active employee with this role, or get any employee with this role
+    let toEmployeeId = activeEmployeesByRole.get(tipOut.toRoleId)
+    let status: 'pending' | 'banked' = 'pending'
+
+    if (!toEmployeeId) {
+      // No active employee with this role - find any employee with this role for banking
+      const employeeWithRole = await db.employee.findFirst({
+        where: {
+          locationId,
+          roleId: tipOut.toRoleId,
+          isActive: true,
+        },
+        select: { id: true },
+      })
+
+      if (employeeWithRole) {
+        toEmployeeId = employeeWithRole.id
+        status = 'banked'
+      } else {
+        // No employees with this role - skip this tip-out
+        console.warn(`No employees found with role ${tipOut.toRoleId} for tip-out`)
+        continue
+      }
+    }
+
+    // Create TipShare record
+    const tipShare = await db.tipShare.create({
+      data: {
+        locationId,
+        shiftId,
+        fromEmployeeId,
+        toEmployeeId,
+        amount: tipOut.amount,
+        shareType: 'role_tipout',
+        ruleId: tipOut.ruleId,
+        status,
+      },
+    })
+
+    // If banked, create TipBank entry
+    if (status === 'banked') {
+      await db.tipBank.create({
+        data: {
+          locationId,
+          employeeId: toEmployeeId,
+          amount: tipOut.amount,
+          source: 'tip_share',
+          sourceId: tipShare.id,
+          status: 'pending',
+        },
+      })
+    }
+  }
+
+  // Process custom shares
+  for (const share of tipDistribution.customShares) {
+    if (share.amount <= 0) continue
+
+    const isOnShift = activeEmployeeIds.has(share.toEmployeeId)
+    const status = isOnShift ? 'pending' : 'banked'
+
+    // Create TipShare record
+    const tipShare = await db.tipShare.create({
+      data: {
+        locationId,
+        shiftId,
+        fromEmployeeId,
+        toEmployeeId: share.toEmployeeId,
+        amount: share.amount,
+        shareType: 'custom',
+        status,
+      },
+    })
+
+    // If banked, create TipBank entry
+    if (status === 'banked') {
+      await db.tipBank.create({
+        data: {
+          locationId,
+          employeeId: share.toEmployeeId,
+          amount: share.amount,
+          source: 'tip_share',
+          sourceId: tipShare.id,
+          status: 'pending',
+        },
+      })
+    }
   }
 }

@@ -198,6 +198,7 @@ export async function PUT(
           const comp = components[idx]
           await db.comboComponent.create({
             data: {
+              locationId: menuItem.locationId,
               comboTemplateId: existingTemplate.id,
               slotName: comp.slotName,
               displayName: comp.displayName,

@@ -53,6 +53,7 @@ export async function POST(request: NextRequest) {
       subtotal += itemTotal + modifiersTotal
 
       return {
+        locationId,
         menuItemId: item.menuItemId,
         name: item.name,
         price: item.price,
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
         courseNumber: item.courseNumber || null,
         modifiers: {
           create: item.modifiers.map(mod => ({
+            locationId,
             // Set modifierId to null for combo selections (they have synthetic IDs)
             modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
             name: mod.name,
@@ -123,6 +125,12 @@ export async function POST(request: NextRequest) {
             lastName: true,
           },
         },
+        table: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
       },
     })
 
@@ -131,6 +139,8 @@ export async function POST(request: NextRequest) {
       orderNumber: order.orderNumber,
       orderType: order.orderType,
       status: order.status,
+      tableId: order.tableId,
+      tableName: order.table?.name || null,
       tabName: order.tabName,
       guestCount: order.guestCount,
       employee: {
@@ -198,6 +208,12 @@ export async function GET(request: NextRequest) {
             lastName: true,
           },
         },
+        table: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
         items: {
           include: {
             modifiers: true,
@@ -216,6 +232,8 @@ export async function GET(request: NextRequest) {
         orderNumber: order.orderNumber,
         orderType: order.orderType,
         status: order.status,
+        tableId: order.tableId,
+        tableName: order.table?.name || null,
         tabName: order.tabName,
         guestCount: order.guestCount,
         employee: {

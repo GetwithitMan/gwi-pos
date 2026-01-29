@@ -232,6 +232,7 @@ export async function POST(
             notes: parentOrder.notes,
             items: {
               create: ticketData.items.map(item => ({
+                locationId: parentOrder.locationId,
                 menuItemId: item.menuItemId,
                 name: item.name,
                 price: item.price,
@@ -244,6 +245,7 @@ export async function POST(
                 kitchenStatus: item.kitchenStatus,
                 modifiers: {
                   create: item.modifiers.map(mod => ({
+                    locationId: parentOrder.locationId,
                     modifierId: mod.modifierId,
                     name: mod.name,
                     price: mod.price,

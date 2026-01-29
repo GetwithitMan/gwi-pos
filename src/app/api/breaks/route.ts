@@ -50,6 +50,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Get time clock entry to get locationId
+    const timeClockEntry = await prisma.timeClockEntry.findUnique({
+      where: { id: timeClockEntryId },
+    })
+
+    if (!timeClockEntry) {
+      return NextResponse.json({ error: 'Time clock entry not found' }, { status: 404 })
+    }
+
     // Check for active break
     const activeBreak = await prisma.break.findFirst({
       where: {
@@ -64,6 +73,7 @@ export async function POST(request: NextRequest) {
 
     const breakEntry = await prisma.break.create({
       data: {
+        locationId: timeClockEntry.locationId,
         employeeId,
         timeClockEntryId,
         breakType: breakType || 'unpaid',

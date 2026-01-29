@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Force dynamic rendering - never cache this endpoint
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 // GET - List all open orders (any type)
 export async function GET(request: NextRequest) {
   try {
@@ -90,6 +94,47 @@ export async function GET(request: NextRequest) {
     const orderIds = orders.map(o => o.id)
     let waitlistByOrder: Record<string, { position: number; menuItemName: string }[]> = {}
 
+    // Get active entertainment items linked to these orders
+    let entertainmentByOrder: Record<string, {
+      menuItemId: string
+      menuItemName: string
+      status: string
+      orderItemId: string | null
+    }[]> = {}
+
+    try {
+      const entertainmentItems = await db.menuItem.findMany({
+        where: {
+          currentOrderId: { in: orderIds },
+          entertainmentStatus: 'in_use',
+        },
+        select: {
+          id: true,
+          name: true,
+          displayName: true,
+          entertainmentStatus: true,
+          currentOrderId: true,
+          currentOrderItemId: true,
+        },
+      })
+
+      for (const item of entertainmentItems) {
+        if (item.currentOrderId) {
+          if (!entertainmentByOrder[item.currentOrderId]) {
+            entertainmentByOrder[item.currentOrderId] = []
+          }
+          entertainmentByOrder[item.currentOrderId].push({
+            menuItemId: item.id,
+            menuItemName: item.displayName || item.name,
+            status: item.entertainmentStatus || 'in_use',
+            orderItemId: item.currentOrderItemId,
+          })
+        }
+      }
+    } catch {
+      // Entertainment fields may not exist
+    }
+
     try {
       const waitlistEntries = await db.entertainmentWaitlist.findMany({
         where: {
@@ -160,6 +205,9 @@ export async function GET(request: NextRequest) {
         // Waitlist info
         waitlist: waitlistByOrder[order.id] || [],
         isOnWaitlist: (waitlistByOrder[order.id]?.length || 0) > 0,
+        // Entertainment session info
+        entertainment: entertainmentByOrder[order.id] || [],
+        hasActiveEntertainment: (entertainmentByOrder[order.id]?.length || 0) > 0,
         items: order.items.map(item => ({
           id: item.id,
           menuItemId: item.menuItemId,
@@ -171,6 +219,10 @@ export async function GET(request: NextRequest) {
           isCompleted: item.isCompleted,
           completedAt: item.completedAt?.toISOString() || null,
           resendCount: item.resendCount,
+          // Entertainment/block time fields
+          blockTimeMinutes: item.blockTimeMinutes,
+          blockTimeStartedAt: item.blockTimeStartedAt?.toISOString() || null,
+          blockTimeExpiresAt: item.blockTimeExpiresAt?.toISOString() || null,
           modifiers: item.modifiers.map(mod => ({
             id: mod.id,
             modifierId: mod.modifierId,

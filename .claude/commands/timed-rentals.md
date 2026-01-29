@@ -2,11 +2,13 @@
 
 Bill customers by time for entertainment items like pool tables, karaoke rooms, or bowling lanes.
 
+> **See also**: [Entertainment Sessions](entertainment-sessions.md) for managing active sessions and the Entertainment KDS.
+
 ## Overview
 
 Timed rentals track usage time and bill accordingly:
-- Start timer when item added to order
-- Auto-calculate charges based on elapsed time
+- Timer auto-starts on "Send to Kitchen"
+- Block time (fixed duration) or per-minute billing
 - Stop and bill when customer is done
 - Different rates for different time increments
 
@@ -86,13 +88,39 @@ Customer plays for 47 minutes:
 
 **Charge: $15.00** (hourly rate is best)
 
+## Block Time Mode
+
+For fixed-duration sessions (e.g., "$15 for 1 hour"):
+
+1. Set `blockTimeMinutes` on the menu item (e.g., 60)
+2. When order is sent, timer starts with that duration
+3. Timer counts DOWN to expiration
+4. Extend time if needed (+15, +30, +45, +60 min options)
+5. Stop session when done
+
+### Session Controls
+Entertainment items show inline controls on the Orders page:
+- Countdown timer (color-coded urgency)
+- "Extend Time" button
+- "Stop Session" button
+
+## Entertainment KDS
+
+The dedicated Entertainment KDS at `/kds/entertainment` provides:
+- Grid view of all entertainment items
+- Waitlist management
+- Quick session start/stop
+- Status overview (available, in_use, maintenance)
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/app/(admin)/timed-rentals/page.tsx` | Admin setup |
-| `src/app/api/timed-rentals/route.ts` | API endpoints |
-| `src/lib/timed-rentals.ts` | Billing calculations |
+| `src/app/(kds)/entertainment/page.tsx` | Entertainment KDS |
+| `src/components/orders/EntertainmentSessionControls.tsx` | Session timer/controls |
+| `src/app/api/entertainment/block-time/route.ts` | Block time API |
+| `src/app/api/entertainment/status/route.ts` | Item status updates |
+| `src/lib/entertainment.ts` | Entertainment utilities |
 
 ## Database Fields
 
@@ -100,10 +128,17 @@ Customer plays for 47 minutes:
 model MenuItem {
   itemType            String   // "timed_rental"
   entertainmentStatus String   // "available", "in_use", etc.
+  blockTimeMinutes    Int?     // Default session duration (e.g., 60)
   rate15Min           Decimal?
   rate30Min           Decimal?
   rateHourly          Decimal?
   currentOrderId      String?  // Active rental order
   currentOrderItemId  String?  // Active rental item
+}
+
+model OrderItem {
+  blockTimeMinutes    Int?     // Duration for this session
+  blockTimeStartedAt  DateTime? // When timer started
+  blockTimeExpiresAt  DateTime? // When timer expires
 }
 ```

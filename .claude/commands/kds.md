@@ -84,11 +84,24 @@ Items can be held:
 3. Server fires when ready
 4. Item appears for preparation
 
+## Entertainment KDS
+
+A specialized KDS for entertainment/timed rentals at `/kds/entertainment`:
+
+- Grid view of pool tables, bowling lanes, etc.
+- Shows availability status (green = available, red = in use)
+- Active session timers with countdown
+- Waitlist management
+- Quick start/stop/extend controls
+
+> **See also**: [Entertainment Sessions](entertainment-sessions.md) for detailed session management.
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `src/app/(pos)/kds/page.tsx` | KDS display |
+| `src/app/(kds)/page.tsx` | Kitchen KDS display |
+| `src/app/(kds)/entertainment/page.tsx` | Entertainment KDS |
 | `src/app/api/kds/route.ts` | KDS API |
 | `src/components/kds/OrderCard.tsx` | Order display |
 

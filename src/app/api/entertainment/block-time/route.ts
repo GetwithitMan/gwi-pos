@@ -262,19 +262,29 @@ export async function DELETE(request: NextRequest) {
     })
 
     // Reset the menu item status
-    await db.menuItem.update({
+    console.log('Resetting menu item status to available:', orderItem.menuItemId)
+    const updatedMenuItem = await db.menuItem.update({
       where: { id: orderItem.menuItemId },
       data: {
         entertainmentStatus: 'available',
         currentOrderId: null,
         currentOrderItemId: null,
       },
+      select: {
+        id: true,
+        name: true,
+        entertainmentStatus: true,
+        currentOrderId: true,
+        currentOrderItemId: true,
+      },
     })
+    console.log('Menu item after update:', updatedMenuItem)
 
     return NextResponse.json({
       success: true,
       actualMinutesUsed: actualMinutes,
       message: `Stopped block time. ${actualMinutes} minutes used.`,
+      menuItem: updatedMenuItem,
     })
   } catch (error) {
     console.error('Failed to stop block time:', error)

@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
         id: role.id,
         name: role.name,
         permissions: getPermissionsArray(role.permissions),
+        isTipped: role.isTipped,
         employeeCount: role._count.employees,
         createdAt: role.createdAt.toISOString(),
       })),

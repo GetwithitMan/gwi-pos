@@ -15,6 +15,9 @@ export async function GET(
         employee: {
           select: { id: true, displayName: true, firstName: true, lastName: true },
         },
+        table: {
+          select: { id: true, name: true },
+        },
         items: {
           include: {
             modifiers: true,
@@ -38,6 +41,7 @@ export async function GET(
       status: order.status,
       tabName: order.tabName,
       tableId: order.tableId,
+      tableName: order.table?.name || null,
       guestCount: order.guestCount,
       employee: {
         id: order.employee.id,
@@ -51,6 +55,10 @@ export async function GET(
         quantity: item.quantity,
         itemTotal: Number(item.itemTotal),
         specialNotes: item.specialNotes,
+        // Entertainment/timed rental fields
+        blockTimeMinutes: item.blockTimeMinutes,
+        blockTimeStartedAt: item.blockTimeStartedAt?.toISOString() || null,
+        blockTimeExpiresAt: item.blockTimeExpiresAt?.toISOString() || null,
         modifiers: item.modifiers.map(mod => ({
           id: mod.id,
           modifierId: mod.modifierId,
@@ -197,6 +205,7 @@ export async function PUT(
         subtotal += itemTotal + modifiersTotal
 
         return {
+          locationId: existingOrder.locationId,
           menuItemId: item.menuItemId,
           name: item.name,
           price: item.price,
@@ -205,6 +214,7 @@ export async function PUT(
           specialNotes: item.specialNotes || null,
           modifiers: {
             create: item.modifiers.map(mod => ({
+              locationId: existingOrder.locationId,
               // Set modifierId to null for combo selections (they have synthetic IDs)
               modifierId: isValidModifierId(mod.modifierId) ? mod.modifierId : null,
               name: mod.name,

@@ -104,6 +104,107 @@ export interface HappyHourSettings {
   showOriginalPrice: boolean       // Show original price crossed out
 }
 
+export interface POSDisplaySettings {
+  // Menu Item Sizing
+  menuItemSize: 'compact' | 'normal' | 'large'
+  menuItemsPerRow: 3 | 4 | 5 | 6
+
+  // Category Button Sizing
+  categorySize: 'sm' | 'md' | 'lg'
+
+  // Order Panel
+  orderPanelWidth: 'narrow' | 'normal' | 'wide'
+
+  // Color Theme
+  categoryColorMode: 'solid' | 'subtle' | 'outline'
+
+  // Custom Button Colors (optional - null/undefined means use defaults)
+  categoryButtonBgColor?: string | null      // Custom background color for buttons
+  categoryButtonTextColor?: string | null    // Custom text color for buttons
+
+  // Quick Settings
+  showPriceOnMenuItems: boolean
+}
+
+// Custom colors for individual category buttons
+export interface CategoryColorOverride {
+  bgColor?: string | null              // Selected button background
+  textColor?: string | null            // Selected button text
+  unselectedBgColor?: string | null    // Unselected button background (makes buttons pop)
+  unselectedTextColor?: string | null  // Unselected button text
+}
+
+// Custom styling for individual menu item buttons
+export type PopEffect = 'none' | 'glow' | 'larger' | 'border' | 'all'
+
+export interface MenuItemCustomization {
+  bgColor?: string | null        // Background color
+  textColor?: string | null      // Text color
+  popEffect?: PopEffect | null   // Pop effect type
+  glowColor?: string | null      // Custom glow color (defaults to bgColor if not set)
+}
+
+// POS Layout Settings - stored per-employee for personal customization
+// or per-location for global defaults (admin only)
+export interface POSLayoutSettings {
+  // Current Mode
+  currentMode: 'bar' | 'food'
+  defaultMode: 'bar' | 'food'           // What mode to start in
+  rememberLastMode: boolean             // Remember last used mode on login
+
+  // Favorites (per mode) - array of menu item IDs
+  barFavorites: string[]
+  foodFavorites: string[]
+  maxFavorites: number                  // Max items in favorites bar (default: 8)
+
+  // Category Order (per mode) - array of category IDs in display order
+  // Empty array = use default alphabetical/sortOrder
+  barCategoryOrder: string[]
+  foodCategoryOrder: string[]
+
+  // Category visibility - which categories to show/hide per mode
+  // Empty array = show all
+  barHiddenCategories: string[]
+  foodHiddenCategories: string[]
+
+  // Custom category colors (per category ID)
+  // Allows employees to personalize individual category button colors
+  categoryColors: { [categoryId: string]: CategoryColorOverride }
+
+  // Custom menu item styling (per menu item ID)
+  // Allows employees to personalize individual menu item buttons
+  menuItemColors: { [menuItemId: string]: MenuItemCustomization }
+
+  // UI Preferences
+  showFavoritesBar: boolean             // Show/hide favorites bar
+  compactCategoryBar: boolean           // Single row with overflow vs wrap
+  autoCollapseCategories: boolean       // Collapse "other" categories into dropdown
+}
+
+// Default layout settings
+export const DEFAULT_LAYOUT_SETTINGS: POSLayoutSettings = {
+  currentMode: 'bar',
+  defaultMode: 'bar',
+  rememberLastMode: true,
+
+  barFavorites: [],
+  foodFavorites: [],
+  maxFavorites: 8,
+
+  barCategoryOrder: [],
+  foodCategoryOrder: [],
+
+  barHiddenCategories: [],
+  foodHiddenCategories: [],
+
+  categoryColors: {},
+  menuItemColors: {},
+
+  showFavoritesBar: true,
+  compactCategoryBar: true,
+  autoCollapseCategories: true,
+}
+
 export interface LocationSettings {
   tax: TaxSettings
   dualPricing: DualPricingSettings
@@ -113,6 +214,7 @@ export interface LocationSettings {
   payments: PaymentSettings
   loyalty: LoyaltySettings
   happyHour: HappyHourSettings
+  posDisplay: POSDisplaySettings
 }
 
 // Default settings for new locations
@@ -191,6 +293,16 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     showBadge: true,
     showOriginalPrice: true,
   },
+  posDisplay: {
+    menuItemSize: 'normal',
+    menuItemsPerRow: 5,
+    categorySize: 'md',
+    orderPanelWidth: 'normal',
+    categoryColorMode: 'solid',
+    categoryButtonBgColor: null,
+    categoryButtonTextColor: null,
+    showPriceOnMenuItems: true,
+  },
 }
 
 // Merge partial settings with defaults
@@ -232,6 +344,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       schedules: (partial.happyHour?.schedules?.length)
         ? partial.happyHour.schedules
         : DEFAULT_SETTINGS.happyHour.schedules,
+    },
+    posDisplay: {
+      ...DEFAULT_SETTINGS.posDisplay,
+      ...(partial.posDisplay || {}),
     },
   }
 }

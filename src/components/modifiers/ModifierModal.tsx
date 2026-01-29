@@ -7,6 +7,43 @@ import { calculateCardPrice } from '@/lib/pricing'
 import type { DualPricingSettings } from '@/lib/settings'
 import type { MenuItem, ModifierGroup, SelectedModifier, Modifier } from '@/types'
 
+// Default pour size configuration (used as fallback for old data format)
+const DEFAULT_POUR_SIZE_CONFIG = {
+  standard: { label: 'Standard Pour', shortLabel: '1x', color: 'bg-blue-500', multiplier: 1.0 },
+  shot: { label: 'Shot', shortLabel: '1x', color: 'bg-blue-500', multiplier: 1.0 }, // Legacy support
+  double: { label: 'Double', shortLabel: '2x', color: 'bg-purple-500', multiplier: 2.0 },
+  tall: { label: 'Tall', shortLabel: '1.5x', color: 'bg-green-500', multiplier: 1.5 },
+  short: { label: 'Short', shortLabel: '0.75x', color: 'bg-amber-500', multiplier: 0.75 },
+} as const
+
+type PourSizeKey = keyof typeof DEFAULT_POUR_SIZE_CONFIG
+
+// Pour size data can be old format (number) or new format ({ label, multiplier })
+type PourSizeValue = number | { label: string; multiplier: number }
+
+// Helper to get multiplier from pour size value (handles both formats)
+function getPourSizeMultiplier(value: PourSizeValue): number {
+  return typeof value === 'number' ? value : value.multiplier
+}
+
+// Helper to get label from pour size (handles both formats)
+function getPourSizeLabel(key: string, value: PourSizeValue): string {
+  if (typeof value === 'object' && value.label) {
+    return value.label
+  }
+  return DEFAULT_POUR_SIZE_CONFIG[key as PourSizeKey]?.label || key.charAt(0).toUpperCase() + key.slice(1)
+}
+
+// Modifier type colors
+const MODIFIER_TYPE_COLORS: Record<string, string> = {
+  universal: '#6b7280',
+  food: '#22c55e',
+  liquor: '#8b5cf6',
+  retail: '#f59e0b',
+  entertainment: '#f97316',
+  combo: '#ec4899',
+}
+
 // Spirit tier configuration
 const SPIRIT_TIER_CONFIG = {
   well: { label: 'Well', color: 'bg-gray-100 border-gray-300 text-gray-700', selectedColor: 'bg-gray-200 border-gray-500 text-gray-900', badgeColor: 'bg-gray-500' },
@@ -27,7 +64,7 @@ interface ModifierModalProps {
     modifiers: { id: string; name: string; price: number; preModifier?: string; depth: number; parentModifierId?: string }[]
   } | null
   dualPricing: DualPricingSettings
-  onConfirm: (modifiers: SelectedModifier[], specialNotes?: string) => void
+  onConfirm: (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number) => void
   onCancel: () => void
   initialNotes?: string
 }
@@ -42,37 +79,45 @@ export function ModifierModal({
   onCancel,
   initialNotes,
 }: ModifierModalProps) {
-  // Helper to format modifier price - shows both card and cash prices if dual pricing enabled
   const discountPct = dualPricing.cashDiscountPercent || 4.0
-  const formatModPrice = (storedPrice: number) => {
-    if (storedPrice === 0) return 'Included'
-    if (!dualPricing.enabled) {
-      return `+${formatCurrency(storedPrice)}`
-    }
-    // Stored price is cash price, calculate card price
-    const cashPrice = storedPrice
-    const cardPrice = calculateCardPrice(storedPrice, discountPct)
-    return (
-      <span className="text-xs">
-        <span className="text-gray-700">+{formatCurrency(cardPrice)}</span>
-        <span className="text-gray-400 mx-0.5">-</span>
-        <span className="text-green-600">+{formatCurrency(cashPrice)}</span>
-      </span>
-    )
-  }
+
+  // Pour size state
+  const [selectedPourSize, setSelectedPourSize] = useState<string | null>(
+    item.defaultPourSize || (item.pourSizes ? 'standard' : null)
+  )
+
   // All selections keyed by groupId
   const [selections, setSelections] = useState<Record<string, SelectedModifier[]>>({})
-  // Cache of loaded child modifier groups
   const [childGroups, setChildGroups] = useState<Record<string, ModifierGroup>>({})
-  // Track which child groups are currently loading
   const [loadingChildren, setLoadingChildren] = useState<Record<string, boolean>>({})
-  // Track if we've initialized from editing item
   const [initialized, setInitialized] = useState(false)
-  // Special notes/instructions for the item
   const [specialNotes, setSpecialNotes] = useState(initialNotes || '')
-  // Spirit upsell tracking
-  const [shownUpsells, setShownUpsells] = useState<Record<string, { baseTier: SpiritTier; shown: boolean; accepted: boolean }>>({})
-  const [activeUpsellGroup, setActiveUpsellGroup] = useState<string | null>(null)
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
+
+  // Get color for a modifier group based on its types
+  const getGroupColor = (group: ModifierGroup): string => {
+    const types = group.modifierTypes || ['universal']
+    // Use the first non-universal type, or universal if that's all there is
+    const primaryType = types.find(t => t !== 'universal') || 'universal'
+    return MODIFIER_TYPE_COLORS[primaryType] || MODIFIER_TYPE_COLORS.universal
+  }
+
+  // Calculate pour multiplier (handles both old and new data formats)
+  const pourMultiplier = selectedPourSize && item.pourSizes
+    ? getPourSizeMultiplier(item.pourSizes[selectedPourSize] as PourSizeValue || 1.0)
+    : 1.0
+
+  // Helper to format modifier price
+  const formatModPrice = (storedPrice: number) => {
+    if (storedPrice === 0) return ''
+    const adjustedPrice = item.applyPourToModifiers ? storedPrice * pourMultiplier : storedPrice
+    if (!dualPricing.enabled) {
+      return `+${formatCurrency(adjustedPrice)}`
+    }
+    const cashPrice = adjustedPrice
+    const cardPrice = calculateCardPrice(adjustedPrice, discountPct)
+    return `+${formatCurrency(cardPrice)}`
+  }
 
   // Initialize with existing modifiers when editing, or defaults for new items
   useEffect(() => {
@@ -81,32 +126,12 @@ export function ModifierModal({
     const initial: Record<string, SelectedModifier[]> = {}
 
     if (editingItem && editingItem.modifiers.length > 0) {
-      // Pre-populate from existing order item modifiers
-      // We need to match modifiers to their groups
       editingItem.modifiers.forEach(existingMod => {
-        // Find which group this modifier belongs to
         for (const group of modifierGroups) {
           const matchingMod = group.modifiers.find(m => m.id === existingMod.id)
           if (matchingMod) {
             if (!initial[group.id]) initial[group.id] = []
             initial[group.id].push({
-              id: existingMod.id,
-              name: matchingMod.name, // Use the original name without preModifier
-              price: existingMod.price,
-              preModifier: existingMod.preModifier,
-              childModifierGroupId: matchingMod.childModifierGroupId,
-              depth: existingMod.depth || 0,
-              parentModifierId: existingMod.parentModifierId,
-            })
-            break
-          }
-        }
-        // Also check child groups that might already be loaded
-        for (const [groupId, childGroup] of Object.entries(childGroups)) {
-          const matchingMod = childGroup.modifiers.find(m => m.id === existingMod.id)
-          if (matchingMod) {
-            if (!initial[groupId]) initial[groupId] = []
-            initial[groupId].push({
               id: existingMod.id,
               name: matchingMod.name,
               price: existingMod.price,
@@ -120,7 +145,6 @@ export function ModifierModal({
         }
       })
     } else {
-      // New item - use defaults
       modifierGroups.forEach(group => {
         const defaults = group.modifiers
           .filter(mod => mod.isDefault)
@@ -140,7 +164,7 @@ export function ModifierModal({
 
     setSelections(initial)
     setInitialized(true)
-  }, [modifierGroups, editingItem, childGroups, initialized])
+  }, [modifierGroups, editingItem, initialized])
 
   // Load a child modifier group by ID
   const loadChildGroup = async (groupId: string) => {
@@ -169,61 +193,8 @@ export function ModifierModal({
     })
   }, [selections])
 
-  // When editing, match child modifiers once their groups are loaded
-  useEffect(() => {
-    if (!editingItem || !initialized) return
-
-    // Find unmatched child modifiers (depth > 0 that aren't yet in selections)
-    const unmatchedChildMods = editingItem.modifiers.filter(existingMod => {
-      if ((existingMod.depth || 0) === 0) return false // Skip top-level
-      // Check if already matched
-      for (const sels of Object.values(selections)) {
-        if (sels.some(s => s.id === existingMod.id)) return false
-      }
-      return true
-    })
-
-    if (unmatchedChildMods.length === 0) return
-
-    // Try to match them to loaded child groups
-    const newSelections = { ...selections }
-    let changed = false
-
-    unmatchedChildMods.forEach(existingMod => {
-      for (const [groupId, childGroup] of Object.entries(childGroups)) {
-        const matchingMod = childGroup.modifiers.find(m => m.id === existingMod.id)
-        if (matchingMod) {
-          if (!newSelections[groupId]) newSelections[groupId] = []
-          // Check if not already added
-          if (!newSelections[groupId].some(s => s.id === existingMod.id)) {
-            newSelections[groupId].push({
-              id: existingMod.id,
-              name: matchingMod.name,
-              price: existingMod.price,
-              preModifier: existingMod.preModifier,
-              childModifierGroupId: matchingMod.childModifierGroupId,
-              depth: existingMod.depth || 0,
-              parentModifierId: existingMod.parentModifierId,
-            })
-            changed = true
-          }
-          break
-        }
-      }
-    })
-
-    if (changed) {
-      setSelections(newSelections)
-    }
-  }, [childGroups, editingItem, initialized, selections])
-
-  // Calculate the depth of a group (0 for top-level, 1+ for children)
   const getGroupDepth = (groupId: string): number => {
-    // Check if this is a top-level group
-    if (modifierGroups.some(g => g.id === groupId)) {
-      return 0
-    }
-    // It's a child group, find its parent
+    if (modifierGroups.some(g => g.id === groupId)) return 0
     for (const [parentGroupId, sels] of Object.entries(selections)) {
       for (const sel of sels) {
         if (sel.childModifierGroupId === groupId) {
@@ -234,7 +205,6 @@ export function ModifierModal({
     return 0
   }
 
-  // Find the parent modifier ID for a group
   const getParentModifierId = (groupId: string): string | undefined => {
     for (const [, sels] of Object.entries(selections)) {
       for (const sel of sels) {
@@ -246,11 +216,7 @@ export function ModifierModal({
     return undefined
   }
 
-  const toggleModifier = (
-    group: ModifierGroup,
-    modifier: ModifierGroup['modifiers'][0],
-    preModifier?: string
-  ) => {
+  const toggleModifier = (group: ModifierGroup, modifier: Modifier, preModifier?: string) => {
     const current = selections[group.id] || []
     const existingIndex = current.findIndex(s => s.id === modifier.id)
 
@@ -261,35 +227,20 @@ export function ModifierModal({
       price = 0
     }
 
-    // Calculate depth and parent for this modifier
     const depth = getGroupDepth(group.id)
     const parentModifierId = getParentModifierId(group.id)
 
     if (existingIndex >= 0) {
-      // Remove if already selected - also remove any child selections
       const removedMod = current[existingIndex]
       const newSelections = { ...selections }
       newSelections[group.id] = current.filter(s => s.id !== modifier.id)
 
-      // Remove child group selections if any
       if (removedMod.childModifierGroupId) {
         delete newSelections[removedMod.childModifierGroupId]
-        // Recursively remove nested children
-        const removeNestedChildren = (parentGroupId: string) => {
-          const parentSelections = newSelections[parentGroupId] || []
-          parentSelections.forEach(sel => {
-            if (sel.childModifierGroupId) {
-              delete newSelections[sel.childModifierGroupId]
-              removeNestedChildren(sel.childModifierGroupId)
-            }
-          })
-        }
-        removeNestedChildren(removedMod.childModifierGroupId)
       }
 
       setSelections(newSelections)
     } else {
-      // Add modifier with depth and parent info
       const newMod: SelectedModifier = {
         id: modifier.id,
         name: modifier.name,
@@ -301,7 +252,6 @@ export function ModifierModal({
       }
 
       if (group.maxSelections === 1) {
-        // Single select - replace and remove old child selections
         const oldSelection = current[0]
         const newSelections = { ...selections }
 
@@ -312,7 +262,6 @@ export function ModifierModal({
         newSelections[group.id] = [newMod]
         setSelections(newSelections)
       } else if (current.length < group.maxSelections) {
-        // Multi-select - add if under max
         setSelections({
           ...selections,
           [group.id]: [...current, newMod],
@@ -321,33 +270,10 @@ export function ModifierModal({
     }
   }
 
-  const updatePreModifier = (groupId: string, modifierId: string, preModifier: string, modifier: ModifierGroup['modifiers'][0]) => {
-    const current = selections[groupId] || []
-    const updated = current.map(s => {
-      if (s.id === modifierId) {
-        let price = modifier.price
-        if (preModifier === 'extra' && modifier.extraPrice) {
-          price = modifier.extraPrice
-        } else if (preModifier === 'no') {
-          price = 0
-        }
-        // Maintain depth and parentModifierId
-        return { ...s, preModifier, price, depth: s.depth, parentModifierId: s.parentModifierId }
-      }
-      return s
-    })
-    setSelections({ ...selections, [groupId]: updated })
-  }
-
   const isSelected = (groupId: string, modifierId: string) => {
     return (selections[groupId] || []).some(s => s.id === modifierId)
   }
 
-  const getSelectedModifier = (groupId: string, modifierId: string) => {
-    return (selections[groupId] || []).find(s => s.id === modifierId)
-  }
-
-  // Get all active child groups that should be displayed
   const getActiveChildGroups = (): { group: ModifierGroup; parentModifierName: string; depth: number }[] => {
     const result: { group: ModifierGroup; parentModifierName: string; depth: number }[] = []
 
@@ -357,13 +283,11 @@ export function ModifierModal({
         if (sel.childModifierGroupId && childGroups[sel.childModifierGroupId]) {
           const childGroup = childGroups[sel.childModifierGroupId]
           result.push({ group: childGroup, parentModifierName: sel.name, depth })
-          // Recursively find children of children
           findChildren(sel.childModifierGroupId, sel.name, depth + 1)
         }
       })
     }
 
-    // Start from top-level groups
     modifierGroups.forEach(group => {
       findChildren(group.id, '', 1)
     })
@@ -372,14 +296,12 @@ export function ModifierModal({
   }
 
   const canConfirm = () => {
-    // Check all top-level required groups
     const topLevelOk = modifierGroups.every(group => {
       if (!group.isRequired) return true
       const selected = selections[group.id] || []
       return selected.length >= group.minSelections
     })
 
-    // Check all active child groups that are required
     const activeChildren = getActiveChildGroups()
     const childrenOk = activeChildren.every(({ group }) => {
       if (!group.isRequired) return true
@@ -394,18 +316,19 @@ export function ModifierModal({
     return Object.values(selections).flat()
   }
 
-  const totalPrice = item.price + getAllSelectedModifiers().reduce((sum, mod) => sum + mod.price, 0)
+  // Calculate total with pour multiplier
+  const basePrice = item.price * pourMultiplier
+  const modifierTotal = getAllSelectedModifiers().reduce((sum, mod) => {
+    const modPrice = item.applyPourToModifiers ? mod.price * pourMultiplier : mod.price
+    return sum + modPrice
+  }, 0)
+  const totalPrice = basePrice + modifierTotal
 
   const activeChildGroups = getActiveChildGroups()
 
   // Group modifiers by spirit tier for spirit groups
   const getModifiersByTier = (modifiers: Modifier[]): Record<SpiritTier, Modifier[]> => {
-    const byTier: Record<SpiritTier, Modifier[]> = {
-      well: [],
-      call: [],
-      premium: [],
-      top_shelf: [],
-    }
+    const byTier: Record<SpiritTier, Modifier[]> = { well: [], call: [], premium: [], top_shelf: [] }
     modifiers.forEach(mod => {
       const tier = (mod.spiritTier as SpiritTier) || 'well'
       byTier[tier].push(mod)
@@ -413,7 +336,7 @@ export function ModifierModal({
     return byTier
   }
 
-  // Handle spirit selection with upsell tracking
+  // Handle spirit selection
   const handleSpiritSelection = (group: ModifierGroup, modifier: Modifier, tier: SpiritTier) => {
     const depth = getGroupDepth(group.id)
     const parentModifierId = getParentModifierId(group.id)
@@ -429,74 +352,148 @@ export function ModifierModal({
       linkedBottleProductId: modifier.linkedBottleProductId,
     }
 
-    // Track upsell if selecting well and upsell is enabled
-    if (tier === 'well' && group.spiritConfig?.upsellEnabled) {
-      setShownUpsells(prev => ({
-        ...prev,
-        [group.id]: { baseTier: 'well', shown: true, accepted: false }
-      }))
-      setActiveUpsellGroup(group.id)
-    } else if (activeUpsellGroup === group.id) {
-      // Accepting upsell by selecting a higher tier
-      if (tier !== 'well') {
-        setShownUpsells(prev => ({
-          ...prev,
-          [group.id]: { ...prev[group.id], accepted: true }
-        }))
-      }
-      setActiveUpsellGroup(null)
-    }
-
     setSelections(prev => ({
       ...prev,
       [group.id]: [newMod],
     }))
   }
 
-  // Dismiss upsell prompt
-  const dismissUpsell = (groupId: string) => {
-    setActiveUpsellGroup(null)
+  // Render pour size buttons for liquor items
+  const renderPourSizeButtons = () => {
+    if (!item.pourSizes) return null
+
+    const enabledSizes = Object.entries(item.pourSizes).filter(([, value]) => {
+      const mult = getPourSizeMultiplier(value as PourSizeValue)
+      return mult > 0
+    })
+    if (enabledSizes.length === 0) return null
+
+    return (
+      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg p-4 mb-4">
+        <div className="text-white text-sm font-medium mb-3">Pour Size</div>
+        <div className="flex gap-2">
+          {enabledSizes.map(([size, value]) => {
+            const multiplier = getPourSizeMultiplier(value as PourSizeValue)
+            const label = getPourSizeLabel(size, value as PourSizeValue)
+            const isSelected = selectedPourSize === size
+            const price = item.price * multiplier
+
+            return (
+              <button
+                key={size}
+                onClick={() => setSelectedPourSize(size)}
+                className={`flex-1 py-3 px-2 rounded-lg text-center transition-all ${
+                  isSelected
+                    ? 'bg-white text-purple-700 shadow-lg scale-105'
+                    : 'bg-white/20 text-white hover:bg-white/30'
+                }`}
+              >
+                <div className="text-lg font-bold">{label}</div>
+                <div className={`text-sm ${isSelected ? 'text-purple-600' : 'text-white/80'}`}>
+                  {formatCurrency(price)}
+                </div>
+                <div className={`text-xs ${isSelected ? 'text-purple-500' : 'text-white/60'}`}>
+                  {multiplier}×
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
   }
 
-  // Accept upsell by selecting a premium modifier
-  const acceptUpsell = (group: ModifierGroup, tier: SpiritTier) => {
-    const modifiers = group.modifiers.filter(m => m.spiritTier === tier)
-    if (modifiers.length > 0) {
-      handleSpiritSelection(group, modifiers[0], tier)
-    }
+  // Render compact modifier squares for a group
+  const renderCompactModifierGroup = (group: ModifierGroup) => {
+    const groupColor = getGroupColor(group)
+    const selectedCount = (selections[group.id] || []).length
+    const isExpanded = expandedGroups[group.id]
+
+    return (
+      <div key={group.id} className="mb-3">
+        {/* Group header - clickable to expand */}
+        <button
+          onClick={() => setExpandedGroups(prev => ({ ...prev, [group.id]: !prev[group.id] }))}
+          className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <div
+              className="w-3 h-3 rounded-sm"
+              style={{ backgroundColor: groupColor }}
+            />
+            <span className="font-medium text-sm">{group.displayName || group.name}</span>
+            {group.isRequired && <span className="text-red-500 text-xs">*</span>}
+            {selectedCount > 0 && (
+              <span
+                className="text-xs px-1.5 py-0.5 rounded-full text-white"
+                style={{ backgroundColor: groupColor }}
+              >
+                {selectedCount}
+              </span>
+            )}
+          </div>
+          <svg
+            className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {/* Compact modifier squares - always visible */}
+        <div className="flex flex-wrap gap-1.5 mt-1 ml-5">
+          {group.modifiers.slice(0, isExpanded ? undefined : 8).map(modifier => {
+            const selected = isSelected(group.id, modifier.id)
+            return (
+              <button
+                key={modifier.id}
+                onClick={() => toggleModifier(group, modifier)}
+                className={`px-2 py-1 text-xs rounded transition-all ${
+                  selected
+                    ? 'text-white shadow-md scale-105'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+                style={selected ? { backgroundColor: groupColor } : undefined}
+                title={`${modifier.name}${modifier.price > 0 ? ` (+${formatCurrency(modifier.price)})` : ''}`}
+              >
+                {modifier.name.length > 12 ? modifier.name.substring(0, 10) + '...' : modifier.name}
+                {modifier.price > 0 && (
+                  <span className={`ml-1 ${selected ? 'text-white/80' : 'text-green-600'}`}>
+                    {formatModPrice(modifier.price)}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+          {!isExpanded && group.modifiers.length > 8 && (
+            <span className="px-2 py-1 text-xs text-gray-400">
+              +{group.modifiers.length - 8} more
+            </span>
+          )}
+        </div>
+      </div>
+    )
   }
 
-  // Render spirit group with tier-based UI
+  // Render spirit group with tier buttons
   const renderSpiritGroup = (group: ModifierGroup) => {
     const modifiersByTier = getModifiersByTier(group.modifiers)
     const currentSelection = selections[group.id]?.[0]
     const selectedTier = currentSelection?.spiritTier as SpiritTier | undefined
-    const showUpsell = activeUpsellGroup === group.id && group.spiritConfig?.upsellEnabled
-
-    // Find a premium option for upsell
-    const premiumOption = modifiersByTier.premium[0] || modifiersByTier.call[0]
-    const wellOption = modifiersByTier.well[0]
-    const priceDiff = premiumOption && wellOption ? premiumOption.price - wellOption.price : 0
+    const groupColor = getGroupColor(group)
 
     return (
-      <div key={group.id} className="bg-gradient-to-br from-purple-50 to-amber-50 rounded-lg p-4 border border-purple-200">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="font-semibold text-purple-900">
-              {group.displayName || group.name}
-              {group.isRequired && <span className="text-red-500 ml-1">*</span>}
-            </h3>
-            {group.spiritConfig?.spiritCategoryName && (
-              <p className="text-sm text-purple-600">{group.spiritConfig.spiritCategoryName}</p>
-            )}
-          </div>
-          <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-            Spirit Selection
-          </span>
+      <div key={group.id} className="mb-3 p-3 rounded-lg border" style={{ borderColor: groupColor + '40', backgroundColor: groupColor + '10' }}>
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: groupColor }} />
+          <span className="font-medium text-sm">{group.displayName || group.name}</span>
+          {group.isRequired && <span className="text-red-500 text-xs">*</span>}
         </div>
 
         {/* Tier quick-select buttons */}
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-1.5 mb-2">
           {(['well', 'call', 'premium', 'top_shelf'] as SpiritTier[]).map(tier => {
             const tierMods = modifiersByTier[tier]
             if (tierMods.length === 0) return null
@@ -506,110 +503,49 @@ export function ModifierModal({
             return (
               <button
                 key={tier}
-                className={`flex-1 py-2 px-3 rounded-lg border-2 text-center transition-all ${
-                  isSelected ? config.selectedColor + ' font-medium shadow-sm' : config.color + ' hover:opacity-80'
+                className={`flex-1 py-1.5 px-2 rounded text-center text-xs transition-all border ${
+                  isSelected ? config.selectedColor + ' font-medium' : config.color
                 }`}
                 onClick={() => handleSpiritSelection(group, tierMods[0], tier)}
               >
-                <div className="text-sm font-medium">{config.label}</div>
-                <div className="text-xs opacity-75">
-                  {tierMods[0].price === 0 ? 'Included' : `+${formatCurrency(tierMods[0].price)}`}
+                <div className="font-medium">{config.label}</div>
+                <div className="opacity-75">
+                  {tierMods[0].price === 0 ? 'Incl' : `+${formatCurrency(tierMods[0].price)}`}
                 </div>
               </button>
             )
           })}
         </div>
 
-        {/* Upsell prompt */}
-        {showUpsell && premiumOption && (
-          <div className="bg-gradient-to-r from-purple-100 to-amber-100 border border-purple-300 rounded-lg p-3 mb-3 animate-pulse">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-purple-900">
-                  {group.spiritConfig?.upsellPromptText || `Upgrade to ${premiumOption.name}?`}
-                </p>
-                <p className="text-sm text-purple-700">
-                  Just {formatCurrency(priceDiff)} more for premium quality
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => dismissUpsell(group.id)}
-                  className="text-gray-600"
-                >
-                  No thanks
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => acceptUpsell(group, 'premium')}
-                  className="bg-purple-600 hover:bg-purple-700"
-                >
-                  Upgrade
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Selected spirit details */}
+        {/* Selected spirit */}
         {currentSelection && (
-          <div className="bg-white rounded-lg p-3 border">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className={`w-3 h-3 rounded-full ${SPIRIT_TIER_CONFIG[selectedTier || 'well'].badgeColor}`} />
-                <span className="font-medium">{currentSelection.name}</span>
-                <span className={`text-xs px-2 py-0.5 rounded ${SPIRIT_TIER_CONFIG[selectedTier || 'well'].color}`}>
-                  {SPIRIT_TIER_CONFIG[selectedTier || 'well'].label}
-                </span>
-              </div>
-              <span className="font-medium text-green-600">
-                {currentSelection.price === 0 ? 'Included' : `+${formatCurrency(currentSelection.price)}`}
-              </span>
-            </div>
+          <div className="text-xs bg-white rounded p-2 flex justify-between items-center">
+            <span className="font-medium">{currentSelection.name}</span>
+            <span className="text-green-600">
+              {currentSelection.price === 0 ? 'Included' : `+${formatCurrency(currentSelection.price)}`}
+            </span>
           </div>
         )}
 
-        {/* Expandable list of all options by tier */}
-        <details className="mt-3">
-          <summary className="text-sm text-purple-600 cursor-pointer hover:text-purple-800">
-            View all {group.modifiers.length} options
-          </summary>
-          <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
-            {(['well', 'call', 'premium', 'top_shelf'] as SpiritTier[]).map(tier => {
-              const tierMods = modifiersByTier[tier]
-              if (tierMods.length === 0) return null
-              const config = SPIRIT_TIER_CONFIG[tier]
-
+        {/* Expandable all options */}
+        <details className="mt-2">
+          <summary className="text-xs text-gray-500 cursor-pointer">All {group.modifiers.length} options</summary>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {group.modifiers.map(mod => {
+              const isModSelected = currentSelection?.id === mod.id
+              const tier = mod.spiritTier as SpiritTier || 'well'
               return (
-                <div key={tier}>
-                  <div className={`text-xs font-semibold ${config.color.split(' ')[2]} mb-1`}>
-                    {config.label}
-                  </div>
-                  {tierMods.map(mod => {
-                    const isModSelected = currentSelection?.id === mod.id
-                    return (
-                      <button
-                        key={mod.id}
-                        className={`w-full text-left p-2 rounded border text-sm mb-1 transition-colors ${
-                          isModSelected
-                            ? config.selectedColor
-                            : 'bg-white border-gray-200 hover:border-gray-300'
-                        }`}
-                        onClick={() => handleSpiritSelection(group, mod, tier)}
-                      >
-                        <div className="flex justify-between items-center">
-                          <span>{mod.name}</span>
-                          <span className={mod.price > 0 ? 'text-green-600' : 'text-gray-400'}>
-                            {mod.price === 0 ? 'Included' : `+${formatCurrency(mod.price)}`}
-                          </span>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
+                <button
+                  key={mod.id}
+                  className={`px-2 py-0.5 text-xs rounded transition-all ${
+                    isModSelected
+                      ? SPIRIT_TIER_CONFIG[tier].selectedColor
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                  onClick={() => handleSpiritSelection(group, mod, tier)}
+                >
+                  {mod.name}
+                </button>
               )
             })}
           </div>
@@ -618,164 +554,79 @@ export function ModifierModal({
     )
   }
 
-  // Render a single modifier group
-  const renderModifierGroup = (group: ModifierGroup, indent: number = 0, parentLabel?: string) => (
-    <div key={group.id} className={indent > 0 ? 'ml-4 pl-4 border-l-2 border-blue-200' : ''}>
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold">
-          {parentLabel && (
-            <span className="text-blue-600 text-sm mr-2">{parentLabel} →</span>
-          )}
-          {group.displayName || group.name}
-          {group.isRequired && <span className="text-red-500 ml-1">*</span>}
-        </h3>
-        <span className="text-sm text-gray-500">
-          {group.minSelections === group.maxSelections
-            ? `Select ${group.minSelections}`
-            : `Select ${group.minSelections}-${group.maxSelections}`}
-        </span>
-      </div>
-      <div className="space-y-2">
-        {group.modifiers.map(modifier => {
-          const selected = isSelected(group.id, modifier.id)
-          const selectedMod = getSelectedModifier(group.id, modifier.id)
-          const hasPreModifiers = modifier.allowedPreModifiers && modifier.allowedPreModifiers.length > 0
-          const hasChild = modifier.childModifierGroupId
-          const childLoading = modifier.childModifierGroupId ? loadingChildren[modifier.childModifierGroupId] : false
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="p-3 border-b bg-gray-50">
+          <h2 className="text-lg font-bold">{item.name}</h2>
+          <p className="text-gray-500 text-sm">
+            Base: {formatCurrency(item.price)}
+            {pourMultiplier !== 1 && (
+              <span className="ml-2 text-purple-600">
+                × {pourMultiplier} = {formatCurrency(item.price * pourMultiplier)}
+              </span>
+            )}
+          </p>
+        </div>
 
-          return (
-            <div key={modifier.id}>
-              <button
-                className={`w-full p-3 rounded-lg border text-left transition-colors ${
-                  selected
-                    ? 'bg-blue-50 border-blue-500'
-                    : 'bg-white border-gray-200 hover:border-gray-300'
-                }`}
-                onClick={() => toggleModifier(group, modifier)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className={selected ? 'font-medium text-blue-700' : ''}>
-                      {modifier.name}
-                    </span>
-                    {hasChild && (
-                      <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
-                        + options
-                      </span>
-                    )}
-                  </div>
-                  <span className={modifier.price > 0 ? '' : 'text-gray-400'}>
-                    {formatModPrice(modifier.price)}
-                  </span>
-                </div>
-              </button>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-3">
+          {loading ? (
+            <div className="text-center py-8 text-gray-500">Loading...</div>
+          ) : (
+            <>
+              {/* Pour Size Buttons - Prominent at top for liquor items */}
+              {renderPourSizeButtons()}
 
-              {/* Pre-modifier buttons when selected */}
-              {selected && hasPreModifiers && (
-                <div className="flex gap-2 mt-2 ml-4">
-                  {modifier.allowedPreModifiers?.map(pre => (
-                    <button
-                      key={pre}
-                      className={`px-3 py-1 rounded text-sm border ${
-                        selectedMod?.preModifier === pre
-                          ? 'bg-purple-100 border-purple-500 text-purple-700'
-                          : 'bg-gray-50 border-gray-300 hover:bg-gray-100'
-                      }`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        updatePreModifier(group.id, modifier.id, pre, modifier)
-                      }}
-                    >
-                      {pre.charAt(0).toUpperCase() + pre.slice(1)}
-                      {pre === 'extra' && modifier.extraPrice && (
-                        <span className="ml-1 text-green-600">+{formatCurrency(modifier.extraPrice)}</span>
-                      )}
-                    </button>
+              {/* Modifier Groups */}
+              {modifierGroups.length === 0 ? (
+                <div className="text-center py-4 text-gray-500 text-sm">No modifiers</div>
+              ) : (
+                <div>
+                  {modifierGroups.map(group =>
+                    group.isSpiritGroup
+                      ? renderSpiritGroup(group)
+                      : renderCompactModifierGroup(group)
+                  )}
+
+                  {/* Child modifier groups */}
+                  {activeChildGroups.map(({ group, parentModifierName }) => (
+                    <div key={group.id} className="ml-4 pl-3 border-l-2 border-blue-200">
+                      <div className="text-xs text-blue-600 mb-1">{parentModifierName} →</div>
+                      {group.isSpiritGroup
+                        ? renderSpiritGroup(group)
+                        : renderCompactModifierGroup(group)}
+                    </div>
                   ))}
                 </div>
               )}
 
-              {/* Loading indicator for child group */}
-              {selected && hasChild && childLoading && (
-                <div className="ml-4 mt-2 text-sm text-gray-500">Loading options...</div>
-              )}
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b bg-gray-50">
-          <h2 className="text-xl font-bold">{item.name}</h2>
-          <p className="text-gray-500">{formatCurrency(item.price)}</p>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {loading ? (
-            <div className="text-center py-8 text-gray-500">Loading modifiers...</div>
-          ) : modifierGroups.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">No modifiers available</div>
-          ) : (
-            <div className="space-y-6">
-              {/* Top-level modifier groups */}
-              {modifierGroups.map(group =>
-                group.isSpiritGroup
-                  ? renderSpiritGroup(group)
-                  : renderModifierGroup(group)
-              )}
-
-              {/* Child modifier groups (nested) */}
-              {activeChildGroups.map(({ group, parentModifierName, depth }) => (
-                <div key={group.id} className="pt-4 border-t">
-                  {group.isSpiritGroup
-                    ? renderSpiritGroup(group)
-                    : renderModifierGroup(group, depth, parentModifierName)}
-                </div>
-              ))}
-
-              {/* Special Notes/Instructions */}
-              <div className="pt-4 border-t">
-                <label className="block font-semibold mb-2">
-                  Special Instructions
-                  <span className="text-gray-400 text-sm font-normal ml-2">(optional)</span>
+              {/* Special Notes */}
+              <div className="mt-3 pt-3 border-t">
+                <label className="block text-sm font-medium mb-1">
+                  Notes <span className="text-gray-400 font-normal">(optional)</span>
                 </label>
                 <textarea
                   value={specialNotes}
                   onChange={(e) => setSpecialNotes(e.target.value)}
-                  placeholder="E.g., no onions, extra sauce, allergy info..."
-                  className="w-full p-3 border border-gray-200 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Special instructions..."
+                  className="w-full p-2 border border-gray-200 rounded text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows={2}
                   maxLength={200}
                 />
-                <div className="text-xs text-gray-400 text-right mt-1">
-                  {specialNotes.length}/200
-                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t bg-gray-50">
-          <div className="flex items-center justify-between mb-3">
-            <span className="font-semibold">Total</span>
-            {dualPricing.enabled ? (
-              <div className="text-right">
-                <span className="text-xl font-bold text-blue-600">{formatCurrency(calculateCardPrice(totalPrice, discountPct))}</span>
-                <span className="text-gray-400 mx-1">-</span>
-                <span className="text-lg font-bold text-green-600">{formatCurrency(totalPrice)}</span>
-              </div>
-            ) : (
-              <span className="text-xl font-bold text-blue-600">{formatCurrency(totalPrice)}</span>
-            )}
+        <div className="p-3 border-t bg-gray-50">
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-semibold text-sm">Total</span>
+            <span className="text-xl font-bold text-blue-600">{formatCurrency(totalPrice)}</span>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={onCancel}>
               Cancel
             </Button>
@@ -783,9 +634,14 @@ export function ModifierModal({
               variant="primary"
               className="flex-1"
               disabled={!canConfirm()}
-              onClick={() => onConfirm(getAllSelectedModifiers(), specialNotes.trim() || undefined)}
+              onClick={() => onConfirm(
+                getAllSelectedModifiers(),
+                specialNotes.trim() || undefined,
+                selectedPourSize || undefined,
+                pourMultiplier !== 1 ? pourMultiplier : undefined
+              )}
             >
-              {editingItem ? 'Update Order' : 'Add to Order'}
+              {editingItem ? 'Update' : 'Add'}
             </Button>
           </div>
         </div>

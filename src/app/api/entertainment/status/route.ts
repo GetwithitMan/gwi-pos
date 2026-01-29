@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Force dynamic rendering - never cache this endpoint
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 // GET - Get all entertainment items with their status
 export async function GET(request: NextRequest) {
   try {
@@ -71,6 +75,7 @@ export async function GET(request: NextRequest) {
 
             currentOrder = {
               orderId: order.id,
+              orderItemId: orderItem?.id || null,
               tabName: order.tabName || `Order #${order.displayNumber || order.orderNumber}`,
               orderNumber: order.orderNumber,
               displayNumber: order.displayNumber,
@@ -125,6 +130,7 @@ export async function GET(request: NextRequest) {
           category: item.category,
           status: item.entertainmentStatus || 'available',
           currentOrder,
+          currentOrderItemId: item.currentOrderItemId,
           timeInfo,
           waitlistCount: item.entertainmentWaitlist.length,
           waitlist: item.entertainmentWaitlist.map((w, index) => ({
@@ -159,7 +165,7 @@ export async function GET(request: NextRequest) {
       })
     )
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       items: itemsWithOrders,
       summary: {
         total: itemsWithOrders.length,
@@ -169,6 +175,12 @@ export async function GET(request: NextRequest) {
         totalWaitlist: itemsWithOrders.reduce((sum, i) => sum + i.waitlistCount, 0),
       },
     })
+
+    // Prevent caching of this dynamic data
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+    response.headers.set('Pragma', 'no-cache')
+
+    return response
   } catch (error) {
     console.error('Failed to fetch entertainment status:', error)
     return NextResponse.json(

@@ -29,6 +29,10 @@ interface OrderItem {
   isCompleted?: boolean  // KDS completion status (kitchen marked done)
   completedAt?: string  // When kitchen marked it done
   resendCount?: number  // How many times resent to kitchen
+  // Entertainment/timed rental fields
+  blockTimeMinutes?: number | null
+  blockTimeStartedAt?: string | null
+  blockTimeExpiresAt?: string | null
 }
 
 interface Order {
@@ -55,6 +59,7 @@ interface LoadedOrderData {
   orderNumber?: number
   orderType: Order['orderType']
   tableId?: string
+  tableName?: string
   tabName?: string
   guestCount: number
   status?: string
@@ -75,6 +80,10 @@ interface LoadedOrderData {
     isCompleted?: boolean
     completedAt?: string | null
     resendCount?: number
+    // Entertainment/timed rental fields
+    blockTimeMinutes?: number | null
+    blockTimeStartedAt?: string | null
+    blockTimeExpiresAt?: string | null
     modifiers: {
       id: string
       modifierId: string
@@ -158,6 +167,10 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       isCompleted: item.isCompleted || false,
       completedAt: item.completedAt || undefined,
       resendCount: item.resendCount || 0,
+      // Entertainment/timed rental fields
+      blockTimeMinutes: item.blockTimeMinutes,
+      blockTimeStartedAt: item.blockTimeStartedAt,
+      blockTimeExpiresAt: item.blockTimeExpiresAt,
       modifiers: item.modifiers.map(mod => ({
         id: mod.modifierId,
         name: mod.name,
@@ -173,6 +186,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         orderNumber: orderData.orderNumber,
         orderType: orderData.orderType,
         tableId: orderData.tableId,
+        tableName: orderData.tableName,
         tabName: orderData.tabName,
         guestCount: orderData.guestCount,
         items,

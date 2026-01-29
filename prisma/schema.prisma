@@ -72,6 +72,52 @@ model Location {
   bottleProducts     BottleProduct[]
   spiritUpsellEvents SpiritUpsellEvent[]
 
+  // Tip Sharing
+  tipOutRules    TipOutRule[]
+  tipShares      TipShare[]
+  tipBank        TipBank[]
+  tipPoolEntries TipPoolEntry[]
+
+  // Order Details (multi-tenancy)
+  orderItems         OrderItem[]
+  orderItemModifiers OrderItemModifier[]
+  orderDiscounts     OrderDiscount[]
+  payments           Payment[]
+
+  // Menu Details (multi-tenancy)
+  modifiers              Modifier[]
+  menuItemModifierGroups MenuItemModifierGroup[]
+
+  // Combos (multi-tenancy)
+  comboTemplates        ComboTemplate[]
+  comboComponents       ComboComponent[]
+  comboComponentOptions ComboComponentOption[]
+
+  // Operations (multi-tenancy)
+  paidInOuts         PaidInOut[]
+  sectionAssignments SectionAssignment[]
+  voidLogs           VoidLog[]
+  breaks             Break[]
+
+  // Transactions (multi-tenancy)
+  couponRedemptions        CouponRedemption[]
+  giftCardTransactions     GiftCardTransaction[]
+  houseAccountTransactions HouseAccountTransaction[]
+
+  // Events (multi-tenancy)
+  eventPricingTiers EventPricingTier[]
+  eventTableConfigs EventTableConfig[]
+  upsellEvents      UpsellEvent[]
+
+  // Inventory & Tax (multi-tenancy)
+  taxRules              TaxRule[]
+  inventoryTransactions InventoryTransaction[]
+  stockAlerts           StockAlert[]
+
+  // Liquor Builder (multi-tenancy)
+  recipeIngredients    RecipeIngredient[]
+  spiritModifierGroups SpiritModifierGroup[]
+
   @@index([organizationId])
 }
 
@@ -97,9 +143,9 @@ model Customer {
 
   // Loyalty (Skill 52 foundation)
   loyaltyPoints Int       @default(0)
-  totalSpent    Decimal   @default(0) 
+  totalSpent    Decimal   @default(0)
   totalOrders   Int       @default(0)
-  averageTicket Decimal   @default(0) 
+  averageTicket Decimal   @default(0)
   lastVisit     DateTime?
 
   // Marketing
@@ -134,10 +180,17 @@ model Role {
   name        String // Server, Bartender, Manager, Admin
   permissions Json? // Array of permission strings
 
+  // Tip configuration
+  isTipped Boolean @default(false) // Is this a tipped position?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   employees Employee[]
+
+  // Tip-out rules (role gives/receives tip-outs)
+  tipOutRulesFrom TipOutRule[] @relation("TipOutFrom")
+  tipOutRulesTo   TipOutRule[] @relation("TipOutTo")
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -162,13 +215,16 @@ model Employee {
   password String? // Optional password for admin access (hashed)
 
   // Employment
-  hourlyRate Decimal? 
+  hourlyRate Decimal?
   hireDate   DateTime @default(now())
   isActive   Boolean  @default(true)
 
   // Settings
   color     String? // For floor plan display
   avatarUrl String?
+
+  // POS Layout Preferences (personal customization)
+  posLayoutSettings Json? // Bar/Food mode, favorites, category order
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -180,6 +236,11 @@ model Employee {
   voidLogs         VoidLog[]
   auditLogs        AuditLog[]
   sections         SectionAssignment[]
+
+  // Tip sharing relations
+  tipSharesGiven    TipShare[] @relation("TipShareFrom")
+  tipSharesReceived TipShare[] @relation("TipShareTo")
+  tipBank           TipBank[]
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -206,8 +267,8 @@ model TimeClockEntry {
   breakMinutes Int       @default(0)
 
   // Totals
-  regularHours  Decimal? 
-  overtimeHours Decimal? 
+  regularHours  Decimal?
+  overtimeHours Decimal?
 
   // Cash drawer
   drawerCountIn  Json? // {denominations, total}
@@ -238,22 +299,30 @@ model Shift {
   endedAt   DateTime?
 
   // Cash management
-  startingCash Decimal  
-  expectedCash Decimal? 
-  actualCash   Decimal? 
-  variance     Decimal? 
+  startingCash Decimal
+  expectedCash Decimal?
+  actualCash   Decimal?
+  variance     Decimal?
 
   // Sales summary
-  totalSales   Decimal? 
-  cashSales    Decimal? 
-  cardSales    Decimal? 
-  tipsDeclared Decimal? 
+  totalSales   Decimal?
+  cashSales    Decimal?
+  cardSales    Decimal?
+  tipsDeclared Decimal?
+
+  // Tip distribution tracking
+  grossTips   Decimal? // Total tips before distribution
+  tipOutTotal Decimal? // Amount tipped out to others
+  netTips     Decimal? // Tips kept (gross - tipOut)
 
   notes  String?
   status String  @default("open") // open, closed
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Tip shares distributed during this shift closeout
+  tipShares TipShare[]
 
   @@index([locationId])
   @@index([employeeId])
@@ -278,12 +347,14 @@ model Drawer {
 }
 
 model PaidInOut {
-  id       String @id @default(cuid())
-  drawerId String
-  drawer   Drawer @relation(fields: [drawerId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  drawerId   String
+  drawer     Drawer   @relation(fields: [drawerId], references: [id])
 
   type      String // "in" or "out"
-  amount    Decimal 
+  amount    Decimal
   reason    String
   reference String? // Check number, vendor, etc.
 
@@ -292,6 +363,7 @@ model PaidInOut {
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([drawerId])
   @@index([createdAt])
 }
@@ -387,11 +459,11 @@ model MenuItem {
   imageUrl    String?
 
   // Pricing
-  price Decimal  
-  cost  Decimal?  // For profit tracking
+  price Decimal
+  cost  Decimal? // For profit tracking
 
   // Tax
-  taxRate     Decimal?  // Override location default
+  taxRate     Decimal? // Override location default
   isTaxExempt Boolean  @default(false)
 
   // Display & Behavior
@@ -440,7 +512,7 @@ model MenuItem {
   // Liquor Pour Sizes - quick pricing options for liquor items
   // Stores enabled pour sizes and their multipliers: { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
   pourSizes            Json?
-  defaultPourSize      String?  // Default selection: 'shot', 'double', 'tall', 'short'
+  defaultPourSize      String? // Default selection: 'shot', 'double', 'tall', 'short'
   applyPourToModifiers Boolean @default(false) // Apply pour multiplier to spirit modifiers too
 
   createdAt DateTime @default(now())
@@ -458,6 +530,9 @@ model MenuItem {
 
   // Liquor Builder - Recipe ingredients for cocktails
   recipeIngredients RecipeIngredient[]
+
+  // Modifiers that link to this item (for spirit upgrades, etc.)
+  linkedModifiers Modifier[] @relation("LinkedModifierItem")
 
   @@unique([locationId, sku])
   @@index([locationId])
@@ -508,6 +583,8 @@ model ModifierGroup {
 
 model Modifier {
   id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
   modifierGroupId String
   modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
 
@@ -515,14 +592,17 @@ model Modifier {
   displayName String?
 
   // Pricing
-  price       Decimal  @default(0) 
-  upsellPrice Decimal?  // Special price when offered as upsell
-  cost        Decimal? 
+  // If linkedMenuItemId is set and price is 0, use linked item's price
+  // If price > 0, it acts as a price override or upcharge
+  price       Decimal  @default(0)
+  priceType   String   @default("upcharge") // 'upcharge' (add to base), 'override' (replace base), 'from_item' (use linked item price)
+  upsellPrice Decimal? // Special price when offered as upsell
+  cost        Decimal?
 
   // Pre-modifier support (Skill 32)
   allowedPreModifiers Json? // Array of allowed prefixes: ["no", "lite", "extra", "side"]
-  extraPrice          Decimal?  // Price when "extra" is selected
-  extraUpsellPrice    Decimal?  // Upsell price for "extra"
+  extraPrice          Decimal? // Price when "extra" is selected
+  extraUpsellPrice    Decimal? // Upsell price for "extra"
 
   // Sub-modifier support - when selected, prompts for additional modifiers
   childModifierGroupId String?
@@ -530,13 +610,18 @@ model Modifier {
 
   // Commission (Skill 29)
   commissionType  String? // 'fixed' | 'percent' | null
-  commissionValue Decimal? 
+  commissionValue Decimal?
+
+  // Linked Menu Item - for spirit upgrades, links to actual menu item for pricing/reporting
+  // When set, sales are tracked against this item for reporting purposes
+  linkedMenuItemId String?
+  linkedMenuItem   MenuItem? @relation("LinkedModifierItem", fields: [linkedMenuItemId], references: [id])
 
   // Liquor Builder - Spirit fields
   spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
   linkedBottleProductId String? // Links to bottle inventory
   linkedBottleProduct   BottleProduct? @relation(fields: [linkedBottleProductId], references: [id])
-  pourSizeOz            Decimal?        // Override default pour size
+  pourSizeOz            Decimal? // Override default pour size
 
   // Display
   sortOrder Int     @default(0)
@@ -548,13 +633,17 @@ model Modifier {
 
   orderItemModifiers OrderItemModifier[]
 
+  @@index([locationId])
   @@index([modifierGroupId])
   @@index([childModifierGroupId])
   @@index([linkedBottleProductId])
+  @@index([linkedMenuItemId])
 }
 
 model MenuItemModifierGroup {
   id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
   menuItemId      String
   menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   modifierGroupId String
@@ -563,6 +652,7 @@ model MenuItemModifierGroup {
   sortOrder Int @default(0)
 
   @@unique([menuItemId, modifierGroupId])
+  @@index([locationId])
 }
 
 // ============================================
@@ -570,20 +660,26 @@ model MenuItemModifierGroup {
 // ============================================
 
 model ComboTemplate {
-  id         String @id @default(cuid())
-  menuItemId String @unique // Links to MenuItem with itemType="combo"
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String   @unique // Links to MenuItem with itemType="combo"
 
-  basePrice    Decimal  
-  comparePrice Decimal?  // A la carte total for savings display
+  basePrice    Decimal
+  comparePrice Decimal? // A la carte total for savings display
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   components ComboComponent[]
+
+  @@index([locationId])
 }
 
 model ComboComponent {
   id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
   comboTemplateId String
   comboTemplate   ComboTemplate @relation(fields: [comboTemplateId], references: [id], onDelete: Cascade)
 
@@ -600,7 +696,7 @@ model ComboComponent {
   menuItem   MenuItem? @relation("ComboComponentItem", fields: [menuItemId], references: [id])
 
   // Price override for the item itself (null = use item's default price)
-  itemPriceOverride Decimal? 
+  itemPriceOverride Decimal?
 
   // Per-modifier price overrides: { "modifierId": 0.00, ... }
   modifierPriceOverrides Json?
@@ -608,7 +704,7 @@ model ComboComponent {
   // Legacy fields (kept for backward compatibility)
   modifierGroupId String?
   modifierGroup   ModifierGroup? @relation(fields: [modifierGroupId], references: [id])
-  priceOverride   Decimal?       
+  priceOverride   Decimal?
   defaultItemId   String?
   defaultItem     MenuItem?      @relation("ComboComponentDefault", fields: [defaultItemId], references: [id])
 
@@ -616,22 +712,26 @@ model ComboComponent {
 
   options ComboComponentOption[]
 
+  @@index([locationId])
   @@index([modifierGroupId])
   @@index([menuItemId])
 }
 
 model ComboComponentOption {
   id               String         @id @default(cuid())
+  locationId       String
+  location         Location       @relation(fields: [locationId], references: [id])
   comboComponentId String
   comboComponent   ComboComponent @relation(fields: [comboComponentId], references: [id], onDelete: Cascade)
 
   menuItemId  String
   menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
-  upcharge    Decimal  @default(0) 
+  upcharge    Decimal  @default(0)
   sortOrder   Int      @default(0)
   isAvailable Boolean  @default(true)
 
   @@unique([comboComponentId, menuItemId])
+  @@index([locationId])
   @@index([menuItemId])
 }
 
@@ -669,6 +769,8 @@ model Section {
 
 model SectionAssignment {
   id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   sectionId  String
   section    Section  @relation(fields: [sectionId], references: [id])
   employeeId String
@@ -677,6 +779,7 @@ model SectionAssignment {
   assignedAt   DateTime  @default(now())
   unassignedAt DateTime?
 
+  @@index([locationId])
   @@index([sectionId])
   @@index([employeeId])
 }
@@ -764,24 +867,24 @@ model Order {
   closedAt DateTime?
 
   // Totals
-  subtotal      Decimal @default(0) 
-  discountTotal Decimal @default(0) 
-  taxTotal      Decimal @default(0) 
-  tipTotal      Decimal @default(0) 
-  total         Decimal @default(0) 
+  subtotal      Decimal @default(0)
+  discountTotal Decimal @default(0)
+  taxTotal      Decimal @default(0)
+  tipTotal      Decimal @default(0)
+  total         Decimal @default(0)
 
   // Dual Pricing (Skill 31)
   primaryPaymentMethod String? // 'cash' | 'card' - determines which price applies
 
   // Commission (Skill 29)
-  commissionTotal Decimal @default(0) 
+  commissionTotal Decimal @default(0)
 
   // Notes
   notes String?
 
   // Bar Tab Pre-auth (Skill 21)
   preAuthId        String? // Reference to pre-auth transaction
-  preAuthAmount    Decimal?  
+  preAuthAmount    Decimal?
   preAuthLast4     String? // Last 4 digits of held card
   preAuthCardBrand String? // Visa, Mastercard, etc.
   preAuthExpiresAt DateTime? // When the hold expires
@@ -808,6 +911,8 @@ model Order {
 
 model OrderItem {
   id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItemId String
@@ -815,7 +920,7 @@ model OrderItem {
 
   // Item details (snapshot at time of order)
   name     String
-  price    Decimal 
+  price    Decimal
   quantity Int     @default(1)
 
   // Seat tracking (Skill 24)
@@ -855,17 +960,18 @@ model OrderItem {
   voidReason String?
 
   // Totals
-  modifierTotal Decimal @default(0) 
-  itemTotal     Decimal @default(0) 
+  modifierTotal Decimal @default(0)
+  itemTotal     Decimal @default(0)
 
   // Commission (Skill 29)
-  commissionAmount Decimal? 
+  commissionAmount Decimal?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   modifiers OrderItemModifier[]
 
+  @@index([locationId])
   @@index([orderId])
   @@index([menuItemId])
   @@index([kitchenStatus])
@@ -873,20 +979,28 @@ model OrderItem {
 
 model OrderItemModifier {
   id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
   orderItemId String
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   modifierId  String? // Optional: null for combo component selections
   modifier    Modifier? @relation(fields: [modifierId], references: [id])
 
-  // Snapshot
+  // Snapshot at time of sale
   name        String
-  price       Decimal 
+  price       Decimal // Actual price charged (may differ from item price if discounted)
   preModifier String? // "no", "lite", "extra", "side"
 
   quantity Int @default(1)
 
   // Commission (Skill 29)
-  commissionAmount Decimal? 
+  commissionAmount Decimal?
+
+  // Linked Item Snapshot - for reporting which menu item was actually sold
+  // Even if ordered as a modifier, this tracks the underlying item for sales reporting
+  linkedMenuItemId    String? // Snapshot of linked menu item at time of sale
+  linkedMenuItemName  String? // Name snapshot for reporting
+  linkedMenuItemPrice Decimal? // Original item price (before any discount/override)
 
   // Liquor Builder - Spirit snapshot for reporting
   spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
@@ -894,8 +1008,10 @@ model OrderItemModifier {
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([orderItemId])
   @@index([spiritTier])
+  @@index([linkedMenuItemId])
 }
 
 // ============================================
@@ -903,23 +1019,25 @@ model OrderItemModifier {
 // ============================================
 
 model Payment {
-  id         String  @id @default(cuid())
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   orderId    String
-  order      Order   @relation(fields: [orderId], references: [id])
+  order      Order    @relation(fields: [orderId], references: [id])
   employeeId String? // Who processed the payment
 
   // Payment details
-  amount      Decimal 
-  tipAmount   Decimal @default(0) 
-  totalAmount Decimal 
+  amount      Decimal
+  tipAmount   Decimal @default(0)
+  totalAmount Decimal
 
   // Method
   paymentMethod String // cash, credit, debit, gift_card, house_account
 
   // Cash details
-  amountTendered     Decimal?  // Amount given by customer
-  changeGiven        Decimal?  // Change returned
-  roundingAdjustment Decimal?  // Amount rounded (+ or -)
+  amountTendered     Decimal? // Amount given by customer
+  changeGiven        Decimal? // Change returned
+  roundingAdjustment Decimal? // Amount rounded (+ or -)
 
   // Card details (if card)
   cardBrand     String?
@@ -931,12 +1049,13 @@ model Payment {
   status String @default("completed") // pending, completed, refunded, voided
 
   // Refund tracking
-  refundedAmount Decimal   @default(0) 
+  refundedAmount Decimal   @default(0)
   refundedAt     DateTime?
   refundReason   String?
 
   processedAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([orderId])
   @@index([processedAt])
   @@index([employeeId])
@@ -958,12 +1077,12 @@ model Coupon {
 
   // Discount type
   discountType  String // 'percent' | 'fixed' | 'free_item'
-  discountValue Decimal  // Percent or dollar amount
+  discountValue Decimal // Percent or dollar amount
   freeItemId    String? // If discountType is 'free_item'
 
   // Restrictions
-  minimumOrder    Decimal?  // Minimum order total
-  maximumDiscount Decimal?  // Cap on discount amount
+  minimumOrder    Decimal? // Minimum order total
+  maximumDiscount Decimal? // Cap on discount amount
   appliesTo       String   @default("order") // 'order' | 'category' | 'item'
   categoryIds     Json? // If appliesTo is 'category'
   itemIds         Json? // If appliesTo is 'item'
@@ -994,17 +1113,20 @@ model Coupon {
 }
 
 model CouponRedemption {
-  id         String  @id @default(cuid())
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   couponId   String
-  coupon     Coupon  @relation(fields: [couponId], references: [id])
+  coupon     Coupon   @relation(fields: [couponId], references: [id])
   orderId    String
   customerId String? // If linked to customer
 
-  discountAmount Decimal 
+  discountAmount Decimal
 
   redeemedAt DateTime @default(now())
   redeemedBy String? // Employee who applied
 
+  @@index([locationId])
   @@index([couponId])
   @@index([orderId])
   @@index([customerId])
@@ -1026,7 +1148,7 @@ model Reservation {
   partySize  Int
 
   // Timing
-  reservationDate DateTime 
+  reservationDate DateTime
   reservationTime String // HH:MM format
   duration        Int      @default(90) // Minutes
 
@@ -1110,14 +1232,16 @@ model DiscountRule {
 
 model OrderDiscount {
   id             String        @id @default(cuid())
+  locationId     String
+  location       Location      @relation(fields: [locationId], references: [id])
   orderId        String
   order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   discountRuleId String?
   discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
 
   name    String
-  amount  Decimal  
-  percent Decimal? 
+  amount  Decimal
+  percent Decimal?
 
   // Who applied it
   appliedBy   String? // Employee ID if manual
@@ -1127,6 +1251,7 @@ model OrderDiscount {
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([orderId])
 }
 
@@ -1175,6 +1300,8 @@ model UpsellConfig {
 
 model UpsellEvent {
   id             String       @id @default(cuid())
+  locationId     String
+  location       Location     @relation(fields: [locationId], references: [id])
   upsellConfigId String
   upsellConfig   UpsellConfig @relation(fields: [upsellConfigId], references: [id])
 
@@ -1185,10 +1312,11 @@ model UpsellEvent {
   wasAccepted  Boolean @default(false)
   wasDismissed Boolean @default(false)
 
-  addedAmount Decimal? 
+  addedAmount Decimal?
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([upsellConfigId])
   @@index([createdAt])
 }
@@ -1199,6 +1327,8 @@ model UpsellEvent {
 
 model VoidLog {
   id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id])
   employeeId String
@@ -1206,7 +1336,7 @@ model VoidLog {
 
   voidType String // item, order
   itemId   String? // If item void
-  amount   Decimal 
+  amount   Decimal
   reason   String
 
   approvedById String?
@@ -1214,6 +1344,7 @@ model VoidLog {
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([orderId])
   @@index([employeeId])
   @@index([createdAt])
@@ -1267,20 +1398,117 @@ model TipPool {
 }
 
 model TipPoolEntry {
-  id        String  @id @default(cuid())
-  tipPoolId String
-  tipPool   TipPool @relation(fields: [tipPoolId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  tipPoolId  String
+  tipPool    TipPool  @relation(fields: [tipPoolId], references: [id])
 
-  shiftDate   DateTime 
-  totalAmount Decimal  
+  shiftDate   DateTime
+  totalAmount Decimal
 
   // Distributions
   distributions Json // [{employeeId, amount, hours, points}]
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([tipPoolId])
   @@index([shiftDate])
+}
+
+// ============================================
+// TIP SHARING & TIP-OUTS (Role-based & Custom)
+// ============================================
+
+// Defines automatic tip-out percentages by role
+// e.g., Server tips out 3% to Busser, 2% to Bartender
+model TipOutRule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  fromRoleId String // Role that tips out (Server)
+  fromRole   Role   @relation("TipOutFrom", fields: [fromRoleId], references: [id])
+  toRoleId   String // Role that receives (Busser, Bartender)
+  toRole     Role   @relation("TipOutTo", fields: [toRoleId], references: [id])
+
+  percentage Decimal // e.g., 3.0 for 3%
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tipShares TipShare[]
+
+  @@unique([locationId, fromRoleId, toRoleId])
+  @@index([locationId])
+  @@index([fromRoleId])
+  @@index([toRoleId])
+}
+
+// Records actual tip distributions (both automatic role-based and custom one-off)
+model TipShare {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  shiftId String? // Link to shift closeout (optional)
+  shift   Shift?  @relation(fields: [shiftId], references: [id])
+
+  fromEmployeeId String
+  fromEmployee   Employee @relation("TipShareFrom", fields: [fromEmployeeId], references: [id])
+  toEmployeeId   String
+  toEmployee     Employee @relation("TipShareTo", fields: [toEmployeeId], references: [id])
+
+  amount    Decimal
+  shareType String // 'role_tipout' | 'custom' | 'pool'
+  ruleId    String? // Reference to TipOutRule if role-based
+  rule      TipOutRule? @relation(fields: [ruleId], references: [id])
+
+  status      String    @default("pending") // pending, collected, banked, paid_out
+  collectedAt DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+
+  tipBankEntry TipBank?
+
+  @@index([locationId])
+  @@index([shiftId])
+  @@index([fromEmployeeId])
+  @@index([toEmployeeId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Tracks uncollected tips for employees not on shift
+// Goes to payroll or future collection
+model TipBank {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  amount   Decimal
+  source   String // 'tip_share' | 'tip_pool'
+  sourceId String? @unique // TipShare.id or TipPoolEntry.id
+
+  tipShare TipShare? @relation(fields: [sourceId], references: [id])
+
+  status      String    @default("pending") // pending, collected, paid_out
+  collectedAt DateTime?
+  paidOutAt   DateTime?
+  payrollId   String? // If paid via payroll
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 // ============================================
@@ -1297,8 +1525,8 @@ model GiftCard {
   pin        String? // Optional PIN for security
 
   // Balance
-  initialBalance Decimal 
-  currentBalance Decimal 
+  initialBalance Decimal
+  currentBalance Decimal
 
   // Status
   status String @default("active") // active, depleted, expired, frozen
@@ -1332,6 +1560,8 @@ model GiftCard {
 
 model GiftCardTransaction {
   id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   giftCardId String
   giftCard   GiftCard @relation(fields: [giftCardId], references: [id])
 
@@ -1339,9 +1569,9 @@ model GiftCardTransaction {
   type String // purchase, redemption, reload, refund, adjustment
 
   // Amounts
-  amount        Decimal 
-  balanceBefore Decimal 
-  balanceAfter  Decimal 
+  amount        Decimal
+  balanceBefore Decimal
+  balanceAfter  Decimal
 
   // Reference
   orderId    String? // Order where used
@@ -1350,6 +1580,7 @@ model GiftCardTransaction {
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([giftCardId])
   @@index([orderId])
   @@index([createdAt])
@@ -1372,8 +1603,8 @@ model HouseAccount {
   address     String?
 
   // Credit settings
-  creditLimit    Decimal @default(0) 
-  currentBalance Decimal @default(0)  // Positive = owes money
+  creditLimit    Decimal @default(0)
+  currentBalance Decimal @default(0) // Positive = owes money
   paymentTerms   Int     @default(30) // Days until due
 
   // Status
@@ -1406,6 +1637,8 @@ model HouseAccount {
 
 model HouseAccountTransaction {
   id             String       @id @default(cuid())
+  locationId     String
+  location       Location     @relation(fields: [locationId], references: [id])
   houseAccountId String
   houseAccount   HouseAccount @relation(fields: [houseAccountId], references: [id])
 
@@ -1413,9 +1646,9 @@ model HouseAccountTransaction {
   type String // charge, payment, adjustment, credit
 
   // Amounts
-  amount        Decimal 
-  balanceBefore Decimal 
-  balanceAfter  Decimal 
+  amount        Decimal
+  balanceBefore Decimal
+  balanceAfter  Decimal
 
   // Reference
   orderId         String? // Order that was charged
@@ -1429,6 +1662,7 @@ model HouseAccountTransaction {
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([houseAccountId])
   @@index([orderId])
   @@index([createdAt])
@@ -1454,11 +1688,11 @@ model TimedSession {
 
   // Calculated on close
   totalMinutes Int?
-  totalCharge  Decimal? 
+  totalCharge  Decimal?
 
   // Billing
   rateType   String  @default("hourly") // per15Min, per30Min, hourly, custom
-  rateAmount Decimal 
+  rateAmount Decimal
 
   // Status
   status String @default("active") // active, paused, completed, cancelled
@@ -1501,7 +1735,7 @@ model EntertainmentWaitlist {
   tabName String?
 
   // Deposit to hold position (optional)
-  depositAmount    Decimal? 
+  depositAmount    Decimal?
   depositMethod    String? // 'cash', 'card'
   depositCardLast4 String?
   depositRefunded  Boolean  @default(false)
@@ -1538,7 +1772,7 @@ model Seat {
 
   // Identity
   label      String // "1", "A", "A1" - displayed on floor plan
-  seatNumber Int    // Sequential within table (1, 2, 3...)
+  seatNumber Int // Sequential within table (1, 2, 3...)
 
   // Relative positioning within table (offset from table center in pixels)
   relativeX Int @default(0)
@@ -1576,7 +1810,7 @@ model Event {
   eventType String @default("dinner_show") // dinner_show, concert, private_event, special_occasion
 
   // Timing
-  eventDate DateTime 
+  eventDate DateTime
   doorsOpen String // HH:MM format
   startTime String // HH:MM format
   endTime   String? // HH:MM format (optional)
@@ -1621,9 +1855,11 @@ model Event {
 }
 
 model EventPricingTier {
-  id      String @id @default(cuid())
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   // Tier Details
   name        String // "General Admission", "VIP", "Premium Front Row"
@@ -1631,8 +1867,8 @@ model EventPricingTier {
   color       String? // For floor plan display
 
   // Pricing
-  price      Decimal 
-  serviceFee Decimal @default(0) 
+  price      Decimal
+  serviceFee Decimal @default(0)
 
   // Quantity limits
   quantityAvailable Int? // null = unlimited
@@ -1652,19 +1888,22 @@ model EventPricingTier {
   tickets             Ticket[]
   tableConfigurations EventTableConfig[]
 
+  @@index([locationId])
   @@index([eventId])
 }
 
 model EventTableConfig {
-  id      String @id @default(cuid())
-  eventId String
-  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  tableId String
-  table   Table  @relation(fields: [tableId], references: [id])
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tableId    String
+  table      Table    @relation(fields: [tableId], references: [id])
 
   // Per-event table settings
-  isIncluded    Boolean            @default(true) // Include this table in event
-  bookingMode   String             @default("inherit") // inherit, per_seat, per_table, disabled
+  isIncluded    Boolean           @default(true) // Include this table in event
+  bookingMode   String            @default("inherit") // inherit, per_seat, per_table, disabled
   pricingTierId String?
   pricingTier   EventPricingTier? @relation(fields: [pricingTierId], references: [id])
 
@@ -1673,6 +1912,7 @@ model EventTableConfig {
   maxPartySize Int? // null = use table capacity
 
   @@unique([eventId, tableId])
+  @@index([locationId])
   @@index([eventId])
   @@index([tableId])
 }
@@ -1706,10 +1946,10 @@ model Ticket {
   customer      Customer? @relation(fields: [customerId], references: [id])
 
   // Pricing Snapshot (at time of purchase)
-  basePrice  Decimal 
-  serviceFee Decimal @default(0) 
-  taxAmount  Decimal @default(0) 
-  totalPrice Decimal 
+  basePrice  Decimal
+  serviceFee Decimal @default(0)
+  taxAmount  Decimal @default(0)
+  totalPrice Decimal
 
   // Status
   status String @default("available") // available, held, sold, checked_in, cancelled, refunded
@@ -1733,7 +1973,7 @@ model Ticket {
   cancelledAt  DateTime?
   cancelReason String?
   refundedAt   DateTime?
-  refundAmount Decimal? 
+  refundAmount Decimal?
   refundedBy   String? // Employee ID
 
   // Notes
@@ -1757,11 +1997,12 @@ model Ticket {
 // ============================================
 
 model TaxRule {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   name String // "State Tax", "City Tax", "Alcohol Tax"
-  rate Decimal  // 0.0825 = 8.25%
+  rate Decimal // 0.0825 = 8.25%
 
   // Application rules
   appliesTo   String @default("all") // all, category, item
@@ -1789,8 +2030,9 @@ model TaxRule {
 // ============================================
 
 model InventoryTransaction {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   menuItemId String
 
   // Transaction type
@@ -1809,8 +2051,8 @@ model InventoryTransaction {
   reason        String? // For adjustments/waste
 
   // Cost tracking
-  unitCost  Decimal? 
-  totalCost Decimal? 
+  unitCost  Decimal?
+  totalCost Decimal?
 
   createdAt DateTime @default(now())
 
@@ -1825,8 +2067,9 @@ model InventoryTransaction {
 // ============================================
 
 model StockAlert {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   locationId String
+  location   Location @relation(fields: [locationId], references: [id])
   menuItemId String
 
   alertType    String // low_stock, out_of_stock, reorder
@@ -1854,7 +2097,9 @@ model StockAlert {
 // ============================================
 
 model Break {
-  id               String @id @default(cuid())
+  id               String   @id @default(cuid())
+  locationId       String
+  location         Location @relation(fields: [locationId], references: [id])
   timeClockEntryId String
   employeeId       String
 
@@ -1870,6 +2115,7 @@ model Break {
 
   createdAt DateTime @default(now())
 
+  @@index([locationId])
   @@index([timeClockEntryId])
   @@index([employeeId])
   @@index([startedAt])
@@ -1922,13 +2168,13 @@ model BottleProduct {
 
   // Bottle specs
   bottleSizeMl Int // 1750, 750, 1000
-  bottleSizeOz Decimal?  // Auto-calculated from mL
-  unitCost     Decimal   // Cost per bottle ($25.99)
+  bottleSizeOz Decimal? // Auto-calculated from mL
+  unitCost     Decimal // Cost per bottle ($25.99)
 
   // Pour calculation (uses location default or override)
-  pourSizeOz     Decimal?  // Override location default
+  pourSizeOz     Decimal? // Override location default
   poursPerBottle Int? // Auto-calculated: bottleSizeMl / pourSizeMl
-  pourCost       Decimal?  // Auto-calculated: unitCost / poursPerBottle
+  pourCost       Decimal? // Auto-calculated: unitCost / poursPerBottle
 
   // Inventory - tracks bottles on hand
   currentStock  Int     @default(0) // Number of bottles in inventory
@@ -1951,14 +2197,16 @@ model BottleProduct {
 // Recipe ingredients - what goes into a cocktail
 model RecipeIngredient {
   id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
   menuItemId      String
   menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   bottleProductId String
   bottleProduct   BottleProduct @relation(fields: [bottleProductId], references: [id])
 
   // Pour amount
-  pourCount       Decimal  @default(1)  // 1 pour, 0.5 pour, 2 pours
-  pourSizeOz      Decimal?  // Override location default
+  pourCount       Decimal  @default(1) // 1 pour, 0.5 pour, 2 pours
+  pourSizeOz      Decimal? // Override location default
   isRequired      Boolean  @default(true)
   isSubstitutable Boolean  @default(true) // Can swap for different tier (premium upgrade)
 
@@ -1969,6 +2217,7 @@ model RecipeIngredient {
   createdAt DateTime @default(now())
 
   @@unique([menuItemId, bottleProductId])
+  @@index([locationId])
   @@index([menuItemId])
   @@index([bottleProductId])
 }
@@ -1976,6 +2225,8 @@ model RecipeIngredient {
 // Links ModifierGroup to SpiritCategory for spirit selection
 model SpiritModifierGroup {
   id               String         @id @default(cuid())
+  locationId       String
+  location         Location       @relation(fields: [locationId], references: [id])
   modifierGroupId  String         @unique
   modifierGroup    ModifierGroup  @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
   spiritCategoryId String
@@ -1989,6 +2240,7 @@ model SpiritModifierGroup {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([locationId])
   @@index([spiritCategoryId])
 }
 
@@ -2010,7 +2262,7 @@ model SpiritUpsellEvent {
   upsellModifierId String // Premium spirit modifier ID
   upsellTier       String // 'premium', 'top_shelf', etc.
   upsellBottleName String // "Patron Silver"
-  priceDifference  Decimal 
+  priceDifference  Decimal
 
   // Outcome
   wasShown    Boolean @default(true)

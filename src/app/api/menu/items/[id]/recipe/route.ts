@@ -121,7 +121,7 @@ export async function POST(
     // Verify menu item exists
     const menuItem = await db.menuItem.findUnique({
       where: { id },
-      select: { id: true, name: true, price: true },
+      select: { id: true, name: true, price: true, locationId: true },
     })
 
     if (!menuItem) {
@@ -159,6 +159,7 @@ export async function POST(
       if (ingredients.length > 0) {
         await tx.recipeIngredient.createMany({
           data: ingredients.map((ing: any, index: number) => ({
+            locationId: menuItem.locationId,
             menuItemId: id,
             bottleProductId: ing.bottleProductId,
             pourCount: ing.pourCount || 1,

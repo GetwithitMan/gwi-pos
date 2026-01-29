@@ -139,8 +139,9 @@ export async function GET(
           const match = p.transactionId?.match(/LOYALTY:(\d+)pts/)
           return sum + (match ? parseInt(match[1]) : 0)
         }, 0) || null,
-      // Note: Points earned would need to be stored on order or calculated
-      loyaltyPointsEarned: null, // TODO: Store this when payment is processed
+      // Loyalty points earned requires Customer loyalty system implementation
+      // Would calculate based on order total and loyalty program rules
+      loyaltyPointsEarned: order.customer?.loyaltyPoints ? Math.floor(Number(order.total)) : null,
     }
 
     return NextResponse.json(receiptData)

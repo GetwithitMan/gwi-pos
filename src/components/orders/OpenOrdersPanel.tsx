@@ -40,6 +40,10 @@ interface OpenOrder {
     isCompleted?: boolean
     completedAt?: string | null
     resendCount?: number
+    // Entertainment/block time fields
+    blockTimeMinutes?: number | null
+    blockTimeStartedAt?: string | null
+    blockTimeExpiresAt?: string | null
     modifiers: {
       id: string
       modifierId: string
@@ -67,6 +71,9 @@ interface OpenOrder {
   // Waitlist info
   waitlist?: { position: number; menuItemName: string }[]
   isOnWaitlist?: boolean
+  // Entertainment session info
+  entertainment?: { menuItemId: string; menuItemName: string; status: string; orderItemId: string | null }[]
+  hasActiveEntertainment?: boolean
 }
 
 interface OpenOrdersPanelProps {
@@ -100,6 +107,32 @@ export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onNewTa
     }
   }, [locationId, refreshTrigger])
 
+  // Auto-refresh every 3 seconds when viewing open orders (for entertainment timers)
+  useEffect(() => {
+    if (!locationId || viewMode !== 'open') return
+
+    const interval = setInterval(() => {
+      loadOrders()
+    }, 3000) // 3 seconds for real-time updates
+
+    // Also refresh when page becomes visible or focused
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadOrders()
+      }
+    }
+    const handleFocus = () => loadOrders()
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [locationId, viewMode])
+
   useEffect(() => {
     if (locationId && viewMode === 'closed') {
       loadClosedOrders()
@@ -110,8 +143,11 @@ export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onNewTa
     if (!locationId) return
 
     try {
-      const params = new URLSearchParams({ locationId })
-      const response = await fetch(`/api/orders/open?${params}`)
+      const params = new URLSearchParams({ locationId, _t: Date.now().toString() })
+      const response = await fetch(`/api/orders/open?${params}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      })
       if (response.ok) {
         const data = await response.json()
         setOrders(data.orders)
@@ -312,16 +348,53 @@ export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onNewTa
             const config = ORDER_TYPE_CONFIG[order.orderType] || ORDER_TYPE_CONFIG.dine_in
             const displayName = getOrderDisplayName(order)
             const hasWaitlist = order.isOnWaitlist && order.waitlist && order.waitlist.length > 0
+            const hasEntertainment = order.hasActiveEntertainment && order.entertainment && order.entertainment.length > 0
+
+            // Calculate time remaining for active entertainment items
+            const getTimeRemaining = (item: { blockTimeExpiresAt?: string | null }) => {
+              if (!item.blockTimeExpiresAt) return null
+              const expiresAt = new Date(item.blockTimeExpiresAt)
+              const now = new Date()
+              const remainingMs = expiresAt.getTime() - now.getTime()
+              if (remainingMs <= 0) return 'EXPIRED'
+              const mins = Math.floor(remainingMs / 60000)
+              const secs = Math.floor((remainingMs % 60000) / 1000)
+              return `${mins}:${secs.toString().padStart(2, '0')}`
+            }
+
+            // Find entertainment items in order.items
+            const entertainmentItems = order.items.filter(item => item.blockTimeMinutes || item.blockTimeExpiresAt)
 
             return (
               <Card
                 key={order.id}
                 className={`p-3 cursor-pointer hover:bg-gray-50 transition-colors border-2 ${
+                  hasEntertainment ? 'border-green-500 bg-green-50' :
                   hasWaitlist ? 'border-amber-400 bg-amber-50' : 'border-transparent'
                 }`}
                 onClick={() => onSelectOrder(order)}
                 onDoubleClick={() => onSelectOrder(order)}
               >
+                {/* Entertainment Session Badge */}
+                {hasEntertainment && (
+                  <div className="mb-2 flex flex-wrap gap-1">
+                    {order.entertainment!.map((e, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-green-600 text-white text-xs font-bold rounded-full"
+                      >
+                        <span>🎱</span>
+                        {e.menuItemName}
+                        {entertainmentItems.find(item => item.menuItemId === e.menuItemId)?.blockTimeExpiresAt && (
+                          <span className="ml-1 font-mono">
+                            ({getTimeRemaining(entertainmentItems.find(item => item.menuItemId === e.menuItemId) || {})})
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
                 {/* Waitlist Badge */}
                 {hasWaitlist && (
                   <div className="mb-2 flex flex-wrap gap-1">

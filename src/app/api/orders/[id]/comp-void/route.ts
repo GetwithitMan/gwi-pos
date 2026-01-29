@@ -85,6 +85,7 @@ export async function POST(
     // Create void log entry
     await db.voidLog.create({
       data: {
+        locationId: order.locationId,
         orderId,
         employeeId,
         voidType: 'item',

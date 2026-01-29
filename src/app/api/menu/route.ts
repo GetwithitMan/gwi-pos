@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Force dynamic rendering - never cache (entertainment status changes frequently)
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -99,6 +103,7 @@ export async function GET(request: NextRequest) {
         // Entertainment status for timed_rental items
         entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
         currentOrderId: item.itemType === 'timed_rental' ? item.currentOrderId : null,
+        blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
         modifierGroupCount: item.modifierGroups.length,
         modifierGroups: item.modifierGroups.map(mg => ({
           id: mg.modifierGroup.id,

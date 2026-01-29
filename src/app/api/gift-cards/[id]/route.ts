@@ -169,6 +169,7 @@ export async function PUT(
             currentBalance: newBalance,
             transactions: {
               create: {
+                locationId: giftCard.locationId,
                 type: 'reload',
                 amount,
                 balanceBefore: currentBalance,
@@ -221,6 +222,7 @@ export async function PUT(
             status: newStatus,
             transactions: {
               create: {
+                locationId: giftCard.locationId,
                 type: 'redemption',
                 amount: -amount, // Negative for redemptions
                 balanceBefore: currentBalance,
@@ -261,6 +263,7 @@ export async function PUT(
             status: 'active', // Reactivate if depleted
             transactions: {
               create: {
+                locationId: giftCard.locationId,
                 type: 'refund',
                 amount,
                 balanceBefore: currentBalance,

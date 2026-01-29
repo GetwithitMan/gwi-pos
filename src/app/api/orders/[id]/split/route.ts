@@ -265,6 +265,7 @@ export async function POST(
         newSubtotal += itemTotal + modifiersTotal
 
         return {
+          locationId: order.locationId,
           menuItemId: item.menuItemId,
           name: item.name,
           price: item.price,
@@ -274,6 +275,7 @@ export async function POST(
           seatNumber: item.seatNumber,
           modifiers: {
             create: item.modifiers.map(mod => ({
+              locationId: order.locationId,
               modifierId: mod.modifierId,
               name: mod.name,
               price: mod.price,

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
+import { hasPermission, PERMISSIONS } from '@/lib/auth'
 
 interface ShiftSummary {
   totalSales: number
@@ -26,7 +27,41 @@ interface ShiftData {
   employee: {
     id: string
     name: string
+    roleId?: string
   }
+  locationId?: string
+}
+
+interface TipOutRule {
+  id: string
+  fromRoleId: string
+  toRoleId: string
+  toRole: { id: string; name: string }
+  percentage: number
+  isActive: boolean
+}
+
+interface CalculatedTipOut {
+  ruleId: string
+  toRoleId: string
+  toRoleName: string
+  percentage: number
+  amount: number
+  toEmployeeId?: string
+  toEmployeeName?: string
+}
+
+interface CustomTipShare {
+  toEmployeeId: string
+  toEmployeeName: string
+  amount: number
+}
+
+interface Employee {
+  id: string
+  firstName: string
+  lastName: string
+  role: { id: string; name: string }
 }
 
 interface ShiftCloseoutModalProps {
@@ -37,6 +72,7 @@ interface ShiftCloseoutModalProps {
     variance: number
     summary: ShiftSummary
   }) => void
+  permissions?: string[]
 }
 
 // Denomination structure for cash counting
@@ -58,11 +94,19 @@ export function ShiftCloseoutModal({
   onClose,
   shift,
   onCloseoutComplete,
+  permissions = [],
 }: ShiftCloseoutModalProps) {
-  const [step, setStep] = useState<'summary' | 'count' | 'confirm' | 'complete'>('summary')
-  const [isLoading, setIsLoading] = useState(true)
+  // Check if user has permission to see expected cash before counting (non-blind mode)
+  const canSeeExpectedFirst = hasPermission(permissions, PERMISSIONS.MGR_CASH_DRAWER_FULL)
+
+  // Start at 'count' for blind mode (default), or 'summary' if manager with full access
+  const [step, setStep] = useState<'count' | 'summary' | 'reveal' | 'tips' | 'complete'>('count')
+  const [isLoading, setIsLoading] = useState(false)
   const [summary, setSummary] = useState<ShiftSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  // Track if user chose to view summary first (manager override)
+  const [viewedSummaryFirst, setViewedSummaryFirst] = useState(false)
 
   // Cash count state
   const [counts, setCounts] = useState<Record<number, number>>({})
@@ -79,6 +123,14 @@ export function ShiftCloseoutModal({
     message: string
   } | null>(null)
 
+  // Tip sharing state
+  const [tipOutRules, setTipOutRules] = useState<TipOutRule[]>([])
+  const [calculatedTipOuts, setCalculatedTipOuts] = useState<CalculatedTipOut[]>([])
+  const [customTipShares, setCustomTipShares] = useState<CustomTipShare[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [newShareEmployeeId, setNewShareEmployeeId] = useState('')
+  const [newShareAmount, setNewShareAmount] = useState('')
+
   // Calculate total from denomination counts
   const countedTotal = Object.entries(counts).reduce(
     (sum, [denom, count]) => sum + parseFloat(denom) * count,
@@ -86,17 +138,34 @@ export function ShiftCloseoutModal({
   )
 
   const actualCash = useManual ? parseFloat(manualTotal) || 0 : countedTotal
+  // Only calculate expected if summary is loaded (after reveal)
   const expectedCash = (shift?.startingCash || 0) + (summary?.netCashReceived || 0)
-  const variance = actualCash - expectedCash
+  const variance = summary ? actualCash - expectedCash : 0
 
-  // Fetch shift summary on open
+  // Reset state when modal opens
   useEffect(() => {
-    if (isOpen && shift?.id) {
-      fetchShiftSummary()
+    if (isOpen) {
+      setStep('count')
+      setSummary(null)
+      setCounts({})
+      setManualTotal('')
+      setTipsDeclared('')
+      setNotes('')
+      setCloseoutResult(null)
+      setViewedSummaryFirst(false)
+      setError(null)
+      // Reset tip sharing state
+      setTipOutRules([])
+      setCalculatedTipOuts([])
+      setCustomTipShares([])
+      setEmployees([])
+      setNewShareEmployeeId('')
+      setNewShareAmount('')
     }
-  }, [isOpen, shift?.id])
+  }, [isOpen])
 
-  const fetchShiftSummary = async () => {
+  // Fetch shift summary - called after cash is declared (for reveal step) or by manager preview
+  const fetchShiftSummary = async (forReveal = false) => {
     setIsLoading(true)
     setError(null)
     try {
@@ -104,12 +173,141 @@ export function ShiftCloseoutModal({
       if (!response.ok) throw new Error('Failed to fetch shift summary')
       const data = await response.json()
       setSummary(data.summary)
-      setTipsDeclared(data.summary.totalTips.toFixed(2))
+      if (!tipsDeclared) {
+        setTipsDeclared(data.summary.totalTips.toFixed(2))
+      }
+      if (forReveal) {
+        setStep('reveal')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load shift data')
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Fetch tip-out rules and employees for tip distribution
+  const fetchTipData = async () => {
+    if (!shift.locationId || !shift.employee.roleId) return
+
+    try {
+      // Fetch tip-out rules and employees in parallel
+      const [rulesRes, employeesRes] = await Promise.all([
+        fetch(`/api/tip-out-rules?locationId=${shift.locationId}`),
+        fetch(`/api/employees?locationId=${shift.locationId}`)
+      ])
+
+      if (rulesRes.ok) {
+        const rulesData = await rulesRes.json()
+        // Filter to rules that apply to this employee's role
+        const applicableRules = (rulesData.data || []).filter(
+          (rule: TipOutRule) => rule.fromRoleId === shift.employee.roleId && rule.isActive
+        )
+        setTipOutRules(applicableRules)
+      }
+
+      if (employeesRes.ok) {
+        const empData = await employeesRes.json()
+        // Filter out the current employee
+        const otherEmployees = (empData.employees || []).filter(
+          (emp: Employee) => emp.id !== shift.employee.id
+        )
+        setEmployees(otherEmployees)
+      }
+    } catch (err) {
+      console.error('Failed to fetch tip data:', err)
+    }
+  }
+
+  // Calculate tip-outs when tips are declared and rules are loaded
+  const calculateTipOuts = () => {
+    const grossTips = parseFloat(tipsDeclared) || 0
+    if (grossTips === 0 || tipOutRules.length === 0) {
+      setCalculatedTipOuts([])
+      return
+    }
+
+    const calculated = tipOutRules.map(rule => ({
+      ruleId: rule.id,
+      toRoleId: rule.toRoleId,
+      toRoleName: rule.toRole.name,
+      percentage: rule.percentage,
+      amount: Math.round(grossTips * (rule.percentage / 100) * 100) / 100
+    }))
+
+    setCalculatedTipOuts(calculated)
+  }
+
+  // Update tip-outs when tips declared changes
+  useEffect(() => {
+    calculateTipOuts()
+  }, [tipsDeclared, tipOutRules])
+
+  // Calculate net tips (after tip-outs and custom shares)
+  const totalTipOuts = calculatedTipOuts.reduce((sum, t) => sum + t.amount, 0)
+  const totalCustomShares = customTipShares.reduce((sum, t) => sum + t.amount, 0)
+  const grossTips = parseFloat(tipsDeclared) || 0
+  const netTips = grossTips - totalTipOuts - totalCustomShares
+
+  // Add custom tip share
+  const addCustomShare = () => {
+    if (!newShareEmployeeId || !newShareAmount) {
+      setError('Please select an employee and enter an amount')
+      return
+    }
+
+    const amount = parseFloat(newShareAmount)
+    if (isNaN(amount) || amount <= 0) {
+      setError('Please enter a valid amount')
+      return
+    }
+
+    if (amount > netTips + amount) { // Check if this would make net negative
+      setError('Cannot share more than available tips')
+      return
+    }
+
+    const employee = employees.find(e => e.id === newShareEmployeeId)
+    if (!employee) return
+
+    setCustomTipShares([
+      ...customTipShares,
+      {
+        toEmployeeId: employee.id,
+        toEmployeeName: `${employee.firstName} ${employee.lastName}`,
+        amount
+      }
+    ])
+    setNewShareEmployeeId('')
+    setNewShareAmount('')
+    setError(null)
+  }
+
+  // Remove custom tip share
+  const removeCustomShare = (index: number) => {
+    setCustomTipShares(customTipShares.filter((_, i) => i !== index))
+  }
+
+  // Handler to proceed to tip distribution step
+  const handleProceedToTips = async () => {
+    await fetchTipData()
+    setStep('tips')
+  }
+
+  // Handler for submitting blind count - fetches summary to reveal variance
+  const handleSubmitBlindCount = async () => {
+    if (actualCash === 0) {
+      setError('Please count your drawer first')
+      return
+    }
+    await fetchShiftSummary(true)
+  }
+
+  // Handler for manager to preview summary before counting
+  const handleViewSummaryFirst = async () => {
+    setViewedSummaryFirst(true)
+    await fetchShiftSummary(false)
+    setStep('summary')
   }
 
   const handleCountChange = (denom: number, value: string) => {
@@ -121,6 +319,22 @@ export function ShiftCloseoutModal({
     setIsLoading(true)
     setError(null)
     try {
+      // Prepare tip distribution data
+      const tipDistribution = {
+        grossTips: parseFloat(tipsDeclared) || 0,
+        tipOutTotal: totalTipOuts + totalCustomShares,
+        netTips,
+        roleTipOuts: calculatedTipOuts.map(t => ({
+          ruleId: t.ruleId,
+          toRoleId: t.toRoleId,
+          amount: t.amount
+        })),
+        customShares: customTipShares.map(s => ({
+          toEmployeeId: s.toEmployeeId,
+          amount: s.amount
+        }))
+      }
+
       const response = await fetch(`/api/shifts/${shift.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -129,6 +343,8 @@ export function ShiftCloseoutModal({
           actualCash,
           tipsDeclared: parseFloat(tipsDeclared) || 0,
           notes,
+          blindMode: !viewedSummaryFirst, // Track if closed in blind mode
+          tipDistribution, // Include tip distribution data
         }),
       })
 
@@ -202,13 +418,147 @@ export function ShiftCloseoutModal({
             </div>
           )}
 
-          {isLoading && step !== 'complete' ? (
-            <div className="text-center py-8 text-gray-500">Loading shift data...</div>
+          {isLoading ? (
+            <div className="text-center py-8 text-gray-500">
+              <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
+              Loading...
+            </div>
           ) : (
             <>
-              {/* Step 1: Summary */}
+              {/* Step 1: Blind Cash Count (default for all employees) */}
+              {step === 'count' && (
+                <div className="space-y-4">
+                  {/* Blind Mode Indicator */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                    <div className="flex-1">
+                      <span className="text-sm font-medium text-blue-800">Blind Count Mode</span>
+                      <p className="text-xs text-blue-600">Count your drawer before seeing the expected amount</p>
+                    </div>
+                    {canSeeExpectedFirst && !viewedSummaryFirst && (
+                      <button
+                        onClick={handleViewSummaryFirst}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        Manager: View Summary First
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-lg">Count Your Drawer</h3>
+                    <button
+                      className="text-sm text-blue-600 hover:underline"
+                      onClick={() => setUseManual(!useManual)}
+                    >
+                      {useManual ? 'Count by denomination' : 'Enter total manually'}
+                    </button>
+                  </div>
+
+                  {useManual ? (
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-2">
+                        Enter total cash in drawer
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-3 text-gray-500 text-xl">$</span>
+                        <input
+                          type="number"
+                          value={manualTotal}
+                          onChange={(e) => setManualTotal(e.target.value)}
+                          className="w-full pl-8 pr-4 py-3 text-2xl border rounded-lg"
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {DENOMINATIONS.map(({ label, value }) => (
+                        <div key={value} className="flex items-center gap-2">
+                          <span className="w-12 text-right font-medium">{label}</span>
+                          <span className="text-gray-400">×</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={counts[value] || ''}
+                            onChange={(e) => handleCountChange(value, e.target.value)}
+                            className="w-20 px-2 py-1 border rounded text-center"
+                            placeholder="0"
+                          />
+                          <span className="text-gray-500 text-sm">
+                            = {formatCurrency((counts[value] || 0) * value)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Running total - blind mode doesn't show expected */}
+                  <Card className="p-4 bg-gray-50">
+                    <div className="text-center">
+                      <div className="text-sm text-gray-500">Total Counted</div>
+                      <div className="text-3xl font-bold">{formatCurrency(actualCash)}</div>
+                    </div>
+                  </Card>
+
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-2">
+                      Tips to Declare
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-gray-500">$</span>
+                      <input
+                        type="number"
+                        value={tipsDeclared}
+                        onChange={(e) => setTipsDeclared(e.target.value)}
+                        className="w-full pl-8 pr-4 py-2 border rounded-lg"
+                        placeholder="0.00"
+                        step="0.01"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-gray-600 mb-2">
+                      Notes (optional)
+                    </label>
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      rows={2}
+                      placeholder="Any notes about the shift..."
+                    />
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    className="w-full"
+                    onClick={handleSubmitBlindCount}
+                    disabled={actualCash === 0 || isLoading}
+                  >
+                    {isLoading ? 'Processing...' : 'Submit Count & Reveal →'}
+                  </Button>
+                </div>
+              )}
+
+              {/* Manager View Summary First (optional step for managers) */}
               {step === 'summary' && summary && (
                 <div className="space-y-4">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    <span className="text-sm font-medium text-yellow-800">Manager Override - Non-Blind Mode</span>
+                  </div>
+
                   <h3 className="font-semibold text-lg">Shift Summary</h3>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -292,68 +642,44 @@ export function ShiftCloseoutModal({
                 </div>
               )}
 
-              {/* Step 2: Cash Count */}
-              {step === 'count' && (
+              {/* Step 2: Reveal (after blind count submission) */}
+              {step === 'reveal' && summary && (
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-lg">Count Your Drawer</h3>
-                    <button
-                      className="text-sm text-blue-600 hover:underline"
-                      onClick={() => setUseManual(!useManual)}
-                    >
-                      {useManual ? 'Count by denomination' : 'Enter total manually'}
-                    </button>
-                  </div>
+                  <h3 className="font-semibold text-lg">Drawer Count Results</h3>
 
-                  {useManual ? (
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-2">
-                        Enter total cash in drawer
-                      </label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-3 text-gray-500 text-xl">$</span>
-                        <input
-                          type="number"
-                          value={manualTotal}
-                          onChange={(e) => setManualTotal(e.target.value)}
-                          className="w-full pl-8 pr-4 py-3 text-2xl border rounded-lg"
-                          placeholder="0.00"
-                          step="0.01"
-                          min="0"
-                          autoFocus
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {DENOMINATIONS.map(({ label, value }) => (
-                        <div key={value} className="flex items-center gap-2">
-                          <span className="w-12 text-right font-medium">{label}</span>
-                          <span className="text-gray-400">×</span>
-                          <input
-                            type="number"
-                            min="0"
-                            value={counts[value] || ''}
-                            onChange={(e) => handleCountChange(value, e.target.value)}
-                            className="w-20 px-2 py-1 border rounded text-center"
-                            placeholder="0"
-                          />
-                          <span className="text-gray-500 text-sm">
-                            = {formatCurrency((counts[value] || 0) * value)}
-                          </span>
+                  <Card className={`p-4 ${variance === 0 ? 'bg-green-50 border-green-200' : variance > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
+                    <div className="text-center mb-4">
+                      {variance === 0 ? (
+                        <div className="text-green-600">
+                          <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <p className="font-bold text-lg">Drawer is Balanced!</p>
                         </div>
-                      ))}
+                      ) : variance > 0 ? (
+                        <div className="text-yellow-600">
+                          <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <p className="font-bold text-lg">Drawer is OVER by {formatCurrency(variance)}</p>
+                        </div>
+                      ) : (
+                        <div className="text-red-600">
+                          <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <p className="font-bold text-lg">Drawer is SHORT by {formatCurrency(Math.abs(variance))}</p>
+                        </div>
+                      )}
                     </div>
-                  )}
 
-                  <Card className={`p-4 ${variance === 0 ? 'bg-green-50' : variance > 0 ? 'bg-yellow-50' : 'bg-red-50'}`}>
-                    <div className="grid grid-cols-3 gap-4 text-center">
+                    <div className="grid grid-cols-3 gap-4 text-center py-2">
                       <div>
                         <div className="text-sm text-gray-500">Expected</div>
                         <div className="text-lg font-bold">{formatCurrency(expectedCash)}</div>
                       </div>
                       <div>
-                        <div className="text-sm text-gray-500">Counted</div>
+                        <div className="text-sm text-gray-500">Your Count</div>
                         <div className="text-lg font-bold">{formatCurrency(actualCash)}</div>
                       </div>
                       <div>
@@ -365,121 +691,212 @@ export function ShiftCloseoutModal({
                     </div>
                   </Card>
 
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-2">
-                      Tips to Declare
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2 text-gray-500">$</span>
-                      <input
-                        type="number"
-                        value={tipsDeclared}
-                        onChange={(e) => setTipsDeclared(e.target.value)}
-                        className="w-full pl-8 pr-4 py-2 border rounded-lg"
-                        placeholder="0.00"
-                        step="0.01"
-                        min="0"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-2">
-                      Notes (optional)
-                    </label>
-                    <textarea
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      rows={2}
-                      placeholder="Any notes about the shift..."
-                    />
-                  </div>
-
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => setStep('summary')}
-                    >
-                      ← Back
-                    </Button>
-                    <Button
-                      variant="primary"
-                      className="flex-1"
-                      onClick={() => setStep('confirm')}
-                      disabled={actualCash === 0}
-                    >
-                      Review & Close
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 3: Confirm */}
-              {step === 'confirm' && (
-                <div className="space-y-4">
-                  <h3 className="font-semibold text-lg">Confirm Closeout</h3>
-
-                  <Card className={`p-4 ${variance === 0 ? 'bg-green-50 border-green-200' : variance > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
-                    <div className="text-center mb-4">
-                      {variance === 0 ? (
-                        <div className="text-green-600">
-                          <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <p className="font-bold">Drawer is Balanced!</p>
-                        </div>
-                      ) : variance > 0 ? (
-                        <div className="text-yellow-600">
-                          <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <p className="font-bold">Drawer is OVER by {formatCurrency(variance)}</p>
-                        </div>
-                      ) : (
-                        <div className="text-red-600">
-                          <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <p className="font-bold">Drawer is SHORT by {formatCurrency(Math.abs(variance))}</p>
-                        </div>
-                      )}
-                    </div>
-
+                  {/* Shift Summary - now visible */}
+                  <Card className="p-4">
+                    <div className="text-sm font-medium mb-2">Shift Summary</div>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span>Expected Cash</span>
-                        <span className="font-medium">{formatCurrency(expectedCash)}</span>
+                        <span className="text-gray-600">Total Sales</span>
+                        <span className="font-medium">{formatCurrency(summary.totalSales)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Actual Count</span>
-                        <span className="font-medium">{formatCurrency(actualCash)}</span>
+                        <span className="text-gray-600">Cash Sales</span>
+                        <span className="font-medium">{formatCurrency(summary.cashSales)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Tips Declared</span>
+                        <span className="text-gray-600">Card Sales</span>
+                        <span className="font-medium">{formatCurrency(summary.cardSales)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Orders Completed</span>
+                        <span className="font-medium">{summary.orderCount}</span>
+                      </div>
+                      <div className="flex justify-between border-t pt-2">
+                        <span className="text-gray-600">Tips Declared</span>
                         <span className="font-medium">{formatCurrency(parseFloat(tipsDeclared) || 0)}</span>
                       </div>
                     </div>
                   </Card>
 
-                  <p className="text-sm text-gray-500 text-center">
-                    This action cannot be undone. Make sure your count is correct.
-                  </p>
-
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
                       className="flex-1"
-                      onClick={() => setStep('count')}
+                      onClick={() => {
+                        setSummary(null)
+                        setStep('count')
+                      }}
                     >
                       ← Recount
                     </Button>
                     <Button
                       variant="primary"
                       className="flex-1"
-                      onClick={handleCloseShift}
+                      onClick={handleProceedToTips}
                       disabled={isLoading}
+                    >
+                      {isLoading ? 'Loading...' : 'Continue to Tips →'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Tip Distribution */}
+              {step === 'tips' && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg">Tip Distribution</h3>
+
+                  {/* Gross Tips */}
+                  <Card className="p-4 bg-green-50">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-700">Gross Tips Collected</span>
+                      <span className="text-2xl font-bold text-green-600">
+                        {formatCurrency(grossTips)}
+                      </span>
+                    </div>
+                  </Card>
+
+                  {/* Automatic Tip-Outs */}
+                  {calculatedTipOuts.length > 0 && (
+                    <Card className="p-4">
+                      <h4 className="font-medium text-gray-900 mb-3">
+                        Automatic Tip-Outs (from rules)
+                      </h4>
+                      <div className="space-y-2">
+                        {calculatedTipOuts.map((tipOut, index) => (
+                          <div key={index} className="flex justify-between items-center py-2 border-b last:border-0">
+                            <div>
+                              <span className="font-medium">{tipOut.toRoleName}</span>
+                              <span className="text-sm text-gray-500 ml-2">({tipOut.percentage}%)</span>
+                            </div>
+                            <span className="text-red-600 font-medium">-{formatCurrency(tipOut.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </Card>
+                  )}
+
+                  {calculatedTipOuts.length === 0 && (
+                    <div className="text-sm text-gray-500 text-center py-2">
+                      No automatic tip-out rules configured for your role.
+                    </div>
+                  )}
+
+                  {/* Custom Tip Shares */}
+                  <Card className="p-4">
+                    <h4 className="font-medium text-gray-900 mb-3">
+                      Custom Tip Shares
+                    </h4>
+
+                    {/* Existing custom shares */}
+                    {customTipShares.length > 0 && (
+                      <div className="space-y-2 mb-4">
+                        {customTipShares.map((share, index) => (
+                          <div key={index} className="flex justify-between items-center py-2 border-b">
+                            <span className="font-medium">{share.toEmployeeName}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-red-600 font-medium">-{formatCurrency(share.amount)}</span>
+                              <button
+                                onClick={() => removeCustomShare(index)}
+                                className="text-gray-400 hover:text-red-600"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Add new custom share */}
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <label className="block text-xs text-gray-500 mb-1">Employee</label>
+                        <select
+                          value={newShareEmployeeId}
+                          onChange={(e) => setNewShareEmployeeId(e.target.value)}
+                          className="w-full px-3 py-2 border rounded-lg text-sm"
+                        >
+                          <option value="">Select employee...</option>
+                          {employees.map(emp => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.firstName} {emp.lastName} ({emp.role.name})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="w-28">
+                        <label className="block text-xs text-gray-500 mb-1">Amount</label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-2 text-gray-500">$</span>
+                          <input
+                            type="number"
+                            value={newShareAmount}
+                            onChange={(e) => setNewShareAmount(e.target.value)}
+                            className="w-full pl-6 pr-2 py-2 border rounded-lg text-sm"
+                            placeholder="0.00"
+                            step="0.01"
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        onClick={addCustomShare}
+                        className="px-3"
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </Card>
+
+                  {/* Net Tips Summary */}
+                  <Card className={`p-4 ${netTips >= 0 ? 'bg-blue-50' : 'bg-red-50'}`}>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Gross Tips</span>
+                        <span>{formatCurrency(grossTips)}</span>
+                      </div>
+                      {totalTipOuts > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Role Tip-Outs</span>
+                          <span className="text-red-600">-{formatCurrency(totalTipOuts)}</span>
+                        </div>
+                      )}
+                      {totalCustomShares > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Custom Shares</span>
+                          <span className="text-red-600">-{formatCurrency(totalCustomShares)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t pt-2">
+                        <span className="font-medium">Your Net Tips</span>
+                        <span className={`text-xl font-bold ${netTips >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                          {formatCurrency(netTips)}
+                        </span>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <p className="text-sm text-gray-500 text-center">
+                    Tip shares will be distributed to recipients. If a recipient is not on shift, their share will be banked.
+                  </p>
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setStep('reveal')}
+                    >
+                      ← Back
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={handleCloseShift}
+                      disabled={isLoading || netTips < 0}
                     >
                       {isLoading ? 'Closing...' : 'Close Shift'}
                     </Button>
