@@ -4,6 +4,89 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-01-28] Session 21
+
+### New Feature: Configurable Order Types System (Skill 101)
+
+Transformed hardcoded order types (dine_in, takeout, delivery, bar_tab) into a fully admin-configurable system supporting custom order types with required fields, workflow rules, and KDS display options.
+
+**Core Features:**
+
+1. **Admin-Configurable Order Types**
+   - Create custom order types (Drive Thru, Call-in, Curbside, etc.)
+   - Configure name, slug, color, and icon per type
+   - Set sort order for button display
+   - Toggle active/inactive to show/hide in POS
+   - System types (Table, Bar Tab, Takeout) are protected from deletion
+
+2. **Custom Field Collection**
+   - Define required and optional fields per order type
+   - Field types: text, textarea, phone, time, select
+   - Touch-friendly button grids for select fields
+   - Color fields display actual colors as button backgrounds
+   - Dynamic grid layouts (2-4 columns based on option count)
+
+3. **Workflow Rules**
+   - `requireTableSelection` - Must select table before sending
+   - `requireCustomerName` - Must have customer/tab name
+   - `requirePaymentBeforeSend` - Must pay before sending to kitchen
+   - Pre-send validation enforces all configured rules
+
+4. **Open Orders Display**
+   - Custom order types show correct badges (not "Dine In")
+   - Uses configured color and icon from database
+   - Displays custom field values (vehicle info, phone, etc.)
+
+**Default Order Types Configured:**
+
+| Type | Slug | Color | Required Fields |
+|------|------|-------|-----------------|
+| Table | `dine_in` | Blue | tableId |
+| Bar Tab | `bar_tab` | Purple | tabName |
+| Takeout | `takeout` | Green | - (payment required) |
+| Delivery | `delivery` | Green | address, phone |
+| Drive Thru | `drive_thru` | Cyan | customerName, vehicleType, vehicleColor |
+
+**Drive Thru Configuration:**
+- Customer name text field (required)
+- Vehicle type selection: Sedan, SUV, Pickup Truck, Van, Sports Car, Motorcycle, Other
+- Vehicle color selection: 12 colors displayed as actual colored buttons
+- All fields collected in modal before order starts
+
+**Files Created:**
+- `src/types/order-types.ts` - Type definitions, system type configs
+- `src/app/api/order-types/route.ts` - Order types CRUD API (GET, POST, PUT)
+- `src/app/api/order-types/[id]/route.ts` - Single order type operations
+- `src/app/(admin)/settings/order-types/page.tsx` - Admin management page
+- `src/components/orders/OrderTypeSelector.tsx` - POS order type buttons & field modal
+- `.claude/commands/order-types.md` - Comprehensive skill documentation
+
+**Files Modified:**
+- `prisma/schema.prisma` - Added OrderType model, updated Order with orderTypeId/customFields
+- `src/lib/validations.ts` - Added orderTypeId and customFields to order schema
+- `src/stores/order-store.ts` - Added orderTypeId and customFields to Order interface
+- `src/app/(pos)/orders/page.tsx` - Integrated OrderTypeSelector, added pre-send validation
+- `src/app/api/orders/route.ts` - Handle orderTypeId and customFields in order creation
+- `src/app/api/orders/open/route.ts` - Include orderTypeRef relation and customFields
+- `src/components/orders/OpenOrdersPanel.tsx` - Support custom order type display
+- `src/app/(admin)/settings/page.tsx` - Added Order Types to Quick Links
+
+**API Endpoints:**
+- `GET /api/order-types?locationId=xxx` - List active order types (POS)
+- `GET /api/order-types?locationId=xxx&includeInactive=true` - List all (Admin)
+- `POST /api/order-types` - Create new order type
+- `PUT /api/order-types` - Initialize system types for location
+- `PUT /api/order-types/[id]` - Update order type
+- `DELETE /api/order-types/[id]` - Delete order type (non-system only)
+
+**Bug Fixes:**
+- Fixed order type not being saved when starting order (missing orderTypeId)
+- Fixed table picker always setting 'dine_in' instead of selected order type
+- Fixed Open Orders panel showing "Dine In" for all custom order types
+- API now filters inactive order types by default for POS
+
+---
+
 ## [2026-01-28] Session 20
 
 ### Database: Multi-Tenancy locationId Implementation

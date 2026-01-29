@@ -130,26 +130,49 @@ export function SeatCourseHoldControls({
   // Only show controls for items not yet sent to kitchen, or allow fire/ready actions for sent items
   if (!sentToKitchen) {
     return (
-      <div className="mt-1 ml-[72px]">
-        {badges}
+      <div className="mt-1 ml-[52px]">
+        {/* Inline badges and quick actions */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {badges}
 
-        <button
-          onClick={() => setShowControls(!showControls)}
-          className="text-xs text-gray-500 hover:text-blue-600 mt-1"
-          disabled={isUpdating}
-        >
-          {showControls ? '▼ Hide controls' : '▶ Seat / Course / Hold'}
-        </button>
+          {/* Quick Hold/Fire buttons - always visible */}
+          {isHeld ? (
+            <button
+              onClick={handleFire}
+              className="px-2 py-0.5 text-[10px] rounded bg-emerald-500 text-white hover:bg-emerald-600 font-medium"
+              disabled={isUpdating}
+            >
+              Fire
+            </button>
+          ) : (
+            <button
+              onClick={handleHold}
+              className="px-2 py-0.5 text-[10px] rounded bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium"
+              disabled={isUpdating}
+            >
+              Hold
+            </button>
+          )}
+
+          {/* More options toggle */}
+          <button
+            onClick={() => setShowControls(!showControls)}
+            className="text-[10px] text-gray-400 hover:text-blue-600"
+            disabled={isUpdating}
+          >
+            {showControls ? '▼' : '▶'} More
+          </button>
+        </div>
 
         {showControls && (
-          <div className="mt-2 p-2 bg-gray-50 rounded-lg space-y-2">
+          <div className="mt-1.5 p-2 bg-gray-50/80 rounded-lg space-y-1.5 text-xs">
             {/* Seat Assignment */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 w-12">Seat:</span>
-              <div className="flex gap-1">
+              <span className="text-gray-500 w-10">Seat:</span>
+              <div className="flex gap-0.5">
                 <button
                   onClick={() => handleSeatChange(null)}
-                  className={`px-2 py-1 text-xs rounded ${!seatNumber ? 'bg-gray-300' : 'bg-gray-100 hover:bg-gray-200'}`}
+                  className={`px-1.5 py-0.5 rounded ${!seatNumber ? 'bg-gray-300' : 'bg-gray-100 hover:bg-gray-200'}`}
                   disabled={isUpdating}
                 >
                   -
@@ -158,7 +181,7 @@ export function SeatCourseHoldControls({
                   <button
                     key={seat}
                     onClick={() => handleSeatChange(seat)}
-                    className={`w-7 h-7 text-xs rounded ${
+                    className={`w-6 h-6 rounded ${
                       seatNumber === seat
                         ? 'bg-purple-500 text-white'
                         : 'bg-gray-100 hover:bg-purple-100'
@@ -173,11 +196,11 @@ export function SeatCourseHoldControls({
 
             {/* Course Assignment */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 w-12">Course:</span>
-              <div className="flex gap-1">
+              <span className="text-gray-500 w-10">Course:</span>
+              <div className="flex gap-0.5">
                 <button
                   onClick={() => handleCourseChange(null)}
-                  className={`px-2 py-1 text-xs rounded ${!courseNumber ? 'bg-gray-300' : 'bg-gray-100 hover:bg-gray-200'}`}
+                  className={`px-1.5 py-0.5 rounded ${!courseNumber ? 'bg-gray-300' : 'bg-gray-100 hover:bg-gray-200'}`}
                   disabled={isUpdating}
                 >
                   -
@@ -186,7 +209,7 @@ export function SeatCourseHoldControls({
                   <button
                     key={course}
                     onClick={() => handleCourseChange(course)}
-                    className={`w-7 h-7 text-xs rounded ${
+                    className={`w-6 h-6 rounded ${
                       courseNumber === course
                         ? 'bg-blue-500 text-white'
                         : 'bg-gray-100 hover:bg-blue-100'
@@ -199,36 +222,16 @@ export function SeatCourseHoldControls({
               </div>
             </div>
 
-            {/* Hold Control */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500 w-12">Hold:</span>
-              {isHeld ? (
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleFire}
-                    className="px-3 py-1 text-xs rounded bg-green-500 text-white hover:bg-green-600"
-                    disabled={isUpdating}
-                  >
-                    🔥 Fire Now
-                  </button>
-                  <button
-                    onClick={handleRelease}
-                    className="px-3 py-1 text-xs rounded bg-gray-200 hover:bg-gray-300"
-                    disabled={isUpdating}
-                  >
-                    Release
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={handleHold}
-                  className="px-3 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200"
-                  disabled={isUpdating}
-                >
-                  ⏸ Hold Item
-                </button>
-              )}
-            </div>
+            {/* Release button if held */}
+            {isHeld && (
+              <button
+                onClick={handleRelease}
+                className="px-2 py-0.5 rounded bg-gray-200 hover:bg-gray-300 text-gray-600"
+                disabled={isUpdating}
+              >
+                Release Hold
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -237,54 +240,54 @@ export function SeatCourseHoldControls({
 
   // For sent items, show badges and course firing controls
   return (
-    <div className="mt-1 ml-[72px]">
-      {badges}
+    <div className="mt-1 ml-[52px]">
+      <div className="flex items-center gap-2 flex-wrap">
+        {badges}
 
-      {/* Course controls for sent items */}
-      {courseNumber && courseStatus && courseStatus !== 'served' && (
-        <div className="mt-1 flex gap-1">
-          {courseStatus === 'pending' && !isHeld && (
-            <button
-              onClick={() => handleAction('fire_course')}
-              className="px-2 py-0.5 text-xs rounded bg-yellow-500 text-white hover:bg-yellow-600"
-              disabled={isUpdating}
-            >
-              🔥 Fire Course {courseNumber}
-            </button>
-          )}
-          {courseStatus === 'fired' && (
-            <button
-              onClick={() => handleAction('mark_ready')}
-              className="px-2 py-0.5 text-xs rounded bg-green-500 text-white hover:bg-green-600"
-              disabled={isUpdating}
-            >
-              ✓ Mark Ready
-            </button>
-          )}
-          {courseStatus === 'ready' && (
-            <button
-              onClick={() => handleAction('mark_served')}
-              className="px-2 py-0.5 text-xs rounded bg-blue-500 text-white hover:bg-blue-600"
-              disabled={isUpdating}
-            >
-              ✓ Served
-            </button>
-          )}
-        </div>
-      )}
+        {/* Course controls for sent items */}
+        {courseNumber && courseStatus && courseStatus !== 'served' && (
+          <>
+            {courseStatus === 'pending' && !isHeld && (
+              <button
+                onClick={() => handleAction('fire_course')}
+                className="px-2 py-0.5 text-[10px] rounded bg-amber-500 text-white hover:bg-amber-600 font-medium"
+                disabled={isUpdating}
+              >
+                Fire C{courseNumber}
+              </button>
+            )}
+            {courseStatus === 'fired' && (
+              <button
+                onClick={() => handleAction('mark_ready')}
+                className="px-2 py-0.5 text-[10px] rounded bg-emerald-500 text-white hover:bg-emerald-600 font-medium"
+                disabled={isUpdating}
+              >
+                Ready
+              </button>
+            )}
+            {courseStatus === 'ready' && (
+              <button
+                onClick={() => handleAction('mark_served')}
+                className="px-2 py-0.5 text-[10px] rounded bg-blue-500 text-white hover:bg-blue-600 font-medium"
+                disabled={isUpdating}
+              >
+                Served
+              </button>
+            )}
+          </>
+        )}
 
-      {/* Hold controls for sent items */}
-      {isHeld && (
-        <div className="mt-1">
+        {/* Hold controls for sent items */}
+        {isHeld && (
           <button
             onClick={handleFire}
-            className="px-2 py-0.5 text-xs rounded bg-green-500 text-white hover:bg-green-600"
+            className="px-2 py-0.5 text-[10px] rounded bg-emerald-500 text-white hover:bg-emerald-600 font-medium"
             disabled={isUpdating}
           >
-            🔥 Fire Now
+            Fire
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }
@@ -301,7 +304,7 @@ export function ItemBadges({
   courseStatus?: string
   isHeld?: boolean
 }) {
-  if (!seatNumber && !courseNumber && !isHeld) return null
+  if ((!seatNumber || seatNumber === 0) && (!courseNumber || courseNumber === 0) && !isHeld) return null
 
   const getCourseStatusColor = () => {
     switch (courseStatus) {
@@ -314,12 +317,12 @@ export function ItemBadges({
 
   return (
     <span className="inline-flex items-center gap-1 ml-2">
-      {seatNumber && (
+      {seatNumber != null && seatNumber > 0 && (
         <span className="px-1 py-0.5 text-[10px] rounded bg-purple-100 text-purple-700 font-medium">
           S{seatNumber}
         </span>
       )}
-      {courseNumber && (
+      {courseNumber != null && courseNumber > 0 && (
         <span className={`px-1 py-0.5 text-[10px] rounded font-medium ${getCourseStatusColor()}`}>
           C{courseNumber}
         </span>

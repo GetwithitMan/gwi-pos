@@ -33,6 +33,96 @@ async function main() {
   })
   console.log('Created location:', location.name)
 
+  // Create System Order Types
+  const orderTypes = [
+    {
+      id: 'order-type-dine-in',
+      locationId: location.id,
+      name: 'Dine In',
+      slug: 'dine_in',
+      icon: 'table',
+      color: '#3B82F6',
+      sortOrder: 0,
+      isActive: true,
+      isSystem: true,
+      requiredFields: { tableId: true },
+      optionalFields: {},
+      fieldDefinitions: {},
+      workflowRules: { requireTableSelection: true, allowSplitCheck: true, showOnKDS: true },
+      kdsConfig: { badgeText: 'Table {tableNumber}', badgeColor: '#3B82F6' },
+      printConfig: { headerTemplate: 'TABLE {tableNumber}' },
+    },
+    {
+      id: 'order-type-bar-tab',
+      locationId: location.id,
+      name: 'Bar Tab',
+      slug: 'bar_tab',
+      icon: 'wine',
+      color: '#8B5CF6',
+      sortOrder: 1,
+      isActive: true,
+      isSystem: true,
+      requiredFields: { tabName: true },
+      optionalFields: {},
+      fieldDefinitions: {
+        tabName: { label: 'Tab Name', type: 'text', placeholder: 'Customer name or card name', required: true },
+      },
+      workflowRules: { requireCustomerName: true, allowSplitCheck: true, showOnKDS: true },
+      kdsConfig: { badgeText: '{tabName}', badgeColor: '#8B5CF6' },
+      printConfig: { headerTemplate: 'TAB: {tabName}' },
+    },
+    {
+      id: 'order-type-takeout',
+      locationId: location.id,
+      name: 'Takeout',
+      slug: 'takeout',
+      icon: 'bag',
+      color: '#10B981',
+      sortOrder: 2,
+      isActive: true,
+      isSystem: true,
+      requiredFields: {},
+      optionalFields: { customerName: true, phone: true },
+      fieldDefinitions: {
+        customerName: { label: 'Name', type: 'text', placeholder: 'Customer name' },
+        phone: { label: 'Phone', type: 'phone', placeholder: '555-123-4567' },
+      },
+      workflowRules: { requirePaymentBeforeSend: true, allowSplitCheck: false, showOnKDS: true },
+      kdsConfig: { badgeText: 'TAKEOUT', badgeColor: '#10B981', showPhone: true },
+      printConfig: { headerTemplate: '*** TAKEOUT ***', showCustomFields: ['customerName', 'phone'] },
+    },
+    {
+      id: 'order-type-delivery',
+      locationId: location.id,
+      name: 'Delivery',
+      slug: 'delivery',
+      icon: 'truck',
+      color: '#F59E0B',
+      sortOrder: 3,
+      isActive: true,
+      isSystem: true,
+      requiredFields: { customerName: true, phone: true, address: true },
+      optionalFields: {},
+      fieldDefinitions: {
+        customerName: { label: 'Name', type: 'text', placeholder: 'Customer name', required: true },
+        phone: { label: 'Phone', type: 'phone', placeholder: '555-123-4567', required: true },
+        address: { label: 'Delivery Address', type: 'textarea', placeholder: '123 Main St, City, State ZIP', required: true },
+      },
+      workflowRules: { requirePaymentBeforeSend: true, allowSplitCheck: false, showOnKDS: true },
+      kdsConfig: { badgeText: 'DELIVERY', badgeColor: '#F59E0B', showPhone: true, showAddress: true },
+      printConfig: { headerTemplate: '*** DELIVERY ***', showCustomFields: ['customerName', 'phone', 'address'] },
+    },
+  ]
+
+  for (const orderType of orderTypes) {
+    await prisma.orderType.upsert({
+      where: { id: orderType.id },
+      update: {},
+      create: orderType,
+    })
+  }
+  console.log('Created order types:', orderTypes.length)
+
   // Create Roles with new permission system
   // Manager gets full access to most features
   const managerPermissions = [

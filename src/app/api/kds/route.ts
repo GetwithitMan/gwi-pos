@@ -28,11 +28,11 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Get open orders that have been sent to kitchen
+    // Get orders that have been sent to kitchen (including paid orders with incomplete items)
     const orders = await db.order.findMany({
       where: {
         locationId,
-        status: { in: ['open', 'in_progress'] },
+        status: { in: ['open', 'in_progress', 'paid'] },
         // Only orders with items (sent to kitchen)
         items: { some: {} },
       },
@@ -71,6 +71,15 @@ export async function GET(request: NextRequest) {
                 id: true,
                 name: true,
                 preModifier: true,
+                depth: true,
+              },
+            },
+            ingredientModifications: {
+              select: {
+                id: true,
+                ingredientName: true,
+                modificationType: true,
+                swappedToModifierName: true,
               },
             },
           },
@@ -157,6 +166,13 @@ export async function GET(request: NextRequest) {
             name: mod.preModifier
               ? `${mod.preModifier.charAt(0).toUpperCase() + mod.preModifier.slice(1)} ${mod.name}`
               : mod.name,
+            depth: mod.depth || 0,
+          })),
+          ingredientModifications: item.ingredientModifications.map(ing => ({
+            id: ing.id,
+            ingredientName: ing.ingredientName,
+            modificationType: ing.modificationType as 'no' | 'lite' | 'on_side' | 'extra' | 'swap',
+            swappedToModifierName: ing.swappedToModifierName,
           })),
         })),
       }

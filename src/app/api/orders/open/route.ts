@@ -42,6 +42,9 @@ export async function GET(request: NextRequest) {
           customer: {
             select: { id: true, firstName: true, lastName: true },
           },
+          orderTypeRef: {
+            select: { id: true, name: true, color: true, icon: true },
+          },
           items: {
             include: {
               modifiers: true,
@@ -78,6 +81,9 @@ export async function GET(request: NextRequest) {
           },
           customer: {
             select: { id: true, firstName: true, lastName: true },
+          },
+          orderTypeRef: {
+            select: { id: true, name: true, color: true, icon: true },
           },
           items: {
             include: {
@@ -185,6 +191,12 @@ export async function GET(request: NextRequest) {
         parentOrderId: order.parentOrderId,
         splitIndex: order.splitIndex,
         orderType: order.orderType,
+        orderTypeConfig: order.orderTypeRef ? {
+          name: order.orderTypeRef.name,
+          color: order.orderTypeRef.color,
+          icon: order.orderTypeRef.icon,
+        } : null,
+        customFields: order.customFields as Record<string, string> | null,
         tabName: order.tabName,
         tableId: order.tableId,
         table: order.table ? {

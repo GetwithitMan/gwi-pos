@@ -44,9 +44,23 @@ const orderItemModifierSchema = z.object({
   name: z.string(),
   price: nonNegativeNumber,
   preModifier: z.string().optional(),
+  depth: z.number().int().nonnegative().optional(), // Modifier hierarchy depth: 0=top, 1=child, 2=grandchild
   // Liquor Builder spirit selection fields
   spiritTier: z.string().optional(),
   linkedBottleProductId: z.string().optional(),
+})
+
+// Ingredient modification schema (No, Lite, On Side, Extra, Swap)
+const ingredientModificationSchema = z.object({
+  ingredientId: z.string(),
+  name: z.string(),
+  modificationType: z.enum(['no', 'lite', 'on_side', 'extra', 'swap']),
+  priceAdjustment: nonNegativeNumber.default(0),
+  swappedTo: z.object({
+    modifierId: z.string(),
+    name: z.string(),
+    price: nonNegativeNumber,
+  }).optional(),
 })
 
 const orderItemSchema = z.object({
@@ -55,6 +69,7 @@ const orderItemSchema = z.object({
   price: nonNegativeNumber,
   quantity: z.number().int().positive(),
   modifiers: z.array(orderItemModifierSchema).default([]),
+  ingredientModifications: z.array(ingredientModificationSchema).optional(),
   specialNotes: z.string().max(500).optional(),
   seatNumber: z.number().int().positive().optional(),
   courseNumber: z.number().int().positive().optional(),
@@ -63,12 +78,14 @@ const orderItemSchema = z.object({
 export const createOrderSchema = z.object({
   employeeId: idSchema,
   locationId: idSchema,
-  orderType: orderTypeSchema,
+  orderType: z.string(), // Allow custom order type slugs (not just enum)
+  orderTypeId: idSchema.optional(), // Reference to OrderType record
   tableId: idSchema.optional(),
   tabName: z.string().max(50).optional(),
   guestCount: z.number().int().positive().default(1),
   items: z.array(orderItemSchema).min(1, 'Order must have at least one item'),
   notes: z.string().max(500).optional(),
+  customFields: z.record(z.string(), z.string()).optional(), // Custom fields for configurable order types
 })
 
 export const updateOrderSchema = z.object({

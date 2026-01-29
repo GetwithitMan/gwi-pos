@@ -862,6 +862,15 @@ export default function SettingsPage() {
           <h2 className="text-lg font-semibold mb-4">Quick Links</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Link
+              href="/settings/order-types"
+              className="p-4 border rounded-lg hover:bg-gray-50 text-center"
+            >
+              <svg className="w-6 h-6 mx-auto mb-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              </svg>
+              <span className="text-sm font-medium">Order Types</span>
+            </Link>
+            <Link
               href="/settings/tip-outs"
               className="p-4 border rounded-lg hover:bg-gray-50 text-center"
             >

@@ -11,7 +11,13 @@ interface OpenOrder {
   orderNumber: number
   displayNumber?: string  // "30-1" for split tickets, "30" for regular
   isSplitTicket?: boolean
-  orderType: 'dine_in' | 'takeout' | 'delivery' | 'bar_tab'
+  orderType: string  // Allow custom order types (drive_thru, call_in, etc.)
+  orderTypeConfig?: {  // Custom order type configuration
+    name: string
+    color?: string
+    icon?: string
+  } | null
+  customFields?: Record<string, string> | null  // Custom field values (name, vehicle, etc.)
   tabName: string | null
   tableId: string | null
   table?: {
@@ -90,6 +96,37 @@ const ORDER_TYPE_CONFIG: Record<string, { icon: string; label: string; color: st
   takeout: { icon: '📦', label: 'Takeout', color: 'bg-orange-100 text-orange-800' },
   delivery: { icon: '🚗', label: 'Delivery', color: 'bg-green-100 text-green-800' },
   bar_tab: { icon: '🍺', label: 'Bar Tab', color: 'bg-purple-100 text-purple-800' },
+  drive_thru: { icon: '🚗', label: 'Drive Thru', color: 'bg-cyan-100 text-cyan-800' },
+  call_in: { icon: '📞', label: 'Call-in', color: 'bg-teal-100 text-teal-800' },
+}
+
+// Get order type display config, supporting custom order types
+function getOrderTypeDisplay(order: OpenOrder): { icon: string; label: string; color: string } {
+  // First check if we have a custom order type config from the database
+  if (order.orderTypeConfig) {
+    // Map icon names to emojis for custom types
+    const iconMap: Record<string, string> = {
+      table: '🍽️',
+      wine: '🍷',
+      bag: '📦',
+      truck: '🚚',
+      phone: '📞',
+      car: '🚗',
+    }
+    const icon = order.orderTypeConfig.icon ? (iconMap[order.orderTypeConfig.icon] || '📋') : '📋'
+
+    // Generate Tailwind color class from hex color
+    const color = order.orderTypeConfig.color || '#6B7280'
+
+    return {
+      icon,
+      label: order.orderTypeConfig.name,
+      color: 'bg-gray-100 text-gray-800', // Default, actual color applied via style
+    }
+  }
+
+  // Fall back to built-in config
+  return ORDER_TYPE_CONFIG[order.orderType] || { icon: '📋', label: order.orderType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), color: 'bg-gray-100 text-gray-800' }
 }
 
 export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onNewTab, refreshTrigger, onViewReceipt }: OpenOrdersPanelProps) {
@@ -345,7 +382,7 @@ export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onNewTa
           </div>
         ) : (
           filteredOrders.map(order => {
-            const config = ORDER_TYPE_CONFIG[order.orderType] || ORDER_TYPE_CONFIG.dine_in
+            const config = getOrderTypeDisplay(order)
             const displayName = getOrderDisplayName(order)
             const hasWaitlist = order.isOnWaitlist && order.waitlist && order.waitlist.length > 0
             const hasEntertainment = order.hasActiveEntertainment && order.entertainment && order.entertainment.length > 0
