@@ -41,6 +41,8 @@ export async function GET(
       minSelections: modifierGroup.minSelections,
       maxSelections: modifierGroup.maxSelections,
       isRequired: modifierGroup.isRequired,
+      allowStacking: modifierGroup.allowStacking,
+      hasOnlineOverride: modifierGroup.hasOnlineOverride,
       sortOrder: modifierGroup.sortOrder,
       modifiers: modifierGroup.modifiers.map(mod => ({
         id: mod.id,
@@ -54,6 +56,8 @@ export async function GET(
         sortOrder: mod.sortOrder,
         isDefault: mod.isDefault,
         isActive: mod.isActive,
+        showOnPOS: mod.showOnPOS,
+        showOnline: mod.showOnline,
         childModifierGroupId: mod.childModifierGroupId,
         commissionType: mod.commissionType,
         commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
@@ -80,7 +84,7 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, modifiers } = body
+    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, modifiers } = body
 
     // Update modifier group
     const modifierGroup = await db.modifierGroup.update({
@@ -92,6 +96,8 @@ export async function PUT(
         ...(minSelections !== undefined && { minSelections }),
         ...(maxSelections !== undefined && { maxSelections }),
         ...(isRequired !== undefined && { isRequired }),
+        ...(allowStacking !== undefined && { allowStacking }),
+        ...(hasOnlineOverride !== undefined && { hasOnlineOverride }),
       }
     })
 
@@ -125,6 +131,8 @@ export async function PUT(
           extraUpsellPrice?: number | null
           isDefault?: boolean
           isActive?: boolean
+          showOnPOS?: boolean
+          showOnline?: boolean
           childModifierGroupId?: string | null
           commissionType?: string | null
           commissionValue?: number | null
@@ -146,6 +154,8 @@ export async function PUT(
               commissionValue: mod.commissionValue ?? null,
               isDefault: mod.isDefault ?? false,
               isActive: mod.isActive ?? true,
+              showOnPOS: mod.showOnPOS ?? true,
+              showOnline: mod.showOnline ?? true,
               sortOrder: i,
             }
           })
@@ -166,6 +176,8 @@ export async function PUT(
               commissionValue: mod.commissionValue ?? null,
               isDefault: mod.isDefault ?? false,
               isActive: mod.isActive ?? true,
+              showOnPOS: mod.showOnPOS ?? true,
+              showOnline: mod.showOnline ?? true,
               sortOrder: i,
             }
           })
@@ -191,6 +203,8 @@ export async function PUT(
       minSelections: updated!.minSelections,
       maxSelections: updated!.maxSelections,
       isRequired: updated!.isRequired,
+      allowStacking: updated!.allowStacking,
+      hasOnlineOverride: updated!.hasOnlineOverride,
       modifiers: updated!.modifiers.map(mod => ({
         id: mod.id,
         name: mod.name,
@@ -204,6 +218,8 @@ export async function PUT(
         commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
         isDefault: mod.isDefault,
         isActive: mod.isActive,
+        showOnPOS: mod.showOnPOS,
+        showOnline: mod.showOnline,
       }))
     })
   } catch (error) {

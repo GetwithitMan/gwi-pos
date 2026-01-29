@@ -21,6 +21,7 @@ export async function GET(
         items: {
           include: {
             modifiers: true,
+            ingredientModifications: true,
           },
         },
         payments: true,
@@ -65,8 +66,18 @@ export async function GET(
           name: mod.name,
           price: Number(mod.price),
           preModifier: mod.preModifier,
+          depth: mod.depth || 0,
           spiritTier: mod.spiritTier,
           linkedBottleProductId: mod.linkedBottleProductId,
+        })),
+        ingredientModifications: item.ingredientModifications.map(ing => ({
+          id: ing.id,
+          ingredientId: ing.ingredientId,
+          ingredientName: ing.ingredientName,
+          modificationType: ing.modificationType,
+          priceAdjustment: Number(ing.priceAdjustment),
+          swappedToModifierId: ing.swappedToModifierId,
+          swappedToModifierName: ing.swappedToModifierName,
         })),
       })),
       subtotal: Number(order.subtotal),
@@ -114,9 +125,21 @@ export async function PUT(
           name: string
           price: number
           preModifier?: string
+          depth?: number
           // Spirit selection fields (Liquor Builder)
           spiritTier?: string
           linkedBottleProductId?: string
+        }[]
+        ingredientModifications?: {
+          ingredientId: string
+          name: string
+          modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
+          priceAdjustment: number
+          swappedTo?: {
+            modifierId: string
+            name: string
+            price: number
+          }
         }[]
         specialNotes?: string
       }[]
@@ -179,8 +202,15 @@ export async function PUT(
         })
       }
 
-      // Delete existing items
+      // Delete existing items and their related records
       await db.orderItemModifier.deleteMany({
+        where: {
+          orderItem: {
+            orderId: id,
+          },
+        },
+      })
+      await db.orderItemIngredient.deleteMany({
         where: {
           orderItem: {
             orderId: id,
@@ -202,7 +232,8 @@ export async function PUT(
       const orderItems = items.map(item => {
         const itemTotal = item.price * item.quantity
         const modifiersTotal = item.modifiers.reduce((sum, mod) => sum + mod.price, 0) * item.quantity
-        subtotal += itemTotal + modifiersTotal
+        const ingredientModTotal = (item.ingredientModifications || []).reduce((sum, ing) => sum + (ing.priceAdjustment || 0), 0) * item.quantity
+        subtotal += itemTotal + modifiersTotal + ingredientModTotal
 
         return {
           locationId: existingOrder.locationId,
@@ -210,7 +241,7 @@ export async function PUT(
           name: item.name,
           price: item.price,
           quantity: item.quantity,
-          itemTotal: itemTotal + modifiersTotal,
+          itemTotal: itemTotal + modifiersTotal + ingredientModTotal,
           specialNotes: item.specialNotes || null,
           modifiers: {
             create: item.modifiers.map(mod => ({
@@ -221,11 +252,25 @@ export async function PUT(
               price: mod.price,
               quantity: 1,
               preModifier: mod.preModifier || null,
+              depth: mod.depth || 0, // Modifier hierarchy depth
               // Spirit selection fields (Liquor Builder)
               spiritTier: mod.spiritTier || null,
               linkedBottleProductId: mod.linkedBottleProductId || null,
             })),
           },
+          ingredientModifications: item.ingredientModifications && item.ingredientModifications.length > 0
+            ? {
+                create: item.ingredientModifications.map(ing => ({
+                  locationId: existingOrder.locationId,
+                  ingredientId: ing.ingredientId,
+                  ingredientName: ing.name,
+                  modificationType: ing.modificationType,
+                  priceAdjustment: ing.priceAdjustment || 0,
+                  swappedToModifierId: ing.swappedTo?.modifierId || null,
+                  swappedToModifierName: ing.swappedTo?.name || null,
+                })),
+              }
+            : undefined,
         }
       })
 
@@ -257,6 +302,7 @@ export async function PUT(
           items: {
             include: {
               modifiers: true,
+              ingredientModifications: true,
               menuItem: {
                 select: { id: true, itemType: true },
               },
@@ -303,6 +349,15 @@ export async function PUT(
             price: Number(mod.price),
             preModifier: mod.preModifier,
           })),
+          ingredientModifications: item.ingredientModifications.map(ing => ({
+            id: ing.id,
+            ingredientId: ing.ingredientId,
+            ingredientName: ing.ingredientName,
+            modificationType: ing.modificationType,
+            priceAdjustment: Number(ing.priceAdjustment),
+            swappedToModifierId: ing.swappedToModifierId,
+            swappedToModifierName: ing.swappedToModifierName,
+          })),
         })),
         subtotal: Number(updatedOrder.subtotal),
         taxTotal: Number(updatedOrder.taxTotal),
@@ -336,6 +391,7 @@ export async function PUT(
         items: {
           include: {
             modifiers: true,
+            ingredientModifications: true,
           },
         },
       },

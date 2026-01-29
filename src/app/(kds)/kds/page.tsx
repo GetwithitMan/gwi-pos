@@ -4,6 +4,13 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 
+interface IngredientMod {
+  id: string
+  ingredientName: string
+  modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
+  swappedToModifierName?: string | null
+}
+
 interface KDSItem {
   id: string
   name: string
@@ -15,7 +22,8 @@ interface KDSItem {
   resendCount: number
   lastResentAt: string | null
   resendNote: string | null
-  modifiers: { id: string; name: string }[]
+  modifiers: { id: string; name: string; depth?: number }[]
+  ingredientModifications: IngredientMod[]
 }
 
 interface KDSOrder {
@@ -89,7 +97,7 @@ function KDSContent() {
   // Redirect if not authenticated
   useEffect(() => {
     if (!isAuthenticated) {
-      router.push('/login')
+      router.push('/login?redirect=/kds')
     }
   }, [isAuthenticated, router])
 
@@ -421,17 +429,55 @@ function KDSContent() {
                               </div>
                             )}
 
-                            {/* Modifiers */}
-                            {item.modifiers.length > 0 && (
+                            {/* Ingredient Modifications */}
+                            {item.ingredientModifications && item.ingredientModifications.length > 0 && (
                               <div className="mt-1 space-y-0.5">
-                                {item.modifiers.map(mod => (
+                                {item.ingredientModifications.map(ing => (
                                   <div
-                                    key={mod.id}
-                                    className={`text-sm pl-4 ${item.isCompleted ? 'text-gray-600' : 'text-yellow-400'}`}
+                                    key={ing.id}
+                                    className={`text-sm pl-4 font-semibold ${
+                                      item.isCompleted
+                                        ? 'text-gray-600'
+                                        : ing.modificationType === 'no'
+                                          ? 'text-red-400'
+                                          : ing.modificationType === 'swap'
+                                            ? 'text-purple-400'
+                                            : ing.modificationType === 'extra'
+                                              ? 'text-green-400'
+                                              : 'text-cyan-400'
+                                    }`}
                                   >
-                                    • {mod.name}
+                                    {ing.modificationType === 'no' && `❌ NO ${ing.ingredientName}`}
+                                    {ing.modificationType === 'lite' && `⬇ LITE ${ing.ingredientName}`}
+                                    {ing.modificationType === 'on_side' && `📦 SIDE ${ing.ingredientName}`}
+                                    {ing.modificationType === 'extra' && `⬆ EXTRA ${ing.ingredientName}`}
+                                    {ing.modificationType === 'swap' && `🔄 SWAP ${ing.ingredientName} → ${ing.swappedToModifierName}`}
                                   </div>
                                 ))}
+                              </div>
+                            )}
+
+                            {/* Modifiers with hierarchy dashes */}
+                            {item.modifiers.length > 0 && (
+                              <div className="mt-1 space-y-0.5">
+                                {item.modifiers.map(mod => {
+                                  const depth = mod.depth || 0
+                                  const prefix = depth > 0 ? '-'.repeat(depth) + ' ' : '• '
+                                  return (
+                                    <div
+                                      key={mod.id}
+                                      className={`text-sm pl-4 ${
+                                        item.isCompleted
+                                          ? 'text-gray-600'
+                                          : depth === 0
+                                            ? 'text-yellow-400'
+                                            : 'text-yellow-300'
+                                      }`}
+                                    >
+                                      {prefix}{mod.name}
+                                    </div>
+                                  )
+                                })}
                               </div>
                             )}
 

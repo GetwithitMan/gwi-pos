@@ -10,6 +10,15 @@ interface OrderItemModifier {
   commissionAmount?: number  // Commission earned on this modifier
 }
 
+// Ingredient modification types
+interface IngredientModification {
+  ingredientId: string
+  name: string
+  modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
+  priceAdjustment: number
+  swappedTo?: { modifierId: string; name: string; price: number }
+}
+
 interface OrderItem {
   id: string
   menuItemId: string
@@ -17,6 +26,7 @@ interface OrderItem {
   price: number
   quantity: number
   modifiers: OrderItemModifier[]
+  ingredientModifications?: IngredientModification[]  // "No onion", "Extra bacon", etc.
   specialNotes?: string
   seatNumber?: number
   courseNumber?: number
@@ -38,7 +48,8 @@ interface OrderItem {
 interface Order {
   id?: string
   orderNumber?: number  // For display purposes
-  orderType: 'dine_in' | 'takeout' | 'delivery' | 'bar_tab'
+  orderType: 'dine_in' | 'takeout' | 'delivery' | 'bar_tab' | string  // Allow custom order types
+  orderTypeId?: string  // Reference to OrderType record
   tableId?: string
   tableName?: string
   tabName?: string
@@ -52,6 +63,7 @@ interface Order {
   notes?: string
   primaryPaymentMethod?: 'cash' | 'card'
   commissionTotal: number  // Total commission for the order
+  customFields?: Record<string, string>  // Custom fields for configurable order types
 }
 
 interface LoadedOrderData {
@@ -90,6 +102,16 @@ interface LoadedOrderData {
       name: string
       price: number
       preModifier?: string | null
+      depth?: number
+    }[]
+    ingredientModifications?: {
+      id: string
+      ingredientId: string
+      ingredientName: string
+      modificationType: string
+      priceAdjustment: number
+      swappedToModifierId?: string | null
+      swappedToModifierName?: string | null
     }[]
   }[]
   subtotal: number
@@ -105,7 +127,8 @@ interface OrderState {
   orderHistory: Order[]
 
   // Actions
-  startOrder: (orderType: Order['orderType'], options?: { tableId?: string; tableName?: string; tabName?: string; guestCount?: number }) => void
+  startOrder: (orderType: Order['orderType'], options?: { tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
+  updateOrderType: (orderType: Order['orderType'], options?: { tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
   loadOrder: (orderData: LoadedOrderData) => void
   addItem: (item: Omit<OrderItem, 'id'>) => void
   updateItem: (itemId: string, updates: Partial<OrderItem>) => void
@@ -134,6 +157,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({
       currentOrder: {
         orderType,
+        orderTypeId: options.orderTypeId,
         tableId: options.tableId,
         tableName: options.tableName,
         tabName: options.tabName,
@@ -144,6 +168,30 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         taxTotal: 0,
         total: 0,
         commissionTotal: 0,
+        customFields: options.customFields,
+      },
+    })
+  },
+
+  updateOrderType: (orderType, options = {}) => {
+    const { currentOrder } = get()
+    if (!currentOrder) {
+      // No existing order, just start a new one
+      get().startOrder(orderType, options)
+      return
+    }
+
+    // Update order type while preserving items
+    set({
+      currentOrder: {
+        ...currentOrder,
+        orderType,
+        orderTypeId: options.orderTypeId ?? currentOrder.orderTypeId,
+        tableId: options.tableId ?? currentOrder.tableId,
+        tableName: options.tableName ?? currentOrder.tableName,
+        tabName: options.tabName ?? currentOrder.tabName,
+        guestCount: options.guestCount ?? currentOrder.guestCount,
+        customFields: options.customFields ?? currentOrder.customFields,
       },
     })
   },
@@ -176,7 +224,19 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         name: mod.name,
         price: mod.price,
         preModifier: mod.preModifier || undefined,
-        depth: 0,
+        depth: mod.depth || 0,
+      })),
+      // Ingredient modifications (No, Lite, On Side, Extra, Swap)
+      ingredientModifications: item.ingredientModifications?.map(ing => ({
+        ingredientId: ing.ingredientId,
+        name: ing.ingredientName,
+        modificationType: ing.modificationType as 'no' | 'lite' | 'on_side' | 'extra' | 'swap',
+        priceAdjustment: ing.priceAdjustment,
+        swappedTo: ing.swappedToModifierId ? {
+          modifierId: ing.swappedToModifierId,
+          name: ing.swappedToModifierName || '',
+          price: 0, // Price already included in priceAdjustment
+        } : undefined,
       })),
     }))
 
@@ -318,7 +378,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     currentOrder.items.forEach(item => {
       const itemPrice = item.price * item.quantity
       const modifiersPrice = item.modifiers.reduce((modSum, mod) => modSum + mod.price, 0) * item.quantity
-      subtotal += itemPrice + modifiersPrice
+      const ingredientModsPrice = (item.ingredientModifications || []).reduce((sum, ing) => sum + (ing.priceAdjustment || 0), 0) * item.quantity
+      subtotal += itemPrice + modifiersPrice + ingredientModsPrice
 
       // Calculate commission for item
       const itemCommission = (item.commissionAmount || 0) * item.quantity

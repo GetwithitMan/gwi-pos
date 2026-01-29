@@ -74,6 +74,7 @@ export interface ModifierGroup {
   minSelections: number
   maxSelections: number
   isRequired: boolean
+  allowStacking?: boolean  // Allow selecting the same modifier multiple times (e.g., 2x Fries for 2 side choices)
   modifiers: Modifier[]
   // Modifier types for filtering/coloring
   modifierTypes?: string[]  // e.g., ['liquor'], ['food', 'combo'], etc.

@@ -67,6 +67,36 @@ interface ModifierGroup {
   modifiers: { id: string; name: string; price: number }[]
 }
 
+interface IngredientLibraryItem {
+  id: string
+  name: string
+  category: string | null
+  allowNo: boolean
+  allowLite: boolean
+  allowOnSide: boolean
+  allowExtra: boolean
+  extraPrice: number
+  allowSwap: boolean
+  swapModifierGroupId: string | null
+  swapUpcharge: number
+}
+
+interface MenuItemIngredient {
+  id: string
+  ingredientId: string
+  name: string
+  category: string | null
+  isIncluded: boolean
+  sortOrder: number
+  extraPrice: number
+  allowNo: boolean
+  allowLite: boolean
+  allowOnSide: boolean
+  allowExtra: boolean
+  allowSwap: boolean
+  swapUpcharge: number
+}
+
 // Modifier type definitions for filtering
 const MODIFIER_TYPES = [
   { value: 'universal', label: 'Universal', color: '#6b7280' },
@@ -123,6 +153,7 @@ export default function MenuManagementPage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [items, setItems] = useState<MenuItem[]>([])
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
+  const [ingredientsLibrary, setIngredientsLibrary] = useState<IngredientLibraryItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
@@ -137,7 +168,8 @@ export default function MenuManagementPage() {
       const timestamp = Date.now()
       console.log('[Menu] Loading menu data...', timestamp)
 
-      const [menuResponse, modifiersResponse] = await Promise.all([
+      const locationId = employee?.location?.id
+      const [menuResponse, modifiersResponse, ingredientsResponse] = await Promise.all([
         fetch(`/api/menu?_t=${timestamp}`, {
           cache: 'no-store',
           headers: {
@@ -145,7 +177,8 @@ export default function MenuManagementPage() {
             'Pragma': 'no-cache',
           }
         }),
-        fetch('/api/menu/modifiers')
+        fetch('/api/menu/modifiers'),
+        locationId ? fetch(`/api/ingredients?locationId=${locationId}`) : Promise.resolve(null)
       ])
 
       if (menuResponse.ok) {
@@ -167,12 +200,17 @@ export default function MenuManagementPage() {
         const modData = await modifiersResponse.json()
         setModifierGroups(modData.modifierGroups)
       }
+
+      if (ingredientsResponse?.ok) {
+        const ingData = await ingredientsResponse.json()
+        setIngredientsLibrary(ingData.data || [])
+      }
     } catch (error) {
       console.error('Failed to load menu:', error)
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [employee?.location?.id])
 
   // Initial load
   useEffect(() => {
@@ -249,14 +287,14 @@ export default function MenuManagementPage() {
     }
   }
 
-  const handleSaveItem = async (itemData: Partial<MenuItem> & { modifierGroupIds?: string[] }) => {
+  const handleSaveItem = async (itemData: Partial<MenuItem> & { modifierGroups?: { id: string; showOnline: boolean }[]; ingredientIds?: { ingredientId: string; isIncluded?: boolean }[] }) => {
     try {
       const method = editingItem ? 'PUT' : 'POST'
       const url = editingItem
         ? `/api/menu/items/${editingItem.id}`
         : '/api/menu/items'
 
-      const { modifierGroupIds, ...itemFields } = itemData
+      const { modifierGroups: modifierGroupsData, ingredientIds, ...itemFields } = itemData
 
       const response = await fetch(url, {
         method,
@@ -268,12 +306,21 @@ export default function MenuManagementPage() {
         const savedItem = await response.json()
         const itemId = editingItem?.id || savedItem.id
 
-        // Save modifier group links if provided
-        if (modifierGroupIds !== undefined && itemId) {
+        // Save modifier group links if provided (new format with showOnline)
+        if (modifierGroupsData !== undefined && itemId) {
           await fetch(`/api/menu/items/${itemId}/modifiers`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ modifierGroupIds }),
+            body: JSON.stringify({ modifierGroups: modifierGroupsData }),
+          })
+        }
+
+        // Save ingredient links if provided
+        if (ingredientIds !== undefined && itemId) {
+          await fetch(`/api/menu/items/${itemId}/ingredients`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ingredients: ingredientIds }),
           })
         }
 
@@ -654,6 +701,8 @@ export default function MenuManagementPage() {
           item={editingItem}
           categoryType={selectedCategoryData.categoryType}
           modifierGroups={modifierGroups}
+          ingredientsLibrary={ingredientsLibrary}
+          locationId={employee?.location?.id || ''}
           onSave={handleSaveItem}
           onClose={() => {
             setShowItemModal(false)
@@ -775,13 +824,17 @@ function ItemModal({
   item,
   categoryType,
   modifierGroups,
+  ingredientsLibrary,
+  locationId,
   onSave,
   onClose
 }: {
   item: MenuItem | null
   categoryType: string
   modifierGroups: ModifierGroup[]
-  onSave: (data: Partial<MenuItem> & { modifierGroupIds?: string[] }) => void
+  ingredientsLibrary: IngredientLibraryItem[]
+  locationId: string
+  onSave: (data: Partial<MenuItem> & { modifierGroups?: { id: string; showOnline: boolean }[]; ingredientIds?: { ingredientId: string; isIncluded?: boolean }[] }) => void
   onClose: () => void
 }) {
   const [name, setName] = useState(item?.name || '')
@@ -791,10 +844,15 @@ function ItemModal({
   const [commissionValue, setCommissionValue] = useState<string>(
     item?.commissionValue?.toString() || ''
   )
-  const [selectedModifierGroupIds, setSelectedModifierGroupIds] = useState<string[]>(
-    item?.modifierGroups?.map(g => g.id) || []
+  const [selectedModifierGroups, setSelectedModifierGroups] = useState<{ id: string; showOnline: boolean }[]>(
+    item?.modifierGroups?.map(g => ({ id: g.id, showOnline: true })) || []
   )
   const [isLoadingModifiers, setIsLoadingModifiers] = useState(false)
+
+  // Ingredients state
+  const [selectedIngredients, setSelectedIngredients] = useState<{ ingredientId: string; isIncluded: boolean }[]>([])
+  const [isLoadingIngredients, setIsLoadingIngredients] = useState(false)
+  const [showIngredientPicker, setShowIngredientPicker] = useState(false)
 
   // Modifier type filters - for liquor, default to liquor only; others get primary + universal
   const primaryModType = CATEGORY_TO_MODIFIER_TYPE[categoryType] || 'food'
@@ -836,7 +894,10 @@ function ItemModal({
         .then(res => res.json())
         .then(data => {
           if (data.modifierGroups) {
-            setSelectedModifierGroupIds(data.modifierGroups.map((g: { id: string }) => g.id))
+            setSelectedModifierGroups(data.modifierGroups.map((g: { id: string; showOnline?: boolean }) => ({
+              id: g.id,
+              showOnline: g.showOnline ?? true
+            })))
           }
         })
         .catch(console.error)
@@ -844,13 +905,43 @@ function ItemModal({
     }
   }, [item?.id])
 
+  // Load existing ingredients when editing
+  useEffect(() => {
+    if (item?.id) {
+      setIsLoadingIngredients(true)
+      fetch(`/api/menu/items/${item.id}/ingredients`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.data) {
+            setSelectedIngredients(data.data.map((ing: MenuItemIngredient) => ({
+              ingredientId: ing.ingredientId,
+              isIncluded: ing.isIncluded
+            })))
+          }
+        })
+        .catch(console.error)
+        .finally(() => setIsLoadingIngredients(false))
+    }
+  }, [item?.id])
+
   const toggleModifierGroup = (groupId: string) => {
-    setSelectedModifierGroupIds(prev =>
-      prev.includes(groupId)
-        ? prev.filter(id => id !== groupId)
-        : [...prev, groupId]
+    setSelectedModifierGroups(prev => {
+      const existing = prev.find(g => g.id === groupId)
+      if (existing) {
+        return prev.filter(g => g.id !== groupId)
+      } else {
+        return [...prev, { id: groupId, showOnline: true }]
+      }
+    })
+  }
+
+  const toggleModifierGroupOnline = (groupId: string) => {
+    setSelectedModifierGroups(prev =>
+      prev.map(g => g.id === groupId ? { ...g, showOnline: !g.showOnline } : g)
     )
   }
+
+  const selectedModifierGroupIds = selectedModifierGroups.map(g => g.id)
 
   const handleSave = () => {
     const timedPricing = isEntertainment && isTimedItem
@@ -875,13 +966,35 @@ function ItemModal({
       minimumMinutes: isEntertainment && isTimedItem && minimumMinutes ? parseInt(minimumMinutes) : null,
       commissionType: commissionType || null,
       commissionValue: commissionValue ? parseFloat(commissionValue) : null,
-      modifierGroupIds: selectedModifierGroupIds,
+      modifierGroups: selectedModifierGroups,
       // Liquor pour sizes
       pourSizes: pourSizesData,
       defaultPourSize: isLiquorCategory ? defaultPourSize : null,
       applyPourToModifiers: isLiquorCategory ? applyPourToModifiers : false,
+      // Ingredients
+      ingredientIds: selectedIngredients,
     })
   }
+
+  const addIngredient = (ingredientId: string) => {
+    if (!selectedIngredients.find(i => i.ingredientId === ingredientId)) {
+      setSelectedIngredients([...selectedIngredients, { ingredientId, isIncluded: true }])
+    }
+    setShowIngredientPicker(false)
+  }
+
+  const removeIngredient = (ingredientId: string) => {
+    setSelectedIngredients(selectedIngredients.filter(i => i.ingredientId !== ingredientId))
+  }
+
+  const toggleIngredientIncluded = (ingredientId: string) => {
+    setSelectedIngredients(selectedIngredients.map(i =>
+      i.ingredientId === ingredientId ? { ...i, isIncluded: !i.isIncluded } : i
+    ))
+  }
+
+  // Show ingredients for food and drinks items (not liquor, entertainment, combos)
+  const showIngredientsSection = categoryType === 'food' || categoryType === 'drinks'
 
   const togglePourSize = (size: string) => {
     const newSizes = { ...enabledPourSizes }
@@ -1221,6 +1334,129 @@ function ItemModal({
             </div>
           )}
 
+          {/* Ingredients Section - for food and drinks items */}
+          {showIngredientsSection && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium">Ingredients (What&apos;s In It)</label>
+                <div className="flex items-center gap-2">
+                  <a
+                    href="/ingredients"
+                    target="_blank"
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Manage Library
+                  </a>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowIngredientPicker(!showIngredientPicker)}
+                  >
+                    + Add Ingredient
+                  </Button>
+                </div>
+              </div>
+
+              {isLoadingIngredients ? (
+                <p className="text-sm text-gray-500">Loading ingredients...</p>
+              ) : ingredientsLibrary.length === 0 ? (
+                <div className="text-sm text-gray-500 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="font-medium text-amber-800">No ingredients in library</p>
+                  <p className="mt-1">
+                    <a href="/ingredients" className="text-blue-600 hover:underline font-medium">
+                      → Go to Ingredients
+                    </a>{' '}
+                    to create ingredients like Lettuce, Tomato, Bacon, etc.
+                  </p>
+                </div>
+              ) : selectedIngredients.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  No ingredients added. Click &quot;+ Add Ingredient&quot; above, or{' '}
+                  <a href="/ingredients" className="text-blue-600 hover:underline">create new ingredients</a>.
+                </p>
+              ) : (
+                <div className="space-y-2 border rounded-lg p-2">
+                  {selectedIngredients.map(sel => {
+                    const ing = ingredientsLibrary.find(i => i.id === sel.ingredientId)
+                    if (!ing) return null
+                    return (
+                      <div
+                        key={sel.ingredientId}
+                        className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                      >
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={sel.isIncluded}
+                              onChange={() => toggleIngredientIncluded(sel.ingredientId)}
+                              className="w-4 h-4"
+                            />
+                            <span className={sel.isIncluded ? '' : 'text-gray-400 line-through'}>
+                              {ing.name}
+                            </span>
+                          </label>
+                          {ing.category && (
+                            <span className="text-xs text-gray-400">{ing.category}</span>
+                          )}
+                          {ing.extraPrice > 0 && (
+                            <span className="text-xs text-green-600">
+                              Extra +{formatCurrency(ing.extraPrice)}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeIngredient(sel.ingredientId)}
+                          className="text-red-500 hover:text-red-700 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Ingredient Picker Dropdown */}
+              {showIngredientPicker && (
+                <div className="mt-2 border rounded-lg p-2 bg-white shadow-lg max-h-48 overflow-y-auto">
+                  {ingredientsLibrary.filter(ing =>
+                    !selectedIngredients.find(s => s.ingredientId === ing.id)
+                  ).length === 0 ? (
+                    <p className="text-sm text-gray-500 p-2">
+                      All ingredients added. <a href="/ingredients" className="text-blue-600 hover:underline">Create more</a>
+                    </p>
+                  ) : (
+                    ingredientsLibrary
+                      .filter(ing => !selectedIngredients.find(s => s.ingredientId === ing.id))
+                      .map(ing => (
+                        <button
+                          key={ing.id}
+                          type="button"
+                          onClick={() => addIngredient(ing.id)}
+                          className="w-full text-left p-2 hover:bg-gray-50 rounded flex items-center justify-between"
+                        >
+                          <span>{ing.name}</span>
+                          {ing.category && (
+                            <span className="text-xs text-gray-400">{ing.category}</span>
+                          )}
+                        </button>
+                      ))
+                  )}
+                </div>
+              )}
+
+              {selectedIngredients.length > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {selectedIngredients.filter(i => i.isIncluded).length} included by default,{' '}
+                  {selectedIngredients.filter(i => !i.isIncluded).length} optional
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Modifier Groups Section - only for non-entertainment or non-timed items */}
           {(!isEntertainment || !isTimedItem) && (
             <div>
@@ -1329,6 +1565,52 @@ function ItemModal({
                 <p className="text-xs text-gray-500 mt-1">
                   {selectedModifierGroupIds.length} modifier group(s) selected
                 </p>
+              )}
+
+              {/* Online Modifier Groups - show which groups appear for online ordering */}
+              {selectedModifierGroups.length > 0 && (
+                <div className="mt-4 border-t pt-4">
+                  <label className="text-sm font-medium text-purple-700">Online Modifier Groups</label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Select which modifier groups appear for online orders
+                  </p>
+                  <div className="space-y-2 border rounded-lg p-2 bg-purple-50/50">
+                    {selectedModifierGroups.map(selected => {
+                      const group = modifierGroups.find(g => g.id === selected.id)
+                      if (!group) return null
+                      return (
+                        <label
+                          key={selected.id}
+                          className={`flex items-center gap-3 p-2 rounded cursor-pointer ${
+                            selected.showOnline ? 'bg-purple-100 border border-purple-300' : 'bg-white border border-gray-200'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected.showOnline}
+                            onChange={() => toggleModifierGroupOnline(selected.id)}
+                            className="w-4 h-4 accent-purple-600"
+                          />
+                          <div className="flex-1">
+                            <p className={`font-medium text-sm ${selected.showOnline ? 'text-purple-800' : 'text-gray-500'}`}>
+                              {group.name}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {group.modifiers.length} options
+                              {group.isRequired && <span className="text-red-500 ml-1">(Required)</span>}
+                            </p>
+                          </div>
+                          {!selected.showOnline && (
+                            <span className="text-xs text-amber-600 font-medium">Hidden online</span>
+                          )}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {selectedModifierGroups.filter(g => g.showOnline).length} of {selectedModifierGroups.length} groups visible online
+                  </p>
+                </div>
               )}
             </div>
           )}

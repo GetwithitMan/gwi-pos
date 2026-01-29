@@ -48,6 +48,8 @@ import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
 import { ShiftCloseoutModal } from '@/components/shifts/ShiftCloseoutModal'
 import { ReceiptModal } from '@/components/receipt'
 import { SeatCourseHoldControls, ItemBadges } from '@/components/orders/SeatCourseHoldControls'
+import { OrderTypeSelector, OrderTypeBadge } from '@/components/orders/OrderTypeSelector'
+import type { OrderTypeConfig, OrderCustomFields, WorkflowRules } from '@/types/order-types'
 import { EntertainmentSessionControls } from '@/components/orders/EntertainmentSessionControls'
 import { CourseOverviewPanel } from '@/components/orders/CourseOverviewPanel'
 import { ModifierModal } from '@/components/modifiers/ModifierModal'
@@ -60,7 +62,7 @@ import type { Category, MenuItem, ModifierGroup, SelectedModifier } from '@/type
 export default function OrdersPage() {
   const router = useRouter()
   const { employee, isAuthenticated, logout } = useAuthStore()
-  const { currentOrder, startOrder, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore()
+  const { currentOrder, startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore()
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
@@ -68,6 +70,7 @@ export default function OrdersPage() {
   const [showMenu, setShowMenu] = useState(false)
   const [showAdminNav, setShowAdminNav] = useState(false)
   const [showTablePicker, setShowTablePicker] = useState(false)
+  const [showTotalBreakdown, setShowTotalBreakdown] = useState(false)
 
   // Check if user has admin/manager permissions
   // Handle both array permissions (new format) and role name check
@@ -191,6 +194,11 @@ export default function OrdersPage() {
   const [isSendingOrder, setIsSendingOrder] = useState(false)
   const [orderSent, setOrderSent] = useState(false)
 
+  // Order type state (configurable order types)
+  const [orderTypes, setOrderTypes] = useState<OrderTypeConfig[]>([])
+  const [selectedOrderType, setSelectedOrderType] = useState<OrderTypeConfig | null>(null)
+  const [orderCustomFields, setOrderCustomFields] = useState<OrderCustomFields>({})
+
   // Open orders count for badge
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
 
@@ -304,12 +312,27 @@ export default function OrdersPage() {
     }
   }, [employee?.location?.id, selectedCategory])
 
+  // Load order types
+  const loadOrderTypes = useCallback(async () => {
+    if (!employee?.location?.id) return
+    try {
+      const response = await fetch(`/api/order-types?locationId=${employee.location.id}`)
+      if (response.ok) {
+        const data = await response.json()
+        setOrderTypes(data.orderTypes || [])
+      }
+    } catch (error) {
+      console.error('Failed to load order types:', error)
+    }
+  }, [employee?.location?.id])
+
   useEffect(() => {
     if (employee?.location?.id) {
       loadMenu()
+      loadOrderTypes()
       loadActiveSessions()
     }
-  }, [employee?.location?.id, loadMenu])
+  }, [employee?.location?.id, loadMenu, loadOrderTypes])
 
   // Auto-refresh menu when viewing Entertainment category (for real-time status)
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
@@ -450,6 +473,14 @@ export default function OrdersPage() {
                 name: mod.name,
                 price: mod.price,
                 preModifier: mod.preModifier,
+                depth: mod.depth || 0,
+              })),
+              ingredientModifications: item.ingredientModifications?.map(ing => ({
+                ingredientId: ing.ingredientId,
+                name: ing.name,
+                modificationType: ing.modificationType,
+                priceAdjustment: ing.priceAdjustment,
+                swappedTo: ing.swappedTo,
               })),
               specialNotes: item.specialNotes,
             })),
@@ -472,6 +503,7 @@ export default function OrdersPage() {
           employeeId: employee.id,
           locationId: employee.location?.id,
           orderType: currentOrder.orderType,
+          orderTypeId: currentOrder.orderTypeId,
           tableId: currentOrder.tableId,
           tabName: currentOrder.tabName || currentOrder.tableName,
           guestCount: currentOrder.guestCount,
@@ -485,10 +517,19 @@ export default function OrdersPage() {
               name: mod.name,
               price: mod.price,
               preModifier: mod.preModifier,
+              depth: mod.depth || 0,
+            })),
+            ingredientModifications: item.ingredientModifications?.map(ing => ({
+              ingredientId: ing.ingredientId,
+              name: ing.name,
+              modificationType: ing.modificationType,
+              priceAdjustment: ing.priceAdjustment,
+              swappedTo: ing.swappedTo,
             })),
             specialNotes: item.specialNotes,
           })),
           notes: currentOrder.notes,
+          customFields: currentOrder.customFields || orderCustomFields,
         }),
       })
 
@@ -506,9 +547,95 @@ export default function OrdersPage() {
     }
   }
 
+  // Handle order type selection
+  const handleOrderTypeSelect = (orderType: OrderTypeConfig, customFields?: OrderCustomFields) => {
+    setSelectedOrderType(orderType)
+    if (customFields) {
+      setOrderCustomFields(customFields)
+    }
+
+    // If order type requires table selection, open table picker
+    const workflowRules = (orderType.workflowRules || {}) as WorkflowRules
+    if (workflowRules.requireTableSelection) {
+      setShowTablePicker(true)
+    } else {
+      // Convert OrderCustomFields to Record<string, string> (filter out undefined)
+      const cleanFields: Record<string, string> = {}
+      if (customFields) {
+        Object.entries(customFields).forEach(([key, value]) => {
+          if (value !== undefined) {
+            cleanFields[key] = value
+          }
+        })
+      }
+
+      // If there's an existing order with items, update the order type instead of starting fresh
+      if (currentOrder?.items.length) {
+        updateOrderType(orderType.slug, {
+          tabName: customFields?.customerName,
+          orderTypeId: orderType.id,
+          customFields: Object.keys(cleanFields).length > 0 ? cleanFields : undefined,
+        })
+      } else {
+        // Start new order with the selected type
+        startOrder(orderType.slug, {
+          tabName: customFields?.customerName,
+          orderTypeId: orderType.id,
+          customFields: Object.keys(cleanFields).length > 0 ? cleanFields : undefined,
+        })
+      }
+    }
+  }
+
+  // Validate order before sending to kitchen based on workflow rules
+  const validateBeforeSend = (): { valid: boolean; message?: string } => {
+    if (!currentOrder) return { valid: false, message: 'No order to send' }
+
+    // Find the order type config
+    const orderTypeConfig = orderTypes.find(t => t.slug === currentOrder.orderType)
+    if (!orderTypeConfig) {
+      // No config found, allow sending (backward compatibility)
+      return { valid: true }
+    }
+
+    const workflowRules = (orderTypeConfig.workflowRules || {}) as WorkflowRules
+
+    // Check table selection requirement
+    if (workflowRules.requireTableSelection && !currentOrder.tableId) {
+      return { valid: false, message: 'Please select a table before sending to kitchen' }
+    }
+
+    // Check customer name requirement
+    if (workflowRules.requireCustomerName && !currentOrder.tabName && !orderCustomFields.customerName) {
+      return { valid: false, message: 'Please enter a customer name before sending to kitchen' }
+    }
+
+    // Check payment requirement (for takeout/delivery)
+    if (workflowRules.requirePaymentBeforeSend) {
+      // This would check if payment has been made
+      // For now, we'll prompt user to pay first
+      return { valid: false, message: 'Payment is required before sending this order type to kitchen. Please collect payment first.' }
+    }
+
+    return { valid: true }
+  }
+
   // Send to Kitchen handler
   const handleSendToKitchen = async () => {
     if (!currentOrder?.items.length) return
+
+    // Validate based on workflow rules
+    const validation = validateBeforeSend()
+    if (!validation.valid) {
+      alert(validation.message)
+      // If payment is required, open payment modal
+      const orderTypeConfig = orderTypes.find(t => t.slug === currentOrder.orderType)
+      const workflowRules = (orderTypeConfig?.workflowRules || {}) as WorkflowRules
+      if (workflowRules.requirePaymentBeforeSend) {
+        handleOpenPayment()
+      }
+      return
+    }
 
     setIsSendingOrder(true)
     try {
@@ -524,6 +651,8 @@ export default function OrdersPage() {
         clearOrder()
         setSavedOrderId(null)
         setOrderSent(false)
+        setSelectedOrderType(null)
+        setOrderCustomFields({})
 
         // Refresh the open orders panel and count
         setTabsRefreshTrigger(prev => prev + 1)
@@ -1149,12 +1278,15 @@ export default function OrdersPage() {
     }
   }
 
-  const handleAddItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number) => {
+  const handleAddItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => {
     if (!selectedItem) return
 
     // Apply pour multiplier to base price
     const basePrice = pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price
     const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
+
+    // Add ingredient modification prices to base
+    const ingredientTotal = ingredientModifications?.reduce((sum, mod) => sum + mod.priceAdjustment, 0) || 0
 
     // Build item name with pour size
     const itemName = pourSize
@@ -1164,7 +1296,7 @@ export default function OrdersPage() {
     addItem({
       menuItemId: selectedItem.id,
       name: itemName,
-      price: basePrice,
+      price: basePrice + ingredientTotal,
       quantity: 1,
       specialNotes,
       modifiers: modifiers.map(mod => ({
@@ -1176,6 +1308,13 @@ export default function OrdersPage() {
         preModifier: mod.preModifier,
         depth: mod.depth,
         parentModifierId: mod.parentModifierId,
+      })),
+      ingredientModifications: ingredientModifications?.map(mod => ({
+        ingredientId: mod.ingredientId,
+        name: mod.name,
+        modificationType: mod.modificationType as 'no' | 'lite' | 'on_side' | 'extra' | 'swap',
+        priceAdjustment: mod.priceAdjustment,
+        swappedTo: mod.swappedTo,
       })),
     })
 
@@ -1408,12 +1547,15 @@ export default function OrdersPage() {
     }
   }
 
-  const handleUpdateItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number) => {
+  const handleUpdateItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => {
     if (!selectedItem || !editingOrderItem) return
 
     // Apply pour multiplier to base price
     const basePrice = pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price
     const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
+
+    // Add ingredient modification prices to base
+    const ingredientTotal = ingredientModifications?.reduce((sum, mod) => sum + mod.priceAdjustment, 0) || 0
 
     // Build item name with pour size
     const itemName = pourSize
@@ -1422,7 +1564,7 @@ export default function OrdersPage() {
 
     updateItem(editingOrderItem.id, {
       name: itemName,
-      price: basePrice,
+      price: basePrice + ingredientTotal,
       specialNotes,
       modifiers: modifiers.map(mod => ({
         id: mod.id,
@@ -1433,6 +1575,13 @@ export default function OrdersPage() {
         preModifier: mod.preModifier,
         depth: mod.depth,
         parentModifierId: mod.parentModifierId,
+      })),
+      ingredientModifications: ingredientModifications?.map(mod => ({
+        ingredientId: mod.ingredientId,
+        name: mod.name,
+        modificationType: mod.modificationType as 'no' | 'lite' | 'on_side' | 'extra' | 'swap',
+        priceAdjustment: mod.priceAdjustment,
+        swappedTo: mod.swappedTo,
       })),
     })
 
@@ -2181,53 +2330,98 @@ export default function OrdersPage() {
             )}
           </div>
           {!savedOrderId && (
-            <div className="flex items-center gap-2 mt-2">
-              <Button
-                variant={currentOrder?.orderType === 'dine_in' ? 'primary' : 'ghost'}
-                size="sm"
-                onClick={() => setShowTablePicker(true)}
-              >
-                Table
-              </Button>
-              <Button
-                variant={currentOrder?.orderType === 'bar_tab' ? 'primary' : 'ghost'}
-                size="sm"
-                onClick={() => startOrder('bar_tab')}
-              >
-                Quick Tab
-              </Button>
-              <Button
-                variant={currentOrder?.orderType === 'takeout' ? 'primary' : 'ghost'}
-                size="sm"
-                onClick={() => startOrder('takeout')}
-              >
-                Takeout
-              </Button>
+            <div className="mt-3">
+              {orderTypes.length > 0 ? (
+                <OrderTypeSelector
+                  locationId={employee?.location?.id || ''}
+                  selectedType={currentOrder?.orderType}
+                  onSelectType={handleOrderTypeSelect}
+                />
+              ) : (
+                // Fallback to hardcoded buttons if no order types configured
+                <div className="flex items-center gap-2">
+                  <button
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                      currentOrder?.orderType === 'dine_in'
+                        ? currentMode === 'bar'
+                          ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-md shadow-blue-500/25'
+                          : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25'
+                        : 'bg-white/60 hover:bg-white/80 text-gray-700 border border-white/40 hover:shadow-md'
+                    }`}
+                    onClick={() => setShowTablePicker(true)}
+                  >
+                    Table
+                  </button>
+                  <button
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                      currentOrder?.orderType === 'bar_tab'
+                        ? currentMode === 'bar'
+                          ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-md shadow-blue-500/25'
+                          : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25'
+                        : 'bg-white/60 hover:bg-white/80 text-gray-700 border border-white/40 hover:shadow-md'
+                    }`}
+                    onClick={() => startOrder('bar_tab')}
+                  >
+                    Quick Tab
+                  </button>
+                  <button
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                      currentOrder?.orderType === 'takeout'
+                        ? currentMode === 'bar'
+                          ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-md shadow-blue-500/25'
+                          : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25'
+                        : 'bg-white/60 hover:bg-white/80 text-gray-700 border border-white/40 hover:shadow-md'
+                    }`}
+                    onClick={() => startOrder('takeout')}
+                  >
+                    Takeout
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
 
         {/* Order Items */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className={`flex-1 overflow-y-auto p-4 ${
+          currentMode === 'bar'
+            ? 'bg-gradient-to-b from-blue-50/30 via-transparent to-transparent'
+            : 'bg-gradient-to-b from-orange-50/30 via-transparent to-transparent'
+        }`}>
           {currentOrder?.items.length === 0 ? (
             currentOrder?.total && currentOrder.total > 0 ? (
               // Split order with no items - show split info
               <div className="text-center py-8">
-                <div className="bg-blue-50 rounded-lg p-4 mb-4">
-                  <p className="text-blue-800 font-semibold text-lg">Split Check</p>
-                  <p className="text-blue-600 text-sm">Order #{currentOrder.orderNumber}</p>
+                <div className={`rounded-2xl p-5 mb-4 backdrop-blur-sm ${
+                  currentMode === 'bar'
+                    ? 'bg-gradient-to-br from-blue-100/80 to-cyan-100/60 border border-blue-200/50'
+                    : 'bg-gradient-to-br from-orange-100/80 to-amber-100/60 border border-orange-200/50'
+                }`}>
+                  <p className={`font-bold text-lg ${currentMode === 'bar' ? 'text-blue-800' : 'text-orange-800'}`}>Split Check</p>
+                  <p className={`text-sm ${currentMode === 'bar' ? 'text-blue-600' : 'text-orange-600'}`}>Order #{currentOrder.orderNumber}</p>
                 </div>
-                <p className="text-2xl font-bold text-gray-800">{formatCurrency(currentOrder.total)}</p>
+                <p className={`text-3xl font-bold ${
+                  currentMode === 'bar' ? 'text-blue-600' : 'text-orange-600'
+                }`}>{formatCurrency(currentOrder.total)}</p>
                 <p className="text-sm text-gray-500 mt-2">This is a split portion of the original order</p>
               </div>
             ) : (
-              <div className="text-center text-gray-400 py-8">
-                <p>No items yet</p>
-                <p className="text-sm">Tap menu items to add</p>
+              <div className="text-center py-12">
+                <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center ${
+                  currentMode === 'bar'
+                    ? 'bg-gradient-to-br from-blue-100 to-cyan-100'
+                    : 'bg-gradient-to-br from-orange-100 to-amber-100'
+                }`}>
+                  <svg className={`w-8 h-8 ${currentMode === 'bar' ? 'text-blue-400' : 'text-orange-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </div>
+                <p className="text-gray-500 font-medium">No items yet</p>
+                <p className="text-sm text-gray-400 mt-1">Tap menu items to add</p>
               </div>
             )
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {currentOrder?.items.map(item => {
                 // Group modifiers by depth for hierarchical display
                 const topLevelMods = item.modifiers.filter(m => !m.depth || m.depth === 0)
@@ -2237,41 +2431,53 @@ export default function OrdersPage() {
                 const canEdit = menuItemInfo?.modifierGroupCount && menuItemInfo.modifierGroupCount > 0
 
                 return (
-                  <Card key={item.id} className={`p-3 ${item.sentToKitchen ? 'bg-gray-50 border-l-4 border-l-green-500' : ''}`}>
+                  <Card key={item.id} variant="glassSubtle" className={`p-2 ${
+                    item.sentToKitchen
+                      ? 'bg-gradient-to-r from-emerald-50/80 to-green-50/60 border-l-3 border-l-emerald-500 shadow-emerald-500/10'
+                      : 'hover:bg-white/80 transition-all duration-200'
+                  }`}>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           {/* Sent indicator */}
                           {item.sentToKitchen ? (
-                            <div className="flex items-center gap-1">
-                              <span className="text-green-600" title="Sent to kitchen">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            <div className="flex items-center gap-0.5">
+                              <span className="w-4 h-4 rounded bg-emerald-500 flex items-center justify-center" title="Sent to kitchen">
+                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                                 </svg>
                               </span>
-                              <span className="w-6 text-center font-medium text-gray-500">{item.quantity}</span>
+                              <span className="w-5 text-center text-sm font-semibold text-gray-600">{item.quantity}</span>
                               {/* Printer icon to resend */}
                               <button
-                                className="w-5 h-5 text-gray-400 hover:text-blue-600"
+                                className="w-5 h-5 rounded bg-gray-100/80 flex items-center justify-center text-gray-400 hover:bg-blue-100 hover:text-blue-600 transition-colors"
                                 onClick={() => handleResendItem(item.id, item.name)}
                                 title="Resend to kitchen"
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                                 </svg>
                               </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-0.5">
                               <button
-                                className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600"
+                                className={`w-5 h-5 rounded flex items-center justify-center text-xs font-semibold transition-colors ${
+                                  currentMode === 'bar'
+                                    ? 'bg-blue-100/80 hover:bg-blue-200 text-blue-700'
+                                    : 'bg-orange-100/80 hover:bg-orange-200 text-orange-700'
+                                }`}
                                 onClick={() => updateQuantity(item.id, item.quantity - 1)}
                               >
                                 -
                               </button>
-                              <span className="w-6 text-center font-medium">{item.quantity}</span>
+                              <span className="w-5 text-center text-sm font-semibold text-gray-800">{item.quantity}</span>
                               <button
-                                className="w-6 h-6 rounded bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600"
+                                className={`w-5 h-5 rounded flex items-center justify-center text-xs font-semibold transition-colors ${
+                                  currentMode === 'bar'
+                                    ? 'bg-blue-100/80 hover:bg-blue-200 text-blue-700'
+                                    : 'bg-orange-100/80 hover:bg-orange-200 text-orange-700'
+                                }`}
                                 onClick={() => updateQuantity(item.id, item.quantity + 1)}
                               >
                                 +
@@ -2279,7 +2485,7 @@ export default function OrdersPage() {
                             </div>
                           )}
                           <button
-                            className={`font-medium text-left ${item.sentToKitchen ? 'text-gray-600' : ''} ${canEdit && !item.sentToKitchen ? 'hover:text-blue-600 cursor-pointer' : ''}`}
+                            className={`text-sm font-medium text-left ${item.sentToKitchen ? 'text-gray-600' : 'text-gray-800'} ${canEdit && !item.sentToKitchen ? 'hover:text-blue-600 cursor-pointer' : ''}`}
                             onClick={() => canEdit && !item.sentToKitchen && handleEditOrderItem(item)}
                             disabled={!canEdit || item.sentToKitchen}
                           >
@@ -2292,13 +2498,13 @@ export default function OrdersPage() {
                               isHeld={item.isHeld}
                             />
                             {item.sentToKitchen && !item.isCompleted && !item.isHeld && (
-                              <span className="ml-2 text-xs text-green-600 font-normal">Sent</span>
+                              <span className="ml-1 text-[10px] text-blue-500 font-medium">Sent</span>
                             )}
                             {item.isCompleted && (
-                              <span className="ml-2 px-1.5 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">
+                              <span className="ml-1 text-[10px] text-emerald-600 font-bold">
                                 ✓ MADE
                                 {item.completedAt && (
-                                  <span className="ml-1 text-green-600">
+                                  <span className="ml-0.5 text-emerald-500">
                                     {new Date(item.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                   </span>
                                 )}
@@ -2311,37 +2517,80 @@ export default function OrdersPage() {
                             )}
                           </button>
                         </div>
-                        {/* Display modifiers with hierarchy */}
+                        {/* Display ingredient modifications */}
+                        {item.ingredientModifications && item.ingredientModifications.length > 0 && (
+                          <div
+                            className={`ml-[52px] mt-0.5 ${canEdit && !item.sentToKitchen ? 'cursor-pointer' : ''}`}
+                            onClick={() => canEdit && !item.sentToKitchen && handleEditOrderItem(item)}
+                          >
+                            {item.ingredientModifications.map((ing, idx) => (
+                              <div
+                                key={ing.ingredientId || idx}
+                                className={`text-xs leading-tight font-medium ${
+                                  ing.modificationType === 'no' ? 'text-red-500' :
+                                  ing.modificationType === 'lite' ? 'text-amber-600' :
+                                  ing.modificationType === 'on_side' ? 'text-blue-500' :
+                                  ing.modificationType === 'extra' ? 'text-green-600' :
+                                  ing.modificationType === 'swap' ? 'text-purple-500' : 'text-gray-500'
+                                }`}
+                              >
+                                {ing.modificationType === 'no' && `❌ NO ${ing.name}`}
+                                {ing.modificationType === 'lite' && `⬇ LITE ${ing.name}`}
+                                {ing.modificationType === 'on_side' && `📦 SIDE ${ing.name}`}
+                                {ing.modificationType === 'extra' && `⬆ EXTRA ${ing.name}`}
+                                {ing.modificationType === 'swap' && `🔄 ${ing.name} → ${ing.swappedTo?.name}`}
+                                {ing.priceAdjustment > 0 && <span className="text-emerald-600 ml-1">+{formatCurrency(ing.priceAdjustment)}</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Display modifiers with hierarchy using dashes */}
                         {hasModifiers && (
                           <div
-                            className={`ml-[72px] mt-1 ${canEdit ? 'cursor-pointer' : ''}`}
-                            onClick={() => canEdit && handleEditOrderItem(item)}
+                            className={`ml-[52px] mt-0.5 ${canEdit && !item.sentToKitchen ? 'cursor-pointer' : ''}`}
+                            onClick={() => canEdit && !item.sentToKitchen && handleEditOrderItem(item)}
                           >
-                            {/* Top-level modifiers */}
-                            {topLevelMods.map((mod, idx) => (
-                              <div key={mod.id || idx} className="text-sm text-gray-600">
-                                • {mod.name}{mod.price > 0 && <span className="text-green-600 ml-1">+{formatCurrency(mod.price)}</span>}
-                              </div>
-                            ))}
-                            {/* Child modifiers (indented) */}
-                            {childMods.map((mod, idx) => (
-                              <div
-                                key={mod.id || `child-${idx}`}
-                                className="text-sm text-gray-500"
-                                style={{ marginLeft: `${(mod.depth || 1) * 12}px` }}
-                              >
-                                └ {mod.name}{mod.price > 0 && <span className="text-green-600 ml-1">+{formatCurrency(mod.price)}</span>}
-                              </div>
-                            ))}
+                            {/* All modifiers with dash hierarchy */}
+                            {item.modifiers.map((mod, idx) => {
+                              const depth = mod.depth || 0
+                              const dashes = depth > 0 ? '-'.repeat(depth) + ' ' : ''
+                              return (
+                                <div
+                                  key={mod.id || idx}
+                                  className={`text-xs leading-tight ${depth === 0 ? 'text-gray-500' : 'text-gray-400'}`}
+                                >
+                                  {depth === 0 ? '• ' : dashes}{mod.name}{mod.price > 0 && <span className="text-emerald-600 ml-1">+{formatCurrency(mod.price)}</span>}
+                                </div>
+                              )
+                            })}
                           </div>
                         )}
                         {item.specialNotes && (
-                          <div className="text-sm text-orange-600 ml-[72px]">
-                            Note: {item.specialNotes}
+                          <div className="ml-[52px] mt-0.5 text-xs text-amber-600">
+                            <span className="font-medium">Note:</span> {item.specialNotes}
                           </div>
                         )}
-                        {/* Seat/Course/Hold Controls */}
-                        {savedOrderId && (
+                        {/* Seat/Course/Hold Controls - show for all items */}
+                        {!item.sentToKitchen && (
+                          <div className="ml-[52px] mt-1 flex items-center gap-2">
+                            {item.isHeld ? (
+                              <button
+                                className="px-2 py-0.5 text-[10px] rounded bg-emerald-500 text-white hover:bg-emerald-600 font-medium"
+                                onClick={() => updateItem(item.id, { isHeld: false })}
+                              >
+                                Fire
+                              </button>
+                            ) : (
+                              <button
+                                className="px-2 py-0.5 text-[10px] rounded bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium"
+                                onClick={() => updateItem(item.id, { isHeld: true })}
+                              >
+                                Hold
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {savedOrderId && item.sentToKitchen && (
                           <SeatCourseHoldControls
                             orderId={savedOrderId}
                             itemId={item.id}
@@ -2360,18 +2609,24 @@ export default function OrdersPage() {
                           />
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">
+                      <div className="flex items-center gap-1">
+                        <span className={`font-semibold text-xs ${
+                          item.sentToKitchen ? 'text-emerald-700' : 'text-gray-700'
+                        }`}>
                           {formatCurrency((item.price + item.modifiers.reduce((sum, m) => sum + m.price, 0)) * item.quantity)}
                         </span>
                         {/* Notes button */}
                         {!item.sentToKitchen && (
                           <button
-                            className={`p-1 ${item.specialNotes ? 'text-orange-500 hover:text-orange-700' : 'text-gray-400 hover:text-gray-600'}`}
+                            className={`p-1 rounded transition-colors ${
+                              item.specialNotes
+                                ? 'text-amber-500 hover:text-amber-600'
+                                : 'text-gray-300 hover:text-gray-500'
+                            }`}
                             onClick={() => handleOpenNotesEditor(item.id, item.specialNotes)}
                             title={item.specialNotes ? 'Edit note' : 'Add note'}
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
                             </svg>
                           </button>
@@ -2379,11 +2634,11 @@ export default function OrdersPage() {
                         {/* Comp/Void button for sent items */}
                         {item.sentToKitchen && (
                           <button
-                            className="text-orange-500 hover:text-orange-700 p-1"
+                            className="p-1 rounded text-amber-500 hover:text-amber-600 transition-colors"
                             onClick={() => handleOpenCompVoid(item)}
                             title="Comp or Void"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
                           </button>
@@ -2391,10 +2646,10 @@ export default function OrdersPage() {
                         {/* Delete button (only for unsent items) */}
                         {!item.sentToKitchen && (
                           <button
-                            className="text-red-500 hover:text-red-700 p-1"
+                            className="p-1 rounded text-red-400 hover:text-red-600 transition-colors"
                             onClick={() => removeItem(item.id)}
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
                           </button>
@@ -2491,7 +2746,7 @@ export default function OrdersPage() {
 
         {/* Payment Method Toggle with Totals */}
         {dualPricing.enabled && (
-          <div className="border-t p-3 bg-gray-50">
+          <div className="border-t border-white/30 p-3 bg-gradient-to-r from-gray-50/80 to-white/60 backdrop-blur-sm">
             {(() => {
               // Calculate both totals for display on buttons
               const storedSubtotal = currentOrder?.subtotal || 0
@@ -2514,54 +2769,46 @@ export default function OrdersPage() {
 
               return (
                 <div className="flex gap-2">
-                  <Button
-                    variant={paymentMethod === 'cash' ? 'primary' : 'ghost'}
-                    size="sm"
-                    className={`flex-1 flex-col py-2 h-auto ${paymentMethod === 'cash' ? 'bg-green-600 hover:bg-green-700' : ''}`}
+                  <button
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
+                      paymentMethod === 'cash'
+                        ? 'bg-emerald-500 text-white'
+                        : 'bg-white/60 text-gray-600 hover:bg-white/80'
+                    }`}
                     onClick={() => setPaymentMethod('cash')}
                   >
-                    <div className="flex items-center">
-                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                      </svg>
-                      Cash
-                    </div>
-                    <div className={`text-sm font-bold ${paymentMethod === 'cash' ? 'text-white' : 'text-green-600'}`}>
+                    <span>Cash</span>
+                    <span className={`font-bold ${paymentMethod === 'cash' ? 'text-white' : 'text-emerald-600'}`}>
                       {formatCurrency(cashTotal)}
-                    </div>
-                  </Button>
-                  <Button
-                    variant={paymentMethod === 'card' ? 'primary' : 'ghost'}
-                    size="sm"
-                    className="flex-1 flex-col py-2 h-auto"
+                    </span>
+                  </button>
+                  <button
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
+                      paymentMethod === 'card'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white/60 text-gray-600 hover:bg-white/80'
+                    }`}
                     onClick={() => setPaymentMethod('card')}
                   >
-                    <div className="flex items-center">
-                      <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                      </svg>
-                      Card
-                    </div>
-                    <div className={`text-sm font-bold ${paymentMethod === 'card' ? 'text-white' : 'text-blue-600'}`}>
+                    <span>Card</span>
+                    <span className={`font-bold ${paymentMethod === 'card' ? 'text-white' : 'text-blue-600'}`}>
                       {formatCurrency(cardTotal)}
-                    </div>
-                  </Button>
+                    </span>
+                  </button>
                 </div>
               )
             })()}
           </div>
         )}
 
-        {/* Order Totals - Card price is displayed, cash gets discount */}
-        <div className="border-t p-4 space-y-2">
+        {/* Order Totals - Clickable to expand item breakdown */}
+        <div className="border-t border-white/30 bg-gradient-to-b from-white/40 to-white/60 backdrop-blur-sm">
           {(() => {
-            const storedSubtotal = currentOrder?.subtotal || 0  // Stored as cash price
+            const storedSubtotal = currentOrder?.subtotal || 0
             const discountPct = dualPricing.cashDiscountPercent || 4.0
-            // Convert to card price for display
             const cardSubtotal = dualPricing.enabled
               ? calculateCardPrice(storedSubtotal, discountPct)
               : storedSubtotal
-            // Cash discount brings it back to original price
             const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash'
               ? cardSubtotal - storedSubtotal
               : 0
@@ -2570,53 +2817,133 @@ export default function OrdersPage() {
             const tax = taxableAmount * taxRate
             const gratuity = currentOrder?.tipTotal || 0
             const unroundedTotal = taxableAmount + tax + gratuity
-            // Apply price rounding if enabled
             const total = applyPriceRounding(unroundedTotal, priceRounding, paymentMethod)
             const roundingAdjustment = total - unroundedTotal
 
             return (
               <>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Subtotal</span>
-                  <span>{formatCurrency(cardSubtotal)}</span>
-                </div>
-                {dualPricing.enabled && paymentMethod === 'cash' && cashDiscountAmount > 0 && (
-                  <div className="flex justify-between text-sm text-green-600">
-                    <span>Cash Discount ({discountPct}%)</span>
-                    <span>-{formatCurrency(cashDiscountAmount)}</span>
+                {/* Clickable Total Row */}
+                <button
+                  className="w-full p-3 flex justify-between items-center hover:bg-white/30 transition-colors"
+                  onClick={() => setShowTotalBreakdown(!showTotalBreakdown)}
+                >
+                  <div className="flex items-center gap-2">
+                    <svg
+                      className={`w-4 h-4 text-gray-400 transition-transform ${showTotalBreakdown ? 'rotate-90' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                    <span className="font-bold text-gray-700">Total</span>
+                    <span className="text-xs text-gray-400">({currentOrder?.items.length || 0} items)</span>
                   </div>
-                )}
-                {discount > 0 && (
-                  <div className="flex justify-between text-sm text-green-600">
-                    <span>Discount</span>
-                    <span>-{formatCurrency(discount)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Tax ({(taxRate * 100).toFixed(1)}%)</span>
-                  <span>{formatCurrency(tax)}</span>
-                </div>
-                {(currentOrder?.tipTotal || 0) > 0 && (
-                  <div className="flex justify-between text-sm text-blue-600">
-                    <span>Gratuity</span>
-                    <span>{formatCurrency(currentOrder?.tipTotal || 0)}</span>
-                  </div>
-                )}
-                {priceRounding.enabled && Math.abs(roundingAdjustment) > 0.001 && (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Rounding</span>
-                    <span>{roundingAdjustment >= 0 ? '+' : ''}{formatCurrency(roundingAdjustment)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-lg pt-2 border-t">
-                  <span>Total</span>
-                  <span className={paymentMethod === 'cash' && dualPricing.enabled ? 'text-green-600' : ''}>
+                  <span className={`px-3 py-1 rounded-lg font-bold text-lg ${
+                    dualPricing.enabled && paymentMethod === 'cash'
+                      ? 'bg-emerald-500 text-white'
+                      : dualPricing.enabled
+                        ? 'bg-blue-500 text-white'
+                        : currentMode === 'bar'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-orange-500 text-white'
+                  }`}>
                     {formatCurrency(total)}
                   </span>
-                </div>
-                {dualPricing.enabled && dualPricing.showSavingsMessage && paymentMethod === 'cash' && storedSubtotal > 0 && (
-                  <div className="text-xs text-green-600 text-center">
-                    You save {formatCurrency(cashDiscountAmount)} by paying with cash!
+                </button>
+
+                {/* Expanded Breakdown */}
+                {showTotalBreakdown && (
+                  <div className="px-3 pb-3 space-y-1 text-xs border-t border-white/30">
+                    {/* Item-by-item breakdown */}
+                    <div className="pt-2 space-y-0.5">
+                      {currentOrder?.items.map((item, idx) => {
+                        const itemTotal = (item.price + item.modifiers.reduce((sum, m) => sum + m.price, 0)) * item.quantity
+                        return (
+                          <div key={item.id}>
+                            <div className="flex justify-between text-gray-600">
+                              <span>{item.quantity}x {item.name}</span>
+                              <span>{formatCurrency(itemTotal)}</span>
+                            </div>
+                            {item.modifiers.length > 0 && (
+                              <div className="ml-4 text-gray-400">
+                                {item.modifiers.map((mod, midx) => {
+                                  const depth = mod.depth || 0
+                                  const prefix = depth === 0 ? '+ ' : '-'.repeat(depth + 1) + ' '
+                                  return (
+                                    <div key={mod.id || midx} className="flex justify-between">
+                                      <span>{prefix}{mod.name}</span>
+                                      {mod.price > 0 && <span>{formatCurrency(mod.price * item.quantity)}</span>}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    {/* Subtotal */}
+                    <div className="flex justify-between pt-2 border-t border-gray-200/50 text-gray-600 font-medium">
+                      <span>Subtotal</span>
+                      <span>{formatCurrency(cardSubtotal)}</span>
+                    </div>
+
+                    {/* Cash discount */}
+                    {dualPricing.enabled && paymentMethod === 'cash' && cashDiscountAmount > 0 && (
+                      <div className="flex justify-between text-emerald-600">
+                        <span>Cash Discount ({discountPct}%)</span>
+                        <span>-{formatCurrency(cashDiscountAmount)}</span>
+                      </div>
+                    )}
+
+                    {/* Discounts */}
+                    {discount > 0 && (
+                      <div className="flex justify-between text-emerald-600">
+                        <span>Discount</span>
+                        <span>-{formatCurrency(discount)}</span>
+                      </div>
+                    )}
+
+                    {/* Tax */}
+                    <div className="flex justify-between text-gray-600">
+                      <span>Tax ({(taxRate * 100).toFixed(1)}%)</span>
+                      <span>{formatCurrency(tax)}</span>
+                    </div>
+
+                    {/* Gratuity */}
+                    {gratuity > 0 && (
+                      <div className="flex justify-between text-blue-600">
+                        <span>Gratuity</span>
+                        <span>{formatCurrency(gratuity)}</span>
+                      </div>
+                    )}
+
+                    {/* Rounding */}
+                    {priceRounding.enabled && Math.abs(roundingAdjustment) > 0.001 && (
+                      <div className="flex justify-between text-gray-400">
+                        <span>Rounding</span>
+                        <span>{roundingAdjustment >= 0 ? '+' : ''}{formatCurrency(roundingAdjustment)}</span>
+                      </div>
+                    )}
+
+                    {/* Final Total */}
+                    <div className={`flex justify-between pt-2 border-t font-bold ${
+                      dualPricing.enabled && paymentMethod === 'cash'
+                        ? 'border-emerald-200 text-emerald-700'
+                        : 'border-gray-200/50 text-gray-700'
+                    }`}>
+                      <span>Total</span>
+                      <span>{formatCurrency(total)}</span>
+                    </div>
+
+                    {/* Savings message */}
+                    {dualPricing.enabled && dualPricing.showSavingsMessage && paymentMethod === 'cash' && storedSubtotal > 0 && (
+                      <div className="text-center text-emerald-600 pt-1">
+                        You save {formatCurrency(cashDiscountAmount)} with cash!
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -2625,17 +2952,21 @@ export default function OrdersPage() {
         </div>
 
         {/* Action Buttons */}
-        <div className="p-4 border-t space-y-2">
+        <div className="p-4 border-t border-white/30 space-y-3 bg-gradient-to-b from-white/50 to-white/70 backdrop-blur-sm">
           {(() => {
             const newItemCount = currentOrder?.items.filter(i => !i.sentToKitchen).length || 0
             const hasNewItems = newItemCount > 0
             const isExistingOrder = !!savedOrderId
 
             return (
-              <Button
-                variant="primary"
-                size="lg"
-                className="w-full"
+              <button
+                className={`w-full py-4 rounded-xl font-bold text-lg text-white transition-all duration-200 ${
+                  (!currentOrder?.items.length || isSendingOrder || (isExistingOrder && !hasNewItems))
+                    ? 'bg-gray-300 cursor-not-allowed'
+                    : currentMode === 'bar'
+                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-[1.01] active:scale-[0.99]'
+                      : 'bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/30 hover:shadow-xl hover:shadow-orange-500/40 hover:scale-[1.01] active:scale-[0.99]'
+                }`}
                 disabled={!currentOrder?.items.length || isSendingOrder || (isExistingOrder && !hasNewItems)}
                 onClick={handleSendToKitchen}
               >
@@ -2643,49 +2974,61 @@ export default function OrdersPage() {
                   isExistingOrder ?
                     (hasNewItems ? `Send ${newItemCount} New Item${newItemCount > 1 ? 's' : ''} to Kitchen` : 'No New Items')
                     : 'Send to Kitchen'}
-              </Button>
+              </button>
             )
           })()}
           <div className="grid grid-cols-5 gap-2">
-            <Button
-              variant="outline"
-              size="md"
+            <button
+              className={`py-2.5 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                !currentOrder?.items.length
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white/70 hover:bg-white/90 text-gray-700 border border-white/40 hover:shadow-md hover:border-purple-300 hover:text-purple-700'
+              }`}
               disabled={!currentOrder?.items.length}
               onClick={handleOpenDiscount}
-              className="text-sm"
             >
               Disc
-            </Button>
-            <Button
-              variant="outline"
-              size="md"
+            </button>
+            <button
+              className={`py-2.5 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                !currentOrder?.items.length || !savedOrderId
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white/70 hover:bg-white/90 text-gray-700 border border-white/40 hover:shadow-md hover:border-blue-300 hover:text-blue-700'
+              }`}
               disabled={!currentOrder?.items.length || !savedOrderId}
               onClick={() => setShowItemTransferModal(true)}
-              className="text-sm"
             >
               Move
-            </Button>
-            <Button
-              variant="outline"
-              size="md"
+            </button>
+            <button
+              className={`py-2.5 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                !currentOrder?.items.length || !savedOrderId
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white/70 hover:bg-white/90 text-gray-700 border border-white/40 hover:shadow-md hover:border-cyan-300 hover:text-cyan-700'
+              }`}
               disabled={!currentOrder?.items.length || !savedOrderId}
               onClick={handleOpenSplitTicket}
-              className="text-sm"
               title="Split order into separate tickets"
             >
               Split
-            </Button>
-            <Button
-              variant="outline"
-              size="md"
+            </button>
+            <button
+              className={`py-2.5 px-2 rounded-xl text-sm font-bold transition-all duration-200 ${
+                !currentOrder?.items.length && !(currentOrder?.total && currentOrder.total > 0)
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-md shadow-emerald-500/25 hover:shadow-lg hover:shadow-emerald-500/35 hover:scale-[1.02]'
+              }`}
               disabled={!currentOrder?.items.length && !(currentOrder?.total && currentOrder.total > 0)}
               onClick={handleOpenPayment}
             >
               Pay
-            </Button>
-            <Button
-              variant="danger"
-              size="md"
+            </button>
+            <button
+              className={`py-2.5 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                !currentOrder?.items.length
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-md shadow-red-500/25 hover:shadow-lg hover:shadow-red-500/35 hover:scale-[1.02]'
+              }`}
               onClick={() => {
                 clearOrder()
                 setSavedOrderId(null)
@@ -2695,7 +3038,7 @@ export default function OrdersPage() {
               disabled={!currentOrder?.items.length}
             >
               Clear
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -3168,7 +3511,36 @@ export default function OrdersPage() {
         <TablePickerModal
           locationId={employee.location.id}
           onSelect={(tableId, tableName, guestCount) => {
-            startOrder('dine_in', { tableId, tableName, guestCount })
+            // Use selected order type if available, otherwise default to dine_in
+            const orderTypeSlug = selectedOrderType?.slug || 'dine_in'
+            const orderTypeId = selectedOrderType?.id
+            // Include any custom fields that were collected
+            const cleanFields: Record<string, string> = {}
+            if (orderCustomFields) {
+              Object.entries(orderCustomFields).forEach(([key, value]) => {
+                if (value !== undefined) {
+                  cleanFields[key] = value
+                }
+              })
+            }
+            // If there's an existing order with items, update order type instead of starting fresh
+            if (currentOrder?.items.length) {
+              updateOrderType(orderTypeSlug, {
+                tableId,
+                tableName,
+                guestCount,
+                orderTypeId,
+                customFields: Object.keys(cleanFields).length > 0 ? cleanFields : undefined,
+              })
+            } else {
+              startOrder(orderTypeSlug, {
+                tableId,
+                tableName,
+                guestCount,
+                orderTypeId,
+                customFields: Object.keys(cleanFields).length > 0 ? cleanFields : undefined,
+              })
+            }
             setShowTablePicker(false)
           }}
           onCancel={() => setShowTablePicker(false)}

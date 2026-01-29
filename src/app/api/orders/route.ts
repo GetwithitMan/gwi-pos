@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { employeeId, locationId, orderType, tableId, tabName, guestCount, items, notes } = validation.data
+    const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields } = validation.data
 
     // Get next order number for today
     const today = new Date()
@@ -71,11 +72,26 @@ export async function POST(request: NextRequest) {
             price: mod.price,
             quantity: 1,
             preModifier: mod.preModifier || null,
+            depth: mod.depth || 0, // Modifier hierarchy depth
             // Spirit selection fields (Liquor Builder)
             spiritTier: mod.spiritTier || null,
             linkedBottleProductId: mod.linkedBottleProductId || null,
           })),
         },
+        // Ingredient modifications (No, Lite, On Side, Extra, Swap)
+        ingredientModifications: item.ingredientModifications && item.ingredientModifications.length > 0
+          ? {
+              create: item.ingredientModifications.map(ing => ({
+                locationId,
+                ingredientId: ing.ingredientId,
+                ingredientName: ing.name,
+                modificationType: ing.modificationType,
+                priceAdjustment: ing.priceAdjustment || 0,
+                swappedToModifierId: ing.swappedTo?.modifierId || null,
+                swappedToModifierName: ing.swappedTo?.name || null,
+              })),
+            }
+          : undefined,
       }
     })
 
@@ -96,6 +112,7 @@ export async function POST(request: NextRequest) {
         employeeId,
         orderNumber,
         orderType,
+        orderTypeId: orderTypeId || null,
         tableId: tableId || null,
         tabName: tabName || null,
         guestCount: guestCount || 1,
@@ -107,6 +124,7 @@ export async function POST(request: NextRequest) {
         total,
         commissionTotal,
         notes: notes || null,
+        customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
         items: {
           create: orderItems,
         },

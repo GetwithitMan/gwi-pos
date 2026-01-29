@@ -28,6 +28,8 @@ interface Modifier {
   extraUpsellPrice?: number | null
   isDefault: boolean
   isActive: boolean
+  showOnPOS: boolean
+  showOnline: boolean
   childModifierGroupId?: string | null
   commissionType?: string | null
   commissionValue?: number | null
@@ -41,6 +43,8 @@ interface ModifierGroup {
   minSelections: number
   maxSelections: number
   isRequired: boolean
+  allowStacking: boolean
+  hasOnlineOverride: boolean
   modifiers: Modifier[]
   linkedItems: { id: string; name: string }[]
 }
@@ -87,7 +91,9 @@ export default function ModifiersPage() {
     minSelections: number
     maxSelections: number
     isRequired: boolean
-    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null }[]
+    allowStacking: boolean
+    hasOnlineOverride: boolean
+    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; showOnPOS?: boolean; showOnline?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null }[]
   }) => {
     try {
       const method = editingGroup ? 'PUT' : 'POST'
@@ -105,9 +111,14 @@ export default function ModifiersPage() {
         loadModifiers()
         setShowGroupModal(false)
         setEditingGroup(null)
+      } else {
+        const errorData = await response.json()
+        console.error('API error:', errorData)
+        alert(`Failed to save: ${errorData.error || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Failed to save modifier group:', error)
+      alert('Failed to save modifier group. Check console for details.')
     }
   }
 
@@ -222,6 +233,9 @@ export default function ModifiersPage() {
                             {group.isRequired && (
                               <span className="ml-2 text-red-500">Required</span>
                             )}
+                            {group.hasOnlineOverride && (
+                              <span className="ml-2 text-purple-600" title="Online ordering override enabled">🌐</span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -280,7 +294,7 @@ export default function ModifiersPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-3 gap-4 mb-6 text-sm">
+                <div className="grid grid-cols-4 gap-4 mb-6 text-sm">
                   <div className="bg-gray-50 p-3 rounded">
                     <p className="text-gray-500">Min Selections</p>
                     <p className="font-semibold">{selectedGroup.minSelections}</p>
@@ -293,6 +307,12 @@ export default function ModifiersPage() {
                     <p className="text-gray-500">Required</p>
                     <p className="font-semibold">{selectedGroup.isRequired ? 'Yes' : 'No'}</p>
                   </div>
+                  <div className={`p-3 rounded ${selectedGroup.hasOnlineOverride ? 'bg-purple-50' : 'bg-gray-50'}`}>
+                    <p className="text-gray-500">Online Override</p>
+                    <p className={`font-semibold ${selectedGroup.hasOnlineOverride ? 'text-purple-600' : ''}`}>
+                      {selectedGroup.hasOnlineOverride ? 'Enabled' : 'Off'}
+                    </p>
+                  </div>
                 </div>
 
                 <h4 className="font-semibold mb-3">Modifiers</h4>
@@ -301,6 +321,8 @@ export default function ModifiersPage() {
                     const childGroup = mod.childModifierGroupId
                       ? modifierGroups.find(g => g.id === mod.childModifierGroupId)
                       : null
+                    const showPOS = mod.showOnPOS ?? true
+                    const showOnline = mod.showOnline ?? true
                     return (
                       <div
                         key={mod.id}
@@ -319,6 +341,20 @@ export default function ModifiersPage() {
                               <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded">
                                 {mod.allowedPreModifiers.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(', ')}
                               </span>
+                            )}
+                            {selectedGroup.hasOnlineOverride && (
+                              <>
+                                {!showPOS && (
+                                  <span className="bg-gray-200 text-gray-600 text-xs px-2 py-0.5 rounded">
+                                    Hidden on POS
+                                  </span>
+                                )}
+                                {!showOnline && (
+                                  <span className="bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded">
+                                    Hidden Online
+                                  </span>
+                                )}
+                              </>
                             )}
                             <span className={mod.isActive ? 'font-medium' : 'line-through'}>{mod.name}</span>
                           </div>
@@ -419,7 +455,9 @@ function ModifierGroupModal({
     minSelections: number
     maxSelections: number
     isRequired: boolean
-    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null }[]
+    allowStacking: boolean
+    hasOnlineOverride: boolean
+    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; showOnPOS?: boolean; showOnline?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null }[]
   }) => void
   onClose: () => void
 }) {
@@ -429,6 +467,8 @@ function ModifierGroupModal({
   const [minSelections, setMinSelections] = useState(group?.minSelections || 0)
   const [maxSelections, setMaxSelections] = useState(group?.maxSelections || 1)
   const [isRequired, setIsRequired] = useState(group?.isRequired || false)
+  const [allowStacking, setAllowStacking] = useState(group?.allowStacking || false)
+  const [hasOnlineOverride, setHasOnlineOverride] = useState(group?.hasOnlineOverride || false)
   const [modifiers, setModifiers] = useState<{
     id?: string
     name: string
@@ -439,6 +479,8 @@ function ModifierGroupModal({
     extraUpsellPrice?: number | null
     isDefault?: boolean
     isActive?: boolean
+    showOnPOS?: boolean
+    showOnline?: boolean
     childModifierGroupId?: string | null
     commissionType?: string | null
     commissionValue?: number | null
@@ -453,6 +495,8 @@ function ModifierGroupModal({
       extraUpsellPrice: m.extraUpsellPrice,
       isDefault: m.isDefault,
       isActive: m.isActive,
+      showOnPOS: m.showOnPOS ?? true,
+      showOnline: m.showOnline ?? true,
       childModifierGroupId: m.childModifierGroupId,
       commissionType: m.commissionType,
       commissionValue: m.commissionValue,
@@ -463,7 +507,7 @@ function ModifierGroupModal({
   const availableChildGroups = allGroups.filter(g => g.id !== group?.id)
 
   const addModifier = () => {
-    setModifiers([...modifiers, { name: '', price: 0, upsellPrice: null, allowedPreModifiers: null, extraPrice: null, extraUpsellPrice: null, isDefault: false, isActive: true, childModifierGroupId: null, commissionType: null, commissionValue: null }])
+    setModifiers([...modifiers, { name: '', price: 0, upsellPrice: null, allowedPreModifiers: null, extraPrice: null, extraUpsellPrice: null, isDefault: false, isActive: true, showOnPOS: true, showOnline: true, childModifierGroupId: null, commissionType: null, commissionValue: null }])
   }
 
   const togglePreModifier = (index: number, prefix: string) => {
@@ -491,19 +535,26 @@ function ModifierGroupModal({
   }
 
   const handleSubmit = () => {
-    if (!name.trim()) return
+    if (!name.trim()) {
+      alert('Please enter a name for the modifier group')
+      return
+    }
     if (modifierTypes.length === 0) {
       setModifierTypes(['universal'])
     }
-    onSave({
+    const dataToSave = {
       name: name.trim(),
       displayName: displayName.trim() || undefined,
       modifierTypes: modifierTypes.length > 0 ? modifierTypes : ['universal'],
       minSelections,
       maxSelections,
       isRequired,
+      allowStacking,
+      hasOnlineOverride,
       modifiers: modifiers.filter(m => m.name.trim()),
-    })
+    }
+    console.log('Saving modifier group:', dataToSave)
+    onSave(dataToSave)
   }
 
   const toggleModifierType = (typeValue: string) => {
@@ -625,6 +676,128 @@ function ModifierGroupModal({
                 <span className="text-sm font-medium">Required</span>
               </label>
             </div>
+          </div>
+
+          {/* Allow Stacking - for selecting same modifier multiple times */}
+          {maxSelections > 1 && (
+            <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowStacking}
+                  onChange={e => setAllowStacking(e.target.checked)}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm font-medium">Allow Stacking</span>
+              </label>
+              <span className="text-xs text-gray-500">
+                (Customer can select the same modifier multiple times, e.g., &quot;2x Fries&quot; for 2 side choices)
+              </span>
+            </div>
+          )}
+
+          {/* Online Ordering Override Section */}
+          <div className="border rounded-lg overflow-hidden">
+            <div
+              className={`p-3 flex items-center gap-3 cursor-pointer transition-colors ${
+                hasOnlineOverride ? 'bg-purple-50 border-b border-purple-200' : 'bg-gray-50 hover:bg-gray-100'
+              }`}
+              onClick={() => setHasOnlineOverride(!hasOnlineOverride)}
+            >
+              <input
+                type="checkbox"
+                checked={hasOnlineOverride}
+                onChange={e => setHasOnlineOverride(e.target.checked)}
+                className="w-4 h-4"
+                onClick={e => e.stopPropagation()}
+              />
+              <div>
+                <span className="text-sm font-medium">Enable Online Ordering Override</span>
+                <p className="text-xs text-gray-500">
+                  Manage which modifiers appear for online orders vs POS
+                </p>
+              </div>
+            </div>
+            {hasOnlineOverride && modifiers.length > 0 && (
+              <div className="p-3 bg-white">
+                {/* Quick Actions */}
+                <div className="flex gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = modifiers.map(m => ({ ...m, showOnPOS: true }))
+                      setModifiers(updated)
+                    }}
+                    className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
+                  >
+                    All POS ✓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = modifiers.map(m => ({ ...m, showOnline: true }))
+                      setModifiers(updated)
+                    }}
+                    className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
+                  >
+                    All Online ✓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updated = modifiers.map(m => ({ ...m, showOnPOS: true, showOnline: true }))
+                      setModifiers(updated)
+                    }}
+                    className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
+                  >
+                    Sync Both
+                  </button>
+                </div>
+                {/* Visibility Table */}
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Modifier</th>
+                        <th className="text-center px-3 py-2 font-medium w-20">POS</th>
+                        <th className="text-center px-3 py-2 font-medium w-20">Online</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {modifiers.filter(m => m.name.trim()).map((mod, index) => (
+                        <tr key={index} className="border-t">
+                          <td className="px-3 py-2">{mod.name || '(unnamed)'}</td>
+                          <td className="text-center px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={mod.showOnPOS ?? true}
+                              onChange={e => updateModifier(index, 'showOnPOS', e.target.checked)}
+                              className="w-4 h-4 accent-blue-600"
+                            />
+                          </td>
+                          <td className="text-center px-3 py-2">
+                            <input
+                              type="checkbox"
+                              checked={mod.showOnline ?? true}
+                              onChange={e => updateModifier(index, 'showOnline', e.target.checked)}
+                              className="w-4 h-4 accent-purple-600"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Unchecked modifiers will be hidden from that channel
+                </p>
+              </div>
+            )}
+            {hasOnlineOverride && modifiers.length === 0 && (
+              <div className="p-3 bg-white text-sm text-gray-500 text-center">
+                Add modifiers below to configure visibility
+              </div>
+            )}
           </div>
 
           <div>

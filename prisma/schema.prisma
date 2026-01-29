@@ -47,6 +47,7 @@ model Location {
   categories            Category[]
   menuItems             MenuItem[]
   modifierGroups        ModifierGroup[]
+  orderTypes            OrderType[]
   orders                Order[]
   tables                Table[]
   sections              Section[]
@@ -117,6 +118,11 @@ model Location {
   // Liquor Builder (multi-tenancy)
   recipeIngredients    RecipeIngredient[]
   spiritModifierGroups SpiritModifierGroup[]
+
+  // Menu Item Ingredients (multi-tenancy)
+  ingredients             Ingredient[]
+  menuItemIngredients     MenuItemIngredient[]
+  orderItemIngredients    OrderItemIngredient[]
 
   @@index([organizationId])
 }
@@ -534,6 +540,9 @@ model MenuItem {
   // Modifiers that link to this item (for spirit upgrades, etc.)
   linkedModifiers Modifier[] @relation("LinkedModifierItem")
 
+  // Menu Item Ingredients - what's in this item
+  ingredients MenuItemIngredient[]
+
   @@unique([locationId, sku])
   @@index([locationId])
   @@index([categoryId])
@@ -556,6 +565,10 @@ model ModifierGroup {
   minSelections Int     @default(0)
   maxSelections Int     @default(1)
   isRequired    Boolean @default(false)
+  allowStacking Boolean @default(false) // Allow selecting the same modifier multiple times
+
+  // Online Ordering Override
+  hasOnlineOverride Boolean @default(false) // Enable separate modifier management for online orders
 
   // Display
   sortOrder Int @default(0)
@@ -577,6 +590,9 @@ model ModifierGroup {
 
   // Liquor Builder - Spirit configuration
   spiritConfig SpiritModifierGroup?
+
+  // Ingredients that can swap to this group
+  swappableIngredients Ingredient[] @relation("IngredientSwapGroup")
 
   @@index([locationId])
 }
@@ -628,6 +644,10 @@ model Modifier {
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
 
+  // Channel visibility (for online ordering overrides)
+  showOnPOS    Boolean @default(true)  // Visible to servers on POS
+  showOnline   Boolean @default(true)  // Visible for online ordering
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -649,7 +669,8 @@ model MenuItemModifierGroup {
   modifierGroupId String
   modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
 
-  sortOrder Int @default(0)
+  sortOrder  Int     @default(0)
+  showOnline Boolean @default(true) // Whether this modifier group appears for online ordering
 
   @@unique([menuItemId, modifierGroupId])
   @@index([locationId])
@@ -826,6 +847,53 @@ model Table {
 }
 
 // ============================================
+// ORDER TYPES (Configurable Order Workflow)
+// ============================================
+
+model OrderType {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Dine In", "Call-in", "Drive-through"
+  slug        String // "dine_in", "call_in", "drive_through" (code reference)
+  description String?
+  color       String? // Badge color (hex)
+  icon        String? // Icon name (e.g., "table", "phone", "car")
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+  isSystem    Boolean @default(false) // True for built-in types (dine_in, bar_tab, takeout)
+
+  // JSON Configuration Fields
+  // Required fields: { "tableId": true, "tabName": true, "phone": true }
+  requiredFields Json?
+
+  // Optional fields: { "address": true, "pickupTime": true, "vehicleType": true }
+  optionalFields Json?
+
+  // Field definitions with labels, types, validation
+  // { "phone": { "label": "Phone Number", "type": "phone", "placeholder": "555-123-4567" } }
+  fieldDefinitions Json?
+
+  // Workflow rules: { "requirePaymentBeforeSend": true, "requireTableSelection": true }
+  workflowRules Json?
+
+  // KDS display configuration: { "badgeText": "{customerName}", "showPickupTime": true }
+  kdsConfig Json?
+
+  // Kitchen ticket print formatting
+  printConfig Json?
+
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([locationId, slug])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+// ============================================
 // ORDERS (Skill 04)
 // ============================================
 
@@ -851,11 +919,16 @@ model Order {
   splitIndex    Int? // 1, 2, 3... for display as "31-1", "31-2"
 
   // Type & Context
-  orderType  String  @default("dine_in") // dine_in, takeout, delivery, bar_tab
-  tableId    String?
-  table      Table?  @relation(fields: [tableId], references: [id])
-  guestCount Int     @default(1)
-  tabName    String? // For bar tabs
+  orderType    String     @default("dine_in") // Legacy: dine_in, takeout, delivery, bar_tab
+  orderTypeId  String? // New: Reference to configurable OrderType
+  orderTypeRef OrderType? @relation(fields: [orderTypeId], references: [id])
+  tableId      String?
+  table        Table?     @relation(fields: [tableId], references: [id])
+  guestCount   Int        @default(1)
+  tabName      String? // For bar tabs
+
+  // Custom fields collected for this order type (e.g., phone, pickupTime, vehicleColor)
+  customFields Json?
 
   // Status
   status String @default("open") // open, sent, paid, closed, voided
@@ -906,6 +979,7 @@ model Order {
   @@index([openedAt])
   @@index([orderNumber, locationId])
   @@index([orderType])
+  @@index([orderTypeId])
   @@index([parentOrderId])
 }
 
@@ -969,7 +1043,8 @@ model OrderItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  modifiers OrderItemModifier[]
+  modifiers               OrderItemModifier[]
+  ingredientModifications OrderItemIngredient[]
 
   @@index([locationId])
   @@index([orderId])
@@ -990,6 +1065,7 @@ model OrderItemModifier {
   name        String
   price       Decimal // Actual price charged (may differ from item price if discounted)
   preModifier String? // "no", "lite", "extra", "side"
+  depth       Int     @default(0) // Modifier hierarchy depth: 0=top, 1=child, 2=grandchild
 
   quantity Int @default(1)
 
@@ -2275,4 +2351,95 @@ model SpiritUpsellEvent {
   @@index([employeeId])
   @@index([createdAt])
   @@index([wasAccepted])
+}
+
+// ============================================
+// MENU ITEM INGREDIENTS (Skill: Ingredients)
+// Tracks what's in each menu item with modification options
+// ============================================
+
+// Global ingredient library - reusable across menu items
+model Ingredient {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name     String  // "Lettuce", "Tomato", "Bacon"
+  category String? // "produce", "protein", "dairy", "sauce", "bread"
+
+  // Default modification options (can be overridden per menu item)
+  allowNo      Boolean @default(true)
+  allowLite    Boolean @default(true)
+  allowOnSide  Boolean @default(true)
+  allowExtra   Boolean @default(true)
+  extraPrice   Decimal @default(0) // Charge for Extra
+
+  // Swap configuration - links to a modifier group for replacements
+  allowSwap           Boolean        @default(false)
+  swapModifierGroupId String?
+  swapModifierGroup   ModifierGroup? @relation("IngredientSwapGroup", fields: [swapModifierGroupId], references: [id])
+  swapUpcharge        Decimal        @default(0) // Base upcharge for any swap
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  menuItemIngredients MenuItemIngredient[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([category])
+}
+
+// Links ingredients to menu items with per-item configuration
+model MenuItemIngredient {
+  id           String     @id @default(cuid())
+  locationId   String
+  location     Location   @relation(fields: [locationId], references: [id])
+  menuItemId   String
+  menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  isIncluded Boolean @default(true) // Comes on item by default?
+  sortOrder  Int     @default(0)
+
+  // Per-item price overrides (null = use ingredient defaults)
+  extraPriceOverride   Decimal?
+  swapUpchargeOverride Decimal?
+
+  createdAt DateTime @default(now())
+
+  @@unique([menuItemId, ingredientId])
+  @@index([locationId])
+  @@index([menuItemId])
+}
+
+// Tracks ingredient modifications on orders for reporting
+model OrderItemIngredient {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  ingredientId   String
+  ingredientName String // Snapshot at time of order
+
+  // Modification type: "standard", "no", "lite", "on_side", "extra", "swap"
+  modificationType String  @default("standard")
+  priceAdjustment  Decimal @default(0)
+
+  // For swaps - what was it replaced with?
+  swappedToModifierId   String?
+  swappedToModifierName String?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([orderItemId])
+  @@index([modificationType])
 }

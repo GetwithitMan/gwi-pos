@@ -3,8 +3,13 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 
 // GET all modifier groups with their modifiers
-export async function GET() {
+// Optional query params:
+//   - channel: 'online' | 'pos' - filter modifiers by channel visibility
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url)
+    const channel = searchParams.get('channel') // 'online', 'pos', or null (admin - show all)
+
     const modifierGroups = await db.modifierGroup.findMany({
       orderBy: { sortOrder: 'asc' },
       include: {
@@ -38,52 +43,66 @@ export async function GET() {
     })
 
     return NextResponse.json({
-      modifierGroups: modifierGroups.map(group => ({
-        id: group.id,
-        name: group.name,
-        displayName: group.displayName,
-        modifierTypes: (group.modifierTypes as string[]) || ['universal'],
-        minSelections: group.minSelections,
-        maxSelections: group.maxSelections,
-        isRequired: group.isRequired,
-        sortOrder: group.sortOrder,
-        isSpiritGroup: group.isSpiritGroup,
-        spiritConfig: group.spiritConfig ? {
-          spiritCategoryId: group.spiritConfig.spiritCategoryId,
-          spiritCategoryName: group.spiritConfig.spiritCategory.displayName || group.spiritConfig.spiritCategory.name,
-          upsellEnabled: group.spiritConfig.upsellEnabled,
-          upsellPromptText: group.spiritConfig.upsellPromptText,
-          defaultTier: group.spiritConfig.defaultTier,
-        } : null,
-        modifiers: group.modifiers.map(mod => ({
-          id: mod.id,
-          name: mod.name,
-          displayName: mod.displayName,
-          price: Number(mod.price),
-          upsellPrice: mod.upsellPrice ? Number(mod.upsellPrice) : null,
-          allowedPreModifiers: mod.allowedPreModifiers as string[] | null,
-          extraPrice: mod.extraPrice ? Number(mod.extraPrice) : null,
-          extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
-          sortOrder: mod.sortOrder,
-          isDefault: mod.isDefault,
-          isActive: mod.isActive,
-          childModifierGroupId: mod.childModifierGroupId,
-          commissionType: mod.commissionType,
-          commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
-          // Spirit fields
-          spiritTier: mod.spiritTier,
-          linkedBottleProductId: mod.linkedBottleProductId,
-          linkedBottleProduct: mod.linkedBottleProduct ? {
-            id: mod.linkedBottleProduct.id,
-            name: mod.linkedBottleProduct.name,
-            pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
+      modifierGroups: modifierGroups.map(group => {
+        // Filter modifiers based on channel if specified
+        let filteredModifiers = group.modifiers
+        if (channel === 'online') {
+          filteredModifiers = group.modifiers.filter(mod => mod.showOnline)
+        } else if (channel === 'pos') {
+          filteredModifiers = group.modifiers.filter(mod => mod.showOnPOS)
+        }
+
+        return {
+          id: group.id,
+          name: group.name,
+          displayName: group.displayName,
+          modifierTypes: (group.modifierTypes as string[]) || ['universal'],
+          minSelections: group.minSelections,
+          maxSelections: group.maxSelections,
+          isRequired: group.isRequired,
+          allowStacking: group.allowStacking,
+          hasOnlineOverride: group.hasOnlineOverride,
+          sortOrder: group.sortOrder,
+          isSpiritGroup: group.isSpiritGroup,
+          spiritConfig: group.spiritConfig ? {
+            spiritCategoryId: group.spiritConfig.spiritCategoryId,
+            spiritCategoryName: group.spiritConfig.spiritCategory.displayName || group.spiritConfig.spiritCategory.name,
+            upsellEnabled: group.spiritConfig.upsellEnabled,
+            upsellPromptText: group.spiritConfig.upsellPromptText,
+            defaultTier: group.spiritConfig.defaultTier,
           } : null,
-        })),
-        linkedItems: group.menuItems.map(link => ({
-          id: link.menuItem.id,
-          name: link.menuItem.name,
-        }))
-      }))
+          modifiers: filteredModifiers.map(mod => ({
+            id: mod.id,
+            name: mod.name,
+            displayName: mod.displayName,
+            price: Number(mod.price),
+            upsellPrice: mod.upsellPrice ? Number(mod.upsellPrice) : null,
+            allowedPreModifiers: mod.allowedPreModifiers as string[] | null,
+            extraPrice: mod.extraPrice ? Number(mod.extraPrice) : null,
+            extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
+            sortOrder: mod.sortOrder,
+            isDefault: mod.isDefault,
+            isActive: mod.isActive,
+            showOnPOS: mod.showOnPOS,
+            showOnline: mod.showOnline,
+            childModifierGroupId: mod.childModifierGroupId,
+            commissionType: mod.commissionType,
+            commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
+            // Spirit fields
+            spiritTier: mod.spiritTier,
+            linkedBottleProductId: mod.linkedBottleProductId,
+            linkedBottleProduct: mod.linkedBottleProduct ? {
+              id: mod.linkedBottleProduct.id,
+              name: mod.linkedBottleProduct.name,
+              pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
+            } : null,
+          })),
+          linkedItems: group.menuItems.map(link => ({
+            id: link.menuItem.id,
+            name: link.menuItem.name,
+          }))
+        }
+      })
     })
   } catch (error) {
     console.error('Failed to fetch modifier groups:', error)
@@ -98,7 +117,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, modifiers } = body
+    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, modifiers } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -131,9 +150,12 @@ export async function POST(request: NextRequest) {
         minSelections: minSelections || 0,
         maxSelections: maxSelections || 1,
         isRequired: isRequired || false,
+        allowStacking: allowStacking || false,
+        hasOnlineOverride: hasOnlineOverride || false,
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         modifiers: modifiers?.length ? {
-          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number }, index: number) => ({
+          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number; showOnPOS?: boolean; showOnline?: boolean }, index: number) => ({
+            locationId: location.id,
             name: mod.name,
             price: mod.price || 0,
             upsellPrice: mod.upsellPrice ?? null,
@@ -143,6 +165,8 @@ export async function POST(request: NextRequest) {
             childModifierGroupId: mod.childModifierGroupId || null,
             commissionType: mod.commissionType || null,
             commissionValue: mod.commissionValue ?? null,
+            showOnPOS: mod.showOnPOS ?? true,
+            showOnline: mod.showOnline ?? true,
             sortOrder: index,
           }))
         } : undefined
@@ -160,6 +184,8 @@ export async function POST(request: NextRequest) {
       minSelections: modifierGroup.minSelections,
       maxSelections: modifierGroup.maxSelections,
       isRequired: modifierGroup.isRequired,
+      allowStacking: modifierGroup.allowStacking,
+      hasOnlineOverride: modifierGroup.hasOnlineOverride,
       modifiers: modifierGroup.modifiers.map(mod => ({
         id: mod.id,
         name: mod.name,
@@ -171,6 +197,8 @@ export async function POST(request: NextRequest) {
         childModifierGroupId: mod.childModifierGroupId,
         commissionType: mod.commissionType,
         commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
+        showOnPOS: mod.showOnPOS,
+        showOnline: mod.showOnline,
       }))
     })
   } catch (error) {

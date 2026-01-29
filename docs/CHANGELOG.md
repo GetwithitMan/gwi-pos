@@ -2,6 +2,52 @@
 
 All notable changes to the GWI POS system.
 
+## [2026-01-29] - Online Ordering Modifier Overrides
+
+### Added
+
+#### Online Ordering Modifier Override (Skill 99)
+Control which modifier groups appear for online orders vs POS, per menu item.
+
+**Database Schema:**
+- `MenuItemModifierGroup.showOnline` - Boolean (default true) controlling online visibility
+- `ModifierGroup.hasOnlineOverride` - Boolean flag for modifier-level override management
+- `Modifier.showOnPOS` / `Modifier.showOnline` - Per-modifier channel visibility
+
+**API Changes:**
+- `GET /api/menu/items/[id]/modifiers?channel=online|pos` - Filters by channel
+- `POST /api/menu/items/[id]/modifiers` - Accepts `{ modifierGroups: [{ id, showOnline }] }` format
+- `GET /api/menu/modifiers?channel=online|pos` - Filters modifier groups by channel
+- `PUT /api/menu/modifiers/[id]` - Saves `hasOnlineOverride` and per-modifier visibility
+
+**Admin UI (Edit Item Modal):**
+- "Modifier Groups" section - Select groups for the item (all show on POS)
+- "Online Modifier Groups" section - Toggle which groups appear for online orders
+- Purple-themed checkboxes with "Hidden online" badges
+- Counter showing "X of Y groups visible online"
+
+**Admin UI (Modifiers Page):**
+- "Enable Online Ordering Override" checkbox on modifier groups
+- Visibility table with POS/Online columns for each modifier
+- Quick action buttons: "All POS ✓", "All Online ✓", "Sync Both"
+- 🌐 indicator in sidebar for groups with override enabled
+
+**Two-Level Control:**
+1. **Item Level:** Choose which modifier groups appear online for each menu item
+2. **Modifier Level:** Fine-tune which individual modifiers within a group appear online
+
+#### Modifier Stacking UI Enhancement
+- Visual feedback for stacked selections (gradient + yellow glow)
+- "2x" badge on stacked modifiers
+- "Tap same item twice for 2x" hint text
+- Improved stacking logic for max selection handling
+
+#### Modifier Hierarchy Display
+- `OrderItemModifier.depth` field tracks nesting level (0=top, 1=child, 2=grandchild)
+- KDS and orders page show dashes for nested modifiers (e.g., `- House Salad`, `-- Ranch`)
+
+---
+
 ## [2026-01-28] - Entertainment Management System
 
 ### Added

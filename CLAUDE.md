@@ -194,6 +194,7 @@ Dev server runs at: http://localhost:3000
 | `/employees` | Employee management |
 | `/tables` | Floor plan / table layout |
 | `/settings` | System settings |
+| `/settings/order-types` | Configurable order types management |
 | `/settings/tip-outs` | Tip-out rules configuration |
 | `/reports` | Sales and labor reports |
 | `/reports/tips` | Tips report (tip shares, banked tips) |
@@ -221,6 +222,50 @@ Modifier groups can have multiple types (stored as JSON array):
 - `retail` - Retail item modifiers
 - `entertainment` - Entertainment modifiers
 - `combo` - Combo/bundle modifiers
+
+### Online Ordering Modifier Override
+Control which modifier groups and individual modifiers appear for online orders vs POS.
+
+**Two-Level Control:**
+1. **Item Level** - Per menu item, choose which modifier groups appear for online orders
+2. **Modifier Level** - Within a group, choose which individual modifiers appear online
+
+**Schema:**
+- `MenuItemModifierGroup.showOnline` - Boolean controlling if group appears online for this item
+- `ModifierGroup.hasOnlineOverride` - Enables per-modifier visibility management
+- `Modifier.showOnPOS` / `Modifier.showOnline` - Per-modifier channel visibility
+
+**API Usage:**
+```typescript
+// Fetch modifiers for online ordering (filtered)
+GET /api/menu/items/{id}/modifiers?channel=online
+
+// Fetch modifiers for POS (all or filtered by showOnPOS)
+GET /api/menu/items/{id}/modifiers?channel=pos
+
+// Save modifier group links with online visibility
+POST /api/menu/items/{id}/modifiers
+{ "modifierGroups": [{ "id": "grp-1", "showOnline": true }, { "id": "grp-2", "showOnline": false }] }
+```
+
+**Admin UI:**
+- Edit Item Modal: "Modifier Groups" + "Online Modifier Groups" sections
+- Modifiers Page: "Enable Online Ordering Override" with visibility table
+
+**Example Use Case:**
+- Servers see all 10 wing sauce options on POS
+- Online customers only see 8 popular options (spicy ones hidden)
+
+### Modifier Stacking
+Modifier groups with `allowStacking: true` allow selecting the same modifier multiple times.
+- Visual feedback: gradient color + yellow glow for stacked selections
+- "2x" badge shows stacked count
+- Hint text: "Tap same item twice for 2x"
+
+### Modifier Hierarchy (Nested Modifiers)
+Child modifier groups create nested selections. Depth is tracked for display:
+- `OrderItemModifier.depth` - 0=top level, 1=child, 2=grandchild
+- KDS/Orders display uses dash prefix: `- Salad`, `-- Ranch Dressing`
 
 ### Pour Sizes (Liquor Items)
 Liquor items support quick pour size selection with price multipliers:
@@ -303,6 +348,51 @@ Comprehensive tip distribution with automatic tip-outs and banked tips:
 - `tips.view_own` / `tips.view_all` - View tips
 - `tips.share` / `tips.collect` - Share and collect tips
 - `tips.manage_rules` / `tips.manage_bank` - Admin tip management
+
+### Configurable Order Types
+Admin-configurable order types replace hardcoded types, supporting custom fields and workflow rules.
+
+**Default Order Types:**
+
+| Type | Slug | Required Fields | Workflow Rules |
+|------|------|-----------------|----------------|
+| Table | `dine_in` | tableId | requireTableSelection |
+| Bar Tab | `bar_tab` | tabName | requireCustomerName |
+| Takeout | `takeout` | - | requirePaymentBeforeSend |
+| Delivery | `delivery` | address, phone | - |
+| Drive Thru | `drive_thru` | customerName, vehicleType, vehicleColor | - |
+
+**Admin Management** (`/settings/order-types`):
+- Create custom order types with name, slug, color, icon
+- Configure required/optional fields with various input types
+- Set workflow rules (require table, payment, customer name)
+- Toggle active/inactive to show/hide in POS
+- System types protected from deletion
+
+**Field Types:**
+- `text` - Single line input
+- `textarea` - Multi-line input
+- `phone` - Phone number input
+- `time` - Time picker
+- `select` - Button grid selection (touch-friendly)
+
+**Workflow Rules:**
+- `requireTableSelection` - Must select table before sending
+- `requireCustomerName` - Must have customer/tab name
+- `requirePaymentBeforeSend` - Must pay before sending to kitchen
+- `allowSplitCheck` - Whether split check is allowed
+- `showOnKDS` - Whether to display on KDS
+
+**Related Models:**
+- `OrderType` - Order type configuration with JSON fields
+- `Order.orderTypeId` - Reference to OrderType record
+- `Order.customFields` - JSON storage for collected field values
+
+**Key Files:**
+- `src/types/order-types.ts` - Type definitions
+- `src/app/api/order-types/route.ts` - CRUD API
+- `src/components/orders/OrderTypeSelector.tsx` - POS buttons & modal
+- `src/app/(admin)/settings/order-types/page.tsx` - Admin page
 
 ## Seed Data (Bar Menu)
 

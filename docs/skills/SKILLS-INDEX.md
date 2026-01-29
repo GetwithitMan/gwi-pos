@@ -129,7 +129,7 @@
 |-------|------|--------|--------------|-------|
 | 51 | Customer Profiles | DONE | - | Full CRUD, admin UI at /customers, reports |
 | 52 | Loyalty Program | DONE | 51 | Points earning/redemption, settings, receipt display |
-| 53 | Online Ordering | TODO | 03, 30 | Web orders |
+| 53 | Online Ordering | TODO | 03, 30, 99 | Web orders (modifier override ready via ?channel=online) |
 | 54 | Order Ahead | TODO | 53 | Scheduled pickup |
 
 ### Hardware Integration
@@ -174,8 +174,8 @@
 | Customer Features | 2 | 0 | 2 | 4 | 50% |
 | Hardware | 0 | 0 | 4 | 4 | 0% |
 | Advanced | 0 | 0 | 1 | 1 | 0% |
-| Additional (80-98) | 14 | 0 | 0 | 14 | 100% |
-| **TOTAL** | **71** | **3** | **7** | **81** | **91%** |
+| Additional (80-101) | 17 | 0 | 0 | 17 | 100% |
+| **TOTAL** | **74** | **3** | **7** | **84** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -295,6 +295,14 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-01-29)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 99 | Online Ordering Modifier Override | Per-item control of which modifier groups appear online, two-level visibility system |
+| 100 | Modifier Stacking UI | Visual gradient feedback, 2x badge, hint text for stacked modifier selections |
+| 101 | Modifier Hierarchy Display | Depth field on OrderItemModifier, dash prefix display on KDS and orders page |
 
 ## Recently Completed (2026-01-28)
 
@@ -447,6 +455,9 @@ These skills emerged during development and are now part of the system:
 | 96 | Waitlist Tab Integration | DONE | 95, 20 | Link waitlist to existing tab or start new tab with card |
 | 97 | Waitlist Deposits | DONE | 95 | Take cash/card deposits to hold position on waitlist |
 | 98 | Entertainment KDS | DONE | 94, 95 | Dedicated KDS page at /entertainment with item grid, status display, waitlist panel |
+| 99 | Online Ordering Modifier Override | DONE | 04, 53 | Per-item control of which modifier groups appear online, two-level visibility (item + modifier) |
+| 100 | Modifier Stacking UI | DONE | 04 | Visual feedback for stacked selections (gradient, 2x badge, hint text) |
+| 101 | Modifier Hierarchy Display | DONE | 04 | Depth tracking for nested modifiers, dash prefix display on KDS/orders |
 
 ---
 
