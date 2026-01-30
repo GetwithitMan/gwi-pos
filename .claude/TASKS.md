@@ -54,8 +54,12 @@
 | T015 | Interactive Floor Plan + Table Combine | ✅ COMPLETE | Worker 3 | None |
 | T017 | Floor Plan Premium UI Overhaul | ✅ COMPLETE | Worker 3 | T015 |
 | T019 | Integrate Floor Plan into Orders Page | 🔵 IN PROGRESS | Worker 3 | T017 |
-| T020 | Event Ticketing APIs (Skill 108) | 🔵 IN PROGRESS | Worker 1 | None |
-| T021 | Visual Pizza Builder (Skill 109) | 🔵 IN PROGRESS | Worker 2 | None |
+| T020 | Event Ticketing APIs (Skill 108) | ✅ COMPLETE | Worker 1 | None |
+| T021 | Visual Pizza Builder (Skill 109) | ✅ COMPLETE | Worker 2 | None |
+| T022 | Pizza Seed Data (Full Menu) | ✅ COMPLETE | Worker 2 | T021 |
+| T024 | Pizza Builder Integration (Click to Open) | 🔵 IN PROGRESS | Worker 2 | T021, T022 |
+| T023 | Floor Plan as Home + Inline Ordering | 🔵 IN PROGRESS | Worker 1 | T019 |
+| T025 | Bar Tabs Page (Search/Filter) | 🟡 READY | - | T023 |
 | T018 | Super Admin Role + Dev Access | ✅ COMPLETE | Worker 2 | T016 |
 | T016 | Simulated Card Reader (Tap/Chip) | ✅ COMPLETE | Worker 2 | None |
 
@@ -259,6 +263,10 @@
 | T012 | Implement check splitting | 2026-01-30 | 5 split types, added Split by Seat, Skill 014 docs |
 | T013 | Implement coursing system | 2026-01-30 | Full coursing: 5 components, KDS integration, auto/manual modes |
 | T014 | Build local server Docker config | 2026-01-30 | SQLite + PostgreSQL options, Watchtower, systemd, backup/restore |
+| T021 | Visual Pizza Builder (Skill 109) | 2026-01-30 | Quick + Visual modes, mode switching, SVG canvas |
+| T020 | Event Ticketing APIs (Skill 108) | 2026-01-30 | Full API: tiers, tables, holds, purchase, check-in, refunds |
+| T022 | Pizza Seed Data (Full Menu) | 2026-01-30 | 6 sizes, 6 crusts, 8 sauces, 8 cheeses, 50 toppings, 13 specialties |
+| T017 | Floor Plan Premium UI Overhaul | 2026-01-30 | Dark theme, glows, glassmorphism, Framer Motion |
 
 ---
 
@@ -282,5 +290,7 @@
 - [ ] Build live dashboard
 
 ---
-*Last Updated: January 30, 2026 (PM Session)*
+*Last Updated: January 30, 2026 (PM Session - Evening)*
 *Workers Active: 3*
+*Tasks Completed Today: 19*
+*Tasks In Progress: 4 (T019, T023, T024, T025)*

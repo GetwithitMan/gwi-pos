@@ -164,6 +164,30 @@ This file tracks session notes, ideas, decisions, and worker activity. Updated e
 - [x] Worker 2 output (T012: Check Splitting) ✅ APPROVED
 - [x] Worker 1 output (T013: Coursing System) ✅ APPROVED
 - [x] Worker 2 output (T014: Docker Config) ✅ APPROVED
+- [x] Worker 1 output (T020: Event Ticketing APIs) ✅ APPROVED
+- [x] Worker 2 output (T021: Visual Pizza Builder) ✅ APPROVED
+- [x] Worker 2 output (T022: Pizza Seed Data) ✅ APPROVED
+- [x] Worker 1 output (T023: Floor Plan Home - Initial) ✅ NEEDS REWORK (major UX changes requested)
+- [ ] Worker 3 output (T019: Seat Persistence) - In Progress
+- [ ] Worker 2 output (T024: Pizza Builder Integration) - In Progress
+
+---
+
+## UX Direction Change (Evening Session)
+
+**Major Decision:** The floor plan IS the main order screen. No navigation away.
+
+**Requirements clarified:**
+1. Category click = tables disappear, menu items appear (same screen)
+2. Employee menu in top-left (from old order screen)
+3. Per-employee settings (colors, reset to default)
+4. Order panel = table info panel style
+5. Takeout/Delivery/Bar Tab buttons on floor plan
+6. Open Orders button with count
+7. NEW: `/tabs` page for bartenders - scrollable, searchable
+8. Deprecate old order screen entirely
+
+**New Task Created:** T025 - Bar Tabs Page
 
 ---
 
