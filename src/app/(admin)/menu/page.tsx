@@ -12,6 +12,7 @@ const CATEGORY_TYPES = [
   { value: 'food', label: 'Food', color: '#22c55e', description: 'Kitchen items, appetizers, entrees' },
   { value: 'drinks', label: 'Drinks', color: '#3b82f6', description: 'Non-alcoholic beverages' },
   { value: 'liquor', label: 'Liquor', color: '#8b5cf6', description: 'Beer, wine, spirits' },
+  { value: 'pizza', label: 'Pizza', color: '#ef4444', description: 'Pizza items with sectional toppings builder' },
   { value: 'entertainment', label: 'Entertainment', color: '#f97316', description: 'Pool tables, darts, games - timed billing' },
   { value: 'combos', label: 'Combos', color: '#ec4899', description: 'Bundled items' },
 ]
@@ -22,6 +23,30 @@ interface Category {
   color: string
   categoryType: string
   itemCount: number
+  isActive: boolean
+  printerIds?: string[] | null
+}
+
+interface Printer {
+  id: string
+  name: string
+  printerRole: 'receipt' | 'kitchen' | 'bar'
+  isActive: boolean
+}
+
+interface KDSScreen {
+  id: string
+  name: string
+  screenType: 'kds' | 'entertainment'
+  isActive: boolean
+}
+
+// Combined type for print destinations (printers + KDS screens)
+interface PrintDestination {
+  id: string
+  name: string
+  type: 'printer' | 'kds'
+  role?: string
   isActive: boolean
 }
 
@@ -37,7 +62,7 @@ interface MenuItem {
   timedPricing?: { per15Min?: number; per30Min?: number; perHour?: number; minimum?: number } | null
   minimumMinutes?: number | null
   modifierGroupCount?: number
-  modifierGroups?: { id: string; name: string }[]
+  modifierGroups?: { id: string; showOnline: boolean }[]
   commissionType?: string | null
   commissionValue?: number | null
   // Liquor Builder fields
@@ -54,6 +79,11 @@ interface MenuItem {
   entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | null
   currentOrderId?: string | null
   blockTimeMinutes?: number | null
+  // Printer routing
+  printerIds?: string[] | null
+  backupPrinterIds?: string[] | null
+  // Combo print mode
+  comboPrintMode?: 'individual' | 'primary' | 'all' | null
 }
 
 interface ModifierGroup {
@@ -154,6 +184,8 @@ export default function MenuManagementPage() {
   const [items, setItems] = useState<MenuItem[]>([])
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
   const [ingredientsLibrary, setIngredientsLibrary] = useState<IngredientLibraryItem[]>([])
+  const [printers, setPrinters] = useState<Printer[]>([])
+  const [kdsScreens, setKdsScreens] = useState<KDSScreen[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
@@ -169,7 +201,7 @@ export default function MenuManagementPage() {
       console.log('[Menu] Loading menu data...', timestamp)
 
       const locationId = employee?.location?.id
-      const [menuResponse, modifiersResponse, ingredientsResponse] = await Promise.all([
+      const [menuResponse, modifiersResponse, ingredientsResponse, printersResponse, kdsResponse] = await Promise.all([
         fetch(`/api/menu?_t=${timestamp}`, {
           cache: 'no-store',
           headers: {
@@ -178,7 +210,9 @@ export default function MenuManagementPage() {
           }
         }),
         fetch('/api/menu/modifiers'),
-        locationId ? fetch(`/api/ingredients?locationId=${locationId}`) : Promise.resolve(null)
+        locationId ? fetch(`/api/ingredients?locationId=${locationId}`) : Promise.resolve(null),
+        locationId ? fetch(`/api/hardware/printers?locationId=${locationId}`) : Promise.resolve(null),
+        locationId ? fetch(`/api/hardware/kds-screens?locationId=${locationId}`) : Promise.resolve(null)
       ])
 
       if (menuResponse.ok) {
@@ -204,6 +238,16 @@ export default function MenuManagementPage() {
       if (ingredientsResponse?.ok) {
         const ingData = await ingredientsResponse.json()
         setIngredientsLibrary(ingData.data || [])
+      }
+
+      if (printersResponse?.ok) {
+        const printerData = await printersResponse.json()
+        setPrinters(printerData.printers || [])
+      }
+
+      if (kdsResponse?.ok) {
+        const kdsData = await kdsResponse.json()
+        setKdsScreens(kdsData.screens || [])
       }
     } catch (error) {
       console.error('Failed to load menu:', error)
@@ -287,7 +331,7 @@ export default function MenuManagementPage() {
     }
   }
 
-  const handleSaveItem = async (itemData: Partial<MenuItem> & { modifierGroups?: { id: string; showOnline: boolean }[]; ingredientIds?: { ingredientId: string; isIncluded?: boolean }[] }) => {
+  const handleSaveItem = async (itemData: Omit<Partial<MenuItem>, 'modifierGroups'> & { modifierGroups?: { id: string; showOnline: boolean }[]; ingredientIds?: { ingredientId: string; isIncluded?: boolean }[] }) => {
     try {
       const method = editingItem ? 'PUT' : 'POST'
       const url = editingItem
@@ -442,7 +486,15 @@ export default function MenuManagementPage() {
                         ? 'bg-blue-50 border-2 border-blue-500'
                         : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
                     }`}
-                    onClick={() => setSelectedCategory(category.id)}
+                    onClick={() => {
+                      if (category.categoryType === 'pizza') {
+                        router.push('/pizza')
+                      } else if (category.categoryType === 'combos') {
+                        router.push('/combos')
+                      } else {
+                        setSelectedCategory(category.id)
+                      }
+                    }}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
@@ -687,6 +739,8 @@ export default function MenuManagementPage() {
       {showCategoryModal && (
         <CategoryModal
           category={editingCategory}
+          printers={printers}
+          kdsScreens={kdsScreens}
           onSave={handleSaveCategory}
           onClose={() => {
             setShowCategoryModal(false)
@@ -702,6 +756,8 @@ export default function MenuManagementPage() {
           categoryType={selectedCategoryData.categoryType}
           modifierGroups={modifierGroups}
           ingredientsLibrary={ingredientsLibrary}
+          printers={printers}
+          kdsScreens={kdsScreens}
           locationId={employee?.location?.id || ''}
           onSave={handleSaveItem}
           onClose={() => {
@@ -717,16 +773,42 @@ export default function MenuManagementPage() {
 // Category Modal Component
 function CategoryModal({
   category,
+  printers,
+  kdsScreens,
   onSave,
   onClose
 }: {
   category: Category | null
+  printers: Printer[]
+  kdsScreens: KDSScreen[]
   onSave: (data: Partial<Category>) => void
   onClose: () => void
 }) {
   const [name, setName] = useState(category?.name || '')
   const [color, setColor] = useState(category?.color || '#3b82f6')
   const [categoryType, setCategoryType] = useState(category?.categoryType || 'food')
+  const [printerIds, setPrinterIds] = useState<string[]>(category?.printerIds || [])
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+
+  // Combine printers and KDS screens into destinations
+  const printDestinations: PrintDestination[] = [
+    ...printers.filter(p => p.isActive).map(p => ({
+      id: p.id,
+      name: p.name,
+      type: 'printer' as const,
+      role: p.printerRole,
+      isActive: p.isActive
+    })),
+    ...kdsScreens.filter(k => k.isActive).map(k => ({
+      id: k.id,
+      name: k.name,
+      type: 'kds' as const,
+      role: k.screenType,
+      isActive: k.isActive
+    }))
+  ]
+
+  const selectedDestinations = printDestinations.filter(d => printerIds.includes(d.id))
 
   const colors = [
     '#ef4444', '#f97316', '#eab308', '#22c55e',
@@ -785,6 +867,93 @@ function CategoryModal({
             </div>
           </div>
 
+          {/* Print Destinations - Multiple (Dropdown with checkboxes) */}
+          {printDestinations.length > 0 && (
+            <div className="relative">
+              <label className="block text-sm font-medium mb-2">Default Print Destinations</label>
+              <button
+                type="button"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="w-full px-3 py-2 border rounded-lg text-left flex items-center justify-between bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <span className={selectedDestinations.length === 0 ? 'text-gray-500' : ''}>
+                  {selectedDestinations.length === 0
+                    ? 'Select destinations...'
+                    : selectedDestinations.map(d => d.name).join(', ')}
+                </span>
+                <span className="text-gray-400">{isDropdownOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {isDropdownOpen && (
+                <div className="absolute z-10 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-auto">
+                  {printDestinations.length === 0 ? (
+                    <div className="px-3 py-2 text-gray-500 text-sm">No destinations available</div>
+                  ) : (
+                    <>
+                      {printers.filter(p => p.isActive).length > 0 && (
+                        <div className="px-3 py-1 text-xs font-semibold text-gray-500 bg-gray-50 border-b">
+                          Printers
+                        </div>
+                      )}
+                      {printers.filter(p => p.isActive).map(printer => (
+                        <label
+                          key={printer.id}
+                          className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={printerIds.includes(printer.id)}
+                            onChange={() => {
+                              setPrinterIds(prev =>
+                                prev.includes(printer.id)
+                                  ? prev.filter(id => id !== printer.id)
+                                  : [...prev, printer.id]
+                              )
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                          />
+                          <span className="flex-1">{printer.name}</span>
+                          <span className="text-xs text-gray-400">{printer.printerRole}</span>
+                        </label>
+                      ))}
+                      {kdsScreens.filter(k => k.isActive).length > 0 && (
+                        <div className="px-3 py-1 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-t">
+                          KDS Screens
+                        </div>
+                      )}
+                      {kdsScreens.filter(k => k.isActive).map(screen => (
+                        <label
+                          key={screen.id}
+                          className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={printerIds.includes(screen.id)}
+                            onChange={() => {
+                              setPrinterIds(prev =>
+                                prev.includes(screen.id)
+                                  ? prev.filter(id => id !== screen.id)
+                                  : [...prev, screen.id]
+                              )
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                          />
+                          <span className="flex-1">{screen.name}</span>
+                          <span className="text-xs text-gray-400">{screen.screenType}</span>
+                        </label>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                {printerIds.length === 0
+                  ? 'Using system default'
+                  : `Sending to ${printerIds.length} destination(s)`}
+              </p>
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium mb-2">Color</label>
             <div className="flex gap-2 flex-wrap">
@@ -808,7 +977,7 @@ function CategoryModal({
               variant="primary"
               className="flex-1"
               disabled={!name.trim()}
-              onClick={() => onSave({ name, color, categoryType })}
+              onClick={() => onSave({ name, color, categoryType, printerIds: printerIds.length > 0 ? printerIds : null })}
             >
               {category ? 'Save Changes' : 'Create Category'}
             </Button>
@@ -825,6 +994,8 @@ function ItemModal({
   categoryType,
   modifierGroups,
   ingredientsLibrary,
+  printers,
+  kdsScreens,
   locationId,
   onSave,
   onClose
@@ -833,8 +1004,10 @@ function ItemModal({
   categoryType: string
   modifierGroups: ModifierGroup[]
   ingredientsLibrary: IngredientLibraryItem[]
+  printers: Printer[]
+  kdsScreens: KDSScreen[]
   locationId: string
-  onSave: (data: Partial<MenuItem> & { modifierGroups?: { id: string; showOnline: boolean }[]; ingredientIds?: { ingredientId: string; isIncluded?: boolean }[] }) => void
+  onSave: (data: Omit<Partial<MenuItem>, 'modifierGroups'> & { modifierGroups?: { id: string; showOnline: boolean }[]; ingredientIds?: { ingredientId: string; isIncluded?: boolean }[] }) => void
   onClose: () => void
 }) {
   const [name, setName] = useState(item?.name || '')
@@ -844,6 +1017,32 @@ function ItemModal({
   const [commissionValue, setCommissionValue] = useState<string>(
     item?.commissionValue?.toString() || ''
   )
+  const [printerIds, setPrinterIds] = useState<string[]>(item?.printerIds || [])
+  const [backupPrinterIds, setBackupPrinterIds] = useState<string[]>(item?.backupPrinterIds || [])
+  const [comboPrintMode, setComboPrintMode] = useState<'individual' | 'primary' | 'all'>(item?.comboPrintMode || 'individual')
+  const [isPrinterDropdownOpen, setIsPrinterDropdownOpen] = useState(false)
+  const [isBackupDropdownOpen, setIsBackupDropdownOpen] = useState(false)
+
+  // Combine printers and KDS screens into destinations
+  const printDestinations: PrintDestination[] = [
+    ...printers.filter(p => p.isActive).map(p => ({
+      id: p.id,
+      name: p.name,
+      type: 'printer' as const,
+      role: p.printerRole,
+      isActive: p.isActive
+    })),
+    ...kdsScreens.filter(k => k.isActive).map(k => ({
+      id: k.id,
+      name: k.name,
+      type: 'kds' as const,
+      role: k.screenType,
+      isActive: k.isActive
+    }))
+  ]
+
+  const selectedDestinations = printDestinations.filter(d => printerIds.includes(d.id))
+  const selectedBackupDestinations = printDestinations.filter(d => backupPrinterIds.includes(d.id))
   const [selectedModifierGroups, setSelectedModifierGroups] = useState<{ id: string; showOnline: boolean }[]>(
     item?.modifierGroups?.map(g => ({ id: g.id, showOnline: true })) || []
   )
@@ -857,8 +1056,11 @@ function ItemModal({
   // Modifier type filters - for liquor, default to liquor only; others get primary + universal
   const primaryModType = CATEGORY_TO_MODIFIER_TYPE[categoryType] || 'food'
   const isLiquorCategory = categoryType === 'liquor'
+  const isComboCategory = categoryType === 'combos'
   const [enabledModifierTypes, setEnabledModifierTypes] = useState<string[]>(
-    isLiquorCategory ? ['liquor'] : ['universal', primaryModType]
+    isLiquorCategory ? ['liquor'] :
+    isComboCategory ? ['universal', 'combo', 'food'] : // Combos can use food modifiers too
+    ['universal', primaryModType]
   )
 
   // Filter modifier groups by enabled types (check if any of group's types match enabled types)
@@ -973,6 +1175,11 @@ function ItemModal({
       applyPourToModifiers: isLiquorCategory ? applyPourToModifiers : false,
       // Ingredients
       ingredientIds: selectedIngredients,
+      // Printer routing
+      printerIds: printerIds.length > 0 ? printerIds : null,
+      backupPrinterIds: backupPrinterIds.length > 0 ? backupPrinterIds : null,
+      // Combo print mode
+      comboPrintMode: isComboCategory ? comboPrintMode : null,
     })
   }
 
@@ -1454,6 +1661,223 @@ function ItemModal({
                   {selectedIngredients.filter(i => !i.isIncluded).length} optional
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Print Destinations - override category default (Dropdown with checkboxes) */}
+          {printDestinations.length > 0 && (
+            <div className="space-y-3">
+              <div className="relative">
+                <label className="block text-sm font-medium mb-2">Print Destinations (override category)</label>
+                <button
+                  type="button"
+                  onClick={() => setIsPrinterDropdownOpen(!isPrinterDropdownOpen)}
+                  className="w-full px-3 py-2 border rounded-lg text-left flex items-center justify-between bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <span className={selectedDestinations.length === 0 ? 'text-gray-500' : ''}>
+                    {selectedDestinations.length === 0
+                      ? 'Use category default...'
+                      : selectedDestinations.map(d => d.name).join(', ')}
+                  </span>
+                  <span className="text-gray-400">{isPrinterDropdownOpen ? '▲' : '▼'}</span>
+                </button>
+
+                {isPrinterDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-auto">
+                    {printers.filter(p => p.isActive).length > 0 && (
+                      <div className="px-3 py-1 text-xs font-semibold text-gray-500 bg-gray-50 border-b">
+                        Printers
+                      </div>
+                    )}
+                    {printers.filter(p => p.isActive).map(printer => (
+                      <label
+                        key={printer.id}
+                        className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={printerIds.includes(printer.id)}
+                          onChange={() => {
+                            setPrinterIds(prev =>
+                              prev.includes(printer.id)
+                                ? prev.filter(id => id !== printer.id)
+                                : [...prev, printer.id]
+                            )
+                          }}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                        />
+                        <span className="flex-1">{printer.name}</span>
+                        <span className="text-xs text-gray-400">{printer.printerRole}</span>
+                      </label>
+                    ))}
+                    {kdsScreens.filter(k => k.isActive).length > 0 && (
+                      <div className="px-3 py-1 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-t">
+                        KDS Screens
+                      </div>
+                    )}
+                    {kdsScreens.filter(k => k.isActive).map(screen => (
+                      <label
+                        key={screen.id}
+                        className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={printerIds.includes(screen.id)}
+                          onChange={() => {
+                            setPrinterIds(prev =>
+                              prev.includes(screen.id)
+                                ? prev.filter(id => id !== screen.id)
+                                : [...prev, screen.id]
+                            )
+                          }}
+                          className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                        />
+                        <span className="flex-1">{screen.name}</span>
+                        <span className="text-xs text-gray-400">{screen.screenType}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  {printerIds.length === 0
+                    ? 'Using category default destinations'
+                    : `Sending to ${printerIds.length} destination(s)`}
+                </p>
+              </div>
+
+              {/* Backup Destinations - only show if primary destinations are selected */}
+              {printerIds.length > 0 && (
+                <div className="relative">
+                  <label className="block text-sm font-medium mb-2">Backup Destinations (failover)</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsBackupDropdownOpen(!isBackupDropdownOpen)}
+                    className="w-full px-3 py-2 border rounded-lg text-left flex items-center justify-between bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                  >
+                    <span className={selectedBackupDestinations.length === 0 ? 'text-gray-500' : ''}>
+                      {selectedBackupDestinations.length === 0
+                        ? 'Select backup destinations...'
+                        : selectedBackupDestinations.map(d => d.name).join(', ')}
+                    </span>
+                    <span className="text-gray-400">{isBackupDropdownOpen ? '▲' : '▼'}</span>
+                  </button>
+
+                  {isBackupDropdownOpen && (
+                    <div className="absolute z-10 mt-1 w-full bg-white border rounded-lg shadow-lg max-h-60 overflow-auto">
+                      {printers.filter(p => p.isActive && !printerIds.includes(p.id)).length > 0 && (
+                        <div className="px-3 py-1 text-xs font-semibold text-gray-500 bg-gray-50 border-b">
+                          Printers
+                        </div>
+                      )}
+                      {printers.filter(p => p.isActive && !printerIds.includes(p.id)).map(printer => (
+                        <label
+                          key={printer.id}
+                          className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={backupPrinterIds.includes(printer.id)}
+                            onChange={() => {
+                              setBackupPrinterIds(prev =>
+                                prev.includes(printer.id)
+                                  ? prev.filter(id => id !== printer.id)
+                                  : [...prev, printer.id]
+                              )
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                          />
+                          <span className="flex-1">{printer.name}</span>
+                          <span className="text-xs text-gray-400">{printer.printerRole}</span>
+                        </label>
+                      ))}
+                      {kdsScreens.filter(k => k.isActive && !printerIds.includes(k.id)).length > 0 && (
+                        <div className="px-3 py-1 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-t">
+                          KDS Screens
+                        </div>
+                      )}
+                      {kdsScreens.filter(k => k.isActive && !printerIds.includes(k.id)).map(screen => (
+                        <label
+                          key={screen.id}
+                          className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={backupPrinterIds.includes(screen.id)}
+                            onChange={() => {
+                              setBackupPrinterIds(prev =>
+                                prev.includes(screen.id)
+                                  ? prev.filter(id => id !== screen.id)
+                                  : [...prev, screen.id]
+                              )
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                          />
+                          <span className="flex-1">{screen.name}</span>
+                          <span className="text-xs text-gray-400">{screen.screenType}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">Used if primary destinations fail</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Combo Print Mode - only for combo items */}
+          {isComboCategory && printers.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium mb-2">Combo Printing</label>
+              <div className="space-y-2">
+                <label className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer border-2 transition-all ${
+                  comboPrintMode === 'individual' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="radio"
+                    name="comboPrintMode"
+                    value="individual"
+                    checked={comboPrintMode === 'individual'}
+                    onChange={(e) => setComboPrintMode(e.target.value as 'individual' | 'primary' | 'all')}
+                    className="mt-1"
+                  />
+                  <div>
+                    <p className="font-medium text-sm">Individual Routing</p>
+                    <p className="text-xs text-gray-500">Each item follows its own print rules (burger→kitchen, drink→bar)</p>
+                  </div>
+                </label>
+                <label className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer border-2 transition-all ${
+                  comboPrintMode === 'primary' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="radio"
+                    name="comboPrintMode"
+                    value="primary"
+                    checked={comboPrintMode === 'primary'}
+                    onChange={(e) => setComboPrintMode(e.target.value as 'individual' | 'primary' | 'all')}
+                    className="mt-1"
+                  />
+                  <div>
+                    <p className="font-medium text-sm">Single Printer</p>
+                    <p className="text-xs text-gray-500">Entire combo prints to one printer for assembly coordination</p>
+                  </div>
+                </label>
+                <label className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer border-2 transition-all ${
+                  comboPrintMode === 'all' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                }`}>
+                  <input
+                    type="radio"
+                    name="comboPrintMode"
+                    value="all"
+                    checked={comboPrintMode === 'all'}
+                    onChange={(e) => setComboPrintMode(e.target.value as 'individual' | 'primary' | 'all')}
+                    className="mt-1"
+                  />
+                  <div>
+                    <p className="font-medium text-sm">All Printers</p>
+                    <p className="text-xs text-gray-500">Full combo ticket prints at ALL relevant stations</p>
+                  </div>
+                </label>
+              </div>
             </div>
           )}
 

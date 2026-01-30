@@ -63,6 +63,49 @@ const ingredientModificationSchema = z.object({
   }).optional(),
 })
 
+// Pizza config schema for order items
+const pizzaConfigSchema = z.object({
+  sizeId: z.string(),
+  crustId: z.string(),
+  sauceId: z.string().nullable(),
+  cheeseId: z.string().nullable(),
+  sauceAmount: z.enum(['none', 'light', 'regular', 'extra']),
+  cheeseAmount: z.enum(['none', 'light', 'regular', 'extra']),
+  sauces: z.array(z.object({
+    sauceId: z.string(),
+    name: z.string(),
+    sections: z.array(z.number()),
+    amount: z.enum(['none', 'light', 'regular', 'extra']),
+    price: z.number(),
+  })).optional(),
+  cheeses: z.array(z.object({
+    cheeseId: z.string(),
+    name: z.string(),
+    sections: z.array(z.number()),
+    amount: z.enum(['none', 'light', 'regular', 'extra']),
+    price: z.number(),
+  })).optional(),
+  toppings: z.array(z.object({
+    toppingId: z.string(),
+    name: z.string(),
+    sections: z.array(z.number()),
+    amount: z.enum(['light', 'regular', 'extra']),
+    price: z.number(),
+    basePrice: z.number(),
+  })),
+  cookingInstructions: z.string().optional(),
+  cutStyle: z.string().optional(),
+  specialNotes: z.string().optional(),
+  totalPrice: z.number(),
+  priceBreakdown: z.object({
+    sizePrice: z.number(),
+    crustPrice: z.number(),
+    saucePrice: z.number(),
+    cheesePrice: z.number(),
+    toppingsPrice: z.number(),
+  }),
+}).optional()
+
 const orderItemSchema = z.object({
   menuItemId: idSchema,
   name: z.string().min(1),
@@ -73,6 +116,7 @@ const orderItemSchema = z.object({
   specialNotes: z.string().max(500).optional(),
   seatNumber: z.number().int().positive().optional(),
   courseNumber: z.number().int().positive().optional(),
+  pizzaConfig: pizzaConfigSchema,
 })
 
 export const createOrderSchema = z.object({

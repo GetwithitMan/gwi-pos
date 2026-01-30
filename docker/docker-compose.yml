@@ -1,0 +1,113 @@
+# GWI POS - Docker Compose (SQLite Version)
+#
+# For local restaurant servers using SQLite database.
+# Simpler setup with file-based database.
+#
+# Usage:
+#   docker-compose up -d
+#
+# Data is persisted in ./data/ directory
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # GWI POS Application
+  # ===========================================================================
+  gwi-pos:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: gwi-pos
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/pos.db
+      - TZ=${TZ:-America/New_York}
+      # Location configuration
+      - LOCATION_ID=${LOCATION_ID}
+      - LOCATION_NAME=${LOCATION_NAME:-GWI POS}
+      # Security
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      # Cloud sync (optional)
+      - SYNC_ENABLED=${SYNC_ENABLED:-false}
+      - SYNC_API_URL=${SYNC_API_URL}
+      - SYNC_API_KEY=${SYNC_API_KEY}
+      # Real-time events
+      - EVENTS_PROVIDER=${EVENTS_PROVIDER:-local}
+      - PUSHER_APP_ID=${PUSHER_APP_ID}
+      - PUSHER_KEY=${PUSHER_KEY}
+      - PUSHER_SECRET=${PUSHER_SECRET}
+      - PUSHER_CLUSTER=${PUSHER_CLUSTER}
+    volumes:
+      # Persist database and backups
+      - ./data:/app/data
+      # Optional: mount custom config
+      - ./config:/app/config:ro
+    networks:
+      - gwi-network
+    labels:
+      # Watchtower auto-update labels
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===========================================================================
+  # Watchtower - Automatic Updates
+  # ===========================================================================
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_INTERVAL:-3600}
+      - WATCHTOWER_INCLUDE_STOPPED=true
+      - WATCHTOWER_REVIVE_STOPPED=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - gwi-network
+
+  # ===========================================================================
+  # Backup Service (Optional)
+  # ===========================================================================
+  backup:
+    image: alpine:latest
+    container_name: gwi-backup
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-America/New_York}
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+      - ./scripts:/scripts:ro
+    entrypoint: |
+      /bin/sh -c '
+        apk add --no-cache sqlite dcron
+        echo "$${BACKUP_SCHEDULE} /scripts/backup.sh" | crontab -
+        crond -f -l 2
+      '
+    networks:
+      - gwi-network
+    profiles:
+      - backup
+
+networks:
+  gwi-network:
+    driver: bridge
+
+volumes:
+  gwi-data:
+    driver: local

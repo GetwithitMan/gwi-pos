@@ -98,6 +98,33 @@ export default function ReportsHubPage() {
   // Report categories with permission requirements
   const reportCategories: ReportCategory[] = [
     {
+      title: 'End of Day',
+      reports: [
+        {
+          name: 'Daily Sales Report',
+          href: '/reports/daily',
+          description: 'Full store report: revenue, payments, cash, labor, voids',
+          permission: PERMISSIONS.REPORTS_SALES,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Employee Shift Report',
+          href: '/reports/shift',
+          description: 'Individual employee shift: sales, tips, cash due',
+          permission: PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          ),
+        },
+      ],
+    },
+    {
       title: 'Sales & Revenue',
       reports: [
         {
@@ -139,6 +166,28 @@ export default function ReportsHubPage() {
     {
       title: 'Team & Labor',
       reports: [
+        {
+          name: 'Payroll Report',
+          href: '/reports/payroll',
+          description: 'Complete payroll: wages, tips, commission, hours',
+          permission: PERMISSIONS.REPORTS_LABOR,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          ),
+        },
+        {
+          name: 'Labor Report',
+          href: '/reports/labor',
+          description: 'Hours worked, overtime, labor costs',
+          permission: PERMISSIONS.REPORTS_LABOR,
+          icon: (
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          ),
+        },
         {
           name: 'Employee Performance',
           href: '/reports/employees',

@@ -22,6 +22,11 @@ export async function PUT(
       pourSizes,
       defaultPourSize,
       applyPourToModifiers,
+      // Printer routing (arrays)
+      printerIds,
+      backupPrinterIds,
+      // Combo print mode
+      comboPrintMode,
     } = body
 
     const item = await db.menuItem.update({
@@ -40,6 +45,15 @@ export async function PUT(
         ...(pourSizes !== undefined && { pourSizes: pourSizes || null }),
         ...(defaultPourSize !== undefined && { defaultPourSize: defaultPourSize || null }),
         ...(applyPourToModifiers !== undefined && { applyPourToModifiers }),
+        // Printer routing - arrays of printer IDs
+        ...(printerIds !== undefined && {
+          printerIds: printerIds && printerIds.length > 0 ? printerIds : null
+        }),
+        ...(backupPrinterIds !== undefined && {
+          backupPrinterIds: backupPrinterIds && backupPrinterIds.length > 0 ? backupPrinterIds : null
+        }),
+        // Combo print mode
+        ...(comboPrintMode !== undefined && { comboPrintMode: comboPrintMode || null }),
       }
     })
 
@@ -59,6 +73,9 @@ export async function PUT(
       pourSizes: item.pourSizes,
       defaultPourSize: item.defaultPourSize,
       applyPourToModifiers: item.applyPourToModifiers,
+      printerIds: item.printerIds,
+      backupPrinterIds: item.backupPrinterIds,
+      comboPrintMode: item.comboPrintMode,
     })
   } catch (error) {
     console.error('Failed to update item:', error)

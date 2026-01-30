@@ -1,0 +1,140 @@
+# GWI POS - Docker Compose (PostgreSQL Version)
+#
+# For larger deployments or when you need advanced database features.
+# Requires more resources but offers better concurrency and features.
+#
+# Usage:
+#   docker-compose -f docker-compose.postgres.yml up -d
+#
+# Note: This overrides the default SQLite configuration
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: gwi-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-gwi}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      - POSTGRES_DB=${POSTGRES_DB:-gwi_pos}
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Initialize database with custom scripts (optional)
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    networks:
+      - gwi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gwi} -d ${POSTGRES_DB:-gwi_pos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================================================
+  # GWI POS Application
+  # ===========================================================================
+  gwi-pos:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.postgres
+    container_name: gwi-pos
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-gwi}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-gwi_pos}?schema=public
+      - TZ=${TZ:-America/New_York}
+      # Location configuration
+      - LOCATION_ID=${LOCATION_ID}
+      - LOCATION_NAME=${LOCATION_NAME:-GWI POS}
+      # Security
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      # Cloud sync (optional)
+      - SYNC_ENABLED=${SYNC_ENABLED:-false}
+      - SYNC_API_URL=${SYNC_API_URL}
+      - SYNC_API_KEY=${SYNC_API_KEY}
+      # Real-time events
+      - EVENTS_PROVIDER=${EVENTS_PROVIDER:-local}
+      - PUSHER_APP_ID=${PUSHER_APP_ID}
+      - PUSHER_KEY=${PUSHER_KEY}
+      - PUSHER_SECRET=${PUSHER_SECRET}
+      - PUSHER_CLUSTER=${PUSHER_CLUSTER}
+    volumes:
+      # Persist uploads and config
+      - ./uploads:/app/uploads
+      - ./config:/app/config:ro
+    networks:
+      - gwi-network
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===========================================================================
+  # Watchtower - Automatic Updates
+  # ===========================================================================
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=${WATCHTOWER_INTERVAL:-3600}
+      - WATCHTOWER_INCLUDE_STOPPED=true
+      - WATCHTOWER_REVIVE_STOPPED=true
+      - WATCHTOWER_LABEL_ENABLE=true
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - gwi-network
+
+  # ===========================================================================
+  # Database Backup Service (Optional)
+  # ===========================================================================
+  pg-backup:
+    image: prodrigestivill/postgres-backup-local
+    container_name: gwi-pg-backup
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-gwi}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-gwi_pos}
+      - SCHEDULE=${BACKUP_SCHEDULE:-@daily}
+      - BACKUP_KEEP_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_KEEP_WEEKS=4
+      - BACKUP_KEEP_MONTHS=6
+      - TZ=${TZ:-America/New_York}
+    volumes:
+      - ./backups/postgres:/backups
+    networks:
+      - gwi-network
+    profiles:
+      - backup
+
+networks:
+  gwi-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+    driver: local

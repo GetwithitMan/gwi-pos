@@ -3,6 +3,24 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 
+// Helper to calculate commission for an item
+function calculateItemCommission(
+  itemTotal: number,
+  quantity: number,
+  commissionType: string | null,
+  commissionValue: number | null
+): number {
+  if (!commissionType || commissionValue === null || commissionValue === undefined) {
+    return 0
+  }
+  if (commissionType === 'percent') {
+    return Math.round((itemTotal * commissionValue / 100) * 100) / 100
+  } else if (commissionType === 'fixed') {
+    return Math.round((commissionValue * quantity) * 100) / 100
+  }
+  return 0
+}
+
 // POST - Create a new order
 export async function POST(request: NextRequest) {
   try {
@@ -38,20 +56,69 @@ export async function POST(request: NextRequest) {
 
     const orderNumber = (lastOrder?.orderNumber || 0) + 1
 
+    // Fetch menu items to get commission settings
+    const menuItemIds = items.map(item => item.menuItemId)
+    const menuItems = await db.menuItem.findMany({
+      where: { id: { in: menuItemIds } },
+      select: { id: true, commissionType: true, commissionValue: true },
+    })
+    const menuItemMap = new Map(menuItems.map(mi => [mi.id, mi]))
+
     // Calculate totals
     let subtotal = 0
     let commissionTotal = 0
 
     // Helper to check if a string is a valid CUID (for real modifier IDs)
     const isValidModifierId = (id: string) => {
-      // CUIDs are typically 25 chars starting with 'c', combo IDs start with 'combo-'
-      return id && !id.startsWith('combo-') && id.length >= 20
+      // CUIDs are typically 25 chars starting with 'c'
+      // Exclude synthetic IDs: combo- (combo selections), pizza- (pizza toppings/sauces/cheeses)
+      return id && !id.startsWith('combo-') && !id.startsWith('pizza-') && id.length >= 20
     }
 
     const orderItems = items.map(item => {
       const itemTotal = item.price * item.quantity
       const modifiersTotal = item.modifiers.reduce((sum, mod) => sum + mod.price, 0) * item.quantity
-      subtotal += itemTotal + modifiersTotal
+      const fullItemTotal = itemTotal + modifiersTotal
+      subtotal += fullItemTotal
+
+      // Calculate commission for this item
+      const menuItem = menuItemMap.get(item.menuItemId)
+      const itemCommission = calculateItemCommission(
+        fullItemTotal,
+        item.quantity,
+        menuItem?.commissionType || null,
+        menuItem?.commissionValue ? Number(menuItem.commissionValue) : null
+      )
+      commissionTotal += itemCommission
+
+      // Build pizza data if present
+      const pizzaData = item.pizzaConfig ? {
+        create: {
+          locationId,
+          sizeId: item.pizzaConfig.sizeId,
+          crustId: item.pizzaConfig.crustId,
+          sauceId: item.pizzaConfig.sauceId,
+          sauceAmount: item.pizzaConfig.sauceAmount,
+          cheeseId: item.pizzaConfig.cheeseId,
+          cheeseAmount: item.pizzaConfig.cheeseAmount,
+          // Store full config in toppingsData JSON for easy retrieval
+          toppingsData: {
+            toppings: item.pizzaConfig.toppings,
+            sauces: item.pizzaConfig.sauces,
+            cheeses: item.pizzaConfig.cheeses,
+            cookingInstructions: item.pizzaConfig.cookingInstructions,
+            cutStyle: item.pizzaConfig.cutStyle,
+          },
+          cookingInstructions: item.pizzaConfig.cookingInstructions || null,
+          cutStyle: item.pizzaConfig.cutStyle || null,
+          sizePrice: item.pizzaConfig.priceBreakdown.sizePrice,
+          crustPrice: item.pizzaConfig.priceBreakdown.crustPrice,
+          saucePrice: item.pizzaConfig.priceBreakdown.saucePrice,
+          cheesePrice: item.pizzaConfig.priceBreakdown.cheesePrice,
+          toppingsPrice: item.pizzaConfig.priceBreakdown.toppingsPrice,
+          totalPrice: item.pizzaConfig.totalPrice,
+        }
+      } : undefined
 
       return {
         locationId,
@@ -60,6 +127,7 @@ export async function POST(request: NextRequest) {
         price: item.price,
         quantity: item.quantity,
         itemTotal: itemTotal + modifiersTotal,
+        commissionAmount: itemCommission,
         specialNotes: item.specialNotes || null,
         seatNumber: item.seatNumber || null,
         courseNumber: item.courseNumber || null,
@@ -92,6 +160,8 @@ export async function POST(request: NextRequest) {
               })),
             }
           : undefined,
+        // Pizza configuration
+        pizzaData,
       }
     })
 

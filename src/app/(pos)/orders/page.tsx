@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
+import { useDevStore } from '@/stores/dev-store'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { usePOSDisplay } from '@/hooks/usePOSDisplay'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
@@ -53,16 +54,19 @@ import type { OrderTypeConfig, OrderCustomFields, WorkflowRules } from '@/types/
 import { EntertainmentSessionControls } from '@/components/orders/EntertainmentSessionControls'
 import { CourseOverviewPanel } from '@/components/orders/CourseOverviewPanel'
 import { ModifierModal } from '@/components/modifiers/ModifierModal'
+import { PizzaBuilderModal } from '@/components/pizza/PizzaBuilderModal'
 import { AddToWaitlistModal } from '@/components/entertainment/AddToWaitlistModal'
 import { OrderSettingsModal } from '@/components/orders/OrderSettingsModal'
 import { AdminNav } from '@/components/admin/AdminNav'
 import { TablePickerModal } from '@/components/orders/TablePickerModal'
-import type { Category, MenuItem, ModifierGroup, SelectedModifier } from '@/types'
+import { FloorPlanHome } from '@/components/floor-plan'
+import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig } from '@/types'
 
 export default function OrdersPage() {
   const router = useRouter()
   const { employee, isAuthenticated, logout } = useAuthStore()
   const { currentOrder, startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore()
+  const { hasDevAccess, setHasDevAccess } = useDevStore()
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
@@ -71,6 +75,11 @@ export default function OrdersPage() {
   const [showAdminNav, setShowAdminNav] = useState(false)
   const [showTablePicker, setShowTablePicker] = useState(false)
   const [showTotalBreakdown, setShowTotalBreakdown] = useState(false)
+
+  // Floor Plan integration (T019)
+  // viewMode: 'floor-plan' = default HOME view, 'order-entry' = traditional POS screen
+  const isBartender = employee?.role?.name?.toLowerCase() === 'bartender'
+  const [viewMode, setViewMode] = useState<'floor-plan' | 'order-entry'>(isBartender ? 'order-entry' : 'floor-plan')
 
   // Check if user has admin/manager permissions
   // Handle both array permissions (new format) and role name check
@@ -88,6 +97,15 @@ export default function OrdersPage() {
     menuItemId: string
     modifiers: { id: string; name: string; price: number; depth: number; parentModifierId?: string }[]
     specialNotes?: string
+    pizzaConfig?: PizzaOrderConfig
+  } | null>(null)
+
+  // Pizza builder state
+  const [showPizzaModal, setShowPizzaModal] = useState(false)
+  const [selectedPizzaItem, setSelectedPizzaItem] = useState<MenuItem | null>(null)
+  const [editingPizzaItem, setEditingPizzaItem] = useState<{
+    id: string
+    pizzaConfig?: PizzaOrderConfig
   } | null>(null)
 
   // Settings loaded from API via custom hook
@@ -157,6 +175,11 @@ export default function OrdersPage() {
 
   // Comp/Void modal state
   const [showCompVoidModal, setShowCompVoidModal] = useState(false)
+
+  // Resend modal state (replaces blocking prompt/alert)
+  const [resendModal, setResendModal] = useState<{ itemId: string; itemName: string } | null>(null)
+  const [resendNote, setResendNote] = useState('')
+  const [resendLoading, setResendLoading] = useState(false)
   const [compVoidItem, setCompVoidItem] = useState<{
     id: string
     name: string
@@ -445,6 +468,7 @@ export default function OrdersPage() {
 
   const handleLogout = () => {
     clearOrder()
+    setHasDevAccess(false)  // Clear dev access on logout
     logout()
     router.push('/login')
   }
@@ -483,6 +507,7 @@ export default function OrdersPage() {
                 swappedTo: ing.swappedTo,
               })),
               specialNotes: item.specialNotes,
+              pizzaConfig: item.pizzaConfig, // Include pizza configuration
             })),
           }),
         })
@@ -527,6 +552,7 @@ export default function OrdersPage() {
               swappedTo: ing.swappedTo,
             })),
             specialNotes: item.specialNotes,
+            pizzaConfig: item.pizzaConfig, // Include pizza configuration
           })),
           notes: currentOrder.notes,
           customFields: currentOrder.customFields || orderCustomFields,
@@ -644,6 +670,9 @@ export default function OrdersPage() {
         // Start timers for any entertainment/timed rental items
         await startEntertainmentTimers(orderId)
 
+        // Print kitchen ticket
+        await printKitchenTicket(orderId)
+
         // Show brief confirmation
         const orderNum = orderId.slice(-6).toUpperCase()
 
@@ -657,11 +686,33 @@ export default function OrdersPage() {
         // Refresh the open orders panel and count
         setTabsRefreshTrigger(prev => prev + 1)
 
+        // Return to floor plan (if not bartender)
+        if (!isBartender) {
+          setViewMode('floor-plan')
+        }
+
         // Show confirmation with instructions
         alert(`Order #${orderNum} sent to kitchen!\n\nClick "Open Orders" button to view or add more items.`)
       }
     } finally {
       setIsSendingOrder(false)
+    }
+  }
+
+  // Print kitchen ticket when order is sent
+  const printKitchenTicket = async (orderId: string) => {
+    try {
+      const response = await fetch('/api/print/kitchen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId }),
+      })
+
+      if (!response.ok) {
+        console.error('Failed to print kitchen ticket')
+      }
+    } catch (err) {
+      console.error('Failed to print kitchen ticket:', err)
     }
   }
 
@@ -698,37 +749,39 @@ export default function OrdersPage() {
     }
   }
 
-  // Handle resending an item to the kitchen (KDS)
-  const handleResendItem = async (itemId: string, itemName: string) => {
-    // Prompt for an optional note
-    const resendNote = prompt(
-      `Resend "${itemName}" to kitchen?\n\nOptional: Add a note for the kitchen (e.g., "Make it well done")`,
-      ''
-    )
+  // Handle resending an item to the kitchen (KDS) - opens modal
+  const handleResendItem = (itemId: string, itemName: string) => {
+    setResendNote('')
+    setResendModal({ itemId, itemName })
+  }
 
-    // If user clicked Cancel, abort
-    if (resendNote === null) return
+  // Actually perform the resend after modal confirmation
+  const confirmResendItem = async () => {
+    if (!resendModal) return
 
+    setResendLoading(true)
     try {
       const response = await fetch('/api/kds', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          itemIds: [itemId],
+          itemIds: [resendModal.itemId],
           action: 'resend',
           resendNote: resendNote.trim() || undefined,
         }),
       })
 
       if (response.ok) {
-        const noteMsg = resendNote.trim() ? `\nNote: "${resendNote.trim()}"` : ''
-        alert(`"${itemName}" resent to kitchen!${noteMsg}\n\nIt will appear with a RESEND badge on KDS.`)
+        // Success - close modal (no blocking alert)
+        setResendModal(null)
+        setResendNote('')
       } else {
-        alert('Failed to resend item')
+        console.error('Failed to resend item')
       }
     } catch (error) {
       console.error('Failed to resend item:', error)
-      alert('Failed to resend item')
+    } finally {
+      setResendLoading(false)
     }
   }
 
@@ -818,6 +871,10 @@ export default function OrdersPage() {
     setSavedOrderId(null)
     setOrderSent(false)
     clearOrder()
+    // Return to floor plan (if not bartender)
+    if (!isBartender) {
+      setViewMode('floor-plan')
+    }
   }
 
   // Handle order settings save (tab name, guests, gratuity)
@@ -853,13 +910,14 @@ export default function OrdersPage() {
 
   // Handle split check result
   const handleSplitComplete = (result: {
-    type: 'even' | 'by_item' | 'custom_amount' | 'split_item'
+    type: 'even' | 'by_item' | 'by_seat' | 'custom_amount' | 'split_item'
     originalOrderId: string
     splits?: { splitNumber: number; amount: number }[]
     newOrderId?: string
     newOrderNumber?: number
     splitAmount?: number
     itemSplits?: { itemId: string; itemName: string; splitNumber: number; amount: number }[]
+    seatSplits?: { seatNumber: number; total: number; splitOrderId: string }[]
   }) => {
     setShowSplitModal(false)
 
@@ -882,6 +940,14 @@ export default function OrdersPage() {
       alert(`New check #${result.newOrderNumber} created with selected items.\n\nView it in Open Orders.`)
       setTabsRefreshTrigger(prev => prev + 1)
       // Clear current order since items were moved
+      clearOrder()
+      setSavedOrderId(null)
+    } else if (result.type === 'by_seat' && result.seatSplits) {
+      // Split by seat - multiple checks created
+      const seatCount = result.seatSplits.length
+      alert(`${seatCount} separate checks created (one per seat).\n\nView them in Open Orders.`)
+      setTabsRefreshTrigger(prev => prev + 1)
+      // Clear current order since items were moved to seat-specific checks
       clearOrder()
       setSavedOrderId(null)
     } else if (result.type === 'custom_amount' && result.splitAmount) {
@@ -1249,6 +1315,13 @@ export default function OrdersPage() {
       return
     }
 
+    // Handle pizza items - check if item is in a pizza category
+    if (selectedCategoryData?.categoryType === 'pizza') {
+      setSelectedPizzaItem(item)
+      setShowPizzaModal(true)
+      return
+    }
+
     // Check if item has modifiers
     if (item.modifierGroupCount && item.modifierGroupCount > 0) {
       setSelectedItem(item)
@@ -1322,6 +1395,247 @@ export default function OrdersPage() {
     setSelectedItem(null)
     setItemModifierGroups([])
     setEditingOrderItem(null)
+  }
+
+  // Handle adding pizza to order
+  const handleAddPizzaToOrder = (config: PizzaOrderConfig) => {
+    if (!selectedPizzaItem) return
+
+    // Build display name with size info
+    const itemName = selectedPizzaItem.name
+
+    // Build modifiers array organized by section boxes (like pizza builder)
+    const pizzaModifiers: { id: string; name: string; price: number; preModifier?: string; depth: number }[] = []
+    const maxSections = 24
+    const halfSize = maxSections / 2
+    const quarterSize = maxSections / 4
+    const sixthSize = maxSections / 6
+    const eighthSize = maxSections / 8
+
+    // Define all box section ranges
+    const boxSections: Record<string, number[]> = {
+      'WHOLE': Array.from({ length: maxSections }, (_, i) => i),
+      'RIGHT HALF': Array.from({ length: halfSize }, (_, i) => i),
+      'LEFT HALF': Array.from({ length: halfSize }, (_, i) => halfSize + i),
+      'TOP RIGHT': Array.from({ length: quarterSize }, (_, i) => i),
+      'BOTTOM RIGHT': Array.from({ length: quarterSize }, (_, i) => quarterSize + i),
+      'BOTTOM LEFT': Array.from({ length: quarterSize }, (_, i) => quarterSize * 2 + i),
+      'TOP LEFT': Array.from({ length: quarterSize }, (_, i) => quarterSize * 3 + i),
+    }
+    // Add sixths
+    for (let i = 0; i < 6; i++) {
+      boxSections[`1/6-${i + 1}`] = Array.from({ length: sixthSize }, (_, j) => i * sixthSize + j)
+    }
+    // Add eighths
+    for (let i = 0; i < 8; i++) {
+      boxSections[`1/8-${i + 1}`] = Array.from({ length: eighthSize }, (_, j) => i * eighthSize + j)
+    }
+
+    // Collect all items with their sections
+    type PizzaItem = { type: string; id: string; name: string; sections: number[]; price: number; amount?: string }
+    const allItems: PizzaItem[] = []
+
+    if (config.sauces) {
+      config.sauces.forEach(s => {
+        const prefix = s.amount === 'light' ? 'Light ' : s.amount === 'extra' ? 'Extra ' : ''
+        allItems.push({ type: 'sauce', id: s.sauceId, name: `${prefix}${s.name}`, sections: s.sections, price: s.price || 0 })
+      })
+    }
+    if (config.cheeses) {
+      config.cheeses.forEach(c => {
+        const prefix = c.amount === 'light' ? 'Light ' : c.amount === 'extra' ? 'Extra ' : ''
+        allItems.push({ type: 'cheese', id: c.cheeseId, name: `${prefix}${c.name}`, sections: c.sections, price: c.price || 0 })
+      })
+    }
+    config.toppings.forEach(t => {
+      const prefix = t.amount === 'light' ? 'Light ' : t.amount === 'extra' ? 'Extra ' : ''
+      allItems.push({ type: 'topping', id: t.toppingId, name: `${prefix}${t.name}`, sections: t.sections, price: t.price })
+    })
+
+    // Determine section mode based on items (find smallest sections used)
+    let sectionMode = 1 // Default to whole
+    allItems.forEach(item => {
+      if (item.sections.length < maxSections) {
+        if (item.sections.length <= eighthSize) sectionMode = Math.max(sectionMode, 8)
+        else if (item.sections.length <= sixthSize) sectionMode = Math.max(sectionMode, 6)
+        else if (item.sections.length <= quarterSize) sectionMode = Math.max(sectionMode, 4)
+        else if (item.sections.length <= halfSize) sectionMode = Math.max(sectionMode, 2)
+      }
+    })
+
+    // Helper to check if sections exactly match a box
+    const exactlyCovers = (itemSections: number[], boxName: string): boolean => {
+      const boxSecs = boxSections[boxName]
+      if (!boxSecs || itemSections.length !== boxSecs.length) return false
+      const sorted = [...itemSections].sort((a, b) => a - b)
+      return boxSecs.every((s, i) => sorted[i] === s)
+    }
+
+    // Helper to check if item sections cover a box's sections
+    const coversBox = (itemSections: number[], boxName: string): boolean => {
+      const boxSecs = boxSections[boxName]
+      if (!boxSecs) return false
+      return boxSecs.every(s => itemSections.includes(s))
+    }
+
+    // Group items into boxes
+    const boxContents: Record<string, { items: string[]; totalPrice: number }> = {}
+
+    // Initialize all boxes we'll show
+    const boxOrder = [
+      'WHOLE',
+      'LEFT HALF', 'RIGHT HALF',
+      'TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT',
+      '1/6-1', '1/6-2', '1/6-3', '1/6-4', '1/6-5', '1/6-6',
+      '1/8-1', '1/8-2', '1/8-3', '1/8-4', '1/8-5', '1/8-6', '1/8-7', '1/8-8',
+    ]
+
+    boxOrder.forEach(box => {
+      boxContents[box] = { items: [], totalPrice: 0 }
+    })
+
+    // Place each item in the appropriate box(es)
+    allItems.forEach(item => {
+      // Find the best (largest) box this item exactly covers
+      let placed = false
+
+      // Check from largest to smallest
+      if (exactlyCovers(item.sections, 'WHOLE')) {
+        boxContents['WHOLE'].items.push(item.name)
+        boxContents['WHOLE'].totalPrice += item.price
+        placed = true
+      } else if (exactlyCovers(item.sections, 'LEFT HALF')) {
+        boxContents['LEFT HALF'].items.push(item.name)
+        boxContents['LEFT HALF'].totalPrice += item.price
+        placed = true
+      } else if (exactlyCovers(item.sections, 'RIGHT HALF')) {
+        boxContents['RIGHT HALF'].items.push(item.name)
+        boxContents['RIGHT HALF'].totalPrice += item.price
+        placed = true
+      } else {
+        // Check quarters
+        for (const q of ['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT']) {
+          if (exactlyCovers(item.sections, q)) {
+            boxContents[q].items.push(item.name)
+            boxContents[q].totalPrice += item.price
+            placed = true
+            break
+          }
+        }
+      }
+
+      if (!placed) {
+        // Check sixths
+        for (let i = 1; i <= 6; i++) {
+          if (exactlyCovers(item.sections, `1/6-${i}`)) {
+            boxContents[`1/6-${i}`].items.push(item.name)
+            boxContents[`1/6-${i}`].totalPrice += item.price
+            placed = true
+            break
+          }
+        }
+      }
+
+      if (!placed) {
+        // Check eighths
+        for (let i = 1; i <= 8; i++) {
+          if (exactlyCovers(item.sections, `1/8-${i}`)) {
+            boxContents[`1/8-${i}`].items.push(item.name)
+            boxContents[`1/8-${i}`].totalPrice += item.price
+            placed = true
+            break
+          }
+        }
+      }
+
+      if (!placed) {
+        // Non-standard grouping - place in each smallest box it covers
+        const smallestBoxes = sectionMode === 8 ? ['1/8-1', '1/8-2', '1/8-3', '1/8-4', '1/8-5', '1/8-6', '1/8-7', '1/8-8'] :
+          sectionMode === 6 ? ['1/6-1', '1/6-2', '1/6-3', '1/6-4', '1/6-5', '1/6-6'] :
+          sectionMode === 4 ? ['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT'] :
+          ['LEFT HALF', 'RIGHT HALF']
+
+        smallestBoxes.forEach(boxName => {
+          if (coversBox(item.sections, boxName)) {
+            boxContents[boxName].items.push(item.name)
+            // Don't add price multiple times for split items
+          }
+        })
+      }
+    })
+
+    // Determine which rows to show based on section mode
+    const rows: string[][] = [['WHOLE', 'LEFT HALF', 'RIGHT HALF']]
+    if (sectionMode >= 4) rows.push(['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT'])
+    if (sectionMode >= 6) rows.push(['1/6-1', '1/6-2', '1/6-3', '1/6-4', '1/6-5', '1/6-6'])
+    if (sectionMode >= 8) {
+      rows.push(['1/8-1', '1/8-2', '1/8-3', '1/8-4'])
+      rows.push(['1/8-5', '1/8-6', '1/8-7', '1/8-8'])
+    }
+
+    // Build modifiers from boxes - show ALL boxes in relevant rows
+    rows.forEach((row, rowIdx) => {
+      row.forEach(boxName => {
+        // Skip halves row if mode is 1 (whole only)
+        if (sectionMode === 1 && (boxName === 'LEFT HALF' || boxName === 'RIGHT HALF')) return
+
+        const content = boxContents[boxName]
+        const itemsText = content.items.length > 0 ? content.items.join(', ') : '-'
+
+        pizzaModifiers.push({
+          id: `pizza-box-${boxName.replace(/\s+/g, '-').toLowerCase()}`,
+          name: `${boxName}: ${itemsText}`,
+          price: content.totalPrice,
+          depth: 0,
+        })
+      })
+    })
+
+    // Add cooking instructions
+    if (config.cookingInstructions) {
+      pizzaModifiers.push({
+        id: 'pizza-cooking',
+        name: config.cookingInstructions,
+        price: 0,
+        depth: 0,
+      })
+    }
+
+    // Add cut style
+    if (config.cutStyle && config.cutStyle !== 'Normal Cut') {
+      pizzaModifiers.push({
+        id: 'pizza-cut',
+        name: config.cutStyle,
+        price: 0,
+        depth: 0,
+      })
+    }
+
+    if (editingPizzaItem) {
+      // Update existing item
+      updateItem(editingPizzaItem.id, {
+        name: itemName,
+        price: config.totalPrice,
+        specialNotes: config.specialNotes,
+        modifiers: pizzaModifiers,
+        pizzaConfig: config,
+      })
+    } else {
+      // Add new item
+      addItem({
+        menuItemId: selectedPizzaItem.id,
+        name: itemName,
+        price: config.totalPrice,
+        quantity: 1,
+        specialNotes: config.specialNotes,
+        modifiers: pizzaModifiers,
+        pizzaConfig: config,
+      })
+    }
+
+    setShowPizzaModal(false)
+    setSelectedPizzaItem(null)
+    setEditingPizzaItem(null)
   }
 
   // Handle adding combo to order
@@ -1524,6 +1838,17 @@ export default function OrdersPage() {
     const menuItem = menuItems.find(m => m.id === orderItem.menuItemId)
     if (!menuItem) return
 
+    // Check if this is a pizza item (has pizzaConfig)
+    if (orderItem.pizzaConfig) {
+      setSelectedPizzaItem(menuItem)
+      setEditingPizzaItem({
+        id: orderItem.id,
+        pizzaConfig: orderItem.pizzaConfig,
+      })
+      setShowPizzaModal(true)
+      return
+    }
+
     if (menuItem.modifierGroupCount && menuItem.modifierGroupCount > 0) {
       setSelectedItem(menuItem)
       setEditingOrderItem({
@@ -1701,6 +2026,67 @@ export default function OrdersPage() {
     return null
   }
 
+  // Floor Plan HOME view (T019)
+  if (viewMode === 'floor-plan' && employee.location?.id) {
+    return (
+      <>
+        <FloorPlanHome
+          locationId={employee.location.id}
+          employeeId={employee.id}
+          employeeName={employee.displayName}
+          employeeRole={employee.role?.name}
+          isManager={isManager}
+          onNavigateToOrders={async (tableId, orderId) => {
+            // Table workflow: open order entry with table context
+            if (orderId) {
+              // Load existing order from API
+              try {
+                const res = await fetch(`/api/orders/${orderId}`)
+                if (res.ok) {
+                  const orderData = await res.json()
+                  loadOrder(orderData)
+                }
+              } catch (error) {
+                console.error('Failed to load order:', error)
+              }
+            } else if (tableId) {
+              // Start a new dine-in order attached to this table
+              startOrder('dine_in')
+              // TODO: Associate order with table via table picker or direct assignment
+            }
+            setViewMode('order-entry')
+          }}
+          onStartNewTab={() => {
+            // Tab workflow: start a bar tab with no table
+            startOrder('bar_tab')
+            setViewMode('order-entry')
+          }}
+          onCategoryClick={(categoryId) => {
+            // Tab workflow: tap category first → start bar tab with that category selected
+            startOrder('bar_tab')
+            setSelectedCategory(categoryId)
+            setViewMode('order-entry')
+          }}
+          onLogout={logout}
+          onOpenSettings={() => setShowDisplaySettings(true)}
+          onOpenAdminNav={() => setShowAdminNav(true)}
+        />
+        {/* Admin Nav Sidebar */}
+        {showAdminNav && (
+          <AdminNav onClose={() => setShowAdminNav(false)} />
+        )}
+        {/* Display Settings Modal */}
+        <POSDisplaySettingsModal
+          isOpen={showDisplaySettings}
+          onClose={() => setShowDisplaySettings(false)}
+          settings={displaySettings}
+          onUpdate={updateSetting}
+          onBatchUpdate={updateSettings}
+        />
+      </>
+    )
+  }
+
   return (
     <div className={`h-screen flex overflow-hidden transition-colors duration-500 ${
       currentMode === 'bar'
@@ -1727,7 +2113,14 @@ export default function OrdersPage() {
                 </div>
                 <div className="text-left">
                   <p className="font-semibold text-gray-900">{employee.displayName}</p>
-                  <p className="text-sm text-gray-500">{employee.role.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-gray-500">{employee.role.name}</p>
+                    {hasDevAccess && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-amber-950 rounded uppercase tracking-wider">
+                        DEV
+                      </span>
+                    )}
+                  </div>
                 </div>
               </button>
             ) : (
@@ -1741,9 +2134,31 @@ export default function OrdersPage() {
                 </div>
                 <div>
                   <p className="font-semibold text-gray-900">{employee.displayName}</p>
-                  <p className="text-sm text-gray-500">{employee.role.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-gray-500">{employee.role.name}</p>
+                    {hasDevAccess && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-bold bg-amber-500 text-amber-950 rounded uppercase tracking-wider">
+                        DEV
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
+            )}
+
+            {/* Back to Floor Plan button (T019) - only for non-bartenders */}
+            {!isBartender && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode('floor-plan')}
+                className="ml-2"
+              >
+                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Floor Plan
+              </Button>
             )}
           </div>
 
@@ -2428,7 +2843,7 @@ export default function OrdersPage() {
                 const childMods = item.modifiers.filter(m => m.depth && m.depth > 0)
                 const hasModifiers = item.modifiers.length > 0
                 const menuItemInfo = menuItems.find(m => m.id === item.menuItemId)
-                const canEdit = menuItemInfo?.modifierGroupCount && menuItemInfo.modifierGroupCount > 0
+                const canEdit = (menuItemInfo?.modifierGroupCount && menuItemInfo.modifierGroupCount > 0) || item.pizzaConfig
 
                 return (
                   <Card key={item.id} variant="glassSubtle" className={`p-2 ${
@@ -3083,6 +3498,20 @@ export default function OrdersPage() {
         />
       )}
 
+      {/* Pizza Builder Modal */}
+      {showPizzaModal && selectedPizzaItem && (
+        <PizzaBuilderModal
+          item={selectedPizzaItem}
+          editingItem={editingPizzaItem}
+          onConfirm={handleAddPizzaToOrder}
+          onCancel={() => {
+            setShowPizzaModal(false)
+            setSelectedPizzaItem(null)
+            setEditingPizzaItem(null)
+          }}
+        />
+      )}
+
       {/* Combo Selection Modal */}
       {showComboModal && selectedComboItem && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -3633,6 +4062,7 @@ export default function OrdersPage() {
             quantity: item.quantity,
             price: item.price,
             itemTotal: (item.price + item.modifiers.reduce((sum, m) => sum + m.price, 0)) * item.quantity,
+            seatNumber: item.seatNumber,
             modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price })),
           }))}
           onSplitComplete={handleSplitComplete}
@@ -3667,6 +4097,51 @@ export default function OrdersPage() {
           employeeId={employee.id}
           onComplete={handleCompVoidComplete}
         />
+      )}
+
+      {/* Resend to Kitchen Modal */}
+      {resendModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold mb-2">Resend to Kitchen</h3>
+            <p className="text-gray-600 mb-4">
+              Resend &quot;{resendModal.itemName}&quot; to kitchen?
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Note for kitchen (optional)
+              </label>
+              <input
+                type="text"
+                value={resendNote}
+                onChange={(e) => setResendNote(e.target.value)}
+                placeholder="e.g., Make it well done"
+                className="w-full p-3 border rounded-lg text-lg"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setResendModal(null)
+                  setResendNote('')
+                }}
+                disabled={resendLoading}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="flex-1 bg-blue-600 hover:bg-blue-700"
+                onClick={confirmResendItem}
+                disabled={resendLoading}
+              >
+                {resendLoading ? 'Sending...' : 'Resend'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Item Transfer Modal */}

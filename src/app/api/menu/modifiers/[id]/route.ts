@@ -61,6 +61,8 @@ export async function GET(
         childModifierGroupId: mod.childModifierGroupId,
         commissionType: mod.commissionType,
         commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
+        printerRouting: mod.printerRouting,
+        printerIds: mod.printerIds,
       })),
       linkedItems: modifierGroup.menuItems.map(link => ({
         id: link.menuItem.id,
@@ -136,6 +138,8 @@ export async function PUT(
           childModifierGroupId?: string | null
           commissionType?: string | null
           commissionValue?: number | null
+          printerRouting?: string
+          printerIds?: string[] | null
         }
 
         if (mod.id && existingIds.has(mod.id)) {
@@ -156,6 +160,8 @@ export async function PUT(
               isActive: mod.isActive ?? true,
               showOnPOS: mod.showOnPOS ?? true,
               showOnline: mod.showOnline ?? true,
+              printerRouting: mod.printerRouting ?? 'follow',
+              printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
               sortOrder: i,
             }
           })
@@ -178,6 +184,8 @@ export async function PUT(
               isActive: mod.isActive ?? true,
               showOnPOS: mod.showOnPOS ?? true,
               showOnline: mod.showOnline ?? true,
+              printerRouting: mod.printerRouting ?? 'follow',
+              printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
               sortOrder: i,
             }
           })
@@ -220,6 +228,8 @@ export async function PUT(
         isActive: mod.isActive,
         showOnPOS: mod.showOnPOS,
         showOnline: mod.showOnline,
+        printerRouting: mod.printerRouting,
+        printerIds: mod.printerIds,
       }))
     })
   } catch (error) {

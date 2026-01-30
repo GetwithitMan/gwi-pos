@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { InteractiveFloorPlan, FloorPlanTable, TableStatus } from '@/components/floor-plan'
 
 interface Section {
   id: string
@@ -240,6 +241,85 @@ export default function TablesPage() {
     setShowTableModal(true)
   }
 
+  // Floor Plan handlers
+  const handleFloorPlanTableSelect = useCallback((table: FloorPlanTable) => {
+    if (table.currentOrder) {
+      router.push(`/orders?tableId=${table.id}`)
+    } else {
+      // Convert to TableData format for edit modal
+      openEditTable({
+        id: table.id,
+        name: table.name,
+        capacity: table.capacity,
+        posX: table.posX,
+        posY: table.posY,
+        width: table.width,
+        height: table.height,
+        shape: table.shape as 'rectangle' | 'circle' | 'square',
+        status: table.status as 'available' | 'occupied' | 'reserved' | 'dirty',
+        section: table.section,
+        currentOrder: table.currentOrder,
+      })
+    }
+  }, [router])
+
+  const handleTableCombine = useCallback(async (sourceTableId: string, targetTableId: string): Promise<boolean> => {
+    if (!employee?.location?.id) return false
+
+    try {
+      const response = await fetch('/api/tables/combine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceTableId,
+          targetTableId,
+          locationId: employee.location.id,
+          employeeId: employee.id,
+        }),
+      })
+
+      if (response.ok) {
+        loadData() // Refresh grid view data too
+        return true
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to combine tables')
+        return false
+      }
+    } catch (error) {
+      console.error('Failed to combine tables:', error)
+      return false
+    }
+  }, [employee])
+
+  const handleTableSplit = useCallback(async (tableId: string, splitMode: 'even' | 'by_seat'): Promise<boolean> => {
+    if (!employee?.location?.id) return false
+
+    try {
+      const response = await fetch(`/api/tables/${tableId}/split`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: employee.location.id,
+          employeeId: employee.id,
+          splitMode,
+        }),
+      })
+
+      if (response.ok) {
+        loadData() // Refresh grid view data too
+        return true
+      } else {
+        const data = await response.json()
+        alert(data.error || 'Failed to split tables')
+        return false
+      }
+    } catch (error) {
+      console.error('Failed to split tables:', error)
+      return false
+    }
+  }, [employee])
+
   const filteredTables = tables.filter(table => {
     if (filterSection && table.section?.id !== filterSection) return false
     if (filterStatus && table.status !== filterStatus) return false
@@ -437,11 +517,15 @@ export default function TablesPage() {
           </div>
         ) : (
           /* Floor Plan View */
-          <div className="bg-white rounded-lg border p-4 min-h-[600px] relative">
-            <p className="text-center text-gray-400 py-12">
-              Floor plan editor coming soon.<br />
-              Drag and drop tables to position them.
-            </p>
+          <div className="bg-white rounded-lg border min-h-[600px] relative">
+            <InteractiveFloorPlan
+              locationId={employee?.location?.id || ''}
+              filterSectionId={filterSection}
+              filterStatus={filterStatus as TableStatus | null}
+              onTableSelect={handleFloorPlanTableSelect}
+              onTableCombine={handleTableCombine}
+              onTableSplit={handleTableSplit}
+            />
           </div>
         )}
       </div>

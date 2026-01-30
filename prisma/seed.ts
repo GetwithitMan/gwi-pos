@@ -124,6 +124,29 @@ async function main() {
   console.log('Created order types:', orderTypes.length)
 
   // Create Roles with new permission system
+
+  // Super Admin gets ALL access including dev features
+  const superAdminPermissions = [
+    'all',  // Full access to everything
+    'dev.access',  // Developer features
+    'dev.test_cards',  // Simulated card reader
+    'dev.training_mode',  // Training mode (future)
+    'dev.force_sync',  // Manual sync trigger (future)
+  ]
+
+  const superAdminRole = await prisma.role.upsert({
+    where: { id: 'role-super-admin' },
+    update: {
+      permissions: superAdminPermissions,
+    },
+    create: {
+      id: 'role-super-admin',
+      locationId: location.id,
+      name: 'Super Admin',
+      permissions: superAdminPermissions,
+    },
+  })
+
   // Manager gets full access to most features
   const managerPermissions = [
     // POS Access
@@ -212,9 +235,27 @@ async function main() {
       permissions: bartenderPermissions,
     },
   })
-  console.log('Created/updated roles: Manager, Server, Bartender')
+  console.log('Created/updated roles: Super Admin, Manager, Server, Bartender')
 
   // Create Employees
+
+  // Super Admin - PIN 0000 for dev access
+  const superAdmin = await prisma.employee.upsert({
+    where: { id: 'emp-super-admin' },
+    update: {},
+    create: {
+      id: 'emp-super-admin',
+      locationId: location.id,
+      roleId: superAdminRole.id,
+      firstName: 'Dev',
+      lastName: 'Admin',
+      displayName: 'Dev Admin',
+      pin: await hash('0000', 10),
+      hourlyRate: 0,
+      email: 'dev@gwi-pos.local',
+    },
+  })
+
   const pinHash = await hash('1234', 10)
 
   const manager = await prisma.employee.upsert({
@@ -264,7 +305,7 @@ async function main() {
       email: 'mike@demo.com',
     },
   })
-  console.log('Created employees: Demo Manager (PIN: 1234), Sarah S. (PIN: 2345), Mike B. (PIN: 3456)')
+  console.log('Created employees: Dev Admin (PIN: 0000), Demo Manager (PIN: 1234), Sarah S. (PIN: 2345), Mike B. (PIN: 3456)')
 
   // Create Categories
   const categories = await Promise.all([

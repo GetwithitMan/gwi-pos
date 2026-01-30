@@ -84,6 +84,8 @@
 | 24 | Bump Bar | TODO | 23 | Physical bump bar hardware |
 | 25 | Expo Station | PARTIAL | 23 | Expo mode works via showAllItems toggle |
 | 26 | Prep Tickets | TODO | 07 | Prep station routing |
+| 102 | KDS Device Security | DONE | 23 | Device pairing, httpOnly cookies, static IP enforcement |
+| 103 | Print Routing | DONE | 67 | Direct category/item printer assignment, multi-destination, KDS support, backup failover |
 
 ### Pricing & Discounts
 | Skill | Name | Status | Dependencies | Notes |
@@ -115,6 +117,13 @@
 | 71 | Transfer Reports | DONE | 22, 68 | Tab/item transfers, audit trail, by employee/hour |
 | 72 | Table Reports | DONE | 16, 42 | Sales by table, turn times, server sections |
 | 73 | Customer Reports | DONE | 51 | Spend tiers, frequency, tags, at-risk customers |
+| 104 | Daily Store Report | DONE | 42, 43, 50 | Comprehensive EOD report: revenue, payments, cash, sales by category/type, voids, discounts, labor, tips |
+| 105 | Tip Share Report | DONE | - | Standalone tip share report, by recipient/giver, mark as paid, payroll/manual settings |
+| 106 | Interactive Floor Plan (SVG) | DONE | 16, 80 | SVG floor plan with zoom, pan, status colors, seat display |
+| 107 | Table Combine/Split | DONE | 106 | Drag-combine, long-press split, 30s undo, audit log |
+| 108 | Event Ticketing APIs | TODO | 106 | Event CRUD, seat hold/release, ticket purchase, check-in |
+| 109 | Visual Pizza Builder | TODO | 106 | Konva-based pizza customizer with section selection, topping drag-drop |
+| 110 | Real-time Events (Pusher) | TODO | - | WebSocket abstraction for instant updates (seats, orders, KDS) |
 
 ### Employee Features
 | Skill | Name | Status | Dependencies | Notes |
@@ -166,16 +175,17 @@
 | Advanced Orders | 5 | 0 | 0 | 5 | 100% |
 | Table Management | 4 | 0 | 0 | 4 | 100% |
 | Bar Features | 3 | 0 | 0 | 3 | 100% |
-| Kitchen Display | 2 | 1 | 2 | 5 | 50% |
+| Kitchen Display | 4 | 1 | 2 | 7 | 71% |
 | Pricing & Discounts | 5 | 0 | 0 | 5 | 100% |
 | Inventory & Menu | 5 | 0 | 0 | 5 | 100% |
-| Reporting | 11 | 0 | 0 | 11 | 100% |
+| Reporting | 13 | 0 | 0 | 13 | 100% |
 | Employee Features | 3 | 1 | 0 | 4 | 88% |
 | Customer Features | 2 | 0 | 2 | 4 | 50% |
 | Hardware | 0 | 0 | 4 | 4 | 0% |
 | Advanced | 0 | 0 | 1 | 1 | 0% |
-| Additional (80-101) | 17 | 0 | 0 | 17 | 100% |
-| **TOTAL** | **74** | **3** | **7** | **84** | **92%** |
+| Additional (80-105) | 21 | 0 | 0 | 21 | 100% |
+| Canvas/Events (106-112) | 3 | 0 | 4 | 7 | 43% |
+| **TOTAL** | **80** | **3** | **11** | **94** | **88%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -300,6 +310,12 @@ Skills that can be developed simultaneously:
 
 | Skill | Name | What Was Built |
 |-------|------|----------------|
+| 104 | Daily Store Report | Comprehensive EOD report: revenue, payments, cash reconciliation, sales by category/type, voids, discounts, labor, gift cards, tip shares, stats |
+| 105 | Tip Share Report | Standalone report with date range filter, by recipient (for payout), by giver (for tracking), mark as paid action, payroll/manual settings |
+| - | Tip Share Settings | `tipShares.payoutMethod` setting: 'payroll' (auto) or 'manual' (use report), simplified cash flow |
+| - | Employee Shift Report | Individual shift report with hours, sales, tips earned vs received separation |
+| 103 | Print Routing | Simplified to direct category/item printer assignment, multi-select dropdown with KDS support, backup failover |
+| 102 | KDS Device Security | Device pairing with 6-digit codes, httpOnly cookies, 256-bit tokens, static IP enforcement for UniFi networks |
 | 99 | Online Ordering Modifier Override | Per-item control of which modifier groups appear online, two-level visibility system |
 | 100 | Modifier Stacking UI | Visual gradient feedback, 2x badge, hint text for stacked modifier selections |
 | 101 | Modifier Hierarchy Display | Depth field on OrderItemModifier, dash prefix display on KDS and orders page |
@@ -458,6 +474,19 @@ These skills emerged during development and are now part of the system:
 | 99 | Online Ordering Modifier Override | DONE | 04, 53 | Per-item control of which modifier groups appear online, two-level visibility (item + modifier) |
 | 100 | Modifier Stacking UI | DONE | 04 | Visual feedback for stacked selections (gradient, 2x badge, hint text) |
 | 101 | Modifier Hierarchy Display | DONE | 04 | Depth tracking for nested modifiers, dash prefix display on KDS/orders |
+| 102 | KDS Device Security | DONE | 23 | Device pairing, httpOnly cookies, static IP enforcement for merchant deployment |
+| 103 | Print Routing | DONE | 67 | Direct category/item printer assignment, multi-select dropdown, KDS support, backup failover |
+| 104 | Daily Store Report | DONE | 42, 43, 50 | Comprehensive EOD: revenue, payments, cash, sales by category/type, voids, discounts, labor, tip shares |
+| 105 | Tip Share Report | DONE | - | Standalone report, by recipient/giver, mark as paid, payroll/manual payout settings |
+| 106 | Interactive Floor Plan (SVG) | DONE | 16, 80 | SVG floor plan with zoom, pan, status colors, seat display |
+| 107 | Table Combine/Split | DONE | 106 | Drag-combine, long-press split, 30s undo, audit log |
+| 108 | Event Ticketing APIs | TODO | 106 | Event CRUD, seat hold/release (10min TTL), ticket purchase, barcode check-in |
+| 109 | Visual Pizza Builder | TODO | 106 | Konva-based pizza customizer with section selection, topping drag-drop, live KDS preview |
+| 110 | Real-time Events (Pusher/Ably) | TODO | - | WebSocket abstraction layer for instant updates across all terminals |
+| 111 | Training Mode | TODO | 30 | Sandbox mode with temp database for server training, nothing hits production |
+| 112 | Simulated Card Reader | DONE | 30 | Dev/training tap vs chip simulation, 55 mock cards, 5% decline rate |
+| 111 | Training Mode | TODO | 30 | Sandbox mode with temp database, nothing recorded to production, for server training |
+| 112 | Simulated Card Reader | DONE | 30 | Dev/training tap vs chip simulation, 55 mock cards, 5% decline rate |
 
 ---
 

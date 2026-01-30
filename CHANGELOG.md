@@ -4,6 +4,213 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-01-29] Session 24
+
+### Simplified Print Routing System
+
+Completely redesigned the print routing system to be simpler and more intuitive. Removed the complex PrintRoute system and replaced it with direct printer/KDS assignment at the category and item level.
+
+**Key Changes:**
+
+1. **Removed PrintRoute System**
+   - Deleted `PrintRoute` model from schema
+   - Removed `/api/hardware/print-routes/` API endpoints
+   - Removed `PrintRouteEditor.tsx` and `PrintRoutePreview.tsx` components
+   - Removed `print-route-settings.ts` types file
+
+2. **Simplified Schema**
+   - `Category.printerIds` - JSON array of printer/KDS IDs (replaces single `printerId`)
+   - `MenuItem.printerIds` - JSON array for item-level override
+   - `MenuItem.backupPrinterIds` - JSON array for failover destinations
+   - `Modifier.printerRouting` - Routing mode: "follow" | "also" | "only"
+   - `Modifier.printerIds` - JSON array when routing is "also" or "only"
+
+3. **Multiple Destination Support**
+   - Categories can print to multiple printers/KDS screens
+   - Items can override with their own destinations
+   - Items can have backup destinations for failover
+   - KDS screens available as print destinations
+
+4. **Improved UI**
+   - Dropdown with checkboxes for multi-select (scales with many printers)
+   - Grouped by type: "Printers" and "KDS Screens"
+   - Visual distinction: Blue for printers, Green for KDS, Orange for backups
+   - Shows selected count: "Sending to X destination(s)"
+
+5. **New Routing Priority**
+   ```
+   Item destinations (array) → Category destinations (array) → Default kitchen printer
+   ```
+
+**Database Changes:**
+- Removed `PrintRoute` model
+- Changed `Category.printerId` → `Category.printerIds` (JSON array)
+- Changed `MenuItem.printerId` → `MenuItem.printerIds` (JSON array)
+- Added `MenuItem.backupPrinterIds` (JSON array)
+- Changed `Modifier.printerId` → `Modifier.printerIds` (JSON array)
+- Added `Modifier.printerRouting` (string with default "follow")
+
+**Modified Files:**
+- `prisma/schema.prisma` - Schema simplification
+- `src/app/(admin)/menu/page.tsx` - Multi-select dropdown for items/categories
+- `src/app/(admin)/settings/hardware/routing/page.tsx` - Added KDS support
+- `src/app/api/menu/categories/route.ts` - Handle printerIds array
+- `src/app/api/menu/categories/[id]/route.ts` - Handle printerIds array
+- `src/app/api/menu/items/route.ts` - Handle printerIds/backupPrinterIds
+- `src/app/api/menu/items/[id]/route.ts` - Handle printerIds/backupPrinterIds
+- `src/app/api/menu/modifiers/route.ts` - Handle printerRouting/printerIds
+- `src/app/api/menu/modifiers/[id]/route.ts` - Handle printerRouting/printerIds
+- `src/app/api/menu/route.ts` - Return backupPrinterIds
+- `src/app/api/print/kitchen/route.ts` - Multi-printer routing logic
+
+**Deleted Files:**
+- `src/app/api/hardware/print-routes/` (entire directory)
+- `src/components/hardware/PrintRouteEditor.tsx`
+- `src/components/hardware/PrintRoutePreview.tsx`
+- `src/types/print-route-settings.ts`
+
+**UI Features:**
+- Edit Item Modal: Dropdown with checkboxes for printers + KDS screens
+- Edit Category Modal: Dropdown with checkboxes for printers + KDS screens
+- Routing Page: Toggle buttons for quick category/item routing with KDS support
+- Both support primary destinations and backup destinations
+
+---
+
+## [2026-01-29] Session 23
+
+### Print Routing Rules System
+
+Redesigned the print routing system to centralize print settings per route (not per location), with support for multiple printers, printer-type-specific settings, live preview, and backup failover.
+
+**New Features:**
+
+1. **Print Routes**
+   - Named routes with printer-specific settings (e.g., "Pizza Printer 1")
+   - Route types: Pizza, Bar/Drinks, Category, Item Type
+   - Priority-based routing (higher priority checked first)
+   - Each route can have different print settings
+
+2. **Printer-Type-Specific Settings**
+   - Impact printers (TM-U220): Red ribbon options, emphasized text, double-strike
+   - Thermal printers (TM-T88): Print density, speed settings
+   - Settings automatically change based on selected printer type
+
+3. **Backup Printer Failover**
+   - Configure backup printer per route
+   - Automatic failover on primary printer failure
+   - Configurable timeout delay (1000-30000ms)
+
+4. **Live Preview**
+   - Real-time ticket preview as settings change
+   - Shows red text for impact printer elements
+   - Different preview content based on route type
+
+5. **Route-Specific Pizza Settings**
+   - Section headers, topping display options
+   - Modification highlighting (NO, EXTRA, LIGHT)
+   - Footer options (topping count, size repeat)
+
+**Database Changes:**
+- Added `PrintRoute` model with:
+  - `name`, `description`, `routeType`
+  - `printerId`, `backupPrinterId` (with relations)
+  - `printSettings` (JSON) for route-specific settings
+  - `failoverEnabled`, `failoverDelayMs`
+  - `priority`, `printCopies`, `isActive`
+
+**New Files:**
+- `prisma/schema.prisma` - PrintRoute model added
+- `src/types/print-route-settings.ts` - RouteSpecificSettings types
+- `src/app/api/hardware/print-routes/route.ts` - CRUD API
+- `src/app/api/hardware/print-routes/[id]/route.ts` - Single route ops
+- `src/app/api/hardware/print-routes/[id]/test/route.ts` - Test print
+- `src/components/hardware/PrintRouteEditor.tsx` - Route editor modal
+- `src/components/hardware/PrintRoutePreview.tsx` - Live preview
+
+**Modified Files:**
+- `src/app/(admin)/settings/hardware/routing/page.tsx` - Added Print Routes section
+
+**Routing Priority:**
+```
+PrintRoute (by priority) > Item printer > Category printer > Default kitchen printer
+```
+
+---
+
+## [2026-01-29] Session 22
+
+### Pizza Kitchen Ticket Printing Improvements
+
+Major overhaul of pizza kitchen ticket printing with comprehensive settings, live preview, and proper sectional topping support.
+
+**Pizza Print Settings Editor:**
+
+1. **Live Receipt Preview**
+   - Real-time preview showing exactly how the ticket will print
+   - Updates instantly as settings change
+   - Shows red text for items that will print in red on TM-U220
+   - Side-by-side layout: settings on left, preview on right
+
+2. **Red Ribbon / Two-Color Support (TM-U220)**
+   - Enable/disable red printing per element type
+   - Options: Headers, Item Names, Modifiers, NO Items, EXTRA Items, LIGHT Items, Notes, Allergies, Section Headers
+   - All style dropdowns include RED, RED Bold, RED Inverted options
+
+3. **Text Sizing Controls**
+   - Header size: Normal, Large, XLarge
+   - Item name size: Normal, Large, XLarge
+   - Modifier size: Small, Normal, Large
+   - Section header size: Normal, Large, XLarge
+   - Notes size: Normal, Large
+
+4. **Preset Configurations**
+   - Standard (default settings)
+   - Compact (minimal spacing)
+   - High Visibility (larger text, more red)
+   - Impact Printer (optimized for TM-U220)
+
+**Kitchen Ticket Content Improvements:**
+
+1. **Size & Crust Now Print**
+   - Size printed prominently: `LARGE (14")`
+   - Crust type: `THIN CRUST`
+   - Base sauce: `MARINARA SAUCE`
+   - Base cheese: `MOZZARELLA CHEESE`
+
+2. **Sectional Toppings Fixed**
+   - Toppings that span multiple sections now correctly appear in each applicable section
+   - Example: Steak on 1/6-1 through 1/6-5 appears in all five sections
+   - Sections print in logical order: WHOLE → Halves → Quarters → Sixths
+   - Empty sections are skipped (no more "LEFT HALF: -")
+
+3. **Text Wrapping Prevention**
+   - Smart sizing uses height-only scaling for long text
+   - Prevents "BUILD YOUR OW\nN" wrapping issues
+   - Order type abbreviated: DINE_IN → DINE IN
+
+4. **Impact Printer Commands**
+   - Uses correct ESC ! commands instead of GS ! for impact printers
+   - Proper double-height and double-width support
+
+**Screen Freeze Fix:**
+
+- Replaced blocking `prompt()`/`alert()` with React modal for resend
+- Eliminates "[Violation] 'click' handler took 2029ms" errors
+- Non-blocking UI for kitchen resend operations
+
+**Files Modified:**
+- `src/app/api/print/kitchen/route.ts` - Complete rewrite of pizza section logic, size/crust printing
+- `src/components/hardware/PizzaPrintSettingsEditor.tsx` - Live preview, all settings tabs
+- `src/types/pizza-print-settings.ts` - Added red style options throughout
+- `src/app/(pos)/orders/page.tsx` - Non-blocking resend modal
+
+**API Changes:**
+- Kitchen print now includes size/crust/sauce/cheese relations
+- Added detailed logging for print debugging
+
+---
+
 ## [2026-01-28] Session 21
 
 ### New Feature: Configurable Order Types System (Skill 101)

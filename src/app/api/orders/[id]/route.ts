@@ -1,6 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Helper to calculate commission for an item
+function calculateItemCommission(
+  itemTotal: number,
+  quantity: number,
+  commissionType: string | null,
+  commissionValue: number | null
+): number {
+  if (!commissionType || commissionValue === null || commissionValue === undefined) {
+    return 0
+  }
+  if (commissionType === 'percent') {
+    return Math.round((itemTotal * commissionValue / 100) * 100) / 100
+  } else if (commissionType === 'fixed') {
+    return Math.round((commissionValue * quantity) * 100) / 100
+  }
+  return 0
+}
+
 // GET - Get order details
 export async function GET(
   request: NextRequest,
@@ -22,6 +40,7 @@ export async function GET(
           include: {
             modifiers: true,
             ingredientModifications: true,
+            pizzaData: true, // Include pizza configuration
           },
         },
         payments: true,
@@ -48,38 +67,67 @@ export async function GET(
         id: order.employee.id,
         name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
       },
-      items: order.items.map(item => ({
-        id: item.id,
-        menuItemId: item.menuItemId,
-        name: item.name,
-        price: Number(item.price),
-        quantity: item.quantity,
-        itemTotal: Number(item.itemTotal),
-        specialNotes: item.specialNotes,
-        // Entertainment/timed rental fields
-        blockTimeMinutes: item.blockTimeMinutes,
-        blockTimeStartedAt: item.blockTimeStartedAt?.toISOString() || null,
-        blockTimeExpiresAt: item.blockTimeExpiresAt?.toISOString() || null,
-        modifiers: item.modifiers.map(mod => ({
-          id: mod.id,
-          modifierId: mod.modifierId,
-          name: mod.name,
-          price: Number(mod.price),
-          preModifier: mod.preModifier,
-          depth: mod.depth || 0,
-          spiritTier: mod.spiritTier,
-          linkedBottleProductId: mod.linkedBottleProductId,
-        })),
-        ingredientModifications: item.ingredientModifications.map(ing => ({
-          id: ing.id,
-          ingredientId: ing.ingredientId,
-          ingredientName: ing.ingredientName,
-          modificationType: ing.modificationType,
-          priceAdjustment: Number(ing.priceAdjustment),
-          swappedToModifierId: ing.swappedToModifierId,
-          swappedToModifierName: ing.swappedToModifierName,
-        })),
-      })),
+      items: order.items.map(item => {
+        // Reconstruct pizzaConfig from pizzaData if present
+        const pizzaConfig = item.pizzaData ? {
+          sizeId: item.pizzaData.sizeId,
+          crustId: item.pizzaData.crustId,
+          sauceId: item.pizzaData.sauceId,
+          cheeseId: item.pizzaData.cheeseId,
+          sauceAmount: item.pizzaData.sauceAmount as 'none' | 'light' | 'regular' | 'extra',
+          cheeseAmount: item.pizzaData.cheeseAmount as 'none' | 'light' | 'regular' | 'extra',
+          // Get arrays from toppingsData JSON
+          toppings: (item.pizzaData.toppingsData as { toppings?: unknown[] })?.toppings || [],
+          sauces: (item.pizzaData.toppingsData as { sauces?: unknown[] })?.sauces,
+          cheeses: (item.pizzaData.toppingsData as { cheeses?: unknown[] })?.cheeses,
+          cookingInstructions: item.pizzaData.cookingInstructions,
+          cutStyle: item.pizzaData.cutStyle,
+          specialNotes: item.specialNotes,
+          totalPrice: Number(item.pizzaData.totalPrice),
+          priceBreakdown: {
+            sizePrice: Number(item.pizzaData.sizePrice),
+            crustPrice: Number(item.pizzaData.crustPrice),
+            saucePrice: Number(item.pizzaData.saucePrice),
+            cheesePrice: Number(item.pizzaData.cheesePrice),
+            toppingsPrice: Number(item.pizzaData.toppingsPrice),
+          },
+        } : undefined
+
+        return {
+          id: item.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          price: Number(item.price),
+          quantity: item.quantity,
+          itemTotal: Number(item.itemTotal),
+          specialNotes: item.specialNotes,
+          // Entertainment/timed rental fields
+          blockTimeMinutes: item.blockTimeMinutes,
+          blockTimeStartedAt: item.blockTimeStartedAt?.toISOString() || null,
+          blockTimeExpiresAt: item.blockTimeExpiresAt?.toISOString() || null,
+          // Pizza configuration
+          pizzaConfig,
+          modifiers: item.modifiers.map(mod => ({
+            id: mod.id,
+            modifierId: mod.modifierId,
+            name: mod.name,
+            price: Number(mod.price),
+            preModifier: mod.preModifier,
+            depth: mod.depth || 0,
+            spiritTier: mod.spiritTier,
+            linkedBottleProductId: mod.linkedBottleProductId,
+          })),
+          ingredientModifications: item.ingredientModifications.map(ing => ({
+            id: ing.id,
+            ingredientId: ing.ingredientId,
+            ingredientName: ing.ingredientName,
+            modificationType: ing.modificationType,
+            priceAdjustment: Number(ing.priceAdjustment),
+            swappedToModifierId: ing.swappedToModifierId,
+            swappedToModifierName: ing.swappedToModifierName,
+          })),
+        }
+      }),
       subtotal: Number(order.subtotal),
       discountTotal: Number(order.discountTotal),
       taxTotal: Number(order.taxTotal),
@@ -227,13 +275,33 @@ export async function PUT(
         return modId && !modId.startsWith('combo-') && modId.length >= 20
       }
 
+      // Fetch menu items to get commission settings
+      const menuItemIds = items.map(item => item.menuItemId)
+      const menuItemsWithCommission = await db.menuItem.findMany({
+        where: { id: { in: menuItemIds } },
+        select: { id: true, commissionType: true, commissionValue: true },
+      })
+      const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
+
       // Calculate new totals
       let subtotal = 0
+      let commissionTotal = 0
       const orderItems = items.map(item => {
         const itemTotal = item.price * item.quantity
         const modifiersTotal = item.modifiers.reduce((sum, mod) => sum + mod.price, 0) * item.quantity
         const ingredientModTotal = (item.ingredientModifications || []).reduce((sum, ing) => sum + (ing.priceAdjustment || 0), 0) * item.quantity
-        subtotal += itemTotal + modifiersTotal + ingredientModTotal
+        const fullItemTotal = itemTotal + modifiersTotal + ingredientModTotal
+        subtotal += fullItemTotal
+
+        // Calculate commission for this item
+        const menuItem = menuItemMap.get(item.menuItemId)
+        const itemCommission = calculateItemCommission(
+          fullItemTotal,
+          item.quantity,
+          menuItem?.commissionType || null,
+          menuItem?.commissionValue ? Number(menuItem.commissionValue) : null
+        )
+        commissionTotal += itemCommission
 
         return {
           locationId: existingOrder.locationId,
@@ -241,7 +309,8 @@ export async function PUT(
           name: item.name,
           price: item.price,
           quantity: item.quantity,
-          itemTotal: itemTotal + modifiersTotal + ingredientModTotal,
+          itemTotal: fullItemTotal,
+          commissionAmount: itemCommission,
           specialNotes: item.specialNotes || null,
           modifiers: {
             create: item.modifiers.map(mod => ({
@@ -291,6 +360,7 @@ export async function PUT(
           subtotal,
           taxTotal,
           total,
+          commissionTotal,
           items: {
             create: orderItems,
           },

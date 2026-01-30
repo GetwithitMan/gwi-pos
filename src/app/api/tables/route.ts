@@ -8,6 +8,8 @@ export async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const sectionId = searchParams.get('sectionId')
     const status = searchParams.get('status')
+    const includeSeats = searchParams.get('includeSeats') === 'true'
+    const includeOrderItems = searchParams.get('includeOrderItems') === 'true'
 
     if (!locationId) {
       return NextResponse.json(
@@ -20,6 +22,7 @@ export async function GET(request: NextRequest) {
       where: {
         locationId,
         isActive: true,
+        deletedAt: null,
         ...(sectionId ? { sectionId } : {}),
         ...(status ? { status } : {}),
       },
@@ -28,7 +31,7 @@ export async function GET(request: NextRequest) {
           select: { id: true, name: true, color: true },
         },
         orders: {
-          where: { status: 'open' },
+          where: { status: 'open', deletedAt: null },
           select: {
             id: true,
             orderNumber: true,
@@ -38,8 +41,36 @@ export async function GET(request: NextRequest) {
             employee: {
               select: { displayName: true, firstName: true, lastName: true },
             },
+            ...(includeOrderItems ? {
+              items: {
+                where: { deletedAt: null },
+                select: {
+                  id: true,
+                  name: true,
+                  quantity: true,
+                  price: true,
+                },
+                orderBy: { createdAt: 'asc' as const },
+                take: 10, // Limit for performance
+              },
+            } : {}),
           },
         },
+        ...(includeSeats ? {
+          seats: {
+            where: { isActive: true, deletedAt: null },
+            select: {
+              id: true,
+              label: true,
+              seatNumber: true,
+              relativeX: true,
+              relativeY: true,
+              angle: true,
+              seatType: true,
+            },
+            orderBy: { seatNumber: 'asc' },
+          },
+        } : {}),
       },
       orderBy: [
         { section: { name: 'asc' } },
@@ -56,9 +87,21 @@ export async function GET(request: NextRequest) {
         posY: table.posY,
         width: table.width,
         height: table.height,
+        rotation: table.rotation,
         shape: table.shape,
         status: table.status,
         section: table.section,
+        // Combine fields (Skill 106/107)
+        combinedWithId: table.combinedWithId,
+        combinedTableIds: table.combinedTableIds as string[] | null,
+        originalName: table.originalName,
+        // Original position for reset-to-default (T017)
+        originalPosX: table.originalPosX,
+        originalPosY: table.originalPosY,
+        // Locked status (T019) - bolted down furniture
+        isLocked: table.isLocked,
+        // Seats (if requested)
+        seats: includeSeats && 'seats' in table ? table.seats : [],
         // Current order info
         currentOrder: table.orders[0] ? {
           id: table.orders[0].id,
@@ -68,6 +111,15 @@ export async function GET(request: NextRequest) {
           openedAt: table.orders[0].createdAt.toISOString(),
           server: table.orders[0].employee?.displayName ||
             `${table.orders[0].employee?.firstName || ''} ${table.orders[0].employee?.lastName || ''}`.trim(),
+          // Order items for info panel (if requested)
+          items: includeOrderItems && 'items' in table.orders[0]
+            ? (table.orders[0].items as Array<{ id: string; name: string; quantity: number; price: unknown }>).map((item) => ({
+                id: item.id,
+                name: item.name,
+                quantity: item.quantity,
+                price: Number(item.price),
+              }))
+            : undefined,
         } : null,
       })),
     })

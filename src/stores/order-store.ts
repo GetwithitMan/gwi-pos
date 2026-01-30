@@ -19,6 +19,55 @@ interface IngredientModification {
   swappedTo?: { modifierId: string; name: string; price: number }
 }
 
+// Pizza order configuration (inline type to avoid circular imports)
+interface PizzaSauceSelectionStore {
+  sauceId: string
+  name: string
+  sections: number[]
+  amount: 'none' | 'light' | 'regular' | 'extra'
+  price: number
+}
+
+interface PizzaCheeseSelectionStore {
+  cheeseId: string
+  name: string
+  sections: number[]
+  amount: 'none' | 'light' | 'regular' | 'extra'
+  price: number
+}
+
+interface PizzaOrderConfigStore {
+  sizeId: string
+  crustId: string
+  // Legacy fields for backwards compatibility
+  sauceId: string | null
+  cheeseId: string | null
+  sauceAmount: 'none' | 'light' | 'regular' | 'extra'
+  cheeseAmount: 'none' | 'light' | 'regular' | 'extra'
+  // New sectional arrays
+  sauces?: PizzaSauceSelectionStore[]
+  cheeses?: PizzaCheeseSelectionStore[]
+  toppings: Array<{
+    toppingId: string
+    name: string
+    sections: number[]
+    amount: 'light' | 'regular' | 'extra'
+    price: number
+    basePrice: number
+  }>
+  cookingInstructions?: string
+  cutStyle?: string
+  specialNotes?: string
+  totalPrice: number
+  priceBreakdown: {
+    sizePrice: number
+    crustPrice: number
+    saucePrice: number
+    cheesePrice: number
+    toppingsPrice: number
+  }
+}
+
 interface OrderItem {
   id: string
   menuItemId: string
@@ -43,6 +92,8 @@ interface OrderItem {
   blockTimeMinutes?: number | null
   blockTimeStartedAt?: string | null
   blockTimeExpiresAt?: string | null
+  // Pizza builder configuration
+  pizzaConfig?: PizzaOrderConfigStore
 }
 
 interface Order {
@@ -113,6 +164,8 @@ interface LoadedOrderData {
       swappedToModifierId?: string | null
       swappedToModifierName?: string | null
     }[]
+    // Pizza configuration
+    pizzaConfig?: PizzaOrderConfigStore
   }[]
   subtotal: number
   discountTotal?: number
@@ -238,6 +291,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
           price: 0, // Price already included in priceAdjustment
         } : undefined,
       })),
+      // Pizza configuration
+      pizzaConfig: item.pizzaConfig,
     }))
 
     set({

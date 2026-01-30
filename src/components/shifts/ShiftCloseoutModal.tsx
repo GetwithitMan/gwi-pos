@@ -11,6 +11,7 @@ interface ShiftSummary {
   cashSales: number
   cardSales: number
   totalTips: number
+  totalCommission: number
   cashReceived: number
   changeGiven: number
   netCashReceived: number
@@ -715,6 +716,12 @@ export function ShiftCloseoutModal({
                         <span className="text-gray-600">Tips Declared</span>
                         <span className="font-medium">{formatCurrency(parseFloat(tipsDeclared) || 0)}</span>
                       </div>
+                      {summary.totalCommission > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Commission Earned</span>
+                          <span className="font-medium text-purple-600">{formatCurrency(summary.totalCommission)}</span>
+                        </div>
+                      )}
                     </div>
                   </Card>
 
@@ -745,6 +752,21 @@ export function ShiftCloseoutModal({
               {step === 'tips' && (
                 <div className="space-y-4">
                   <h3 className="font-semibold text-lg">Tip Distribution</h3>
+
+                  {/* Commission Earned (if any) */}
+                  {summary && summary.totalCommission > 0 && (
+                    <Card className="p-4 bg-purple-50">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <span className="text-gray-700">Commission Earned</span>
+                          <p className="text-xs text-gray-500">Added to payroll</p>
+                        </div>
+                        <span className="text-2xl font-bold text-purple-600">
+                          {formatCurrency(summary.totalCommission)}
+                        </span>
+                      </div>
+                    </Card>
+                  )}
 
                   {/* Gross Tips */}
                   <Card className="p-4 bg-green-50">

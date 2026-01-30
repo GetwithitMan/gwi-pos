@@ -72,6 +72,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Check for dev access (Super Admin or has dev.access permission)
+    const isDevAccess = permissions.includes('all') || permissions.includes('dev.access')
+
     return NextResponse.json({
       employee: {
         id: matchedEmployee.id,
@@ -87,6 +90,7 @@ export async function POST(request: NextRequest) {
           name: matchedEmployee.location.name,
         },
         permissions,
+        isDevAccess,
       },
     })
   } catch (error) {

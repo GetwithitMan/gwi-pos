@@ -1,0 +1,3331 @@
+// GWI POS Database Schema
+// Version: 1.0.0
+// Based on Skills Documentation
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ORGANIZATION & LOCATIONS (Skill 53)
+// ============================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  locations Location[]
+}
+
+model Location {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  name     String
+  address  String?
+  phone    String?
+  timezone String  @default("America/New_York")
+  isActive Boolean @default(true)
+
+  // Settings
+  settings Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  employees             Employee[]
+  roles                 Role[]
+  categories            Category[]
+  menuItems             MenuItem[]
+  modifierGroups        ModifierGroup[]
+  orderTypes            OrderType[]
+  orders                Order[]
+  tables                Table[]
+  sections              Section[]
+  drawers               Drawer[]
+  shifts                Shift[]
+  timeClock             TimeClockEntry[]
+  discountRules         DiscountRule[]
+  prepStations          PrepStation[]
+  customers             Customer[]
+  giftCards             GiftCard[]
+  houseAccounts         HouseAccount[]
+  coupons               Coupon[]
+  reservations          Reservation[]
+  entertainmentWaitlist EntertainmentWaitlist[]
+
+  // Seat-Level Ticketing
+  seats   Seat[]
+  events  Event[]
+  tickets Ticket[]
+
+  // Liquor Builder (Skill: Liquor)
+  spiritCategories   SpiritCategory[]
+  bottleProducts     BottleProduct[]
+  spiritUpsellEvents SpiritUpsellEvent[]
+
+  // Tip Sharing
+  tipOutRules    TipOutRule[]
+  tipShares      TipShare[]
+  tipBank        TipBank[]
+  tipPoolEntries TipPoolEntry[]
+
+  // Order Details (multi-tenancy)
+  orderItems         OrderItem[]
+  orderItemModifiers OrderItemModifier[]
+  orderDiscounts     OrderDiscount[]
+  payments           Payment[]
+
+  // Menu Details (multi-tenancy)
+  modifiers              Modifier[]
+  menuItemModifierGroups MenuItemModifierGroup[]
+
+  // Combos (multi-tenancy)
+  comboTemplates        ComboTemplate[]
+  comboComponents       ComboComponent[]
+  comboComponentOptions ComboComponentOption[]
+
+  // Operations (multi-tenancy)
+  paidInOuts         PaidInOut[]
+  sectionAssignments SectionAssignment[]
+  voidLogs           VoidLog[]
+  breaks             Break[]
+
+  // Transactions (multi-tenancy)
+  couponRedemptions        CouponRedemption[]
+  giftCardTransactions     GiftCardTransaction[]
+  houseAccountTransactions HouseAccountTransaction[]
+
+  // Events (multi-tenancy)
+  eventPricingTiers EventPricingTier[]
+  eventTableConfigs EventTableConfig[]
+  upsellEvents      UpsellEvent[]
+
+  // Inventory & Tax (multi-tenancy)
+  taxRules              TaxRule[]
+  inventoryTransactions InventoryTransaction[]
+  stockAlerts           StockAlert[]
+
+  // Liquor Builder (multi-tenancy)
+  recipeIngredients    RecipeIngredient[]
+  spiritModifierGroups SpiritModifierGroup[]
+
+  // Menu Item Ingredients (multi-tenancy)
+  ingredients             Ingredient[]
+  menuItemIngredients     MenuItemIngredient[]
+  orderItemIngredients    OrderItemIngredient[]
+
+  // Hardware Management
+  printers   Printer[]
+  kdsScreens KDSScreen[]
+  printRules PrintRule[]
+  printJobs  PrintJob[]
+
+  // Pizza Builder
+  pizzaConfigs     PizzaConfig[]
+  pizzaSizes       PizzaSize[]
+  pizzaCrusts      PizzaCrust[]
+  pizzaSauces      PizzaSauce[]
+  pizzaCheeses     PizzaCheese[]
+  pizzaToppings    PizzaTopping[]
+  pizzaSpecialties PizzaSpecialty[]
+  orderItemPizzas  OrderItemPizza[]
+
+  // Payroll & Scheduling
+  payrollPeriods      PayrollPeriod[]
+  payStubs            PayStub[]
+  schedules           Schedule[]
+  scheduledShifts     ScheduledShift[]
+  availabilityEntries AvailabilityEntry[]
+  payrollSettings     PayrollSettings?
+
+  @@index([organizationId])
+}
+
+// ============================================
+// CUSTOMERS (Skill 51)
+// ============================================
+
+model Customer {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Basic info
+  firstName   String
+  lastName    String
+  displayName String? // Optional nickname
+  email       String?
+  phone       String?
+
+  // Preferences
+  notes String? // Allergies, preferences, etc.
+  tags  Json? // VIP, Regular, etc.
+
+  // Loyalty (Skill 52 foundation)
+  loyaltyPoints Int       @default(0)
+  totalSpent    Decimal   @default(0)
+  totalOrders   Int       @default(0)
+  averageTicket Decimal   @default(0)
+  lastVisit     DateTime?
+
+  // Marketing
+  marketingOptIn Boolean   @default(false)
+  birthday       DateTime?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  orders        Order[]
+  houseAccounts HouseAccount[]
+  reservations  Reservation[]
+  tickets       Ticket[]
+
+  @@unique([locationId, email])
+  @@unique([locationId, phone])
+  @@index([locationId])
+  @@index([lastName, firstName])
+}
+
+// ============================================
+// EMPLOYEES & ROLES (Skill 05)
+// ============================================
+
+model Role {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // Server, Bartender, Manager, Admin
+  permissions Json? // Array of permission strings
+
+  // Tip configuration
+  isTipped Boolean @default(false) // Is this a tipped position?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees Employee[]
+
+  // Tip-out rules (role gives/receives tip-outs)
+  tipOutRulesFrom TipOutRule[] @relation("TipOutFrom")
+  tipOutRulesTo   TipOutRule[] @relation("TipOutTo")
+
+  // Scheduled shifts for this role
+  scheduledShifts ScheduledShift[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+model Employee {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  roleId     String
+  role       Role     @relation(fields: [roleId], references: [id])
+
+  // Identity
+  firstName   String
+  lastName    String
+  displayName String?
+  email       String?
+  phone       String?
+
+  // Address (for tax documents like W-2)
+  address  String?
+  city     String?
+  state    String?
+  zipCode  String?
+
+  // Authentication
+  pin      String // 4-6 digit PIN (hashed)
+  password String? // Optional password for admin access (hashed)
+
+  // Employment
+  hourlyRate Decimal?
+  hireDate   DateTime @default(now())
+  isActive   Boolean  @default(true)
+
+  // Tax Information (W-4 data)
+  federalFilingStatus          String?  // 'single' | 'married' | 'head_of_household'
+  federalAllowances            Int      @default(0)
+  additionalFederalWithholding Decimal  @default(0)
+  stateFilingStatus            String?  // State-specific filing status
+  stateAllowances              Int      @default(0)
+  additionalStateWithholding   Decimal  @default(0)
+  isExemptFromFederalTax       Boolean  @default(false)
+  isExemptFromStateTax         Boolean  @default(false)
+
+  // Payment Preferences
+  paymentMethod     String? // 'direct_deposit' | 'check' | 'cash'
+  bankName          String?
+  bankRoutingNumber String?
+  bankAccountNumber String? // Should be encrypted in production
+  bankAccountType   String? // 'checking' | 'savings'
+  bankAccountLast4  String? // Last 4 digits for display
+
+  // Year-to-Date Tracking (reset annually)
+  ytdGrossEarnings  Decimal @default(0) // Total gross (wages + tips + commission)
+  ytdGrossWages     Decimal @default(0)
+  ytdTips           Decimal @default(0)
+  ytdCommission     Decimal @default(0)
+  ytdTaxesWithheld  Decimal @default(0) // Total taxes (federal + state + FICA)
+  ytdFederalTax     Decimal @default(0)
+  ytdStateTax       Decimal @default(0)
+  ytdLocalTax       Decimal @default(0)
+  ytdSocialSecurity Decimal @default(0)
+  ytdMedicare       Decimal @default(0)
+  ytdNetPay         Decimal @default(0)
+  ytdLastUpdated    DateTime?
+
+  // Settings
+  color     String? // For floor plan display
+  avatarUrl String?
+
+  // POS Layout Preferences (personal customization)
+  posLayoutSettings Json? // Bar/Food mode, favorites, category order
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  orders           Order[]
+  timeClockEntries TimeClockEntry[]
+  shifts           Shift[]
+  voidLogs         VoidLog[]
+  auditLogs        AuditLog[]
+  sections         SectionAssignment[]
+
+  // Tip sharing relations
+  tipSharesGiven    TipShare[] @relation("TipShareFrom")
+  tipSharesReceived TipShare[] @relation("TipShareTo")
+  tipBank           TipBank[]
+
+  // Payroll & Scheduling
+  payStubs           PayStub[]
+  scheduledShifts    ScheduledShift[]
+  availabilityEntries AvailabilityEntry[]
+
+  @@unique([locationId, pin])
+  @@index([locationId])
+  @@index([roleId])
+}
+
+// ============================================
+// TIME CLOCK (Skill 45)
+// ============================================
+
+model TimeClockEntry {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  clockIn  DateTime  @default(now())
+  clockOut DateTime?
+
+  // Break tracking
+  breakStart   DateTime?
+  breakEnd     DateTime?
+  breakMinutes Int       @default(0)
+
+  // Totals
+  regularHours  Decimal?
+  overtimeHours Decimal?
+
+  // Cash drawer
+  drawerCountIn  Json? // {denominations, total}
+  drawerCountOut Json?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([clockIn])
+}
+
+// ============================================
+// SHIFTS & DRAWER MANAGEMENT (Skill 37)
+// ============================================
+
+model Shift {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  // Cash management
+  startingCash Decimal
+  expectedCash Decimal?
+  actualCash   Decimal?
+  variance     Decimal?
+
+  // Sales summary
+  totalSales   Decimal?
+  cashSales    Decimal?
+  cardSales    Decimal?
+  tipsDeclared Decimal?
+
+  // Tip distribution tracking
+  grossTips   Decimal? // Total tips before distribution
+  tipOutTotal Decimal? // Amount tipped out to others
+  netTips     Decimal? // Tips kept (gross - tipOut)
+
+  notes  String?
+  status String  @default("open") // open, closed
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Tip shares distributed during this shift closeout
+  tipShares TipShare[]
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([startedAt])
+}
+
+model Drawer {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name     String // "Drawer 1", "Bar Drawer"
+  deviceId String? // Associated terminal
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  paidInOuts PaidInOut[]
+
+  @@index([locationId])
+}
+
+model PaidInOut {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  drawerId   String
+  drawer     Drawer   @relation(fields: [drawerId], references: [id])
+
+  type      String // "in" or "out"
+  amount    Decimal
+  reason    String
+  reference String? // Check number, vendor, etc.
+
+  employeeId String
+  approvedBy String? // Manager who approved
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([drawerId])
+  @@index([createdAt])
+}
+
+// ============================================
+// PREP STATIONS / KDS ROUTING
+// ============================================
+
+model PrepStation {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Kitchen", "Bar", "Expo", "Grill", "Fryer"
+  displayName String?
+  color       String? // For KDS display theming
+
+  // Station type
+  stationType String @default("kitchen") // kitchen, bar, expo, prep
+
+  // Display settings
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  // KDS settings
+  showAllItems Boolean @default(false) // Expo sees all items
+  autoComplete Int? // Auto-complete after X seconds (for non-interactive)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations - categories and items assigned to this station
+  categories Category[]
+  menuItems  MenuItem[]
+
+  // KDS screens that display this station
+  kdsScreens KDSScreenStation[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+// ============================================
+// MENU PROGRAMMING (Skill 03)
+// ============================================
+
+model Category {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String
+  displayName String?
+  description String?
+  color       String?
+  imageUrl    String?
+
+  // Category Type - controls item builder, modifier filtering, and reporting
+  // food, drinks, liquor, entertainment, combos
+  categoryType String @default("food")
+
+  // Display
+  sortOrder  Int     @default(0)
+  isActive   Boolean @default(true)
+  showOnPOS  Boolean @default(true)
+  showOnline Boolean @default(true)
+
+  // Kitchen routing
+  prepStationId String?
+  prepStation   PrepStation? @relation(fields: [prepStationId], references: [id])
+  courseNumber  Int?
+
+  // Printer routing - printers for items in this category
+  // JSON array of printer IDs, e.g., ["printer-1", "printer-2"]
+  printerIds Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menuItems MenuItem[]
+
+  // Print routing rules for this category
+  printRules PrintRule[]
+
+  @@index([locationId])
+  @@index([prepStationId])
+  @@index([sortOrder])
+  @@index([categoryType])
+}
+
+model MenuItem {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  // Identity
+  name        String
+  displayName String?
+  description String?
+  sku         String?
+  imageUrl    String?
+
+  // Pricing
+  price Decimal
+  cost  Decimal? // For profit tracking
+
+  // Tax
+  taxRate     Decimal? // Override location default
+  isTaxExempt Boolean  @default(false)
+
+  // Display & Behavior
+  sortOrder  Int     @default(0)
+  isActive   Boolean @default(true)
+  showOnPOS  Boolean @default(true)
+  showOnline Boolean @default(true)
+
+  // Kitchen
+  prepStationId String? // Override category station
+  prepStation   PrepStation? @relation(fields: [prepStationId], references: [id])
+  prepTime      Int? // Minutes
+  courseNumber  Int? // Override category course
+
+  // Printer routing - override category's printers for this item
+  // JSON array of printer IDs, e.g., ["printer-1", "printer-2"]
+  printerIds       Json?
+  backupPrinterIds Json? // Backup printers if primary fails
+
+  // Inventory
+  trackInventory Boolean @default(false)
+  currentStock   Int?
+  lowStockAlert  Int?
+  isAvailable    Boolean @default(true) // 86'd when false
+
+  // Type
+  itemType String @default("standard") // standard, combo, timed_rental
+
+  // Combo Print Mode - how combo components print to stations
+  // 'individual' - Each component follows its own print rules (burger→kitchen, drink→bar)
+  // 'primary' - Entire combo prints to the combo's assigned printer
+  // 'all' - Full combo ticket prints at ALL relevant stations
+  comboPrintMode String? // null for non-combos, 'individual' | 'primary' | 'all'
+
+  // Timed Rental Pricing (Skill 81) - for pool tables, dart boards, etc.
+  timedPricing   Json? // { per15Min: 5.00, per30Min: 8.00, perHour: 15.00, minimum: 15 }
+  minimumMinutes Int? // Minimum rental time in minutes
+  graceMinutes   Int? // Grace period before next increment
+
+  // Entertainment tracking (Skill 94-97)
+  entertainmentStatus String? // 'available', 'in_use', 'maintenance'
+  currentOrderId      String? // Links to order currently using this item
+  currentOrderItemId  String? // Links to specific order item
+  blockTimeMinutes    Int? // If set, sells in blocks (30, 60, 90 mins)
+  maxConcurrentUses   Int?    @default(1) // For items with multiple units
+  currentUseCount     Int?    @default(0) // Current number in use
+
+  // Menu Scheduling (Skill 40)
+  availableFrom String? // Time format "HH:mm" e.g., "06:00"
+  availableTo   String? // Time format "HH:mm" e.g., "11:00"
+  availableDays String? // Comma-separated days: "0,1,2,3,4,5,6" (0=Sunday)
+
+  // Commission (Skill 29)
+  commissionType  String? // 'fixed' | 'percent' | null
+  commissionValue Decimal?
+
+  // Liquor Pour Sizes - quick pricing options for liquor items
+  // Stores enabled pour sizes and their multipliers: { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
+  pourSizes            Json?
+  defaultPourSize      String? // Default selection: 'shot', 'double', 'tall', 'short'
+  applyPourToModifiers Boolean @default(false) // Apply pour multiplier to spirit modifiers too
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  modifierGroups         MenuItemModifierGroup[]
+  orderItems             OrderItem[]
+  upsellTriggers         UpsellConfig[]          @relation("TriggerItem")
+  upsellSuggestions      UpsellConfig[]          @relation("SuggestionItem")
+  comboComponentItems    ComboComponent[]        @relation("ComboComponentItem")
+  comboComponentDefaults ComboComponent[]        @relation("ComboComponentDefault")
+  comboOptions           ComboComponentOption[]
+  entertainmentWaitlist  EntertainmentWaitlist[]
+
+  // Liquor Builder - Recipe ingredients for cocktails
+  recipeIngredients RecipeIngredient[]
+
+  // Modifiers that link to this item (for spirit upgrades, etc.)
+  linkedModifiers Modifier[] @relation("LinkedModifierItem")
+
+  // Menu Item Ingredients - what's in this item
+  ingredients MenuItemIngredient[]
+
+  // Print routing rules for this specific item
+  printRules PrintRule[]
+
+  // Pizza Builder - specialty pizza configuration
+  pizzaSpecialty PizzaSpecialty?
+
+  @@unique([locationId, sku])
+  @@index([locationId])
+  @@index([categoryId])
+  @@index([prepStationId])
+  @@index([isActive, showOnPOS])
+}
+
+model ModifierGroup {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String
+  displayName String?
+
+  // Modifier Types: food, liquor, retail, entertainment, combo, universal (can have multiple)
+  modifierTypes Json @default("[\"universal\"]")
+
+  // Requirements
+  minSelections Int     @default(0)
+  maxSelections Int     @default(1)
+  isRequired    Boolean @default(false)
+  allowStacking Boolean @default(false) // Allow selecting the same modifier multiple times
+
+  // Online Ordering Override
+  hasOnlineOverride Boolean @default(false) // Enable separate modifier management for online orders
+
+  // Display
+  sortOrder Int @default(0)
+
+  // Liquor Builder - Spirit Group Configuration
+  isSpiritGroup Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  modifiers Modifier[]
+  menuItems MenuItemModifierGroup[]
+
+  // Modifiers that use this group as a sub-modifier
+  parentModifiers Modifier[] @relation("SubModifier")
+
+  // Combo components that use this modifier group
+  comboComponents ComboComponent[]
+
+  // Liquor Builder - Spirit configuration
+  spiritConfig SpiritModifierGroup?
+
+  // Ingredients that can swap to this group
+  swappableIngredients Ingredient[] @relation("IngredientSwapGroup")
+
+  @@index([locationId])
+}
+
+model Modifier {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  modifierGroupId String
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  name        String
+  displayName String?
+
+  // Pricing
+  // If linkedMenuItemId is set and price is 0, use linked item's price
+  // If price > 0, it acts as a price override or upcharge
+  price       Decimal  @default(0)
+  priceType   String   @default("upcharge") // 'upcharge' (add to base), 'override' (replace base), 'from_item' (use linked item price)
+  upsellPrice Decimal? // Special price when offered as upsell
+  cost        Decimal?
+
+  // Pre-modifier support (Skill 32)
+  allowedPreModifiers Json? // Array of allowed prefixes: ["no", "lite", "extra", "side"]
+  extraPrice          Decimal? // Price when "extra" is selected
+  extraUpsellPrice    Decimal? // Upsell price for "extra"
+
+  // Sub-modifier support - when selected, prompts for additional modifiers
+  childModifierGroupId String?
+  childModifierGroup   ModifierGroup? @relation("SubModifier", fields: [childModifierGroupId], references: [id])
+
+  // Commission (Skill 29)
+  commissionType  String? // 'fixed' | 'percent' | null
+  commissionValue Decimal?
+
+  // Linked Menu Item - for spirit upgrades, links to actual menu item for pricing/reporting
+  // When set, sales are tracked against this item for reporting purposes
+  linkedMenuItemId String?
+  linkedMenuItem   MenuItem? @relation("LinkedModifierItem", fields: [linkedMenuItemId], references: [id])
+
+  // Liquor Builder - Spirit fields
+  spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
+  linkedBottleProductId String? // Links to bottle inventory
+  linkedBottleProduct   BottleProduct? @relation(fields: [linkedBottleProductId], references: [id])
+  pourSizeOz            Decimal? // Override default pour size
+
+  // Display
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  // Channel visibility (for online ordering overrides)
+  showOnPOS    Boolean @default(true)  // Visible to servers on POS
+  showOnline   Boolean @default(true)  // Visible for online ordering
+
+  // Printer routing for modifiers
+  // printerRouting: "follow" (default) = prints with main item
+  //                 "also" = prints with main item AND to printerIds
+  //                 "only" = prints ONLY to printerIds (not with main item)
+  printerRouting String @default("follow")
+  printerIds     Json?  // Array of printer IDs when routing is "also" or "only"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderItemModifiers OrderItemModifier[]
+
+  // Print routing rules for this specific modifier
+  printRules PrintRule[]
+
+  @@index([locationId])
+  @@index([modifierGroupId])
+  @@index([childModifierGroupId])
+  @@index([linkedBottleProductId])
+  @@index([linkedMenuItemId])
+}
+
+model MenuItemModifierGroup {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  menuItemId      String
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierGroupId String
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+
+  sortOrder  Int     @default(0)
+  showOnline Boolean @default(true) // Whether this modifier group appears for online ordering
+
+  @@unique([menuItemId, modifierGroupId])
+  @@index([locationId])
+}
+
+// ============================================
+// COMBO MEALS (Skill 59)
+// ============================================
+
+model ComboTemplate {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String   @unique // Links to MenuItem with itemType="combo"
+
+  basePrice    Decimal
+  comparePrice Decimal? // A la carte total for savings display
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  components ComboComponent[]
+
+  @@index([locationId])
+}
+
+model ComboComponent {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  comboTemplateId String
+  comboTemplate   ComboTemplate @relation(fields: [comboTemplateId], references: [id], onDelete: Cascade)
+
+  slotName    String // "entree", "side", "drink"
+  displayName String // "Choose Your Side"
+  sortOrder   Int    @default(0)
+
+  isRequired    Boolean @default(true)
+  minSelections Int     @default(1)
+  maxSelections Int     @default(1)
+
+  // The menu item for this combo slot
+  menuItemId String?
+  menuItem   MenuItem? @relation("ComboComponentItem", fields: [menuItemId], references: [id])
+
+  // Price override for the item itself (null = use item's default price)
+  itemPriceOverride Decimal?
+
+  // Per-modifier price overrides: { "modifierId": 0.00, ... }
+  modifierPriceOverrides Json?
+
+  // Legacy fields (kept for backward compatibility)
+  modifierGroupId String?
+  modifierGroup   ModifierGroup? @relation(fields: [modifierGroupId], references: [id])
+  priceOverride   Decimal?
+  defaultItemId   String?
+  defaultItem     MenuItem?      @relation("ComboComponentDefault", fields: [defaultItemId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  options ComboComponentOption[]
+
+  @@index([locationId])
+  @@index([modifierGroupId])
+  @@index([menuItemId])
+}
+
+model ComboComponentOption {
+  id               String         @id @default(cuid())
+  locationId       String
+  location         Location       @relation(fields: [locationId], references: [id])
+  comboComponentId String
+  comboComponent   ComboComponent @relation(fields: [comboComponentId], references: [id], onDelete: Cascade)
+
+  menuItemId  String
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id])
+  upcharge    Decimal  @default(0)
+  sortOrder   Int      @default(0)
+  isAvailable Boolean  @default(true)
+
+  @@unique([comboComponentId, menuItemId])
+  @@index([locationId])
+  @@index([menuItemId])
+}
+
+// ============================================
+// TABLES & FLOOR PLAN (Skill 55)
+// ============================================
+
+model Section {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name  String // "Bar", "Patio", "Main Floor"
+  color String?
+
+  // Floor plan (Skill 80)
+  posX        Int    @default(0)
+  posY        Int    @default(0)
+  width       Int    @default(400)
+  height      Int    @default(300)
+  shape       String @default("rectangle") // rectangle, polygon
+  coordinates Json? // For polygon: [{x, y}, {x, y}, ...]
+
+  sortOrder Int     @default(0)
+  isVisible Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tables      Table[]
+  assignments SectionAssignment[]
+
+  @@index([locationId])
+}
+
+model SectionAssignment {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  sectionId  String
+  section    Section  @relation(fields: [sectionId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  assignedAt   DateTime  @default(now())
+  unassignedAt DateTime?
+
+  @@index([locationId])
+  @@index([sectionId])
+  @@index([employeeId])
+}
+
+model Table {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  sectionId  String?
+  section    Section? @relation(fields: [sectionId], references: [id])
+
+  name     String // "Table 1", "Bar 3", "Patio A"
+  capacity Int    @default(4)
+
+  // Floor plan position (Skill 80)
+  posX     Int    @default(0)
+  posY     Int    @default(0)
+  width    Int    @default(80)
+  height   Int    @default(80)
+  rotation Int    @default(0) // Degrees 0-359
+  shape    String @default("rectangle") // rectangle, circle, square, booth, bar
+
+  // For timed rentals (pool tables, dart boards)
+  isTimedRental Boolean @default(false)
+  timedItemId   String? // Links to MenuItem for pricing
+
+  // Status
+  status   String  @default("available") // available, occupied, reserved, dirty, in_use
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders              Order[]
+  reservations        Reservation[]
+  timedSessions       TimedSession[]
+  seats               Seat[]
+  tickets             Ticket[]
+  eventConfigurations EventTableConfig[]
+
+  @@index([locationId])
+  @@index([sectionId])
+  @@index([status])
+}
+
+// ============================================
+// ORDER TYPES (Configurable Order Workflow)
+// ============================================
+
+model OrderType {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Dine In", "Call-in", "Drive-through"
+  slug        String // "dine_in", "call_in", "drive_through" (code reference)
+  description String?
+  color       String? // Badge color (hex)
+  icon        String? // Icon name (e.g., "table", "phone", "car")
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+  isSystem    Boolean @default(false) // True for built-in types (dine_in, bar_tab, takeout)
+
+  // JSON Configuration Fields
+  // Required fields: { "tableId": true, "tabName": true, "phone": true }
+  requiredFields Json?
+
+  // Optional fields: { "address": true, "pickupTime": true, "vehicleType": true }
+  optionalFields Json?
+
+  // Field definitions with labels, types, validation
+  // { "phone": { "label": "Phone Number", "type": "phone", "placeholder": "555-123-4567" } }
+  fieldDefinitions Json?
+
+  // Workflow rules: { "requirePaymentBeforeSend": true, "requireTableSelection": true }
+  workflowRules Json?
+
+  // KDS display configuration: { "badgeText": "{customerName}", "showPickupTime": true }
+  kdsConfig Json?
+
+  // Kitchen ticket print formatting
+  printConfig Json?
+
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([locationId, slug])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+// ============================================
+// ORDERS (Skill 04)
+// ============================================
+
+model Order {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  // Customer tracking (Skill 51)
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  // Order identification
+  orderNumber   Int // Sequential per location per day
+  displayNumber String? // Displayed number (e.g., "A23")
+
+  // Split order tracking
+  parentOrderId String? // If this is a split, reference to parent
+  parentOrder   Order?  @relation("OrderSplits", fields: [parentOrderId], references: [id])
+  splitOrders   Order[] @relation("OrderSplits")
+  splitIndex    Int? // 1, 2, 3... for display as "31-1", "31-2"
+
+  // Type & Context
+  orderType    String     @default("dine_in") // Legacy: dine_in, takeout, delivery, bar_tab
+  orderTypeId  String? // New: Reference to configurable OrderType
+  orderTypeRef OrderType? @relation(fields: [orderTypeId], references: [id])
+  tableId      String?
+  table        Table?     @relation(fields: [tableId], references: [id])
+  guestCount   Int        @default(1)
+  tabName      String? // For bar tabs
+
+  // Custom fields collected for this order type (e.g., phone, pickupTime, vehicleColor)
+  customFields Json?
+
+  // Status
+  status String @default("open") // open, sent, paid, closed, voided
+
+  // Timing
+  openedAt DateTime  @default(now())
+  sentAt   DateTime?
+  paidAt   DateTime?
+  closedAt DateTime?
+
+  // Totals
+  subtotal      Decimal @default(0)
+  discountTotal Decimal @default(0)
+  taxTotal      Decimal @default(0)
+  tipTotal      Decimal @default(0)
+  total         Decimal @default(0)
+
+  // Dual Pricing (Skill 31)
+  primaryPaymentMethod String? // 'cash' | 'card' - determines which price applies
+
+  // Commission (Skill 29)
+  commissionTotal Decimal @default(0)
+
+  // Notes
+  notes String?
+
+  // Bar Tab Pre-auth (Skill 21)
+  preAuthId        String? // Reference to pre-auth transaction
+  preAuthAmount    Decimal?
+  preAuthLast4     String? // Last 4 digits of held card
+  preAuthCardBrand String? // Visa, Mastercard, etc.
+  preAuthExpiresAt DateTime? // When the hold expires
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  items     OrderItem[]
+  payments  Payment[]
+  discounts OrderDiscount[]
+  voidLogs  VoidLog[]
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([tableId])
+  @@index([customerId])
+  @@index([status])
+  @@index([openedAt])
+  @@index([orderNumber, locationId])
+  @@index([orderType])
+  @@index([orderTypeId])
+  @@index([parentOrderId])
+}
+
+model OrderItem {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  // Item details (snapshot at time of order)
+  name     String
+  price    Decimal
+  quantity Int     @default(1)
+
+  // Seat tracking (Skill 24)
+  seatNumber Int?
+
+  // Course (Skill 14)
+  courseNumber Int?
+  courseStatus String @default("pending") // pending, fired, ready, served
+
+  // Hold & Fire (Skill 15)
+  isHeld    Boolean   @default(false)
+  holdUntil DateTime?
+  firedAt   DateTime?
+
+  // Kitchen status
+  kitchenStatus String @default("pending") // pending, cooking, ready, delivered
+
+  // KDS completion tracking
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+
+  // Resend tracking
+  resendCount  Int       @default(0)
+  lastResentAt DateTime?
+  resendNote   String? // Note from server when resending (e.g., "Make it well done")
+
+  // Block time tracking (Skill 97)
+  blockTimeMinutes   Int? // Duration purchased (30, 60, 90 mins)
+  blockTimeStartedAt DateTime? // When block time started
+  blockTimeExpiresAt DateTime? // Calculated expiration time
+
+  // Special requests (Skill 48)
+  specialNotes String?
+
+  // Status
+  status     String  @default("active") // active, voided, comped
+  voidReason String?
+
+  // Totals
+  modifierTotal Decimal @default(0)
+  itemTotal     Decimal @default(0)
+
+  // Commission (Skill 29)
+  commissionAmount Decimal?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  modifiers               OrderItemModifier[]
+  ingredientModifications OrderItemIngredient[]
+
+  // Pizza Builder - detailed pizza configuration
+  pizzaData OrderItemPizza?
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([menuItemId])
+  @@index([kitchenStatus])
+}
+
+model OrderItemModifier {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  modifierId  String? // Optional: null for combo component selections
+  modifier    Modifier? @relation(fields: [modifierId], references: [id])
+
+  // Snapshot at time of sale
+  name        String
+  price       Decimal // Actual price charged (may differ from item price if discounted)
+  preModifier String? // "no", "lite", "extra", "side"
+  depth       Int     @default(0) // Modifier hierarchy depth: 0=top, 1=child, 2=grandchild
+
+  quantity Int @default(1)
+
+  // Commission (Skill 29)
+  commissionAmount Decimal?
+
+  // Linked Item Snapshot - for reporting which menu item was actually sold
+  // Even if ordered as a modifier, this tracks the underlying item for sales reporting
+  linkedMenuItemId    String? // Snapshot of linked menu item at time of sale
+  linkedMenuItemName  String? // Name snapshot for reporting
+  linkedMenuItemPrice Decimal? // Original item price (before any discount/override)
+
+  // Liquor Builder - Spirit snapshot for reporting
+  spiritTier            String? // 'well', 'call', 'premium', 'top_shelf'
+  linkedBottleProductId String? // Snapshot of bottle used for inventory
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([orderItemId])
+  @@index([spiritTier])
+  @@index([linkedMenuItemId])
+}
+
+// ============================================
+// PAYMENTS (Skill 30)
+// ============================================
+
+model Payment {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  employeeId String? // Who processed the payment
+
+  // Payment details
+  amount      Decimal
+  tipAmount   Decimal @default(0)
+  totalAmount Decimal
+
+  // Method
+  paymentMethod String // cash, credit, debit, gift_card, house_account
+
+  // Cash details
+  amountTendered     Decimal? // Amount given by customer
+  changeGiven        Decimal? // Change returned
+  roundingAdjustment Decimal? // Amount rounded (+ or -)
+
+  // Card details (if card)
+  cardBrand     String?
+  cardLast4     String?
+  authCode      String?
+  transactionId String?
+
+  // Status
+  status String @default("completed") // pending, completed, refunded, voided
+
+  // Refund tracking
+  refundedAmount Decimal   @default(0)
+  refundedAt     DateTime?
+  refundReason   String?
+
+  processedAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([processedAt])
+  @@index([employeeId])
+}
+
+// ============================================
+// COUPONS (Skill 35)
+// ============================================
+
+model Coupon {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Coupon code
+  code        String // e.g., "SAVE20", "WELCOME10"
+  name        String // Display name
+  description String?
+
+  // Discount type
+  discountType  String // 'percent' | 'fixed' | 'free_item'
+  discountValue Decimal // Percent or dollar amount
+  freeItemId    String? // If discountType is 'free_item'
+
+  // Restrictions
+  minimumOrder    Decimal? // Minimum order total
+  maximumDiscount Decimal? // Cap on discount amount
+  appliesTo       String   @default("order") // 'order' | 'category' | 'item'
+  categoryIds     Json? // If appliesTo is 'category'
+  itemIds         Json? // If appliesTo is 'item'
+
+  // Usage limits
+  usageLimit       Int? // Total uses allowed (null = unlimited)
+  usageCount       Int     @default(0) // Current usage count
+  perCustomerLimit Int? // Uses per customer (null = unlimited)
+  singleUse        Boolean @default(false) // One-time use per customer
+
+  // Validity
+  validFrom  DateTime?
+  validUntil DateTime?
+  isActive   Boolean   @default(true)
+
+  // Tracking
+  createdBy String? // Employee who created
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  redemptions CouponRedemption[]
+
+  @@unique([locationId, code])
+  @@index([locationId])
+  @@index([code])
+  @@index([isActive])
+}
+
+model CouponRedemption {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  couponId   String
+  coupon     Coupon   @relation(fields: [couponId], references: [id])
+  orderId    String
+  customerId String? // If linked to customer
+
+  discountAmount Decimal
+
+  redeemedAt DateTime @default(now())
+  redeemedBy String? // Employee who applied
+
+  @@index([locationId])
+  @@index([couponId])
+  @@index([orderId])
+  @@index([customerId])
+}
+
+// ============================================
+// RESERVATIONS (Skill 19)
+// ============================================
+
+model Reservation {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Guest info
+  guestName  String
+  guestPhone String?
+  guestEmail String?
+  partySize  Int
+
+  // Timing
+  reservationDate DateTime
+  reservationTime String // HH:MM format
+  duration        Int      @default(90) // Minutes
+
+  // Table assignment
+  tableId String?
+  table   Table?  @relation(fields: [tableId], references: [id])
+
+  // Status
+  status String @default("confirmed") // confirmed, seated, completed, cancelled, no_show
+
+  // Notes
+  specialRequests String?
+  internalNotes   String?
+
+  // Link to customer profile
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  // Link to order when seated
+  orderId String?
+
+  // Tracking
+  createdBy    String? // Employee who created
+  seatedAt     DateTime?
+  completedAt  DateTime?
+  cancelledAt  DateTime?
+  cancelReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([reservationDate])
+  @@index([status])
+  @@index([tableId])
+  @@index([customerId])
+}
+
+// ============================================
+// DISCOUNTS (Skills 18, 60)
+// ============================================
+
+model DiscountRule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String
+  displayText String
+  description String?
+
+  // Type
+  discountType String // bogo, quantity, mix_match, threshold, time_based, manual
+
+  // Trigger conditions
+  triggerConfig Json // Category IDs, item IDs, quantities, etc.
+
+  // Discount
+  discountConfig Json // Percent, amount, fixed price, apply_to
+
+  // Schedule (optional)
+  scheduleConfig Json? // Days, times, date range
+
+  // Rules
+  priority         Int     @default(0)
+  isStackable      Boolean @default(true)
+  requiresApproval Boolean @default(false)
+  maxPerOrder      Int?
+
+  isActive    Boolean @default(true)
+  isAutomatic Boolean @default(false) // Auto-apply vs manual
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appliedDiscounts OrderDiscount[]
+
+  @@index([locationId])
+  @@index([isActive, isAutomatic])
+}
+
+model OrderDiscount {
+  id             String        @id @default(cuid())
+  locationId     String
+  location       Location      @relation(fields: [locationId], references: [id])
+  orderId        String
+  order          Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  discountRuleId String?
+  discountRule   DiscountRule? @relation(fields: [discountRuleId], references: [id])
+
+  name    String
+  amount  Decimal
+  percent Decimal?
+
+  // Who applied it
+  appliedBy   String? // Employee ID if manual
+  isAutomatic Boolean @default(false)
+
+  reason String?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([orderId])
+}
+
+// ============================================
+// UPSELL PROMPTS (Skill 58)
+// ============================================
+
+model UpsellConfig {
+  id         String @id @default(cuid())
+  locationId String
+
+  // Trigger
+  triggerType       String // item, category, order_condition
+  triggerItemId     String?
+  triggerItem       MenuItem? @relation("TriggerItem", fields: [triggerItemId], references: [id])
+  triggerCategoryId String?
+  triggerCondition  Json?
+
+  // Suggestion
+  suggestionType       String // item, category, combo, upgrade
+  suggestionItemId     String?
+  suggestionItem       MenuItem? @relation("SuggestionItem", fields: [suggestionItemId], references: [id])
+  suggestionCategoryId String?
+
+  // Display
+  promptText  String
+  displayMode String  @default("inline") // inline, popup, toast
+  showPrice   Boolean @default(true)
+
+  // Timing
+  triggerOnAdd      Boolean @default(true)
+  triggerBeforeSend Boolean @default(false)
+  triggerAtPayment  Boolean @default(false)
+
+  // Status
+  isActive Boolean @default(true)
+  priority Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events UpsellEvent[]
+
+  @@index([locationId])
+}
+
+model UpsellEvent {
+  id             String       @id @default(cuid())
+  locationId     String
+  location       Location     @relation(fields: [locationId], references: [id])
+  upsellConfigId String
+  upsellConfig   UpsellConfig @relation(fields: [upsellConfigId], references: [id])
+
+  orderId    String
+  employeeId String
+
+  wasShown     Boolean @default(true)
+  wasAccepted  Boolean @default(false)
+  wasDismissed Boolean @default(false)
+
+  addedAmount Decimal?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([upsellConfigId])
+  @@index([createdAt])
+}
+
+// ============================================
+// VOIDS & AUDIT (Skill 19)
+// ============================================
+
+model VoidLog {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  voidType String // item, order
+  itemId   String? // If item void
+  amount   Decimal
+  reason   String
+
+  approvedById String?
+  approvedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([employeeId])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String    @id @default(cuid())
+  locationId String
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+
+  action     String // login, logout, order_created, item_voided, etc.
+  entityType String? // order, employee, menu_item, etc.
+  entityId   String?
+  details    Json? // Before/after values
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ============================================
+// TIPPING (Skill 06)
+// ============================================
+
+model TipPool {
+  id         String @id @default(cuid())
+  locationId String
+
+  name        String // "Bar Pool", "Server Pool"
+  description String?
+
+  // Distribution rules
+  distributionType String // equal, hours, points
+  eligibleRoles    Json // Array of role IDs
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  entries TipPoolEntry[]
+
+  @@index([locationId])
+}
+
+model TipPoolEntry {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  tipPoolId  String
+  tipPool    TipPool  @relation(fields: [tipPoolId], references: [id])
+
+  shiftDate   DateTime
+  totalAmount Decimal
+
+  // Distributions
+  distributions Json // [{employeeId, amount, hours, points}]
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([tipPoolId])
+  @@index([shiftDate])
+}
+
+// ============================================
+// TIP SHARING & TIP-OUTS (Role-based & Custom)
+// ============================================
+
+// Defines automatic tip-out percentages by role
+// e.g., Server tips out 3% to Busser, 2% to Bartender
+model TipOutRule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  fromRoleId String // Role that tips out (Server)
+  fromRole   Role   @relation("TipOutFrom", fields: [fromRoleId], references: [id])
+  toRoleId   String // Role that receives (Busser, Bartender)
+  toRole     Role   @relation("TipOutTo", fields: [toRoleId], references: [id])
+
+  percentage Decimal // e.g., 3.0 for 3%
+  isActive   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tipShares TipShare[]
+
+  @@unique([locationId, fromRoleId, toRoleId])
+  @@index([locationId])
+  @@index([fromRoleId])
+  @@index([toRoleId])
+}
+
+// Records actual tip distributions (both automatic role-based and custom one-off)
+model TipShare {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  shiftId String? // Link to shift closeout (optional)
+  shift   Shift?  @relation(fields: [shiftId], references: [id])
+
+  fromEmployeeId String
+  fromEmployee   Employee @relation("TipShareFrom", fields: [fromEmployeeId], references: [id])
+  toEmployeeId   String
+  toEmployee     Employee @relation("TipShareTo", fields: [toEmployeeId], references: [id])
+
+  amount    Decimal
+  shareType String // 'role_tipout' | 'custom' | 'pool'
+  ruleId    String? // Reference to TipOutRule if role-based
+  rule      TipOutRule? @relation(fields: [ruleId], references: [id])
+
+  status      String    @default("pending") // pending, collected, banked, paid_out
+  collectedAt DateTime?
+
+  notes     String?
+  createdAt DateTime @default(now())
+
+  tipBankEntry TipBank?
+
+  @@index([locationId])
+  @@index([shiftId])
+  @@index([fromEmployeeId])
+  @@index([toEmployeeId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Tracks uncollected tips for employees not on shift
+// Goes to payroll or future collection
+model TipBank {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  amount   Decimal
+  source   String // 'tip_share' | 'tip_pool'
+  sourceId String? @unique // TipShare.id or TipPoolEntry.id
+
+  tipShare TipShare? @relation(fields: [sourceId], references: [id])
+
+  status      String    @default("pending") // pending, collected, paid_out
+  collectedAt DateTime?
+  paidOutAt   DateTime?
+  payrollId   String? // If paid via payroll
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================
+// GIFT CARDS (Skill 32)
+// ============================================
+
+model GiftCard {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Card identification
+  cardNumber String  @unique // Unique code (e.g., "GC-1234-5678-9012")
+  pin        String? // Optional PIN for security
+
+  // Balance
+  initialBalance Decimal
+  currentBalance Decimal
+
+  // Status
+  status String @default("active") // active, depleted, expired, frozen
+
+  // Validity
+  purchasedAt  DateTime  @default(now())
+  expiresAt    DateTime?
+  frozenAt     DateTime?
+  frozenReason String?
+
+  // Purchaser info (optional)
+  purchasedById  String? // Employee who sold it
+  recipientName  String?
+  recipientEmail String?
+  recipientPhone String?
+  purchaserName  String?
+  message        String? // Gift message
+
+  // Tracking
+  orderId String? // Order where it was purchased
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions GiftCardTransaction[]
+
+  @@index([locationId])
+  @@index([cardNumber])
+  @@index([status])
+}
+
+model GiftCardTransaction {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  giftCardId String
+  giftCard   GiftCard @relation(fields: [giftCardId], references: [id])
+
+  // Transaction type
+  type String // purchase, redemption, reload, refund, adjustment
+
+  // Amounts
+  amount        Decimal
+  balanceBefore Decimal
+  balanceAfter  Decimal
+
+  // Reference
+  orderId    String? // Order where used
+  employeeId String? // Employee who processed
+  notes      String?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([giftCardId])
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+// ============================================
+// HOUSE ACCOUNTS (Skill 33)
+// ============================================
+
+model HouseAccount {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Account holder
+  name        String // Individual or business name
+  contactName String? // Contact person if business
+  email       String?
+  phone       String?
+  address     String?
+
+  // Credit settings
+  creditLimit    Decimal @default(0)
+  currentBalance Decimal @default(0) // Positive = owes money
+  paymentTerms   Int     @default(30) // Days until due
+
+  // Status
+  status          String    @default("active") // active, suspended, closed
+  suspendedAt     DateTime?
+  suspendedReason String?
+
+  // Billing
+  billingCycle String    @default("monthly") // monthly, weekly, on_demand
+  lastBilledAt DateTime?
+  nextBillDate DateTime?
+
+  // Tax
+  taxExempt Boolean @default(false)
+  taxId     String? // Tax exempt ID
+
+  // Link to customer profile (optional)
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions HouseAccountTransaction[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([status])
+}
+
+model HouseAccountTransaction {
+  id             String       @id @default(cuid())
+  locationId     String
+  location       Location     @relation(fields: [locationId], references: [id])
+  houseAccountId String
+  houseAccount   HouseAccount @relation(fields: [houseAccountId], references: [id])
+
+  // Transaction type
+  type String // charge, payment, adjustment, credit
+
+  // Amounts
+  amount        Decimal
+  balanceBefore Decimal
+  balanceAfter  Decimal
+
+  // Reference
+  orderId         String? // Order that was charged
+  employeeId      String? // Employee who processed
+  paymentMethod   String? // For payments: check, cash, card, etc.
+  referenceNumber String? // Check number, etc.
+  notes           String?
+
+  // Due date (for charges)
+  dueDate DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([houseAccountId])
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+// ============================================
+// TIMED RENTALS (Skill 81) - Pool tables, dart boards, etc.
+// ============================================
+
+model TimedSession {
+  id         String  @id @default(cuid())
+  locationId String
+  menuItemId String // The timed rental item (for pricing)
+  tableId    String? // The physical table/equipment being used
+  table      Table?  @relation(fields: [tableId], references: [id])
+  orderId    String? // Linked order for billing
+
+  // Session timing
+  startedAt     DateTime  @default(now())
+  endedAt       DateTime?
+  pausedAt      DateTime? // If currently paused
+  pausedMinutes Int       @default(0) // Total paused time
+
+  // Calculated on close
+  totalMinutes Int?
+  totalCharge  Decimal?
+
+  // Billing
+  rateType   String  @default("hourly") // per15Min, per30Min, hourly, custom
+  rateAmount Decimal
+
+  // Status
+  status String @default("active") // active, paused, completed, cancelled
+
+  // Who started/ended
+  startedById String?
+  endedById   String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([menuItemId])
+  @@index([tableId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// ============================================
+// ENTERTAINMENT WAITLIST (Skill 95)
+// ============================================
+
+model EntertainmentWaitlist {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String // The entertainment item they're waiting for
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  // Customer info
+  customerName String
+  phoneNumber  String?
+  partySize    Int     @default(1)
+  notes        String?
+
+  // Link to existing tab (optional)
+  tabId   String?
+  tabName String?
+
+  // Deposit to hold position (optional)
+  depositAmount    Decimal?
+  depositMethod    String? // 'cash', 'card'
+  depositCardLast4 String?
+  depositRefunded  Boolean  @default(false)
+
+  // Status tracking
+  status     String    @default("waiting") // waiting, notified, seated, cancelled
+  notifiedAt DateTime?
+  seatedAt   DateTime?
+
+  // For linking to order when seated
+  seatedOrderId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([menuItemId])
+  @@index([tabId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================
+// SEAT-LEVEL TICKETING
+// Seats, Events, Tickets for shows, concerts, private events
+// ============================================
+
+model Seat {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  tableId    String
+  table      Table    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  // Identity
+  label      String // "1", "A", "A1" - displayed on floor plan
+  seatNumber Int // Sequential within table (1, 2, 3...)
+
+  // Relative positioning within table (offset from table center in pixels)
+  relativeX Int @default(0)
+  relativeY Int @default(0)
+  angle     Int @default(0) // Facing direction (0-359 degrees)
+
+  // Seat properties
+  seatType String @default("standard") // standard, premium, accessible, booth_end
+
+  // Status
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tickets Ticket[]
+
+  @@unique([tableId, seatNumber])
+  @@index([locationId])
+  @@index([tableId])
+}
+
+model Event {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Event Details
+  name        String
+  description String?
+  imageUrl    String?
+
+  // Type determines booking behavior
+  eventType String @default("dinner_show") // dinner_show, concert, private_event, special_occasion
+
+  // Timing
+  eventDate DateTime
+  doorsOpen String // HH:MM format
+  startTime String // HH:MM format
+  endTime   String? // HH:MM format (optional)
+
+  // Ticketing Configuration
+  ticketingMode      String  @default("per_seat") // per_seat, per_table, general_admission, hybrid
+  allowOnlineSales   Boolean @default(true)
+  allowPOSSales      Boolean @default(true)
+  maxTicketsPerOrder Int?
+
+  // Capacity
+  totalCapacity    Int
+  reservedCapacity Int @default(0) // Held for walk-ins or VIPs
+
+  // Sales Window
+  salesStartAt DateTime?
+  salesEndAt   DateTime?
+
+  // Status
+  status   String  @default("draft") // draft, on_sale, sold_out, cancelled, completed
+  isActive Boolean @default(true)
+
+  // Settings stored as JSON for flexibility
+  settings Json?
+
+  // Reservation Conflict Handling
+  reservationConflictsHandled Boolean @default(false)
+  reservationConflictNotes    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String? // Employee who created
+
+  // Relations
+  pricingTiers        EventPricingTier[]
+  tickets             Ticket[]
+  tableConfigurations EventTableConfig[]
+
+  @@index([locationId])
+  @@index([eventDate])
+  @@index([status])
+}
+
+model EventPricingTier {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Tier Details
+  name        String // "General Admission", "VIP", "Premium Front Row"
+  description String?
+  color       String? // For floor plan display
+
+  // Pricing
+  price      Decimal
+  serviceFee Decimal @default(0)
+
+  // Quantity limits
+  quantityAvailable Int? // null = unlimited
+  quantitySold      Int  @default(0)
+  maxPerOrder       Int? // Limit per transaction
+
+  // Which sections/tables this tier applies to (JSON array of section IDs)
+  sectionIds Json?
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tickets             Ticket[]
+  tableConfigurations EventTableConfig[]
+
+  @@index([locationId])
+  @@index([eventId])
+}
+
+model EventTableConfig {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tableId    String
+  table      Table    @relation(fields: [tableId], references: [id])
+
+  // Per-event table settings
+  isIncluded    Boolean           @default(true) // Include this table in event
+  bookingMode   String            @default("inherit") // inherit, per_seat, per_table, disabled
+  pricingTierId String?
+  pricingTier   EventPricingTier? @relation(fields: [pricingTierId], references: [id])
+
+  // For per-table booking: min/max party size
+  minPartySize Int?
+  maxPartySize Int? // null = use table capacity
+
+  @@unique([eventId, tableId])
+  @@index([locationId])
+  @@index([eventId])
+  @@index([tableId])
+}
+
+model Ticket {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id])
+
+  // Pricing
+  pricingTierId String
+  pricingTier   EventPricingTier @relation(fields: [pricingTierId], references: [id])
+
+  // Seat Assignment (nullable for GA)
+  tableId String?
+  table   Table?  @relation(fields: [tableId], references: [id])
+  seatId  String?
+  seat    Seat?   @relation(fields: [seatId], references: [id])
+
+  // Ticket Identification
+  ticketNumber String @unique // Human-readable: EVT-20260128-001
+  barcode      String @unique // Scannable code
+
+  // Customer Info
+  customerName  String?
+  customerEmail String?
+  customerPhone String?
+  customerId    String?
+  customer      Customer? @relation(fields: [customerId], references: [id])
+
+  // Pricing Snapshot (at time of purchase)
+  basePrice  Decimal
+  serviceFee Decimal @default(0)
+  taxAmount  Decimal @default(0)
+  totalPrice Decimal
+
+  // Status
+  status String @default("available") // available, held, sold, checked_in, cancelled, refunded
+
+  // Hold Information (for cart/checkout flow)
+  heldAt          DateTime?
+  heldUntil       DateTime?
+  heldBySessionId String? // Browser session or POS session
+
+  // Purchase Information
+  purchasedAt     DateTime?
+  purchaseChannel String? // pos, online, phone, comp
+  orderId         String? // Link to POS Order for F&B
+  paymentId       String? // Payment reference
+
+  // Check-in
+  checkedInAt DateTime?
+  checkedInBy String? // Employee ID
+
+  // Cancellation/Refund
+  cancelledAt  DateTime?
+  cancelReason String?
+  refundedAt   DateTime?
+  refundAmount Decimal?
+  refundedBy   String? // Employee ID
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([eventId])
+  @@index([tableId])
+  @@index([seatId])
+  @@index([customerId])
+  @@index([status])
+  @@index([ticketNumber])
+  @@index([barcode])
+}
+
+// ============================================
+// TAX RULES (Skill 36) - Multiple tax rates
+// ============================================
+
+model TaxRule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name String // "State Tax", "City Tax", "Alcohol Tax"
+  rate Decimal // 0.0825 = 8.25%
+
+  // Application rules
+  appliesTo   String @default("all") // all, category, item
+  categoryIds Json? // If appliesTo is 'category'
+  itemIds     Json? // If appliesTo is 'item'
+
+  // Tax-inclusive pricing
+  isInclusive Boolean @default(false)
+
+  // Order
+  priority     Int     @default(0) // For stacking order
+  isCompounded Boolean @default(false) // Calculate on subtotal+previous taxes
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([isActive])
+}
+
+// ============================================
+// INVENTORY TRACKING (Skill 38)
+// ============================================
+
+model InventoryTransaction {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String
+
+  // Transaction type
+  type String // sale, purchase, adjustment, waste, transfer, count
+
+  // Quantities
+  quantityBefore Int
+  quantityChange Int // Negative for sales/waste, positive for purchases
+  quantityAfter  Int
+
+  // Reference
+  orderId       String? // If from a sale
+  employeeId    String? // Who made the change
+  vendorName    String? // If purchase
+  invoiceNumber String? // If purchase
+  reason        String? // For adjustments/waste
+
+  // Cost tracking
+  unitCost  Decimal?
+  totalCost Decimal?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([menuItemId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ============================================
+// STOCK ALERTS (Skill 39)
+// ============================================
+
+model StockAlert {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String
+
+  alertType    String // low_stock, out_of_stock, reorder
+  currentStock Int
+  threshold    Int // The level that triggered the alert
+
+  // Status
+  status String @default("active") // active, acknowledged, resolved
+
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  resolvedAt     DateTime?
+  resolvedBy     String?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([menuItemId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================
+// EMPLOYEE BREAKS (Skill 48)
+// ============================================
+
+model Break {
+  id               String   @id @default(cuid())
+  locationId       String
+  location         Location @relation(fields: [locationId], references: [id])
+  timeClockEntryId String
+  employeeId       String
+
+  breakType String    @default("unpaid") // paid, unpaid, meal
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  duration  Int? // Minutes, calculated on end
+
+  // Status
+  status String @default("active") // active, completed
+
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([timeClockEntryId])
+  @@index([employeeId])
+  @@index([startedAt])
+}
+
+// ============================================
+// LIQUOR BUILDER (Skill: Liquor)
+// Spirit selection, recipes, pour cost tracking
+// ============================================
+
+// Spirit categories: Tequila, Vodka, Gin, Rum, Whiskey, etc.
+model SpiritCategory {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Tequila", "Vodka", "Gin"
+  displayName String?
+  description String?
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  bottleProducts       BottleProduct[]
+  spiritModifierGroups SpiritModifierGroup[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+// Bottle/Product Library - the actual bottles you buy
+model BottleProduct {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Identity
+  name        String // "Seagram's 7"
+  brand       String? // "Seagram's"
+  displayName String? // "Seagram's 7 - WELL"
+
+  // Classification
+  spiritCategoryId String
+  spiritCategory   SpiritCategory @relation(fields: [spiritCategoryId], references: [id])
+  tier             String // 'well', 'call', 'premium', 'top_shelf'
+
+  // Bottle specs
+  bottleSizeMl Int // 1750, 750, 1000
+  bottleSizeOz Decimal? // Auto-calculated from mL
+  unitCost     Decimal // Cost per bottle ($25.99)
+
+  // Pour calculation (uses location default or override)
+  pourSizeOz     Decimal? // Override location default
+  poursPerBottle Int? // Auto-calculated: bottleSizeMl / pourSizeMl
+  pourCost       Decimal? // Auto-calculated: unitCost / poursPerBottle
+
+  // Inventory - tracks bottles on hand
+  currentStock  Int     @default(0) // Number of bottles in inventory
+  lowStockAlert Int? // Alert when below this many bottles
+  isActive      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  spiritModifiers   Modifier[] // Modifiers that link to this bottle
+  recipeIngredients RecipeIngredient[] // Recipes that use this bottle
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([spiritCategoryId])
+  @@index([tier])
+}
+
+// Recipe ingredients - what goes into a cocktail
+model RecipeIngredient {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  menuItemId      String
+  menuItem        MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  bottleProductId String
+  bottleProduct   BottleProduct @relation(fields: [bottleProductId], references: [id])
+
+  // Pour amount
+  pourCount       Decimal  @default(1) // 1 pour, 0.5 pour, 2 pours
+  pourSizeOz      Decimal? // Override location default
+  isRequired      Boolean  @default(true)
+  isSubstitutable Boolean  @default(true) // Can swap for different tier (premium upgrade)
+
+  // For display
+  sortOrder Int     @default(0)
+  notes     String? // "Top with...", "Float", etc.
+
+  createdAt DateTime @default(now())
+
+  @@unique([menuItemId, bottleProductId])
+  @@index([locationId])
+  @@index([menuItemId])
+  @@index([bottleProductId])
+}
+
+// Links ModifierGroup to SpiritCategory for spirit selection
+model SpiritModifierGroup {
+  id               String         @id @default(cuid())
+  locationId       String
+  location         Location       @relation(fields: [locationId], references: [id])
+  modifierGroupId  String         @unique
+  modifierGroup    ModifierGroup  @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  spiritCategoryId String
+  spiritCategory   SpiritCategory @relation(fields: [spiritCategoryId], references: [id])
+
+  // Upsell configuration
+  upsellEnabled    Boolean @default(true)
+  upsellPromptText String? // "Upgrade to {name} for ${diff}?"
+  defaultTier      String  @default("well") // Default selection tier
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([spiritCategoryId])
+}
+
+// Track spirit upsell performance for reporting
+model SpiritUpsellEvent {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  orderId     String
+  orderItemId String
+  employeeId  String
+
+  // What was the default (well) option
+  baseModifierId String // Well spirit modifier ID
+  baseTier       String // 'well'
+  baseBottleName String // "House Tequila"
+
+  // What was offered as upsell
+  upsellModifierId String // Premium spirit modifier ID
+  upsellTier       String // 'premium', 'top_shelf', etc.
+  upsellBottleName String // "Patron Silver"
+  priceDifference  Decimal
+
+  // Outcome
+  wasShown    Boolean @default(true)
+  wasAccepted Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([employeeId])
+  @@index([createdAt])
+  @@index([wasAccepted])
+}
+
+// ============================================
+// MENU ITEM INGREDIENTS (Skill: Ingredients)
+// Tracks what's in each menu item with modification options
+// ============================================
+
+// Global ingredient library - reusable across menu items
+model Ingredient {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name     String  // "Lettuce", "Tomato", "Bacon"
+  category String? // "produce", "protein", "dairy", "sauce", "bread"
+
+  // Default modification options (can be overridden per menu item)
+  allowNo      Boolean @default(true)
+  allowLite    Boolean @default(true)
+  allowOnSide  Boolean @default(true)
+  allowExtra   Boolean @default(true)
+  extraPrice   Decimal @default(0) // Charge for Extra
+
+  // Swap configuration - links to a modifier group for replacements
+  allowSwap           Boolean        @default(false)
+  swapModifierGroupId String?
+  swapModifierGroup   ModifierGroup? @relation("IngredientSwapGroup", fields: [swapModifierGroupId], references: [id])
+  swapUpcharge        Decimal        @default(0) // Base upcharge for any swap
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  menuItemIngredients MenuItemIngredient[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([category])
+}
+
+// Links ingredients to menu items with per-item configuration
+model MenuItemIngredient {
+  id           String     @id @default(cuid())
+  locationId   String
+  location     Location   @relation(fields: [locationId], references: [id])
+  menuItemId   String
+  menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+
+  isIncluded Boolean @default(true) // Comes on item by default?
+  sortOrder  Int     @default(0)
+
+  // Per-item price overrides (null = use ingredient defaults)
+  extraPriceOverride   Decimal?
+  swapUpchargeOverride Decimal?
+
+  createdAt DateTime @default(now())
+
+  @@unique([menuItemId, ingredientId])
+  @@index([locationId])
+  @@index([menuItemId])
+}
+
+// Tracks ingredient modifications on orders for reporting
+model OrderItemIngredient {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  ingredientId   String
+  ingredientName String // Snapshot at time of order
+
+  // Modification type: "standard", "no", "lite", "on_side", "extra", "swap"
+  modificationType String  @default("standard")
+  priceAdjustment  Decimal @default(0)
+
+  // For swaps - what was it replaced with?
+  swappedToModifierId   String?
+  swappedToModifierName String?
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([orderItemId])
+  @@index([modificationType])
+}
+
+// ============================================
+// HARDWARE MANAGEMENT (Printers & KDS Screens)
+// ============================================
+
+model Printer {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Kitchen Printer", "Bar Printer", "Receipt Printer"
+  printerType String // "thermal" | "impact"
+  model       String? // "TM-T88VII", "TM-U220"
+
+  // Network configuration
+  ipAddress String
+  port      Int    @default(9100)
+
+  // Role
+  printerRole String  @default("kitchen") // "receipt" | "kitchen" | "bar"
+  isDefault   Boolean @default(false) // Default printer for this role
+
+  // Capabilities
+  paperWidth  Int     @default(80) // 80mm or 40mm
+  supportsCut Boolean @default(true)
+
+  // Status
+  isActive   Boolean   @default(true)
+  lastPingAt DateTime?
+  lastPingOk Boolean   @default(false)
+
+  // Print template settings (JSON object conforming to PrintTemplateSettings)
+  printSettings Json?
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  printJobs  PrintJob[]
+  printRules PrintRule[]
+
+  @@unique([locationId, ipAddress])
+  @@index([locationId])
+  @@index([printerRole])
+}
+
+model KDSScreen {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name       String // "Kitchen Main", "Grill Station", "Bar Display"
+  slug       String? // URL-friendly identifier: "kitchen-main", "grill-station"
+  screenType String @default("kds") // "kds" | "entertainment"
+
+  // Display Settings
+  columns     Int    @default(4)
+  fontSize    String @default("normal") // "small" | "normal" | "large"
+  colorScheme String @default("dark") // "dark" | "light"
+
+  // Timing Thresholds (minutes)
+  agingWarning Int @default(8) // Yellow when older than this
+  lateWarning  Int @default(15) // Red when older than this
+
+  // Alerts
+  playSound  Boolean @default(true)
+  flashOnNew Boolean @default(true)
+
+  // Device Pairing & Authentication
+  deviceToken          String?   @unique // Secure token assigned after pairing
+  pairingCode          String?   // 6-digit temporary pairing code
+  pairingCodeExpiresAt DateTime? // When pairing code expires
+  isPaired             Boolean   @default(false) // Whether a device is paired
+
+  // Static IP Configuration (for UniFi/private networks)
+  staticIp        String?  // Expected static IP address (e.g., "192.168.1.50")
+  enforceStaticIp Boolean  @default(false) // Reject requests from wrong IP
+
+  // Device Info (for troubleshooting)
+  lastKnownIp String? // Last IP address seen
+  deviceInfo  Json?   // User agent, screen size, etc.
+
+  // Status
+  isActive   Boolean   @default(true)
+  lastSeenAt DateTime?
+  isOnline   Boolean   @default(false)
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  stations   KDSScreenStation[]
+  printRules PrintRule[]
+
+  @@unique([locationId, name])
+  @@unique([locationId, slug])
+  @@index([locationId])
+  @@index([deviceToken])
+}
+
+model KDSScreenStation {
+  id          String      @id @default(cuid())
+  kdsScreenId String
+  kdsScreen   KDSScreen   @relation(fields: [kdsScreenId], references: [id], onDelete: Cascade)
+  stationId   String
+  station     PrepStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  sortOrder Int @default(0)
+
+  @@unique([kdsScreenId, stationId])
+  @@index([kdsScreenId])
+  @@index([stationId])
+}
+
+model PrintRule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name String?
+
+  // Match Level: category < item < modifier (cascade priority)
+  // Higher specificity wins: modifier > item > category
+  ruleLevel String // "category" | "item" | "modifier"
+
+  // Match Target (one set based on ruleLevel)
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  menuItemId String?
+  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierId String?
+  modifier   Modifier? @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+
+  // Primary Destinations
+  printerId   String?
+  printer     Printer?   @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  kdsScreenId String?
+  kdsScreen   KDSScreen? @relation(fields: [kdsScreenId], references: [id], onDelete: SetNull)
+
+  // Additional Destinations (JSON arrays of IDs)
+  additionalPrinterIds Json? // ["printer-id-1", "printer-id-2"]
+  additionalKDSIds     Json? // ["kds-id-1", "kds-id-2"]
+
+  // Options
+  printCopies Int     @default(1) // Number of copies to print
+  isReference Boolean @default(false) // Abbreviated reference ticket
+  printOnSend Boolean @default(true) // Print when sent to kitchen
+  showOnKDS   Boolean @default(true) // Show on KDS screens
+
+  priority Int     @default(0) // For tie-breaking within same level
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([categoryId])
+  @@index([menuItemId])
+  @@index([modifierId])
+  @@index([ruleLevel])
+}
+
+model PrintJob {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  jobType   String // "kitchen_ticket" | "receipt" | "reference"
+  orderId   String?
+  printerId String
+  printer   Printer  @relation(fields: [printerId], references: [id])
+
+  status       String  @default("pending") // "pending" | "sent" | "failed"
+  errorMessage String?
+  retryCount   Int     @default(0)
+
+  content String? // ESC/POS buffer for reprint
+
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  @@index([locationId])
+  @@index([status])
+  @@index([printerId])
+  @@index([createdAt])
+}
+
+// ============================================
+// PIZZA BUILDER
+// Comprehensive pizza customization system with sectional toppings
+// ============================================
+
+model PizzaConfig {
+  id         String   @id @default(cuid())
+  locationId String   @unique
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Sectional settings
+  maxSections     Int     @default(8) // Max sections: 1 (whole), 2 (halves), 4 (quarters), 8 (eighths)
+  defaultSections Int     @default(2) // Default view (halves)
+  sectionOptions  Json    @default("[1, 2, 4, 8]") // Available section modes
+
+  // Pricing strategy - FRACTIONAL is recommended
+  pricingMode String @default("fractional")
+  // "fractional" (DEFAULT): coverage% = price% (half = 50%, quarter = 25%, eighth = 12.5%)
+  // "flat": any coverage = full topping price (higher margin, simpler)
+  // "hybrid": custom percentages per coverage level
+  hybridPricing Json? // Only used if pricingMode="hybrid": { "whole": 1.0, "half": 0.6, ... }
+
+  // Free toppings system
+  freeToppingsEnabled Boolean @default(false)
+  freeToppingsCount   Int     @default(0) // Number of free toppings (0 = none free)
+  freeToppingsMode    String  @default("per_pizza") // "per_pizza" | "per_size"
+  // per_pizza: same free count regardless of size
+  // per_size: different free count per size (configured in PizzaSize)
+
+  // Extra topping charges (after free toppings exhausted)
+  extraToppingPrice Decimal? // Override price for toppings after free ones (null = use topping's own price)
+
+  // Display settings
+  showVisualBuilder Boolean @default(true) // Toggle for visual pizza graphic
+  showToppingList   Boolean @default(true) // Show list view of toppings
+  defaultToListView Boolean @default(false) // Start in list view instead of visual
+
+  // Printer routing - multiple printers supported
+  printerIds Json? // Array of printer IDs: ["printer-id-1", "printer-id-2"]
+
+  // Pizza-specific print settings (JSON object conforming to PizzaPrintSettings)
+  printSettings Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+}
+
+model PizzaSize {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Small", "Medium", "Large", "XL"
+  displayName String? // "10\"", "12\"", "14\"", "18\""
+  inches      Int? // Diameter in inches
+  slices      Int     @default(8) // Number of slices
+
+  // Pricing
+  basePrice         Decimal // Base price for cheese pizza this size
+  priceMultiplier   Decimal @default(1.0) // For calculating from base (legacy support)
+  toppingMultiplier Decimal @default(1.0) // Topping price multiplier for this size
+
+  // Free toppings per size (when freeToppingsMode = "per_size")
+  freeToppings Int @default(0) // Number of free toppings for this size
+
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  orderItemPizzas OrderItemPizza[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model PizzaCrust {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Hand Tossed", "Thin", "Deep Dish", "Stuffed"
+  displayName String?
+  description String?
+  price       Decimal @default(0) // Upcharge for specialty crusts
+
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  pizzaSpecialties PizzaSpecialty[] @relation("DefaultCrust")
+  orderItemPizzas  OrderItemPizza[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model PizzaSauce {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Marinara", "White", "BBQ", "Buffalo", "No Sauce"
+  displayName String?
+  description String?
+  price       Decimal @default(0)
+
+  // Sauce amount options
+  allowLight Boolean @default(true)
+  allowExtra Boolean @default(true)
+  extraPrice Decimal @default(0)
+
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  pizzaSpecialties PizzaSpecialty[] @relation("DefaultSauce")
+  orderItemPizzas  OrderItemPizza[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model PizzaCheese {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Mozzarella", "No Cheese", "Extra Cheese", "Vegan"
+  displayName String?
+  description String?
+  price       Decimal @default(0)
+
+  // Cheese amount options
+  allowLight Boolean @default(true)
+  allowExtra Boolean @default(true)
+  extraPrice Decimal @default(0)
+
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  pizzaSpecialties PizzaSpecialty[] @relation("DefaultCheese")
+  orderItemPizzas  OrderItemPizza[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model PizzaTopping {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Pepperoni", "Mushrooms", "Onions"
+  displayName String?
+  description String?
+
+  // Category for grouping in UI
+  category String @default("standard") // "meat", "veggie", "premium", "cheese", "seafood"
+
+  // Pricing
+  price      Decimal // Base price for whole pizza
+  extraPrice Decimal? // Price for "extra" (2x amount)
+
+  // Visual (for visual pizza builder)
+  color   String? // Hex color for visual builder representation
+  iconUrl String? // Optional icon image
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([category])
+  @@index([sortOrder])
+}
+
+model PizzaSpecialty {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String   @unique // Links to MenuItem with itemType="pizza"
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  // Default configuration
+  defaultCrustId  String?
+  defaultCrust    PizzaCrust?  @relation("DefaultCrust", fields: [defaultCrustId], references: [id])
+  defaultSauceId  String?
+  defaultSauce    PizzaSauce?  @relation("DefaultSauce", fields: [defaultSauceId], references: [id])
+  defaultCheeseId String?
+  defaultCheese   PizzaCheese? @relation("DefaultCheese", fields: [defaultCheeseId], references: [id])
+
+  sauceAmount  String @default("regular") // "none", "light", "regular", "extra"
+  cheeseAmount String @default("regular")
+
+  // Pre-selected toppings (JSON array)
+  // [{ "toppingId": "...", "name": "Pepperoni", "sections": [0,1,2,3,4,5,6,7], "amount": "regular" }, ...]
+  toppings Json @default("[]")
+
+  // Allow modifications?
+  allowSizeChange   Boolean @default(true)
+  allowCrustChange  Boolean @default(true)
+  allowSauceChange  Boolean @default(true)
+  allowCheeseChange Boolean @default(true)
+  allowToppingMods  Boolean @default(true) // Add/remove toppings
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([menuItemId])
+}
+
+// Order item extension for pizza orders - stores the actual pizza configuration
+model OrderItemPizza {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  orderItemId String    @unique
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  // Size selection
+  sizeId String
+  size   PizzaSize @relation(fields: [sizeId], references: [id])
+
+  // Crust selection
+  crustId String
+  crust   PizzaCrust @relation(fields: [crustId], references: [id])
+
+  // Sauce selection (optional - "No Sauce" pizzas)
+  sauceId     String?
+  sauce       PizzaSauce? @relation(fields: [sauceId], references: [id])
+  sauceAmount String      @default("regular") // "none", "light", "regular", "extra"
+
+  // Cheese selection (optional - "No Cheese" pizzas)
+  cheeseId     String?
+  cheese       PizzaCheese? @relation(fields: [cheeseId], references: [id])
+  cheeseAmount String       @default("regular") // "none", "light", "regular", "extra"
+
+  // Sectional toppings (JSON) - the heart of the pizza builder
+  // {
+  //   "toppings": [
+  //     { "toppingId": "...", "name": "Pepperoni", "sections": [0,1,2,3,4,5,6,7], "amount": "regular", "price": 2.50 },
+  //     { "toppingId": "...", "name": "Mushrooms", "sections": [0,1,2,3], "amount": "regular", "price": 1.25 }
+  //   ],
+  //   "sectionMode": 2  // How many sections was the pizza divided into (1, 2, 4, or 8)
+  // }
+  toppingsData Json // Set in application code: { toppings: [], sectionMode: 2 }
+
+  // Cooking instructions
+  cookingInstructions String? // "well done", "light bake", etc.
+  cutStyle            String? // "normal", "square", "uncut"
+
+  // Pricing snapshot at time of order
+  sizePrice     Decimal
+  crustPrice    Decimal
+  saucePrice    Decimal @default(0)
+  cheesePrice   Decimal @default(0)
+  toppingsPrice Decimal
+  totalPrice    Decimal
+
+  // Free toppings tracking
+  freeToppingsUsed Int @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@index([locationId])
+  @@index([orderItemId])
+  @@index([sizeId])
+}
+
+// ============================================
+// PAYROLL SYSTEM
+// ============================================
+
+// PayrollPeriod - Defines pay periods (weekly, bi-weekly, etc.)
+model PayrollPeriod {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Period details
+  periodStart DateTime
+  periodEnd   DateTime
+  periodType  String // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
+
+  // Status tracking
+  status    String   @default("open") // 'open' | 'processing' | 'closed' | 'paid'
+  closedAt  DateTime?
+  closedBy  String? // employeeId of manager who closed
+  paidAt    DateTime?
+
+  // Totals (calculated when closed)
+  totalRegularHours   Decimal?
+  totalOvertimeHours  Decimal?
+  totalWages          Decimal?
+  totalTips           Decimal?
+  totalCommissions    Decimal?
+  totalBankedTips     Decimal?
+  grandTotal          Decimal?
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  payStubs PayStub[]
+
+  @@unique([locationId, periodStart, periodEnd])
+  @@index([locationId])
+  @@index([status])
+  @@index([periodStart])
+}
+
+// PayStub - Individual employee pay stub for a period
+model PayStub {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location @relation(fields: [locationId], references: [id])
+  payrollPeriodId String
+  employeeId      String
+
+  payrollPeriod PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
+  employee      Employee      @relation(fields: [employeeId], references: [id])
+
+  // Time worked
+  regularHours   Decimal @default(0)
+  overtimeHours  Decimal @default(0)
+  breakMinutes   Int     @default(0)
+
+  // Wages
+  hourlyRate     Decimal @default(0)
+  regularPay     Decimal @default(0) // regularHours * hourlyRate
+  overtimePay    Decimal @default(0) // overtimeHours * hourlyRate * 1.5
+
+  // Tips
+  declaredTips     Decimal @default(0) // Tips declared at shift closeout
+  tipSharesGiven   Decimal @default(0) // Tip-outs to other employees
+  tipSharesReceived Decimal @default(0) // Tip-outs from other employees
+  bankedTipsCollected Decimal @default(0) // Previously banked tips now paid
+  netTips          Decimal @default(0) // declared - given + received + banked
+
+  // Commissions
+  commissionTotal Decimal @default(0)
+
+  // Gross earnings
+  grossPay Decimal @default(0) // wages + tips + commission
+
+  // Tax Deductions
+  federalTax        Decimal @default(0)
+  stateTax          Decimal @default(0)
+  socialSecurityTax Decimal @default(0)
+  medicareTax       Decimal @default(0)
+  localTax          Decimal @default(0)
+  totalDeductions   Decimal @default(0) // All taxes combined
+  deductions        Json?   // Additional deductions { other: [] }
+
+  // Net pay
+  netPay Decimal @default(0)
+
+  // Check/payment reference
+  checkNumber String?
+
+  // Shifts included
+  shiftCount    Int @default(0)
+  shiftIds      Json? // Array of shift IDs included
+  timeEntryIds  Json? // Array of time entry IDs included
+
+  // Payment tracking
+  paymentMethod String? // 'check' | 'direct_deposit' | 'cash'
+  paymentRef    String? // Check number, transaction ID, etc.
+  paidAt        DateTime?
+
+  // Status
+  status String @default("pending") // 'pending' | 'approved' | 'paid' | 'void'
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([payrollPeriodId, employeeId])
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([payrollPeriodId])
+  @@index([status])
+}
+
+// ============================================
+// SCHEDULING SYSTEM
+// ============================================
+
+// Schedule - Weekly schedule template
+model Schedule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Week this schedule is for
+  weekStart DateTime // Monday of the week
+  weekEnd   DateTime // Sunday of the week
+
+  // Status
+  status      String   @default("draft") // 'draft' | 'published' | 'archived'
+  publishedAt DateTime?
+  publishedBy String? // employeeId
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  shifts ScheduledShift[]
+
+  @@unique([locationId, weekStart])
+  @@index([locationId])
+  @@index([weekStart])
+  @@index([status])
+}
+
+// ScheduledShift - Individual shift assignment
+model ScheduledShift {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  scheduleId String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  // Shift timing
+  date      DateTime // Date of the shift
+  startTime String   // "09:00" (24h format)
+  endTime   String   // "17:00" (24h format)
+
+  // Break scheduling
+  breakMinutes Int @default(0)
+
+  // Role/position for this shift (may differ from employee's primary role)
+  roleId String?
+  role   Role?  @relation(fields: [roleId], references: [id])
+
+  // Section assignment (if applicable)
+  sectionId String?
+
+  // Status tracking
+  status String @default("scheduled") // 'scheduled' | 'confirmed' | 'no_show' | 'called_off' | 'worked'
+
+  // Actual vs scheduled (filled after shift)
+  actualStartTime DateTime?
+  actualEndTime   DateTime?
+  actualHours     Decimal?
+
+  // Trade/swap tracking
+  originalEmployeeId String? // If swapped, who was originally scheduled
+  swappedAt          DateTime?
+  swapApprovedBy     String? // Manager who approved swap
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+  @@index([scheduleId])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+}
+
+// AvailabilityEntry - Employee availability preferences
+model AvailabilityEntry {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  // Recurring availability (weekly pattern)
+  dayOfWeek     Int      // 0-6 (Sunday-Saturday)
+  availableFrom String?  // "09:00" or null for not available
+  availableTo   String?  // "17:00" or null for not available
+  isAvailable   Boolean  @default(true)
+
+  // Preference level
+  preference String @default("available") // 'preferred' | 'available' | 'if_needed' | 'unavailable'
+
+  // Effective dates (for temporary changes)
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, dayOfWeek, effectiveFrom])
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([dayOfWeek])
+}
+
+// ============================================
+// PAYROLL SETTINGS & TAX CONFIGURATION
+// ============================================
+
+// PayrollSettings - Location-level payroll configuration
+model PayrollSettings {
+  id         String   @id @default(cuid())
+  locationId String   @unique
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Pay Period Configuration
+  payPeriodType   String @default("biweekly") // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
+  payDayOfWeek    Int?   // 0-6 for weekly/biweekly (Friday = 5)
+  payDayOfMonth1  Int?   // 1-31 for semimonthly/monthly
+  payDayOfMonth2  Int?   // Second pay day for semimonthly
+
+  // Overtime Configuration
+  overtimeThresholdDaily  Decimal @default(8)  // Hours per day before OT kicks in
+  overtimeThresholdWeekly Decimal @default(40) // Hours per week before OT kicks in
+  overtimeMultiplier      Decimal @default(1.5) // 1.5x for time-and-a-half
+  doubleTimeThreshold     Decimal? // Hours before double-time (California: 12 hrs/day)
+  doubleTimeMultiplier    Decimal @default(2.0)
+
+  // Tax Configuration
+  stateTaxState   String? // State code: 'CA', 'TX', 'NY', etc.
+  stateTaxRate    Decimal? // Flat rate if applicable
+  localTaxEnabled Boolean @default(false)
+  localTaxRate    Decimal?
+  localTaxName    String? // 'City Tax', 'School District', etc.
+
+  // FICA (Social Security & Medicare)
+  socialSecurityRate Decimal @default(6.2)  // Employee portion %
+  medicareRate       Decimal @default(1.45) // Employee portion %
+  socialSecurityWageBase Decimal @default(168600) // 2024 wage base
+
+  // Minimum Wage
+  minimumWage      Decimal @default(7.25) // Federal default
+  tippedMinimumWage Decimal @default(2.13) // Tipped employee minimum
+
+  // Break Requirements
+  mealBreakThreshold    Int @default(360) // Minutes worked before meal break required (6 hrs)
+  mealBreakDuration     Int @default(30)  // Required meal break duration in minutes
+  restBreakInterval     Int @default(240) // Minutes between rest breaks (4 hrs)
+  restBreakDuration     Int @default(10)  // Rest break duration in minutes
+  paidMealBreaks        Boolean @default(false)
+  paidRestBreaks        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+}

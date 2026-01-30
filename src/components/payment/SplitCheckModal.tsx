@@ -11,6 +11,7 @@ interface OrderItem {
   quantity: number
   price: number
   itemTotal: number
+  seatNumber?: number | null
   modifiers?: { name: string; price: number }[]
 }
 
@@ -27,20 +28,22 @@ interface SplitCheckModalProps {
 }
 
 interface SplitResult {
-  type: 'even' | 'by_item' | 'custom_amount' | 'split_item'
+  type: 'even' | 'by_item' | 'by_seat' | 'custom_amount' | 'split_item'
   originalOrderId: string
   // For even split
   splits?: { splitNumber: number; amount: number }[]
   // For by_item split
   newOrderId?: string
   newOrderNumber?: number
+  // For by_seat split
+  seatSplits?: { seatNumber: number; total: number; splitOrderId: string }[]
   // For custom amount
   splitAmount?: number
   // For split item
   itemSplits?: { itemId: string; itemName: string; splitNumber: number; amount: number }[]
 }
 
-type SplitMode = 'select' | 'even' | 'by_item' | 'custom' | 'split_item' | 'navigate_splits'
+type SplitMode = 'select' | 'even' | 'by_seat' | 'by_item' | 'custom' | 'split_item' | 'navigate_splits'
 
 interface SplitOrderInfo {
   id: string
@@ -88,7 +91,23 @@ export function SplitCheckModal({
   const [itemSplitWays, setItemSplitWays] = useState(2)
   const [itemSplitResult, setItemSplitResult] = useState<{ itemId: string; itemName: string; splits: { splitNumber: number; amount: number }[] } | null>(null)
 
+  // Split by seat state
+  const [seatSplitResult, setSeatSplitResult] = useState<{
+    splits: { seatNumber: number; total: number; splitOrderId: string; displayNumber: string; itemCount: number }[]
+    hasUnassignedItems: boolean
+    unassignedTotal: number
+  } | null>(null)
+
   const remainingBalance = orderTotal - paidAmount
+
+  // Check if items have seat assignments
+  const seatsWithItems = items.reduce((acc, item) => {
+    if (item.seatNumber !== null && item.seatNumber !== undefined) {
+      acc.add(item.seatNumber)
+    }
+    return acc
+  }, new Set<number>())
+  const canSplitBySeat = seatsWithItems.size >= 2
 
   // Fetch existing splits
   const fetchExistingSplits = async () => {
@@ -124,6 +143,7 @@ export function SplitCheckModal({
       setSelectedItemForSplit(null)
       setItemSplitWays(2)
       setItemSplitResult(null)
+      setSeatSplitResult(null)
       setError(null)
       setExistingSplits([])
       setCurrentSplitId(null)
@@ -225,6 +245,48 @@ export function SplitCheckModal({
     })
   }
 
+  const handleSeatSplit = async () => {
+    setIsProcessing(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/orders/${orderId}/split`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'by_seat' }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to split by seat')
+      }
+
+      const result = await response.json()
+      setSeatSplitResult({
+        splits: result.splits,
+        hasUnassignedItems: result.parentOrder.hasUnassignedItems,
+        unassignedTotal: result.parentOrder.total,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to split by seat')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleConfirmSeatSplit = () => {
+    if (!seatSplitResult) return
+    onSplitComplete({
+      type: 'by_seat',
+      originalOrderId: orderId,
+      seatSplits: seatSplitResult.splits.map(s => ({
+        seatNumber: s.seatNumber,
+        total: s.total,
+        splitOrderId: s.splitOrderId,
+      })),
+    })
+  }
+
   const toggleItemSelection = (itemId: string) => {
     setSelectedItemIds(prev =>
       prev.includes(itemId)
@@ -296,6 +358,23 @@ export function SplitCheckModal({
                   <div>Split Evenly</div>
                   <div className="text-sm text-gray-500 font-normal">
                     Divide the check equally among guests
+                  </div>
+                </div>
+              </Button>
+
+              <Button
+                variant="outline"
+                className={`w-full h-16 text-lg justify-start gap-4 ${!canSplitBySeat ? 'opacity-50' : ''}`}
+                onClick={() => setMode('by_seat')}
+                disabled={!canSplitBySeat}
+              >
+                <span className="text-2xl">🪑</span>
+                <div className="text-left">
+                  <div>Split by Seat</div>
+                  <div className="text-sm text-gray-500 font-normal">
+                    {canSplitBySeat
+                      ? `Each seat gets its own check (${seatsWithItems.size} seats)`
+                      : 'Requires items assigned to seats'}
                   </div>
                 </div>
               </Button>
@@ -527,6 +606,131 @@ export function SplitCheckModal({
                       onClick={handleConfirmEvenSplit}
                     >
                       Confirm Split
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* By Seat Mode */}
+          {mode === 'by_seat' && (
+            <div className="space-y-4">
+              <h3 className="font-medium">Split by Seat</h3>
+
+              {!seatSplitResult ? (
+                <>
+                  <p className="text-sm text-gray-500">
+                    Each seat will get its own check with their items.
+                  </p>
+
+                  {/* Preview items by seat */}
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {Array.from(seatsWithItems).sort((a, b) => a - b).map(seatNum => {
+                      const seatItems = items.filter(item => item.seatNumber === seatNum)
+                      const seatTotal = seatItems.reduce((sum, item) => sum + item.itemTotal, 0)
+                      return (
+                        <Card key={seatNum} className="p-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-medium flex items-center gap-2">
+                              <span className="text-lg">🪑</span> Seat {seatNum}
+                            </span>
+                            <span className="font-bold">{formatCurrency(seatTotal)}</span>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {seatItems.map(item => (
+                              <div key={item.id} className="flex justify-between">
+                                <span>{item.quantity > 1 && `${item.quantity}x `}{item.name}</span>
+                                <span>{formatCurrency(item.itemTotal)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </Card>
+                      )
+                    })}
+
+                    {/* Show unassigned items if any */}
+                    {items.some(item => item.seatNumber === null || item.seatNumber === undefined) && (
+                      <Card className="p-3 bg-amber-50 border-amber-200">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-medium text-amber-700">Unassigned Items</span>
+                          <span className="font-bold text-amber-700">
+                            {formatCurrency(items.filter(i => i.seatNumber === null || i.seatNumber === undefined).reduce((sum, i) => sum + i.itemTotal, 0))}
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-600">
+                          These items will stay on the original check
+                        </p>
+                      </Card>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setMode('select')}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={handleSeatSplit}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? 'Splitting...' : `Create ${seatsWithItems.size} Checks`}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500">
+                    Checks have been created for each seat.
+                  </p>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {seatSplitResult.splits.map((split) => (
+                      <Card key={split.splitOrderId} className="p-3">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="font-medium flex items-center gap-2">
+                              <span>🪑</span> Seat {split.seatNumber}
+                            </span>
+                            <div className="text-sm text-gray-500">
+                              Check #{split.displayNumber} • {split.itemCount} items
+                            </div>
+                          </div>
+                          <span className="text-lg font-bold">{formatCurrency(split.total)}</span>
+                        </div>
+                      </Card>
+                    ))}
+
+                    {seatSplitResult.hasUnassignedItems && (
+                      <Card className="p-3 bg-amber-50 border-amber-200">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium text-amber-700">Original Check</span>
+                          <span className="font-bold text-amber-700">{formatCurrency(seatSplitResult.unassignedTotal)}</span>
+                        </div>
+                        <p className="text-xs text-amber-600">Unassigned items remain here</p>
+                      </Card>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={onClose}
+                    >
+                      Done
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={handleConfirmSeatSplit}
+                    >
+                      View Split Checks
                     </Button>
                   </div>
                 </>

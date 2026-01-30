@@ -15,6 +15,7 @@ interface Employee {
     name: string
   }
   permissions: string[]
+  isDevAccess?: boolean  // Super Admin dev access flag
 }
 
 interface AuthState {

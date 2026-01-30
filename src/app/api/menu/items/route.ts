@@ -18,6 +18,11 @@ export async function POST(request: NextRequest) {
       pourSizes,
       defaultPourSize,
       applyPourToModifiers,
+      // Printer routing
+      printerIds,
+      backupPrinterIds,
+      // Combo print mode
+      comboPrintMode,
     } = body
 
     if (!name?.trim()) {
@@ -70,6 +75,11 @@ export async function POST(request: NextRequest) {
         pourSizes: pourSizes || null,
         defaultPourSize: defaultPourSize || null,
         applyPourToModifiers: applyPourToModifiers || false,
+        // Printer routing
+        printerIds: printerIds && printerIds.length > 0 ? printerIds : null,
+        backupPrinterIds: backupPrinterIds && backupPrinterIds.length > 0 ? backupPrinterIds : null,
+        // Combo print mode
+        comboPrintMode: comboPrintMode || null,
       }
     })
 
@@ -86,6 +96,9 @@ export async function POST(request: NextRequest) {
       availableFrom: item.availableFrom,
       availableTo: item.availableTo,
       availableDays: item.availableDays,
+      printerIds: item.printerIds,
+      backupPrinterIds: item.backupPrinterIds,
+      comboPrintMode: item.comboPrintMode,
     })
   } catch (error) {
     console.error('Failed to create item:', error)

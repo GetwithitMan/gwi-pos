@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { CourseIndicator } from './CourseIndicator'
 
 interface CourseItem {
   id: string
@@ -8,14 +9,20 @@ interface CourseItem {
   seatNumber: number | null
   courseStatus: string
   isHeld: boolean
+  firedAt: string | null
 }
 
 interface Course {
   courseNumber: number
+  name: string
+  displayName?: string
+  color: string
   status: string
   itemCount: number
+  firedCount: number
   readyCount: number
   servedCount: number
+  heldCount: number
   items: CourseItem[]
 }
 
@@ -26,29 +33,34 @@ interface CourseOverviewPanelProps {
 
 export function CourseOverviewPanel({ orderId, onCourseUpdate }: CourseOverviewPanelProps) {
   const [courses, setCourses] = useState<Course[]>([])
+  const [currentCourse, setCurrentCourse] = useState(1)
+  const [courseMode, setCourseMode] = useState<'off' | 'manual' | 'auto'>('off')
   const [loading, setLoading] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
 
-  const fetchCourses = async () => {
+  const fetchCourses = useCallback(async () => {
+    if (!orderId) return
     setLoading(true)
     try {
       const res = await fetch(`/api/orders/${orderId}/courses`)
       if (res.ok) {
         const data = await res.json()
         setCourses(data.courses || [])
+        setCurrentCourse(data.currentCourse || 1)
+        setCourseMode(data.courseMode || 'off')
       }
     } catch (error) {
       console.error('Failed to fetch courses:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [orderId])
 
   useEffect(() => {
     if (isOpen && orderId) {
       fetchCourses()
     }
-  }, [isOpen, orderId])
+  }, [isOpen, orderId, fetchCourses])
 
   const handleCourseAction = async (courseNumber: number, action: string) => {
     try {

@@ -1,10 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// GET - List all categories for a location
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const locationId = searchParams.get('locationId')
+
+    const locationFilter = locationId ? { locationId } : {}
+
+    const categories = await db.category.findMany({
+      where: { isActive: true, deletedAt: null, ...locationFilter },
+      orderBy: { sortOrder: 'asc' },
+      include: { _count: { select: { menuItems: true } } }
+    })
+
+    return NextResponse.json({
+      categories: categories.map(c => ({
+        id: c.id,
+        name: c.name,
+        color: c.color,
+        categoryType: c.categoryType || 'food',
+        isActive: c.isActive,
+        itemCount: c._count.menuItems,
+      })),
+    })
+  } catch (error) {
+    console.error('Failed to fetch categories:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch categories' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, color, categoryType } = body
+    const { name, color, categoryType, printerIds } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -35,6 +68,7 @@ export async function POST(request: NextRequest) {
         color: color || '#3b82f6',
         categoryType: categoryType || 'food',
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
+        ...(printerIds && { printerIds }),
       }
     })
 
@@ -44,6 +78,7 @@ export async function POST(request: NextRequest) {
       color: category.color,
       categoryType: category.categoryType,
       isActive: category.isActive,
+      printerIds: category.printerIds,
       itemCount: 0
     })
   } catch (error) {

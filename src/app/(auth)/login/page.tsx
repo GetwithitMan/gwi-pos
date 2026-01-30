@@ -5,11 +5,13 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { PinPad } from '@/components/ui/pin-pad'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useDevStore } from '@/stores/dev-store'
 
 function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const login = useAuthStore((state) => state.login)
+  const setHasDevAccess = useDevStore((state) => state.setHasDevAccess)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -30,6 +32,9 @@ function LoginContent() {
         setError(data.error || 'Invalid PIN')
         return
       }
+
+      // Set dev access if employee has dev permissions
+      setHasDevAccess(data.employee.isDevAccess || false)
 
       login(data.employee)
       // Redirect to the original destination or default to /orders

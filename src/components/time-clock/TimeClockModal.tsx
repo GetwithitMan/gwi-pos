@@ -527,39 +527,39 @@ export function TimeClockModal({
                       </svg>
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-green-800">You have tips to collect!</h3>
+                      <h3 className="font-semibold text-green-800">You have tip shares for payroll!</h3>
                       <div className="mt-2 space-y-1 text-sm">
+                        {/* Show pending tips (direct shares while on shift) */}
                         {pendingTips.pending.tips.slice(0, 3).map(tip => (
                           <div key={tip.id} className="flex justify-between text-green-700">
                             <span>From {tip.fromEmployee}{tip.shareType === 'role_tipout' ? ` (${tip.percentage}%)` : ''}</span>
                             <span className="font-medium">{formatCurrency(tip.amount)}</span>
                           </div>
                         ))}
-                        {pendingTips.pending.tips.length > 3 && (
+                        {/* Show banked tips (shares while off shift) */}
+                        {pendingTips.banked.tips.slice(0, 3 - pendingTips.pending.tips.length).map(tip => (
+                          <div key={tip.id} className="flex justify-between text-green-700">
+                            <span>From {tip.fromEmployee} <span className="text-xs text-green-500">(banked)</span></span>
+                            <span className="font-medium">{formatCurrency(tip.amount)}</span>
+                          </div>
+                        ))}
+                        {(pendingTips.pending.tips.length + pendingTips.banked.tips.length) > 3 && (
                           <div className="text-green-600 text-xs">
-                            +{pendingTips.pending.tips.length - 3} more
+                            +{(pendingTips.pending.tips.length + pendingTips.banked.tips.length) - 3} more
                           </div>
                         )}
                       </div>
-                      <div className="mt-2 pt-2 border-t border-green-200 flex justify-between items-center">
-                        <span className="font-semibold text-green-800">Total: {formatCurrency(pendingTips.grandTotal)}</span>
-                        <div className="flex gap-2">
+                      <div className="mt-2 pt-2 border-t border-green-200">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-green-800">Total: {formatCurrency(pendingTips.grandTotal)}</span>
                           <button
                             onClick={() => setShowTipsNotification(false)}
                             className="text-xs text-green-600 hover:underline"
                           >
-                            Later
+                            Dismiss
                           </button>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={handleCollectTips}
-                            disabled={isCollectingTips}
-                            className="bg-green-600 hover:bg-green-700"
-                          >
-                            {isCollectingTips ? 'Collecting...' : 'Collect'}
-                          </Button>
                         </div>
+                        <p className="text-xs text-green-600 mt-1">Will be added to your next payroll</p>
                       </div>
                     </div>
                   </div>
@@ -685,6 +685,48 @@ export function TimeClockModal({
           ) : (
             // Not clocked in
             <div className="space-y-6">
+              {/* Pending Tips Notification - show before clocking in too */}
+              {showTipsNotification && pendingTips && pendingTips.grandTotal > 0 && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-1 bg-green-100 rounded-full">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-green-800">You have tip shares for payroll!</h3>
+                      <div className="mt-2 space-y-1 text-sm">
+                        {pendingTips.pending.tips.slice(0, 3).map(tip => (
+                          <div key={tip.id} className="flex justify-between text-green-700">
+                            <span>From {tip.fromEmployee}</span>
+                            <span className="font-medium">{formatCurrency(tip.amount)}</span>
+                          </div>
+                        ))}
+                        {pendingTips.banked.tips.slice(0, 3 - pendingTips.pending.tips.length).map(tip => (
+                          <div key={tip.id} className="flex justify-between text-green-700">
+                            <span>From {tip.fromEmployee} <span className="text-xs text-green-500">(banked)</span></span>
+                            <span className="font-medium">{formatCurrency(tip.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-2 pt-2 border-t border-green-200">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-green-800">Total: {formatCurrency(pendingTips.grandTotal)}</span>
+                          <button
+                            onClick={() => setShowTipsNotification(false)}
+                            className="text-xs text-green-600 hover:underline"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                        <p className="text-xs text-green-600 mt-1">Will be added to your next payroll</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="text-center">
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

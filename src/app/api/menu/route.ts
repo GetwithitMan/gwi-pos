@@ -82,7 +82,8 @@ export async function GET(request: NextRequest) {
         color: c.color,
         categoryType: c.categoryType || 'food', // Ensure fallback for legacy data
         isActive: c.isActive,
-        itemCount: c._count.menuItems
+        itemCount: c._count.menuItems,
+        printerIds: c.printerIds,
       })),
       items: itemsWithPourCost.map(item => ({
         id: item.id,
@@ -118,7 +119,12 @@ export async function GET(request: NextRequest) {
         // Pour size options
         pourSizes: item.pourSizes as Record<string, number> | null,
         defaultPourSize: item.defaultPourSize,
-        applyPourToModifiers: item.applyPourToModifiers
+        applyPourToModifiers: item.applyPourToModifiers,
+        // Printer routing
+        printerIds: item.printerIds,
+        backupPrinterIds: item.backupPrinterIds,
+        // Combo print mode
+        comboPrintMode: item.comboPrintMode,
       }))
     })
   } catch (error) {

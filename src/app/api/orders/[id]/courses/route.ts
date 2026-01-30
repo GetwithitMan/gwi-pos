@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Default course names for display
+const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
+  0: { name: 'ASAP', color: '#EF4444' },
+  1: { name: 'Appetizers', color: '#3B82F6' },
+  2: { name: 'Soup/Salad', color: '#10B981' },
+  3: { name: 'Entrees', color: '#F59E0B' },
+  4: { name: 'Dessert', color: '#EC4899' },
+  5: { name: 'After-Dinner', color: '#8B5CF6' },
+}
+
 // GET - Get course status for an order
 export async function GET(
   request: NextRequest,
@@ -13,7 +23,7 @@ export async function GET(
       where: { id: orderId },
       include: {
         items: {
-          where: { status: 'active' },
+          where: { status: 'active', deletedAt: null },
           orderBy: [
             { courseNumber: 'asc' },
             { seatNumber: 'asc' },
@@ -29,39 +39,73 @@ export async function GET(
       )
     }
 
+    // Get course configuration for this location
+    const courseConfigs = await db.courseConfig.findMany({
+      where: {
+        locationId: order.locationId,
+        deletedAt: null,
+        isActive: true,
+      },
+      orderBy: { sortOrder: 'asc' },
+    })
+
+    // Build course name/color lookup
+    const courseInfo: Record<number, { name: string; displayName?: string; color: string }> = { ...DEFAULT_COURSE_NAMES }
+    for (const config of courseConfigs) {
+      courseInfo[config.courseNumber] = {
+        name: config.name,
+        displayName: config.displayName || undefined,
+        color: config.color || DEFAULT_COURSE_NAMES[config.courseNumber]?.color || '#6B7280',
+      }
+    }
+
     // Group items by course
     const courses: Record<number, {
       courseNumber: number
+      name: string
+      displayName?: string
+      color: string
       status: string
       itemCount: number
+      firedCount: number
       readyCount: number
       servedCount: number
+      heldCount: number
       items: Array<{
         id: string
         name: string
         seatNumber: number | null
         courseStatus: string
         isHeld: boolean
+        firedAt: string | null
       }>
     }> = {}
 
     for (const item of order.items) {
       const courseNum = item.courseNumber || 0
+      const info = courseInfo[courseNum] || { name: `Course ${courseNum}`, color: '#6B7280' }
 
       if (!courses[courseNum]) {
         courses[courseNum] = {
           courseNumber: courseNum,
+          name: info.name,
+          displayName: info.displayName,
+          color: info.color,
           status: 'pending',
           itemCount: 0,
+          firedCount: 0,
           readyCount: 0,
           servedCount: 0,
+          heldCount: 0,
           items: [],
         }
       }
 
       courses[courseNum].itemCount++
+      if (item.courseStatus === 'fired') courses[courseNum].firedCount++
       if (item.courseStatus === 'ready') courses[courseNum].readyCount++
       if (item.courseStatus === 'served') courses[courseNum].servedCount++
+      if (item.isHeld) courses[courseNum].heldCount++
 
       courses[courseNum].items.push({
         id: item.id,
@@ -69,6 +113,7 @@ export async function GET(
         seatNumber: item.seatNumber,
         courseStatus: item.courseStatus,
         isHeld: item.isHeld,
+        firedAt: item.firedAt?.toISOString() || null,
       })
     }
 
@@ -78,9 +123,9 @@ export async function GET(
         course.status = 'served'
       } else if (course.readyCount === course.itemCount) {
         course.status = 'ready'
-      } else if (course.items.some(i => i.courseStatus === 'fired')) {
+      } else if (course.firedCount > 0 || course.items.some(i => i.courseStatus === 'fired')) {
         course.status = 'fired'
-      } else if (course.items.every(i => i.isHeld)) {
+      } else if (course.heldCount === course.itemCount) {
         course.status = 'held'
       } else {
         course.status = 'pending'
@@ -89,6 +134,8 @@ export async function GET(
 
     return NextResponse.json({
       orderId,
+      currentCourse: order.currentCourse,
+      courseMode: order.courseMode,
       courses: Object.values(courses).sort((a, b) => a.courseNumber - b.courseNumber),
     })
   } catch (error) {
@@ -100,7 +147,7 @@ export async function GET(
   }
 }
 
-// POST - Fire a course
+// POST - Fire a course or update course settings
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -108,14 +155,7 @@ export async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { courseNumber, action } = body
-
-    if (courseNumber === undefined) {
-      return NextResponse.json(
-        { error: 'Course number is required' },
-        { status: 400 }
-      )
-    }
+    const { courseNumber, action, courseMode } = body
 
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -128,15 +168,88 @@ export async function POST(
       )
     }
 
+    // Handle course mode update
+    if (action === 'set_mode' && courseMode) {
+      if (!['off', 'manual', 'auto'].includes(courseMode)) {
+        return NextResponse.json(
+          { error: 'Invalid course mode. Use: off, manual, auto' },
+          { status: 400 }
+        )
+      }
+
+      const updated = await db.order.update({
+        where: { id: orderId },
+        data: { courseMode },
+      })
+
+      return NextResponse.json({
+        success: true,
+        courseMode: updated.courseMode,
+      })
+    }
+
+    // Handle set current course
+    if (action === 'set_current' && courseNumber !== undefined) {
+      const updated = await db.order.update({
+        where: { id: orderId },
+        data: { currentCourse: courseNumber },
+      })
+
+      return NextResponse.json({
+        success: true,
+        currentCourse: updated.currentCourse,
+      })
+    }
+
+    // For other actions, courseNumber is required
+    if (courseNumber === undefined) {
+      return NextResponse.json(
+        { error: 'Course number is required' },
+        { status: 400 }
+      )
+    }
+
     switch (action) {
       case 'fire':
-        // Fire all items in this course
+        // Fire all items in this course (excluding held items unless explicitly including them)
         const firedItems = await db.orderItem.updateMany({
           where: {
             orderId,
             courseNumber,
             status: 'active',
-            courseStatus: { in: ['pending', 'held'] },
+            deletedAt: null,
+            courseStatus: 'pending',
+            isHeld: false,
+          },
+          data: {
+            courseStatus: 'fired',
+            firedAt: new Date(),
+          },
+        })
+
+        // Update current course if this course is higher
+        if (courseNumber > order.currentCourse) {
+          await db.order.update({
+            where: { id: orderId },
+            data: { currentCourse: courseNumber },
+          })
+        }
+
+        return NextResponse.json({
+          success: true,
+          courseNumber,
+          itemsFired: firedItems.count,
+        })
+
+      case 'fire_all':
+        // Fire all items in this course including held items
+        const allFiredItems = await db.orderItem.updateMany({
+          where: {
+            orderId,
+            courseNumber,
+            status: 'active',
+            deletedAt: null,
+            courseStatus: { in: ['pending'] },
           },
           data: {
             courseStatus: 'fired',
@@ -145,19 +258,28 @@ export async function POST(
           },
         })
 
+        // Update current course
+        if (courseNumber > order.currentCourse) {
+          await db.order.update({
+            where: { id: orderId },
+            data: { currentCourse: courseNumber },
+          })
+        }
+
         return NextResponse.json({
           success: true,
           courseNumber,
-          itemsFired: firedItems.count,
+          itemsFired: allFiredItems.count,
         })
 
       case 'hold':
-        // Hold all items in this course
+        // Hold all pending items in this course
         const heldItems = await db.orderItem.updateMany({
           where: {
             orderId,
             courseNumber,
             status: 'active',
+            deletedAt: null,
             courseStatus: 'pending',
           },
           data: {
@@ -171,13 +293,36 @@ export async function POST(
           itemsHeld: heldItems.count,
         })
 
+      case 'release':
+        // Release hold on all items in this course
+        const releasedItems = await db.orderItem.updateMany({
+          where: {
+            orderId,
+            courseNumber,
+            status: 'active',
+            deletedAt: null,
+            isHeld: true,
+          },
+          data: {
+            isHeld: false,
+          },
+        })
+
+        return NextResponse.json({
+          success: true,
+          courseNumber,
+          itemsReleased: releasedItems.count,
+        })
+
       case 'mark_ready':
-        // Mark all items in course as ready
+        // Mark all fired items in course as ready
         const readyItems = await db.orderItem.updateMany({
           where: {
             orderId,
             courseNumber,
             status: 'active',
+            deletedAt: null,
+            courseStatus: 'fired',
           },
           data: {
             courseStatus: 'ready',
@@ -192,12 +337,14 @@ export async function POST(
         })
 
       case 'mark_served':
-        // Mark all items in course as served
+        // Mark all ready items in course as served
         const servedItems = await db.orderItem.updateMany({
           where: {
             orderId,
             courseNumber,
             status: 'active',
+            deletedAt: null,
+            courseStatus: { in: ['fired', 'ready'] },
           },
           data: {
             courseStatus: 'served',
@@ -213,7 +360,7 @@ export async function POST(
 
       default:
         return NextResponse.json(
-          { error: 'Invalid action. Use: fire, hold, mark_ready, mark_served' },
+          { error: 'Invalid action. Use: fire, fire_all, hold, release, mark_ready, mark_served, set_mode, set_current' },
           { status: 400 }
         )
     }

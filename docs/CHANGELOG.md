@@ -2,6 +2,289 @@
 
 All notable changes to the GWI POS system.
 
+## [2026-01-29] - End-of-Day Reports & Tip Share System (Skills 104-105)
+
+### Added
+
+#### Daily Store Report (Skill 104) - `/api/reports/daily`
+Comprehensive end-of-day report for store managers.
+
+**Revenue Section:**
+- Adjusted gross sales, discounts, net sales
+- Tax, surcharges, tips, gratuity
+- Refunds, gift card loads, total collected
+- Commission tracking
+
+**Payments Section:**
+- Cash (count, amount, tips)
+- Credit (count, amount, tips, card type breakdown: Visa, MC, Amex, Discover)
+- Gift cards, house accounts, other methods
+
+**Cash Reconciliation:**
+- Cash received from sales
+- Paid in/out tracking
+- Tips out (credit card tips paid in cash)
+- **Tip shares in** - ALL tip-outs from servers (increases cash due)
+- Cash due to house
+
+**Sales Analytics:**
+- By Category: units, gross, discounts, net, voids, % of total
+- By Order Type: count, gross, net
+
+**Voids & Discounts:**
+- Ticket voids vs item voids
+- By reason breakdown
+- Void percentage of sales
+- Discount usage by type
+
+**Labor Summary:**
+- FOH/BOH hours and cost split
+- Labor percentage of sales
+
+**Gift Cards:**
+- Loads, redemptions, net liability
+
+**Tip Shares Section:**
+- Total tip shares distributed
+- Grouped by employee who GAVE tips
+- Shows recipient, amount, rule used, percentage, status
+
+**Stats:**
+- Check count, avg check, avg check time
+- Covers, avg cover
+- Food/beverage/retail averages
+
+#### Employee Shift Report - `/api/reports/employee-shift`
+Individual employee shift summary.
+
+- Hours worked (regular, overtime, breaks)
+- Sales summary (order count, item count, net sales)
+- Tips breakdown:
+  - **Tips Earned** - From orders (subject to tip-out)
+  - **Tips Received** - From tip shares (NOT subject to tip-out)
+  - Net tips after tip-outs
+
+#### Tip Share Report (Skill 105) - `/api/reports/tip-shares`
+Standalone tip share report runnable anytime.
+
+**Query Parameters:**
+- `startDate`, `endDate` - Date range filter
+- `employeeId` - Filter by giver or receiver
+- `status` - pending, accepted, paid_out, all
+
+**Response:**
+- **Summary**: total shares, pending, accepted, paid out, awaiting payout
+- **By Recipient**: Grouped for payout with pending/accepted/paid amounts
+- **By Giver**: Grouped for tracking who gave tips
+- **All Shares**: Full detail list
+
+**Actions:**
+- `POST mark_paid` - Mark specific tip share IDs as paid out
+- `POST mark_paid_all` - Mark all for an employee as paid out
+
+#### Tip Share Settings
+New settings section in location settings (`/api/settings`):
+
+```json
+{
+  "tipShares": {
+    "payoutMethod": "payroll",          // "payroll" or "manual"
+    "autoTipOutEnabled": true,
+    "requireTipOutAcknowledgment": true,
+    "showTipSharesOnReceipt": true
+  }
+}
+```
+
+**Payout Methods:**
+- `payroll` - All tip shares added to payroll automatically
+- `manual` - Use tip share report to track and pay out manually
+
+### Changed
+
+#### Simplified Tip Share Cash Flow
+All tip shares now go to payroll - no same-day cash handoffs between employees.
+
+**Flow:**
+1. Server closes shift → tips out to busser, bartender, etc.
+2. Server gives ALL tip-out cash to house
+3. House holds the cash
+4. ALL recipients receive via payroll
+5. No timing issues - doesn't matter who clocks out first
+
+**Cash Impact:**
+- `tipSharesIn` = total tip-outs collected by house
+- `cashDue` includes `tipSharesIn` (house keeps for payroll)
+
+#### TimeClockModal Updates
+- Changed from "Collect" action to informational notification
+- Shows "You have tip shares for payroll!" message
+- Dismiss button only (no accept action needed)
+- "Will be added to your next payroll" note
+
+### Fixed
+- Fixed `payment.method` → `payment.paymentMethod`
+- Fixed `payment.tip` → `payment.tipAmount`
+- Fixed `payment.cardType` → `payment.cardBrand`
+- Fixed `log.orderItemId` → `log.itemId`
+- Fixed `entry.totalBreakMinutes` → `entry.breakMinutes`
+- Fixed `shift.clockIn/clockOut` → `shift.startedAt/endedAt`
+- Fixed timezone handling with UTC date parsing in report APIs
+- Added Suspense boundary for useSearchParams in shift report page
+
+---
+
+## [2026-01-29] - System Testing & Print Routing Foundation
+
+### Fixed
+
+#### Critical System Fixes
+Comprehensive system testing revealed and fixed several issues blocking development.
+
+**Missing Component Fix:**
+- Created `src/components/hardware/PrintRouteEditor.tsx` - Modal editor for print routes
+- This component was imported but didn't exist, causing 500 errors on ALL API requests
+
+**Field Name Corrections (printerId → printerIds):**
+Schema uses `printerIds` (JSON array) for multi-printer routing support. Fixed mismatches in:
+- `src/app/api/menu/route.ts` - Categories and items response
+- `src/app/api/menu/categories/route.ts` - Category creation
+- `src/app/api/menu/modifiers/route.ts` - Modifier response and creation
+- `src/app/api/menu/items/route.ts` - Item creation
+
+### Added
+
+#### Print Routing Foundation (Skill 103)
+Scaffolding for advanced print routing with named routes and printer-specific settings.
+
+**Types (`src/types/print-route-settings.ts`):**
+- `RouteType` - 'pizza' | 'bar' | 'category' | 'item_type'
+- `TextSizing` - Header/item/modifier/footer size options
+- `BasePrintSettings` - Quantity display, indentation, separators
+- `ImpactPrinterSettings` - Red ribbon support for TM-U220
+- `ThermalPrinterSettings` - Logo, inverse headers
+- `PizzaPrintSettings` - Section labels, grouping, size display
+- `BarPrintSettings` - Garnish, ice, modifier highlighting
+- `RouteSpecificSettings` - Combined settings object
+- `getDefaultRouteSettings()` - Factory function for defaults
+
+**Component (`src/components/hardware/PrintRouteEditor.tsx`):**
+- Modal editor for creating/editing print routes
+- Route type selection (Pizza, Bar, Category, Item Type)
+- Primary and backup printer selection
+- Print copies, priority, failover settings
+- Text sizing configuration
+- Impact printer red ribbon options
+
+**API Stubs (`src/app/api/hardware/print-routes/`):**
+- `GET /api/hardware/print-routes` - Returns empty array (stub)
+- `POST /api/hardware/print-routes` - Returns 501 Not Implemented
+- `PUT /api/hardware/print-routes/[id]` - Update route (stub)
+- `DELETE /api/hardware/print-routes/[id]` - Delete route (stub)
+- `POST /api/hardware/print-routes/[id]/test` - Test print (stub)
+
+**Admin UI (`/settings/hardware/routing`):**
+- Print Routes list with add/edit/delete/test actions
+- Route type badges with color coding
+- Printer info display with backup indicators
+- Category & Item Routing section
+- Expandable categories showing items
+- Per-category and per-item printer override dropdowns
+
+**Next Steps (for full implementation):**
+1. Add `PrintRoute` model to Prisma schema
+2. Implement actual CRUD operations in API
+3. Integrate routing resolution into kitchen print flow
+4. Add print job logging and retry logic
+
+### Verified
+
+#### Comprehensive System Test - All Passing
+| API | Status | Count |
+|-----|--------|-------|
+| Menu | PASS | 15 categories, 222 items |
+| Modifiers | PASS | 18 groups |
+| Employees | PASS | 3 |
+| Tables | PASS | 8 |
+| Order Types | PASS | 3 |
+| Orders | PASS | 5 |
+| KDS | PASS | 29 tickets |
+| Discounts | PASS | 0 |
+| Customers | PASS | 0 |
+| Printers | PASS | 2 |
+| KDS Screens | PASS | 1 |
+| Print Routes | PASS | 0 (stub) |
+| Prep Stations | PASS | 0 |
+| Settings | PASS | 0 |
+| Time Clock | PASS | 28 |
+| Sales Report | PASS | 2 |
+
+**Build Status:**
+- TypeScript: Clean (no errors)
+- Production Build: Successful
+- All 50+ routes compiling
+
+---
+
+## [2026-01-29] - KDS Device Pairing & Security
+
+### Added
+
+#### KDS Device Pairing System (Skill 102)
+Production-ready device authentication for KDS screens deployed to merchants nationwide.
+
+**Security Layers:**
+- 256-bit device tokens (cryptographically secure)
+- httpOnly cookies (XSS protection, auto-sent with requests)
+- Secure + SameSite flags (HTTPS only, CSRF protection)
+- 5-minute pairing code expiry
+- Optional static IP enforcement (for UniFi networks)
+- IP address tracking for audit trails
+
+**Database Schema:**
+- `KDSScreen.deviceToken` - Unique token per paired device
+- `KDSScreen.pairingCode` / `pairingCodeExpiresAt` - Temporary 6-digit codes
+- `KDSScreen.isPaired` - Pairing status flag
+- `KDSScreen.staticIp` / `enforceStaticIp` - Network-level security
+- `KDSScreen.lastKnownIp` / `deviceInfo` - Troubleshooting data
+
+**Pairing Flow:**
+1. Admin generates 6-digit code (Settings → Hardware → KDS Screens)
+2. Device enters code at `/kds/pair`
+3. Server validates code, generates secure token
+4. Token stored in httpOnly cookie (1-year expiry)
+5. All KDS requests verified against token + optional IP
+
+**API Endpoints:**
+- `POST /api/hardware/kds-screens/[id]/generate-code` - Generate pairing code
+- `POST /api/hardware/kds-screens/pair` - Complete pairing, set httpOnly cookie
+- `GET /api/hardware/kds-screens/auth` - Verify device (cookie or header token)
+- `POST /api/hardware/kds-screens/[id]/heartbeat` - Status update + IP check
+- `POST /api/hardware/kds-screens/[id]/unpair` - Remove pairing
+
+**Admin UI (`/settings/hardware/kds-screens`):**
+- Generate Pairing Code button with modal display
+- Large 6-digit code with setup instructions
+- Copy KDS URL button
+- Unpair button for paired devices
+- Static IP configuration with "Use Current" helper
+- "Enforce IP address" checkbox with warning
+- "Paired" / "Not Paired" / "Enforced" badges
+
+**KDS Pages:**
+- `/kds/pair` - 6-digit code entry with auto-advance and paste support
+- `/kds` - Auth check on mount, redirects to pairing if needed
+- Employee fallback mode for manager troubleshooting
+- Green dot indicator for paired devices
+
+**Static IP Support (UniFi):**
+- Configure expected IP address per KDS screen
+- "Enforce IP address" option rejects requests from wrong IP
+- Works with DHCP reservations or static IPs
+- Adds network-level security for private restaurant networks
+
+---
+
 ## [2026-01-29] - Online Ordering Modifier Overrides
 
 ### Added

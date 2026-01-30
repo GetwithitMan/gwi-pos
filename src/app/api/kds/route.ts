@@ -161,6 +161,11 @@ export async function GET(request: NextRequest) {
           resendCount: item.resendCount || 0,
           lastResentAt: item.lastResentAt?.toISOString() || null,
           resendNote: item.resendNote || null,
+          // Coursing info (T013)
+          courseNumber: item.courseNumber ?? null,
+          courseStatus: item.courseStatus ?? 'pending',
+          isHeld: item.isHeld ?? false,
+          firedAt: item.firedAt?.toISOString() || null,
           modifiers: item.modifiers.map(mod => ({
             id: mod.id,
             name: mod.preModifier
@@ -254,8 +259,32 @@ export async function PUT(request: NextRequest) {
             resendNote: resendNote || null,
             isCompleted: false,
             completedAt: null,
+            kitchenStatus: 'pending', // Reset kitchen status so it can be reprinted
           },
         })
+      }
+
+      // Get order ID to trigger reprint
+      const firstItem = await db.orderItem.findUnique({
+        where: { id: itemIds[0] },
+        select: { orderId: true },
+      })
+
+      if (firstItem?.orderId) {
+        // Print the resend items to kitchen
+        try {
+          await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/print/kitchen`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderId: firstItem.orderId,
+              itemIds, // Only reprint these specific items
+            }),
+          })
+        } catch (printError) {
+          console.error('Failed to print resend ticket:', printError)
+          // Don't fail the resend action if print fails
+        }
       }
     }
 

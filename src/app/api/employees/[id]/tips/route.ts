@@ -113,23 +113,52 @@ export async function POST(
 
     const now = new Date()
 
-    if (action === 'collect' || action === 'collect_all') {
-      // Update all pending tip shares to collected
-      const updatedShares = await db.tipShare.updateMany({
+    if (action === 'collect' || action === 'collect_all' || action === 'accept' || action === 'accept_all') {
+      // Update all pending tip shares to accepted (employee acknowledged)
+      const updatedPendingShares = await db.tipShare.updateMany({
         where: {
           toEmployeeId: employeeId,
           status: 'pending',
         },
         data: {
-          status: 'collected',
+          status: 'accepted',
+          collectedAt: now, // Using collectedAt for accepted timestamp
+        },
+      })
+
+      // Update all banked tip shares to accepted
+      const updatedBankedShares = await db.tipShare.updateMany({
+        where: {
+          toEmployeeId: employeeId,
+          status: 'banked',
+        },
+        data: {
+          status: 'accepted',
           collectedAt: now,
         },
       })
 
+      // Update all pending tip bank entries to accepted
+      const updatedTipBank = await db.tipBank.updateMany({
+        where: {
+          employeeId: employeeId,
+          status: 'pending',
+        },
+        data: {
+          status: 'accepted',
+          collectedAt: now,
+        },
+      })
+
+      const totalAccepted = updatedPendingShares.count + updatedBankedShares.count
+
       return NextResponse.json({
-        message: `Collected ${updatedShares.count} tip share(s)`,
-        collectedCount: updatedShares.count,
-        collectedAt: now.toISOString(),
+        message: `Accepted ${totalAccepted} tip share(s) - will be added to payroll`,
+        acceptedCount: totalAccepted,
+        pendingSharesAccepted: updatedPendingShares.count,
+        bankedSharesAccepted: updatedBankedShares.count,
+        tipBankEntriesAccepted: updatedTipBank.count,
+        acceptedAt: now.toISOString(),
       })
     }
 

@@ -124,6 +124,33 @@ model Location {
   menuItemIngredients     MenuItemIngredient[]
   orderItemIngredients    OrderItemIngredient[]
 
+  // Hardware Management
+  printers   Printer[]
+  kdsScreens KDSScreen[]
+  printRules PrintRule[]
+  printJobs  PrintJob[]
+
+  // Pizza Builder
+  pizzaConfigs     PizzaConfig[]
+  pizzaSizes       PizzaSize[]
+  pizzaCrusts      PizzaCrust[]
+  pizzaSauces      PizzaSauce[]
+  pizzaCheeses     PizzaCheese[]
+  pizzaToppings    PizzaTopping[]
+  pizzaSpecialties PizzaSpecialty[]
+  orderItemPizzas  OrderItemPizza[]
+
+  // Payroll & Scheduling
+  payrollPeriods      PayrollPeriod[]
+  payStubs            PayStub[]
+  schedules           Schedule[]
+  scheduledShifts     ScheduledShift[]
+  availabilityEntries AvailabilityEntry[]
+  payrollSettings     PayrollSettings?
+
+  // Course Configuration
+  courseConfigs CourseConfig[]
+
   @@index([organizationId])
 }
 
@@ -161,6 +188,9 @@ model Customer {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   orders        Order[]
@@ -191,12 +221,18 @@ model Role {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   employees Employee[]
 
   // Tip-out rules (role gives/receives tip-outs)
   tipOutRulesFrom TipOutRule[] @relation("TipOutFrom")
   tipOutRulesTo   TipOutRule[] @relation("TipOutTo")
+
+  // Scheduled shifts for this role
+  scheduledShifts ScheduledShift[]
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -216,6 +252,12 @@ model Employee {
   email       String?
   phone       String?
 
+  // Address (for tax documents like W-2)
+  address  String?
+  city     String?
+  state    String?
+  zipCode  String?
+
   // Authentication
   pin      String // 4-6 digit PIN (hashed)
   password String? // Optional password for admin access (hashed)
@@ -224,6 +266,38 @@ model Employee {
   hourlyRate Decimal?
   hireDate   DateTime @default(now())
   isActive   Boolean  @default(true)
+
+  // Tax Information (W-4 data)
+  federalFilingStatus          String?  // 'single' | 'married' | 'head_of_household'
+  federalAllowances            Int      @default(0)
+  additionalFederalWithholding Decimal  @default(0)
+  stateFilingStatus            String?  // State-specific filing status
+  stateAllowances              Int      @default(0)
+  additionalStateWithholding   Decimal  @default(0)
+  isExemptFromFederalTax       Boolean  @default(false)
+  isExemptFromStateTax         Boolean  @default(false)
+
+  // Payment Preferences
+  paymentMethod     String? // 'direct_deposit' | 'check' | 'cash'
+  bankName          String?
+  bankRoutingNumber String?
+  bankAccountNumber String? // Should be encrypted in production
+  bankAccountType   String? // 'checking' | 'savings'
+  bankAccountLast4  String? // Last 4 digits for display
+
+  // Year-to-Date Tracking (reset annually)
+  ytdGrossEarnings  Decimal @default(0) // Total gross (wages + tips + commission)
+  ytdGrossWages     Decimal @default(0)
+  ytdTips           Decimal @default(0)
+  ytdCommission     Decimal @default(0)
+  ytdTaxesWithheld  Decimal @default(0) // Total taxes (federal + state + FICA)
+  ytdFederalTax     Decimal @default(0)
+  ytdStateTax       Decimal @default(0)
+  ytdLocalTax       Decimal @default(0)
+  ytdSocialSecurity Decimal @default(0)
+  ytdMedicare       Decimal @default(0)
+  ytdNetPay         Decimal @default(0)
+  ytdLastUpdated    DateTime?
 
   // Settings
   color     String? // For floor plan display
@@ -234,6 +308,9 @@ model Employee {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   orders           Order[]
@@ -247,6 +324,11 @@ model Employee {
   tipSharesGiven    TipShare[] @relation("TipShareFrom")
   tipSharesReceived TipShare[] @relation("TipShareTo")
   tipBank           TipBank[]
+
+  // Payroll & Scheduling
+  payStubs           PayStub[]
+  scheduledShifts    ScheduledShift[]
+  availabilityEntries AvailabilityEntry[]
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -284,6 +366,9 @@ model TimeClockEntry {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([employeeId])
@@ -326,6 +411,9 @@ model Shift {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Tip shares distributed during this shift closeout
   tipShares TipShare[]
@@ -346,6 +434,9 @@ model Drawer {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   paidInOuts PaidInOut[]
 
@@ -368,6 +459,11 @@ model PaidInOut {
   approvedBy String? // Manager who approved
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([drawerId])
@@ -400,13 +496,48 @@ model PrepStation {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations - categories and items assigned to this station
   categories Category[]
   menuItems  MenuItem[]
 
+  // KDS screens that display this station
+  kdsScreens KDSScreenStation[]
+
   @@unique([locationId, name])
   @@index([locationId])
+}
+
+// ============================================
+// COURSE CONFIGURATION (T013)
+// ============================================
+
+model CourseConfig {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  courseNumber  Int    // 1, 2, 3, 4, 5
+  name          String // "Appetizers", "Soup/Salad", "Entrees", "Dessert", "After-Dinner"
+  displayName   String? // Optional custom display name
+  color         String? // Badge color (hex)
+  autoFireDelay Int?   // Minutes after previous course to auto-fire (null = manual only)
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, courseNumber])
+  @@index([locationId])
+  @@index([sortOrder])
 }
 
 // ============================================
@@ -439,10 +570,20 @@ model Category {
   prepStation   PrepStation? @relation(fields: [prepStationId], references: [id])
   courseNumber  Int?
 
+  // Printer routing - printers for items in this category
+  // JSON array of printer IDs, e.g., ["printer-1", "printer-2"]
+  printerIds Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   menuItems MenuItem[]
+
+  // Print routing rules for this category
+  printRules PrintRule[]
 
   @@index([locationId])
   @@index([prepStationId])
@@ -484,6 +625,11 @@ model MenuItem {
   prepTime      Int? // Minutes
   courseNumber  Int? // Override category course
 
+  // Printer routing - override category's printers for this item
+  // JSON array of printer IDs, e.g., ["printer-1", "printer-2"]
+  printerIds       Json?
+  backupPrinterIds Json? // Backup printers if primary fails
+
   // Inventory
   trackInventory Boolean @default(false)
   currentStock   Int?
@@ -492,6 +638,12 @@ model MenuItem {
 
   // Type
   itemType String @default("standard") // standard, combo, timed_rental
+
+  // Combo Print Mode - how combo components print to stations
+  // 'individual' - Each component follows its own print rules (burger→kitchen, drink→bar)
+  // 'primary' - Entire combo prints to the combo's assigned printer
+  // 'all' - Full combo ticket prints at ALL relevant stations
+  comboPrintMode String? // null for non-combos, 'individual' | 'primary' | 'all'
 
   // Timed Rental Pricing (Skill 81) - for pool tables, dart boards, etc.
   timedPricing   Json? // { per15Min: 5.00, per30Min: 8.00, perHour: 15.00, minimum: 15 }
@@ -523,6 +675,9 @@ model MenuItem {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   modifierGroups         MenuItemModifierGroup[]
@@ -542,6 +697,12 @@ model MenuItem {
 
   // Menu Item Ingredients - what's in this item
   ingredients MenuItemIngredient[]
+
+  // Print routing rules for this specific item
+  printRules PrintRule[]
+
+  // Pizza Builder - specialty pizza configuration
+  pizzaSpecialty PizzaSpecialty?
 
   @@unique([locationId, sku])
   @@index([locationId])
@@ -578,6 +739,9 @@ model ModifierGroup {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   modifiers Modifier[]
   menuItems MenuItemModifierGroup[]
@@ -648,10 +812,23 @@ model Modifier {
   showOnPOS    Boolean @default(true)  // Visible to servers on POS
   showOnline   Boolean @default(true)  // Visible for online ordering
 
+  // Printer routing for modifiers
+  // printerRouting: "follow" (default) = prints with main item
+  //                 "also" = prints with main item AND to printerIds
+  //                 "only" = prints ONLY to printerIds (not with main item)
+  printerRouting String @default("follow")
+  printerIds     Json?  // Array of printer IDs when routing is "also" or "only"
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   orderItemModifiers OrderItemModifier[]
+
+  // Print routing rules for this specific modifier
+  printRules PrintRule[]
 
   @@index([locationId])
   @@index([modifierGroupId])
@@ -671,6 +848,13 @@ model MenuItemModifierGroup {
 
   sortOrder  Int     @default(0)
   showOnline Boolean @default(true) // Whether this modifier group appears for online ordering
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
 
   @@unique([menuItemId, modifierGroupId])
   @@index([locationId])
@@ -691,6 +875,9 @@ model ComboTemplate {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   components ComboComponent[]
 
@@ -730,6 +917,11 @@ model ComboComponent {
   defaultItem     MenuItem?      @relation("ComboComponentDefault", fields: [defaultItemId], references: [id])
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   options ComboComponentOption[]
 
@@ -750,6 +942,13 @@ model ComboComponentOption {
   upcharge    Decimal  @default(0)
   sortOrder   Int      @default(0)
   isAvailable Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
 
   @@unique([comboComponentId, menuItemId])
   @@index([locationId])
@@ -781,6 +980,9 @@ model Section {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   tables      Table[]
   assignments SectionAssignment[]
@@ -799,6 +1001,13 @@ model SectionAssignment {
 
   assignedAt   DateTime  @default(now())
   unassignedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
 
   @@index([locationId])
   @@index([sectionId])
@@ -831,8 +1040,23 @@ model Table {
   status   String  @default("available") // available, occupied, reserved, dirty, in_use
   isActive Boolean @default(true)
 
+  // Table Combine (Skill 106/107)
+  combinedWithId   String? // Points to primary table when this table is combined
+  combinedTableIds Json?   // JSON array of table IDs that are combined into this one (on primary)
+  originalName     String? // Stores original name when combined for restoration on split
+
+  // Original position (admin-defined, used for reset-to-default)
+  originalPosX     Int?    // Admin-defined X position
+  originalPosY     Int?    // Admin-defined Y position
+
+  // Locked items (T019) - bolted down furniture that cannot be moved
+  isLocked         Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   orders              Order[]
   reservations        Reservation[]
@@ -887,6 +1111,9 @@ model OrderType {
   orders    Order[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@unique([locationId, slug])
   @@index([locationId])
@@ -962,8 +1189,15 @@ model Order {
   preAuthCardBrand String? // Visa, Mastercard, etc.
   preAuthExpiresAt DateTime? // When the hold expires
 
+  // Coursing (T013)
+  currentCourse Int    @default(1) // Currently active course
+  courseMode    String @default("off") // 'off' | 'manual' | 'auto'
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   items     OrderItem[]
@@ -1042,9 +1276,15 @@ model OrderItem {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   modifiers               OrderItemModifier[]
   ingredientModifications OrderItemIngredient[]
+
+  // Pizza Builder - detailed pizza configuration
+  pizzaData OrderItemPizza?
 
   @@index([locationId])
   @@index([orderId])
@@ -1083,6 +1323,11 @@ model OrderItemModifier {
   linkedBottleProductId String? // Snapshot of bottle used for inventory
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([orderItemId])
@@ -1130,6 +1375,13 @@ model Payment {
   refundReason   String?
 
   processedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
 
   @@index([locationId])
   @@index([orderId])
@@ -1179,6 +1431,9 @@ model Coupon {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   redemptions CouponRedemption[]
 
@@ -1201,6 +1456,13 @@ model CouponRedemption {
 
   redeemedAt DateTime @default(now())
   redeemedBy String? // Employee who applied
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
 
   @@index([locationId])
   @@index([couponId])
@@ -1255,6 +1517,9 @@ model Reservation {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([reservationDate])
@@ -1299,6 +1564,9 @@ model DiscountRule {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   appliedDiscounts OrderDiscount[]
 
@@ -1326,6 +1594,11 @@ model OrderDiscount {
   reason String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([orderId])
@@ -1368,6 +1641,9 @@ model UpsellConfig {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   events UpsellEvent[]
 
@@ -1391,6 +1667,11 @@ model UpsellEvent {
   addedAmount Decimal?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([upsellConfigId])
@@ -1419,6 +1700,11 @@ model VoidLog {
   approvedAt   DateTime?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([orderId])
@@ -1441,6 +1727,11 @@ model AuditLog {
   userAgent String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([employeeId])
@@ -1467,6 +1758,9 @@ model TipPool {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   entries TipPoolEntry[]
 
@@ -1487,6 +1781,11 @@ model TipPoolEntry {
   distributions Json // [{employeeId, amount, hours, points}]
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([tipPoolId])
@@ -1514,6 +1813,9 @@ model TipOutRule {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   tipShares TipShare[]
 
@@ -1547,6 +1849,11 @@ model TipShare {
 
   notes     String?
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   tipBankEntry TipBank?
 
@@ -1580,6 +1887,11 @@ model TipBank {
   payrollId   String? // If paid via payroll
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([employeeId])
@@ -1626,6 +1938,9 @@ model GiftCard {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   transactions GiftCardTransaction[]
 
@@ -1655,6 +1970,11 @@ model GiftCardTransaction {
   notes      String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([giftCardId])
@@ -1703,6 +2023,9 @@ model HouseAccount {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   transactions HouseAccountTransaction[]
 
@@ -1737,6 +2060,11 @@ model HouseAccountTransaction {
   dueDate DateTime?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([houseAccountId])
@@ -1781,6 +2109,9 @@ model TimedSession {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([menuItemId])
@@ -1826,6 +2157,9 @@ model EntertainmentWaitlist {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([menuItemId])
@@ -1863,6 +2197,9 @@ model Seat {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   tickets Ticket[]
@@ -1918,6 +2255,9 @@ model Event {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
   createdBy String? // Employee who created
 
   // Relations
@@ -1959,6 +2299,9 @@ model EventPricingTier {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   tickets             Ticket[]
@@ -1986,6 +2329,13 @@ model EventTableConfig {
   // For per-table booking: min/max party size
   minPartySize Int?
   maxPartySize Int? // null = use table capacity
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
 
   @@unique([eventId, tableId])
   @@index([locationId])
@@ -2057,6 +2407,9 @@ model Ticket {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([eventId])
@@ -2096,6 +2449,9 @@ model TaxRule {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([isActive])
@@ -2131,6 +2487,11 @@ model InventoryTransaction {
   totalCost Decimal?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([menuItemId])
@@ -2161,6 +2522,11 @@ model StockAlert {
   resolvedBy     String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([menuItemId])
@@ -2190,6 +2556,11 @@ model Break {
   notes String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([timeClockEntryId])
@@ -2216,6 +2587,9 @@ model SpiritCategory {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   bottleProducts       BottleProduct[]
@@ -2259,6 +2633,9 @@ model BottleProduct {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   spiritModifiers   Modifier[] // Modifiers that link to this bottle
@@ -2291,6 +2668,11 @@ model RecipeIngredient {
   notes     String? // "Top with...", "Float", etc.
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@unique([menuItemId, bottleProductId])
   @@index([locationId])
@@ -2315,6 +2697,9 @@ model SpiritModifierGroup {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([spiritCategoryId])
@@ -2345,6 +2730,11 @@ model SpiritUpsellEvent {
   wasAccepted Boolean @default(false)
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([orderId])
@@ -2385,6 +2775,9 @@ model Ingredient {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   // Relations
   menuItemIngredients MenuItemIngredient[]
@@ -2412,6 +2805,11 @@ model MenuItemIngredient {
   swapUpchargeOverride Decimal?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@unique([menuItemId, ingredientId])
   @@index([locationId])
@@ -2438,8 +2836,854 @@ model OrderItemIngredient {
   swappedToModifierName String?
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
 
   @@index([locationId])
   @@index([orderItemId])
   @@index([modificationType])
+}
+
+// ============================================
+// HARDWARE MANAGEMENT (Printers & KDS Screens)
+// ============================================
+
+model Printer {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Kitchen Printer", "Bar Printer", "Receipt Printer"
+  printerType String // "thermal" | "impact"
+  model       String? // "TM-T88VII", "TM-U220"
+
+  // Network configuration
+  ipAddress String
+  port      Int    @default(9100)
+
+  // Role
+  printerRole String  @default("kitchen") // "receipt" | "kitchen" | "bar"
+  isDefault   Boolean @default(false) // Default printer for this role
+
+  // Capabilities
+  paperWidth  Int     @default(80) // 80mm or 40mm
+  supportsCut Boolean @default(true)
+
+  // Status
+  isActive   Boolean   @default(true)
+  lastPingAt DateTime?
+  lastPingOk Boolean   @default(false)
+
+  // Print template settings (JSON object conforming to PrintTemplateSettings)
+  printSettings Json?
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  printJobs  PrintJob[]
+  printRules PrintRule[]
+
+  @@unique([locationId, ipAddress])
+  @@index([locationId])
+  @@index([printerRole])
+}
+
+model KDSScreen {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name       String // "Kitchen Main", "Grill Station", "Bar Display"
+  slug       String? // URL-friendly identifier: "kitchen-main", "grill-station"
+  screenType String @default("kds") // "kds" | "entertainment"
+
+  // Display Settings
+  columns     Int    @default(4)
+  fontSize    String @default("normal") // "small" | "normal" | "large"
+  colorScheme String @default("dark") // "dark" | "light"
+
+  // Timing Thresholds (minutes)
+  agingWarning Int @default(8) // Yellow when older than this
+  lateWarning  Int @default(15) // Red when older than this
+
+  // Alerts
+  playSound  Boolean @default(true)
+  flashOnNew Boolean @default(true)
+
+  // Device Pairing & Authentication
+  deviceToken          String?   @unique // Secure token assigned after pairing
+  pairingCode          String?   // 6-digit temporary pairing code
+  pairingCodeExpiresAt DateTime? // When pairing code expires
+  isPaired             Boolean   @default(false) // Whether a device is paired
+
+  // Static IP Configuration (for UniFi/private networks)
+  staticIp        String?  // Expected static IP address (e.g., "192.168.1.50")
+  enforceStaticIp Boolean  @default(false) // Reject requests from wrong IP
+
+  // Device Info (for troubleshooting)
+  lastKnownIp String? // Last IP address seen
+  deviceInfo  Json?   // User agent, screen size, etc.
+
+  // Status
+  isActive   Boolean   @default(true)
+  lastSeenAt DateTime?
+  isOnline   Boolean   @default(false)
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  stations   KDSScreenStation[]
+  printRules PrintRule[]
+
+  @@unique([locationId, name])
+  @@unique([locationId, slug])
+  @@index([locationId])
+  @@index([deviceToken])
+}
+
+model KDSScreenStation {
+  id          String      @id @default(cuid())
+  kdsScreenId String
+  kdsScreen   KDSScreen   @relation(fields: [kdsScreenId], references: [id], onDelete: Cascade)
+  stationId   String
+  station     PrepStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  sortOrder Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+
+  @@unique([kdsScreenId, stationId])
+  @@index([kdsScreenId])
+  @@index([stationId])
+}
+
+model PrintRule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name String?
+
+  // Match Level: category < item < modifier (cascade priority)
+  // Higher specificity wins: modifier > item > category
+  ruleLevel String // "category" | "item" | "modifier"
+
+  // Match Target (one set based on ruleLevel)
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  menuItemId String?
+  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  modifierId String?
+  modifier   Modifier? @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+
+  // Primary Destinations
+  printerId   String?
+  printer     Printer?   @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  kdsScreenId String?
+  kdsScreen   KDSScreen? @relation(fields: [kdsScreenId], references: [id], onDelete: SetNull)
+
+  // Additional Destinations (JSON arrays of IDs)
+  additionalPrinterIds Json? // ["printer-id-1", "printer-id-2"]
+  additionalKDSIds     Json? // ["kds-id-1", "kds-id-2"]
+
+  // Options
+  printCopies Int     @default(1) // Number of copies to print
+  isReference Boolean @default(false) // Abbreviated reference ticket
+  printOnSend Boolean @default(true) // Print when sent to kitchen
+  showOnKDS   Boolean @default(true) // Show on KDS screens
+
+  priority Int     @default(0) // For tie-breaking within same level
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([categoryId])
+  @@index([menuItemId])
+  @@index([modifierId])
+  @@index([ruleLevel])
+}
+
+model PrintJob {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  jobType   String // "kitchen_ticket" | "receipt" | "reference"
+  orderId   String?
+  printerId String
+  printer   Printer  @relation(fields: [printerId], references: [id])
+
+  status       String  @default("pending") // "pending" | "sent" | "failed"
+  errorMessage String?
+  retryCount   Int     @default(0)
+
+  content String? // ESC/POS buffer for reprint
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+  sentAt    DateTime?
+
+  @@index([locationId])
+  @@index([status])
+  @@index([printerId])
+  @@index([createdAt])
+}
+
+// ============================================
+// PIZZA BUILDER
+// Comprehensive pizza customization system with sectional toppings
+// ============================================
+
+model PizzaConfig {
+  id         String   @id @default(cuid())
+  locationId String   @unique
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Sectional settings
+  maxSections     Int     @default(8) // Max sections: 1 (whole), 2 (halves), 4 (quarters), 8 (eighths)
+  defaultSections Int     @default(2) // Default view (halves)
+  sectionOptions  Json    @default("[1, 2, 4, 8]") // Available section modes
+
+  // Pricing strategy - FRACTIONAL is recommended
+  pricingMode String @default("fractional")
+  // "fractional" (DEFAULT): coverage% = price% (half = 50%, quarter = 25%, eighth = 12.5%)
+  // "flat": any coverage = full topping price (higher margin, simpler)
+  // "hybrid": custom percentages per coverage level
+  hybridPricing Json? // Only used if pricingMode="hybrid": { "whole": 1.0, "half": 0.6, ... }
+
+  // Free toppings system
+  freeToppingsEnabled Boolean @default(false)
+  freeToppingsCount   Int     @default(0) // Number of free toppings (0 = none free)
+  freeToppingsMode    String  @default("per_pizza") // "per_pizza" | "per_size"
+  // per_pizza: same free count regardless of size
+  // per_size: different free count per size (configured in PizzaSize)
+
+  // Extra topping charges (after free toppings exhausted)
+  extraToppingPrice Decimal? // Override price for toppings after free ones (null = use topping's own price)
+
+  // Display settings
+  showVisualBuilder Boolean @default(true) // Toggle for visual pizza graphic
+  showToppingList   Boolean @default(true) // Show list view of toppings
+  defaultToListView Boolean @default(false) // Start in list view instead of visual
+
+  // Printer routing - multiple printers supported
+  printerIds Json? // Array of printer IDs: ["printer-id-1", "printer-id-2"]
+
+  // Pizza-specific print settings (JSON object conforming to PizzaPrintSettings)
+  printSettings Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+}
+
+model PizzaSize {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Small", "Medium", "Large", "XL"
+  displayName String? // "10\"", "12\"", "14\"", "18\""
+  inches      Int? // Diameter in inches
+  slices      Int     @default(8) // Number of slices
+
+  // Pricing
+  basePrice         Decimal // Base price for cheese pizza this size
+  priceMultiplier   Decimal @default(1.0) // For calculating from base (legacy support)
+  toppingMultiplier Decimal @default(1.0) // Topping price multiplier for this size
+
+  // Free toppings per size (when freeToppingsMode = "per_size")
+  freeToppings Int @default(0) // Number of free toppings for this size
+
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  orderItemPizzas OrderItemPizza[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model PizzaCrust {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Hand Tossed", "Thin", "Deep Dish", "Stuffed"
+  displayName String?
+  description String?
+  price       Decimal @default(0) // Upcharge for specialty crusts
+
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  pizzaSpecialties PizzaSpecialty[] @relation("DefaultCrust")
+  orderItemPizzas  OrderItemPizza[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model PizzaSauce {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Marinara", "White", "BBQ", "Buffalo", "No Sauce"
+  displayName String?
+  description String?
+  price       Decimal @default(0)
+
+  // Sauce amount options
+  allowLight Boolean @default(true)
+  allowExtra Boolean @default(true)
+  extraPrice Decimal @default(0)
+
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  pizzaSpecialties PizzaSpecialty[] @relation("DefaultSauce")
+  orderItemPizzas  OrderItemPizza[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model PizzaCheese {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Mozzarella", "No Cheese", "Extra Cheese", "Vegan"
+  displayName String?
+  description String?
+  price       Decimal @default(0)
+
+  // Cheese amount options
+  allowLight Boolean @default(true)
+  allowExtra Boolean @default(true)
+  extraPrice Decimal @default(0)
+
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  pizzaSpecialties PizzaSpecialty[] @relation("DefaultCheese")
+  orderItemPizzas  OrderItemPizza[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([sortOrder])
+}
+
+model PizzaTopping {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name        String // "Pepperoni", "Mushrooms", "Onions"
+  displayName String?
+  description String?
+
+  // Category for grouping in UI
+  category String @default("standard") // "meat", "veggie", "premium", "cheese", "seafood"
+
+  // Pricing
+  price      Decimal // Base price for whole pizza
+  extraPrice Decimal? // Price for "extra" (2x amount)
+
+  // Visual (for visual pizza builder)
+  color   String? // Hex color for visual builder representation
+  iconUrl String? // Optional icon image
+
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([category])
+  @@index([sortOrder])
+}
+
+model PizzaSpecialty {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  menuItemId String   @unique // Links to MenuItem with itemType="pizza"
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  // Default configuration
+  defaultCrustId  String?
+  defaultCrust    PizzaCrust?  @relation("DefaultCrust", fields: [defaultCrustId], references: [id])
+  defaultSauceId  String?
+  defaultSauce    PizzaSauce?  @relation("DefaultSauce", fields: [defaultSauceId], references: [id])
+  defaultCheeseId String?
+  defaultCheese   PizzaCheese? @relation("DefaultCheese", fields: [defaultCheeseId], references: [id])
+
+  sauceAmount  String @default("regular") // "none", "light", "regular", "extra"
+  cheeseAmount String @default("regular")
+
+  // Pre-selected toppings (JSON array)
+  // [{ "toppingId": "...", "name": "Pepperoni", "sections": [0,1,2,3,4,5,6,7], "amount": "regular" }, ...]
+  toppings Json @default("[]")
+
+  // Allow modifications?
+  allowSizeChange   Boolean @default(true)
+  allowCrustChange  Boolean @default(true)
+  allowSauceChange  Boolean @default(true)
+  allowCheeseChange Boolean @default(true)
+  allowToppingMods  Boolean @default(true) // Add/remove toppings
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([menuItemId])
+}
+
+// Order item extension for pizza orders - stores the actual pizza configuration
+model OrderItemPizza {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  orderItemId String    @unique
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+
+  // Size selection
+  sizeId String
+  size   PizzaSize @relation(fields: [sizeId], references: [id])
+
+  // Crust selection
+  crustId String
+  crust   PizzaCrust @relation(fields: [crustId], references: [id])
+
+  // Sauce selection (optional - "No Sauce" pizzas)
+  sauceId     String?
+  sauce       PizzaSauce? @relation(fields: [sauceId], references: [id])
+  sauceAmount String      @default("regular") // "none", "light", "regular", "extra"
+
+  // Cheese selection (optional - "No Cheese" pizzas)
+  cheeseId     String?
+  cheese       PizzaCheese? @relation(fields: [cheeseId], references: [id])
+  cheeseAmount String       @default("regular") // "none", "light", "regular", "extra"
+
+  // Sectional toppings (JSON) - the heart of the pizza builder
+  // {
+  //   "toppings": [
+  //     { "toppingId": "...", "name": "Pepperoni", "sections": [0,1,2,3,4,5,6,7], "amount": "regular", "price": 2.50 },
+  //     { "toppingId": "...", "name": "Mushrooms", "sections": [0,1,2,3], "amount": "regular", "price": 1.25 }
+  //   ],
+  //   "sectionMode": 2  // How many sections was the pizza divided into (1, 2, 4, or 8)
+  // }
+  toppingsData Json // Set in application code: { toppings: [], sectionMode: 2 }
+
+  // Cooking instructions
+  cookingInstructions String? // "well done", "light bake", etc.
+  cutStyle            String? // "normal", "square", "uncut"
+
+  // Pricing snapshot at time of order
+  sizePrice     Decimal
+  crustPrice    Decimal
+  saucePrice    Decimal @default(0)
+  cheesePrice   Decimal @default(0)
+  toppingsPrice Decimal
+  totalPrice    Decimal
+
+  // Free toppings tracking
+  freeToppingsUsed Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([orderItemId])
+  @@index([sizeId])
+}
+
+// ============================================
+// PAYROLL SYSTEM
+// ============================================
+
+// PayrollPeriod - Defines pay periods (weekly, bi-weekly, etc.)
+model PayrollPeriod {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Period details
+  periodStart DateTime
+  periodEnd   DateTime
+  periodType  String // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
+
+  // Status tracking
+  status    String   @default("open") // 'open' | 'processing' | 'closed' | 'paid'
+  closedAt  DateTime?
+  closedBy  String? // employeeId of manager who closed
+  paidAt    DateTime?
+
+  // Totals (calculated when closed)
+  totalRegularHours   Decimal?
+  totalOvertimeHours  Decimal?
+  totalWages          Decimal?
+  totalTips           Decimal?
+  totalCommissions    Decimal?
+  totalBankedTips     Decimal?
+  grandTotal          Decimal?
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  payStubs PayStub[]
+
+  @@unique([locationId, periodStart, periodEnd])
+  @@index([locationId])
+  @@index([status])
+  @@index([periodStart])
+}
+
+// PayStub - Individual employee pay stub for a period
+model PayStub {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location @relation(fields: [locationId], references: [id])
+  payrollPeriodId String
+  employeeId      String
+
+  payrollPeriod PayrollPeriod @relation(fields: [payrollPeriodId], references: [id])
+  employee      Employee      @relation(fields: [employeeId], references: [id])
+
+  // Time worked
+  regularHours   Decimal @default(0)
+  overtimeHours  Decimal @default(0)
+  breakMinutes   Int     @default(0)
+
+  // Wages
+  hourlyRate     Decimal @default(0)
+  regularPay     Decimal @default(0) // regularHours * hourlyRate
+  overtimePay    Decimal @default(0) // overtimeHours * hourlyRate * 1.5
+
+  // Tips
+  declaredTips     Decimal @default(0) // Tips declared at shift closeout
+  tipSharesGiven   Decimal @default(0) // Tip-outs to other employees
+  tipSharesReceived Decimal @default(0) // Tip-outs from other employees
+  bankedTipsCollected Decimal @default(0) // Previously banked tips now paid
+  netTips          Decimal @default(0) // declared - given + received + banked
+
+  // Commissions
+  commissionTotal Decimal @default(0)
+
+  // Gross earnings
+  grossPay Decimal @default(0) // wages + tips + commission
+
+  // Tax Deductions
+  federalTax        Decimal @default(0)
+  stateTax          Decimal @default(0)
+  socialSecurityTax Decimal @default(0)
+  medicareTax       Decimal @default(0)
+  localTax          Decimal @default(0)
+  totalDeductions   Decimal @default(0) // All taxes combined
+  deductions        Json?   // Additional deductions { other: [] }
+
+  // Net pay
+  netPay Decimal @default(0)
+
+  // Check/payment reference
+  checkNumber String?
+
+  // Shifts included
+  shiftCount    Int @default(0)
+  shiftIds      Json? // Array of shift IDs included
+  timeEntryIds  Json? // Array of time entry IDs included
+
+  // Payment tracking
+  paymentMethod String? // 'check' | 'direct_deposit' | 'cash'
+  paymentRef    String? // Check number, transaction ID, etc.
+  paidAt        DateTime?
+
+  // Status
+  status String @default("pending") // 'pending' | 'approved' | 'paid' | 'void'
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([payrollPeriodId, employeeId])
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([payrollPeriodId])
+  @@index([status])
+}
+
+// ============================================
+// SCHEDULING SYSTEM
+// ============================================
+
+// Schedule - Weekly schedule template
+model Schedule {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Week this schedule is for
+  weekStart DateTime // Monday of the week
+  weekEnd   DateTime // Sunday of the week
+
+  // Status
+  status      String   @default("draft") // 'draft' | 'published' | 'archived'
+  publishedAt DateTime?
+  publishedBy String? // employeeId
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  shifts ScheduledShift[]
+
+  @@unique([locationId, weekStart])
+  @@index([locationId])
+  @@index([weekStart])
+  @@index([status])
+}
+
+// ScheduledShift - Individual shift assignment
+model ScheduledShift {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  scheduleId String
+  schedule   Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  // Shift timing
+  date      DateTime // Date of the shift
+  startTime String   // "09:00" (24h format)
+  endTime   String   // "17:00" (24h format)
+
+  // Break scheduling
+  breakMinutes Int @default(0)
+
+  // Role/position for this shift (may differ from employee's primary role)
+  roleId String?
+  role   Role?  @relation(fields: [roleId], references: [id])
+
+  // Section assignment (if applicable)
+  sectionId String?
+
+  // Status tracking
+  status String @default("scheduled") // 'scheduled' | 'confirmed' | 'no_show' | 'called_off' | 'worked'
+
+  // Actual vs scheduled (filled after shift)
+  actualStartTime DateTime?
+  actualEndTime   DateTime?
+  actualHours     Decimal?
+
+  // Trade/swap tracking
+  originalEmployeeId String? // If swapped, who was originally scheduled
+  swappedAt          DateTime?
+  swapApprovedBy     String? // Manager who approved swap
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([scheduleId])
+  @@index([employeeId])
+  @@index([date])
+  @@index([status])
+}
+
+// AvailabilityEntry - Employee availability preferences
+model AvailabilityEntry {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+
+  // Recurring availability (weekly pattern)
+  dayOfWeek     Int      // 0-6 (Sunday-Saturday)
+  availableFrom String?  // "09:00" or null for not available
+  availableTo   String?  // "17:00" or null for not available
+  isAvailable   Boolean  @default(true)
+
+  // Preference level
+  preference String @default("available") // 'preferred' | 'available' | 'if_needed' | 'unavailable'
+
+  // Effective dates (for temporary changes)
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+
+  // Notes
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([employeeId, dayOfWeek, effectiveFrom])
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([dayOfWeek])
+}
+
+// ============================================
+// PAYROLL SETTINGS & TAX CONFIGURATION
+// ============================================
+
+// PayrollSettings - Location-level payroll configuration
+model PayrollSettings {
+  id         String   @id @default(cuid())
+  locationId String   @unique
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Pay Period Configuration
+  payPeriodType   String @default("biweekly") // 'weekly' | 'biweekly' | 'semimonthly' | 'monthly'
+  payDayOfWeek    Int?   // 0-6 for weekly/biweekly (Friday = 5)
+  payDayOfMonth1  Int?   // 1-31 for semimonthly/monthly
+  payDayOfMonth2  Int?   // Second pay day for semimonthly
+
+  // Overtime Configuration
+  overtimeThresholdDaily  Decimal @default(8)  // Hours per day before OT kicks in
+  overtimeThresholdWeekly Decimal @default(40) // Hours per week before OT kicks in
+  overtimeMultiplier      Decimal @default(1.5) // 1.5x for time-and-a-half
+  doubleTimeThreshold     Decimal? // Hours before double-time (California: 12 hrs/day)
+  doubleTimeMultiplier    Decimal @default(2.0)
+
+  // Tax Configuration
+  stateTaxState   String? // State code: 'CA', 'TX', 'NY', etc.
+  stateTaxRate    Decimal? // Flat rate if applicable
+  localTaxEnabled Boolean @default(false)
+  localTaxRate    Decimal?
+  localTaxName    String? // 'City Tax', 'School District', etc.
+
+  // FICA (Social Security & Medicare)
+  socialSecurityRate Decimal @default(6.2)  // Employee portion %
+  medicareRate       Decimal @default(1.45) // Employee portion %
+  socialSecurityWageBase Decimal @default(168600) // 2024 wage base
+
+  // Minimum Wage
+  minimumWage      Decimal @default(7.25) // Federal default
+  tippedMinimumWage Decimal @default(2.13) // Tipped employee minimum
+
+  // Break Requirements
+  mealBreakThreshold    Int @default(360) // Minutes worked before meal break required (6 hrs)
+  mealBreakDuration     Int @default(30)  // Required meal break duration in minutes
+  restBreakInterval     Int @default(240) // Minutes between rest breaks (4 hrs)
+  restBreakDuration     Int @default(10)  // Rest break duration in minutes
+  paidMealBreaks        Boolean @default(false)
+  paidRestBreaks        Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields (for cloud sync and soft deletes)
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
 }

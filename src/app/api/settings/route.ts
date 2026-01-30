@@ -52,6 +52,7 @@ export async function PUT(request: NextRequest) {
       tax: { ...currentSettings.tax, ...(settings.tax || {}) },
       dualPricing: { ...currentSettings.dualPricing, ...(settings.dualPricing || {}) },
       tips: { ...currentSettings.tips, ...(settings.tips || {}) },
+      tipShares: { ...currentSettings.tipShares, ...(settings.tipShares || {}) },
       receipts: { ...currentSettings.receipts, ...(settings.receipts || {}) },
       loyalty: { ...currentSettings.loyalty, ...(settings.loyalty || {}) },
     })

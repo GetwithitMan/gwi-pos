@@ -276,8 +276,12 @@ async function calculateShiftSummary(
       total: true,
       tipTotal: true,
       discountTotal: true,
+      commissionTotal: true,
     },
   })
+
+  // Calculate total commission earned
+  const totalCommission = orders.reduce((sum, order) => sum + Number(order.commissionTotal || 0), 0)
 
   // Calculate totals
   let totalSales = 0
@@ -344,6 +348,7 @@ async function calculateShiftSummary(
     cashSales: Math.round(cashSales * 100) / 100,
     cardSales: Math.round(cardSales * 100) / 100,
     totalTips: Math.round(totalTips * 100) / 100,
+    totalCommission: Math.round(totalCommission * 100) / 100,
     cashReceived: Math.round(cashReceived * 100) / 100,
     changeGiven: Math.round(changeGiven * 100) / 100,
     netCashReceived: Math.round(netCashReceived * 100) / 100,

@@ -6,6 +6,60 @@ This file provides context for Claude Code when working on this project.
 
 GWI POS is a modern point-of-sale system built for bars and restaurants. It emphasizes a "fewest clicks" philosophy for fast service.
 
+## System Architecture
+
+GWI POS is a **hybrid SaaS** system with local servers at each location for speed and offline capability.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    GWI ADMIN CONSOLE (Cloud)                     │
+│  • Onboard new locations        • Push updates                  │
+│  • Manage subscriptions         • Aggregate reporting           │
+│  • Monitor all locations        • License enforcement           │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ Sync when online
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                LOCAL SERVER (Ubuntu Mini PC)                     │
+│  Docker Compose:                                                │
+│  ├── GWI POS (Next.js)           ├── PostgreSQL (local data)   │
+│  ├── Socket.io (real-time)       └── Watchtower (auto-updates) │
+│                                                                 │
+│  • Manages all terminals + devices                              │
+│  • Works 100% offline                                           │
+│  • Sub-10ms response times                                      │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ Local network (WiFi/Ethernet)
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+         ┌─────────┐    ┌─────────┐    ┌─────────┐
+         │Terminal │    │Terminal │    │ Phone/  │
+         │   #1    │    │   #2    │    │  iPad   │
+         │(browser)│    │(browser)│    │  (PWA)  │
+         └─────────┘    └─────────┘    └─────────┘
+```
+
+### Build Phases
+
+| Phase | What | Status |
+|-------|------|--------|
+| **1** | Build the POS | 🔄 In Progress |
+| **2** | Build Admin Console | ⏳ Later |
+| **3** | Deployment Infrastructure | ⏳ Later |
+
+### Why Local Servers?
+
+| Benefit | Details |
+|---------|---------|
+| **Speed** | Sub-50ms response (vs 100-500ms cloud) |
+| **Offline** | Works 100% when internet is down |
+| **Real-time** | Socket.io on local network = instant KDS updates |
+| **Reliability** | No dependency on external services |
+
+**Full architecture details:** See `/docs/GWI-ARCHITECTURE.md`
+
 ## Tech Stack
 
 | Technology | Version | Purpose |
@@ -108,8 +162,46 @@ model NewModel {
 
   // ... other fields
 
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  // Sync fields (REQUIRED for cloud sync)
+  deletedAt  DateTime?
+  syncedAt   DateTime?
+
   @@index([locationId])
 }
+```
+
+### ⚠️ CRITICAL: Sync Fields (deletedAt, syncedAt)
+
+**EVERY table MUST have sync fields** (except `Organization` and `Location`).
+
+| Field | Purpose |
+|-------|---------|
+| `deletedAt` | Soft delete - never hard delete records |
+| `syncedAt` | Tracks when record was last synced to cloud |
+
+**Why this matters:**
+- Cloud sync needs to know what's been pushed
+- Soft deletes allow sync to handle "deleted" records
+- Hard deletes cause sync conflicts
+
+**Never hard delete - always soft delete:**
+```typescript
+// ❌ BAD - hard delete causes sync issues
+await db.menuItem.delete({ where: { id } })
+
+// ✅ GOOD - soft delete
+await db.menuItem.update({
+  where: { id },
+  data: { deletedAt: new Date() }
+})
+
+// ✅ GOOD - filter out soft-deleted in queries
+const items = await db.menuItem.findMany({
+  where: { locationId, deletedAt: null }
+})
 ```
 
 **When querying data:**
@@ -138,8 +230,8 @@ await db.orderItem.create({
 })
 ```
 
-**Tables with locationId (57 total):**
-All tables except `Organization` and `Location` have `locationId` including:
+**Tables with locationId + sync fields (80 total):**
+All tables except `Organization` and `Location` have `locationId`, `deletedAt`, and `syncedAt` including:
 - Core: Employee, Role, Category, MenuItem, ModifierGroup, Modifier
 - Orders: Order, OrderItem, OrderItemModifier, Payment, OrderDiscount
 - Menu: MenuItemModifierGroup, ComboTemplate, ComboComponent, ComboComponentOption
@@ -197,6 +289,9 @@ Dev server runs at: http://localhost:3000
 | `/settings/order-types` | Configurable order types management |
 | `/settings/tip-outs` | Tip-out rules configuration |
 | `/reports` | Sales and labor reports |
+| `/reports/daily` | Daily store report (EOD) |
+| `/reports/shift` | Employee shift report |
+| `/reports/tip-shares` | Tip share report (standalone) |
 | `/reports/tips` | Tips report (tip shares, banked tips) |
 | `/customers` | Customer management |
 | `/reservations` | Reservation system |
@@ -313,36 +408,49 @@ Three synchronized views:
 3. Orders Page - Inline timer and stop/extend buttons
 
 ### Tip Sharing System
-Comprehensive tip distribution with automatic tip-outs and banked tips:
+Comprehensive tip distribution with automatic tip-outs. ALL tip shares go to payroll (simplified cash flow).
 
 **Tip-Out Rules** (configured at `/settings/tip-outs`):
 - Role-based automatic tip-out percentages (e.g., Server → Busser 3%)
 - Applied automatically at shift closeout
 - Multiple rules per role supported
 
-**Shift Closeout Flow**:
-1. Cash count (as usual)
-2. Tip Distribution (new step):
-   - View gross tips collected
-   - Auto-calculated role tip-outs
-   - Add custom one-off shares
-   - See net tips to keep
-3. Complete closeout
+**Simplified Cash Flow**:
+- ALL tip shares go to payroll (no same-day cash handoffs)
+- Server gives tip-out cash to house
+- House holds for payroll distribution
+- No timing dependency on who clocks out first
 
-**Banked Tips**:
-- Tips auto-bank when recipient not on shift
-- Collect at next clock-in or via payroll
-- Notification appears when clocked in with pending tips
+**Tip Share Settings** (`settings.tipShares`):
+```json
+{
+  "payoutMethod": "payroll",     // "payroll" (auto) or "manual" (use report)
+  "autoTipOutEnabled": true,
+  "requireTipOutAcknowledgment": true,
+  "showTipSharesOnReceipt": true
+}
+```
 
-**Tips Report** (`/reports/tips`):
-- By Employee: gross, given, received, net
-- Tip Shares: transaction history
-- Banked Tips: uncollected tips for payroll
+**Reports**:
+
+| Report | Endpoint | Description |
+|--------|----------|-------------|
+| Daily Store Report | `/api/reports/daily` | Comprehensive EOD with tip shares section |
+| Employee Shift Report | `/api/reports/employee-shift` | Tips earned vs received separation |
+| Tip Share Report | `/api/reports/tip-shares` | Standalone, by recipient/giver, mark as paid |
+
+**Tip Share Report Actions** (POST `/api/reports/tip-shares`):
+- `mark_paid` - Mark specific tip share IDs as paid (for manual mode)
+- `mark_paid_all` - Mark all for an employee as paid
+
+**Key Distinction in Reports**:
+- `tips.earned` = Tips from orders (subject to tip-out rules)
+- `tipShares.received` = Tips from other employees (NOT subject to tip-out)
 
 **Related Models**:
 - `TipOutRule` - Automatic tip-out rules by role
 - `TipShare` - Actual tip distribution records
-- `TipBank` - Uncollected/banked tips
+- `TipBank` - Uncollected/banked tips (legacy)
 
 **Permissions**:
 - `tips.view_own` / `tips.view_all` - View tips
@@ -483,8 +591,10 @@ gwi-pos/
 
 1. **Decimal fields** - Convert to Number() when returning from API
 2. **JSON fields** - Used for arrays in SQLite (e.g., `modifierTypes`, `pourSizes`)
-3. **Soft deletes** - Use `isActive: false` instead of hard deletes
+3. **Soft deletes** - Use `deletedAt: new Date()` instead of hard deletes (required for sync)
 4. **Sort order** - Most lists support `sortOrder` for custom ordering
+5. **Always filter by locationId** - Multi-tenancy requirement
+6. **Always filter out deleted** - Add `deletedAt: null` to queries
 
 ## Schema Highlights
 
@@ -517,6 +627,182 @@ The Liquor Builder system tracks:
 - `RecipeIngredient` - Links menu items to bottles for cocktail recipes
 
 Located at `/liquor-builder` in the admin interface.
+
+## Hardware & Printing
+
+### Printer Configuration
+
+Located at `/settings/hardware` - manage receipt and kitchen printers.
+
+**Printer Types:**
+- `thermal` - Thermal receipt printers (e.g., Epson TM-T88)
+- `impact` - Impact kitchen printers (e.g., Epson TM-U220)
+
+**Printer Roles:**
+- `receipt` - Customer receipts
+- `kitchen` - Kitchen tickets (food prep)
+- `bar` - Bar tickets
+
+**Printer Models:**
+- `Printer` - Printer configuration (IP, port, type, role)
+- `PrinterSettings` - Per-printer text sizing and formatting
+- `PrintJob` - Print job history/logging
+
+### Print Routes
+
+Located at `/settings/hardware/routing` - named print routes with printer-specific settings.
+
+**Features:**
+- Named routes (e.g., "Pizza Printer 1", "Bar Printer")
+- Route types: pizza, bar, category, item_type
+- Printer-type-specific settings (impact vs thermal)
+- Backup printer failover with configurable timeout
+- Live preview of ticket appearance
+- Priority-based routing
+
+**Routing Priority:**
+```
+PrintRoute (by priority) > Item printer > Category printer > Default kitchen printer
+```
+
+**Related Models:**
+- `PrintRoute` - Route configuration with settings and failover
+- `RouteSpecificSettings` - Base + impact + thermal + pizza/bar options
+
+**Key Files:**
+- `src/types/print-route-settings.ts` - RouteSpecificSettings types
+- `src/components/hardware/PrintRouteEditor.tsx` - Editor modal with live preview
+- `src/app/api/hardware/print-routes/` - CRUD API
+
+### Pizza Print Settings
+
+Located at `/pizza` settings tab - specialized settings for pizza kitchen tickets.
+
+**Features:**
+- **Live Preview** - See exactly how tickets will print as you change settings
+- **Red Ribbon Support** - Two-color printing for TM-U220 impact printers
+- **Sectional Printing** - Organized by pizza sections (WHOLE, LEFT HALF, 1/6-1, etc.)
+- **Size/Crust/Sauce/Cheese** - All pizza attributes print on ticket
+
+**Priority System:**
+Pizza Print Settings override Printer Settings when configured:
+```typescript
+// Priority: Pizza Settings > Printer Settings > Defaults
+const headerSize = settings.textSizing?.headerSize ?? printerSettings.textSizing.headerSize
+```
+
+**Related Models:**
+- `PizzaConfig` - Location pizza settings including `printerIds` and `printSettings`
+- `OrderItemPizza` - Pizza order data (size, crust, toppings, sections)
+
+### ESC/POS Commands
+
+The system uses ESC/POS protocol for printer communication:
+
+**Thermal Printers:**
+- `GS ! 0x11` - Double width + height
+- `GS ! 0x01` - Double height only
+- `GS ! 0x00` - Normal size
+
+**Impact Printers (TM-U220):**
+- `ESC ! 0x30` - Double width + height
+- `ESC ! 0x10` - Double height only
+- `ESC ! 0x00` - Normal size
+
+**Two-Color (Red Ribbon):**
+- `ESC r 0x01` - Red color
+- `ESC r 0x00` - Black color
+
+**Key Files:**
+- `src/lib/escpos/commands.ts` - ESC/POS command constants
+- `src/lib/escpos/document.ts` - Document building utilities
+- `src/lib/printer-connection.ts` - TCP socket connection to printers
+- `src/app/api/print/kitchen/route.ts` - Kitchen ticket generation
+- `src/types/pizza-print-settings.ts` - Pizza print settings types
+- `src/types/printer-settings.ts` - General printer settings types
+
+### KDS Device Security
+
+Production-ready device authentication for KDS screens. Prevents unauthorized access to kitchen displays.
+
+**Security Layers:**
+| Layer | Protection |
+|-------|-----------|
+| 256-bit token | Cryptographically secure device identity |
+| httpOnly cookie | XSS-proof token storage (auto-sent with requests) |
+| Secure + SameSite | HTTPS-only, CSRF protection |
+| 5-min pairing code | Time-limited code expiry |
+| Static IP binding | Optional network-level lock (for UniFi) |
+
+**Pairing Flow:**
+1. Admin generates 6-digit code at `/settings/hardware/kds-screens`
+2. Device enters code at `/kds/pair`
+3. Server issues token + sets httpOnly cookie (1-year expiry)
+4. All KDS requests verified against token + optional IP
+
+**Schema Fields (`KDSScreen`):**
+- `deviceToken` - Unique 256-bit token per paired device
+- `pairingCode` / `pairingCodeExpiresAt` - Temporary 6-digit code
+- `isPaired` - Pairing status
+- `staticIp` / `enforceStaticIp` - Optional IP binding
+- `lastKnownIp` / `deviceInfo` - Troubleshooting data
+
+**API Endpoints:**
+- `POST /api/hardware/kds-screens/[id]/generate-code` - Generate pairing code
+- `POST /api/hardware/kds-screens/pair` - Complete pairing
+- `GET /api/hardware/kds-screens/auth` - Verify device
+- `POST /api/hardware/kds-screens/[id]/unpair` - Remove pairing
+
+**Key Files:**
+- `src/app/api/hardware/kds-screens/auth/route.ts` - Device auth + IP check
+- `src/app/api/hardware/kds-screens/pair/route.ts` - Pairing + httpOnly cookie
+- `src/app/(kds)/kds/page.tsx` - Auth flow on KDS
+- `src/app/(kds)/kds/pair/page.tsx` - Pairing code entry UI
+- `docs/skills/102-KDS-DEVICE-SECURITY.md` - Full documentation
+
+### Mobile Device Security (Planned)
+
+Employee phones/tablets can be used as POS terminals via PWA. Security via QR + PIN system:
+
+**Clock-in Flow:**
+1. Employee clocks in at manager station
+2. System displays QR code (one-time use)
+3. Employee scans with phone → QR becomes 4-digit PIN
+4. Employee enters PIN on phone → session activated
+5. First-time devices get named ("Sarah's iPhone")
+
+**Session Rules:**
+- Session valid until clock-out or 8-hour max
+- Device bound to session token + fingerprint
+- Manager can revoke any session instantly
+- Periodic PIN re-entry for voids/discounts
+
+**Planned Schema:**
+```prisma
+model RegisteredDevice {
+  id                String    @id @default(cuid())
+  locationId        String
+  deviceFingerprint String    @unique
+  name              String              // "Sarah's iPhone"
+  type              String?             // phone, tablet, terminal
+  lastSeenAt        DateTime
+  isActive          Boolean   @default(true)
+  // ... sync fields
+}
+
+model DeviceSession {
+  id           String    @id @default(cuid())
+  locationId   String
+  employeeId   String
+  deviceId     String
+  token        String    @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  // ... sync fields
+}
+```
+
+**Full details:** See `/docs/GWI-ARCHITECTURE.md`
 
 ## Recent Changes
 

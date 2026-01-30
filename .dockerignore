@@ -1,0 +1,61 @@
+# Dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+.next
+out
+build
+
+# Database files (will be mounted as volume)
+prisma/*.db
+prisma/*.db-journal
+prisma/backups
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Documentation (keep README for reference)
+docs/
+CLAUDE.md
+INSTALL.txt
+
+# Tests
+__tests__
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+coverage
+.nyc_output
+
+# Development environment
+.env
+.env.local
+.env.development
+.env.test
+
+# Docker files (not needed in build context)
+docker/data
+docker/backups
+docker/config
+docker/.env
+
+# Misc
+*.log
+tmp/
+temp/
+.cache

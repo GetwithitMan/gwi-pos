@@ -88,6 +88,7 @@ export async function GET(request: NextRequest) {
             childModifierGroupId: mod.childModifierGroupId,
             commissionType: mod.commissionType,
             commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
+            printerIds: mod.printerIds,
             // Spirit fields
             spiritTier: mod.spiritTier,
             linkedBottleProductId: mod.linkedBottleProductId,
@@ -154,7 +155,7 @@ export async function POST(request: NextRequest) {
         hasOnlineOverride: hasOnlineOverride || false,
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         modifiers: modifiers?.length ? {
-          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number; showOnPOS?: boolean; showOnline?: boolean }, index: number) => ({
+          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number; showOnPOS?: boolean; showOnline?: boolean; printerRouting?: string; printerIds?: string[] }, index: number) => ({
             locationId: location.id,
             name: mod.name,
             price: mod.price || 0,
@@ -167,6 +168,8 @@ export async function POST(request: NextRequest) {
             commissionValue: mod.commissionValue ?? null,
             showOnPOS: mod.showOnPOS ?? true,
             showOnline: mod.showOnline ?? true,
+            printerRouting: mod.printerRouting ?? 'follow',
+            printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
             sortOrder: index,
           }))
         } : undefined
@@ -199,6 +202,8 @@ export async function POST(request: NextRequest) {
         commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
         showOnPOS: mod.showOnPOS,
         showOnline: mod.showOnline,
+        printerRouting: mod.printerRouting,
+        printerIds: mod.printerIds,
       }))
     })
   } catch (error) {

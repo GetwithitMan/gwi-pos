@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 interface SplitRequest {
-  type: 'even' | 'by_item' | 'custom_amount' | 'get_splits'
+  type: 'even' | 'by_item' | 'by_seat' | 'custom_amount' | 'get_splits'
   // For even split
   numWays?: number
   // For by_item split
@@ -399,6 +399,191 @@ export async function POST(
             price: Number(item.price),
           })),
         },
+      })
+    }
+
+    if (body.type === 'by_seat') {
+      // Split by seat - each seat gets its own check
+      // Group items by seat number
+      const itemsBySeat = new Map<number | null, typeof order.items>()
+
+      for (const item of order.items) {
+        const seat = item.seatNumber
+        if (!itemsBySeat.has(seat)) {
+          itemsBySeat.set(seat, [])
+        }
+        itemsBySeat.get(seat)!.push(item)
+      }
+
+      // Check if there are items with seat assignments
+      const seatsWithItems = Array.from(itemsBySeat.keys()).filter(s => s !== null)
+      if (seatsWithItems.length < 2) {
+        return NextResponse.json(
+          { error: 'Need at least 2 seats with items to split by seat' },
+          { status: 400 }
+        )
+      }
+
+      // Don't re-split an already split order
+      if (isAlreadySplit) {
+        return NextResponse.json(
+          { error: 'Order is already split. Navigate between existing splits.' },
+          { status: 400 }
+        )
+      }
+
+      // Get base order number
+      const baseOrderNumber = order.orderNumber
+
+      // Get current max split index
+      const existingSplits = await db.order.count({
+        where: { parentOrderId: order.id },
+      })
+
+      // Create a split order for each seat
+      const splitOrders = []
+      let splitIndex = existingSplits
+
+      // Sort seats numerically
+      const sortedSeats = seatsWithItems.sort((a, b) => (a ?? 0) - (b ?? 0))
+
+      for (const seatNumber of sortedSeats) {
+        const seatItems = itemsBySeat.get(seatNumber) || []
+        if (seatItems.length === 0) continue
+
+        splitIndex++
+
+        // Calculate totals for this seat's items
+        let seatSubtotal = 0
+        const newItems = seatItems.map(item => {
+          const itemTotal = Number(item.price) * item.quantity
+          const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+          seatSubtotal += itemTotal + modifiersTotal
+
+          return {
+            locationId: order.locationId,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            itemTotal: item.itemTotal,
+            specialNotes: item.specialNotes,
+            seatNumber: item.seatNumber,
+            courseNumber: item.courseNumber,
+            modifiers: {
+              create: item.modifiers.map(mod => ({
+                locationId: order.locationId,
+                modifierId: mod.modifierId,
+                name: mod.name,
+                price: mod.price,
+                quantity: mod.quantity,
+                preModifier: mod.preModifier,
+                spiritTier: mod.spiritTier,
+                linkedBottleProductId: mod.linkedBottleProductId,
+              })),
+            },
+          }
+        })
+
+        const seatTax = Math.round(seatSubtotal * taxRate * 100) / 100
+        const seatTotal = Math.round((seatSubtotal + seatTax) * 100) / 100
+
+        // Create split order for this seat
+        const splitOrder = await db.order.create({
+          data: {
+            orderNumber: baseOrderNumber,
+            displayNumber: `${baseOrderNumber}-${splitIndex}`,
+            locationId: order.locationId,
+            employeeId: order.employeeId,
+            customerId: order.customerId,
+            orderType: order.orderType,
+            status: 'open',
+            tableId: order.tableId,
+            tabName: order.tabName,
+            guestCount: 1,
+            subtotal: seatSubtotal,
+            discountTotal: 0,
+            taxTotal: seatTax,
+            tipTotal: 0,
+            total: seatTotal,
+            parentOrderId: order.id,
+            splitIndex,
+            notes: `Seat ${seatNumber} from order #${baseOrderNumber}`,
+            items: {
+              create: newItems,
+            },
+          },
+          include: {
+            items: {
+              include: { modifiers: true },
+            },
+          },
+        })
+
+        splitOrders.push({
+          id: splitOrder.id,
+          orderNumber: splitOrder.orderNumber,
+          splitIndex: splitOrder.splitIndex,
+          displayNumber: `${baseOrderNumber}-${splitIndex}`,
+          seatNumber,
+          total: Number(splitOrder.total),
+          itemCount: splitOrder.items.length,
+          paidAmount: 0,
+          isPaid: false,
+        })
+      }
+
+      // Delete items from original order (they've been copied to split orders)
+      const itemIdsToRemove = seatsWithItems.flatMap(seat =>
+        itemsBySeat.get(seat)?.map(item => item.id) || []
+      )
+
+      await db.orderItemModifier.deleteMany({
+        where: {
+          orderItem: { id: { in: itemIdsToRemove } },
+        },
+      })
+      await db.orderItem.deleteMany({
+        where: { id: { in: itemIdsToRemove } },
+      })
+
+      // Recalculate original order totals (for items without seat assignment)
+      const remainingItems = itemsBySeat.get(null) || []
+      let remainingSubtotal = 0
+      remainingItems.forEach(item => {
+        const itemTotal = Number(item.price) * item.quantity
+        const modifiersTotal = item.modifiers.reduce((sum, m) => sum + Number(m.price), 0) * item.quantity
+        remainingSubtotal += itemTotal + modifiersTotal
+      })
+
+      const remainingTax = Math.round(remainingSubtotal * taxRate * 100) / 100
+      const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
+
+      // Update original order totals
+      await db.order.update({
+        where: { id: order.id },
+        data: {
+          subtotal: remainingSubtotal,
+          taxTotal: remainingTax,
+          total: remainingTotal,
+          notes: order.notes
+            ? `${order.notes}\n[Split by seat: ${sortedSeats.length} seats]`
+            : `[Split by seat: ${sortedSeats.length} seats]`,
+        },
+      })
+
+      return NextResponse.json({
+        type: 'by_seat',
+        parentOrder: {
+          id: order.id,
+          orderNumber: order.orderNumber,
+          total: remainingTotal,
+          itemCount: remainingItems.length,
+          hasUnassignedItems: remainingItems.length > 0,
+        },
+        splits: splitOrders,
+        seatCount: sortedSeats.length,
+        message: `Order #${baseOrderNumber} split into ${sortedSeats.length} checks by seat`,
       })
     }
 

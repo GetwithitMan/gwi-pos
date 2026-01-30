@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 
+// LocalStorage keys for device authentication
+const DEVICE_TOKEN_KEY = 'kds_device_token'
+const SCREEN_CONFIG_KEY = 'kds_screen_config'
+
 interface IngredientMod {
   id: string
   ingredientName: string
@@ -22,6 +26,11 @@ interface KDSItem {
   resendCount: number
   lastResentAt: string | null
   resendNote: string | null
+  // Coursing info (T013)
+  courseNumber: number | null
+  courseStatus: string
+  isHeld: boolean
+  firedAt: string | null
   modifiers: { id: string; name: string; depth?: number }[]
   ingredientModifications: IngredientMod[]
 }
@@ -46,8 +55,32 @@ interface PrepStation {
   displayName: string | null
   color: string | null
   stationType: string
-  showAllItems: boolean
+  showAllItems?: boolean
 }
+
+interface ScreenConfig {
+  id: string
+  name: string
+  slug: string | null
+  screenType: string
+  locationId: string
+  columns: number
+  fontSize: string
+  colorScheme: string
+  agingWarning: number
+  lateWarning: number
+  playSound: boolean
+  flashOnNew: boolean
+  stations: Array<{
+    id: string
+    name: string
+    displayName: string | null
+    stationType: string
+    color: string | null
+  }>
+}
+
+type AuthState = 'checking' | 'authenticated' | 'requires_pairing' | 'employee_fallback'
 
 const ORDER_TYPE_LABELS: Record<string, string> = {
   dine_in: 'Dine In',
@@ -63,12 +96,33 @@ const ORDER_TYPE_COLORS: Record<string, string> = {
   bar_tab: 'bg-green-600',
 }
 
+// Course colors for KDS display (T013)
+const COURSE_COLORS: Record<number, string> = {
+  0: '#EF4444', // ASAP - Red
+  1: '#3B82F6', // Course 1 - Blue
+  2: '#10B981', // Course 2 - Green
+  3: '#F59E0B', // Course 3 - Amber
+  4: '#EC4899', // Course 4 - Pink
+  5: '#8B5CF6', // Course 5 - Violet
+}
+
+const getCourseColor = (courseNumber: number): string => {
+  return COURSE_COLORS[courseNumber] || '#6B7280'
+}
+
 function KDSContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const stationId = searchParams.get('station')
-  const { employee, isAuthenticated } = useAuthStore()
+  const screenParam = searchParams.get('screen') // Can be slug or ID
+  const stationParam = searchParams.get('station') // Legacy station filter
+  const { employee, isAuthenticated: isEmployeeAuthenticated } = useAuthStore()
 
+  // Authentication state
+  const [authState, setAuthState] = useState<AuthState>('checking')
+  const [screenConfig, setScreenConfig] = useState<ScreenConfig | null>(null)
+  const [deviceToken, setDeviceToken] = useState<string | null>(null)
+
+  // KDS state
   const [orders, setOrders] = useState<KDSOrder[]>([])
   const [station, setStation] = useState<PrepStation | null>(null)
   const [stations, setStations] = useState<PrepStation[]>([])
@@ -77,33 +131,150 @@ function KDSContent() {
   const [showCompleted, setShowCompleted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // Load available stations
+  // Authenticate device on mount
   useEffect(() => {
-    if (employee?.location?.id) {
+    authenticateDevice()
+  }, [screenParam])
+
+  const authenticateDevice = async () => {
+    setAuthState('checking')
+
+    // Get stored token
+    const storedToken = localStorage.getItem(DEVICE_TOKEN_KEY)
+    const storedConfig = localStorage.getItem(SCREEN_CONFIG_KEY)
+
+    // If we have a screen parameter, try to authenticate
+    if (screenParam) {
+      try {
+        const headers: Record<string, string> = {}
+        if (storedToken) {
+          headers['x-device-token'] = storedToken
+        }
+
+        // Try to authenticate with the screen
+        const response = await fetch(
+          `/api/hardware/kds-screens/auth?slug=${encodeURIComponent(screenParam)}`,
+          { headers }
+        )
+
+        const data = await response.json()
+
+        if (response.ok && data.authenticated) {
+          // Successfully authenticated
+          setScreenConfig(data.screen)
+          setDeviceToken(storedToken)
+          localStorage.setItem(SCREEN_CONFIG_KEY, JSON.stringify(data.screen))
+          setAuthState('authenticated')
+          return
+        }
+
+        if (response.status === 401 && data.requiresPairing) {
+          // Screen requires pairing
+          setAuthState('requires_pairing')
+          return
+        }
+
+        // Screen not found or other error
+        if (response.status === 404) {
+          // Invalid screen parameter
+          console.error('Screen not found:', screenParam)
+        }
+      } catch (error) {
+        console.error('Authentication failed:', error)
+      }
+    }
+
+    // If we have a stored config and token, try to use them
+    if (storedToken && storedConfig) {
+      try {
+        const config = JSON.parse(storedConfig) as ScreenConfig
+
+        // Verify the token is still valid
+        const response = await fetch(
+          `/api/hardware/kds-screens/auth?screenId=${config.id}`,
+          { headers: { 'x-device-token': storedToken } }
+        )
+
+        if (response.ok) {
+          const data = await response.json()
+          setScreenConfig(data.screen)
+          setDeviceToken(storedToken)
+          setAuthState('authenticated')
+          return
+        }
+      } catch (error) {
+        // Invalid stored config, clear it
+        localStorage.removeItem(DEVICE_TOKEN_KEY)
+        localStorage.removeItem(SCREEN_CONFIG_KEY)
+      }
+    }
+
+    // Fall back to employee authentication (for managers/troubleshooting)
+    if (isEmployeeAuthenticated && employee) {
+      setAuthState('employee_fallback')
+      return
+    }
+
+    // No authentication - require pairing
+    setAuthState('requires_pairing')
+  }
+
+  // Redirect to pairing if needed
+  useEffect(() => {
+    if (authState === 'requires_pairing') {
+      const returnUrl = screenParam ? `/kds?screen=${screenParam}` : '/kds'
+      router.push(`/kds/pair?returnTo=${encodeURIComponent(returnUrl)}${screenParam ? `&screen=${screenParam}` : ''}`)
+    }
+  }, [authState, screenParam, router])
+
+  // Load stations based on screen config or employee location
+  useEffect(() => {
+    if (authState === 'authenticated' && screenConfig) {
+      // Use stations from screen config
+      setStations(screenConfig.stations)
+    } else if (authState === 'employee_fallback' && employee?.location?.id) {
       loadStations()
     }
-  }, [employee?.location?.id])
+  }, [authState, screenConfig, employee?.location?.id])
 
   // Load orders on interval
   useEffect(() => {
-    if (!employee?.location?.id) return
+    if (authState !== 'authenticated' && authState !== 'employee_fallback') return
 
     loadOrders()
-    const interval = setInterval(loadOrders, 5000) // Refresh every 5 seconds
+    const interval = setInterval(loadOrders, 5000)
 
-    return () => clearInterval(interval)
-  }, [employee?.location?.id, stationId, showCompleted])
+    // Also send heartbeat every 30 seconds
+    const heartbeatInterval = setInterval(sendHeartbeat, 30000)
+    sendHeartbeat() // Initial heartbeat
 
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/kds')
+    return () => {
+      clearInterval(interval)
+      clearInterval(heartbeatInterval)
     }
-  }, [isAuthenticated, router])
+  }, [authState, screenConfig, stationParam, showCompleted])
+
+  const sendHeartbeat = async () => {
+    if (!screenConfig || !deviceToken) return
+
+    try {
+      await fetch(`/api/hardware/kds-screens/${screenConfig.id}/heartbeat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-device-token': deviceToken,
+        },
+      })
+    } catch (error) {
+      console.error('Heartbeat failed:', error)
+    }
+  }
 
   const loadStations = async () => {
+    if (!employee?.location?.id) return
+
     try {
-      const response = await fetch(`/api/prep-stations?locationId=${employee?.location?.id}`)
+      const response = await fetch(`/api/prep-stations?locationId=${employee.location.id}`)
       if (response.ok) {
         const data = await response.json()
         setStations(data.stations || [])
@@ -113,24 +284,54 @@ function KDSContent() {
     }
   }
 
+  const getLocationId = () => {
+    if (screenConfig?.locationId) return screenConfig.locationId
+    if (employee?.location?.id) return employee.location.id
+    return 'loc-1' // Fallback
+  }
+
+  const getStationIds = () => {
+    // If using screen config, use its assigned stations
+    if (screenConfig?.stations?.length) {
+      return screenConfig.stations.map(s => s.id)
+    }
+    // If using legacy station param
+    if (stationParam) {
+      return [stationParam]
+    }
+    return null // All stations
+  }
+
   const loadOrders = useCallback(async () => {
-    if (!employee?.location?.id) return
+    const locationId = getLocationId()
+    if (!locationId) return
 
     try {
-      const params = new URLSearchParams({
-        locationId: employee.location.id,
-      })
-      if (stationId) {
-        params.append('stationId', stationId)
+      const params = new URLSearchParams({ locationId })
+
+      const stationIds = getStationIds()
+      if (stationIds && stationIds.length > 0) {
+        stationIds.forEach(id => params.append('stationId', id))
       } else {
         params.append('showAll', 'true')
       }
 
-      const response = await fetch(`/api/kds?${params}`)
+      const headers: Record<string, string> = {}
+      if (deviceToken) {
+        headers['x-device-token'] = deviceToken
+      }
+
+      const response = await fetch(`/api/kds?${params}`, { headers })
+
+      if (response.status === 401) {
+        // Token expired or invalid
+        setAuthState('requires_pairing')
+        return
+      }
+
       if (response.ok) {
         const data = await response.json()
 
-        // Filter out orders where all items are completed (unless showCompleted)
         let filteredOrders = data.orders || []
         if (!showCompleted) {
           filteredOrders = filteredOrders.filter((order: KDSOrder) =>
@@ -147,13 +348,16 @@ function KDSContent() {
     } finally {
       setIsLoading(false)
     }
-  }, [employee?.location?.id, stationId, showCompleted])
+  }, [screenConfig, stationParam, showCompleted, deviceToken])
 
   const handleBumpItem = async (itemId: string) => {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (deviceToken) headers['x-device-token'] = deviceToken
+
       await fetch('/api/kds', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           itemIds: [itemId],
           action: 'complete',
@@ -173,9 +377,12 @@ function KDSContent() {
     if (incompleteItemIds.length === 0) return
 
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (deviceToken) headers['x-device-token'] = deviceToken
+
       await fetch('/api/kds', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           itemIds: incompleteItemIds,
           action: 'bump_order',
@@ -189,9 +396,12 @@ function KDSContent() {
 
   const handleUncompleteItem = async (itemId: string) => {
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (deviceToken) headers['x-device-token'] = deviceToken
+
       await fetch('/api/kds', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           itemIds: [itemId],
           action: 'uncomplete',
@@ -239,24 +449,67 @@ function KDSContent() {
     }
   }
 
-  if (!isAuthenticated) return null
+  // Show loading while checking auth
+  if (authState === 'checking') {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="text-gray-400 text-xl">Authenticating...</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show unauthorized screen (should redirect, but just in case)
+  if (authState === 'requires_pairing') {
+    return (
+      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <div className="w-20 h-20 bg-red-900/50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold mb-2">Device Not Authorized</h1>
+          <p className="text-gray-400 mb-6">This display needs to be paired before it can access the KDS.</p>
+          <button
+            onClick={() => router.push('/kds/pair')}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+          >
+            Pair This Device
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const displayName = screenConfig?.name || station?.displayName || station?.name || 'All Stations'
+  const locationName = employee?.location?.name || screenConfig?.locationId || ''
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       {/* Header */}
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.push('/orders')}
-            className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
+          {authState === 'employee_fallback' && (
+            <button
+              onClick={() => router.push('/orders')}
+              className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2">
-              {station ? (
+              {screenConfig ? (
+                <>
+                  <span className="w-3 h-3 rounded-full bg-green-500" title="Paired" />
+                  {screenConfig.name}
+                </>
+              ) : station ? (
                 <>
                   <span
                     className="w-4 h-4 rounded"
@@ -271,31 +524,36 @@ function KDSContent() {
             <p className="text-sm text-gray-400">
               {orders.length} order{orders.length !== 1 ? 's' : ''} •
               Updated {lastUpdate.toLocaleTimeString()}
+              {authState === 'employee_fallback' && (
+                <span className="ml-2 text-yellow-500">(Employee Mode)</span>
+              )}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Station Selector */}
-          <select
-            value={stationId || ''}
-            onChange={(e) => {
-              const newStation = e.target.value
-              if (newStation) {
-                router.push(`/kds?station=${newStation}`)
-              } else {
-                router.push('/kds')
-              }
-            }}
-            className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm"
-          >
-            <option value="">All Stations</option>
-            {stations.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.displayName || s.name}
-              </option>
-            ))}
-          </select>
+          {/* Station Selector - only for employee fallback mode */}
+          {authState === 'employee_fallback' && (
+            <select
+              value={stationParam || ''}
+              onChange={(e) => {
+                const newStation = e.target.value
+                if (newStation) {
+                  router.push(`/kds?station=${newStation}`)
+                } else {
+                  router.push('/kds')
+                }
+              }}
+              className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">All Stations</option>
+              {stations.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.displayName || s.name}
+                </option>
+              ))}
+            </select>
+          )}
 
           {/* Show Completed Toggle */}
           <button
@@ -357,7 +615,6 @@ function KDSContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
             {orders.map(order => {
               const allCompleted = order.items.every(item => item.isCompleted)
-              const someCompleted = order.items.some(item => item.isCompleted)
 
               return (
                 <div
@@ -412,52 +669,58 @@ function KDSContent() {
                             <div className={`font-medium ${item.isCompleted ? 'line-through text-gray-500' : 'text-white'}`}>
                               <span className="text-blue-400 mr-2">{item.quantity}x</span>
                               {item.name}
-                              {/* RESEND badge */}
+                              {/* Course badge (T013) */}
+                              {item.courseNumber != null && item.courseNumber >= 0 && (
+                                <span
+                                  className={`ml-2 px-1.5 py-0.5 text-xs font-bold rounded text-white ${item.isHeld ? 'animate-pulse ring-1 ring-red-400' : ''}`}
+                                  style={{ backgroundColor: getCourseColor(item.courseNumber) }}
+                                >
+                                  {item.courseNumber === 0 ? 'ASAP' : `C${item.courseNumber}`}
+                                  {item.courseStatus === 'fired' && ' '}
+                                  {item.courseStatus === 'ready' && ' '}
+                                </span>
+                              )}
+                              {/* Held badge */}
+                              {item.isHeld && (
+                                <span className="ml-1 px-1.5 py-0.5 bg-red-600 text-white text-xs font-bold rounded animate-pulse">
+                                  HOLD
+                                </span>
+                              )}
                               {item.resendCount > 0 && (
                                 <span className="ml-2 px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded animate-pulse">
-                                  🔄 RESEND{item.resendCount > 1 ? ` x${item.resendCount}` : ''}
+                                  RESEND{item.resendCount > 1 ? ` x${item.resendCount}` : ''}
                                 </span>
                               )}
                             </div>
 
-                            {/* Resend Note - shows why item was resent */}
                             {item.resendNote && (
-                              <div className={`mt-1 text-sm font-medium ${
-                                item.isCompleted ? 'text-gray-600' : 'text-red-400'
-                              }`}>
-                                📝 {item.resendNote}
+                              <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-red-400'}`}>
+                                {item.resendNote}
                               </div>
                             )}
 
-                            {/* Ingredient Modifications */}
-                            {item.ingredientModifications && item.ingredientModifications.length > 0 && (
+                            {item.ingredientModifications?.length > 0 && (
                               <div className="mt-1 space-y-0.5">
                                 {item.ingredientModifications.map(ing => (
                                   <div
                                     key={ing.id}
                                     className={`text-sm pl-4 font-semibold ${
-                                      item.isCompleted
-                                        ? 'text-gray-600'
-                                        : ing.modificationType === 'no'
-                                          ? 'text-red-400'
-                                          : ing.modificationType === 'swap'
-                                            ? 'text-purple-400'
-                                            : ing.modificationType === 'extra'
-                                              ? 'text-green-400'
-                                              : 'text-cyan-400'
+                                      item.isCompleted ? 'text-gray-600' :
+                                      ing.modificationType === 'no' ? 'text-red-400' :
+                                      ing.modificationType === 'swap' ? 'text-purple-400' :
+                                      ing.modificationType === 'extra' ? 'text-green-400' : 'text-cyan-400'
                                     }`}
                                   >
-                                    {ing.modificationType === 'no' && `❌ NO ${ing.ingredientName}`}
-                                    {ing.modificationType === 'lite' && `⬇ LITE ${ing.ingredientName}`}
-                                    {ing.modificationType === 'on_side' && `📦 SIDE ${ing.ingredientName}`}
-                                    {ing.modificationType === 'extra' && `⬆ EXTRA ${ing.ingredientName}`}
-                                    {ing.modificationType === 'swap' && `🔄 SWAP ${ing.ingredientName} → ${ing.swappedToModifierName}`}
+                                    {ing.modificationType === 'no' && `NO ${ing.ingredientName}`}
+                                    {ing.modificationType === 'lite' && `LITE ${ing.ingredientName}`}
+                                    {ing.modificationType === 'on_side' && `SIDE ${ing.ingredientName}`}
+                                    {ing.modificationType === 'extra' && `EXTRA ${ing.ingredientName}`}
+                                    {ing.modificationType === 'swap' && `SWAP ${ing.ingredientName} → ${ing.swappedToModifierName}`}
                                   </div>
                                 ))}
                               </div>
                             )}
 
-                            {/* Modifiers with hierarchy dashes */}
                             {item.modifiers.length > 0 && (
                               <div className="mt-1 space-y-0.5">
                                 {item.modifiers.map(mod => {
@@ -467,11 +730,7 @@ function KDSContent() {
                                     <div
                                       key={mod.id}
                                       className={`text-sm pl-4 ${
-                                        item.isCompleted
-                                          ? 'text-gray-600'
-                                          : depth === 0
-                                            ? 'text-yellow-400'
-                                            : 'text-yellow-300'
+                                        item.isCompleted ? 'text-gray-600' : depth === 0 ? 'text-yellow-400' : 'text-yellow-300'
                                       }`}
                                     >
                                       {prefix}{mod.name}
@@ -481,17 +740,13 @@ function KDSContent() {
                               </div>
                             )}
 
-                            {/* Special Notes */}
                             {item.specialNotes && (
-                              <div className={`mt-1 text-sm font-medium ${
-                                item.isCompleted ? 'text-gray-600' : 'text-orange-400'
-                              }`}>
-                                ⚠ {item.specialNotes}
+                              <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-orange-400'}`}>
+                                {item.specialNotes}
                               </div>
                             )}
                           </div>
 
-                          {/* Completion indicator */}
                           {item.isCompleted ? (
                             <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0">
                               <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -506,7 +761,6 @@ function KDSContent() {
                     ))}
                   </div>
 
-                  {/* Order Notes */}
                   {order.notes && (
                     <div className="px-4 py-2 bg-orange-900/30 border-t border-orange-800/50">
                       <p className="text-sm text-orange-300">
@@ -515,7 +769,6 @@ function KDSContent() {
                     </div>
                   )}
 
-                  {/* Bump Order Button */}
                   {!allCompleted && (
                     <div className="p-3 border-t border-gray-700">
                       <button
@@ -533,10 +786,10 @@ function KDSContent() {
         )}
       </div>
 
-      {/* Footer - Current Time */}
+      {/* Footer */}
       <div className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 px-4 py-2 flex justify-between items-center text-sm">
         <span className="text-gray-400">
-          {employee?.location?.name}
+          {locationName}
         </span>
         <span className="font-mono text-2xl">
           {new Date().toLocaleTimeString('en-US', {
@@ -545,7 +798,8 @@ function KDSContent() {
             second: '2-digit',
           })}
         </span>
-        <span className="text-gray-400">
+        <span className="text-gray-400 flex items-center gap-2">
+          {screenConfig && <span className="w-2 h-2 rounded-full bg-green-500" />}
           KDS v1.0
         </span>
       </div>

@@ -28,6 +28,18 @@ export interface TipSettings {
   calculateOn: 'subtotal' | 'total'
 }
 
+export interface TipShareSettings {
+  // Payout method
+  payoutMethod: 'payroll' | 'manual'  // payroll = auto-added to payroll, manual = use report to pay out
+
+  // Auto tip-out at closeout
+  autoTipOutEnabled: boolean          // Enable automatic role-based tip-outs at shift closeout
+  requireTipOutAcknowledgment: boolean // Server must acknowledge tip-out before completing closeout
+
+  // Display settings
+  showTipSharesOnReceipt: boolean     // Include tip share breakdown on shift receipt
+}
+
 export interface ReceiptSettings {
   headerText: string
   footerText: string
@@ -53,7 +65,7 @@ export interface PaymentSettings {
   preAuthExpirationDays: number
 
   // Card processing (go-live)
-  processor: 'none' | 'stripe' | 'square'
+  processor: 'none' | 'square' | 'magtek'
   testMode: boolean
 }
 
@@ -210,6 +222,7 @@ export interface LocationSettings {
   dualPricing: DualPricingSettings
   priceRounding: PriceRoundingSettings
   tips: TipSettings
+  tipShares: TipShareSettings
   receipts: ReceiptSettings
   payments: PaymentSettings
   loyalty: LoyaltySettings
@@ -241,6 +254,12 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     enabled: true,
     suggestedPercentages: [18, 20, 22, 25],
     calculateOn: 'subtotal',
+  },
+  tipShares: {
+    payoutMethod: 'payroll',              // Default: tip shares go to payroll
+    autoTipOutEnabled: true,              // Auto tip-out based on rules
+    requireTipOutAcknowledgment: true,    // Server must acknowledge tip-out
+    showTipSharesOnReceipt: true,         // Show on shift receipt
   },
   receipts: {
     headerText: 'Thank you for your visit!',
@@ -325,6 +344,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     tips: {
       ...DEFAULT_SETTINGS.tips,
       ...(partial.tips || {}),
+    },
+    tipShares: {
+      ...DEFAULT_SETTINGS.tipShares,
+      ...(partial.tipShares || {}),
     },
     receipts: {
       ...DEFAULT_SETTINGS.receipts,
