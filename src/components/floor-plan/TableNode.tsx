@@ -9,6 +9,7 @@ interface TableNodeProps {
   isSelected: boolean
   isDragging: boolean
   isDropTarget: boolean
+  isColliding?: boolean  // Whether the table collides with fixtures during drag
   combinedGroupColor?: string  // Color shared by all tables in a combined group
   showSeats?: boolean  // Whether to display seat indicators
   selectedSeat?: { tableId: string; seatNumber: number } | null
@@ -72,6 +73,7 @@ export const TableNode = memo(function TableNode({
   isSelected,
   isDragging,
   isDropTarget,
+  isColliding = false,
   combinedGroupColor,
   showSeats = false,
   selectedSeat,
@@ -214,7 +216,7 @@ export const TableNode = memo(function TableNode({
 
   return (
     <motion.div
-      className={`table-node status-${table.status} ${isSelected ? 'selected' : ''} ${isDropTarget ? 'drop-target' : ''} ${isCombined ? 'combined' : ''} ${isLocked ? 'locked' : ''} ${isInVirtualGroup ? 'virtual-combined' : ''} ${isVirtualCombineSelected ? 'virtual-combine-selected' : ''} ${isVirtualCombineUnavailable ? 'virtual-combine-unavailable' : ''}`}
+      className={`table-node status-${table.status} ${isSelected ? 'selected' : ''} ${isDropTarget ? 'drop-target' : ''} ${isColliding ? 'colliding' : ''} ${isCombined ? 'combined' : ''} ${isLocked ? 'locked' : ''} ${isInVirtualGroup ? 'virtual-combined' : ''} ${isVirtualCombineSelected ? 'virtual-combine-selected' : ''} ${isVirtualCombineUnavailable ? 'virtual-combine-unavailable' : ''}`}
       style={{
         left: table.posX,
         top: table.posY,
@@ -230,7 +232,7 @@ export const TableNode = memo(function TableNode({
       }}
       initial={{ opacity: 0, scale: 0.9, rotate: 0 }}
       animate={{
-        opacity: 1,
+        opacity: isColliding ? 0.7 : 1,
         scale: isDragging ? 1.05 : isSelected ? 1.02 : 1,
         rotate: table.rotation || 0,
       }}
@@ -258,21 +260,30 @@ export const TableNode = memo(function TableNode({
           height: '100%',
         }}
         animate={{
-          boxShadow: [
-            `inset 0 1px 1px rgba(255, 255, 255, 0.05)`,
-            `0 4px 12px rgba(0, 0, 0, 0.3)`,
-            `0 0 ${isSelected ? '30px' : '20px'} ${glowColor}`,
-            `0 0 ${isSelected ? '50px' : '40px'} ${hasCombinedColor ? `${combinedGroupColor}4D` : glowColor.replace(/[\d.]+\)$/, '0.3)')}`,
-          ].join(', '),
-          borderColor: isDropTarget
-            ? '#22c55e'
-            : hasCombinedColor
-              ? combinedGroupColor
-              : isSelected
-                ? '#6366f1'
-                : 'rgba(255, 255, 255, 0.1)',
-          borderWidth: isDropTarget || isSelected || hasCombinedColor ? '2px' : '1px',
-          borderStyle: isDropTarget || isCombined || isPartOfCombinedGroup ? 'dashed' : 'solid',
+          boxShadow: isColliding
+            ? [
+                `inset 0 1px 1px rgba(255, 255, 255, 0.05)`,
+                `0 4px 12px rgba(0, 0, 0, 0.3)`,
+                `0 0 30px rgba(239, 68, 68, 0.8)`,
+                `0 0 50px rgba(239, 68, 68, 0.5)`,
+              ].join(', ')
+            : [
+                `inset 0 1px 1px rgba(255, 255, 255, 0.05)`,
+                `0 4px 12px rgba(0, 0, 0, 0.3)`,
+                `0 0 ${isSelected ? '30px' : '20px'} ${glowColor}`,
+                `0 0 ${isSelected ? '50px' : '40px'} ${hasCombinedColor ? `${combinedGroupColor}4D` : glowColor.replace(/[\d.]+\)$/, '0.3)')}`,
+              ].join(', '),
+          borderColor: isColliding
+            ? '#ef4444'
+            : isDropTarget
+              ? '#22c55e'
+              : hasCombinedColor
+                ? combinedGroupColor
+                : isSelected
+                  ? '#6366f1'
+                  : 'rgba(255, 255, 255, 0.1)',
+          borderWidth: isColliding || isDropTarget || isSelected || hasCombinedColor ? '3px' : '1px',
+          borderStyle: isColliding ? 'solid' : isDropTarget || isCombined || isPartOfCombinedGroup ? 'dashed' : 'solid',
         }}
         transition={{ duration: 0.3 }}
       >
@@ -291,6 +302,31 @@ export const TableNode = memo(function TableNode({
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           />
         )}
+
+        {/* Collision indicator - shows when dragging over fixture */}
+        <AnimatePresence>
+          {isColliding && (
+            <motion.div
+              className="absolute inset-0 flex items-center justify-center pointer-events-none"
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.5 }}
+              transition={{ duration: 0.2 }}
+            >
+              <motion.div
+                className="bg-red-500 rounded-full p-2 shadow-lg"
+                animate={{
+                  scale: [1, 1.1, 1],
+                }}
+                transition={{ duration: 1, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <svg width="24" height="24" fill="white" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+                </svg>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Pulsing glow for virtual combined tables */}
         {isInVirtualGroup && effectiveVirtualGroupColor && (

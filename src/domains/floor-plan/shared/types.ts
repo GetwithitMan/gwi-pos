@@ -6,6 +6,9 @@
  * Do not modify without Domain PM approval.
  */
 
+// Re-export collision detection types and functions
+export * from './collisionDetection'
+
 // =============================================================================
 // COORDINATE SYSTEM
 // =============================================================================

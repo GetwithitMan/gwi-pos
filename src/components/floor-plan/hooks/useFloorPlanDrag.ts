@@ -8,10 +8,12 @@
  * - Coordinate transformation for auto-scaled floor plans
  * - Ghost preview calculation for visual feedback
  * - Drop target detection with hit testing
+ * - Collision detection with fixtures (walls, bar counters, etc.)
  */
 
 import { useState, useCallback, useMemo, RefObject } from 'react'
 import { calculateAttachSide, calculateAttachPosition } from '../table-positioning'
+import { checkTableAllFixturesCollision, type FixtureBounds } from '@/domains/floor-plan/shared/collisionDetection'
 
 interface TableLike {
   id: string
@@ -23,9 +25,21 @@ interface TableLike {
   combinedTableIds?: string[] | null
 }
 
+interface FixtureLike {
+  id: string
+  visualType: string
+  posX: number
+  posY: number
+  width: number
+  height: number
+  geometry?: any
+  thickness?: number
+}
+
 interface UseFloorPlanDragOptions {
   containerRef: RefObject<HTMLDivElement | null>
   tablesRef: RefObject<TableLike[]>
+  fixturesRef: RefObject<FixtureLike[]>
   autoScaleRef: RefObject<number>
   autoScaleOffsetRef: RefObject<{ x: number; y: number }>
   draggedTableId: string | null
@@ -48,11 +62,13 @@ interface UseFloorPlanDragResult {
   handlePointerUp: () => Promise<void>
   ghostPreview: GhostPreview | null
   lastDropPosition: { x: number; y: number } | null
+  isColliding: boolean
 }
 
 export function useFloorPlanDrag({
   containerRef,
   tablesRef,
+  fixturesRef,
   autoScaleRef,
   autoScaleOffsetRef,
   draggedTableId,
@@ -63,6 +79,9 @@ export function useFloorPlanDrag({
 }: UseFloorPlanDragOptions): UseFloorPlanDragResult {
   // Track drop position for ghost preview and combine API
   const [lastDropPosition, setLastDropPosition] = useState<{ x: number; y: number } | null>(null)
+
+  // Track collision state for visual feedback
+  const [isColliding, setIsColliding] = useState(false)
 
   // Handle pointer move during drag
   // Transforms screen coordinates to floor plan coordinates when auto-scaled
@@ -85,6 +104,51 @@ export function useFloorPlanDrag({
 
     setLastDropPosition({ x, y })
 
+    // Get dragged table for collision checking
+    const draggedTable = tablesRef.current.find(t => t.id === draggedTableId)
+    if (!draggedTable) return
+
+    // Check collision with fixtures at the current drag position
+    // Convert fixtures to FixtureBounds format for collision detection
+    const fixtureBounds: FixtureBounds[] = fixturesRef.current.map(fixture => {
+      // Determine fixture type based on visualType
+      let fixtureType: 'wall' | 'rectangle' | 'circle' = 'rectangle'
+      if (fixture.visualType === 'wall' || fixture.geometry?.start) {
+        fixtureType = 'wall'
+      } else if (fixture.visualType === 'pillar' || fixture.visualType === 'planter_builtin') {
+        fixtureType = 'circle'
+      }
+
+      return {
+        id: fixture.id,
+        type: fixtureType,
+        visualType: fixture.visualType,
+        x: fixture.posX + fixture.width / 2, // Convert to center-based coords
+        y: fixture.posY + fixture.height / 2,
+        width: fixture.width,
+        height: fixture.height,
+        centerX: fixtureType === 'circle' ? fixture.posX + fixture.width / 2 : undefined,
+        centerY: fixtureType === 'circle' ? fixture.posY + fixture.height / 2 : undefined,
+        radius: fixtureType === 'circle' ? Math.max(fixture.width, fixture.height) / 2 : undefined,
+        geometry: fixture.geometry,
+        thickness: fixture.thickness,
+      }
+    })
+
+    // Check if table would collide with any fixtures at current position
+    const collisionResult = checkTableAllFixturesCollision(
+      {
+        x: x + draggedTable.width / 2, // Convert to center-based coords
+        y: y + draggedTable.height / 2,
+        width: draggedTable.width,
+        height: draggedTable.height,
+      },
+      fixtureBounds
+    )
+
+    // Update collision state for visual feedback
+    setIsColliding(collisionResult.collides)
+
     // Hit test against all tables except the dragged one
     for (const table of tablesRef.current) {
       if (table.id === draggedTableId) continue
@@ -100,16 +164,26 @@ export function useFloorPlanDrag({
       }
     }
     updateDragTarget(null)
-  }, [draggedTableId, containerRef, autoScaleRef, autoScaleOffsetRef, tablesRef, updateDragTarget])
+  }, [draggedTableId, containerRef, autoScaleRef, autoScaleOffsetRef, tablesRef, fixturesRef, updateDragTarget])
 
   // Handle pointer up - execute combine if dropped on a target
   const handlePointerUp = useCallback(async () => {
+    // Prevent combine if colliding with fixtures
+    if (isColliding) {
+      console.warn('[useFloorPlanDrag] Cannot place table - collides with fixture')
+      endDrag()
+      setLastDropPosition(null)
+      setIsColliding(false)
+      return
+    }
+
     if (draggedTableId && dropTargetTableId) {
       await onCombine(draggedTableId, dropTargetTableId, lastDropPosition || undefined)
     }
     endDrag()
     setLastDropPosition(null)
-  }, [draggedTableId, dropTargetTableId, onCombine, endDrag, lastDropPosition])
+    setIsColliding(false)
+  }, [draggedTableId, dropTargetTableId, isColliding, onCombine, endDrag, lastDropPosition])
 
   // Calculate ghost preview position for visual feedback
   const ghostPreview = useMemo((): GhostPreview | null => {
@@ -184,5 +258,6 @@ export function useFloorPlanDrag({
     handlePointerUp,
     ghostPreview,
     lastDropPosition,
+    isColliding,
   }
 }

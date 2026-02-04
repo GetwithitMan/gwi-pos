@@ -382,6 +382,10 @@ export function FloorPlanHome({
   const tablesRef = useRef(tables)
   tablesRef.current = tables
 
+  // Ref for fixtures/elements data (for collision detection)
+  const fixturesRef = useRef(elements)
+  fixturesRef.current = elements
+
   // FIX: Refs for auto-scale values (needed in handlePointerMove for coordinate transformation)
   const autoScaleRef = useRef(autoScale)
   autoScaleRef.current = autoScale
@@ -1945,9 +1949,11 @@ export function FloorPlanHome({
     handlePointerMove,
     handlePointerUp,
     ghostPreview,
+    isColliding,
   } = useFloorPlanDrag({
     containerRef,
     tablesRef,
+    fixturesRef,
     autoScaleRef,
     autoScaleOffsetRef,
     draggedTableId,
@@ -2846,6 +2852,7 @@ export function FloorPlanHome({
                           isSelected={selectedTableId === table.id || isInActiveGroup}
                           isDragging={draggedTableId === table.id}
                           isDropTarget={dropTargetTableId === table.id}
+                          isColliding={draggedTableId === table.id && isColliding}
                           combinedGroupColor={combinedGroupColors.get(table.id)}
                           showSeats={showSeats}
                           selectedSeat={selectedSeat}
