@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   DndContext,
@@ -59,7 +59,11 @@ import { AddToWaitlistModal } from '@/components/entertainment/AddToWaitlistModa
 import { OrderSettingsModal } from '@/components/orders/OrderSettingsModal'
 import { AdminNav } from '@/components/admin/AdminNav'
 import { TablePickerModal } from '@/components/orders/TablePickerModal'
-import { FloorPlanHome } from '@/components/floor-plan'
+import { FloorPlanHome, FloorPlanHomeV2 } from '@/components/floor-plan'
+import { BartenderView } from '@/components/bartender'
+import { isFloorPlanV2Enabled } from '@/lib/feature-flags'
+import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
+import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig } from '@/types'
 
 export default function OrdersPage() {
@@ -77,15 +81,23 @@ export default function OrdersPage() {
   const [showTotalBreakdown, setShowTotalBreakdown] = useState(false)
 
   // Floor Plan integration (T019)
-  // viewMode: 'floor-plan' = default HOME view, 'order-entry' = traditional POS screen
+  // viewMode: 'floor-plan' = default HOME view, 'bartender' = speed-optimized bar view, 'order-entry' = legacy POS screen (deprecated)
+  // T023: FloorPlanHome is now the default for ALL users including bartenders
+  // T024: Bartenders can switch to bartender view for faster tab management
   const isBartender = employee?.role?.name?.toLowerCase() === 'bartender'
-  const [viewMode, setViewMode] = useState<'floor-plan' | 'order-entry'>(isBartender ? 'order-entry' : 'floor-plan')
+  const [viewMode, setViewMode] = useState<'floor-plan' | 'bartender' | 'order-entry'>('floor-plan')
 
   // Check if user has admin/manager permissions
   // Handle both array permissions (new format) and role name check
   const permissionsArray = Array.isArray(employee?.permissions) ? employee.permissions : []
+
+  // Full manager access (can do everything)
   const isManager = employee?.role?.name && ['Manager', 'Owner', 'Admin'].includes(employee.role.name) ||
     permissionsArray.some(p => ['admin', 'manage_menu', 'manage_employees'].includes(p))
+
+  // Can access admin nav (reports, settings, etc.) - more inclusive
+  const canAccessAdmin = isManager ||
+    permissionsArray.some(p => p.startsWith('reports.') || p.startsWith('settings.') || p.startsWith('tips.'))
 
   // Modifier selection state
   const [showModifierModal, setShowModifierModal] = useState(false)
@@ -99,6 +111,13 @@ export default function OrdersPage() {
     specialNotes?: string
     pizzaConfig?: PizzaOrderConfig
   } | null>(null)
+
+  // T023: Inline ordering modifier callback ref
+  const inlineModifierCallbackRef = useRef<((modifiers: { id: string; name: string; price: number }[]) => void) | null>(null)
+  // T023: Inline ordering timed rental callback ref
+  const inlineTimedRentalCallbackRef = useRef<((price: number, blockMinutes: number) => void) | null>(null)
+  // T023: Inline ordering pizza builder callback ref
+  const inlinePizzaCallbackRef = useRef<((config: PizzaOrderConfig) => void) | null>(null)
 
   // Pizza builder state
   const [showPizzaModal, setShowPizzaModal] = useState(false)
@@ -135,6 +154,12 @@ export default function OrdersPage() {
     setMenuItemStyle,
     resetMenuItemStyle,
     resetAllMenuItemStyles,
+    // Quick Bar (T035)
+    quickBar,
+    quickBarEnabled,
+    addToQuickBar,
+    removeFromQuickBar,
+    isInQuickBar,
   } = usePOSLayout({
     employeeId: employee?.id,
     locationId: employee?.location?.id,
@@ -155,13 +180,35 @@ export default function OrdersPage() {
   // Menu item color picker state
   const [colorPickerMenuItem, setColorPickerMenuItem] = useState<MenuItem | null>(null)
 
+  // Quick Bar items with full data (T035)
+  const [quickBarItems, setQuickBarItems] = useState<{
+    id: string
+    name: string
+    price: number
+    bgColor?: string | null
+    textColor?: string | null
+  }[]>([])
+
+  // Context menu state for menu items (right-click)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    item: MenuItem
+  } | null>(null)
+
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [orderToPayId, setOrderToPayId] = useState<string | null>(null)
 
+  // Order to load into FloorPlanHome (for editing from Open Orders panel)
+  const [orderToLoad, setOrderToLoad] = useState<{ id: string; orderNumber: number; tableId?: string; tabName?: string; orderType: string } | null>(null)
+
   // Receipt modal state
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [receiptOrderId, setReceiptOrderId] = useState<string | null>(null)
+
+  // Order that was just paid - triggers FloorPlanHome to clear its state
+  const [paidOrderId, setPaidOrderId] = useState<string | null>(null)
 
   // Split check modal state
   const [showSplitModal, setShowSplitModal] = useState(false)
@@ -465,6 +512,41 @@ export default function OrdersPage() {
       startOrder('dine_in', { guestCount: 1 })
     }
   }, [currentOrder, startOrder])
+
+  // Load quick bar items when quickBar changes (T035)
+  useEffect(() => {
+    if (!quickBar || quickBar.length === 0) {
+      setQuickBarItems([])
+      return
+    }
+
+    const loadQuickBarItems = async () => {
+      try {
+        const itemPromises = quickBar.map(async (itemId) => {
+          const res = await fetch(`/api/menu/items/${itemId}`)
+          if (res.ok) {
+            const data = await res.json()
+            const customStyle = menuItemColors[itemId]
+            return {
+              id: data.item.id,
+              name: data.item.name,
+              price: Number(data.item.price),
+              bgColor: customStyle?.bgColor || null,
+              textColor: customStyle?.textColor || null,
+            }
+          }
+          return null
+        })
+
+        const items = await Promise.all(itemPromises)
+        setQuickBarItems(items.filter(Boolean) as typeof quickBarItems)
+      } catch (error) {
+        console.error('[Orders] Quick bar items load error:', error)
+      }
+    }
+
+    loadQuickBarItems()
+  }, [quickBar, menuItemColors])
 
   const handleLogout = () => {
     clearOrder()
@@ -910,7 +992,7 @@ export default function OrdersPage() {
 
   // Handle split check result
   const handleSplitComplete = (result: {
-    type: 'even' | 'by_item' | 'by_seat' | 'custom_amount' | 'split_item'
+    type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'split_item'
     originalOrderId: string
     splits?: { splitNumber: number; amount: number }[]
     newOrderId?: string
@@ -918,6 +1000,7 @@ export default function OrdersPage() {
     splitAmount?: number
     itemSplits?: { itemId: string; itemName: string; splitNumber: number; amount: number }[]
     seatSplits?: { seatNumber: number; total: number; splitOrderId: string }[]
+    tableSplits?: { tableId: string; tableName: string; total: number; splitOrderId: string }[]
   }) => {
     setShowSplitModal(false)
 
@@ -948,6 +1031,15 @@ export default function OrdersPage() {
       alert(`${seatCount} separate checks created (one per seat).\n\nView them in Open Orders.`)
       setTabsRefreshTrigger(prev => prev + 1)
       // Clear current order since items were moved to seat-specific checks
+      clearOrder()
+      setSavedOrderId(null)
+    } else if (result.type === 'by_table' && result.tableSplits) {
+      // Split by table - multiple checks created (for virtual combined tables)
+      const tableCount = result.tableSplits.length
+      const tableNames = result.tableSplits.map(s => s.tableName).join(', ')
+      alert(`${tableCount} separate checks created (one per table: ${tableNames}).\n\nView them in Open Orders.`)
+      setTabsRefreshTrigger(prev => prev + 1)
+      // Clear current order since items were moved to table-specific checks
       clearOrder()
       setSavedOrderId(null)
     } else if (result.type === 'custom_amount' && result.splitAmount) {
@@ -1329,10 +1421,10 @@ export default function OrdersPage() {
       setShowModifierModal(true)
 
       try {
-        const response = await fetch(`/api/menu/items/${item.id}/modifiers`)
+        const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
         if (response.ok) {
           const data = await response.json()
-          setItemModifierGroups(data.modifierGroups || [])
+          setItemModifierGroups(data.data || [])
         }
       } catch (error) {
         console.error('Failed to load modifiers:', error)
@@ -1351,8 +1443,64 @@ export default function OrdersPage() {
     }
   }
 
+  // Handle quick bar item click - add to order (T035)
+  const handleQuickBarItemClick = async (itemId: string) => {
+    try {
+      const res = await fetch(`/api/menu/items/${itemId}`)
+      if (!res.ok) return
+
+      const { item } = await res.json()
+      handleAddItem({
+        id: item.id,
+        name: item.name,
+        price: Number(item.price),
+        categoryId: item.categoryId,
+        isAvailable: item.isAvailable ?? true,
+        itemType: item.itemType,
+        modifierGroupCount: item.modifierGroups?.length || 0,
+      } as MenuItem)
+    } catch (error) {
+      console.error('[Orders] Quick bar item load error:', error)
+    }
+  }
+
+  // Handle right-click on menu item (context menu) (T035)
+  const handleMenuItemContextMenu = (e: React.MouseEvent, item: MenuItem) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      item,
+    })
+  }
+
+  // Close context menu
+  const closeContextMenu = () => {
+    setContextMenu(null)
+  }
+
   const handleAddItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => {
     if (!selectedItem) return
+
+    // T023: If there's an inline modifier callback, call it and return
+    // This is used when adding items from the floor plan inline ordering
+    if (inlineModifierCallbackRef.current) {
+      const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
+      const simplifiedModifiers = modifiers.map(mod => ({
+        id: mod.id,
+        name: mod.preModifier
+          ? `${mod.preModifier.charAt(0).toUpperCase() + mod.preModifier.slice(1)} ${mod.name}`
+          : mod.name,
+        price: applyToMods && pourMultiplier ? mod.price * pourMultiplier : mod.price,
+      }))
+      inlineModifierCallbackRef.current(simplifiedModifiers)
+      inlineModifierCallbackRef.current = null
+      setShowModifierModal(false)
+      setSelectedItem(null)
+      setItemModifierGroups([])
+      return
+    }
 
     // Apply pour multiplier to base price
     const basePrice = pourMultiplier ? selectedItem.price * pourMultiplier : selectedItem.price
@@ -1400,6 +1548,16 @@ export default function OrdersPage() {
   // Handle adding pizza to order
   const handleAddPizzaToOrder = (config: PizzaOrderConfig) => {
     if (!selectedPizzaItem) return
+
+    // T023: Check if this is inline ordering callback
+    if (inlinePizzaCallbackRef.current) {
+      inlinePizzaCallbackRef.current(config)
+      inlinePizzaCallbackRef.current = null
+      setShowPizzaModal(false)
+      setSelectedPizzaItem(null)
+      setEditingPizzaItem(null)
+      return
+    }
 
     // Build display name with size info
     const itemName = selectedPizzaItem.name
@@ -1721,6 +1879,21 @@ export default function OrdersPage() {
       rateAmount = pricing[selectedRateType] || pricing.perHour || pricing.per30Min || pricing.per15Min || selectedTimedItem.price
     }
 
+    // Calculate block time in minutes based on selected rate type
+    let blockMinutes = 60 // default to 1 hour
+    if (selectedRateType === 'per15Min') blockMinutes = 15
+    else if (selectedRateType === 'per30Min') blockMinutes = 30
+    else if (selectedRateType === 'perHour') blockMinutes = 60
+
+    // T023: Check if this is inline ordering callback - skip API session creation
+    if (inlineTimedRentalCallbackRef.current) {
+      inlineTimedRentalCallbackRef.current(rateAmount, blockMinutes)
+      inlineTimedRentalCallbackRef.current = null
+      setShowTimedRentalModal(false)
+      setSelectedTimedItem(null)
+      return
+    }
+
     setLoadingSession(true)
     try {
       const response = await fetch('/api/timed-sessions', {
@@ -2026,54 +2199,183 @@ export default function OrdersPage() {
     return null
   }
 
-  // Floor Plan HOME view (T019)
+  // Floor Plan HOME view (T023 - Major UX Overhaul)
+  // The floor plan IS the main order screen - no navigation away
+  // T014: Feature flag for V2 migration - gradual rollout
+  const useFloorPlanV2 = isFloorPlanV2Enabled(employee.location?.id)
+
   if (viewMode === 'floor-plan' && employee.location?.id) {
     return (
       <>
-        <FloorPlanHome
-          locationId={employee.location.id}
-          employeeId={employee.id}
-          employeeName={employee.displayName}
-          employeeRole={employee.role?.name}
-          isManager={isManager}
-          onNavigateToOrders={async (tableId, orderId) => {
-            // Table workflow: open order entry with table context
-            if (orderId) {
-              // Load existing order from API
+        {useFloorPlanV2 ? (
+          // V2: Clean architecture with server-side geometry
+          // Note: V2 has its own internal nav/toolbar, but shares modals with this page
+          <div className="relative h-screen">
+            {/* V2 Floor Plan Header - mimics V1's header capabilities */}
+            <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 py-2 bg-slate-900/90 backdrop-blur-sm border-b border-slate-700">
+              <div className="flex items-center gap-3">
+                <span className="text-white font-medium">{employee.displayName}</span>
+                <span className="text-slate-400 text-sm">{employee.role?.name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowTabsPanel(true)}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg transition-colors"
+                >
+                  Open Orders
+                </button>
+                {isBartender && (
+                  <button
+                    onClick={() => setViewMode('bartender')}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition-colors"
+                  >
+                    Bar View
+                  </button>
+                )}
+                {canAccessAdmin && (
+                  <button
+                    onClick={() => setShowAdminNav(true)}
+                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-sm rounded-lg transition-colors"
+                  >
+                    Admin
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowDisplaySettings(true)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </button>
+                <button
+                  onClick={logout}
+                  className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            {/* V2 Floor Plan Component */}
+            <div className="pt-14 h-full">
+              <FloorPlanHomeV2
+                locationId={employee.location.id}
+                employeeId={employee.id}
+                mode="service"
+                onOpenPayment={(orderId) => {
+                  setOrderToPayId(orderId)
+                  setShowPaymentModal(true)
+                }}
+                onOpenModifiers={async (item, onComplete) => {
+                  try {
+                    inlineModifierCallbackRef.current = onComplete
+                    setLoadingModifiers(true)
+                    setSelectedItem(item as MenuItem)
+                    setShowModifierModal(true)
+
+                    const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
+                    if (response.ok) {
+                      const data = await response.json()
+                      setItemModifierGroups(data.data || [])
+                    }
+                    setLoadingModifiers(false)
+                  } catch (error) {
+                    console.error('Failed to load modifiers:', error)
+                    setLoadingModifiers(false)
+                    inlineModifierCallbackRef.current = null
+                  }
+                }}
+                onOpenTimedRental={(item, onComplete) => {
+                  inlineTimedRentalCallbackRef.current = onComplete
+                  setSelectedTimedItem(item as MenuItem)
+                  setSelectedRateType('perHour')
+                  setShowTimedRentalModal(true)
+                }}
+                onOpenPizzaBuilder={(item, onComplete) => {
+                  inlinePizzaCallbackRef.current = onComplete
+                  setSelectedPizzaItem(item as MenuItem)
+                  setEditingPizzaItem(null)
+                  setShowPizzaModal(true)
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          // V1: Legacy FloorPlanHome (full-featured, to be deprecated)
+          <FloorPlanHome
+            locationId={employee.location.id}
+            employeeId={employee.id}
+            employeeName={employee.displayName}
+            employeeRole={employee.role?.name}
+            isManager={canAccessAdmin}
+            onLogout={logout}
+            onSwitchUser={() => {
+              // Navigate to login for user switch
+              logout()
+            }}
+            onOpenSettings={() => setShowDisplaySettings(true)}
+            onOpenAdminNav={() => setShowAdminNav(true)}
+            onSwitchToBartenderView={() => setViewMode('bartender')}
+            onOpenPayment={(orderId) => {
+              // T023: Open payment modal for inline ordering
+              setOrderToPayId(orderId)
+              setShowPaymentModal(true)
+            }}
+            onOpenModifiers={async (item, onComplete) => {
+              // T023: Open modifier modal for inline ordering
               try {
-                const res = await fetch(`/api/orders/${orderId}`)
-                if (res.ok) {
-                  const orderData = await res.json()
-                  loadOrder(orderData)
+                // Store the callback to be called when modifiers are confirmed
+                inlineModifierCallbackRef.current = onComplete
+                setLoadingModifiers(true)
+                setSelectedItem(item as MenuItem)
+                setShowModifierModal(true)
+
+                const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
+                if (response.ok) {
+                  const data = await response.json()
+                  setItemModifierGroups(data.data || [])
                 }
+                setLoadingModifiers(false)
               } catch (error) {
-                console.error('Failed to load order:', error)
+                console.error('Failed to load modifiers:', error)
+                setLoadingModifiers(false)
+                inlineModifierCallbackRef.current = null
               }
-            } else if (tableId) {
-              // Start a new dine-in order attached to this table
-              startOrder('dine_in')
-              // TODO: Associate order with table via table picker or direct assignment
-            }
-            setViewMode('order-entry')
-          }}
-          onStartNewTab={() => {
-            // Tab workflow: start a bar tab with no table
-            startOrder('bar_tab')
-            setViewMode('order-entry')
-          }}
-          onCategoryClick={(categoryId) => {
-            // Tab workflow: tap category first → start bar tab with that category selected
-            startOrder('bar_tab')
-            setSelectedCategory(categoryId)
-            setViewMode('order-entry')
-          }}
-          onLogout={logout}
-          onOpenSettings={() => setShowDisplaySettings(true)}
-          onOpenAdminNav={() => setShowAdminNav(true)}
-        />
+            }}
+            onOpenOrdersPanel={() => {
+              // T023: Open the open orders panel/modal
+              setShowTabsPanel(true)
+            }}
+            onOpenTimedRental={(item, onComplete) => {
+              // T023: Open timed rental modal for inline ordering
+              inlineTimedRentalCallbackRef.current = onComplete
+              setSelectedTimedItem(item as MenuItem)
+              setSelectedRateType('perHour')
+              setShowTimedRentalModal(true)
+            }}
+            onOpenPizzaBuilder={(item, onComplete) => {
+              // T023: Open pizza builder modal for inline ordering
+              inlinePizzaCallbackRef.current = onComplete
+              setSelectedPizzaItem(item as MenuItem)
+              setEditingPizzaItem(null)
+              setShowPizzaModal(true)
+            }}
+            orderToLoad={orderToLoad}
+            onOrderLoaded={() => setOrderToLoad(null)}
+            paidOrderId={paidOrderId}
+            onPaidOrderCleared={() => setPaidOrderId(null)}
+          />
+        )}
         {/* Admin Nav Sidebar */}
         {showAdminNav && (
-          <AdminNav onClose={() => setShowAdminNav(false)} />
+          <AdminNav
+            forceOpen={true}
+            onClose={() => setShowAdminNav(false)}
+            permissions={employee?.permissions || []}
+          />
         )}
         {/* Display Settings Modal */}
         <POSDisplaySettingsModal
@@ -2082,6 +2384,320 @@ export default function OrdersPage() {
           settings={displaySettings}
           onUpdate={updateSetting}
           onBatchUpdate={updateSettings}
+        />
+        {/* Open Orders Panel */}
+        {showTabsPanel && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/30 z-40"
+              onClick={() => setShowTabsPanel(false)}
+            />
+            <div className="fixed left-0 top-0 bottom-0 w-80 bg-slate-900 shadow-xl z-50">
+              <OpenOrdersPanel
+                locationId={employee.location.id}
+                employeeId={employee.id}
+                refreshTrigger={tabsRefreshTrigger}
+                onSelectOrder={(order) => {
+                  // Open payment modal for the selected order
+                  setOrderToPayId(order.id)
+                  setShowPaymentModal(true)
+                  setShowTabsPanel(false)
+                }}
+                onViewOrder={(order) => {
+                  // Load order into FloorPlanHome for viewing/editing
+                  setOrderToLoad({
+                    id: order.id,
+                    orderNumber: order.orderNumber,
+                    tableId: order.tableId || undefined,
+                    tabName: order.tabName || undefined,
+                    orderType: order.orderType,
+                  })
+                  setShowTabsPanel(false)
+                }}
+                onNewTab={() => {
+                  // Close panel - user can use the Bar Tab button on the floor plan
+                  setShowTabsPanel(false)
+                }}
+              />
+            </div>
+          </>
+        )}
+        {/* Modifier Modal - shared with floor plan inline ordering */}
+        {showModifierModal && selectedItem && (
+          <ModifierModal
+            item={selectedItem}
+            modifierGroups={itemModifierGroups}
+            loading={loadingModifiers}
+            editingItem={editingOrderItem}
+            dualPricing={dualPricing}
+            initialNotes={editingOrderItem?.specialNotes}
+            onConfirm={editingOrderItem ? handleUpdateItemWithModifiers : handleAddItemWithModifiers}
+            onCancel={() => {
+              setShowModifierModal(false)
+              setSelectedItem(null)
+              setItemModifierGroups([])
+              setEditingOrderItem(null)
+              inlineModifierCallbackRef.current = null
+            }}
+          />
+        )}
+        {/* Pizza Builder Modal - shared with floor plan inline ordering */}
+        {showPizzaModal && selectedPizzaItem && (
+          <PizzaBuilderModal
+            item={selectedPizzaItem}
+            editingItem={editingPizzaItem}
+            onConfirm={handleAddPizzaToOrder}
+            onCancel={() => {
+              setShowPizzaModal(false)
+              setSelectedPizzaItem(null)
+              setEditingPizzaItem(null)
+              inlinePizzaCallbackRef.current = null
+            }}
+          />
+        )}
+        {/* Timed Rental Modal - shared with floor plan inline ordering */}
+        {showTimedRentalModal && selectedTimedItem && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+              <div className="p-4 border-b bg-purple-50">
+                <h2 className="text-lg font-bold text-purple-800">{selectedTimedItem.name}</h2>
+                <p className="text-sm text-purple-600">Start a timed session</p>
+              </div>
+              <div className="p-6">
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Rate
+                  </label>
+                  <div className="space-y-2">
+                    {selectedTimedItem.timedPricing?.per15Min ? (
+                      <button
+                        onClick={() => setSelectedRateType('per15Min')}
+                        className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
+                          selectedRateType === 'per15Min'
+                            ? 'border-purple-500 bg-purple-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <span>Per 15 minutes</span>
+                        <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.per15Min)}</span>
+                      </button>
+                    ) : null}
+                    {selectedTimedItem.timedPricing?.per30Min ? (
+                      <button
+                        onClick={() => setSelectedRateType('per30Min')}
+                        className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
+                          selectedRateType === 'per30Min'
+                            ? 'border-purple-500 bg-purple-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <span>Per 30 minutes</span>
+                        <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.per30Min)}</span>
+                      </button>
+                    ) : null}
+                    {selectedTimedItem.timedPricing?.perHour ? (
+                      <button
+                        onClick={() => setSelectedRateType('perHour')}
+                        className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
+                          selectedRateType === 'perHour'
+                            ? 'border-purple-500 bg-purple-50'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <span>Per hour</span>
+                        <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.perHour)}</span>
+                      </button>
+                    ) : null}
+                    {!selectedTimedItem.timedPricing?.per15Min &&
+                     !selectedTimedItem.timedPricing?.per30Min &&
+                     !selectedTimedItem.timedPricing?.perHour && (
+                      <button
+                        onClick={() => setSelectedRateType('perHour')}
+                        className="w-full p-3 rounded-lg border-2 text-left flex justify-between items-center border-purple-500 bg-purple-50"
+                      >
+                        <span>Per hour (base rate)</span>
+                        <span className="font-bold">{formatCurrency(selectedTimedItem.price)}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {selectedTimedItem.timedPricing?.minimum && (
+                  <p className="text-sm text-gray-500 mb-4">
+                    Minimum: {selectedTimedItem.timedPricing.minimum} minutes
+                  </p>
+                )}
+              </div>
+              <div className="p-4 border-t bg-gray-50 flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowTimedRentalModal(false)
+                    setSelectedTimedItem(null)
+                    inlineTimedRentalCallbackRef.current = null
+                  }}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleStartTimedSession}
+                  disabled={loadingSession}
+                  className="flex-1 bg-purple-500 hover:bg-purple-600"
+                >
+                  {loadingSession ? 'Starting...' : 'Start Timer'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Payment Modal - for floor plan inline ordering */}
+        {showPaymentModal && orderToPayId && (
+          <PaymentModal
+            isOpen={showPaymentModal}
+            onClose={() => {
+              setShowPaymentModal(false)
+              setOrderToPayId(null)
+            }}
+            orderId={orderToPayId}
+            orderTotal={0} // Will be fetched by modal
+            remainingBalance={0} // Will be fetched by modal
+            dualPricing={dualPricing}
+            paymentSettings={paymentSettings}
+            onPaymentComplete={async () => {
+              // Store order ID for receipt before closing payment modal
+              const paidOrderId = orderToPayId
+              setShowPaymentModal(false)
+              setOrderToPayId(null)
+              // Show receipt modal
+              if (paidOrderId) {
+                setReceiptOrderId(paidOrderId)
+                setShowReceiptModal(true)
+              }
+              // Refresh the floor plan to show updated table status
+              setTabsRefreshTrigger(prev => prev + 1)
+            }}
+            employeeId={employee?.id}
+          />
+        )}
+        {/* Receipt Modal - for floor plan after payment */}
+        <ReceiptModal
+          isOpen={showReceiptModal}
+          onClose={() => {
+            // Set paidOrderId to trigger FloorPlanHome to clear the order
+            if (receiptOrderId) {
+              setPaidOrderId(receiptOrderId)
+            }
+            setShowReceiptModal(false)
+            setReceiptOrderId(null)
+          }}
+          orderId={receiptOrderId}
+          locationId={employee.location?.id || ''}
+          receiptSettings={receiptSettings}
+        />
+      </>
+    )
+  }
+
+  // Bartender View - Speed-optimized for bar tabs (T024)
+  if (viewMode === 'bartender' && employee.location?.id) {
+    return (
+      <>
+        <BartenderView
+          locationId={employee.location.id}
+          employeeId={employee.id}
+          employeeName={employee.displayName}
+          onLogout={logout}
+          onSwitchToFloorPlan={() => setViewMode('floor-plan')}
+          onOpenPayment={(orderId) => {
+            setOrderToPayId(orderId)
+            setShowPaymentModal(true)
+          }}
+          onOpenModifiers={async (item, onComplete) => {
+            try {
+              inlineModifierCallbackRef.current = onComplete
+              setLoadingModifiers(true)
+              setSelectedItem(item as MenuItem)
+              setShowModifierModal(true)
+
+              const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
+              if (response.ok) {
+                const data = await response.json()
+                setItemModifierGroups(data.data || [])
+              }
+              setLoadingModifiers(false)
+            } catch (error) {
+              console.error('Failed to load modifiers:', error)
+              setLoadingModifiers(false)
+              inlineModifierCallbackRef.current = null
+            }
+          }}
+          // Settings props (TODO: load from location settings)
+          requireNameWithoutCard={false}
+          tapCardBehavior="close"
+        />
+        {/* Admin Nav Sidebar */}
+        {showAdminNav && (
+          <AdminNav
+            forceOpen={true}
+            onClose={() => setShowAdminNav(false)}
+            permissions={employee?.permissions || []}
+          />
+        )}
+        {/* Modifier Modal - shared */}
+        {showModifierModal && selectedItem && (
+          <ModifierModal
+            item={selectedItem}
+            modifierGroups={itemModifierGroups}
+            loading={loadingModifiers}
+            editingItem={editingOrderItem}
+            dualPricing={dualPricing}
+            initialNotes={editingOrderItem?.specialNotes}
+            onConfirm={editingOrderItem ? handleUpdateItemWithModifiers : handleAddItemWithModifiers}
+            onCancel={() => {
+              setShowModifierModal(false)
+              setSelectedItem(null)
+              setItemModifierGroups([])
+              setEditingOrderItem(null)
+              inlineModifierCallbackRef.current = null
+            }}
+          />
+        )}
+        {/* Payment Modal - shared */}
+        {showPaymentModal && orderToPayId && (
+          <PaymentModal
+            isOpen={showPaymentModal}
+            onClose={() => {
+              setShowPaymentModal(false)
+              setOrderToPayId(null)
+            }}
+            orderId={orderToPayId}
+            orderTotal={0}
+            remainingBalance={0}
+            dualPricing={dualPricing}
+            paymentSettings={paymentSettings}
+            onPaymentComplete={async () => {
+              const paidOrderId = orderToPayId
+              setShowPaymentModal(false)
+              setOrderToPayId(null)
+              if (paidOrderId) {
+                setReceiptOrderId(paidOrderId)
+                setShowReceiptModal(true)
+              }
+              setTabsRefreshTrigger(prev => prev + 1)
+            }}
+            employeeId={employee?.id}
+          />
+        )}
+        {/* Receipt Modal - for bartender after payment */}
+        <ReceiptModal
+          isOpen={showReceiptModal}
+          onClose={() => {
+            setShowReceiptModal(false)
+            setReceiptOrderId(null)
+          }}
+          orderId={receiptOrderId}
+          locationId={employee.location?.id || ''}
+          receiptSettings={receiptSettings}
         />
       </>
     )
@@ -2098,10 +2714,10 @@ export default function OrdersPage() {
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-xl border-b border-white/30 shadow-lg shadow-black/5 px-6 py-4 flex items-center justify-between overflow-visible relative z-50">
           <div className="flex items-center gap-4">
-            {/* GWI Icon - clickable for managers/owners to open admin sidebar */}
+            {/* GWI Icon - clickable for managers/owners to open employee menu */}
             {isManager ? (
               <button
-                onClick={() => setShowAdminNav(!showAdminNav)}
+                onClick={() => setShowMenu(!showMenu)}
                 className="flex items-center gap-4 hover:opacity-90 transition-all duration-200"
               >
                 <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-lg transition-all duration-300 ${
@@ -2304,8 +2920,9 @@ export default function OrdersPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setShowMenu(!showMenu)}
+              onClick={() => setShowAdminNav(!showAdminNav)}
               className="relative"
+              title="Admin Menu"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -2348,6 +2965,15 @@ export default function OrdersPage() {
               </button>
             )}
           </div>
+        )}
+
+        {/* Quick Access Bar (T035) */}
+        {quickBarEnabled && (
+          <QuickAccessBar
+            items={quickBarItems}
+            onItemClick={handleQuickBarItemClick}
+            onRemoveItem={removeFromQuickBar}
+          />
         )}
 
         {/* Favorites Bar */}
@@ -2632,19 +3258,19 @@ export default function OrdersPage() {
                       }`}
                     style={getItemStyles()}
                     onClick={() => !isEditingMenuItems && handleAddItem(item)}
-                    onContextMenu={(e) => {
-                      if (!canCustomize) return
-                      e.preventDefault()
-                      if (isFavorite) {
-                        removeFavorite(item.id)
-                      } else {
-                        addFavorite(item.id)
-                      }
-                    }}
+                    onContextMenu={(e) => handleMenuItemContextMenu(e, item)}
                   >
+                    {/* Quick Bar indicator (T035) */}
+                    {isInQuickBar(item.id) && (
+                      <span className="absolute top-2 right-2 text-orange-500 drop-shadow-[0_0_4px_rgba(249,115,22,0.6)]">
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      </span>
+                    )}
                     {/* Favorite star indicator with glow */}
                     {isFavorite && (
-                      <span className="absolute top-2 left-2 text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.6)]">
+                      <span className={`absolute top-2 ${isInQuickBar(item.id) ? 'left-2' : 'left-2'} text-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.6)]`}>
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                         </svg>
@@ -2751,6 +3377,7 @@ export default function OrdersPage() {
                   locationId={employee?.location?.id || ''}
                   selectedType={currentOrder?.orderType}
                   onSelectType={handleOrderTypeSelect}
+                  onBarModeClick={() => setMode('bar')}
                 />
               ) : (
                 // Fallback to hardcoded buttons if no order types configured
@@ -2769,15 +3396,13 @@ export default function OrdersPage() {
                   </button>
                   <button
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                      currentOrder?.orderType === 'bar_tab'
-                        ? currentMode === 'bar'
-                          ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-md shadow-blue-500/25'
-                          : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25'
+                      currentMode === 'bar'
+                        ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-md shadow-blue-500/25'
                         : 'bg-white/60 hover:bg-white/80 text-gray-700 border border-white/40 hover:shadow-md'
                     }`}
-                    onClick={() => startOrder('bar_tab')}
+                    onClick={() => setMode('bar')}
                   >
-                    Quick Tab
+                    Bar Mode
                   </button>
                   <button
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
@@ -3494,6 +4119,8 @@ export default function OrdersPage() {
             setSelectedItem(null)
             setItemModifierGroups([])
             setEditingOrderItem(null)
+            // T023: Clear inline modifier callback if set
+            inlineModifierCallbackRef.current = null
           }}
         />
       )}
@@ -3508,6 +4135,7 @@ export default function OrdersPage() {
             setShowPizzaModal(false)
             setSelectedPizzaItem(null)
             setEditingPizzaItem(null)
+            inlinePizzaCallbackRef.current = null // Clear inline callback
           }}
         />
       )}
@@ -3792,6 +4420,7 @@ export default function OrdersPage() {
                 onClick={() => {
                   setShowTimedRentalModal(false)
                   setSelectedTimedItem(null)
+                  inlineTimedRentalCallbackRef.current = null // Clear inline callback
                 }}
                 className="flex-1"
               >
@@ -4095,6 +4724,7 @@ export default function OrdersPage() {
           orderId={savedOrderId}
           item={compVoidItem}
           employeeId={employee.id}
+          locationId={employee.location?.id || ''}
           onComplete={handleCompVoidComplete}
         />
       )}
@@ -4314,6 +4944,24 @@ export default function OrdersPage() {
           }}
           onReset={() => {
             resetMenuItemStyle(colorPickerMenuItem.id)
+          }}
+        />
+      )}
+
+      {/* Menu Item Context Menu (right-click) (T035) */}
+      {contextMenu && (
+        <MenuItemContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          itemId={contextMenu.item.id}
+          itemName={contextMenu.item.name}
+          isInQuickBar={isInQuickBar(contextMenu.item.id)}
+          onClose={closeContextMenu}
+          onAddToQuickBar={() => addToQuickBar(contextMenu.item.id)}
+          onRemoveFromQuickBar={() => removeFromQuickBar(contextMenu.item.id)}
+          onCustomizeColor={() => {
+            setColorPickerMenuItem(contextMenu.item)
+            closeContextMenu()
           }}
         />
       )}
