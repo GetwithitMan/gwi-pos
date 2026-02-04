@@ -521,14 +521,9 @@ export async function POST(
           }
         }
 
-        // If collisions detected and not forcing, return warning
-        if (collisionResult.hasCollisions && !forceGenerate) {
-          return NextResponse.json({
-            warning: 'Seat collisions detected',
-            collisions: collisionResult.collisions,
-            seatPattern: pattern,
-            suggestedAction: 'Move or resize the table to avoid collisions, or use forceGenerate: true to proceed anyway.',
-          }, { status: 409 }) // Conflict
+        // Log collisions but proceed anyway - let the user arrange tables as needed
+        if (collisionResult.hasCollisions) {
+          console.warn(`[Seats] Detected ${collisionResult.collisions.length} potential collisions, proceeding anyway`)
         }
       } // End else block (table has valid position)
     } // End if (checkCollisions)

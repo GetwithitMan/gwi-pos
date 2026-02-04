@@ -143,7 +143,7 @@ export function EditorCanvas({
   const SEAT_MIN_DISTANCE = 10;       // Increased from 5 - clearer boundary
   const SEAT_RADIUS = 20;             // Increased from 15 - easier to click
   const SEAT_HIT_RADIUS = 25;         // Larger hit target for clicking
-  const SEAT_COLLISION_RADIUS = 12;   // Reduced collision radius - seats can be closer
+  const SEAT_COLLISION_RADIUS = 8;    // Small collision radius - allow seats to be very close
 
   // Check if a table would collide with any fixture
   const checkTableFixtureCollision = useCallback((
@@ -1054,18 +1054,7 @@ export function EditorCanvas({
         // Normalize to 0-360
         newRotation = ((newRotation % 360) + 360) % 360;
 
-        // Check if seats would collide with obstacles at new rotation
-        if (checkSeatsObstacleCollision(
-          selectedTableId,
-          currentTable.posX,
-          currentTable.posY,
-          currentTable.width,
-          currentTable.height,
-          newRotation
-        )) {
-          return; // Don't allow rotation if seats would collide
-        }
-
+        // Allow rotation - collision detection is only for awareness, not blocking
         onTableUpdate(selectedTableId, { rotation: newRotation });
         return;
       }
@@ -1250,22 +1239,8 @@ export function EditorCanvas({
           }
 
           // Check for collision with other tables (exclude self)
-          if (checkTableCollision(newPosX, newPosY, currentTable.width, currentTable.height, selectedTableId)) {
-            // Don't update position if collision detected
-            return;
-          }
-
-          // Check if seats would collide with obstacles at new position
-          if (checkSeatsObstacleCollision(
-            selectedTableId,
-            newPosX,
-            newPosY,
-            currentTable.width,
-            currentTable.height,
-            currentTable.rotation || 0
-          )) {
-            return; // Don't allow move if seats would collide
-          }
+          // Allow overlapping - manager can arrange tables as needed
+          // Table-to-table collision is soft (visual only), not blocking
         }
 
         onTableUpdate(selectedTableId, {
