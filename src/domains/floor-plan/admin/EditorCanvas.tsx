@@ -1034,6 +1034,18 @@ export function EditorCanvas({
         // Normalize to 0-360
         newRotation = ((newRotation % 360) + 360) % 360;
 
+        // Check if seats would collide with obstacles at new rotation
+        if (checkSeatsObstacleCollision(
+          selectedTableId,
+          currentTable.posX,
+          currentTable.posY,
+          currentTable.width,
+          currentTable.height,
+          newRotation
+        )) {
+          return; // Don't allow rotation if seats would collide
+        }
+
         onTableUpdate(selectedTableId, { rotation: newRotation });
         return;
       }
