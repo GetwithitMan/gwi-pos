@@ -20,6 +20,8 @@ import { sampleFloorPlans, sampleFixtures, sampleTables } from './sampleData';
 // =============================================================================
 // DATABASE FIXTURE CONVERSION
 // =============================================================================
+// IMPORTANT: Database stores positions in PIXELS for direct rendering
+// These fixtures are rendered DIRECTLY using pixel values (no feet conversion)
 
 interface DbFloorPlanElement {
   id: string;
@@ -39,11 +41,66 @@ interface DbFloorPlanElement {
   sectionId: string | null;
 }
 
-// Convert database element to Fixture for display
-function dbElementToFixture(el: DbFloorPlanElement, roomId: string): Fixture {
+interface DbSeat {
+  id: string;
+  label: string;
+  seatNumber: number;
+  relativeX: number;
+  relativeY: number;
+  angle: number;
+  seatType: string;
+}
+
+interface DbTable {
+  id: string;
+  name: string;
+  abbreviation: string | null;
+  capacity: number;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  shape: string;
+  status: string;
+  section: { id: string; name: string; color: string | null } | null;
+  seats: DbSeat[];
+}
+
+// Convert database element to a "pixel fixture" for DIRECT rendering (no feet conversion)
+// The returned fixture has geometry in PIXELS, not feet
+interface PixelFixture {
+  id: string;
+  floorPlanId: string;
+  roomId: string;
+  type: string;
+  category: string;
+  label: string;
+  geometry: {
+    type: 'rectangle';
+    position: { x: number; y: number };
+    width: number;
+    height: number;
+    rotation: number;
+  } | {
+    type: 'circle';
+    center: { x: number; y: number };
+    radius: number;
+  } | {
+    type: 'line';
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+  };
+  color: string;
+  opacity: number;
+  thickness: number;
+  isActive: boolean;
+}
+
+function dbElementToPixelFixture(el: DbFloorPlanElement, roomId: string): PixelFixture {
   const geometry = el.geometry as { type: string; [key: string]: unknown } | null;
 
-  let fixtureGeometry: Fixture['geometry'];
+  let fixtureGeometry: PixelFixture['geometry'];
   if (geometry?.type === 'line') {
     fixtureGeometry = {
       type: 'line',
@@ -51,10 +108,14 @@ function dbElementToFixture(el: DbFloorPlanElement, roomId: string): Fixture {
       end: (geometry.end as { x: number; y: number }) || { x: el.posX + el.width, y: el.posY },
     };
   } else if (geometry?.type === 'circle') {
+    // For circles, reconstruct from posX/posY/width/height (bounding box)
+    const centerX = el.posX + el.width / 2;
+    const centerY = el.posY + el.height / 2;
+    const radius = el.width / 2;
     fixtureGeometry = {
       type: 'circle',
-      center: (geometry.center as { x: number; y: number }) || { x: el.posX, y: el.posY },
-      radius: (geometry.radius as number) || el.width / 2,
+      center: { x: centerX, y: centerY },
+      radius: radius,
     };
   } else {
     fixtureGeometry = {
@@ -70,27 +131,25 @@ function dbElementToFixture(el: DbFloorPlanElement, roomId: string): Fixture {
     id: el.id,
     floorPlanId: roomId,
     roomId: roomId,
-    type: (el.visualType || 'custom_fixture') as Fixture['type'],
+    type: el.visualType || 'custom_fixture',
     category: 'barrier',
     label: el.name,
     geometry: fixtureGeometry,
     color: el.fillColor || '#666666',
     opacity: el.opacity,
     thickness: el.thickness,
-    height: null,
-    blocksPlacement: true,
-    blocksMovement: true,
-    snapTarget: false,
     isActive: true,
   };
 }
 
 // =============================================================================
-// DATABASE FIXTURE RENDERER
+// DATABASE FIXTURE RENDERER (PIXELS - NO CONVERSION)
 // =============================================================================
+// Renders fixtures using PIXEL coordinates directly from the database
+// NO feetToPixels conversion because DB already stores pixels
 
 interface DbFixtureRendererProps {
-  fixture: Fixture;
+  fixture: PixelFixture;
   onClick?: () => void;
 }
 
@@ -103,7 +162,7 @@ function DbFixtureRenderer({ fixture, onClick }: DbFixtureRendererProps) {
     border: '1px solid rgba(0,0,0,0.2)',
   };
 
-  // Render based on geometry type
+  // Render based on geometry type - using PIXEL values directly
   if (fixture.geometry.type === 'rectangle') {
     const { position, width, height, rotation } = fixture.geometry;
     return (
@@ -111,10 +170,10 @@ function DbFixtureRenderer({ fixture, onClick }: DbFixtureRendererProps) {
         onClick={onClick}
         style={{
           ...baseStyle,
-          left: FloorCanvasAPI.feetToPixels(position.x),
-          top: FloorCanvasAPI.feetToPixels(position.y),
-          width: FloorCanvasAPI.feetToPixels(width),
-          height: FloorCanvasAPI.feetToPixels(height),
+          left: position.x,  // Already in pixels
+          top: position.y,   // Already in pixels
+          width: width,      // Already in pixels
+          height: height,    // Already in pixels
           transform: `rotate(${rotation}deg)`,
           transformOrigin: 'center center',
         }}
@@ -131,10 +190,10 @@ function DbFixtureRenderer({ fixture, onClick }: DbFixtureRendererProps) {
         onClick={onClick}
         style={{
           ...baseStyle,
-          left: FloorCanvasAPI.feetToPixels(center.x - radius),
-          top: FloorCanvasAPI.feetToPixels(center.y - radius),
-          width: FloorCanvasAPI.feetToPixels(diameter),
-          height: FloorCanvasAPI.feetToPixels(diameter),
+          left: center.x - radius,  // Already in pixels
+          top: center.y - radius,   // Already in pixels
+          width: diameter,          // Already in pixels
+          height: diameter,         // Already in pixels
           borderRadius: '50%',
         }}
         title={fixture.label}
@@ -144,7 +203,7 @@ function DbFixtureRenderer({ fixture, onClick }: DbFixtureRendererProps) {
 
   if (fixture.geometry.type === 'line') {
     const { start, end } = fixture.geometry;
-    const thickness = fixture.thickness || 0.5;
+    const thickness = fixture.thickness || 10; // Default thickness in pixels
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const length = Math.sqrt(dx * dx + dy * dy);
@@ -155,10 +214,10 @@ function DbFixtureRenderer({ fixture, onClick }: DbFixtureRendererProps) {
         onClick={onClick}
         style={{
           ...baseStyle,
-          left: FloorCanvasAPI.feetToPixels(start.x),
-          top: FloorCanvasAPI.feetToPixels(start.y - thickness / 2),
-          width: FloorCanvasAPI.feetToPixels(length),
-          height: FloorCanvasAPI.feetToPixels(thickness),
+          left: start.x,              // Already in pixels
+          top: start.y - thickness / 2, // Already in pixels
+          width: length,              // Already in pixels
+          height: thickness,          // Already in pixels
           transform: `rotate(${angle}deg)`,
           transformOrigin: 'left center',
         }}
@@ -171,6 +230,95 @@ function DbFixtureRenderer({ fixture, onClick }: DbFixtureRendererProps) {
 }
 
 // =============================================================================
+// DATABASE TABLE RENDERER
+// =============================================================================
+
+interface DbTableRendererProps {
+  table: DbTable;
+  showSeats?: boolean;
+  onClick?: () => void;
+}
+
+function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
+  const isRound = table.shape === 'round' || table.shape === 'circle';
+
+  const tableCenterX = table.posX + table.width / 2;
+  const tableCenterY = table.posY + table.height / 2;
+
+  // Render seats with rotation
+  const renderSeats = () => {
+    if (!showSeats || !table.seats || table.seats.length === 0) return null;
+
+    return table.seats.map((seat) => {
+      // Apply table rotation to seat position
+      const angleRad = (table.rotation * Math.PI) / 180;
+      const cos = Math.cos(angleRad);
+      const sin = Math.sin(angleRad);
+
+      const rotatedX = seat.relativeX * cos - seat.relativeY * sin;
+      const rotatedY = seat.relativeX * sin + seat.relativeY * cos;
+
+      const seatAbsX = tableCenterX + rotatedX;
+      const seatAbsY = tableCenterY + rotatedY;
+
+      return (
+        <div
+          key={seat.id}
+          style={{
+            position: 'absolute',
+            left: seatAbsX - 15,
+            top: seatAbsY - 15,
+            width: 30,
+            height: 30,
+            backgroundColor: '#fff',
+            border: '2px solid #333',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 11,
+            fontWeight: 600,
+            pointerEvents: 'none',
+          }}
+        >
+          {seat.seatNumber}
+        </div>
+      );
+    });
+  };
+
+  return (
+    <>
+      <div
+        onClick={onClick}
+        style={{
+          position: 'absolute',
+          left: table.posX,
+          top: table.posY,
+          width: table.width,
+          height: table.height,
+          backgroundColor: table.status === 'occupied' ? '#ffcdd2' : '#e8f5e9',
+          border: '2px solid #666',
+          borderRadius: isRound ? '50%' : 8,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 12,
+          fontWeight: 600,
+          transform: `rotate(${table.rotation}deg)`,
+          transformOrigin: 'center center',
+        }}
+        title={`${table.name} (${table.capacity} seats)`}
+      >
+        {table.abbreviation || table.name}
+      </div>
+      {renderSeats()}
+    </>
+  );
+}
+
+// =============================================================================
 // TABLE RENDERER - Using Layer 2 Components
 // =============================================================================
 
@@ -180,6 +328,14 @@ const PIXELS_PER_FOOT = 40;
 // TEST PAGE COMPONENT
 // =============================================================================
 
+// Database section type
+interface DbSection {
+  id: string;
+  name: string;
+  widthFeet: number;
+  heightFeet: number;
+}
+
 export default function TestFloorPlanPage() {
   const [selectedRoomId, setSelectedRoomId] = useState<string>('room-main');
   const [clickedPosition, setClickedPosition] = useState<Point | null>(null);
@@ -187,10 +343,13 @@ export default function TestFloorPlanPage() {
   const [selectedSeat, setSelectedSeat] = useState<SeatType | null>(null);
 
   // Database fixtures from FloorPlanElement table
-  const [dbFixtures, setDbFixtures] = useState<Fixture[]>([]);
+  const [dbFixtures, setDbFixtures] = useState<PixelFixture[]>([]);
+  const [dbSections, setDbSections] = useState<DbSection[]>([]);
+  const [dbTables, setDbTables] = useState<DbTable[]>([]);
   const [locationId, setLocationId] = useState<string | null>(null);
   const [isDbMode, setIsDbMode] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [showDbSeats, setShowDbSeats] = useState(true);
 
   // Fetch database fixtures
   const fetchDbFixtures = useCallback(async (locId: string) => {
@@ -199,7 +358,7 @@ export default function TestFloorPlanPage() {
       if (res.ok) {
         const data = await res.json();
         const fixtures = (data.elements || []).map((el: DbFloorPlanElement) =>
-          dbElementToFixture(el, el.sectionId || 'db-room')
+          dbElementToPixelFixture(el, el.sectionId || 'db-room')
         );
         setDbFixtures(fixtures);
         setIsDbMode(fixtures.length > 0);
@@ -208,6 +367,45 @@ export default function TestFloorPlanPage() {
       }
     } catch (error) {
       console.error('[FOH] Failed to fetch database fixtures:', error);
+    }
+  }, []);
+
+  // Fetch database sections
+  const fetchDbSections = useCallback(async (locId: string) => {
+    try {
+      const res = await fetch(`/api/sections?locationId=${locId}`);
+      if (res.ok) {
+        const data = await res.json();
+        const sections = data.sections || [];
+        setDbSections(sections);
+        console.log(`[FOH] Loaded ${sections.length} sections from database`);
+        // Auto-select first section if available
+        if (sections.length > 0) {
+          setSelectedRoomId(sections[0].id);
+        }
+        return sections;
+      }
+    } catch (error) {
+      console.error('[FOH] Failed to fetch sections:', error);
+    }
+    return [];
+  }, []);
+
+  // Fetch database tables
+  const fetchDbTables = useCallback(async (locId: string, sectionId?: string) => {
+    try {
+      let url = `/api/tables?locationId=${locId}&includeSeats=true`;
+      if (sectionId) {
+        url += `&sectionId=${sectionId}`;
+      }
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setDbTables(data.tables || []);
+        console.log(`[FOH] Loaded ${(data.tables || []).length} tables from database`);
+      }
+    } catch (error) {
+      console.error('[FOH] Failed to fetch database tables:', error);
     }
   }, []);
 
@@ -220,9 +418,16 @@ export default function TestFloorPlanPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.locations && data.locations.length > 0) {
-            setLocationId(data.locations[0].id);
-            // Fetch database fixtures
-            await fetchDbFixtures(data.locations[0].id);
+            const locId = data.locations[0].id;
+            setLocationId(locId);
+            // Fetch database sections and fixtures
+            const sections = await fetchDbSections(locId);
+            await fetchDbFixtures(locId);
+            await fetchDbTables(locId);
+            // If we have sections, we're in DB mode
+            if (sections.length > 0) {
+              setIsDbMode(true);
+            }
           }
         }
       } catch {
@@ -250,10 +455,13 @@ export default function TestFloorPlanPage() {
         });
       }
 
-      setSelectedRoomId('room-main');
+      // Only set to room-main if not already set to a DB section
+      if (!isDbMode) {
+        setSelectedRoomId('room-main');
+      }
     }
     init();
-  }, [fetchDbFixtures]);
+  }, [fetchDbFixtures, fetchDbSections, fetchDbTables, isDbMode]);
 
   // Listen for floor-plan:updated socket events
   useEffect(() => {
@@ -266,6 +474,7 @@ export default function TestFloorPlanPage() {
     // Poll for updates every 5 seconds (simple approach without socket.io)
     intervalId = setInterval(() => {
       fetchDbFixtures(locationId);
+      fetchDbTables(locationId, selectedRoomId);
     }, 5000);
 
     console.log('[FOH] Started polling for floor plan updates');
@@ -309,7 +518,7 @@ export default function TestFloorPlanPage() {
     }
   };
 
-  const handleFixtureClick = (fixture: Fixture) => {
+  const handleFixtureClick = (fixture: PixelFixture | Fixture) => {
     alert(`Fixture clicked: ${fixture.label} (${fixture.type})`);
   };
 
@@ -329,30 +538,89 @@ export default function TestFloorPlanPage() {
         )}
       </p>
 
-      {/* Room Selector */}
-      <RoomSelector
-        selectedRoomId={selectedRoomId}
-        onRoomSelect={setSelectedRoomId}
-      />
+      {/* Room/Section Selector */}
+      {isDbMode && dbSections.length > 0 ? (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+          {dbSections.map((section) => (
+            <button
+              key={section.id}
+              onClick={() => setSelectedRoomId(section.id)}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                border: selectedRoomId === section.id ? '2px solid #3498db' : '1px solid #ccc',
+                backgroundColor: selectedRoomId === section.id ? '#e3f2fd' : 'white',
+                cursor: 'pointer',
+                fontWeight: selectedRoomId === section.id ? 600 : 400,
+                fontSize: 14,
+              }}
+            >
+              {section.name}
+            </button>
+          ))}
+
+          {/* Show/Hide Seats Toggle */}
+          <button
+            onClick={() => setShowDbSeats(!showDbSeats)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: '1px solid #ccc',
+              backgroundColor: showDbSeats ? '#e3f2fd' : 'white',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: showDbSeats ? 600 : 400,
+              marginLeft: 'auto',
+            }}
+          >
+            {showDbSeats ? 'Hide Seats' : 'Show Seats'}
+          </button>
+        </div>
+      ) : (
+        <RoomSelector
+          selectedRoomId={selectedRoomId}
+          onRoomSelect={setSelectedRoomId}
+        />
+      )}
 
       {/* Main Canvas */}
       <div style={{ display: 'flex', gap: 24 }}>
         <div>
           <FloorCanvas
             roomId={selectedRoomId}
-            showGrid={true}
+            showGrid={!isDbMode} // Disable grid in DB mode (we render our own canvas)
             showFixtures={!isDbMode}
+            // Pass dimensions from selected section for DB mode
+            width={isDbMode ? (dbSections.find(s => s.id === selectedRoomId)?.widthFeet || 40) * 20 : undefined}
+            height={isDbMode ? (dbSections.find(s => s.id === selectedRoomId)?.heightFeet || 30) * 20 : undefined}
             onPositionClick={handlePositionClick}
             onFixtureClick={handleFixtureClick}
           >
-            {/* Render database fixtures when in DB mode */}
-            {isDbMode && dbFixtures.map((fixture) => (
-              <DbFixtureRenderer
-                key={fixture.id}
-                fixture={fixture}
-                onClick={() => handleFixtureClick(fixture)}
-              />
-            ))}
+            {/* Render database fixtures when in DB mode - filter by selected section */}
+            {isDbMode && dbFixtures
+              .filter((fixture) => {
+                // In DB mode, filter by sectionId (stored as roomId in PixelFixture)
+                return fixture.roomId === selectedRoomId;
+              })
+              .map((fixture) => (
+                <DbFixtureRenderer
+                  key={fixture.id}
+                  fixture={fixture}
+                  onClick={() => handleFixtureClick(fixture)}
+                />
+              ))}
+
+            {/* Render database tables when in DB mode - filter by selected section */}
+            {isDbMode && dbTables
+              .filter((table) => table.section?.id === selectedRoomId)
+              .map((table) => (
+                <DbTableRenderer
+                  key={table.id}
+                  table={table}
+                  showSeats={showDbSeats}
+                  onClick={() => alert(`Table: ${table.name}`)}
+                />
+              ))}
 
             {/* Render tables using Layer 2 components (SVG) */}
             <svg

@@ -19,6 +19,7 @@ export type EditorToolMode =
   | 'WALL'
   | 'RECTANGLE'
   | 'CIRCLE'
+  | 'TABLE'
   | 'DELETE';
 
 // =============================================================================
@@ -217,4 +218,125 @@ export const FIXTURE_TYPE_MAP: Record<FixtureType, FixtureTypeMetadata> = FIXTUR
 // Helper to get metadata for a fixture type
 export function getFixtureTypeMetadata(type: FixtureType): FixtureTypeMetadata {
   return FIXTURE_TYPE_MAP[type] || FIXTURE_TYPES[FIXTURE_TYPES.length - 1];
+}
+
+// =============================================================================
+// TABLE TYPES (for Editor Layer)
+// =============================================================================
+
+export type TableShape = 'square' | 'rectangle' | 'round' | 'oval' | 'booth' | 'bar';
+
+export type SeatPattern = 'all_around' | 'front_only' | 'three_sides' | 'two_sides' | 'inside';
+
+export interface EditorTable {
+  id: string;
+  name: string;
+  abbreviation: string | null;
+  capacity: number;
+  posX: number; // pixels (same as fixtures in database)
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  shape: TableShape;
+  seatPattern: SeatPattern;
+  sectionId: string | null;
+  // Status fields
+  status: string;
+  isLocked: boolean;
+  // Seats (optional, for rendering)
+  seats?: EditorSeat[];
+}
+
+export interface EditorSeat {
+  id: string;
+  tableId: string;
+  label: string;
+  seatNumber: number;
+  relativeX: number;
+  relativeY: number;
+  angle: number;
+  seatType: string;
+}
+
+export interface TableTypeMetadata {
+  shape: TableShape;
+  label: string;
+  defaultWidth: number;  // pixels
+  defaultHeight: number; // pixels
+  defaultCapacity: number;
+  defaultSeatPattern: SeatPattern;
+  icon: string;
+}
+
+// Table shape definitions for the editor
+export const TABLE_SHAPES: TableTypeMetadata[] = [
+  {
+    shape: 'square',
+    label: 'Square (4-top)',
+    defaultWidth: 80,
+    defaultHeight: 80,
+    defaultCapacity: 4,
+    defaultSeatPattern: 'all_around',
+    icon: '⬜',
+  },
+  {
+    shape: 'rectangle',
+    label: 'Rectangle (6-top)',
+    defaultWidth: 120,
+    defaultHeight: 80,
+    defaultCapacity: 6,
+    defaultSeatPattern: 'all_around',
+    icon: '▭',
+  },
+  {
+    shape: 'round',
+    label: 'Round (4-top)',
+    defaultWidth: 80,
+    defaultHeight: 80,
+    defaultCapacity: 4,
+    defaultSeatPattern: 'all_around',
+    icon: '⬤',
+  },
+  {
+    shape: 'oval',
+    label: 'Oval (8-top)',
+    defaultWidth: 160,
+    defaultHeight: 100,
+    defaultCapacity: 8,
+    defaultSeatPattern: 'all_around',
+    icon: '⬭',
+  },
+  {
+    shape: 'booth',
+    label: 'Booth',
+    defaultWidth: 120,
+    defaultHeight: 80,
+    defaultCapacity: 4,
+    defaultSeatPattern: 'inside',
+    icon: '⌒',
+  },
+  {
+    shape: 'bar',
+    label: 'Bar Section',
+    defaultWidth: 200,
+    defaultHeight: 40,
+    defaultCapacity: 5,
+    defaultSeatPattern: 'front_only',
+    icon: '━',
+  },
+];
+
+// Map for quick lookup
+export const TABLE_SHAPE_MAP: Record<TableShape, TableTypeMetadata> = TABLE_SHAPES.reduce(
+  (acc, item) => {
+    acc[item.shape] = item;
+    return acc;
+  },
+  {} as Record<TableShape, TableTypeMetadata>
+);
+
+// Helper to get metadata for a table shape
+export function getTableShapeMetadata(shape: TableShape): TableTypeMetadata {
+  return TABLE_SHAPE_MAP[shape] || TABLE_SHAPES[0];
 }

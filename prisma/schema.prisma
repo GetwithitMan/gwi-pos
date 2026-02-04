@@ -2571,6 +2571,19 @@ model Seat {
   // Seat properties
   seatType String @default("standard") // standard, premium, accessible, booth_end
 
+  // Virtual Group (for combined tables)
+  virtualGroupId        String?   // Matches Table.virtualGroupId when combined
+  virtualSeatNumber     Int?      // Seat number within combined group (1-13 for 8+5)
+  virtualGroupCreatedAt DateTime? // When this seat joined a virtual group
+
+  // Status tracking
+  status             String  @default("available") // available, occupied, reserved
+  currentOrderItemId String? // Currently active order item at this seat
+
+  // Historical tracking
+  lastOccupiedAt DateTime? // When seat was last occupied
+  lastOccupiedBy String?   // Customer name or order reference
+
   // Status
   isActive Boolean @default(true)
 
@@ -2586,6 +2599,7 @@ model Seat {
   @@unique([tableId, seatNumber])
   @@index([locationId])
   @@index([tableId])
+  @@index([virtualGroupId])
 }
 
 model Event {

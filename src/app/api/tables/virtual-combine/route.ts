@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { tableEvents } from '@/lib/realtime/table-events'
+import {
+  calculateVirtualSeatNumbers,
+  type TableWithSeats,
+} from '@/lib/virtual-group-seats'
 
 // Color palette for virtual groups (distinct from physical combine)
 const VIRTUAL_GROUP_COLORS = [
@@ -240,6 +244,60 @@ export async function POST(request: NextRequest) {
         })
       }
 
+      // Handle seat renumbering for virtual group
+      // Fetch all seats for the tables in the group
+      const allSeats = await tx.seat.findMany({
+        where: {
+          tableId: { in: tableIds },
+          isActive: true,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          tableId: true,
+          seatNumber: true,
+          label: true,
+          relativeX: true,
+          relativeY: true,
+        },
+        orderBy: [{ tableId: 'asc' }, { seatNumber: 'asc' }],
+      })
+
+      if (allSeats.length > 0) {
+        // Prepare table data for virtual seat calculation
+        const tablesWithSeats: TableWithSeats[] = tables.map((table) => ({
+          id: table.id,
+          name: table.name,
+          posX: table.posX,
+          posY: table.posY,
+          seats: allSeats
+            .filter((seat) => seat.tableId === table.id)
+            .map((seat) => ({
+              id: seat.id,
+              seatNumber: seat.seatNumber,
+              label: seat.label,
+              relativeX: seat.relativeX,
+              relativeY: seat.relativeY,
+            })),
+        }))
+
+        // Calculate virtual seat numbers (primary table first, then others clockwise)
+        const virtualSeatInfo = calculateVirtualSeatNumbers(
+          primaryTableId,
+          tablesWithSeats
+        )
+
+        // Update each seat with virtual label (e.g., "T1-3")
+        for (const seatInfo of virtualSeatInfo) {
+          await tx.seat.update({
+            where: { id: seatInfo.seatId },
+            data: {
+              label: seatInfo.virtualLabel, // Store "TableName-SeatNum" format
+            },
+          })
+        }
+      }
+
       // Create audit log
       await tx.auditLog.create({
         data: {
@@ -255,6 +313,7 @@ export async function POST(request: NextRequest) {
             tableNames: tables.map(t => t.name),
             groupColor: virtualGroupColor,
             ordersHandled: existingOrderActions?.length || 0,
+            seatsRenumbered: allSeats.length,
           },
         },
       })

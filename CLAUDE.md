@@ -1498,3 +1498,341 @@ npx tsc --noEmit
 
 ### Server Already Running
 If port 3000 is in use, the dev server will auto-select another port (usually 3001).
+
+## Worker Prompt Structure (MANDATORY)
+
+When working with multiple Claude instances (workers), prompts MUST follow this structure to ensure clean code boundaries and prevent scope creep.
+
+### Project Manager Role
+
+The **Project Manager** (PM) Claude instance:
+- **DOES NOT write code** - only creates prompts for workers
+- Reviews the current code state BEFORE writing any prompts
+- Ensures each worker stays within their assigned files/scope
+- Reviews worker output for quality and boundary violations
+
+### Worker Prompt Template
+
+Every worker prompt MUST include these sections:
+
+```markdown
+You are a DEVELOPER [fixing/building/cleaning] [specific task] in GWI POS [Domain Name].
+
+## Context / Your Previous Work
+[What the worker built before, if applicable]
+
+## Problem / Task Description
+[Clear description of what needs to be done]
+[Symptoms if it's a bug fix]
+
+## Files to Modify
+[EXPLICIT list of files - workers can ONLY touch these files]
+
+═══════════════════════════════════════════════════════════════════
+⚠️  STRICT BOUNDARY - ONLY MODIFY THESE FILES
+═══════════════════════════════════════════════════════════════════
+
+## Changes Required
+[Specific changes with line numbers when possible]
+[DELETE vs KEEP sections for clarity]
+
+## Acceptance Criteria
+- [ ] Checkbox list of what success looks like
+- [ ] Testable conditions
+
+## Limitations
+- ONLY modify [specific files]
+- Do NOT create new files (unless specified)
+- Do NOT touch [related but out-of-scope areas]
+```
+
+### PM Mode Trigger
+
+To start a session as Project Manager, say:
+
+```
+PM Mode: [Domain Name]
+```
+
+**Examples:**
+- `PM Mode: Floor Plan`
+- `PM Mode: Inventory`
+- `PM Mode: Orders`
+- `PM Mode: Menu`
+
+**What happens when you trigger PM Mode:**
+1. Claude enters Project Manager mode (NO code writing)
+2. Claude reads CLAUDE.md and the domain's key files
+3. Claude asks: "What tasks are we working on today?"
+4. You list tasks → Claude creates worker prompts
+5. You send prompts to workers → paste results back for review
+
+---
+
+### Domain Registry
+
+Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude uses this registry to:
+- Know which files belong to the domain
+- Understand layer separation
+- Create properly scoped worker prompts
+
+#### Floor Plan Domain
+**Trigger:** `PM Mode: Floor Plan`
+**Changelog:** `/docs/changelogs/FLOOR-PLAN-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Canvas | Floor plan rendering | `/src/domains/floor-plan/canvas/` |
+| Fixtures | Non-seating elements (walls, bars, etc.) | `/src/domains/floor-plan/admin/FixtureProperties.tsx`, `/api/floor-plan-elements` |
+| Tables | Table records, resize, rotation | `/api/tables`, `/api/tables/[id]`, `TableRenderer.tsx`, `TableProperties.tsx` |
+| Seats | Seat records, positioning, generation | `/api/seats`, `/api/tables/[id]/seats/*`, `SeatRenderer.tsx`, `/src/lib/seat-generation.ts` |
+| Virtual Groups | Combined table seat numbering | `/src/lib/virtual-group-seats.ts`, `/api/tables/virtual-combine/` |
+| Sections | Rooms/areas | `/api/sections` |
+| FOH View | Front-of-house display | `/src/app/test-floorplan/page.tsx`, `FloorPlanHome.tsx` |
+| Editor | Admin floor plan builder | `FloorPlanEditor.tsx`, `EditorCanvas.tsx`, `FixtureToolbar.tsx` |
+
+**Related Skills:** 16, 117, 206, 207
+
+---
+
+#### Inventory Domain
+**Trigger:** `PM Mode: Inventory`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Ingredients | Base ingredients + prep items | `/src/app/(admin)/ingredients/`, `/api/ingredients` |
+| Stock | Stock levels, adjustments | `/api/inventory/stock-adjust`, `/api/inventory/settings` |
+| Recipes | Menu item recipes | `/api/menu/items/[id]/recipe` |
+| Deductions | Auto-deduction on sale/void | `/src/lib/inventory-calculations.ts` |
+| Reports | Variance, usage reports | `/api/reports/inventory` |
+
+---
+
+#### Orders Domain
+**Trigger:** `PM Mode: Orders`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Order CRUD | Create, read, update orders | `/api/orders`, `/api/orders/[id]` |
+| Order Items | Items within orders | `/api/orders/[id]/items` |
+| Send to Kitchen | Kitchen ticket dispatch | `/api/orders/[id]/send` |
+| Payment | Payment processing | `/api/orders/[id]/pay` |
+| Void/Comp | Void and comp operations | `/api/orders/[id]/comp-void` |
+| UI | Order screen components | `/src/app/(pos)/orders/`, `/src/components/orders/` |
+
+---
+
+#### Menu Domain
+**Trigger:** `PM Mode: Menu`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Categories | Menu categories | `/api/menu/categories` |
+| Items | Menu items | `/api/menu/items`, `/api/menu/items/[id]` |
+| Modifiers | Modifier groups and modifiers | `/api/menu/modifiers` |
+| Item Modifiers | Item-to-modifier links | `/api/menu/items/[id]/modifiers` |
+| UI | Menu builder components | `/src/app/(admin)/menu/`, `/src/components/menu-builder/` |
+
+---
+
+#### Employees Domain
+**Trigger:** `PM Mode: Employees`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Employee CRUD | Employee records | `/api/employees` |
+| Roles | Role definitions | `/api/roles` |
+| Permissions | Permission management | `/api/permissions` |
+| Time Clock | Clock in/out | `/api/time-clock` |
+| UI | Employee management | `/src/app/(admin)/employees/` |
+
+---
+
+#### KDS Domain
+**Trigger:** `PM Mode: KDS`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Display | KDS screen rendering | `/src/app/(kds)/kds/` |
+| Tickets | Kitchen ticket management | `/api/kds/tickets` |
+| Stations | Station configuration | `/api/kds/stations` |
+| Device Auth | KDS device pairing | `/api/hardware/kds-screens` |
+
+---
+
+#### Payments Domain
+**Trigger:** `PM Mode: Payments`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Processing | Payment processing | `/api/payments` |
+| Tips | Tip management | `/api/tips`, `/src/lib/tip-calculations.ts` |
+| Receipts | Receipt generation | `/api/print/receipt` |
+| UI | Payment modal | `/src/components/payments/` |
+
+---
+
+#### Reports Domain
+**Trigger:** `PM Mode: Reports`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Daily | Daily store report | `/api/reports/daily` |
+| Shift | Employee shift reports | `/api/reports/employee-shift` |
+| Tips | Tip share reports | `/api/reports/tip-shares` |
+| Sales | Sales reports | `/api/reports/sales` |
+| UI | Report pages | `/src/app/(admin)/reports/` |
+
+---
+
+#### Hardware Domain
+**Trigger:** `PM Mode: Hardware`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Printers | Printer configuration | `/api/hardware/printers` |
+| Print Routes | Print routing rules | `/api/hardware/print-routes` |
+| KDS Screens | KDS device management | `/api/hardware/kds-screens` |
+| ESC/POS | Printer commands | `/src/lib/escpos/` |
+
+---
+
+### Layer Separation Rule (CRITICAL)
+
+**A worker assigned to one layer must NOT touch code in another layer, even if it's in the same file.**
+
+Example: If a worker is assigned to "Tables" layer:
+- ✅ CAN modify table CRUD operations
+- ❌ CANNOT add/modify seat code (that's the "Seats" layer)
+- ❌ CANNOT modify fixture code (that's the "Fixtures" layer)
+
+If code from another layer exists in their file, the worker should:
+- REMOVE it (if that's the task)
+- IGNORE it (if not relevant to their task)
+- NEVER add new functionality for that layer
+
+---
+
+### Morning Startup Protocol
+
+When starting a new day:
+
+1. **Say:** `PM Mode: [Domain]`
+2. **Claude responds with:**
+   - Confirmation of PM mode
+   - **Reads domain changelog** at `/docs/changelogs/[DOMAIN]-CHANGELOG.md`
+   - Shows: Last session summary, pending workers, known issues
+   - "What tasks are we working on today?"
+3. **You list tasks** (or say "continue from yesterday")
+4. **Claude reads relevant files** (to get accurate line numbers)
+5. **Claude creates worker prompts** (following the template)
+6. **You send prompts to workers**
+7. **Workers return results → paste back to PM for review**
+
+**Morning Startup Files to Check:**
+- `/docs/changelogs/[DOMAIN]-CHANGELOG.md` - Session history
+- `/docs/skills/SKILLS-INDEX.md` - Skill status
+- Domain-specific skill docs in `/docs/skills/`
+
+---
+
+### End of Day Protocol (EOD)
+
+**Trigger:** Say `EOD: [Domain]` or `End of Day: [Domain]`
+
+When you trigger EOD, Claude will:
+
+1. **Update Domain Changelog** (`/docs/changelogs/[DOMAIN]-CHANGELOG.md`)
+   - Add session date
+   - List workers completed with status
+   - List pending workers with prompts ready
+   - Document issues discovered
+   - Note architectural decisions made
+   - List files created/modified
+
+2. **Create/Update Skill Docs** (`/docs/skills/`)
+   - New skills get their own numbered doc
+   - Existing skills get status updates
+   - Update SKILLS-INDEX.md with new entries
+
+3. **Document Pending Work**
+   - Worker prompts ready to send
+   - Known issues/bugs
+   - Next priority tasks
+
+4. **Session Recovery Info**
+   - "How to Resume" section in changelog
+   - Key context for next session
+
+**EOD Output Format:**
+```
+## EOD Summary for [Domain] - [Date]
+
+### Completed Today
+- [x] Worker 1: Task name
+- [x] Worker 2: Task name
+
+### Pending (Prompts Ready)
+- [ ] Worker 3: Task name
+- [ ] Worker 4: Task name
+
+### Issues Discovered
+1. Issue description
+
+### New Skills Documented
+- Skill XXX: Name
+
+### Files Updated
+- /docs/changelogs/[DOMAIN]-CHANGELOG.md
+- /docs/skills/XXX-SKILL-NAME.md
+
+### Resume Tomorrow
+1. Say: `PM Mode: [Domain]`
+2. Review changelog
+3. Send pending worker prompts
+```
+
+---
+
+### Quality Control
+
+Before accepting worker output:
+
+1. **Boundary check** - Did they ONLY modify allowed files?
+2. **Scope check** - Did they stay within their layer?
+3. **No extras** - Did they add unrequested features?
+4. **Tests pass** - Does the code work?
+5. **Types clean** - No TypeScript errors?
+
+### Example: Good vs Bad Worker Prompt
+
+**❌ BAD (vague, no boundaries):**
+```
+Fix the table API to not create seats.
+```
+
+**✅ GOOD (specific, bounded):**
+```
+You are a DEVELOPER cleaning up the Table API in GWI POS Floor Plan domain.
+
+## Files to Modify
+1. /src/app/api/tables/route.ts
+2. /src/app/api/tables/[id]/route.ts
+
+⚠️ STRICT BOUNDARY - ONLY MODIFY THESE TWO FILES
+
+## Changes Required
+DELETE: generateSeatPositions function (lines 84-157)
+DELETE: skipSeatGeneration parameter
+DELETE: All db.seat.* operations
+KEEP: capacity field (metadata)
+KEEP: seatPattern field (configuration)
+
+## Acceptance Criteria
+- [ ] POST /api/tables creates table WITHOUT seats
+- [ ] No db.seat.* calls in POST or PUT handlers
+
+## Limitations
+- Do NOT create /seats routes
+- Do NOT modify Seat model
+```

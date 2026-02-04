@@ -200,6 +200,38 @@ export async function POST(
         })
       }
 
+      // Restore original seat labels
+      // Fetch all seats for tables in the group
+      const allSeats = await tx.seat.findMany({
+        where: {
+          tableId: { in: tables.map(t => t.id) },
+          isActive: true,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          tableId: true,
+          seatNumber: true,
+          label: true,
+        },
+      })
+
+      // Restore each seat's original label (just the seat number)
+      for (const seat of allSeats) {
+        // Check if label has table prefix format (e.g., "T1-3")
+        const hasTablePrefix = seat.label.includes('-')
+
+        if (hasTablePrefix) {
+          // Restore to original seat number format
+          await tx.seat.update({
+            where: { id: seat.id },
+            data: {
+              label: String(seat.seatNumber), // Simple number format
+            },
+          })
+        }
+      }
+
       // Create audit log
       await tx.auditLog.create({
         data: {
@@ -213,6 +245,7 @@ export async function POST(
             tableIds: tables.map(t => t.id),
             tableNames: tables.map(t => t.name),
             splitOrder,
+            seatsRestored: allSeats.length,
           },
         },
       })

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // GET - List all seats for a table
 export async function GET(
@@ -8,11 +9,13 @@ export async function GET(
 ) {
   try {
     const { id: tableId } = await params
+    const searchParams = request.nextUrl.searchParams
+    const includeInactive = searchParams.get('includeInactive') === 'true'
 
     // Verify table exists
     const table = await db.table.findUnique({
       where: { id: tableId },
-      select: { id: true, locationId: true, capacity: true },
+      select: { id: true, name: true, shape: true, capacity: true, locationId: true },
     })
 
     if (!table) {
@@ -25,7 +28,8 @@ export async function GET(
     const seats = await db.seat.findMany({
       where: {
         tableId,
-        isActive: true,
+        deletedAt: null,
+        ...(includeInactive ? {} : { isActive: true }),
       },
       orderBy: { seatNumber: 'asc' },
     })
@@ -39,8 +43,18 @@ export async function GET(
         relativeX: seat.relativeX,
         relativeY: seat.relativeY,
         angle: seat.angle,
+        originalRelativeX: seat.originalRelativeX,
+        originalRelativeY: seat.originalRelativeY,
+        originalAngle: seat.originalAngle,
         seatType: seat.seatType,
+        isActive: seat.isActive,
       })),
+      table: {
+        id: table.id,
+        name: table.name,
+        shape: table.shape,
+        capacity: table.capacity,
+      },
     })
   } catch (error) {
     console.error('Failed to fetch seats:', error)
@@ -51,7 +65,7 @@ export async function GET(
   }
 }
 
-// POST - Create a new seat
+// POST - Add a seat to table
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -66,6 +80,7 @@ export async function POST(
       relativeY,
       angle,
       seatType,
+      insertAt,
     } = body
 
     // Verify table exists and get locationId
@@ -81,11 +96,25 @@ export async function POST(
       )
     }
 
-    // Get next seat number if not provided
-    let finalSeatNumber = seatNumber
+    // If insertAt is provided, renumber existing seats >= insertAt
+    if (insertAt !== undefined && insertAt > 0) {
+      await db.seat.updateMany({
+        where: {
+          tableId,
+          seatNumber: { gte: insertAt },
+          deletedAt: null,
+        },
+        data: {
+          seatNumber: { increment: 1 },
+        },
+      })
+    }
+
+    // Determine final seat number
+    let finalSeatNumber = seatNumber || insertAt
     if (!finalSeatNumber) {
       const maxSeat = await db.seat.findFirst({
-        where: { tableId },
+        where: { tableId, deletedAt: null },
         orderBy: { seatNumber: 'desc' },
         select: { seatNumber: true },
       })
@@ -114,6 +143,15 @@ export async function POST(
       },
     })
 
+    // Fetch all seats for UI update
+    const allSeats = await db.seat.findMany({
+      where: { tableId, deletedAt: null, isActive: true },
+      orderBy: { seatNumber: 'asc' },
+    })
+
+    // Notify POS terminals of floor plan update
+    dispatchFloorPlanUpdate(table.locationId, { async: true })
+
     return NextResponse.json({
       seat: {
         id: seat.id,
@@ -124,7 +162,18 @@ export async function POST(
         relativeY: seat.relativeY,
         angle: seat.angle,
         seatType: seat.seatType,
+        isActive: seat.isActive,
       },
+      seats: allSeats.map(s => ({
+        id: s.id,
+        label: s.label,
+        seatNumber: s.seatNumber,
+        relativeX: s.relativeX,
+        relativeY: s.relativeY,
+        angle: s.angle,
+        seatType: s.seatType,
+        isActive: s.isActive,
+      })),
     })
   } catch (error) {
     console.error('Failed to create seat:', error)

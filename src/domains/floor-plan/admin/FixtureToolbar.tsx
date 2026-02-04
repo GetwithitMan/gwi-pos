@@ -8,8 +8,8 @@
  */
 
 import React from 'react';
-import type { EditorToolMode, FixtureType } from './types';
-import { FIXTURE_TYPES } from './types';
+import type { EditorToolMode, FixtureType, TableShape } from './types';
+import { FIXTURE_TYPES, TABLE_SHAPES } from './types';
 
 // =============================================================================
 // TYPES
@@ -18,8 +18,10 @@ import { FIXTURE_TYPES } from './types';
 interface FixtureToolbarProps {
   selectedTool: EditorToolMode;
   selectedFixtureType: FixtureType;
+  selectedTableShape?: TableShape;
   onToolSelect: (tool: EditorToolMode) => void;
   onFixtureTypeSelect: (type: FixtureType) => void;
+  onTableShapeSelect?: (shape: TableShape) => void;
 }
 
 // =============================================================================
@@ -29,13 +31,26 @@ interface FixtureToolbarProps {
 export function FixtureToolbar({
   selectedTool,
   selectedFixtureType,
+  selectedTableShape = 'rectangle',
   onToolSelect,
   onFixtureTypeSelect,
+  onTableShapeSelect,
 }: FixtureToolbarProps) {
-  const tools: { mode: EditorToolMode; label: string; icon: string }[] = [
+  const tools: { mode: EditorToolMode; label: string; icon: React.ReactNode }[] = [
     { mode: 'SELECT', label: 'Select', icon: '⇪' },
+    {
+      mode: 'TABLE',
+      label: 'Table',
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+          <rect x="3" y="8" width="18" height="3" rx="1" />
+          <rect x="5" y="11" width="2" height="8" />
+          <rect x="17" y="11" width="2" height="8" />
+        </svg>
+      )
+    },
     { mode: 'WALL', label: 'Wall', icon: '▬' },
-    { mode: 'RECTANGLE', label: 'Rectangle', icon: '▭' },
+    { mode: 'RECTANGLE', label: 'Fixture', icon: '▭' },
     { mode: 'CIRCLE', label: 'Circle', icon: '●' },
     { mode: 'DELETE', label: 'Delete', icon: '🗑' },
   ];
@@ -77,6 +92,39 @@ export function FixtureToolbar({
           ))}
         </div>
       </div>
+
+      {/* Table Shape Selector (shown for TABLE mode) */}
+      {selectedTool === 'TABLE' && onTableShapeSelect && (
+        <div>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 600 }}>
+            Table Shape
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4 }}>
+            {TABLE_SHAPES.map((tableShape) => (
+              <button
+                key={tableShape.shape}
+                onClick={() => onTableShapeSelect(tableShape.shape)}
+                style={{
+                  padding: '6px 8px',
+                  border: selectedTableShape === tableShape.shape ? '2px solid #3498db' : '1px solid #ccc',
+                  backgroundColor: selectedTableShape === tableShape.shape ? '#e3f2fd' : 'white',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: selectedTableShape === tableShape.shape ? 600 : 400,
+                  textAlign: 'left',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                <span style={{ fontSize: 16 }}>{tableShape.icon}</span>
+                <span>{tableShape.label.split(' ')[0]}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Fixture Type Selector (shown for RECTANGLE and CIRCLE modes) */}
       {(selectedTool === 'RECTANGLE' || selectedTool === 'CIRCLE') && (
@@ -143,9 +191,16 @@ export function FixtureToolbar({
         <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
           {selectedTool === 'SELECT' && (
             <>
-              <li>Click to select a fixture</li>
+              <li>Click to select fixture/table</li>
               <li>Drag to move it</li>
               <li>Press Delete to remove</li>
+            </>
+          )}
+          {selectedTool === 'TABLE' && (
+            <>
+              <li>Choose shape, then click to place</li>
+              <li>Seats auto-generated</li>
+              <li>Edit properties on right</li>
             </>
           )}
           {selectedTool === 'WALL' && (

@@ -69,6 +69,8 @@
 | 18 | Table Transfer | DONE | 16, 02 | Transfer API, moves orders with audit log |
 | 19 | Reservations | DONE | 16 | Full booking system, admin page, status tracking |
 | 117 | Virtual Table Combine | DONE | 106, 107 | Long-press to link tables, pulsing glow, T-S notation, manager dashboard |
+| 206 | Seat Management System | DONE | 16, 117 | Seat API, generation, positioning, virtual group numbering, reflow on resize |
+| 207 | Table Resize & Rotation | DONE | 16 | 8 resize handles, rotation handle, grid snap, collision detection, shape-specific minimums |
 
 ### Bar Features
 | Skill | Name | Status | Dependencies | Notes |
@@ -321,6 +323,14 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-04)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 206 | Seat Management System | Complete seat management: Seat API (CRUD, bulk operations), position generation algorithms (all_around, front_only, two_sides, three_sides, inside patterns), SeatRenderer component with states, manual drag positioning with boundary (5-40px from edge), virtual group seat numbering (T1-3 format), schema enhancements (virtualGroupId, status, currentOrderItemId), seat reflow on table resize with proportional scaling |
+| 207 | Table Resize & Rotation | 8 resize handles (4 corners + 4 edges), rotation handle with 40px stem and 15° snap, shape-specific minimum sizes (bar: 80x30, booth: 60x80, round/square: 50x50), collision detection during resize, seats reflow automatically when table resized |
+| - | Bug Fixes | Fixed 3 critical bugs: (1) Seat dragging not working - added handleSeatUpdate callback and dbSeats prop to EditorCanvas; (2) Regenerate seats 500 error - fixed generateSeatPositions function signature and added label field; (3) Seats stacking on resize - fixed reflow algorithm to only push out seats if BOTH x AND y inside table bounds |
 
 ## Recently Completed (2026-02-03)
 
