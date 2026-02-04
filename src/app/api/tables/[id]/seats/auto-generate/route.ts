@@ -277,6 +277,51 @@ function generateSeatPositions(
   }
 }
 
+// Collision detection constants
+const SEAT_RADIUS = 12 // Seat visual radius for collision detection
+const COLLISION_PADDING = 5 // Extra padding for collision checks
+
+interface CollisionResult {
+  hasCollisions: boolean
+  collisions: {
+    seatNumber: number
+    collidedWith: string // 'table:T1' or 'fixture:Wall' or 'seat:T2-S3'
+    type: 'table' | 'fixture' | 'seat'
+  }[]
+}
+
+// Check if a point collides with a rectangle (with rotation support)
+function pointInRotatedRect(
+  px: number,
+  py: number,
+  rectX: number,
+  rectY: number,
+  rectW: number,
+  rectH: number,
+  rectRotation: number = 0
+): boolean {
+  // Get rect center
+  const cx = rectX + rectW / 2
+  const cy = rectY + rectH / 2
+
+  // Translate point to rect's local space
+  const dx = px - cx
+  const dy = py - cy
+
+  // Rotate point in opposite direction
+  const rad = (-rectRotation * Math.PI) / 180
+  const cos = Math.cos(rad)
+  const sin = Math.sin(rad)
+  const localX = dx * cos - dy * sin
+  const localY = dx * sin + dy * cos
+
+  // Check if local point is within rect bounds (with padding for seat radius)
+  const halfW = rectW / 2 + SEAT_RADIUS + COLLISION_PADDING
+  const halfH = rectH / 2 + SEAT_RADIUS + COLLISION_PADDING
+
+  return Math.abs(localX) <= halfW && Math.abs(localY) <= halfH
+}
+
 // POST - Auto-generate seats for a table based on capacity and pattern
 export async function POST(
   request: NextRequest,
@@ -292,6 +337,8 @@ export async function POST(
       replaceExisting = true,
       updateTablePattern = true, // Also update table's seatPattern field
       employeeId, // For audit logging
+      checkCollisions = true, // New: whether to check for collisions
+      forceGenerate = false, // New: generate even if collisions detected
     } = body
 
     // Verify table exists and get details
@@ -304,6 +351,9 @@ export async function POST(
         capacity: true,
         width: true,
         height: true,
+        posX: true,
+        posY: true,
+        rotation: true,
         shape: true,
         seatPattern: true,
       },
@@ -336,15 +386,162 @@ export async function POST(
       labelPattern as LabelPattern
     )
 
+    // Check for collisions if requested
+    let collisionResult: CollisionResult = { hasCollisions: false, collisions: [] }
+
+    if (checkCollisions) {
+      // Skip collision checks if table hasn't been positioned yet
+      if (table.posX == null || table.posY == null) {
+        console.warn('[Seats] Skipping collision check - table has no position yet')
+        // Generate seats without collision checking
+      } else {
+        // Get all other tables in the location (for collision detection)
+        const otherTables = await db.table.findMany({
+          where: {
+            locationId: table.locationId,
+            id: { not: tableId },
+            isActive: true,
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            name: true,
+            posX: true,
+            posY: true,
+            width: true,
+            height: true,
+            rotation: true,
+            seats: {
+              where: { isActive: true, deletedAt: null },
+              select: {
+                id: true,
+                seatNumber: true,
+                relativeX: true,
+                relativeY: true,
+              },
+            },
+          },
+        })
+
+        // Get all fixtures (walls, bars) in the location
+        const fixtures = await db.floorPlanElement.findMany({
+          where: {
+            locationId: table.locationId,
+            deletedAt: null,
+          },
+          select: {
+            id: true,
+            name: true,
+            elementType: true,
+            posX: true,
+            posY: true,
+            width: true,
+            height: true,
+            rotation: true,
+          },
+        })
+
+        // Calculate table center for seat absolute positions
+        const tableCenterX = (table.posX ?? 0) + table.width / 2
+        const tableCenterY = (table.posY ?? 0) + table.height / 2
+        const tableRotation = (table.rotation ?? 0) * Math.PI / 180
+        const cos = Math.cos(tableRotation)
+        const sin = Math.sin(tableRotation)
+
+        // Check each generated seat for collisions
+        for (const seat of seatPositions) {
+          // Calculate absolute seat position (applying table rotation)
+          const rotatedX = seat.relativeX * cos - seat.relativeY * sin
+          const rotatedY = seat.relativeX * sin + seat.relativeY * cos
+          const seatAbsX = tableCenterX + rotatedX
+          const seatAbsY = tableCenterY + rotatedY
+
+          // Check against other tables
+          for (const otherTable of otherTables) {
+            // Skip tables with invalid positions
+            if (otherTable.posX == null || otherTable.posY == null) continue
+
+            if (pointInRotatedRect(
+              seatAbsX, seatAbsY,
+              otherTable.posX, otherTable.posY,
+              otherTable.width, otherTable.height,
+              otherTable.rotation ?? 0
+            )) {
+              collisionResult.hasCollisions = true
+              collisionResult.collisions.push({
+                seatNumber: seat.seatNumber,
+                collidedWith: `table:${otherTable.name || otherTable.id}`,
+                type: 'table',
+              })
+            }
+
+            // Check against seats of other tables
+            const otherTableCenterX = otherTable.posX + otherTable.width / 2
+            const otherTableCenterY = otherTable.posY + otherTable.height / 2
+            const otherRotation = (otherTable.rotation ?? 0) * Math.PI / 180
+            const otherCos = Math.cos(otherRotation)
+            const otherSin = Math.sin(otherRotation)
+
+            for (const otherSeat of otherTable.seats) {
+              const otherRotatedX = otherSeat.relativeX * otherCos - otherSeat.relativeY * otherSin
+              const otherRotatedY = otherSeat.relativeX * otherSin + otherSeat.relativeY * otherCos
+              const otherSeatAbsX = otherTableCenterX + otherRotatedX
+              const otherSeatAbsY = otherTableCenterY + otherRotatedY
+
+              const distance = Math.hypot(seatAbsX - otherSeatAbsX, seatAbsY - otherSeatAbsY)
+              if (distance < (SEAT_RADIUS * 2 + COLLISION_PADDING)) {
+                collisionResult.hasCollisions = true
+                collisionResult.collisions.push({
+                  seatNumber: seat.seatNumber,
+                  collidedWith: `seat:${otherTable.name || otherTable.id}-S${otherSeat.seatNumber}`,
+                  type: 'seat',
+                })
+              }
+            }
+          }
+
+          // Check against fixtures (walls, bars, etc.)
+          for (const fixture of fixtures) {
+            // Skip fixtures with invalid positions
+            if (fixture.posX == null || fixture.posY == null) continue
+
+            if (pointInRotatedRect(
+              seatAbsX, seatAbsY,
+              fixture.posX, fixture.posY,
+              fixture.width, fixture.height,
+              fixture.rotation ?? 0
+            )) {
+              collisionResult.hasCollisions = true
+              collisionResult.collisions.push({
+                seatNumber: seat.seatNumber,
+                collidedWith: `fixture:${fixture.name || fixture.elementType}`,
+                type: 'fixture',
+              })
+            }
+          }
+        }
+
+          // If collisions detected and not forcing, return warning
+          if (collisionResult.hasCollisions && !forceGenerate) {
+            return NextResponse.json({
+              warning: 'Seat collisions detected',
+              collisions: collisionResult.collisions,
+              seatPattern: pattern,
+              suggestedAction: 'Move or resize the table to avoid collisions, or use forceGenerate: true to proceed anyway.',
+            }, { status: 409 }) // Conflict
+          }
+        } // End else block (table has valid position)
+    } // End if (checkCollisions)
+
     // Use transaction to replace existing seats and optionally update table pattern
     const result = await db.$transaction(async (tx) => {
       let deletedCount = 0
 
       if (replaceExisting) {
-        // Soft delete existing seats
-        const deleted = await tx.seat.updateMany({
-          where: { tableId, isActive: true },
-          data: { isActive: false, deletedAt: new Date() },
+        // Hard delete existing seats to avoid unique constraint violation
+        // (tableId + seatNumber must be unique, soft delete doesn't clear this)
+        const deleted = await tx.seat.deleteMany({
+          where: { tableId },
         })
         deletedCount = deleted.count
       }
@@ -415,11 +612,23 @@ export async function POST(
       })),
       generated: result.length,
       seatPattern: pattern,
+      // Include collision warning if seats were forced despite collisions
+      ...(collisionResult.hasCollisions ? {
+        warning: 'Seats generated with collisions (forceGenerate was true)',
+        collisions: collisionResult.collisions,
+      } : {}),
     })
   } catch (error) {
     console.error('Failed to auto-generate seats:', error)
+    // Return detailed error for debugging
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
     return NextResponse.json(
-      { error: 'Failed to auto-generate seats' },
+      {
+        error: 'Failed to auto-generate seats',
+        details: errorMessage,
+        stack: process.env.NODE_ENV === 'development' ? errorStack : undefined
+      },
       { status: 500 }
     )
   }

@@ -425,9 +425,14 @@ export function EditorCanvas({
         setSeatDragOffset(null);
         setOriginalSeatPos(null);
         setSeatDragPreview(null);
+
+        // Notify parent that selected seat should be cleared
+        if (onSeatSelect) {
+          onSeatSelect(null);
+        }
       }
     }
-  }, [useDatabase, dbSeats, refreshKey, draggedSeatId]);
+  }, [useDatabase, dbSeats, refreshKey, draggedSeatId, onSeatSelect]);
 
   // Refresh fixtures when they change (in-memory mode only)
   const refreshFixtures = useCallback(() => {

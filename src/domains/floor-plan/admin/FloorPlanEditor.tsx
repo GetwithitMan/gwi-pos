@@ -593,10 +593,52 @@ export function FloorPlanEditor({
             count: table.capacity,
             seatPattern: table.seatPattern,
             replaceExisting: true,
+            checkCollisions: true,
+            forceGenerate: false, // Will prompt user if collisions detected
           }),
         });
 
+        const data = await response.json();
+
+        if (response.status === 409 && data.warning) {
+          // Collision detected - ask user if they want to force generate
+          const collisionCount = data.collisions?.length || 0;
+          const collisionTypes = data.collisions?.map((c: { collidedWith: string }) => c.collidedWith).slice(0, 3).join(', ');
+          const confirmed = window.confirm(
+            `⚠️ Seat Collision Warning\n\n` +
+            `${collisionCount} seat(s) would collide with: ${collisionTypes}${collisionCount > 3 ? '...' : ''}\n\n` +
+            `Options:\n` +
+            `• Click "Cancel" to abort and move/resize the table first\n` +
+            `• Click "OK" to generate seats anyway (they may overlap)`
+          );
+
+          if (confirmed) {
+            // Force generate despite collisions
+            const forceResponse = await fetch(`/api/tables/${tableId}/seats/auto-generate`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                count: table.capacity,
+                seatPattern: table.seatPattern,
+                replaceExisting: true,
+                checkCollisions: true,
+                forceGenerate: true,
+              }),
+            });
+
+            if (forceResponse.ok) {
+              await fetchTables();
+              setTimeout(() => setRefreshKey((prev) => prev + 1), 50);
+            }
+          }
+          return;
+        }
+
         if (response.ok) {
+          // Check if there was a collision warning even with successful generation
+          if (data.warning && data.collisions?.length > 0) {
+            console.warn('Seats generated with collisions:', data.collisions);
+          }
           // Refresh tables first, then increment key to trigger re-render
           await fetchTables();
           // Small delay to ensure state has propagated
@@ -604,9 +646,8 @@ export function FloorPlanEditor({
             setRefreshKey((prev) => prev + 1);
           }, 50);
         } else {
-          const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-          console.error('Failed to regenerate seats:', error);
-          alert('Failed to regenerate seats: ' + (error.error || 'Unknown error'));
+          console.error('Failed to regenerate seats:', data);
+          alert('Failed to regenerate seats: ' + (data.error || 'Unknown error'));
         }
       } catch (error) {
         console.error('Failed to regenerate seats:', error);

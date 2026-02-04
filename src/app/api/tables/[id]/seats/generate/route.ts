@@ -52,10 +52,10 @@ export async function POST(
       height: table.height,
     });
 
-    // Delete existing seats (soft delete)
-    await db.seat.updateMany({
-      where: { tableId, deletedAt: null },
-      data: { deletedAt: new Date() },
+    // Hard delete existing seats to avoid unique constraint violation
+    // (tableId + seatNumber must be unique, soft delete doesn't clear this)
+    await db.seat.deleteMany({
+      where: { tableId },
     });
 
     // Create new seats

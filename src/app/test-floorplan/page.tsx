@@ -261,25 +261,48 @@ function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
       const seatAbsX = tableCenterX + rotatedX;
       const seatAbsY = tableCenterY + rotatedY;
 
+      // Smaller seats (24px) to prevent overlap and allow tapping
+      const SEAT_SIZE = 24;
+      const SEAT_HALF = SEAT_SIZE / 2;
+
       return (
         <div
           key={seat.id}
+          onClick={(e) => {
+            e.stopPropagation();
+            // When we integrate with orders, this will select the seat
+            console.log(`Seat ${seat.seatNumber} tapped on table ${table.name}`);
+          }}
           style={{
             position: 'absolute',
-            left: seatAbsX - 15,
-            top: seatAbsY - 15,
-            width: 30,
-            height: 30,
+            left: seatAbsX - SEAT_HALF,
+            top: seatAbsY - SEAT_HALF,
+            width: SEAT_SIZE,
+            height: SEAT_SIZE,
             backgroundColor: '#fff',
-            border: '2px solid #333',
+            border: '2px solid #555',
             borderRadius: '50%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 600,
-            pointerEvents: 'none',
+            cursor: 'pointer',
+            pointerEvents: 'auto',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+            transition: 'transform 0.1s, box-shadow 0.1s',
           }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'scale(1.15)';
+            e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+            e.currentTarget.style.zIndex = '100';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'scale(1)';
+            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
+            e.currentTarget.style.zIndex = 'auto';
+          }}
+          title={`Seat ${seat.seatNumber}`}
         >
           {seat.seatNumber}
         </div>
@@ -472,9 +495,11 @@ export default function TestFloorPlanPage() {
     let intervalId: NodeJS.Timeout | null = null;
 
     // Poll for updates every 5 seconds (simple approach without socket.io)
+    // Don't pass sectionId - fetch ALL tables and filter client-side
+    // This prevents the "0 tables" bug when polling with wrong section filter
     intervalId = setInterval(() => {
       fetchDbFixtures(locationId);
-      fetchDbTables(locationId, selectedRoomId);
+      fetchDbTables(locationId); // No sectionId filter - client filters by section
     }, 5000);
 
     console.log('[FOH] Started polling for floor plan updates');
@@ -485,7 +510,7 @@ export default function TestFloorPlanPage() {
         console.log('[FOH] Stopped polling');
       }
     };
-  }, [locationId, fetchDbFixtures]);
+  }, [locationId, fetchDbFixtures, fetchDbTables]);
 
   // Get tables for current room using TableAPI
   const tablesInRoom = TableAPI.getTablesForRoom(selectedRoomId);
@@ -611,8 +636,15 @@ export default function TestFloorPlanPage() {
               ))}
 
             {/* Render database tables when in DB mode - filter by selected section */}
+            {/* Tables without a section will show in first section as fallback */}
             {isDbMode && dbTables
-              .filter((table) => table.section?.id === selectedRoomId)
+              .filter((table) => {
+                // Show tables that match the selected section
+                if (table.section?.id === selectedRoomId) return true;
+                // Also show tables with no section in the first section
+                if (!table.section && dbSections.length > 0 && dbSections[0].id === selectedRoomId) return true;
+                return false;
+              })
               .map((table) => (
                 <DbTableRenderer
                   key={table.id}
