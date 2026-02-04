@@ -283,6 +283,26 @@ export function EditorCanvas({
             seatAbsY - SEAT_RADIUS < otherTable.posY + otherTable.height) {
           return true; // Collision with another table
         }
+
+        // Check against seats of other tables
+        const otherTableSeats = seats.filter(s => s.tableId === otherTable.id);
+        const otherTableCenterX = otherTable.posX + otherTable.width / 2;
+        const otherTableCenterY = otherTable.posY + otherTable.height / 2;
+        const otherRotation = (otherTable.rotation || 0) * Math.PI / 180;
+        const otherCos = Math.cos(otherRotation);
+        const otherSin = Math.sin(otherRotation);
+
+        for (const otherSeat of otherTableSeats) {
+          const otherRotatedX = otherSeat.relativeX * otherCos - otherSeat.relativeY * otherSin;
+          const otherRotatedY = otherSeat.relativeX * otherSin + otherSeat.relativeY * otherCos;
+          const otherSeatAbsX = otherTableCenterX + otherRotatedX;
+          const otherSeatAbsY = otherTableCenterY + otherRotatedY;
+
+          const distance = Math.hypot(seatAbsX - otherSeatAbsX, seatAbsY - otherSeatAbsY);
+          if (distance < SEAT_COLLISION_RADIUS * 2 + 4) {
+            return true; // Collision with seat from another table
+          }
+        }
       }
 
       // Check against fixtures
