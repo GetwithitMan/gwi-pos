@@ -22,45 +22,106 @@
 // PUBLIC TYPES
 // =============================================================================
 
-export type { Table, TableShape, TableStatus } from './types'
-export type { Seat, SeatPosition } from './types'
-export type { Room, FloorPlan } from './types'
-export type { TableGroup, GroupColor } from './types'
-export type { Section, SectionAssignment } from './types'
-export type { WaitlistEntry, WaitlistStatus } from './types'
-export type { TimedRental, RentalStatus, EntertainmentType } from './types'
+export type {
+  Table,
+  TableShape,
+  TableStatus,
+  Seat,
+  SeatPosition,
+  Room,
+  FloorPlan,
+  Fixture,
+  FixtureType,
+  TableGroup,
+  GroupColor,
+  Section,
+  SectionAssignment,
+  StatusTransition,
+  StatusTrigger,
+  TimedRental,
+  EntertainmentType,
+  RentalStatus,
+  WaitlistEntry,
+  WaitlistStatus,
+  WaitlistPreferences,
+} from './types'
 
 // =============================================================================
 // PUBLIC HOOKS
 // =============================================================================
 
-// These will be implemented as we migrate existing hooks
-// export { useFloorPlan } from './hooks/useFloorPlan'
-// export { useTableStatus } from './hooks/useTableStatus'
-// export { useSeating } from './hooks/useSeating'
-// export { useWaitlist } from './hooks/useWaitlist'
-// export { useEntertainment } from './hooks/useEntertainment'
-
-// =============================================================================
-// PUBLIC COMPONENTS
-// =============================================================================
-
-// These will be implemented as we migrate existing components
-// export { FloorPlanCanvas } from './components/FloorPlanCanvas'
-// export { TableNode } from './components/TableNode'
-// export { SeatNode } from './components/SeatNode'
-// export { WaitlistPanel } from './components/WaitlistPanel'
+export { useFloorPlan } from './hooks/useFloorPlan'
+export { useSeating } from './hooks/useSeating'
+export { useTableGroups } from './hooks/useTableGroups'
 
 // =============================================================================
 // PUBLIC SERVICES
 // =============================================================================
 
-// These will be implemented as we migrate existing lib functions
-// export { FloorPlanService } from './services/FloorPlanService'
-// export { TableService } from './services/TableService'
-// export { SeatService } from './services/SeatService'
-// export { StatusEngine } from './services/StatusEngine'
-// export { EntertainmentService } from './services/EntertainmentService'
+// Table Service (L2)
+export {
+  getTablesForLocation,
+  getTableById,
+  getTablesForSection,
+  updateTablePosition,
+  updateTableStatus,
+  toTableRect,
+  toTableRectArray,
+  getPrimaryTableId,
+  getPrimaryTable,
+  isPhysicalGroup,
+  isVirtualGroup,
+  isPrimaryTable,
+} from './services/table-service'
+
+// Seat Service (L3)
+export {
+  getSeatsForTable,
+  getSeatById,
+  autoGenerateSeats,
+  addVirtualSeat,
+  updateSeatOccupancy,
+  calculateSeatBalance,
+  determineSeatStatus,
+  SEAT_STATUS_COLORS,
+  SEAT_STATUS_BG_COLORS,
+  SEAT_STATUS_GLOW,
+} from './services/seat-service'
+
+export type { SeatStatus, SeatInfo, OrderItemForSeat, PaymentForSeat } from './services/seat-service'
+
+// Group Service (L4)
+export {
+  getGroupsForLocation,
+  getGroupById,
+  createVirtualGroup,
+  createPhysicalGroup,
+  dissolveGroup,
+  addTableToGroup,
+  removeTableFromGroup,
+} from './services/group-service'
+
+// Status Engine (L7)
+export {
+  isValidTransition,
+  getValidNextStatuses,
+  getNextStatusForTrigger,
+  isAutomaticTransition,
+  getTransitionTimeout,
+  getStatusDisplay,
+  isDiningState,
+  canSeatGuests,
+  needsAttention,
+} from './services/status-engine'
+
+// =============================================================================
+// PUBLIC COMPONENTS (to be migrated)
+// =============================================================================
+
+// Components will be migrated incrementally
+// export { FloorPlanCanvas } from './components/FloorPlanCanvas'
+// export { TableNode } from './components/TableNode'
+// export { SeatNode } from './components/SeatNode'
 
 // =============================================================================
 // CONSTANTS
@@ -102,4 +163,15 @@ export const GROUP_COLORS = [
   'yellow',
   'cyan',
   'red',
+] as const
+
+export const TABLE_SHAPES = [
+  'square',
+  'round',
+  'rectangle',
+  'oval',
+  'booth',
+  'bar_seat',
+  'high_top',
+  'custom',
 ] as const

@@ -57,7 +57,7 @@ export type FixtureType =
 
 export interface Table {
   id: string
-  roomId: string
+  sectionId?: string | null
   name: string
   number: number
   shape: TableShape
@@ -71,7 +71,7 @@ export interface Table {
   status: TableStatus
   isActive: boolean
   isEntertainment: boolean
-  entertainmentType?: EntertainmentType
+  entertainmentType?: EntertainmentType | string
 }
 
 export type TableShape =
