@@ -23,15 +23,43 @@ function getLabel(index: number, pattern: LabelPattern): string {
   }
 }
 
+// Available space interface
+interface AvailableSpace {
+  top?: number;
+  bottom?: number;
+  left?: number;
+  right?: number;
+}
+
+// Calculate dynamic offset based on available space
+function getDynamicOffset(availableSpace: number | undefined, baseOffset: number = 8): number {
+  const SEAT_RADIUS = 20; // Match EditorCanvas constant
+  const MIN_OFFSET = 10;
+  const MAX_OFFSET = 50;
+
+  if (availableSpace === undefined) return baseOffset;
+
+  // Compress offset if space is limited
+  return Math.max(MIN_OFFSET, Math.min(baseOffset, availableSpace - SEAT_RADIUS));
+}
+
 // Generate seats distributed around all 4 sides of a rectangle
 function generateSeatsAllAround(
   tableWidth: number,
   tableHeight: number,
   count: number,
-  labelPattern: LabelPattern = 'numeric'
+  labelPattern: LabelPattern = 'numeric',
+  availableSpace?: AvailableSpace
 ): SeatPosition[] {
   const seats: SeatPosition[] = []
-  const offset = 25 // Distance from table edge
+  const baseOffset = 8; // Base distance from table edge
+
+  // Calculate dynamic offsets for each side
+  const topOffset = getDynamicOffset(availableSpace?.top, baseOffset);
+  const bottomOffset = getDynamicOffset(availableSpace?.bottom, baseOffset);
+  const leftOffset = getDynamicOffset(availableSpace?.left, baseOffset);
+  const rightOffset = getDynamicOffset(availableSpace?.right, baseOffset);
+
   const perimeter = 2 * (tableWidth + tableHeight)
   const spacing = perimeter / count
 
@@ -43,24 +71,24 @@ function generateSeatsAllAround(
     if (currentDist < tableWidth) {
       // Top side
       x = -tableWidth / 2 + currentDist
-      y = -tableHeight / 2 - offset
+      y = -tableHeight / 2 - topOffset
       angle = 180 // Facing down
     } else if (currentDist < tableWidth + tableHeight) {
       // Right side
       const sideDist = currentDist - tableWidth
-      x = tableWidth / 2 + offset
+      x = tableWidth / 2 + rightOffset
       y = -tableHeight / 2 + sideDist
       angle = 270 // Facing left
     } else if (currentDist < 2 * tableWidth + tableHeight) {
       // Bottom side
       const sideDist = currentDist - tableWidth - tableHeight
       x = tableWidth / 2 - sideDist
-      y = tableHeight / 2 + offset
+      y = tableHeight / 2 + bottomOffset
       angle = 0 // Facing up
     } else {
       // Left side
       const sideDist = currentDist - 2 * tableWidth - tableHeight
-      x = -tableWidth / 2 - offset
+      x = -tableWidth / 2 - leftOffset
       y = tableHeight / 2 - sideDist
       angle = 90 // Facing right
     }
@@ -85,10 +113,12 @@ function generateSeatsFrontOnly(
   tableWidth: number,
   tableHeight: number,
   count: number,
-  labelPattern: LabelPattern = 'numeric'
+  labelPattern: LabelPattern = 'numeric',
+  availableSpace?: AvailableSpace
 ): SeatPosition[] {
   const seats: SeatPosition[] = []
-  const offset = 25
+  const baseOffset = 8;
+  const bottomOffset = getDynamicOffset(availableSpace?.bottom, baseOffset);
   const spacing = tableWidth / (count + 1)
 
   for (let i = 0; i < count; i++) {
@@ -96,7 +126,7 @@ function generateSeatsFrontOnly(
       seatNumber: i + 1,
       label: getLabel(i, labelPattern),
       relativeX: Math.round(-tableWidth / 2 + spacing * (i + 1)),
-      relativeY: tableHeight / 2 + offset,
+      relativeY: tableHeight / 2 + bottomOffset,
       angle: 0, // Facing up toward the bar
     })
   }
@@ -109,10 +139,16 @@ function generateSeatsThreeSides(
   tableWidth: number,
   tableHeight: number,
   count: number,
-  labelPattern: LabelPattern = 'numeric'
+  labelPattern: LabelPattern = 'numeric',
+  availableSpace?: AvailableSpace
 ): SeatPosition[] {
   const seats: SeatPosition[] = []
-  const offset = 25
+  const baseOffset = 8;
+
+  // Calculate dynamic offsets for each side
+  const leftOffset = getDynamicOffset(availableSpace?.left, baseOffset);
+  const bottomOffset = getDynamicOffset(availableSpace?.bottom, baseOffset);
+  const rightOffset = getDynamicOffset(availableSpace?.right, baseOffset);
 
   // Distribute: front gets more, sides split the rest
   const frontSeats = Math.ceil(count / 2)
@@ -128,7 +164,7 @@ function generateSeatsThreeSides(
     seats.push({
       seatNumber: seatNum + 1,
       label: getLabel(seatNum, labelPattern),
-      relativeX: -tableWidth / 2 - offset,
+      relativeX: -tableWidth / 2 - leftOffset,
       relativeY: Math.round(y),
       angle: 90,
     })
@@ -142,7 +178,7 @@ function generateSeatsThreeSides(
       seatNumber: seatNum + 1,
       label: getLabel(seatNum, labelPattern),
       relativeX: Math.round(x),
-      relativeY: tableHeight / 2 + offset,
+      relativeY: tableHeight / 2 + bottomOffset,
       angle: 0,
     })
     seatNum++
@@ -154,7 +190,7 @@ function generateSeatsThreeSides(
     seats.push({
       seatNumber: seatNum + 1,
       label: getLabel(seatNum, labelPattern),
-      relativeX: tableWidth / 2 + offset,
+      relativeX: tableWidth / 2 + rightOffset,
       relativeY: Math.round(y),
       angle: 270,
     })
@@ -169,10 +205,15 @@ function generateSeatsTwoSides(
   tableWidth: number,
   tableHeight: number,
   count: number,
-  labelPattern: LabelPattern = 'numeric'
+  labelPattern: LabelPattern = 'numeric',
+  availableSpace?: AvailableSpace
 ): SeatPosition[] {
   const seats: SeatPosition[] = []
-  const offset = 25
+  const baseOffset = 8;
+
+  // Calculate dynamic offsets for each side
+  const bottomOffset = getDynamicOffset(availableSpace?.bottom, baseOffset);
+  const rightOffset = getDynamicOffset(availableSpace?.right, baseOffset);
 
   // Split between front and right sides
   const frontSeats = Math.ceil(count / 2)
@@ -187,7 +228,7 @@ function generateSeatsTwoSides(
       seatNumber: seatNum + 1,
       label: getLabel(seatNum, labelPattern),
       relativeX: Math.round(x),
-      relativeY: tableHeight / 2 + offset,
+      relativeY: tableHeight / 2 + bottomOffset,
       angle: 0,
     })
     seatNum++
@@ -199,7 +240,7 @@ function generateSeatsTwoSides(
     seats.push({
       seatNumber: seatNum + 1,
       label: getLabel(seatNum, labelPattern),
-      relativeX: tableWidth / 2 + offset,
+      relativeX: tableWidth / 2 + rightOffset,
       relativeY: Math.round(y),
       angle: 270,
     })
@@ -214,10 +255,11 @@ function generateSeatsInside(
   tableWidth: number,
   tableHeight: number,
   count: number,
-  labelPattern: LabelPattern = 'numeric'
+  labelPattern: LabelPattern = 'numeric',
+  availableSpace?: AvailableSpace
 ): SeatPosition[] {
   const seats: SeatPosition[] = []
-  const innerPadding = 15
+  const innerPadding = 8
 
   // Two rows: back and front of booth
   const backSeats = Math.ceil(count / 2)
@@ -260,20 +302,21 @@ function generateSeatPositions(
   tableHeight: number,
   count: number,
   pattern: SeatPattern,
-  labelPattern: LabelPattern = 'numeric'
+  labelPattern: LabelPattern = 'numeric',
+  availableSpace?: AvailableSpace
 ): SeatPosition[] {
   switch (pattern) {
     case 'front_only':
-      return generateSeatsFrontOnly(tableWidth, tableHeight, count, labelPattern)
+      return generateSeatsFrontOnly(tableWidth, tableHeight, count, labelPattern, availableSpace)
     case 'three_sides':
-      return generateSeatsThreeSides(tableWidth, tableHeight, count, labelPattern)
+      return generateSeatsThreeSides(tableWidth, tableHeight, count, labelPattern, availableSpace)
     case 'two_sides':
-      return generateSeatsTwoSides(tableWidth, tableHeight, count, labelPattern)
+      return generateSeatsTwoSides(tableWidth, tableHeight, count, labelPattern, availableSpace)
     case 'inside':
-      return generateSeatsInside(tableWidth, tableHeight, count, labelPattern)
+      return generateSeatsInside(tableWidth, tableHeight, count, labelPattern, availableSpace)
     case 'all_around':
     default:
-      return generateSeatsAllAround(tableWidth, tableHeight, count, labelPattern)
+      return generateSeatsAllAround(tableWidth, tableHeight, count, labelPattern, availableSpace)
   }
 }
 
@@ -339,6 +382,7 @@ export async function POST(
       employeeId, // For audit logging
       checkCollisions = true, // New: whether to check for collisions
       forceGenerate = false, // New: generate even if collisions detected
+      availableSpace, // Optional: space available around table (for dynamic compression)
     } = body
 
     // Verify table exists and get details
@@ -383,7 +427,8 @@ export async function POST(
       table.height,
       seatCount,
       pattern,
-      labelPattern as LabelPattern
+      labelPattern as LabelPattern,
+      availableSpace // Pass through optional available space for dynamic compression
     )
 
     // Check for collisions if requested

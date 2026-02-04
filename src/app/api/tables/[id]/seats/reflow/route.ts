@@ -10,7 +10,7 @@ export async function POST(
   try {
     const { id: tableId } = await params;
     const body = await request.json();
-    const { oldWidth, oldHeight, newWidth, newHeight } = body;
+    const { oldWidth, oldHeight, newWidth, newHeight, availableSpace } = body;
 
     if (!oldWidth || !oldHeight || !newWidth || !newHeight) {
       return NextResponse.json(
@@ -18,6 +18,18 @@ export async function POST(
         { status: 400 }
       );
     }
+
+    // Helper to calculate dynamic clearance based on available space
+    const getDynamicClearance = (availableSpace: number | undefined, baseClearance: number = 25): number => {
+      const SEAT_RADIUS = 20;
+      const MIN_CLEARANCE = 10;
+      const MAX_CLEARANCE = 50;
+
+      if (availableSpace === undefined) return baseClearance;
+
+      // Compress clearance if space is limited
+      return Math.max(MIN_CLEARANCE, Math.min(baseClearance, availableSpace - SEAT_RADIUS));
+    };
 
     // Get table and its active seats
     const table = await db.table.findUnique({
@@ -37,8 +49,12 @@ export async function POST(
       );
     }
 
-    // Fixed clearance from table edge (matches seat-generation.ts)
-    const CLEARANCE = 25;
+    // Calculate dynamic clearance for each side
+    const baseClearance = 25;
+    const topClearance = getDynamicClearance(availableSpace?.top, baseClearance);
+    const bottomClearance = getDynamicClearance(availableSpace?.bottom, baseClearance);
+    const leftClearance = getDynamicClearance(availableSpace?.left, baseClearance);
+    const rightClearance = getDynamicClearance(availableSpace?.right, baseClearance);
 
     // Handle round/oval tables differently
     const isRoundTable = table.shape === 'round' || table.shape === 'oval';
@@ -59,6 +75,9 @@ export async function POST(
           // Calculate current angle and distance from center
           const currentAngle = Math.atan2(seat.relativeY, seat.relativeX);
 
+          // Use average clearance for round tables (simplified)
+          const avgClearance = (topClearance + bottomClearance + leftClearance + rightClearance) / 4;
+
           // For oval, use ellipse formula; for round, use circle
           let newRadius: number;
           if (table.shape === 'oval') {
@@ -66,10 +85,10 @@ export async function POST(
             newRadius = Math.sqrt(
               Math.pow(newHalfW * Math.cos(currentAngle), 2) +
               Math.pow(newHalfH * Math.sin(currentAngle), 2)
-            ) + CLEARANCE;
+            ) + avgClearance;
           } else {
             // Circle: use smaller dimension as radius
-            newRadius = Math.min(newHalfW, newHalfH) + CLEARANCE;
+            newRadius = Math.min(newHalfW, newHalfH) + avgClearance;
           }
 
           newRelX = newRadius * Math.cos(currentAngle);
@@ -85,17 +104,19 @@ export async function POST(
 
           if (normalizedY >= normalizedX) {
             // Seat is on top or bottom edge
-            // Maintain Y clearance, scale X proportionally along the edge
+            // Use dynamic clearance based on side
             const direction = seat.relativeY >= 0 ? 1 : -1;
-            newRelY = direction * (newHalfH + CLEARANCE);
+            const clearance = direction > 0 ? bottomClearance : topClearance;
+            newRelY = direction * (newHalfH + clearance);
 
             // Scale X position proportionally along the edge
             newRelX = seat.relativeX * (newWidth / oldWidth);
           } else {
             // Seat is on left or right edge
-            // Maintain X clearance, scale Y proportionally along the edge
+            // Use dynamic clearance based on side
             const direction = seat.relativeX >= 0 ? 1 : -1;
-            newRelX = direction * (newHalfW + CLEARANCE);
+            const clearance = direction > 0 ? rightClearance : leftClearance;
+            newRelX = direction * (newHalfW + clearance);
 
             // Scale Y position proportionally along the edge
             newRelY = seat.relativeY * (newHeight / oldHeight);

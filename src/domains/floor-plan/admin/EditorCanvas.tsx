@@ -28,6 +28,14 @@ interface VirtualFloorPlan {
   gridSizeFeet: number;
 }
 
+// Available space around a table (in pixels)
+interface AvailableSpace {
+  top: number;    // pixels to nearest obstacle above
+  bottom: number; // pixels to nearest obstacle below
+  left: number;   // pixels to nearest obstacle left
+  right: number;  // pixels to nearest obstacle right
+}
+
 interface EditorCanvasProps {
   roomId: string;
   toolMode: EditorToolMode;
@@ -139,11 +147,15 @@ export function EditorCanvas({
   const [showBoundaryDebug, setShowBoundaryDebug] = useState(false);
 
   // Boundary configuration (distance from table edge in pixels)
-  const SEAT_BOUNDARY_DISTANCE = 50;  // Increased from 40 - more room to drag
-  const SEAT_MIN_DISTANCE = 10;       // Increased from 5 - clearer boundary
-  const SEAT_RADIUS = 20;             // Increased from 15 - easier to click
+  const SEAT_MAX_BOUNDARY = 35;       // Maximum distance when space allows (was SEAT_BOUNDARY_DISTANCE)
+  const SEAT_MIN_BOUNDARY = 5;        // Minimum distance when squeezed (was SEAT_MIN_DISTANCE)
+  const SEAT_RADIUS = 20;             // Seat visual size
   const SEAT_HIT_RADIUS = 25;         // Larger hit target for clicking
   const SEAT_COLLISION_RADIUS = 8;    // Small collision radius - allow seats to be very close
+
+  // For backward compatibility in existing code
+  const SEAT_BOUNDARY_DISTANCE = SEAT_MAX_BOUNDARY;
+  const SEAT_MIN_DISTANCE = SEAT_MIN_BOUNDARY;
 
   // Check if a table would collide with any fixture
   const checkTableFixtureCollision = useCallback((
@@ -351,6 +363,178 @@ export function EditorCanvas({
 
     return false; // No collisions
   }, [seats, tables, fixtures, useDatabase, dbTables, dbFixtures, SEAT_RADIUS]);
+
+  // Calculate available space around a table (in pixels)
+  const calculateAvailableSpace = useCallback((
+    tableId: string,
+    tablePosX: number,
+    tablePosY: number,
+    tableWidth: number,
+    tableHeight: number,
+    tableRotation: number = 0
+  ): AvailableSpace => {
+    // Default to maximum boundary if no obstacles nearby
+    const defaultSpace = SEAT_MAX_BOUNDARY + SEAT_RADIUS;
+    let topSpace = defaultSpace;
+    let bottomSpace = defaultSpace;
+    let leftSpace = defaultSpace;
+    let rightSpace = defaultSpace;
+
+    const tableList = useDatabase ? (dbTables || []) : tables;
+    const fixtureList = useDatabase ? (dbFixtures || []) : fixtures;
+
+    // For simplicity, assume rectangular bounding box (ignore rotation for obstacle distance)
+    const tableTop = tablePosY;
+    const tableBottom = tablePosY + tableHeight;
+    const tableLeft = tablePosX;
+    const tableRight = tablePosX + tableWidth;
+
+    // Check distance to other tables
+    for (const otherTable of tableList) {
+      if (otherTable.id === tableId) continue;
+
+      const otherTop = otherTable.posY;
+      const otherBottom = otherTable.posY + otherTable.height;
+      const otherLeft = otherTable.posX;
+      const otherRight = otherTable.posX + otherTable.width;
+
+      // Check if tables are aligned horizontally (check top/bottom space)
+      if (!(tableRight < otherLeft || tableLeft > otherRight)) {
+        // Tables overlap horizontally, check vertical distance
+        if (otherBottom <= tableTop) {
+          // Other table is above
+          const distance = tableTop - otherBottom;
+          topSpace = Math.min(topSpace, distance);
+        } else if (otherTop >= tableBottom) {
+          // Other table is below
+          const distance = otherTop - tableBottom;
+          bottomSpace = Math.min(bottomSpace, distance);
+        }
+      }
+
+      // Check if tables are aligned vertically (check left/right space)
+      if (!(tableBottom < otherTop || tableTop > otherBottom)) {
+        // Tables overlap vertically, check horizontal distance
+        if (otherRight <= tableLeft) {
+          // Other table is to the left
+          const distance = tableLeft - otherRight;
+          leftSpace = Math.min(leftSpace, distance);
+        } else if (otherLeft >= tableRight) {
+          // Other table is to the right
+          const distance = otherLeft - tableRight;
+          rightSpace = Math.min(rightSpace, distance);
+        }
+      }
+    }
+
+    // Check distance to fixtures
+    for (const fixture of fixtureList) {
+      if (fixture.geometry.type === 'rectangle') {
+        const fx = FloorCanvasAPI.feetToPixels(fixture.geometry.position.x);
+        const fy = FloorCanvasAPI.feetToPixels(fixture.geometry.position.y);
+        const fw = FloorCanvasAPI.feetToPixels(fixture.geometry.width);
+        const fh = FloorCanvasAPI.feetToPixels(fixture.geometry.height);
+
+        const fixtureTop = fy;
+        const fixtureBottom = fy + fh;
+        const fixtureLeft = fx;
+        const fixtureRight = fx + fw;
+
+        // Check horizontal alignment
+        if (!(tableRight < fixtureLeft || tableLeft > fixtureRight)) {
+          if (fixtureBottom <= tableTop) {
+            const distance = tableTop - fixtureBottom;
+            topSpace = Math.min(topSpace, distance);
+          } else if (fixtureTop >= tableBottom) {
+            const distance = fixtureTop - tableBottom;
+            bottomSpace = Math.min(bottomSpace, distance);
+          }
+        }
+
+        // Check vertical alignment
+        if (!(tableBottom < fixtureTop || tableTop > fixtureBottom)) {
+          if (fixtureRight <= tableLeft) {
+            const distance = tableLeft - fixtureRight;
+            leftSpace = Math.min(leftSpace, distance);
+          } else if (fixtureLeft >= tableRight) {
+            const distance = fixtureLeft - tableRight;
+            rightSpace = Math.min(rightSpace, distance);
+          }
+        }
+      }
+      // Simplified: treat circles and lines as not affecting space for now
+      // (more complex geometry would require more sophisticated calculations)
+    }
+
+    return {
+      top: Math.max(0, topSpace),
+      bottom: Math.max(0, bottomSpace),
+      left: Math.max(0, leftSpace),
+      right: Math.max(0, rightSpace),
+    };
+  }, [tables, fixtures, useDatabase, dbTables, dbFixtures, SEAT_MAX_BOUNDARY, SEAT_RADIUS]);
+
+  // Compress seats to fit within available space
+  const compressSeatsToFit = useCallback((
+    tableId: string,
+    tableSeats: EditorSeat[],
+    table: EditorTable,
+    availableSpace: AvailableSpace
+  ): EditorSeat[] => {
+    if (tableSeats.length === 0) return tableSeats;
+
+    const halfWidth = table.width / 2;
+    const halfHeight = table.height / 2;
+
+    return tableSeats.map((seat) => {
+      const absX = Math.abs(seat.relativeX);
+      const absY = Math.abs(seat.relativeY);
+
+      // Determine which side the seat is on
+      const normalizedX = absX / halfWidth;
+      const normalizedY = absY / halfHeight;
+
+      let newRelativeX = seat.relativeX;
+      let newRelativeY = seat.relativeY;
+
+      // Calculate dynamic offset for each side based on available space
+      const baseOffset = 25; // Default offset from table edge
+
+      if (normalizedY >= normalizedX) {
+        // Seat is on top or bottom edge
+        const direction = seat.relativeY >= 0 ? 1 : -1;
+        const availableOnSide = direction > 0 ? availableSpace.bottom : availableSpace.top;
+
+        // Calculate dynamic offset (compressed if space is tight)
+        const dynamicOffset = Math.max(
+          SEAT_MIN_BOUNDARY,
+          Math.min(baseOffset, availableOnSide - SEAT_RADIUS)
+        );
+
+        // Apply dynamic offset
+        newRelativeY = direction * (halfHeight + dynamicOffset);
+      } else {
+        // Seat is on left or right edge
+        const direction = seat.relativeX >= 0 ? 1 : -1;
+        const availableOnSide = direction > 0 ? availableSpace.right : availableSpace.left;
+
+        // Calculate dynamic offset (compressed if space is tight)
+        const dynamicOffset = Math.max(
+          SEAT_MIN_BOUNDARY,
+          Math.min(baseOffset, availableOnSide - SEAT_RADIUS)
+        );
+
+        // Apply dynamic offset
+        newRelativeX = direction * (halfWidth + dynamicOffset);
+      }
+
+      return {
+        ...seat,
+        relativeX: Math.round(newRelativeX),
+        relativeY: Math.round(newRelativeY),
+      };
+    });
+  }, [SEAT_MIN_BOUNDARY, SEAT_RADIUS]);
 
   // Check if position is valid for a seat (boundary + not inside table)
   const isValidSeatPosition = useCallback((
@@ -1241,6 +1425,37 @@ export function EditorCanvas({
           // Check for collision with other tables (exclude self)
           // Allow overlapping - manager can arrange tables as needed
           // Table-to-table collision is soft (visual only), not blocking
+
+          // Calculate available space at new position
+          const availableSpace = calculateAvailableSpace(
+            selectedTableId,
+            newPosX,
+            newPosY,
+            currentTable.width,
+            currentTable.height,
+            currentTable.rotation || 0
+          );
+
+          // Get current seats for this table
+          const tableSeats = seats.filter(s => s.tableId === selectedTableId);
+
+          // Compress seats to fit available space (preview only, don't save yet)
+          if (tableSeats.length > 0) {
+            const compressedSeats = compressSeatsToFit(
+              selectedTableId,
+              tableSeats,
+              { ...currentTable, posX: newPosX, posY: newPosY },
+              availableSpace
+            );
+
+            // Update local seat state for preview
+            setSeats(prevSeats =>
+              prevSeats.map(seat => {
+                const compressed = compressedSeats.find(cs => cs.id === seat.id);
+                return compressed || seat;
+              })
+            );
+          }
         }
 
         onTableUpdate(selectedTableId, {
@@ -1279,7 +1494,7 @@ export function EditorCanvas({
         refreshFixtures();
       }
     },
-    [floorPlan, isDragging, isDraggingTable, isDraggingSeat, draggedSeatId, seatDragOffset, isRotatingTable, isResizingTable, resizeHandle, resizeStartDimensions, resizeStartPos, resizeStartMousePos, selectedFixtureId, selectedTableId, dragOffset, tableDragOffset, rotationStartAngle, rotationStartMouseAngle, fixtures, tables, seats, screenToFloor, calculateAngle, onFixtureUpdate, onTableUpdate, refreshFixtures, checkTableFixtureCollision, checkTableCollision, checkSeatsObstacleCollision, isValidSeatPosition]
+    [floorPlan, isDragging, isDraggingTable, isDraggingSeat, draggedSeatId, seatDragOffset, isRotatingTable, isResizingTable, resizeHandle, resizeStartDimensions, resizeStartPos, resizeStartMousePos, selectedFixtureId, selectedTableId, dragOffset, tableDragOffset, rotationStartAngle, rotationStartMouseAngle, fixtures, tables, seats, screenToFloor, calculateAngle, onFixtureUpdate, onTableUpdate, refreshFixtures, checkTableFixtureCollision, isValidSeatPosition]
   );
 
   // Handle mouse up
@@ -1389,7 +1604,47 @@ export function EditorCanvas({
         return;
       }
 
-      if (isDraggingTable) {
+      if (isDraggingTable && selectedTableId) {
+        // Save compressed seat positions to database
+        const currentTable = (useDatabase ? (dbTables || []) : tables).find(t => t.id === selectedTableId);
+        if (currentTable && onSeatUpdate) {
+          // Calculate available space at final position
+          const availableSpace = calculateAvailableSpace(
+            selectedTableId,
+            currentTable.posX,
+            currentTable.posY,
+            currentTable.width,
+            currentTable.height,
+            currentTable.rotation || 0
+          );
+
+          // Get current seats for this table
+          const tableSeats = seats.filter(s => s.tableId === selectedTableId);
+
+          // Compress seats if needed
+          if (tableSeats.length > 0) {
+            const compressedSeats = compressSeatsToFit(
+              selectedTableId,
+              tableSeats,
+              currentTable,
+              availableSpace
+            );
+
+            // Save compressed positions to database
+            compressedSeats.forEach(seat => {
+              // Only update if position changed
+              const originalSeat = tableSeats.find(s => s.id === seat.id);
+              if (originalSeat &&
+                  (originalSeat.relativeX !== seat.relativeX || originalSeat.relativeY !== seat.relativeY)) {
+                onSeatUpdate(seat.id, {
+                  relativeX: seat.relativeX,
+                  relativeY: seat.relativeY,
+                });
+              }
+            });
+          }
+        }
+
         setIsDraggingTable(false);
         setTableDragOffset(null);
         return;
