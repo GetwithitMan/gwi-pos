@@ -1,5 +1,15 @@
 # GWI POS
 
+## Start Project Manager
+
+When the user says "Start Project Manager", "Open Project Manager", or similar:
+1. Read this file (`/.claude/PROJECT.md`) for project overview
+2. Read `/.claude/TASKS.md` for the current task queue
+3. Show active tasks, ready tasks, and blockers
+4. Ask what the user wants to work on
+
+---
+
 ## What It Is
 
 GWI POS is a hybrid SaaS point-of-sale system designed for bars and restaurants. It emphasizes a "fewest clicks" philosophy for speed in high-volume environments. Each location runs a local server (Ubuntu mini PC) for instant response times and offline capability, while a cloud admin console manages all locations centrally. The system supports 60 modular "skills" (feature domains) that can be developed independently.

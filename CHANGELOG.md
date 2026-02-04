@@ -4,6 +4,434 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2026-02-03] Session 29
+
+### Menu/Liquor Builder Separation & Inventory Seeding (Skill 141)
+
+Complete separation of food menu management from liquor inventory, establishing Liquor Builder as the sole source of truth for all spirits, wines, and cocktails.
+
+**The Problem:**
+- Menu page (`/menu`) was showing both food AND liquor categories
+- Liquor categories appeared empty in menu management
+- Confusion about where to manage spirits vs food items
+- Previous restore operation created duplicate liquor items as menu items
+
+**The Solution:**
+
+**1. Menu Page Filtering:**
+- `/menu` now filters out `categoryType: 'liquor'` and `categoryType: 'drinks'`
+- Only food, pizza, entertainment, and combo categories appear in menu management
+- Liquor categories no longer visible in food menu interface
+
+**File Modified:**
+- `src/app/(admin)/menu/page.tsx` - Added category type filtering at line 248
+
+**2. Comprehensive Liquor Inventory Seeding:**
+Created automated seeding script to populate Liquor Builder with complete bar inventory:
+
+**Categories Created:**
+- Whiskey (32 bottles)
+- Vodka (20 bottles)
+- Rum (16 bottles)
+- Tequila (29 bottles)
+- Gin (14 bottles)
+- Cocktails (36 bottles)
+
+**Total: 147 bottles across 6 categories**
+
+**Tier Distribution:**
+Bottles automatically assigned to spirit tiers based on sell price:
+- **Well**: $0-$6 (24 bottles)
+- **Call**: $6.01-$9 (59 bottles)
+- **Premium**: $9.01-$13 (50 bottles)
+- **Top Shelf**: $13.01+ (14 bottles)
+
+**Script Features:**
+- Checks for existing bottles to avoid duplicates
+- Creates linked `InventoryItem` for each bottle (unified inventory tracking)
+- Calculates pour costs, pours per bottle automatically
+- Standard 750ml bottle size, 1.5oz pour
+- Estimated costs: sell price × 0.25
+
+**Files Created:**
+- `scripts/seed-liquor-inventory.ts` - Seeding script for liquor builder inventory
+
+**API Endpoints Used:**
+- `POST /api/liquor/categories` - Create spirit categories
+- `POST /api/liquor/bottles` - Create bottle products with inventory items
+
+**Clear Separation:**
+- **Menu (`/menu`)**: Food items only (burgers, pizzas, appetizers, etc.)
+- **Liquor Builder (`/liquor-builder`)**: ALL spirits, cocktails, wines, beers
+- No overlap or confusion between the two systems
+
+**Why This Matters:**
+- Prevents accidental duplicate liquor items in menu system
+- Clear mental model: "Food goes in Menu, Drinks go in Liquor Builder"
+- Liquor Builder has specialized features (pour sizes, recipes, spirit tiers)
+- Menu builder focused on food-specific features (recipes, modifiers, combos)
+
+**Skill Doc:** `docs/skills/141-MENU-LIQUOR-SEPARATION.md`
+
+---
+
+## [2026-02-02] Session 28
+
+### Ingredient Costing & Recipe System (Skill 125)
+
+Complete ingredient tracking system enabling full cost calculation from raw materials through menu items, including prep yields, portion sizes, and modifier adjustments.
+
+**The Complete Tracking Flow:**
+```
+RAW MATERIALS (Flour, Yeast, Oil, Water)
+    ↓ Recipe (IngredientRecipe model)
+INVENTORY ITEM (Pizza Dough - 5 lb batch)
+    ↓ Batch Yield + Yield %
+PREP ITEMS (Personal Crust 8", Large Crust 14")
+    ↓ Portion Size + Modifiers (Lite/Extra/No)
+MENU ITEMS (Personal Pizza, Large Supreme)
+```
+
+**Schema Changes:**
+
+1. **New Model: IngredientRecipe** - Links inventory items to their component raw materials
+   - `outputId` - The item being made (e.g., Pizza Dough)
+   - `componentId` - The raw material used (e.g., Flour)
+   - `quantity` / `unit` - Amount needed
+   - `batchSize` / `batchUnit` - For batch recipes
+
+2. **New Ingredient Fields:**
+   - `portionSize` / `portionUnit` - How much per serving
+   - `batchYield` - How many prep items from one inventory unit
+
+**API Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/ingredients/[id]/recipe` | Get recipe components |
+| POST | `/api/ingredients/[id]/recipe` | Add component |
+| PUT | `/api/ingredients/[id]/recipe` | Update component |
+| DELETE | `/api/ingredients/[id]/recipe?recipeId=X` | Remove component |
+
+**UI Updates:**
+
+1. **Inventory Item Editor** - New "Recipe - What makes this item?" section
+   - Collapsible recipe components list
+   - Dropdown to add components from available ingredients
+   - Remove button per component
+   - Cost calculation preview
+
+2. **Prep Item Editor** - Complete costing fields:
+   - Batch Yield (green box) - "From 1 lb of Chicken → X oz"
+   - Yield % (amber box) - Cooking/prep loss with quick buttons
+   - Portion Size (blue box) - How much per serving
+   - Modifier Amounts (purple box) - Lite/Extra multipliers
+
+3. **Hierarchy View:**
+   - Daily count badge for prep items marked for daily counting
+   - Alphabetical sorting for categories and prep items
+
+**Files Modified:**
+- `prisma/schema.prisma` - Added IngredientRecipe model, portionSize, portionUnit, batchYield
+- `src/app/api/ingredients/route.ts` - Added all new fields to responses, fixed grandchildren query
+- `src/app/api/ingredients/[id]/route.ts` - Added portionSize, portionUnit support
+- `src/app/api/ingredients/[id]/recipe/route.ts` - NEW: Recipe CRUD
+- `src/components/ingredients/IngredientEditorModal.tsx` - Complete rewrite with costing sections
+- `src/components/ingredients/IngredientHierarchy.tsx` - Daily badge, alphabetical sorting
+
+**Bug Fixes:**
+- Fixed `isDailyCountItem` not appearing on prep items (missing from API response)
+- Fixed `batchYield` unknown field error (Prisma client regeneration required)
+- Fixed grandchildren select missing fields (portionSize, portionUnit, liteMultiplier, etc.)
+
+**Skill Doc:** `docs/skills/125-INGREDIENT-COSTING-RECIPES.md`
+
+---
+
+## [2026-02-02] Session 27
+
+### Admin Navigation Standardization (Skill 124)
+
+Completed the admin navigation page structure reorganization, adding standardized `AdminPageHeader` and `AdminSubNav` components across all admin pages.
+
+**Components Created:**
+
+1. **AdminPageHeader** (`src/components/admin/AdminPageHeader.tsx`)
+   - Unified page header with title, subtitle (ReactNode), breadcrumbs, back button, and actions
+   - Consistent styling across all admin pages
+
+2. **AdminSubNav** (`src/components/admin/AdminSubNav.tsx`)
+   - Pre-defined sub-navigation configs: `menuSubNav`, `customersSubNav`, `teamSubNav`, `floorSubNav`
+   - Responsive horizontal tab-style navigation
+
+**Pages Updated:**
+
+| Section | Pages |
+|---------|-------|
+| **Customers** | customers, gift-cards, house-accounts, coupons |
+| **Team** | employees, roles, scheduling, payroll, events |
+| **Floor** | tables, floor-plan, reservations |
+
+**Files Modified:**
+- `src/app/(admin)/customers/page.tsx`
+- `src/app/(admin)/gift-cards/page.tsx`
+- `src/app/(admin)/house-accounts/page.tsx`
+- `src/app/(admin)/coupons/page.tsx`
+- `src/app/(admin)/employees/page.tsx`
+- `src/app/(admin)/roles/page.tsx`
+- `src/app/(admin)/scheduling/page.tsx`
+- `src/app/(admin)/payroll/page.tsx`
+- `src/app/(admin)/events/page.tsx`
+- `src/app/(admin)/tables/page.tsx`
+- `src/app/(admin)/floor-plan/page.tsx`
+- `src/app/(admin)/reservations/page.tsx`
+
+**Bug Fixes:**
+- Fixed AdminPageHeader subtitle prop to accept `React.ReactNode` instead of just `string`
+- Fixed unclosed JSX tags in multiple pages (coupons, events, gift-cards, house-accounts, reservations)
+
+---
+
+### Bar Tab Button → Bar Mode (FloorPlanHome)
+
+Changed the "Bar Tab" button in the POS floor plan interface to switch to Bar Mode instead of creating a bar tab order type.
+
+**What Changed:**
+- Renamed button from "Bar Tab" to "Bar Mode"
+- Button now calls `onSwitchToBartenderView()` to switch to bartender interface
+- Button is conditionally rendered only when `onSwitchToBartenderView` prop is provided
+
+**File Modified:**
+- `src/components/floor-plan/FloorPlanHome.tsx` (line ~2315)
+
+**Rationale:**
+Bar tabs are created through the normal order flow. The "Bar Tab" button was redundant and better serves the workflow by providing quick access to the specialized bartender view.
+
+---
+
+## [2026-02-01] Session 26
+
+### Entertainment Floor Plan Integration (Skill 123)
+
+Integrated entertainment menu items directly into the floor plan builder, allowing visual placement and management of timed rental equipment like pool tables, dart boards, and karaoke rooms.
+
+**Core Features:**
+
+1. **FloorPlanElement Model** (`prisma/schema.prisma`)
+   - New model for placing entertainment items on floor plan
+   - Links to MenuItem via `linkedMenuItemId` for pricing/sessions
+   - Supports position, size, rotation, status, and visual customization
+   - Includes waitlist relation for entertainment queuing
+
+2. **Entertainment Visual Components** (`src/components/floor-plan/entertainment-visuals.tsx`)
+   - 12 inline SVG visual types: pool_table, dartboard, arcade, foosball, shuffleboard, ping_pong, bowling_lane, karaoke_stage, dj_booth, photo_booth, vr_station, game_table
+   - Status-based color theming (available=green, in_use=amber, reserved=indigo, maintenance=red)
+   - Auto-detection of visual type from menu item name
+
+3. **AddEntertainmentPalette** (`src/components/floor-plan/AddEntertainmentPalette.tsx`)
+   - Bottom sheet modal for adding entertainment to floor plan
+   - Filters to show only items from `categoryType: 'entertainment'`
+   - One placement per menu item (prevents duplicates)
+   - Two-step selection: choose item → choose visual style
+
+4. **FloorPlanEntertainment** (`src/components/floor-plan/FloorPlanEntertainment.tsx`)
+   - Renders elements on floor plan canvas
+   - Visual-only rotation (label stays horizontal for readability)
+   - Extended rotation handle (40px stem, 24px handle) for easier grabbing
+   - 15-degree snap increments
+   - Resize handles at corners
+   - Status glow effects and badges (time remaining, waitlist count)
+
+5. **API Endpoints** (`src/app/api/floor-plan-elements/`)
+   - `GET /api/floor-plan-elements` - List elements with linkedMenuItem and section includes
+   - `POST /api/floor-plan-elements` - Create new element with validation
+   - `GET/PUT/DELETE /api/floor-plan-elements/[id]` - CRUD operations
+
+6. **Floor Plan Store** (`src/components/floor-plan/use-floor-plan.ts`)
+   - Added `elements` and `selectedElementId` state
+   - Element management actions: add, update, updatePosition, updateSize, delete, select
+
+7. **Filtering Fix**
+   - Elements without room assignment (sectionId: null) now always display
+   - Prevents newly placed elements from being hidden when a room is selected
+
+**Files Created:**
+- `src/components/floor-plan/entertainment-visuals.tsx`
+- `src/components/floor-plan/AddEntertainmentPalette.tsx`
+- `src/components/floor-plan/FloorPlanEntertainment.tsx`
+- `src/app/api/floor-plan-elements/route.ts`
+- `src/app/api/floor-plan-elements/[id]/route.ts`
+- `docs/skills/123-ENTERTAINMENT-FLOOR-PLAN.md`
+
+**Files Modified:**
+- `prisma/schema.prisma` - FloorPlanElement model
+- `src/components/floor-plan/use-floor-plan.ts` - Element state/actions
+- `src/app/(admin)/floor-plan/page.tsx` - Integration with palette and rendering
+
+**Bug Fixes:**
+- Fixed Prisma client not recognizing FloorPlanElement (cleared .next and .prisma caches)
+- Fixed elements not showing when room selected (updated filter to include null sectionId)
+
+---
+
+## [2026-01-31] Session 25
+
+### Tag-Based Routing Engine - Finalization
+
+Completed the unified tag-based routing system that replaces scattered `printerIds` fields with a pub/sub architecture where items publish to `routeTags` and stations subscribe to tags.
+
+**Core Components:**
+
+1. **OrderRouter Enhancement** (`src/lib/order-router.ts`)
+   - Added `primaryItems` / `referenceItems` separation
+   - Reference items show other items in order for cook context
+   - "This burger is part of a larger order with a pizza"
+   - See: Skill #201
+
+2. **Atomic Print Configuration** (`src/types/routing.ts`)
+   - Per-element print settings (stationName, orderNumber, tabName, etc.)
+   - Each element has: enabled, align, size, reverse, bold, prefix, suffix
+   - Divider styles: single-line, double-line, dashed, dots, stars, equals
+   - `DEFAULT_ATOMIC_PRINT_CONFIG` constant for new stations
+
+3. **Schema Updates** (`prisma/schema.prisma`)
+   - Added `showReferenceItems` Boolean to Station (default: true)
+   - Added `atomicPrintConfig` JSON field to Station
+   - Updated RoutingManifest interface with new fields
+
+4. **Migration Script** (`scripts/migrate-routing.ts`)
+   - Non-destructive migration from old printerIds to new Station model
+   - Converts Printers → Stations with inferred tags
+   - Creates Pizza Station from PizzaConfig.printerIds
+   - Creates Expo Station if none exists
+   - Generates routeTags for Categories based on categoryType
+   - Run: `npx ts-node scripts/migrate-routing.ts [locationId]`
+
+**Files Created:**
+- `scripts/migrate-routing.ts` - Migration utility
+
+**Files Modified:**
+- `prisma/schema.prisma` - Added showReferenceItems, atomicPrintConfig
+- `src/lib/order-router.ts` - primaryItems/referenceItems separation
+- `src/types/routing.ts` - AtomicPrintConfig types, updated RoutingManifest
+
+---
+
+### Socket.io Real-Time KDS Architecture
+
+Replaced 3-5 second polling with WebSocket-based real-time updates using a room-based architecture.
+
+**Room Architecture:**
+```
+location:{id}   - Global venue alerts (sync status, hardware failures)
+tag:{tagName}   - Prep stations (pizza KDS only hears tag:pizza)
+terminal:{id}   - Direct messages to specific handheld
+```
+
+**Server Components:**
+
+1. **Socket Server** (`src/lib/socket-server.ts`)
+   - Room-based event routing
+   - `join_station` - Terminals join tag-based rooms
+   - `new_order` - Dispatches to tag rooms from routing manifest
+   - `item_status` - Broadcasts item status changes
+   - `entertainment_update` - Syncs timer updates
+
+2. **Socket Dispatch Helper** (`src/lib/socket-dispatch.ts`)
+   - `dispatchNewOrder()` - Called after OrderRouter.resolveRouting()
+   - `dispatchItemStatus()` - Item cooking/ready/served
+   - `dispatchOrderBumped()` - Order fully served
+   - `dispatchEntertainmentUpdate()` - Timer start/extend/stop
+
+3. **KDS React Hook** (`src/hooks/useKDSSockets.ts`)
+   - Replaces polling with WebSocket subscriptions
+   - Optimistic local state updates on bump
+   - Automatic reconnection with fallback to polling
+   - Sound alerts on new orders
+   - See: Skill #202
+
+4. **Event Types** (`src/lib/events/types.ts`)
+   - `KDSOrderReceivedEvent` - Full order with primary/reference items
+   - `KDSItemStatusUpdateEvent` - Item status change
+   - `KDSOrderBumpedEvent` - Order bumped from station
+   - `EntertainmentSessionUpdateEvent` - Timer updates
+   - New channel types: `tag`, `terminal`
+
+5. **API Integration** (`src/app/api/orders/[id]/send/route.ts`)
+   - Integrated OrderRouter.resolveRouting()
+   - Fire-and-forget socket dispatch after DB update
+   - Returns routing info in response
+
+**Performance Benefits:**
+- Latency: <50ms on local network (vs 3-5 second polling)
+- DB Load: ~200-300 hits/min → near zero during service
+- Battery: Handhelds idle until actual orders arrive
+- Sync: No more "ghost bumps" - all KDS screens update instantly
+
+**Files Created:**
+- `src/lib/socket-server.ts` - Socket.io server
+- `src/lib/socket-dispatch.ts` - Dispatch helpers
+- `src/hooks/useKDSSockets.ts` - React hook
+- `src/app/api/internal/socket/broadcast/route.ts` - Internal API
+
+**Files Modified:**
+- `src/lib/events/types.ts` - New KDS event types
+- `src/app/api/orders/[id]/send/route.ts` - Routing + dispatch integration
+
+**Dependencies Added:**
+- `socket.io` - Server-side WebSocket
+- `socket.io-client` - Client-side WebSocket
+
+---
+
+### ESC/POS Impact Printer Fix
+
+Fixed TM-U220 impact printer color state bleed issue.
+
+**Problem:** Impact printers are stateful - if a print job ends with red color enabled, the next job might start in red.
+
+**Solution:** Added `COLOR_BLACK` reset at end of document building functions.
+
+**Files Modified:**
+- `src/lib/escpos/commands.ts`
+  - `buildDocument()` - Added COLOR_BLACK + NORMAL_SIZE reset
+  - `buildDocumentNoCut()` - Added COLOR_BLACK + IMPACT_NORMAL reset
+
+---
+
+### Tip Guide Basis Configuration (Planned)
+
+Added feature spec for configurable tip guide calculations. Servers will no longer be penalized when discounts/promos/gift cards are applied.
+
+**Settings Options:**
+- `net_total` - Current behavior (after all adjustments)
+- `pre_discount` - Before discounts, after tax
+- `gross_subtotal` - Original item subtotal (recommended)
+- `custom` - Selective exclusions via checkboxes
+
+**Files Created:**
+- `docs/features/tip-guide-basis.md` - Feature specification
+
+**CLAUDE.md Updated:**
+- Added as Priority 4 in TODO section
+- Updated Priority 3 (Kitchen/Print) with Socket.io completion
+- Added Priority 6 for Tag-Based Routing completion
+
+---
+
+### Skills Documentation
+
+Created/updated skills documentation for new features.
+
+**Skills Created:**
+| Skill # | Name | File |
+|---------|------|------|
+| 201 | Tag-Based Routing Engine | `docs/skills/201-tag-based-routing.md` |
+| 202 | Socket.io Real-Time KDS | `docs/skills/202-socketio-realtime-kds.md` |
+| 203 | Reference Items & Atomic Print | `docs/skills/203-reference-items-atomic-print.md` |
+
+---
+
 ## [2026-01-29] Session 24
 
 ### Simplified Print Routing System

@@ -6,7 +6,7 @@ import { db } from '@/lib/db'
  * GET /api/floor-plan?locationId=xxx&sectionId=yyy
  *
  * Returns tables and seats for the floor plan view.
- * Used by FloorPlanHomeV2 to load initial data.
+ * Used by FloorPlanHome to load initial data.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)

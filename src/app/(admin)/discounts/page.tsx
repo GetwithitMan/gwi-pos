@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 interface DiscountRule {
   id: string
@@ -204,16 +206,11 @@ export default function DiscountsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" onClick={() => router.push('/orders')}>
-              Back to POS
-            </Button>
-            <h1 className="text-2xl font-bold text-gray-900">Discounts</h1>
-          </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Discounts"
+        breadcrumbs={[{ label: 'Menu', href: '/menu' }]}
+        actions={
           <Button
             variant="primary"
             onClick={() => {
@@ -223,11 +220,12 @@ export default function DiscountsPage() {
           >
             Add Discount
           </Button>
-        </div>
-      </header>
+        }
+      />
+      <AdminSubNav items={menuSubNav} basePath="/menu" />
 
       {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-7xl mx-auto mt-6">
         {isLoading ? (
           <div className="text-center py-12 text-gray-500">Loading discounts...</div>
         ) : discounts.length === 0 ? (

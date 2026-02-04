@@ -6,11 +6,19 @@
   --fp-bg-secondary: #16213e;
   --fp-bg-gradient: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f0f1a 100%);
 
+  /* Status Colors (solid) */
+  --fp-status-available: #22c55e;
+  --fp-status-occupied: #6366f1;
+  --fp-status-dirty: #f59e0b;
+  --fp-status-reserved: #eab308;
+  --fp-status-in-use: #8b5cf6;
+
   /* Status Glow Colors */
-  --fp-glow-available: rgba(255, 255, 255, 0.15);
+  --fp-glow-available: rgba(34, 197, 94, 0.3);
   --fp-glow-occupied: rgba(99, 102, 241, 0.6);
   --fp-glow-dirty: rgba(245, 158, 11, 0.6);
   --fp-glow-reserved: rgba(251, 191, 36, 0.6);
+  --fp-glow-in-use: rgba(139, 92, 246, 0.6);
   --fp-glow-vip: rgba(251, 191, 36, 0.8);
 
   /* Table Surface Colors */
@@ -46,6 +54,8 @@
   background: rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative;
+  z-index: 50; /* Above floor plan canvas and tables */
 }
 
 .floor-plan-header-left {
@@ -212,7 +222,9 @@
 .table-node-inner {
   position: relative;
   background: var(--fp-table-surface);
-  border: 1px solid var(--fp-table-stroke);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--fp-table-stroke);
   border-radius: 12px;
   box-shadow:
     inset 0 1px 1px rgba(255, 255, 255, 0.05),
@@ -423,6 +435,23 @@
   /* Booth seats are inside the table, smaller */
   width: 20px !important;
   height: 20px !important;
+}
+
+/* Combined seats group container */
+.combined-seats-group {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.combined-seats-group .seat-indicator {
+  pointer-events: auto;
+}
+
+.seat-indicator.combined-seat {
+  /* Combined group seats have colored border matching the group */
+  transition: all 0.15s ease;
 }
 
 @keyframes seatPulse {
@@ -744,5 +773,416 @@
 
   .panel-action-btn {
     min-height: 52px;
+  }
+}
+
+/* ========================================
+   ADMIN MODE - Enhanced Visibility (T019)
+   ======================================== */
+
+/* Admin floor plan uses .unified-floor-plan parent with mode class */
+.unified-floor-plan {
+  --admin-table-surface: #2d3a5a;
+  --admin-table-border: rgba(255, 255, 255, 0.25);
+  --admin-table-border-selected: #6366f1;
+  --admin-glow-selected: rgba(99, 102, 241, 0.7);
+}
+
+/* Admin Mode Table Nodes - Higher contrast */
+.unified-floor-plan .table-node .table-node-inner {
+  background: linear-gradient(145deg, #2d3a5a 0%, #252d48 100%);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+/* Admin Table Name - Pure white, larger, bolder */
+.unified-floor-plan .table-node-name {
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* Admin Table Info - Brighter */
+.unified-floor-plan .table-node-info {
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+/* Admin Status Colors - Brighter Glows */
+.unified-floor-plan .table-node.status-available .table-node-inner {
+  background: linear-gradient(145deg, #2d3a5a 0%, #252d48 100%);
+  border-color: rgba(100, 200, 150, 0.4);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 15px rgba(100, 200, 150, 0.25),
+    0 0 30px rgba(100, 200, 150, 0.15);
+}
+
+.unified-floor-plan .table-node.status-occupied .table-node-inner {
+  background: linear-gradient(145deg, #2d3558 0%, #252850 100%);
+  border-color: rgba(99, 102, 241, 0.6);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 25px rgba(99, 102, 241, 0.5),
+    0 0 50px rgba(99, 102, 241, 0.3);
+}
+
+.unified-floor-plan .table-node.status-reserved .table-node-inner {
+  background: linear-gradient(145deg, #3d3530 0%, #352d28 100%);
+  border-color: rgba(251, 191, 36, 0.6);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 25px rgba(251, 191, 36, 0.5),
+    0 0 50px rgba(251, 191, 36, 0.3);
+}
+
+.unified-floor-plan .table-node.status-dirty .table-node-inner {
+  background: linear-gradient(145deg, #3d3020 0%, #352818 100%);
+  border-color: rgba(245, 158, 11, 0.6);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 25px rgba(245, 158, 11, 0.5),
+    0 0 50px rgba(245, 158, 11, 0.3);
+}
+
+.unified-floor-plan .table-node.status-in_use .table-node-inner {
+  background: linear-gradient(145deg, #352d48 0%, #2d2540 100%);
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 25px rgba(139, 92, 246, 0.5),
+    0 0 50px rgba(139, 92, 246, 0.3);
+}
+
+/* Admin Selected State - Very Obvious */
+.unified-floor-plan .table-node.selected .table-node-inner {
+  border-color: #818cf8 !important;
+  border-width: 3px !important;
+  background: linear-gradient(145deg, #3d4570 0%, #353d60 100%) !important;
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 30px rgba(99, 102, 241, 0.6),
+    0 0 60px rgba(99, 102, 241, 0.4),
+    0 0 90px rgba(99, 102, 241, 0.2) !important;
+}
+
+/* Selected table name highlight */
+.unified-floor-plan .table-node.selected .table-node-name {
+  color: #c7d2fe;
+  text-shadow: 0 0 10px rgba(129, 140, 248, 0.5);
+}
+
+/* Admin Drop Target - Green highlight */
+.unified-floor-plan .table-node.drop-target .table-node-inner {
+  border-color: #22c55e !important;
+  border-width: 3px !important;
+  border-style: dashed !important;
+  box-shadow:
+    0 0 30px rgba(34, 197, 94, 0.5),
+    0 0 60px rgba(34, 197, 94, 0.3) !important;
+}
+
+/* Admin Dragging State */
+.unified-floor-plan .table-node:active .table-node-inner {
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.15),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(99, 102, 241, 0.4) !important;
+}
+
+/* Admin Seat Indicators - Brighter */
+.unified-floor-plan .seat-dot {
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
+
+.unified-floor-plan .seat-dot.occupied {
+  background: #818cf8;
+  border-color: #a5b4fc;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.5);
+}
+
+/* Admin Edit Cursor */
+.unified-floor-plan .table-node {
+  cursor: grab;
+}
+
+.unified-floor-plan .table-node:active {
+  cursor: grabbing;
+}
+
+/* Locked tables in admin */
+.unified-floor-plan .table-node.locked {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.unified-floor-plan .table-node.locked .table-node-inner {
+  border-style: dotted;
+  background: linear-gradient(145deg, #252530 0%, #1e1e28 100%);
+}
+
+/* Combined Tables in Admin - Clearer indication */
+.unified-floor-plan .table-node.combined .table-node-inner {
+  border-style: dashed;
+  border-width: 3px;
+}
+
+/* Hover state for interactivity feedback */
+.unified-floor-plan .table-node:hover:not(.selected):not(:active) .table-node-inner {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.12),
+    0 6px 20px rgba(0, 0, 0, 0.45),
+    0 0 20px rgba(255, 255, 255, 0.1);
+}
+
+/* ========================================
+   SEAT INDICATORS - Enhanced Visibility
+   ======================================== */
+
+/* External seat circles (shown when showSeats is true) */
+.unified-floor-plan .seat-indicator {
+  backdrop-filter: blur(4px);
+  transition: all 0.15s ease;
+}
+
+/* POS mode seat indicators - clickable for item assignment */
+.floor-plan-container .seat-indicator {
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.2);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+}
+
+.floor-plan-container .seat-indicator:hover {
+  background: rgba(99, 102, 241, 0.3);
+  border-color: rgba(99, 102, 241, 0.6);
+  transform: scale(1.15);
+}
+
+/* Editable seat in admin mode */
+.unified-floor-plan .seat-indicator.editable {
+  background: rgba(99, 102, 241, 0.25);
+  border: 2px solid rgba(99, 102, 241, 0.5);
+  cursor: grab;
+}
+
+.unified-floor-plan .seat-indicator.editable:hover {
+  background: rgba(99, 102, 241, 0.4);
+  border-color: rgba(99, 102, 241, 0.7);
+}
+
+.unified-floor-plan .seat-indicator.editable:active {
+  cursor: grabbing;
+}
+
+/* Selected seat state */
+.unified-floor-plan .seat-indicator.selected,
+.floor-plan-container .seat-indicator.selected {
+  background: var(--fp-status-occupied);
+  border-color: #818cf8;
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.6);
+  animation: seatPulse 1.5s ease-in-out infinite;
+}
+
+/* ========================================
+   COMBINED TABLES - Enhanced Display
+   ======================================== */
+
+/* Combined table group visual connection */
+.table-node.combined::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 16px;
+  border: 2px dashed var(--combined-color, #8b5cf6);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Primary combined table gets a special indicator */
+.table-node.combined .combined-badge {
+  animation: badgePulse 2s ease-in-out infinite;
+}
+
+@keyframes badgePulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5);
+  }
+}
+
+/* Child table in combined group */
+.table-node .combined-child-badge {
+  animation: childBadgePulse 2s ease-in-out infinite;
+}
+
+@keyframes childBadgePulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ========================================
+   VIRTUAL COMBINE STYLES
+   ======================================== */
+
+/* Virtual combined table - pulsing glow animation */
+.table-node.virtual-combined .table-node-inner {
+  border: 2px double white !important;
+  border-style: double !important;
+}
+
+/* Virtual combine mode - selection checkmark indicator */
+.table-node.virtual-combine-selected .table-node-inner {
+  border-color: #06b6d4 !important;
+  border-width: 3px !important;
+}
+
+/* Dim non-table elements when in virtual combine mode */
+.floor-plan-home.virtual-combine-mode .categories-bar-container,
+.floor-plan-home.virtual-combine-mode .menu-items-panel,
+.floor-plan-home.virtual-combine-mode .order-panel-container {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* Virtual group pulsing glow keyframes */
+@keyframes virtualPulse {
+  0%, 100% {
+    box-shadow: 0 0 10px var(--virtual-group-color, #06b6d4), 0 0 5px var(--virtual-group-color, #06b6d4);
+  }
+  50% {
+    box-shadow: 0 0 25px var(--virtual-group-color, #06b6d4), 0 0 15px var(--virtual-group-color, #06b6d4);
+  }
+}
+
+.table-node .virtual-group-pulse {
+  animation: virtualPulse 2s infinite ease-in-out;
+}
+
+/* Virtual group badge styling */
+.table-node .virtual-group-badge {
+  animation: virtualBadgePulse 2s ease-in-out infinite;
+}
+
+@keyframes virtualBadgePulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.5);
+  }
+}
+
+/* ========================================
+   TABLE CONTENT - Text Readability
+   ======================================== */
+
+/* Ensure table content stays centered and readable */
+.table-node-content {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Table name with truncation for long names */
+.table-node-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Order total styling */
+.table-node-total {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Status indicator color bar at top of table */
+.table-node.status-available .table-node-inner::before,
+.table-node.status-occupied .table-node-inner::before,
+.table-node.status-dirty .table-node-inner::before,
+.table-node.status-reserved .table-node-inner::before,
+.table-node.status-in_use .table-node-inner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 3px;
+  border-radius: 0 0 2px 2px;
+  opacity: 0.8;
+}
+
+.table-node.status-available .table-node-inner::before {
+  background: var(--fp-status-available, #22c55e);
+}
+
+.table-node.status-occupied .table-node-inner::before {
+  background: var(--fp-status-occupied, #6366f1);
+}
+
+.table-node.status-dirty .table-node-inner::before {
+  background: var(--fp-status-dirty, #f59e0b);
+}
+
+.table-node.status-reserved .table-node-inner::before {
+  background: var(--fp-status-reserved, #eab308);
+}
+
+.table-node.status-in_use .table-node-inner::before {
+  background: var(--fp-status-in-use, #8b5cf6);
+}
+
+/* ========================================
+   COLLISION DETECTION VISUAL FEEDBACK
+   ======================================== */
+
+/* Red pulse animation for collision warning */
+@keyframes collisionPulse {
+  0%, 100% {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.8);
+  }
+  50% {
+    background: rgba(239, 68, 68, 0.35);
+    border-color: rgba(239, 68, 68, 1);
+  }
+}
+
+/* Generic pulse animation for inline styles */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
   }
 }

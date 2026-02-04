@@ -85,7 +85,8 @@ interface OpenOrder {
 interface OpenOrdersPanelProps {
   locationId?: string
   employeeId?: string
-  onSelectOrder: (order: OpenOrder) => void
+  onSelectOrder: (order: OpenOrder) => void  // Called when Pay button is clicked
+  onViewOrder?: (order: OpenOrder) => void   // Called when order is clicked (to view/edit)
   onNewTab: () => void
   refreshTrigger?: number
   onViewReceipt?: (orderId: string) => void
@@ -129,7 +130,7 @@ function getOrderTypeDisplay(order: OpenOrder): { icon: string; label: string; c
   return ORDER_TYPE_CONFIG[order.orderType] || { icon: '📋', label: order.orderType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()), color: 'bg-gray-100 text-gray-800' }
 }
 
-export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onNewTab, refreshTrigger, onViewReceipt }: OpenOrdersPanelProps) {
+export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onViewOrder, onNewTab, refreshTrigger, onViewReceipt }: OpenOrdersPanelProps) {
   const [orders, setOrders] = useState<OpenOrder[]>([])
   const [closedOrders, setClosedOrders] = useState<OpenOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -409,8 +410,7 @@ export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onNewTa
                   hasEntertainment ? 'border-green-500 bg-green-50' :
                   hasWaitlist ? 'border-amber-400 bg-amber-50' : 'border-transparent'
                 }`}
-                onClick={() => onSelectOrder(order)}
-                onDoubleClick={() => onSelectOrder(order)}
+                onClick={() => onViewOrder ? onViewOrder(order) : onSelectOrder(order)}
               >
                 {/* Entertainment Session Badge */}
                 {hasEntertainment && (
@@ -517,6 +517,39 @@ export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onNewTa
                     </span>
                   )}
                 </div>
+
+                {/* Action buttons */}
+                {viewMode === 'open' && (
+                  <div className="mt-2 flex gap-2">
+                    {onViewOrder && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onViewOrder(order)
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-medium text-gray-700 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        View
+                      </button>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelectOrder(order)
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1 px-3 py-2 bg-green-500 hover:bg-green-600 rounded text-sm font-medium text-white transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      Pay
+                    </button>
+                  </div>
+                )}
 
                 {/* Receipt button for closed orders */}
                 {viewMode === 'closed' && onViewReceipt && (

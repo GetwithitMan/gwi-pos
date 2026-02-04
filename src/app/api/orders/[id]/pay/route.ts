@@ -8,6 +8,8 @@ import {
 } from '@/lib/payment'
 import { parseSettings } from '@/lib/settings'
 import { processLiquorInventory } from '@/lib/liquor-inventory'
+import { deductInventoryForOrder } from '@/lib/inventory-calculations'
+import { tableEvents } from '@/lib/realtime/table-events'
 
 interface PaymentInput {
   method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'loyalty_points'
@@ -452,7 +454,7 @@ export async function POST(
       data: updateData,
     })
 
-    // If order is fully paid, reset entertainment items
+    // If order is fully paid, reset entertainment items and cleanup virtual groups
     if (updateData.status === 'paid') {
       await db.menuItem.updateMany({
         where: {
@@ -469,6 +471,81 @@ export async function POST(
       // Process liquor inventory deductions for cocktails with recipes
       // This tracks pour usage and creates inventory transactions
       await processLiquorInventory(orderId, employeeId)
+
+      // Deduct general food/ingredient inventory (fire-and-forget to not block payment)
+      // This processes MenuItemRecipes and ModifierInventoryLinks
+      deductInventoryForOrder(orderId, employeeId).catch(err => {
+        console.error('Background inventory deduction failed:', err)
+      })
+
+      // Clean up virtual group if this order belongs to one
+      // Find the table associated with this order
+      const orderTable = await db.table.findFirst({
+        where: {
+          orders: {
+            some: { id: orderId },
+          },
+        },
+      })
+
+      if (orderTable?.virtualGroupId) {
+        const virtualGroupId = orderTable.virtualGroupId
+
+        // Find all tables in the group before clearing
+        const groupTables = await db.table.findMany({
+          where: {
+            virtualGroupId,
+            locationId: order.locationId,
+          },
+          select: { id: true },
+        })
+
+        // Dissolve the virtual group when the order is paid
+        await db.table.updateMany({
+          where: {
+            virtualGroupId,
+            locationId: order.locationId,
+          },
+          data: {
+            virtualGroupId: null,
+            virtualGroupPrimary: false,
+            virtualGroupColor: null,
+            virtualGroupCreatedAt: null,
+            status: 'available',
+          },
+        })
+
+        // Create audit log for virtual group dissolution
+        await db.auditLog.create({
+          data: {
+            locationId: order.locationId,
+            employeeId: employeeId || null,
+            action: 'virtual_group_dissolved',
+            entityType: 'order',
+            entityId: orderId,
+            details: {
+              virtualGroupId,
+              reason: 'Order paid',
+              primaryTableId: orderTable.id,
+            },
+          },
+        })
+
+        // Emit real-time event for UI updates
+        tableEvents.virtualGroupDissolved?.({
+          virtualGroupId,
+          tableIds: groupTables.map(t => t.id),
+          locationId: order.locationId,
+          timestamp: new Date().toISOString(),
+          triggeredBy: employeeId,
+        })
+      } else if (order.tableId) {
+        // Regular table (not virtual group) - just reset status
+        await db.table.update({
+          where: { id: order.tableId },
+          data: { status: 'available' },
+        })
+      }
     }
 
     // Award loyalty points if order is fully paid and has a customer

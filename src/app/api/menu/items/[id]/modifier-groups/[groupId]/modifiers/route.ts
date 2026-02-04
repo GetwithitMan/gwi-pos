@@ -1,0 +1,203 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+
+interface RouteParams {
+  params: Promise<{ id: string; groupId: string }>
+}
+
+// POST /api/menu/items/[id]/modifier-groups/[groupId]/modifiers - Add modifier
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: menuItemId, groupId } = await params
+    const body = await request.json()
+    const {
+      name,
+      price = 0,
+      allowNo = true,
+      allowLite = false,
+      allowOnSide = false,
+      allowExtra = false,
+      extraPrice = 0,
+      isDefault = false,
+      ingredientId,
+      childModifierGroupId,
+    } = body
+
+    // Verify group belongs to this item
+    const group = await db.modifierGroup.findFirst({
+      where: { id: groupId, menuItemId },
+      select: { id: true, locationId: true },
+    })
+
+    if (!group) {
+      return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
+    }
+
+    // Get max sort order
+    const maxSort = await db.modifier.aggregate({
+      where: { modifierGroupId: groupId },
+      _max: { sortOrder: true },
+    })
+
+    const modifier = await db.modifier.create({
+      data: {
+        locationId: group.locationId,
+        modifierGroupId: groupId,
+        name: name || 'New Modifier',
+        price,
+        allowNo,
+        allowLite,
+        allowOnSide,
+        allowExtra,
+        extraPrice,
+        isDefault,
+        ingredientId: ingredientId || null,
+        childModifierGroupId: childModifierGroupId || null,
+        sortOrder: (maxSort._max.sortOrder || 0) + 1,
+      },
+      include: {
+        ingredient: {
+          select: { id: true, name: true },
+        },
+        childModifierGroup: {
+          select: { id: true, name: true },
+        },
+      },
+    })
+
+    return NextResponse.json({
+      data: {
+        id: modifier.id,
+        name: modifier.name,
+        price: Number(modifier.price),
+        allowNo: modifier.allowNo,
+        allowLite: modifier.allowLite,
+        allowOnSide: modifier.allowOnSide,
+        allowExtra: modifier.allowExtra,
+        extraPrice: Number(modifier.extraPrice),
+        isDefault: modifier.isDefault,
+        sortOrder: modifier.sortOrder,
+        ingredientId: modifier.ingredientId,
+        ingredientName: modifier.ingredient?.name || null,
+        childModifierGroupId: modifier.childModifierGroupId,
+        childModifierGroupName: modifier.childModifierGroup?.name || null,
+      },
+    })
+  } catch (error) {
+    console.error('Error creating modifier:', error)
+    return NextResponse.json({ error: 'Failed to create modifier' }, { status: 500 })
+  }
+}
+
+// PUT /api/menu/items/[id]/modifier-groups/[groupId]/modifiers - Update modifier
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: menuItemId, groupId } = await params
+    const body = await request.json()
+    const {
+      modifierId,
+      name,
+      price,
+      allowNo,
+      allowLite,
+      allowOnSide,
+      allowExtra,
+      extraPrice,
+      isDefault,
+      ingredientId,
+      childModifierGroupId,
+    } = body
+
+    if (!modifierId) {
+      return NextResponse.json({ error: 'modifierId is required' }, { status: 400 })
+    }
+
+    // Verify modifier belongs to this group
+    const modifier = await db.modifier.findFirst({
+      where: { id: modifierId, modifierGroupId: groupId },
+    })
+
+    if (!modifier) {
+      return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
+    }
+
+    const updated = await db.modifier.update({
+      where: { id: modifierId },
+      data: {
+        name: name !== undefined ? name : undefined,
+        price: price !== undefined ? price : undefined,
+        allowNo: allowNo !== undefined ? allowNo : undefined,
+        allowLite: allowLite !== undefined ? allowLite : undefined,
+        allowOnSide: allowOnSide !== undefined ? allowOnSide : undefined,
+        allowExtra: allowExtra !== undefined ? allowExtra : undefined,
+        extraPrice: extraPrice !== undefined ? extraPrice : undefined,
+        isDefault: isDefault !== undefined ? isDefault : undefined,
+        ingredientId: ingredientId !== undefined ? (ingredientId || null) : undefined,
+        childModifierGroupId: childModifierGroupId !== undefined ? (childModifierGroupId || null) : undefined,
+      },
+      include: {
+        ingredient: {
+          select: { id: true, name: true },
+        },
+        childModifierGroup: {
+          select: { id: true, name: true },
+        },
+      },
+    })
+
+    return NextResponse.json({
+      data: {
+        id: updated.id,
+        name: updated.name,
+        price: Number(updated.price),
+        allowNo: updated.allowNo,
+        allowLite: updated.allowLite,
+        allowOnSide: updated.allowOnSide,
+        allowExtra: updated.allowExtra,
+        extraPrice: Number(updated.extraPrice),
+        isDefault: updated.isDefault,
+        sortOrder: updated.sortOrder,
+        ingredientId: updated.ingredientId,
+        ingredientName: updated.ingredient?.name || null,
+        childModifierGroupId: updated.childModifierGroupId,
+        childModifierGroupName: updated.childModifierGroup?.name || null,
+      },
+    })
+  } catch (error) {
+    console.error('Error updating modifier:', error)
+    return NextResponse.json({ error: 'Failed to update modifier' }, { status: 500 })
+  }
+}
+
+// DELETE /api/menu/items/[id]/modifier-groups/[groupId]/modifiers - Delete modifier
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { groupId } = await params
+    const { searchParams } = new URL(request.url)
+    const modifierId = searchParams.get('modifierId')
+
+    if (!modifierId) {
+      return NextResponse.json({ error: 'modifierId is required' }, { status: 400 })
+    }
+
+    // Verify modifier belongs to this group
+    const modifier = await db.modifier.findFirst({
+      where: { id: modifierId, modifierGroupId: groupId },
+    })
+
+    if (!modifier) {
+      return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
+    }
+
+    // Soft delete
+    await db.modifier.update({
+      where: { id: modifierId },
+      data: { deletedAt: new Date() },
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error deleting modifier:', error)
+    return NextResponse.json({ error: 'Failed to delete modifier' }, { status: 500 })
+  }
+}

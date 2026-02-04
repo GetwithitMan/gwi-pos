@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import type { OrderTypeConfig, FieldDefinition, WorkflowRules, KDSConfig } from '@/types/order-types'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, settingsSubNav } from '@/components/admin/AdminSubNav'
 
 export default function OrderTypesPage() {
   const router = useRouter()
@@ -166,35 +168,24 @@ export default function OrderTypesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push('/settings')}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-xl font-semibold">Order Types</h1>
-              <p className="text-sm text-gray-500">Configure order type options and workflows</p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Order Types"
+        subtitle="Configure order type options and workflows"
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
+        actions={
           <button
             onClick={handleCreate}
             className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
           >
             + New Order Type
           </button>
-        </div>
-      </div>
+        }
+      />
+      <AdminSubNav items={settingsSubNav} basePath="/settings" />
 
       {/* Order Types List */}
-      <div className="p-6">
+      <div className="max-w-7xl mx-auto">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           {orderTypes.length === 0 ? (
             <div className="p-8 text-center text-gray-500">

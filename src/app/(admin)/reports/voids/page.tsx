@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface VoidLog {
   id: string
@@ -132,21 +134,15 @@ export default function VoidReportsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" onClick={() => router.push('/orders')}>
-              Back to POS
-            </Button>
-            <h1 className="text-2xl font-bold text-gray-900">Void / Comp Report</h1>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Void / Comp Report"
+        breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
+      />
+      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       {/* Filters */}
-      <div className="max-w-7xl mx-auto px-4 py-4">
+      <div className="max-w-7xl mx-auto">
         <Card className="p-4">
           <div className="flex flex-wrap gap-4 items-end">
             <div>

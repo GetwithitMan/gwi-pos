@@ -161,6 +161,8 @@ export async function GET(request: NextRequest) {
           resendCount: item.resendCount || 0,
           lastResentAt: item.lastResentAt?.toISOString() || null,
           resendNote: item.resendNote || null,
+          // Seat assignment (T023)
+          seatNumber: item.seatNumber ?? null,
           // Coursing info (T013)
           courseNumber: item.courseNumber ?? null,
           courseStatus: item.courseStatus ?? 'pending',

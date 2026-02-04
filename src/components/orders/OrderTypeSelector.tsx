@@ -41,6 +41,7 @@ interface OrderTypeSelectorProps {
   locationId: string
   selectedType?: string | null
   onSelectType: (orderType: OrderTypeConfig, customFields?: OrderCustomFields) => void
+  onBarModeClick?: () => void  // Called when Bar Tab is clicked to switch to bar mode
   className?: string
   compact?: boolean
 }
@@ -49,6 +50,7 @@ export function OrderTypeSelector({
   locationId,
   selectedType,
   onSelectType,
+  onBarModeClick,
   className = '',
   compact = false,
 }: OrderTypeSelectorProps) {
@@ -95,6 +97,12 @@ export function OrderTypeSelector({
 
   // Handle order type button click
   const handleTypeClick = (orderType: OrderTypeConfig) => {
+    // Special handling for bar_tab - switch to bar mode instead
+    if (orderType.slug === 'bar_tab' && onBarModeClick) {
+      onBarModeClick()
+      return
+    }
+
     if (hasRequiredFields(orderType)) {
       // Show fields modal to collect required data
       setPendingOrderType(orderType)
@@ -283,14 +291,14 @@ export function OrderTypeSelector({
           Table
         </button>
         <button
-          onClick={() => onSelectType({ slug: 'bar_tab', name: 'Bar Tab' } as OrderTypeConfig)}
+          onClick={() => onBarModeClick ? onBarModeClick() : onSelectType({ slug: 'bar_tab', name: 'Bar Tab' } as OrderTypeConfig)}
           className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-all ${
             selectedType === 'bar_tab'
               ? 'bg-purple-500 text-white'
               : 'bg-white/20 text-gray-700 hover:bg-white/40'
           }`}
         >
-          Quick Tab
+          Bar Mode
         </button>
         <button
           onClick={() => onSelectType({ slug: 'takeout', name: 'Takeout' } as OrderTypeConfig)}

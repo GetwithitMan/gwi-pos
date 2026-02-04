@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, teamSubNav } from '@/components/admin/AdminSubNav'
 
 interface Role {
   id: string
@@ -275,21 +277,10 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push('/orders')}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <h1 className="text-2xl font-bold">Employees</h1>
-          </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Employees"
+        actions={
           <div className="flex items-center gap-3">
             <Button variant="ghost" onClick={() => router.push('/roles')}>
               Manage Roles
@@ -298,11 +289,12 @@ export default function EmployeesPage() {
               + Add Employee
             </Button>
           </div>
-        </div>
-      </header>
+        }
+      />
+      <AdminSubNav items={teamSubNav} basePath="/employees" />
 
       {/* Content */}
-      <div className="p-6">
+      <div className="mt-6">
         {/* Filters */}
         <div className="flex items-center gap-4 mb-6">
           <div className="flex-1 max-w-md">

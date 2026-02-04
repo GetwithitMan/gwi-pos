@@ -1,6 +1,10 @@
 // Location Settings Types and Defaults
 // Skill 09: Features & Config
 
+import type { GlobalReceiptSettings } from '@/types/receipt-settings'
+import { DEFAULT_GLOBAL_RECEIPT_SETTINGS, mergeGlobalReceiptSettings } from '@/types/receipt-settings'
+export type { GlobalReceiptSettings }
+
 export interface DualPricingSettings {
   enabled: boolean
   cashDiscountPercent: number      // % discount for paying with cash (e.g., 4 = 4% off)
@@ -64,9 +68,14 @@ export interface PaymentSettings {
   defaultPreAuthAmount: number
   preAuthExpirationDays: number
 
-  // Card processing (go-live)
-  processor: 'none' | 'square' | 'magtek'
+  // Card processing
+  processor: 'none' | 'simulated' | 'datacap'  // datacap = Datacap Direct integration
   testMode: boolean
+
+  // Datacap Direct configuration
+  datacapMerchantId?: string
+  readerTimeoutSeconds: number     // Timeout for reader response (default: 30)
+  autoSwapOnFailure: boolean       // Automatically offer reader swap when offline (default: true)
 }
 
 export interface LoyaltySettings {
@@ -169,6 +178,12 @@ export interface POSLayoutSettings {
   foodFavorites: string[]
   maxFavorites: number                  // Max items in favorites bar (default: 8)
 
+  // Quick Bar - personal quick access bar (mode-independent)
+  // Displayed above category bar for fast access to frequently used items
+  quickBar: string[]                    // Array of menuItemIds
+  quickBarEnabled: boolean              // Show/hide quick bar
+  maxQuickBarItems: number              // Max items in quick bar (default: 12)
+
   // Category Order (per mode) - array of category IDs in display order
   // Empty array = use default alphabetical/sortOrder
   barCategoryOrder: string[]
@@ -203,6 +218,10 @@ export const DEFAULT_LAYOUT_SETTINGS: POSLayoutSettings = {
   foodFavorites: [],
   maxFavorites: 8,
 
+  quickBar: [],
+  quickBarEnabled: true,
+  maxQuickBarItems: 12,
+
   barCategoryOrder: [],
   foodCategoryOrder: [],
 
@@ -228,6 +247,7 @@ export interface LocationSettings {
   loyalty: LoyaltySettings
   happyHour: HappyHourSettings
   posDisplay: POSDisplaySettings
+  receiptDisplay: GlobalReceiptSettings  // Controls WHAT features are available in the Visual Editor
 }
 
 // Default settings for new locations
@@ -278,8 +298,10 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     enablePreAuth: true,
     defaultPreAuthAmount: 100.00,
     preAuthExpirationDays: 7,
-    processor: 'none',
+    processor: 'simulated',        // 'none' | 'simulated' | 'datacap'
     testMode: true,
+    readerTimeoutSeconds: 30,
+    autoSwapOnFailure: true,
   },
   loyalty: {
     enabled: false,
@@ -322,6 +344,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     categoryButtonTextColor: null,
     showPriceOnMenuItems: true,
   },
+  receiptDisplay: DEFAULT_GLOBAL_RECEIPT_SETTINGS,
 }
 
 // Merge partial settings with defaults
@@ -372,6 +395,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ...DEFAULT_SETTINGS.posDisplay,
       ...(partial.posDisplay || {}),
     },
+    receiptDisplay: mergeGlobalReceiptSettings(partial.receiptDisplay),
   }
 }
 

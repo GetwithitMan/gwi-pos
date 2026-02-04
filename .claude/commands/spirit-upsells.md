@@ -83,6 +83,36 @@ In the SpiritModifierGroup:
 
 Default prompt: "Upgrade to {bottleName} for ${priceDifference} more?"
 
+## Admin Management
+
+### Creating Spirit Groups
+
+1. Go to `/modifiers` admin page
+2. Click "+ New Modifier Group" or edit existing
+3. Check **"Spirit Upgrade Group"** checkbox
+4. For each modifier (spirit brand):
+   - Enter name (e.g., "Patron Silver")
+   - Enter upcharge price
+   - Click tier button: **Well** | **Call** | **Premium** | **Top Shelf**
+5. Save
+
+### Tier Assignment
+
+| Tier | Color | Description | Example |
+|------|-------|-------------|---------|
+| Well | Gray | House/default | House Tequila |
+| Call | Sky Blue | Mid-tier brands | Smirnoff, Bacardi |
+| Premium | Violet | Premium brands | Patron, Tito's |
+| Top Shelf | Amber | Top shelf brands | Clase Azul, Grey Goose |
+
+### POS Quick Selection
+
+When bartenders use BartenderView:
+- Cocktail items show tier buttons: **Call** | **Prem** | **Top**
+- Clicking tier opens popup with all spirits in that tier
+- One-tap upgrade without full modifier modal
+- Well tier excluded (it's the default)
+
 ## Database Model
 
 ```prisma

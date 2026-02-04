@@ -15,14 +15,14 @@ export async function GET(request: NextRequest) {
     }
 
     const sections = await db.section.findMany({
-      where: { locationId },
+      where: { locationId, deletedAt: null },
       include: {
         tables: {
-          where: { isActive: true },
+          where: { isActive: true, deletedAt: null },
           select: { id: true },
         },
         assignments: {
-          where: { unassignedAt: null },
+          where: { unassignedAt: null, deletedAt: null },
           include: {
             employee: {
               select: { id: true, displayName: true, firstName: true, lastName: true },
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      orderBy: { name: 'asc' },
+      orderBy: { sortOrder: 'asc' },
     })
 
     return NextResponse.json({
@@ -38,6 +38,11 @@ export async function GET(request: NextRequest) {
         id: section.id,
         name: section.name,
         color: section.color,
+        sortOrder: section.sortOrder,
+        posX: section.posX,
+        posY: section.posY,
+        width: section.width,
+        height: section.height,
         tableCount: section.tables.length,
         assignedEmployees: section.assignments.map(a => ({
           id: a.employee.id,
@@ -68,11 +73,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Get highest sortOrder to place new section at end
+    const lastSection = await db.section.findFirst({
+      where: { locationId, deletedAt: null },
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    })
+
+    const newSortOrder = (lastSection?.sortOrder ?? -1) + 1
+
     const section = await db.section.create({
       data: {
         locationId,
         name,
-        color: color || '#3B82F6',
+        color: color || '#6366f1',
+        sortOrder: newSortOrder,
       },
     })
 
@@ -81,6 +96,11 @@ export async function POST(request: NextRequest) {
         id: section.id,
         name: section.name,
         color: section.color,
+        sortOrder: section.sortOrder,
+        posX: section.posX,
+        posY: section.posY,
+        width: section.width,
+        height: section.height,
         tableCount: 0,
         assignedEmployees: [],
       },

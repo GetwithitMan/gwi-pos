@@ -558,7 +558,138 @@ Get receipt data for printing.
 
 ### POST /api/orders/[id]/comp-void
 
-Comp or void order/items.
+Comp or void order/items. Accepts optional `remoteApprovalCode` for SMS-based manager approval.
+
+**Request Body:**
+```json
+{
+  "action": "comp" | "void",
+  "itemId": "string",
+  "reason": "string",
+  "employeeId": "string",
+  "approvedById": "string (optional)",
+  "remoteApprovalCode": "string (optional, 6-digit code from remote approval)"
+}
+```
+
+---
+
+## Remote Void Approval (Skill 122)
+
+SMS-based manager approval for voids when no manager is present.
+
+### GET /api/voids/remote-approval/managers
+
+List managers with void permission and phone number.
+
+**Query Parameters:**
+- `locationId` - Location ID (required)
+
+**Response:**
+```json
+{
+  "data": {
+    "managers": [
+      {
+        "id": "string",
+        "name": "string",
+        "phoneMasked": "***-***-1234",
+        "roleName": "string"
+      }
+    ]
+  }
+}
+```
+
+### POST /api/voids/remote-approval/request
+
+Create approval request and send SMS to manager.
+
+**Request Body:**
+```json
+{
+  "locationId": "string",
+  "orderId": "string",
+  "orderItemId": "string (optional)",
+  "voidType": "item" | "order" | "comp",
+  "managerId": "string",
+  "voidReason": "string",
+  "amount": 12.99,
+  "itemName": "string",
+  "requestedById": "string",
+  "terminalId": "string (optional)"
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "approvalId": "string",
+    "expiresAt": "ISO timestamp",
+    "smsSent": true
+  }
+}
+```
+
+### GET /api/voids/remote-approval/[id]/status
+
+Check approval status (polling fallback).
+
+**Response:**
+```json
+{
+  "data": {
+    "status": "pending" | "approved" | "rejected" | "expired" | "used",
+    "approvalCode": "123456 (if approved)",
+    "managerName": "string"
+  }
+}
+```
+
+### POST /api/voids/remote-approval/validate-code
+
+Validate 6-digit approval code at POS.
+
+**Request Body:**
+```json
+{
+  "orderId": "string",
+  "orderItemId": "string (optional)",
+  "code": "123456",
+  "employeeId": "string"
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "valid": true,
+    "approvalId": "string",
+    "managerId": "string",
+    "managerName": "string"
+  }
+}
+```
+
+### GET /api/voids/remote-approval/[token]
+
+Fetch approval details for mobile approval page (token is 32 hex chars).
+
+### POST /api/voids/remote-approval/[token]/approve
+
+Approve via mobile web page. Generates 6-digit code.
+
+### POST /api/voids/remote-approval/[token]/reject
+
+Reject via mobile web page.
+
+### POST /api/webhooks/twilio/sms
+
+Twilio webhook for inbound SMS replies (YES/NO).
+
+---
 
 ### POST /api/orders/[id]/courses
 

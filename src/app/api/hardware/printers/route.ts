@@ -101,10 +101,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ printer })
   } catch (error) {
     console.error('Failed to create printer:', error)
-    // Check for unique constraint violation
+    // Check for unique constraint violation (name must be unique per location)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
       return NextResponse.json(
-        { error: 'A printer with this IP address already exists at this location' },
+        { error: 'A printer with this name already exists at this location' },
         { status: 400 }
       )
     }

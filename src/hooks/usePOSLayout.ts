@@ -27,6 +27,15 @@ interface UsePOSLayoutReturn {
   removeFavorite: (menuItemId: string) => void
   reorderFavorites: (menuItemIds: string[]) => void
 
+  // Quick Bar controls (mode-independent personal favorites)
+  quickBar: string[]
+  quickBarEnabled: boolean
+  addToQuickBar: (menuItemId: string) => void
+  removeFromQuickBar: (menuItemId: string) => void
+  reorderQuickBar: (menuItemIds: string[]) => void
+  toggleQuickBar: () => void
+  isInQuickBar: (menuItemId: string) => boolean
+
   // Category controls
   categoryOrder: string[]    // Current mode's category order
   setCategoryOrder: (categoryIds: string[]) => void
@@ -192,6 +201,34 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
     updateSetting(key, menuItemIds)
   }, [layout.currentMode, updateSetting])
 
+  // Quick Bar controls (mode-independent)
+  const quickBar = layout.quickBar || []
+  const quickBarEnabled = layout.quickBarEnabled ?? true
+
+  const addToQuickBar = useCallback((menuItemId: string) => {
+    const current = layout.quickBar || []
+    if (current.includes(menuItemId)) return
+    if (current.length >= (layout.maxQuickBarItems || 12)) return
+    updateSetting('quickBar', [...current, menuItemId])
+  }, [layout.quickBar, layout.maxQuickBarItems, updateSetting])
+
+  const removeFromQuickBar = useCallback((menuItemId: string) => {
+    const current = layout.quickBar || []
+    updateSetting('quickBar', current.filter(id => id !== menuItemId))
+  }, [layout.quickBar, updateSetting])
+
+  const reorderQuickBar = useCallback((menuItemIds: string[]) => {
+    updateSetting('quickBar', menuItemIds)
+  }, [updateSetting])
+
+  const toggleQuickBar = useCallback(() => {
+    updateSetting('quickBarEnabled', !layout.quickBarEnabled)
+  }, [layout.quickBarEnabled, updateSetting])
+
+  const isInQuickBar = useCallback((menuItemId: string) => {
+    return (layout.quickBar || []).includes(menuItemId)
+  }, [layout.quickBar])
+
   // Category controls
   const categoryOrder = layout.currentMode === 'bar' ? layout.barCategoryOrder : layout.foodCategoryOrder
   const hiddenCategories = layout.currentMode === 'bar' ? layout.barHiddenCategories : layout.foodHiddenCategories
@@ -267,6 +304,14 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
     addFavorite,
     removeFavorite,
     reorderFavorites,
+
+    quickBar,
+    quickBarEnabled,
+    addToQuickBar,
+    removeFromQuickBar,
+    reorderQuickBar,
+    toggleQuickBar,
+    isInQuickBar,
 
     categoryOrder,
     setCategoryOrder,

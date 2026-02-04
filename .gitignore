@@ -47,3 +47,8 @@ next-env.d.ts
 prisma/*.db
 prisma/*.db-journal
 prisma/backups/
+
+# Large binary files
+epson printers/
+ePOS_SDK_JavaScript_v2.27.0h.zip
+Manual PDF.pdf

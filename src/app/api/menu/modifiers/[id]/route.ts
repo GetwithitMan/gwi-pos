@@ -15,11 +15,27 @@ export async function GET(
       include: {
         modifiers: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            linkedBottleProduct: {
+              select: {
+                id: true,
+                name: true,
+                pourCost: true,
+              },
+            },
+          },
         },
         menuItems: {
           include: {
             menuItem: {
               select: { id: true, name: true }
+            }
+          }
+        },
+        spiritConfig: {
+          include: {
+            spiritCategory: {
+              select: { id: true, name: true, displayName: true }
             }
           }
         }
@@ -44,6 +60,14 @@ export async function GET(
       allowStacking: modifierGroup.allowStacking,
       hasOnlineOverride: modifierGroup.hasOnlineOverride,
       sortOrder: modifierGroup.sortOrder,
+      isSpiritGroup: modifierGroup.isSpiritGroup,
+      spiritConfig: modifierGroup.spiritConfig ? {
+        spiritCategoryId: modifierGroup.spiritConfig.spiritCategoryId,
+        spiritCategoryName: modifierGroup.spiritConfig.spiritCategory.displayName || modifierGroup.spiritConfig.spiritCategory.name,
+        upsellEnabled: modifierGroup.spiritConfig.upsellEnabled,
+        upsellPromptText: modifierGroup.spiritConfig.upsellPromptText,
+        defaultTier: modifierGroup.spiritConfig.defaultTier,
+      } : null,
       modifiers: modifierGroup.modifiers.map(mod => ({
         id: mod.id,
         name: mod.name,
@@ -63,6 +87,14 @@ export async function GET(
         commissionValue: mod.commissionValue ? Number(mod.commissionValue) : null,
         printerRouting: mod.printerRouting,
         printerIds: mod.printerIds,
+        // Spirit fields
+        spiritTier: mod.spiritTier,
+        linkedBottleProductId: mod.linkedBottleProductId,
+        linkedBottleProduct: mod.linkedBottleProduct ? {
+          id: mod.linkedBottleProduct.id,
+          name: mod.linkedBottleProduct.name,
+          pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
+        } : null,
       })),
       linkedItems: modifierGroup.menuItems.map(link => ({
         id: link.menuItem.id,
@@ -86,7 +118,7 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, modifiers } = body
+    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, isSpiritGroup, modifiers } = body
 
     // Update modifier group
     const modifierGroup = await db.modifierGroup.update({
@@ -100,6 +132,7 @@ export async function PUT(
         ...(isRequired !== undefined && { isRequired }),
         ...(allowStacking !== undefined && { allowStacking }),
         ...(hasOnlineOverride !== undefined && { hasOnlineOverride }),
+        ...(isSpiritGroup !== undefined && { isSpiritGroup }),
       }
     })
 
@@ -140,6 +173,7 @@ export async function PUT(
           commissionValue?: number | null
           printerRouting?: string
           printerIds?: string[] | null
+          spiritTier?: string | null
         }
 
         if (mod.id && existingIds.has(mod.id)) {
@@ -151,8 +185,8 @@ export async function PUT(
               price: mod.price ?? 0,
               upsellPrice: mod.upsellPrice ?? null,
               allowedPreModifiers: mod.allowedPreModifiers?.length ? mod.allowedPreModifiers : Prisma.DbNull,
-              extraPrice: mod.extraPrice ?? null,
-              extraUpsellPrice: mod.extraUpsellPrice ?? null,
+              extraPrice: mod.extraPrice ?? 0,
+              extraUpsellPrice: mod.extraUpsellPrice ?? 0,
               childModifierGroupId: mod.childModifierGroupId || null,
               commissionType: mod.commissionType || null,
               commissionValue: mod.commissionValue ?? null,
@@ -162,6 +196,7 @@ export async function PUT(
               showOnline: mod.showOnline ?? true,
               printerRouting: mod.printerRouting ?? 'follow',
               printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
+              spiritTier: mod.spiritTier || null,
               sortOrder: i,
             }
           })
@@ -175,8 +210,8 @@ export async function PUT(
               price: mod.price ?? 0,
               upsellPrice: mod.upsellPrice ?? null,
               allowedPreModifiers: mod.allowedPreModifiers?.length ? mod.allowedPreModifiers : Prisma.DbNull,
-              extraPrice: mod.extraPrice ?? null,
-              extraUpsellPrice: mod.extraUpsellPrice ?? null,
+              extraPrice: mod.extraPrice ?? 0,
+              extraUpsellPrice: mod.extraUpsellPrice ?? 0,
               childModifierGroupId: mod.childModifierGroupId || null,
               commissionType: mod.commissionType || null,
               commissionValue: mod.commissionValue ?? null,
@@ -186,6 +221,7 @@ export async function PUT(
               showOnline: mod.showOnline ?? true,
               printerRouting: mod.printerRouting ?? 'follow',
               printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
+              spiritTier: mod.spiritTier || null,
               sortOrder: i,
             }
           })
@@ -199,6 +235,22 @@ export async function PUT(
       include: {
         modifiers: {
           orderBy: { sortOrder: 'asc' },
+          include: {
+            linkedBottleProduct: {
+              select: {
+                id: true,
+                name: true,
+                pourCost: true,
+              },
+            },
+          },
+        },
+        spiritConfig: {
+          include: {
+            spiritCategory: {
+              select: { id: true, name: true, displayName: true }
+            }
+          }
         }
       }
     })
@@ -213,6 +265,14 @@ export async function PUT(
       isRequired: updated!.isRequired,
       allowStacking: updated!.allowStacking,
       hasOnlineOverride: updated!.hasOnlineOverride,
+      isSpiritGroup: updated!.isSpiritGroup,
+      spiritConfig: updated!.spiritConfig ? {
+        spiritCategoryId: updated!.spiritConfig.spiritCategoryId,
+        spiritCategoryName: updated!.spiritConfig.spiritCategory.displayName || updated!.spiritConfig.spiritCategory.name,
+        upsellEnabled: updated!.spiritConfig.upsellEnabled,
+        upsellPromptText: updated!.spiritConfig.upsellPromptText,
+        defaultTier: updated!.spiritConfig.defaultTier,
+      } : null,
       modifiers: updated!.modifiers.map(mod => ({
         id: mod.id,
         name: mod.name,
@@ -230,6 +290,14 @@ export async function PUT(
         showOnline: mod.showOnline,
         printerRouting: mod.printerRouting,
         printerIds: mod.printerIds,
+        // Spirit fields
+        spiritTier: mod.spiritTier,
+        linkedBottleProductId: mod.linkedBottleProductId,
+        linkedBottleProduct: mod.linkedBottleProduct ? {
+          id: mod.linkedBottleProduct.id,
+          name: mod.linkedBottleProduct.name,
+          pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
+        } : null,
       }))
     })
   } catch (error) {

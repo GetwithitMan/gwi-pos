@@ -7,7 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
-import { hasPermission, PERMISSIONS } from '@/lib/auth'
+import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface TodayStats {
   totalSales: number
@@ -288,24 +290,15 @@ export default function ReportsHubPage() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.push('/orders')}>
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to POS
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">Reports</h1>
-            <p className="text-sm text-gray-500">{employee?.location?.name}</p>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Reports Hub"
+        subtitle={employee?.location?.name}
+        backHref="/orders"
+      />
+      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
-      <div className="p-6 max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         {/* Today's Quick Stats */}
         <div className="mb-8">
           <h2 className="text-lg font-semibold mb-4">Today&apos;s Overview</h2>

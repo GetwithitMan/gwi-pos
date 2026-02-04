@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, modifiers } = body
+    const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, isSpiritGroup, modifiers } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -153,9 +153,10 @@ export async function POST(request: NextRequest) {
         isRequired: isRequired || false,
         allowStacking: allowStacking || false,
         hasOnlineOverride: hasOnlineOverride || false,
+        isSpiritGroup: isSpiritGroup || false,
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         modifiers: modifiers?.length ? {
-          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number; showOnPOS?: boolean; showOnline?: boolean; printerRouting?: string; printerIds?: string[] }, index: number) => ({
+          create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number; showOnPOS?: boolean; showOnline?: boolean; printerRouting?: string; printerIds?: string[]; spiritTier?: string }, index: number) => ({
             locationId: location.id,
             name: mod.name,
             price: mod.price || 0,
@@ -170,6 +171,7 @@ export async function POST(request: NextRequest) {
             showOnline: mod.showOnline ?? true,
             printerRouting: mod.printerRouting ?? 'follow',
             printerIds: mod.printerIds && mod.printerIds.length > 0 ? mod.printerIds : Prisma.DbNull,
+            spiritTier: mod.spiritTier || null,
             sortOrder: index,
           }))
         } : undefined

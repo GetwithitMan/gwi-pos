@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface EmployeeTipSummary {
   employeeId: string
@@ -140,23 +142,19 @@ export default function TipsReportPage() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/reports" className="text-gray-400 hover:text-gray-600">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Tips Report"
+        breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
+        actions={
+          <Link href="/settings/tip-outs">
+            <Button variant="outline">Configure Tip-Outs</Button>
           </Link>
-          <h1 className="text-2xl font-bold">Tips Report</h1>
-        </div>
-        <Link href="/settings/tip-outs">
-          <Button variant="outline">Configure Tip-Outs</Button>
-        </Link>
-      </header>
+        }
+      />
+      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
-      <div className="p-6 max-w-6xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         {/* Filters */}
         <Card className="mb-6">
           <CardContent className="p-4">

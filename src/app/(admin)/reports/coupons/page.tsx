@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
-import { AdminNav } from '@/components/admin/AdminNav'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface CouponStat {
   id: string
@@ -120,14 +121,15 @@ export default function CouponReportsPage() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <AdminNav />
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Coupon Reports"
+        subtitle="Analyze coupon performance and redemptions"
+        breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
+      />
+      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
-      <div className="lg:ml-64 p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Coupon Reports</h1>
-          <p className="text-gray-600">Analyze coupon performance and redemptions</p>
-        </div>
+      <div className="max-w-7xl mx-auto">
 
         {/* Date Filters */}
         <Card className="mb-6">

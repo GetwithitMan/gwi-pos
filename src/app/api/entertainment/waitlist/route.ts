@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// GET - List waitlist entries
+// GET - List waitlist entries for floor plan elements
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
-    const menuItemId = searchParams.get('menuItemId')
+    const elementId = searchParams.get('elementId')
+    const visualType = searchParams.get('visualType')
     const status = searchParams.get('status') || 'waiting'
 
     if (!locationId) {
@@ -19,67 +20,66 @@ export async function GET(request: NextRequest) {
     const waitlist = await db.entertainmentWaitlist.findMany({
       where: {
         locationId,
-        ...(menuItemId ? { menuItemId } : {}),
+        deletedAt: null,
+        ...(elementId ? { elementId } : {}),
+        ...(visualType ? { visualType } : {}),
         ...(status !== 'all' ? { status } : {}),
       },
       include: {
-        menuItem: {
+        element: {
           select: {
             id: true,
             name: true,
-            displayName: true,
-            entertainmentStatus: true,
+            visualType: true,
+            status: true,
+          },
+        },
+        table: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },
       orderBy: [
-        { status: 'asc' }, // waiting first, then notified, seated, cancelled
-        { createdAt: 'asc' },
+        { status: 'asc' },
+        { position: 'asc' },
+        { requestedAt: 'asc' },
       ],
     })
 
-    // Calculate positions and wait times
+    // Calculate wait times
     const now = new Date()
-    const waitlistByItem: Record<string, number> = {}
 
     const enrichedWaitlist = waitlist.map(entry => {
-      // Calculate position within same item
-      if (!waitlistByItem[entry.menuItemId]) {
-        waitlistByItem[entry.menuItemId] = 0
-      }
-      if (entry.status === 'waiting') {
-        waitlistByItem[entry.menuItemId]++
-      }
-
-      const waitMinutes = Math.floor((now.getTime() - entry.createdAt.getTime()) / 1000 / 60)
+      const waitMinutes = Math.floor((now.getTime() - entry.requestedAt.getTime()) / 1000 / 60)
 
       return {
         id: entry.id,
         customerName: entry.customerName,
-        phoneNumber: entry.phoneNumber,
+        phone: entry.phone,
         partySize: entry.partySize,
         notes: entry.notes,
         status: entry.status,
-        position: entry.status === 'waiting' ? waitlistByItem[entry.menuItemId] : null,
+        position: entry.position,
         waitMinutes,
         waitTimeFormatted: formatWaitTime(waitMinutes),
-        menuItemId: entry.menuItemId,
-        menuItem: {
-          id: entry.menuItem.id,
-          name: entry.menuItem.displayName || entry.menuItem.name,
-          status: entry.menuItem.entertainmentStatus,
-        },
-        // Tab info
-        tabId: entry.tabId,
-        tabName: entry.tabName,
-        // Deposit info
-        depositAmount: entry.depositAmount ? Number(entry.depositAmount) : null,
-        depositMethod: entry.depositMethod,
-        depositCardLast4: entry.depositCardLast4,
-        depositRefunded: entry.depositRefunded,
+        elementId: entry.elementId,
+        visualType: entry.visualType,
+        element: entry.element ? {
+          id: entry.element.id,
+          name: entry.element.name,
+          visualType: entry.element.visualType,
+          status: entry.element.status,
+        } : null,
+        table: entry.table ? {
+          id: entry.table.id,
+          name: entry.table.name,
+        } : null,
+        requestedAt: entry.requestedAt.toISOString(),
         notifiedAt: entry.notifiedAt?.toISOString() || null,
         seatedAt: entry.seatedAt?.toISOString() || null,
-        createdAt: entry.createdAt.toISOString(),
+        expiresAt: entry.expiresAt?.toISOString() || null,
       }
     })
 
@@ -106,152 +106,102 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const {
       locationId,
-      menuItemId,
+      elementId,
+      visualType,
+      tableId,
       customerName,
-      phoneNumber,
+      phone,
       partySize,
       notes,
-      employeeId,
-      // Tab options
-      tabId,
-      createNewTab,
-      newTabCardLast4,
-      newTabPreAuthAmount,
-      // Deposit options
-      depositAmount,
-      depositMethod,
-      depositCardLast4,
+      expiresInMinutes,
     } = body
 
-    if (!locationId || !menuItemId || !customerName) {
+    if (!locationId) {
       return NextResponse.json(
-        { error: 'Location ID, menu item ID, and customer name are required' },
+        { error: 'Location ID is required' },
         { status: 400 }
       )
     }
 
-    // Verify the menu item exists and is entertainment type
-    const menuItem = await db.menuItem.findUnique({
-      where: { id: menuItemId },
-      select: { id: true, name: true, itemType: true, locationId: true },
-    })
-
-    if (!menuItem) {
+    if (!elementId && !visualType) {
       return NextResponse.json(
-        { error: 'Menu item not found' },
-        { status: 404 }
-      )
-    }
-
-    if (menuItem.locationId !== locationId) {
-      return NextResponse.json(
-        { error: 'Menu item does not belong to this location' },
+        { error: 'Either elementId or visualType is required' },
         { status: 400 }
       )
     }
 
-    if (menuItem.itemType !== 'timed_rental') {
+    if (!customerName && !tableId) {
       return NextResponse.json(
-        { error: 'This menu item is not an entertainment item' },
+        { error: 'Either customer name or table ID is required' },
         { status: 400 }
       )
     }
 
-    // Handle tab linking
-    let linkedTabId = tabId || null
-    let linkedTabName = null
-
-    // If linking to existing tab, verify it exists
-    if (tabId) {
-      const existingTab = await db.order.findUnique({
-        where: { id: tabId },
-        select: { id: true, tabName: true, status: true },
+    // Verify element exists if elementId provided
+    if (elementId) {
+      const element = await db.floorPlanElement.findUnique({
+        where: { id: elementId },
+        select: { id: true, locationId: true },
       })
-      if (!existingTab || existingTab.status !== 'open') {
+
+      if (!element) {
         return NextResponse.json(
-          { error: 'Tab not found or is closed' },
+          { error: 'Element not found' },
+          { status: 404 }
+        )
+      }
+
+      if (element.locationId !== locationId) {
+        return NextResponse.json(
+          { error: 'Element does not belong to this location' },
           { status: 400 }
         )
       }
-      linkedTabName = existingTab.tabName
-    }
-
-    // Create a new tab if requested
-    if (createNewTab && !tabId) {
-      // Generate order number
-      const orderCount = await db.order.count({
-        where: { locationId },
-      })
-      const orderNumber = orderCount + 1
-
-      // Get employee ID - use provided or find any active employee
-      let tabEmployeeId = employeeId
-      if (!tabEmployeeId) {
-        const anyEmployee = await db.employee.findFirst({
-          where: { locationId, isActive: true },
-          select: { id: true },
-        })
-        if (!anyEmployee) {
-          return NextResponse.json(
-            { error: 'No active employees found for this location' },
-            { status: 400 }
-          )
-        }
-        tabEmployeeId = anyEmployee.id
-      }
-
-      const newTab = await db.order.create({
-        data: {
-          locationId,
-          employeeId: tabEmployeeId,
-          orderNumber,
-          orderType: 'bar',
-          tabName: `${customerName}'s Tab`,
-          status: 'open',
-          subtotal: 0,
-          taxTotal: 0,
-          tipTotal: 0,
-          discountTotal: 0,
-          total: 0,
-          preAuthAmount: newTabPreAuthAmount || null,
-          preAuthLast4: newTabCardLast4 || null,
-        },
-      })
-      linkedTabId = newTab.id
-      linkedTabName = newTab.tabName
     }
 
     // Get current position
     const currentWaitlistCount = await db.entertainmentWaitlist.count({
       where: {
-        menuItemId,
+        locationId,
+        deletedAt: null,
         status: 'waiting',
+        ...(elementId ? { elementId } : { visualType }),
       },
     })
 
-    // Create waitlist entry with tab and deposit info
+    // Calculate expiry
+    const expiresAt = expiresInMinutes
+      ? new Date(Date.now() + expiresInMinutes * 60 * 1000)
+      : null
+
+    // Create waitlist entry
     const entry = await db.entertainmentWaitlist.create({
       data: {
         locationId,
-        menuItemId,
-        customerName: customerName.trim(),
-        phoneNumber: phoneNumber?.trim() || null,
+        elementId: elementId || null,
+        visualType: visualType || null,
+        tableId: tableId || null,
+        customerName: customerName?.trim() || null,
+        phone: phone?.trim() || null,
         partySize: partySize || 1,
         notes: notes?.trim() || null,
-        tabId: linkedTabId,
-        tabName: linkedTabName,
-        depositAmount: depositAmount || null,
-        depositMethod: depositMethod || null,
-        depositCardLast4: depositCardLast4 || null,
+        position: currentWaitlistCount + 1,
         status: 'waiting',
+        expiresAt,
       },
       include: {
-        menuItem: {
+        element: {
           select: {
             id: true,
             name: true,
-            displayName: true,
-            entertainmentStatus: true,
+            visualType: true,
+            status: true,
+          },
+        },
+        table: {
+          select: {
+            id: true,
+            name: true,
           },
         },
       },
@@ -261,24 +211,19 @@ export async function POST(request: NextRequest) {
       entry: {
         id: entry.id,
         customerName: entry.customerName,
-        phoneNumber: entry.phoneNumber,
+        phone: entry.phone,
         partySize: entry.partySize,
         notes: entry.notes,
         status: entry.status,
-        position: currentWaitlistCount + 1,
-        tabId: entry.tabId,
-        tabName: entry.tabName,
-        depositAmount: entry.depositAmount ? Number(entry.depositAmount) : null,
-        depositMethod: entry.depositMethod,
-        menuItem: {
-          id: entry.menuItem.id,
-          name: entry.menuItem.displayName || entry.menuItem.name,
-          status: entry.menuItem.entertainmentStatus,
-        },
-        createdAt: entry.createdAt.toISOString(),
+        position: entry.position,
+        elementId: entry.elementId,
+        visualType: entry.visualType,
+        element: entry.element,
+        table: entry.table,
+        requestedAt: entry.requestedAt.toISOString(),
+        expiresAt: entry.expiresAt?.toISOString() || null,
       },
-      message: `Added ${customerName} to waitlist at position ${currentWaitlistCount + 1}`,
-      newTabCreated: createNewTab && linkedTabId ? { id: linkedTabId, name: linkedTabName } : null,
+      message: `Added ${customerName || 'Table'} to waitlist at position ${entry.position}`,
     })
   } catch (error) {
     console.error('Failed to add to waitlist:', error)

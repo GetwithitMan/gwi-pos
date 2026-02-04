@@ -111,12 +111,15 @@ const orderItemSchema = z.object({
   name: z.string().min(1),
   price: nonNegativeNumber,
   quantity: z.number().int().positive(),
+  correlationId: z.string().optional(), // Client-provided ID for matching response items
   modifiers: z.array(orderItemModifierSchema).default([]),
   ingredientModifications: z.array(ingredientModificationSchema).optional(),
   specialNotes: z.string().max(500).optional(),
   seatNumber: z.number().int().positive().optional(),
   courseNumber: z.number().int().positive().optional(),
   pizzaConfig: pizzaConfigSchema,
+  // Timed rental / entertainment fields
+  blockTimeMinutes: z.number().int().positive().optional(),
 })
 
 export const createOrderSchema = z.object({
@@ -253,6 +256,67 @@ export const createInventoryTransactionSchema = z.object({
   invoiceNumber: z.string().max(50).optional(),
   unitCost: nonNegativeNumber.optional(),
   employeeId: idSchema.optional(),
+})
+
+// ============================================
+// Inventory Report schemas
+// ============================================
+
+export const reportDateRangeSchema = z.object({
+  locationId: idSchema,
+  startDate: z.string().refine((val) => !isNaN(Date.parse(val)), {
+    message: 'Invalid start date format',
+  }),
+  endDate: z.string().refine((val) => !isNaN(Date.parse(val)), {
+    message: 'Invalid end date format',
+  }),
+  department: z.string().optional(),
+  category: z.string().optional(),
+  categoryId: idSchema.optional(),
+})
+
+export const theoreticalUsageQuerySchema = reportDateRangeSchema.pick({
+  locationId: true,
+  startDate: true,
+  endDate: true,
+  department: true,
+})
+
+export const varianceQuerySchema = reportDateRangeSchema
+
+export const pmixQuerySchema = reportDateRangeSchema.pick({
+  locationId: true,
+  startDate: true,
+  endDate: true,
+  department: true,
+  categoryId: true,
+})
+
+// ============================================
+// Recipe & Modifier Link schemas
+// ============================================
+
+const recipeIngredientSchema = z.object({
+  inventoryItemId: idSchema.optional(),
+  prepItemId: idSchema.optional(),
+  quantity: positiveNumber,
+  unit: z.string().min(1, 'Unit is required'),
+}).refine(
+  (data) => data.inventoryItemId || data.prepItemId,
+  { message: 'Either inventoryItemId or prepItemId must be provided' }
+)
+
+export const createMenuItemRecipeSchema = z.object({
+  portionSize: positiveNumber.optional(),
+  portionUnit: z.string().optional(),
+  prepInstructions: z.string().optional(),
+  ingredients: z.array(recipeIngredientSchema).optional(),
+})
+
+export const createModifierInventoryLinkSchema = z.object({
+  inventoryItemId: idSchema,
+  usageQuantity: positiveNumber,
+  usageUnit: z.string().min(1, 'Usage unit is required'),
 })
 
 // ============================================

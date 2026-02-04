@@ -158,23 +158,26 @@ export async function POST(
       )
     }
 
-    // Remove existing links
-    await db.menuItemModifierGroup.deleteMany({
-      where: { menuItemId }
-    })
-
-    // Create new links
-    if (groupsToLink.length > 0) {
-      await db.menuItemModifierGroup.createMany({
-        data: groupsToLink.map((group, index: number) => ({
-          locationId: menuItem.locationId,
-          menuItemId,
-          modifierGroupId: group.id,
-          sortOrder: index,
-          showOnline: group.showOnline,
-        }))
+    // Use transaction to ensure atomic update (prevents partial state if one operation fails)
+    await db.$transaction(async (tx) => {
+      // Remove existing links
+      await tx.menuItemModifierGroup.deleteMany({
+        where: { menuItemId }
       })
-    }
+
+      // Create new links
+      if (groupsToLink.length > 0) {
+        await tx.menuItemModifierGroup.createMany({
+          data: groupsToLink.map((group, index: number) => ({
+            locationId: menuItem.locationId,
+            menuItemId,
+            modifierGroupId: group.id,
+            sortOrder: index,
+            showOnline: group.showOnline,
+          }))
+        })
+      }
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

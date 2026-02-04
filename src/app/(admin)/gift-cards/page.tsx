@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, customersSubNav } from '@/components/admin/AdminSubNav'
 
 interface GiftCard {
   id: string
@@ -187,15 +189,19 @@ export default function GiftCardsPage() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Gift Cards</h1>
-        <Button variant="primary" onClick={() => setShowCreateModal(true)}>
-          Create Gift Card
-        </Button>
-      </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Gift Cards"
+        actions={
+          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+            Create Gift Card
+          </Button>
+        }
+      />
+      <AdminSubNav items={customersSubNav} basePath="/customers" />
 
       {/* Filters */}
+      <div className="max-w-7xl mx-auto mt-6">
       <div className="flex gap-4 mb-6">
         <div className="flex-1">
           <input
@@ -392,6 +398,7 @@ export default function GiftCardsPage() {
             </Card>
           )}
         </div>
+      </div>
       </div>
 
       {/* Create Modal */}

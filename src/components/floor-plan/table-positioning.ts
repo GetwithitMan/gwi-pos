@@ -18,6 +18,7 @@ export interface TableRect {
 
 /**
  * Determine which side to attach based on drop position relative to target center
+ * Normalizes by table dimensions so wide tables can still attach on top/bottom
  */
 export function calculateAttachSide(
   dropX: number,
@@ -30,7 +31,12 @@ export function calculateAttachSide(
   const dx = dropX - targetCenterX
   const dy = dropY - targetCenterY
 
-  if (Math.abs(dx) > Math.abs(dy)) {
+  // Normalize by table dimensions to make top/bottom attachment easier for wide tables
+  // This creates equal-sized zones relative to the table's aspect ratio
+  const normalizedDx = Math.abs(dx) / (target.width / 2)
+  const normalizedDy = Math.abs(dy) / (target.height / 2)
+
+  if (normalizedDx > normalizedDy) {
     // Horizontal attachment
     return dx > 0 ? 'right' : 'left'
   } else {
@@ -41,6 +47,7 @@ export function calculateAttachSide(
 
 /**
  * Calculate the position for a table when attaching to a side
+ * Aligns edges flush (not centered) for clean magnetic attachment
  */
 export function calculateAttachPosition(
   source: TableRect,
@@ -51,21 +58,21 @@ export function calculateAttachPosition(
     case 'right':
       return {
         posX: target.posX + target.width + TABLE_GAP,
-        posY: target.posY + (target.height - source.height) / 2, // Center vertically
+        posY: target.posY, // Align top edges
       }
     case 'left':
       return {
         posX: target.posX - source.width - TABLE_GAP,
-        posY: target.posY + (target.height - source.height) / 2,
+        posY: target.posY, // Align top edges
       }
     case 'bottom':
       return {
-        posX: target.posX + (target.width - source.width) / 2, // Center horizontally
+        posX: target.posX, // Align left edges
         posY: target.posY + target.height + TABLE_GAP,
       }
     case 'top':
       return {
-        posX: target.posX + (target.width - source.width) / 2,
+        posX: target.posX, // Align left edges
         posY: target.posY - source.height - TABLE_GAP,
       }
   }
@@ -218,10 +225,42 @@ export interface SeatPosition {
   angle: number  // Rotation angle for the seat indicator
 }
 
+// Seat patterns for partial coverage
+export type SeatPattern =
+  | 'all_around'    // Default - seats on all sides
+  | 'front_only'    // Bar/counter style - seats on one side
+  | 'back_only'     // Rare - seats behind
+  | 'three_sides'   // Against wall - no seats on one side
+  | 'two_sides'     // Corner booth - seats on two adjacent sides
+  | 'inside'        // Booth interior - seats inside the table
+
+// Arc configuration for seat distribution
+export interface SeatArc {
+  startAngle: number  // 0 = top, 90 = right, 180 = bottom, 270 = left
+  endAngle: number
+}
+
+// Get arc configuration for a seat pattern
+function getArcForPattern(pattern: SeatPattern): SeatArc {
+  switch (pattern) {
+    case 'front_only':
+      return { startAngle: 135, endAngle: 225 } // Bottom side only
+    case 'back_only':
+      return { startAngle: 315, endAngle: 45 } // Top side only
+    case 'three_sides':
+      return { startAngle: 45, endAngle: 315 } // All except top (against wall)
+    case 'two_sides':
+      return { startAngle: 90, endAngle: 270 } // Right and bottom (corner)
+    case 'inside':
+    case 'all_around':
+    default:
+      return { startAngle: 0, endAngle: 360 }
+  }
+}
+
 /**
  * Calculate seat positions around a table edge
- * For regular tables: seats distributed around the perimeter
- * For booths: seats along the inner curved edge
+ * Supports different patterns: all_around, front_only, three_sides, etc.
  */
 export function calculateSeatPositions(
   table: {
@@ -232,7 +271,7 @@ export function calculateSeatPositions(
     shape: string
   },
   seatCount: number,
-  isBooth: boolean = false
+  pattern: SeatPattern = 'all_around'
 ): SeatPosition[] {
   const positions: SeatPosition[] = []
 
@@ -240,28 +279,40 @@ export function calculateSeatPositions(
 
   const centerX = table.posX + table.width / 2
   const centerY = table.posY + table.height / 2
+  const padding = 20 // Distance from table edge
 
-  if (isBooth) {
-    // Booths: seats distributed along the inner back edge (horizontal line inside)
-    const padding = 15
-    const availableWidth = table.width - padding * 2
+  if (pattern === 'inside') {
+    // Booth-style: seats distributed inside the table
+    const innerPadding = 15
+    const availableWidth = table.width - innerPadding * 2
     const spacing = seatCount > 1 ? availableWidth / (seatCount - 1) : 0
 
     for (let i = 0; i < seatCount; i++) {
       positions.push({
         seatNumber: i + 1,
-        x: table.posX + padding + (seatCount > 1 ? i * spacing : availableWidth / 2),
-        y: table.posY + table.height * 0.3, // Upper portion of booth
-        angle: 0,
+        x: table.posX + innerPadding + (seatCount > 1 ? i * spacing : availableWidth / 2),
+        y: table.posY + table.height * 0.35, // Upper portion of booth
+        angle: 180, // Facing down/out
       })
     }
-  } else if (table.shape === 'circle') {
-    // Circle tables: seats distributed evenly around circumference
-    const radius = Math.max(table.width, table.height) / 2 + 18 // Outside edge
-    const angleStep = (2 * Math.PI) / seatCount
+    return positions
+  }
+
+  if (table.shape === 'circle') {
+    // Circle tables: seats distributed evenly around circumference within arc
+    const arc = getArcForPattern(pattern)
+    const radius = Math.max(table.width, table.height) / 2 + padding
+
+    const startRad = (arc.startAngle * Math.PI) / 180
+    const endRad = (arc.endAngle * Math.PI) / 180
+    const arcLength = arc.endAngle > arc.startAngle
+      ? endRad - startRad
+      : (2 * Math.PI) - startRad + endRad
+
+    const angleStep = seatCount > 1 ? arcLength / (seatCount - 1) : 0
 
     for (let i = 0; i < seatCount; i++) {
-      const angle = angleStep * i - Math.PI / 2 // Start at top
+      const angle = startRad + i * angleStep - Math.PI / 2 // Offset so 0 = top
       positions.push({
         seatNumber: i + 1,
         x: centerX + radius * Math.cos(angle),
@@ -269,59 +320,93 @@ export function calculateSeatPositions(
         angle: (angle * 180) / Math.PI + 90, // Point toward center
       })
     }
-  } else {
-    // Rectangle/square tables: seats distributed around perimeter
-    // Prioritize sides based on table orientation
-    const padding = 18
+    return positions
+  }
 
-    if (seatCount <= 4) {
-      // 1-4 seats: one per side, starting top
-      const sidePositions = [
-        { x: centerX, y: table.posY - padding, angle: 0 },                    // top
-        { x: table.posX + table.width + padding, y: centerY, angle: 90 },     // right
-        { x: centerX, y: table.posY + table.height + padding, angle: 180 },   // bottom
-        { x: table.posX - padding, y: centerY, angle: 270 },                  // left
-      ]
+  // Rectangle/square tables: distribute seats around perimeter based on pattern
+  const arc = getArcForPattern(pattern)
 
-      for (let i = 0; i < seatCount; i++) {
-        positions.push({
-          seatNumber: i + 1,
-          ...sidePositions[i],
-        })
-      }
-    } else {
-      // 5+ seats: distribute evenly around perimeter
-      const perimeter = 2 * (table.width + table.height)
-      const spacing = perimeter / seatCount
+  // Calculate which sides are included in the arc
+  const includedSides: Array<'top' | 'right' | 'bottom' | 'left'> = []
+  const sideRanges = [
+    { side: 'top' as const, start: 315, end: 45 },
+    { side: 'right' as const, start: 45, end: 135 },
+    { side: 'bottom' as const, start: 135, end: 225 },
+    { side: 'left' as const, start: 225, end: 315 },
+  ]
 
-      for (let i = 0; i < seatCount; i++) {
-        const distance = i * spacing
-        let x: number, y: number, angle: number
+  for (const { side, start, end } of sideRanges) {
+    // Check if this side overlaps with the arc
+    const arcStart = arc.startAngle
+    const arcEnd = arc.endAngle === 360 ? 360 : arc.endAngle
 
-        if (distance < table.width / 2) {
-          // Top edge, left of center
-          x = centerX - (table.width / 2 - distance)
-          y = table.posY - padding
-          angle = 0
-        } else if (distance < table.width / 2 + table.height) {
-          // Right edge
-          x = table.posX + table.width + padding
-          y = table.posY + (distance - table.width / 2)
-          angle = 90
-        } else if (distance < table.width * 1.5 + table.height) {
-          // Bottom edge
-          x = table.posX + table.width - (distance - table.width / 2 - table.height)
-          y = table.posY + table.height + padding
-          angle = 180
-        } else {
-          // Left edge
-          x = table.posX - padding
-          y = table.posY + table.height - (distance - table.width * 1.5 - table.height)
-          angle = 270
+    // Handle wrap-around
+    const sideInArc = arcEnd >= arcStart
+      ? (start < arcEnd && end > arcStart) || (start < arcEnd && start >= arcStart) || (end > arcStart && end <= arcEnd)
+      : (start >= arcStart || start < arcEnd) || (end > arcStart || end <= arcEnd)
+
+    if (sideInArc || arc.endAngle === 360) {
+      includedSides.push(side)
+    }
+  }
+
+  // If no sides included, default to all
+  if (includedSides.length === 0) {
+    includedSides.push('top', 'right', 'bottom', 'left')
+  }
+
+  // Calculate perimeter of included sides
+  let totalPerimeter = 0
+  for (const side of includedSides) {
+    totalPerimeter += (side === 'top' || side === 'bottom') ? table.width : table.height
+  }
+
+  // Distribute seats evenly along included perimeter
+  const spacing = totalPerimeter / seatCount
+  let currentDistance = spacing / 2 // Start offset
+
+  for (let i = 0; i < seatCount; i++) {
+    let distanceAccum = 0
+    let x = 0, y = 0, angle = 0
+
+    for (const side of includedSides) {
+      const sideLength = (side === 'top' || side === 'bottom') ? table.width : table.height
+      const nextAccum = distanceAccum + sideLength
+
+      if (currentDistance <= nextAccum) {
+        const posOnSide = currentDistance - distanceAccum
+
+        switch (side) {
+          case 'top':
+            x = table.posX + posOnSide
+            y = table.posY - padding
+            angle = 0
+            break
+          case 'right':
+            x = table.posX + table.width + padding
+            y = table.posY + posOnSide
+            angle = 90
+            break
+          case 'bottom':
+            x = table.posX + table.width - posOnSide
+            y = table.posY + table.height + padding
+            angle = 180
+            break
+          case 'left':
+            x = table.posX - padding
+            y = table.posY + table.height - posOnSide
+            angle = 270
+            break
         }
-
-        positions.push({ seatNumber: i + 1, x, y, angle })
+        break
       }
+      distanceAccum = nextAccum
+    }
+
+    positions.push({ seatNumber: i + 1, x, y, angle })
+    currentDistance += spacing
+    if (currentDistance > totalPerimeter) {
+      currentDistance -= totalPerimeter
     }
   }
 
@@ -330,16 +415,19 @@ export function calculateSeatPositions(
 
 /**
  * Calculate seat positions for a combined table group
- * Distributes seats around the combined bounding box
+ * Distributes seats around the combined bounding box perimeter
  */
 export function calculateCombinedSeatPositions(
   tables: Array<{
+    id: string
     posX: number
     posY: number
     width: number
     height: number
     capacity: number
-  }>
+    shape?: string
+  }>,
+  pattern: SeatPattern = 'all_around'
 ): SeatPosition[] {
   if (tables.length === 0) return []
 
@@ -355,16 +443,19 @@ export function calculateCombinedSeatPositions(
     totalCapacity += t.capacity
   }
 
+  // Add small padding between tables in the bounding box
+  const boundingPadding = 5
+
   // Create a virtual combined table
   const combinedTable = {
-    posX: minX,
-    posY: minY,
-    width: maxX - minX,
-    height: maxY - minY,
+    posX: minX - boundingPadding,
+    posY: minY - boundingPadding,
+    width: maxX - minX + boundingPadding * 2,
+    height: maxY - minY + boundingPadding * 2,
     shape: 'rectangle',
   }
 
-  return calculateSeatPositions(combinedTable, totalCapacity, false)
+  return calculateSeatPositions(combinedTable, totalCapacity, pattern)
 }
 
 /**

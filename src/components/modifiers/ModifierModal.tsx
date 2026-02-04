@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
+import { toast } from '@/stores/toast-store'
 import type { DualPricingSettings } from '@/lib/settings'
 import type { MenuItem, ModifierGroup, SelectedModifier, Modifier } from '@/types'
 
@@ -282,7 +283,8 @@ export function ModifierModal({
   }, [modifierGroups, editingItem, initialized])
 
   // Load a child modifier group by ID
-  const loadChildGroup = async (groupId: string) => {
+  // Using useCallback to ensure stable reference for inline calls
+  const loadChildGroup = useCallback(async (groupId: string) => {
     if (childGroups[groupId] || loadingChildren[groupId]) return
 
     setLoadingChildren(prev => ({ ...prev, [groupId]: true }))
@@ -297,16 +299,25 @@ export function ModifierModal({
     } finally {
       setLoadingChildren(prev => ({ ...prev, [groupId]: false }))
     }
-  }
+  }, [childGroups, loadingChildren])
 
-  // When a modifier with a child is selected, load the child group
+  // Load child groups for initial/edited selections on mount
+  // Note: Further child loading happens directly in toggleModifier for better performance
   useEffect(() => {
-    Object.values(selections).flat().forEach(sel => {
-      if (sel.childModifierGroupId && !childGroups[sel.childModifierGroupId]) {
-        loadChildGroup(sel.childModifierGroupId)
+    // Only run once on initialization to load children for pre-existing selections
+    if (!initialized) return
+
+    const loadInitialChildren = async () => {
+      for (const sel of Object.values(selections).flat()) {
+        if (sel.childModifierGroupId && !childGroups[sel.childModifierGroupId]) {
+          await loadChildGroup(sel.childModifierGroupId)
+        }
       }
-    })
-  }, [selections])
+    }
+    loadInitialChildren()
+    // Intentionally only run when initialized changes (once)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialized])
 
   const getGroupDepth = (groupId: string): number => {
     if (modifierGroups.some(g => g.id === groupId)) return 0
@@ -433,32 +444,25 @@ export function ModifierModal({
 
         newSelections[group.id] = [newMod]
         setSelections(newSelections)
+
+        // Load child group if this modifier has one
+        if (modifier.childModifierGroupId) {
+          loadChildGroup(modifier.childModifierGroupId)
+        }
       } else if (current.length < group.maxSelections) {
         // Room available - just add
         setSelections({
           ...selections,
           [group.id]: [...current, newMod],
         })
-      } else if (group.allowStacking && current.length >= group.maxSelections) {
-        // At max but stacking is enabled - check if any modifier is stacked (selected more than once)
-        // If so, remove one instance of a stacked modifier to make room for the new selection
-        const modifierCounts: Record<string, number> = {}
-        current.forEach(s => {
-          modifierCounts[s.id] = (modifierCounts[s.id] || 0) + 1
-        })
 
-        // Find a stacked modifier (count > 1)
-        const stackedModifierId = Object.entries(modifierCounts).find(([, count]) => count > 1)?.[0]
-
-        if (stackedModifierId) {
-          // Remove one instance of the stacked modifier
-          const indexToRemove = current.findIndex(s => s.id === stackedModifierId)
-          const newSelections = { ...selections }
-          const updatedCurrent = current.filter((_, i) => i !== indexToRemove)
-          newSelections[group.id] = [...updatedCurrent, newMod]
-          setSelections(newSelections)
+        // Load child group if this modifier has one
+        if (modifier.childModifierGroupId) {
+          loadChildGroup(modifier.childModifierGroupId)
         }
-        // If nothing is stacked, can't add more (at max with unique selections)
+      } else {
+        // At max - show toast instead of silently failing or auto-removing
+        toast.warning(`Maximum ${group.maxSelections} selections reached for ${group.displayName || group.name}`)
       }
     }
   }

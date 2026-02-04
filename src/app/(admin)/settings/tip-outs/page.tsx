@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, settingsSubNav } from '@/components/admin/AdminSubNav'
 
 interface Role {
   id: string
@@ -243,28 +245,20 @@ export default function TipOutsSettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/settings" className="text-gray-400 hover:text-gray-600">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Tip-Out Rules</h1>
-              <p className="text-sm text-gray-500">Configure automatic tip-out percentages by role</p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Tip-Out Rules"
+        subtitle="Configure automatic tip-out percentages by role"
+        breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
+        actions={
           <Button variant="primary" onClick={() => setShowAddForm(true)}>
             Add Rule
           </Button>
-        </div>
-      </header>
+        }
+      />
+      <AdminSubNav items={settingsSubNav} basePath="/settings" />
 
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
         {/* Messages */}
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">

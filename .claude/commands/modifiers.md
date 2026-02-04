@@ -82,11 +82,43 @@ Text prefixes for kitchen tickets:
 
 ## Spirit Groups
 
-Special modifier type for liquor:
-- `isSpiritGroup: true`
-- Tiered display (Well/Call/Premium/Top Shelf)
-- Links to bottle inventory
-- See `/liquor-builder` skill
+Special modifier type for liquor upgrades:
+
+### Setup
+
+1. Go to `/modifiers` admin page
+2. Create or edit a modifier group
+3. Enable **"Spirit Upgrade Group"** checkbox
+4. For each modifier:
+   - Enter spirit name (e.g., "Patron Silver")
+   - Enter upcharge price
+   - Click tier button: **Well** | **Call** | **Premium** | **Top**
+
+### Spirit Tiers
+
+| Tier | Color | Description |
+|------|-------|-------------|
+| Well | Gray | House/default (no upcharge) |
+| Call | Sky Blue | Mid-tier brands |
+| Premium | Violet | Premium brands |
+| Top Shelf | Amber | Top shelf brands |
+
+### POS Behavior
+
+- BartenderView shows quick tier buttons on cocktails
+- Clicking tier opens popup with all spirits in that tier
+- One-tap selection without full modifier modal
+- Well tier hidden (it's the default)
+
+### Database Fields
+
+- `ModifierGroup.isSpiritGroup`: Boolean flag
+- `Modifier.spiritTier`: 'well' | 'call' | 'premium' | 'top_shelf'
+
+### Links
+
+- See `/liquor-builder` skill for bottle inventory
+- See `/spirit-upsells` skill for upsell tracking
 
 ## Key Files
 

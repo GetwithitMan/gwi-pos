@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, customersSubNav } from '@/components/admin/AdminSubNav'
 
 // Common customer tags
 const CUSTOMER_TAGS = ['VIP', 'Regular', 'First-Timer', 'Staff', 'Family', 'Business', 'Birthday Club']
@@ -262,31 +264,20 @@ export default function CustomersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Customers</h1>
-              <p className="text-sm text-gray-500">
-                {total} customer{total !== 1 ? 's' : ''}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" onClick={() => router.push('/orders')}>
-                Back to POS
-              </Button>
-              <Button variant="primary" onClick={openAddModal}>
-                + Add Customer
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Customers"
+        subtitle={`${total} customer${total !== 1 ? 's' : ''}`}
+        actions={
+          <Button variant="primary" onClick={openAddModal}>
+            + Add Customer
+          </Button>
+        }
+      />
+      <AdminSubNav items={customersSubNav} basePath="/customers" />
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto mt-6">
         {/* Search and Filters */}
         <div className="mb-6 space-y-4">
           <Input

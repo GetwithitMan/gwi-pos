@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
-import { PERMISSION_GROUPS, DEFAULT_ROLES, hasPermission } from '@/lib/auth'
+import { PERMISSION_GROUPS, DEFAULT_ROLES, hasPermission } from '@/lib/auth-utils'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, teamSubNav } from '@/components/admin/AdminSubNav'
 
 interface Role {
   id: string
@@ -229,32 +231,20 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => router.push('/employees')}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-2xl font-bold">Roles & Permissions</h1>
-              <p className="text-sm text-gray-500">Manage employee access levels</p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Roles & Permissions"
+        subtitle="Manage employee access levels"
+        actions={
           <Button variant="primary" onClick={openAddModal}>
             + Add Role
           </Button>
-        </div>
-      </header>
+        }
+      />
+      <AdminSubNav items={teamSubNav} basePath="/employees" />
 
       {/* Content */}
-      <div className="p-6">
+      <div className="mt-6">
         {isLoading ? (
           <div className="text-center py-12 text-gray-500">Loading roles...</div>
         ) : roles.length === 0 ? (

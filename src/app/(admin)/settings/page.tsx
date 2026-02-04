@@ -1,13 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { LocationSettings, DEFAULT_SETTINGS } from '@/lib/settings'
 import { formatCurrency, calculateCashPrice } from '@/lib/pricing'
 import { useAuthStore } from '@/stores/auth-store'
-import { hasPermission, PERMISSIONS } from '@/lib/auth'
+import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
+import { HardwareHealthWidget } from '@/components/hardware/HardwareHealthWidget'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, settingsSubNav } from '@/components/admin/AdminSubNav'
 
 export default function SettingsPage() {
   const { employee } = useAuthStore()
@@ -17,14 +20,48 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState('')
 
+  // Hardware health data
+  const [terminals, setTerminals] = useState<any[]>([])
+  const [printers, setPrinters] = useState<any[]>([])
+  const [kdsScreens, setKdsScreens] = useState<any[]>([])
+
   // Check if user has admin/settings permissions
   const isSuperAdmin = employee?.role?.name === 'Owner' ||
     employee?.role?.name === 'Admin' ||
     hasPermission(employee?.permissions || [], PERMISSIONS.ADMIN)
 
+  const loadHardwareStatus = useCallback(async () => {
+    try {
+      const [terminalsRes, printersRes, kdsRes] = await Promise.all([
+        fetch('/api/hardware/terminals?locationId=loc-1'),
+        fetch('/api/hardware/printers?locationId=loc-1'),
+        fetch('/api/hardware/kds-screens?locationId=loc-1'),
+      ])
+
+      if (terminalsRes.ok) {
+        const data = await terminalsRes.json()
+        setTerminals(data.terminals || [])
+      }
+      if (printersRes.ok) {
+        const data = await printersRes.json()
+        setPrinters(data.printers || [])
+      }
+      if (kdsRes.ok) {
+        const data = await kdsRes.json()
+        setKdsScreens(data.screens || [])
+      }
+    } catch (error) {
+      console.error('Failed to load hardware status:', error)
+    }
+  }, [])
+
   useEffect(() => {
     loadSettings()
-  }, [])
+    loadHardwareStatus()
+    // Refresh hardware status every 30 seconds
+    const interval = setInterval(loadHardwareStatus, 30000)
+    return () => clearInterval(interval)
+  }, [loadHardwareStatus])
 
   const loadSettings = async () => {
     try {
@@ -166,21 +203,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/orders" className="text-gray-400 hover:text-gray-600">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-              <p className="text-sm text-gray-500">{locationName}</p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Settings"
+        subtitle={locationName}
+        backHref="/orders"
+        actions={
           <div className="flex items-center gap-3">
             {saveMessage && (
               <span className={`text-sm ${saveMessage.includes('success') ? 'text-green-600' : 'text-red-600'}`}>
@@ -191,10 +219,11 @@ export default function SettingsPage() {
               {isSaving ? 'Saving...' : 'Save Changes'}
             </Button>
           </div>
-        </div>
-      </header>
+        }
+      />
+      <AdminSubNav items={settingsSubNav} basePath="/settings" />
 
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
         {/* Cash Discount Program Section */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
@@ -856,6 +885,15 @@ export default function SettingsPage() {
             </div>
           )}
         </Card>
+
+        {/* Hardware Health Status */}
+        <div className="bg-slate-900 rounded-xl overflow-hidden">
+          <HardwareHealthWidget
+            terminals={terminals}
+            printers={printers}
+            kdsScreens={kdsScreens}
+          />
+        </div>
 
         {/* Quick Links */}
         <Card className="p-6">

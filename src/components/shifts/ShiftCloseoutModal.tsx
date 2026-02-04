@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
-import { hasPermission, PERMISSIONS } from '@/lib/auth'
+import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 
 interface ShiftSummary {
   totalSales: number

@@ -60,14 +60,24 @@ export async function PUT(
       relativeY,
       angle,
       seatType,
+      updateOriginal = false, // If true, also update the "builder default" position
     } = body
 
     // Verify seat exists and belongs to this table
+    // Also check if table is part of a combined group
     const existingSeat = await db.seat.findFirst({
       where: {
         id: seatId,
         tableId,
         isActive: true,
+      },
+      include: {
+        table: {
+          select: {
+            combinedWithId: true,
+            combinedTableIds: true,
+          },
+        },
       },
     })
 
@@ -78,16 +88,37 @@ export async function PUT(
       )
     }
 
+    // Determine if we should update original positions
+    // Update originals if:
+    // 1. Explicitly requested (updateOriginal = true)
+    // 2. OR if the table is NOT combined (we're in the floor plan builder)
+    const isTableCombined = existingSeat.table.combinedWithId ||
+      (existingSeat.table.combinedTableIds && (existingSeat.table.combinedTableIds as string[]).length > 0)
+
+    const shouldUpdateOriginal = updateOriginal || !isTableCombined
+
+    // Build update data
+    const updateData: Record<string, number | string | null> = {}
+
+    if (label !== undefined) updateData.label = label
+    if (seatNumber !== undefined) updateData.seatNumber = seatNumber
+    if (relativeX !== undefined) {
+      updateData.relativeX = relativeX
+      if (shouldUpdateOriginal) updateData.originalRelativeX = relativeX
+    }
+    if (relativeY !== undefined) {
+      updateData.relativeY = relativeY
+      if (shouldUpdateOriginal) updateData.originalRelativeY = relativeY
+    }
+    if (angle !== undefined) {
+      updateData.angle = angle
+      if (shouldUpdateOriginal) updateData.originalAngle = angle
+    }
+    if (seatType !== undefined) updateData.seatType = seatType
+
     const seat = await db.seat.update({
       where: { id: seatId },
-      data: {
-        ...(label !== undefined ? { label } : {}),
-        ...(seatNumber !== undefined ? { seatNumber } : {}),
-        ...(relativeX !== undefined ? { relativeX } : {}),
-        ...(relativeY !== undefined ? { relativeY } : {}),
-        ...(angle !== undefined ? { angle } : {}),
-        ...(seatType !== undefined ? { seatType } : {}),
-      },
+      data: updateData,
     })
 
     return NextResponse.json({
@@ -118,13 +149,20 @@ export async function DELETE(
 ) {
   try {
     const { id: tableId, seatId } = await params
+    const { searchParams } = new URL(request.url)
+    const employeeId = searchParams.get('employeeId')
 
-    // Verify seat exists and belongs to this table
+    // Verify seat exists and belongs to this table (with table info for logging)
     const existingSeat = await db.seat.findFirst({
       where: {
         id: seatId,
         tableId,
         isActive: true,
+      },
+      include: {
+        table: {
+          select: { locationId: true, name: true },
+        },
       },
     })
 
@@ -150,11 +188,33 @@ export async function DELETE(
       )
     }
 
-    // Soft delete
-    await db.seat.update({
-      where: { id: seatId },
-      data: { isActive: false },
+    // Use transaction to soft delete and log
+    await db.$transaction(async (tx) => {
+      // Soft delete
+      await tx.seat.update({
+        where: { id: seatId },
+        data: { isActive: false, deletedAt: new Date() },
+      })
+
+      // Audit log
+      await tx.auditLog.create({
+        data: {
+          locationId: existingSeat.table.locationId,
+          employeeId: employeeId || null,
+          action: 'seat_deleted',
+          entityType: 'seat',
+          entityId: seatId,
+          details: {
+            tableId,
+            tableName: existingSeat.table.name,
+            seatNumber: existingSeat.seatNumber,
+            seatLabel: existingSeat.label,
+          },
+        },
+      })
     })
+
+    console.log(`[Seats] Deleted seat ${existingSeat.seatNumber} from table ${existingSeat.table.name}`)
 
     return NextResponse.json({ success: true })
   } catch (error) {

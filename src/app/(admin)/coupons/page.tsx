@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, customersSubNav } from '@/components/admin/AdminSubNav'
 
 interface Coupon {
   id: string
@@ -117,17 +120,19 @@ export default function CouponsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Coupons & Promo Codes</h1>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700"
-        >
-          Create Coupon
-        </button>
-      </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Coupons & Promo Codes"
+        actions={
+          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+            Create Coupon
+          </Button>
+        }
+      />
+      <AdminSubNav items={customersSubNav} basePath="/customers" />
 
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto mt-6">
       {/* Filters */}
       <div className="flex gap-2 mb-6">
         {(['all', 'active', 'inactive'] as const).map(f => (
@@ -266,6 +271,7 @@ export default function CouponsPage() {
           </tbody>
         </table>
       </div>
+      </main>
 
       {/* Create/Edit Modal */}
       {(showCreateModal || editingCoupon) && (

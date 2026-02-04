@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-// GET - Get all entertainment items with their status
+// GET - Get all floor plan entertainment elements with their status
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
@@ -18,87 +18,100 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get all entertainment items (timed_rental type)
-    const entertainmentItems = await db.menuItem.findMany({
+    // Get all floor plan elements (entertainment type)
+    const elements = await db.floorPlanElement.findMany({
       where: {
         locationId,
-        itemType: 'timed_rental',
-        isActive: true,
+        deletedAt: null,
+        elementType: 'entertainment',
+        isVisible: true,
       },
       include: {
-        category: {
-          select: { id: true, name: true },
+        linkedMenuItem: {
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            blockTimeMinutes: true,
+            timedPricing: true,
+            minimumMinutes: true,
+          },
         },
-        entertainmentWaitlist: {
-          where: { status: 'waiting' },
-          orderBy: { createdAt: 'asc' },
+        section: {
+          select: {
+            id: true,
+            name: true,
+            color: true,
+          },
+        },
+        waitlistEntries: {
+          where: {
+            status: 'waiting',
+            deletedAt: null,
+          },
+          orderBy: { position: 'asc' },
+          select: {
+            id: true,
+            customerName: true,
+            phone: true,
+            partySize: true,
+            notes: true,
+            status: true,
+            position: true,
+            requestedAt: true,
+          },
         },
       },
       orderBy: [
-        { category: { sortOrder: 'asc' } },
+        { section: { sortOrder: 'asc' } },
         { sortOrder: 'asc' },
       ],
     })
 
     // For items that are in use, get the linked order info
-    const itemsWithOrders = await Promise.all(
-      entertainmentItems.map(async (item) => {
+    const elementsWithOrders = await Promise.all(
+      elements.map(async (element) => {
         let currentOrder = null
         let timeInfo = null
 
-        if (item.entertainmentStatus === 'in_use' && item.currentOrderId) {
+        if (element.status === 'in_use' && element.currentOrderId) {
           const order = await db.order.findUnique({
-            where: { id: item.currentOrderId },
+            where: { id: element.currentOrderId },
             select: {
               id: true,
               tabName: true,
               orderNumber: true,
               displayNumber: true,
               openedAt: true,
-              items: {
-                where: { menuItemId: item.id },
-                select: {
-                  id: true,
-                  blockTimeMinutes: true,
-                  blockTimeStartedAt: true,
-                  blockTimeExpiresAt: true,
-                  createdAt: true,
-                },
-                take: 1,
-              },
             },
           })
 
           if (order) {
-            const orderItem = order.items[0]
             const now = new Date()
 
             currentOrder = {
               orderId: order.id,
-              orderItemId: orderItem?.id || null,
               tabName: order.tabName || `Order #${order.displayNumber || order.orderNumber}`,
               orderNumber: order.orderNumber,
               displayNumber: order.displayNumber,
             }
 
             // Calculate time info
-            if (orderItem?.blockTimeMinutes && orderItem.blockTimeExpiresAt) {
-              // Block time - calculate remaining
-              const expiresAt = new Date(orderItem.blockTimeExpiresAt)
+            if (element.sessionExpiresAt) {
+              const expiresAt = new Date(element.sessionExpiresAt)
               const remaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60))
 
               timeInfo = {
                 type: 'block',
-                blockMinutes: orderItem.blockTimeMinutes,
-                startedAt: orderItem.blockTimeStartedAt?.toISOString(),
-                expiresAt: orderItem.blockTimeExpiresAt.toISOString(),
+                startedAt: element.sessionStartedAt?.toISOString(),
+                expiresAt: element.sessionExpiresAt.toISOString(),
                 minutesRemaining: remaining,
                 isExpired: remaining <= 0,
                 isExpiringSoon: remaining > 0 && remaining <= 10,
               }
-            } else {
+            } else if (element.sessionStartedAt) {
               // Per-minute billing - calculate elapsed
-              const startedAt = orderItem?.createdAt || order.openedAt
+              const startedAt = element.sessionStartedAt
               const elapsed = Math.floor((now.getTime() - startedAt.getTime()) / 1000 / 60)
 
               timeInfo = {
@@ -110,69 +123,68 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Parse timed pricing
+        // Parse timed pricing from linked menu item
         let timedPricing = null
-        if (item.timedPricing) {
+        if (element.linkedMenuItem?.timedPricing) {
           try {
-            timedPricing = typeof item.timedPricing === 'string'
-              ? JSON.parse(item.timedPricing)
-              : item.timedPricing
+            timedPricing = typeof element.linkedMenuItem.timedPricing === 'string'
+              ? JSON.parse(element.linkedMenuItem.timedPricing)
+              : element.linkedMenuItem.timedPricing
           } catch {
             timedPricing = null
           }
         }
 
         return {
-          id: item.id,
-          name: item.name,
-          displayName: item.displayName || item.name,
-          description: item.description,
-          category: item.category,
-          status: item.entertainmentStatus || 'available',
+          id: element.id,
+          name: element.name,
+          abbreviation: element.abbreviation,
+          visualType: element.visualType,
+          sectionId: element.sectionId,
+          section: element.section,
+          posX: element.posX,
+          posY: element.posY,
+          width: element.width,
+          height: element.height,
+          status: element.status || 'available',
           currentOrder,
-          currentOrderItemId: item.currentOrderItemId,
+          currentOrderId: element.currentOrderId,
           timeInfo,
-          waitlistCount: item.entertainmentWaitlist.length,
-          waitlist: item.entertainmentWaitlist.map((w, index) => ({
+          waitlistCount: element.waitlistEntries.length,
+          waitlist: element.waitlistEntries.map((w) => ({
             id: w.id,
             customerName: w.customerName,
-            phoneNumber: w.phoneNumber,
+            phone: w.phone,
             partySize: w.partySize,
-            position: index + 1,
+            position: w.position,
             status: w.status,
             notes: w.notes,
-            menuItemId: item.id,
-            // Tab info
-            tabId: w.tabId,
-            tabName: w.tabName,
-            // Deposit info
-            depositAmount: w.depositAmount ? Number(w.depositAmount) : null,
-            depositMethod: w.depositMethod,
-            depositCardLast4: w.depositCardLast4,
-            depositRefunded: w.depositRefunded,
-            createdAt: w.createdAt.toISOString(),
-            waitMinutes: Math.floor((new Date().getTime() - w.createdAt.getTime()) / 1000 / 60),
+            elementId: element.id,
+            requestedAt: w.requestedAt.toISOString(),
+            waitMinutes: Math.floor((new Date().getTime() - w.requestedAt.getTime()) / 1000 / 60),
           })),
-          // Pricing info
-          price: Number(item.price),
-          timedPricing,
-          blockTimeMinutes: item.blockTimeMinutes,
-          minimumMinutes: item.minimumMinutes,
-          // Capacity
-          maxConcurrentUses: item.maxConcurrentUses || 1,
-          currentUseCount: item.currentUseCount || 0,
+          // Linked menu item for pricing
+          linkedMenuItem: element.linkedMenuItem ? {
+            id: element.linkedMenuItem.id,
+            name: element.linkedMenuItem.name,
+            price: Number(element.linkedMenuItem.price),
+            blockTimeMinutes: element.linkedMenuItem.blockTimeMinutes,
+            timedPricing,
+            minimumMinutes: element.linkedMenuItem.minimumMinutes,
+          } : null,
         }
       })
     )
 
     const response = NextResponse.json({
-      items: itemsWithOrders,
+      elements: elementsWithOrders,
       summary: {
-        total: itemsWithOrders.length,
-        available: itemsWithOrders.filter(i => i.status === 'available').length,
-        inUse: itemsWithOrders.filter(i => i.status === 'in_use').length,
-        maintenance: itemsWithOrders.filter(i => i.status === 'maintenance').length,
-        totalWaitlist: itemsWithOrders.reduce((sum, i) => sum + i.waitlistCount, 0),
+        total: elementsWithOrders.length,
+        available: elementsWithOrders.filter(i => i.status === 'available').length,
+        inUse: elementsWithOrders.filter(i => i.status === 'in_use').length,
+        reserved: elementsWithOrders.filter(i => i.status === 'reserved').length,
+        maintenance: elementsWithOrders.filter(i => i.status === 'maintenance').length,
+        totalWaitlist: elementsWithOrders.reduce((sum, i) => sum + i.waitlistCount, 0),
       },
     })
 
@@ -190,20 +202,20 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// PATCH - Update entertainment item status
+// PATCH - Update floor plan element status
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { menuItemId, status, currentOrderId, currentOrderItemId } = body
+    const { elementId, status, currentOrderId, sessionStartedAt, sessionExpiresAt } = body
 
-    if (!menuItemId) {
+    if (!elementId) {
       return NextResponse.json(
-        { error: 'Menu item ID is required' },
+        { error: 'Element ID is required' },
         { status: 400 }
       )
     }
 
-    const validStatuses = ['available', 'in_use', 'maintenance']
+    const validStatuses = ['available', 'in_use', 'reserved', 'maintenance']
     if (status && !validStatuses.includes(status)) {
       return NextResponse.json(
         { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
@@ -212,39 +224,47 @@ export async function PATCH(request: NextRequest) {
     }
 
     const updateData: {
-      entertainmentStatus?: string
+      status?: string
       currentOrderId?: string | null
-      currentOrderItemId?: string | null
+      sessionStartedAt?: Date | null
+      sessionExpiresAt?: Date | null
     } = {}
 
     if (status) {
-      updateData.entertainmentStatus = status
+      updateData.status = status
     }
 
     if (status === 'available') {
       updateData.currentOrderId = null
-      updateData.currentOrderItemId = null
+      updateData.sessionStartedAt = null
+      updateData.sessionExpiresAt = null
     } else if (currentOrderId !== undefined) {
       updateData.currentOrderId = currentOrderId
     }
 
-    if (currentOrderItemId !== undefined) {
-      updateData.currentOrderItemId = currentOrderItemId
+    if (sessionStartedAt !== undefined) {
+      updateData.sessionStartedAt = sessionStartedAt ? new Date(sessionStartedAt) : null
     }
 
-    const updatedItem = await db.menuItem.update({
-      where: { id: menuItemId },
+    if (sessionExpiresAt !== undefined) {
+      updateData.sessionExpiresAt = sessionExpiresAt ? new Date(sessionExpiresAt) : null
+    }
+
+    const updatedElement = await db.floorPlanElement.update({
+      where: { id: elementId },
       data: updateData,
       select: {
         id: true,
         name: true,
-        entertainmentStatus: true,
+        visualType: true,
+        status: true,
         currentOrderId: true,
-        currentOrderItemId: true,
+        sessionStartedAt: true,
+        sessionExpiresAt: true,
       },
     })
 
-    return NextResponse.json({ item: updatedItem })
+    return NextResponse.json({ element: updatedElement })
   } catch (error) {
     console.error('Failed to update entertainment status:', error)
     return NextResponse.json(

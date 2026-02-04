@@ -1,0 +1,334 @@
+/**
+ * Socket Event Dispatcher
+ *
+ * Utility for dispatching real-time events from API routes.
+ * Works with both local socket server and external services.
+ *
+ * Usage:
+ * ```typescript
+ * import { dispatchNewOrder, dispatchItemStatus } from '@/lib/socket-dispatch'
+ *
+ * // In order send route
+ * const routingResult = await OrderRouter.resolveRouting(orderId)
+ * await dispatchNewOrder(locationId, routingResult)
+ * ```
+ */
+
+import type { RoutingResult } from '@/types/routing'
+
+const SOCKET_SERVER_URL = process.env.SOCKET_SERVER_URL || 'http://localhost:3000'
+const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || 'dev-internal-secret'
+
+interface DispatchOptions {
+  /** Don't await the dispatch (fire and forget) */
+  async?: boolean
+  /** Log debug information */
+  debug?: boolean
+}
+
+/**
+ * Internal broadcast function
+ */
+async function broadcast(
+  type: string,
+  locationId: string,
+  data: Record<string, unknown>,
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const { debug = false } = options
+
+  try {
+    const response = await fetch(`${SOCKET_SERVER_URL}/api/internal/socket/broadcast`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Secret': INTERNAL_SECRET,
+      },
+      body: JSON.stringify({
+        type,
+        locationId,
+        ...data,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`[SocketDispatch] Broadcast failed: ${errorText}`)
+      return false
+    }
+
+    if (debug) {
+      console.log(`[SocketDispatch] Broadcast ${type} to location ${locationId}`)
+    }
+
+    return true
+  } catch (error) {
+    // Socket dispatch failures should not block the main operation
+    console.error('[SocketDispatch] Failed to dispatch:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch new order event to KDS screens
+ *
+ * Called after OrderRouter.resolveRouting() completes.
+ * Sends order data to each station's tag-based room.
+ */
+export async function dispatchNewOrder(
+  locationId: string,
+  routingResult: RoutingResult,
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('NEW_ORDER', locationId, { routingResult }, options)
+
+  if (options.async) {
+    // Fire and forget
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch item status change (cooking/ready/served)
+ *
+ * Called when an item's status is updated on a KDS screen.
+ * Propagates to expo and all other listening stations.
+ */
+export async function dispatchItemStatus(
+  locationId: string,
+  payload: {
+    orderId: string
+    itemId: string
+    status: string
+    stationId: string
+    updatedBy: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('ITEM_STATUS', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch order bumped event
+ *
+ * Called when an order is bumped from a KDS station.
+ * Notifies expo and other stations to update their displays.
+ */
+export async function dispatchOrderBumped(
+  locationId: string,
+  payload: {
+    orderId: string
+    stationId: string
+    bumpedBy: string
+    allItemsServed: boolean
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('ORDER_BUMPED', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch entertainment session update
+ *
+ * Called when entertainment timer starts/extends/stops.
+ * Keeps all displays in sync (Pit Boss dashboard, POS terminals).
+ */
+export async function dispatchEntertainmentUpdate(
+  locationId: string,
+  payload: {
+    sessionId: string
+    tableId: string
+    tableName: string
+    action: 'started' | 'extended' | 'stopped' | 'warning'
+    expiresAt: string | null
+    addedMinutes?: number
+    partyName?: string
+    virtualGroupId?: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('ENTERTAINMENT_UPDATE', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch location-wide alert
+ *
+ * Used for system alerts (sync status, hardware failures, etc.)
+ */
+export async function dispatchLocationAlert(
+  locationId: string,
+  payload: {
+    type: 'info' | 'warning' | 'error' | 'success'
+    title: string
+    message: string
+    dismissable?: boolean
+    duration?: number
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('LOCATION_ALERT', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch void approval status update (Skill 121)
+ *
+ * Called when a remote void approval is approved/rejected.
+ * Notifies the requesting POS terminal to update the modal.
+ */
+export async function dispatchVoidApprovalUpdate(
+  locationId: string,
+  payload: {
+    type: 'approved' | 'rejected' | 'expired'
+    approvalId: string
+    terminalId?: string
+    approvalCode?: string
+    managerName: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('VOID_APPROVAL', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch floor plan update event
+ *
+ * Called when tables or entertainment elements are added/updated/deleted.
+ * Notifies all POS terminals to refresh their floor plan view.
+ */
+export async function dispatchFloorPlanUpdate(
+  locationId: string,
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('FLOOR_PLAN_UPDATE', locationId, {}, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch inventory stock adjustment event (Skill 127)
+ *
+ * Called when ingredient stock is adjusted via Quick Stock Adjust page.
+ * Notifies all terminals to update stock displays in real-time.
+ */
+export async function dispatchInventoryAdjustment(
+  locationId: string,
+  payload: {
+    adjustments: Array<{
+      ingredientId: string
+      name: string
+      previousStock: number
+      newStock: number
+      change: number
+      unit: string
+    }>
+    adjustedById: string
+    adjustedByName: string
+    totalItems: number
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('INVENTORY_ADJUSTMENT', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch single stock level change (for POS menu item badges)
+ *
+ * Used for real-time stock level updates on menu items.
+ */
+export async function dispatchStockLevelChange(
+  locationId: string,
+  payload: {
+    ingredientId: string
+    name: string
+    currentStock: number
+    previousStock: number
+    unit: string
+    stockLevel: 'critical' | 'low' | 'ok' | 'good'
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('STOCK_LEVEL_CHANGE', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch menu update event
+ *
+ * Called when menu items are added, removed, or modified.
+ * Notifies all POS terminals and admin pages to refresh menu data.
+ */
+export async function dispatchMenuUpdate(
+  locationId: string,
+  payload: {
+    action: 'created' | 'updated' | 'deleted' | 'restored'
+    menuItemId?: string
+    bottleId?: string
+    name?: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('MENU_UPDATE', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}

@@ -34,11 +34,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch all orders for the day
+    // NOTE: 'merged' status is intentionally excluded to prevent double-counting revenue.
+    // When tables are virtually combined, secondary table orders are marked as 'merged'
+    // and their items are moved to the primary table's order. Only the primary order
+    // (with status 'paid') should count toward revenue.
     const orders = await db.order.findMany({
       where: {
         locationId,
         createdAt: { gte: startOfDay, lte: endOfDay },
-        status: { in: ['completed', 'closed', 'paid'] },
+        status: { in: ['completed', 'closed', 'paid'] }, // Excludes 'merged', 'open', 'voided'
       },
       include: {
         items: {

@@ -327,6 +327,10 @@ export interface PizzaConfig {
   showVisualBuilder: boolean
   showToppingList: boolean
   defaultToListView: boolean
+  // Builder mode settings (Skill 109)
+  builderMode: 'quick' | 'visual' | 'both'
+  defaultBuilderMode: 'quick' | 'visual'
+  allowModeSwitch: boolean
 }
 
 /**

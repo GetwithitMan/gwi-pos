@@ -22,8 +22,10 @@ const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
   enablePreAuth: true,
   defaultPreAuthAmount: 50,
   preAuthExpirationDays: 7,
-  processor: 'none',
+  processor: 'simulated',
   testMode: true,
+  readerTimeoutSeconds: 30,
+  autoSwapOnFailure: true,
 }
 
 const DEFAULT_PRICE_ROUNDING: PriceRoundingSettings = {

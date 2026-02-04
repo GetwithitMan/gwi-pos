@@ -17,10 +17,10 @@ interface CategoriesBarProps {
   onStartTabWorkflow?: () => void
 }
 
-// Category types that belong to "Food" row
-const FOOD_TYPES = ['food', 'combos', 'retail', 'entertainment']
-// Category types that belong to "Bar" row
-const BAR_TYPES = ['drinks', 'liquor']
+// Category types that belong to "Bar" row (must match orders page)
+const BAR_TYPES = ['liquor', 'drinks', 'cocktails', 'beer', 'wine']
+// Category types that belong to "Food" row - everything else defaults to food
+const FOOD_TYPES = ['food', 'pizza', 'combos', 'retail', 'entertainment', 'appetizers', 'entrees', 'desserts']
 
 export function CategoriesBar({
   categories,
@@ -45,20 +45,20 @@ export function CategoriesBar({
       whileTap={{ scale: 0.98 }}
       style={{
         padding: '10px 20px',
-        background: selectedCategoryId === category.id ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
+        background: selectedCategoryId === category.id
+          ? (category.color ? `${category.color}20` : 'rgba(99, 102, 241, 0.2)')
+          : 'rgba(255, 255, 255, 0.05)',
+        borderWidth: '1px',
+        borderStyle: 'solid',
+        borderColor: selectedCategoryId === category.id && category.color
+          ? category.color
+          : 'rgba(255, 255, 255, 0.1)',
         borderRadius: '10px',
         color: selectedCategoryId === category.id ? '#a5b4fc' : '#94a3b8',
         fontSize: '14px',
         fontWeight: 500,
         cursor: 'pointer',
         whiteSpace: 'nowrap' as const,
-        ...(selectedCategoryId === category.id && category.color
-          ? {
-              borderColor: category.color,
-              backgroundColor: `${category.color}20`,
-            }
-          : {}),
       }}
     >
       {category.name}
@@ -68,8 +68,6 @@ export function CategoriesBar({
     </motion.button>
   )
 
-  // Debug: log categories to console
-  console.log('[CategoriesBar] Categories:', categories.length, { food: foodCategories.length, bar: barCategories.length })
 
   return (
     <div className="categories-bar-container" style={{ minHeight: '100px', background: 'rgba(0,0,0,0.2)' }}>
@@ -81,26 +79,6 @@ export function CategoriesBar({
           </svg>
           Food
         </span>
-
-        {/* All Food button */}
-        <motion.button
-          className={`category-button ${selectedCategoryId === null ? 'active' : ''}`}
-          onClick={() => onCategorySelect(null)}
-          whileHover={{ y: -2 }}
-          whileTap={{ scale: 0.98 }}
-          style={{
-            padding: '10px 20px',
-            background: selectedCategoryId === null ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '10px',
-            color: selectedCategoryId === null ? '#a5b4fc' : '#94a3b8',
-            fontSize: '14px',
-            fontWeight: 500,
-            cursor: 'pointer',
-          }}
-        >
-          All
-        </motion.button>
 
         {foodCategories.map(renderCategoryButton)}
       </div>

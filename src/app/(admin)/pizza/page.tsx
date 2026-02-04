@@ -8,6 +8,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { PizzaPrintSettings } from '@/types/pizza-print-settings'
 import { PizzaPrintSettingsEditor } from '@/components/hardware/PizzaPrintSettingsEditor'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 // Types
 interface PizzaConfig {
@@ -349,18 +351,15 @@ export default function PizzaAdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 p-8">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Pizza Builder Settings</h1>
-            <p className="text-gray-600 mt-1">Configure sizes, crusts, sauces, cheeses, and toppings</p>
-          </div>
-          <Button variant="outline" onClick={() => router.push('/menu')}>
-            Back to Menu
-          </Button>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 p-6">
+      <AdminPageHeader
+        title="Pizza Builder Settings"
+        subtitle="Configure sizes, crusts, sauces, cheeses, and toppings"
+        breadcrumbs={[{ label: 'Menu', href: '/menu' }]}
+      />
+      <AdminSubNav items={menuSubNav} basePath="/menu" />
+
+      <div className="max-w-6xl mx-auto mt-6">
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6 border-b border-gray-200 pb-4 overflow-x-auto">

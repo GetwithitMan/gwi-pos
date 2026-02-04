@@ -23,9 +23,12 @@ interface KDSItem {
   specialNotes: string | null
   isCompleted: boolean
   completedAt: string | null
+  completedBy: string | null  // Who marked complete (T023)
   resendCount: number
   lastResentAt: string | null
   resendNote: string | null
+  // Seat assignment (T023)
+  seatNumber: number | null
   // Coursing info (T013)
   courseNumber: number | null
   courseStatus: string
@@ -241,6 +244,10 @@ function KDSContent() {
   useEffect(() => {
     if (authState !== 'authenticated' && authState !== 'employee_fallback') return
 
+    // TODO: SCALING - Replace polling with WebSockets/SSE for production
+    // Current: 10 terminals × 5s polling = ~120 DB hits/min during service
+    // Target: Push-based updates via Socket.io (see /src/lib/events/socket-provider.ts)
+    // Orders pushed on: create, item_added, status_change, bump
     loadOrders()
     const interval = setInterval(loadOrders, 5000)
 
@@ -667,6 +674,10 @@ function KDSContent() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1">
                             <div className={`font-medium ${item.isCompleted ? 'line-through text-gray-500' : 'text-white'}`}>
+                              {/* Seat number prefix (T023) */}
+                              {item.seatNumber && (
+                                <span className="text-purple-400 font-bold mr-1">S{item.seatNumber}:</span>
+                              )}
                               <span className="text-blue-400 mr-2">{item.quantity}x</span>
                               {item.name}
                               {/* Course badge (T013) */}
@@ -743,6 +754,14 @@ function KDSContent() {
                             {item.specialNotes && (
                               <div className={`mt-1 text-sm font-medium ${item.isCompleted ? 'text-gray-600' : 'text-orange-400'}`}>
                                 {item.specialNotes}
+                              </div>
+                            )}
+
+                            {/* Completion info (T023) */}
+                            {item.isCompleted && item.completedAt && (
+                              <div className="mt-1 text-xs text-green-500">
+                                ✓ Completed {new Date(item.completedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                                {item.completedBy && <span className="text-gray-500"> by {item.completedBy}</span>}
                               </div>
                             )}
                           </div>

@@ -7,6 +7,8 @@ import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, calculateChange, PAYMENT_METHOD_LABELS } from '@/lib/payment'
 import type { DualPricingSettings, TipSettings, PaymentSettings } from '@/lib/settings'
+import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
+import type { DatacapResult } from '@/hooks/useDatacap'
 
 interface PaymentModalProps {
   isOpen: boolean
@@ -21,6 +23,7 @@ interface PaymentModalProps {
   paymentSettings: PaymentSettings
   onPaymentComplete: () => void
   employeeId?: string
+  terminalId?: string  // Required for Datacap integration
 }
 
 interface PendingPayment {
@@ -50,7 +53,7 @@ interface HouseAccountInfo {
   status: string
 }
 
-type PaymentStep = 'method' | 'cash' | 'card' | 'tip' | 'confirm' | 'gift_card' | 'house_account'
+type PaymentStep = 'method' | 'cash' | 'card' | 'tip' | 'confirm' | 'gift_card' | 'house_account' | 'datacap_card'
 
 // Default tip settings
 const DEFAULT_TIP_SETTINGS: TipSettings = {
@@ -72,12 +75,15 @@ export function PaymentModal({
   paymentSettings,
   onPaymentComplete,
   employeeId,
+  terminalId,
 }: PaymentModalProps) {
-  // Don't render if not open
-  if (!isOpen) return null
+  // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
+  // State for fetched order data (when orderTotal is not provided)
+  const [fetchedOrderTotal, setFetchedOrderTotal] = useState<number | null>(null)
+  const [fetchedSubtotal, setFetchedSubtotal] = useState<number | null>(null)
+  const [loadingOrder, setLoadingOrder] = useState(false)
 
-  // Use subtotal from props or default to orderTotal
-  const effectiveSubtotal = subtotal ?? orderTotal
+  // Payment flow state
   const [step, setStep] = useState<PaymentStep>('method')
   const [selectedMethod, setSelectedMethod] = useState<'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | null>(null)
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([])
@@ -106,10 +112,49 @@ export function PaymentModal({
   const [houseAccountSearch, setHouseAccountSearch] = useState('')
   const [houseAccountsLoading, setHouseAccountsLoading] = useState(false)
 
+  // Fetch order data if orderTotal is 0 or not provided
+  useEffect(() => {
+    if (isOpen && orderId && orderTotal === 0) {
+      setLoadingOrder(true)
+      fetch(`/api/orders/${orderId}`)
+        .then(res => res.json())
+        .then(data => {
+          setFetchedOrderTotal(data.total || 0)
+          setFetchedSubtotal(data.subtotal || 0)
+        })
+        .catch(err => {
+          console.error('Failed to fetch order:', err)
+        })
+        .finally(() => {
+          setLoadingOrder(false)
+        })
+    }
+  }, [isOpen, orderId, orderTotal])
+
+  // Use fetched total if orderTotal was 0
+  const effectiveOrderTotal = orderTotal > 0 ? orderTotal : (fetchedOrderTotal ?? 0)
+  // Use subtotal from props or fetched or default to orderTotal
+  const effectiveSubtotal = subtotal ?? fetchedSubtotal ?? effectiveOrderTotal
+
+  // Don't render if not open
+  if (!isOpen) return null
+
+  // Show loading while fetching order
+  if (loadingOrder) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-8 text-center">
+          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading order...</p>
+        </div>
+      </div>
+    )
+  }
+
   // Calculate amounts
   const alreadyPaid = existingPayments.reduce((sum, p) => sum + p.totalAmount, 0)
   const pendingTotal = pendingPayments.reduce((sum, p) => sum + p.amount + p.tipAmount, 0)
-  const remainingBeforeTip = orderTotal - alreadyPaid - pendingTotal
+  const remainingBeforeTip = effectiveOrderTotal - alreadyPaid - pendingTotal
 
   // Apply dual pricing - card price is displayed, cash gets discount
   const discountPercent = dualPricing.cashDiscountPercent || 4.0
@@ -231,7 +276,7 @@ export function PaymentModal({
     if (percent === null) {
       setTipAmount(0)
     } else {
-      const tip = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, orderTotal)
+      const tip = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal)
       setTipAmount(tip)
     }
     setCustomTip('')
@@ -245,7 +290,11 @@ export function PaymentModal({
   const handleContinueFromTip = () => {
     if (selectedMethod === 'cash') {
       setStep('cash')
+    } else if ((selectedMethod === 'credit' || selectedMethod === 'debit') && paymentSettings.processor === 'datacap') {
+      // Use Datacap Direct for card payments
+      setStep('datacap_card')
     } else {
+      // Simulated card payment (dev/test mode)
       setStep('card')
     }
   }
@@ -273,6 +322,19 @@ export function PaymentModal({
       tipAmount,
       cardBrand,
       cardLast4,
+    }
+    setPendingPayments([...pendingPayments, payment])
+    processPayments([...pendingPayments, payment])
+  }
+
+  // Handle Datacap payment success
+  const handleDatacapSuccess = (result: DatacapResult & { tipAmount: number }) => {
+    const payment: PendingPayment = {
+      method: selectedMethod as 'credit' | 'debit',
+      amount: currentTotal,
+      tipAmount: result.tipAmount,
+      cardBrand: result.cardBrand || 'card',
+      cardLast4: result.cardLast4 || '****',
     }
     setPendingPayments([...pendingPayments, payment])
     processPayments([...pendingPayments, payment])
@@ -353,7 +415,7 @@ export function PaymentModal({
           <div className="mb-4 p-3 bg-gray-50 rounded-lg">
             <div className="flex justify-between text-sm">
               <span>Order Total</span>
-              <span className="font-medium">{formatCurrency(orderTotal)}</span>
+              <span className="font-medium">{formatCurrency(effectiveOrderTotal)}</span>
             </div>
             {alreadyPaid > 0 && (
               <div className="flex justify-between text-sm text-green-600">
@@ -481,7 +543,7 @@ export function PaymentModal({
 
               <div className="grid grid-cols-4 gap-2">
                 {tipSettings.suggestedPercentages.map(percent => {
-                  const tipForPercent = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, orderTotal)
+                  const tipForPercent = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal)
                   return (
                     <Button
                       key={percent}
@@ -671,6 +733,20 @@ export function PaymentModal({
                 </Button>
               </div>
             </div>
+          )}
+
+          {/* Step: Datacap Direct Card Payment */}
+          {step === 'datacap_card' && orderId && terminalId && employeeId && (
+            <DatacapPaymentProcessor
+              orderId={orderId}
+              amount={currentTotal}
+              subtotal={effectiveSubtotal}
+              tipSettings={tipSettings}
+              terminalId={terminalId}
+              employeeId={employeeId}
+              onSuccess={handleDatacapSuccess}
+              onCancel={() => setStep('method')}
+            />
           )}
 
           {/* Step: Gift Card Payment */}

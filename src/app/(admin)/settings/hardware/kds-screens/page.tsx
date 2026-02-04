@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 
 interface PrepStation {
   id: string
@@ -278,32 +280,25 @@ export default function KDSScreensPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
-      <div className="mx-auto max-w-4xl">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/settings/hardware"
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              <span>Hardware</span>
-            </Link>
-            <h1 className="text-2xl font-bold text-gray-900">KDS Screens</h1>
-          </div>
+      <AdminPageHeader
+        title="KDS Screens"
+        subtitle="Configure kitchen display screens"
+        breadcrumbs={[
+          { label: 'Settings', href: '/settings' },
+          { label: 'Hardware', href: '/settings/hardware' },
+        ]}
+        actions={
           <button
             onClick={handleAdd}
             className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Screen
+            + Add Screen
           </button>
-        </div>
+        }
+      />
+      <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
 
+      <div className="mx-auto max-w-4xl">
         {/* Screens List */}
         {loading ? (
           <div className="flex h-64 items-center justify-center rounded-xl bg-white shadow">

@@ -38,6 +38,14 @@ export async function POST(request: NextRequest) {
           include: {
             modifiers: true,
             ingredientModifications: true,
+            // Source table for T-S notation (virtual combined tables)
+            sourceTable: {
+              select: {
+                id: true,
+                name: true,
+                abbreviation: true,
+              },
+            },
             pizzaData: {
               include: {
                 size: { select: { name: true, inches: true } },
@@ -245,6 +253,9 @@ function buildKitchenTicket(
     id: string
     name: string
     quantity: number
+    seatNumber: number | null  // T023: Seat assignment
+    sourceTableId: string | null  // For virtual combined tables - T-S notation
+    sourceTable: { id: string; name: string; abbreviation: string | null } | null  // Source table for T-S prefix
     specialNotes: string | null
     resendCount: number
     modifiers: Array<{
@@ -423,8 +434,22 @@ function buildKitchenTicket(
 
   // ITEMS
   for (const item of items) {
-    // Item name with quantity - use priority settings for size and formatting
-    let itemName = `${item.quantity}x ${item.name}`
+    // Item name with quantity and T-S (Table-Seat) notation for virtual combined tables
+    // Format: T2-S3 = Table 2, Seat 3 | S3 = Seat 3 only (no source table)
+    let positionPrefix = ''
+    if (item.sourceTable) {
+      // Virtual combined table - use T-S notation
+      const tablePrefix = item.sourceTable.abbreviation || item.sourceTable.name.slice(0, 4)
+      if (item.seatNumber) {
+        positionPrefix = `${tablePrefix}-S${item.seatNumber}: `
+      } else {
+        positionPrefix = `${tablePrefix}: `
+      }
+    } else if (item.seatNumber) {
+      // Regular seat number only
+      positionPrefix = `S${item.seatNumber}: `
+    }
+    let itemName = `${positionPrefix}${item.quantity}x ${item.name}`
     if (allCapsItems) itemName = itemName.toUpperCase()
     content.push(importantLine(itemName, itemNameSize, useRedItemNames, boldItems))
 

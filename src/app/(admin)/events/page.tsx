@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, teamSubNav } from '@/components/admin/AdminSubNav'
 
 interface PricingTier {
   id: string
@@ -33,11 +36,11 @@ interface Event {
 const LOCATION_ID = 'loc_default'
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-700 text-gray-300',
-  on_sale: 'bg-green-900 text-green-300',
-  sold_out: 'bg-purple-900 text-purple-300',
-  cancelled: 'bg-red-900 text-red-300',
-  completed: 'bg-blue-900 text-blue-300',
+  draft: 'bg-gray-100 text-gray-700',
+  on_sale: 'bg-green-50 text-green-700',
+  sold_out: 'bg-purple-50 text-purple-700',
+  cancelled: 'bg-red-50 text-red-700',
+  completed: 'bg-blue-50 text-blue-700',
 }
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -93,17 +96,19 @@ export default function EventsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Events</h1>
-        <Link
-          href="/events/new"
-          className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700"
-        >
-          Create Event
-        </Link>
-      </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Events"
+        actions={
+          <Link href="/events/new">
+            <Button variant="primary">Create Event</Button>
+          </Link>
+        }
+      />
+      <AdminSubNav items={teamSubNav} basePath="/employees" />
 
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto mt-6">
       {/* Filters */}
       <div className="flex gap-2 mb-6">
         {['upcoming', 'all', 'draft', 'on_sale', 'sold_out', 'completed', 'cancelled'].map(status => (
@@ -111,7 +116,7 @@ export default function EventsPage() {
             key={status}
             onClick={() => setFilter(status)}
             className={`px-3 py-2 rounded capitalize ${
-              filter === status ? 'bg-blue-600' : 'bg-gray-700 hover:bg-gray-600'
+              filter === status ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
             }`}
           >
             {status === 'on_sale' ? 'On Sale' : status.replace('_', ' ')}
@@ -121,32 +126,32 @@ export default function EventsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-5 gap-4 mb-6">
-        <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Total Events</div>
-          <div className="text-2xl font-bold">{stats.total}</div>
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow">
+          <div className="text-gray-600 text-sm">Total Events</div>
+          <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">On Sale</div>
-          <div className="text-2xl font-bold text-green-400">{stats.onSale}</div>
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow">
+          <div className="text-gray-600 text-sm">On Sale</div>
+          <div className="text-2xl font-bold text-green-600">{stats.onSale}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Drafts</div>
-          <div className="text-2xl font-bold text-gray-400">{stats.draft}</div>
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow">
+          <div className="text-gray-600 text-sm">Drafts</div>
+          <div className="text-2xl font-bold text-gray-600">{stats.draft}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Tickets Sold</div>
-          <div className="text-2xl font-bold text-blue-400">{stats.totalTickets}</div>
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow">
+          <div className="text-gray-600 text-sm">Tickets Sold</div>
+          <div className="text-2xl font-bold text-blue-600">{stats.totalTickets}</div>
         </div>
-        <div className="bg-gray-800 rounded-lg p-4">
-          <div className="text-gray-400 text-sm">Total Capacity</div>
-          <div className="text-2xl font-bold">{stats.totalCapacity}</div>
+        <div className="bg-white rounded-lg p-4 border border-gray-200 shadow">
+          <div className="text-gray-600 text-sm">Total Capacity</div>
+          <div className="text-2xl font-bold text-gray-900">{stats.totalCapacity}</div>
         </div>
       </div>
 
       {/* Event List */}
       <div className="space-y-4">
         {events.length === 0 ? (
-          <div className="bg-gray-800 rounded-lg p-8 text-center text-gray-400">
+          <div className="bg-white rounded-lg p-8 text-center text-gray-600 border border-gray-200 shadow">
             No events found. Create your first event to get started.
           </div>
         ) : (
@@ -155,6 +160,7 @@ export default function EventsPage() {
           ))
         )}
       </div>
+      </main>
     </div>
   )
 }
@@ -195,12 +201,12 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
   }
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4 relative">
+    <div className="bg-white rounded-lg p-4 relative border border-gray-200 shadow">
       <div className="flex gap-4">
         {/* Date column */}
         <div className="flex-shrink-0 w-20 text-center">
-          <div className="text-3xl font-bold">{new Date(event.eventDate).getDate()}</div>
-          <div className="text-sm text-gray-400 uppercase">
+          <div className="text-3xl font-bold text-gray-900">{new Date(event.eventDate).getDate()}</div>
+          <div className="text-sm text-gray-600 uppercase">
             {new Date(event.eventDate).toLocaleDateString('en-US', { month: 'short' })}
           </div>
           <div className="text-xs text-gray-500">
@@ -213,14 +219,14 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <Link href={`/events/${event.id}`} className="text-lg font-medium hover:underline">
+                <Link href={`/events/${event.id}`} className="text-lg font-medium text-gray-900 hover:underline">
                   {event.name}
                 </Link>
                 <span className={`px-2 py-0.5 text-xs rounded ${STATUS_COLORS[event.status]}`}>
                   {event.status.replace('_', ' ')}
                 </span>
               </div>
-              <div className="text-sm text-gray-400 mt-1">
+              <div className="text-sm text-gray-600 mt-1">
                 {EVENT_TYPE_LABELS[event.eventType] || event.eventType} &bull;{' '}
                 Doors {formatTime(event.doorsOpen)} &bull;{' '}
                 Show {formatTime(event.startTime)}
@@ -244,11 +250,11 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
             <div className="flex items-center gap-2">
               {/* Capacity indicator */}
               <div className="text-right mr-4">
-                <div className="text-lg font-medium">
+                <div className="text-lg font-medium text-gray-900">
                   {event.soldCount} / {event.totalCapacity}
                 </div>
-                <div className="text-xs text-gray-400">tickets sold</div>
-                <div className="w-32 h-2 bg-gray-700 rounded-full mt-1">
+                <div className="text-xs text-gray-600">tickets sold</div>
+                <div className="w-32 h-2 bg-gray-200 rounded-full mt-1">
                   <div
                     className={`h-full rounded-full ${
                       soldPercent >= 90 ? 'bg-purple-500' :
@@ -264,7 +270,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
               {event.status === 'on_sale' && (
                 <Link
                   href={`/events/${event.id}/sell`}
-                  className="px-3 py-1.5 bg-green-600 rounded text-sm hover:bg-green-700"
+                  className="px-3 py-1.5 bg-green-600 rounded text-sm text-white hover:bg-green-700"
                 >
                   Sell Tickets
                 </Link>
@@ -272,7 +278,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
               {event.status === 'draft' && (
                 <button
                   onClick={publishEvent}
-                  className="px-3 py-1.5 bg-blue-600 rounded text-sm hover:bg-blue-700"
+                  className="px-3 py-1.5 bg-blue-600 rounded text-sm text-white hover:bg-blue-700"
                 >
                   Publish
                 </button>
@@ -280,7 +286,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
               {(event.status === 'on_sale' || event.status === 'sold_out') && (
                 <Link
                   href={`/events/${event.id}/check-in`}
-                  className="px-3 py-1.5 bg-purple-600 rounded text-sm hover:bg-purple-700"
+                  className="px-3 py-1.5 bg-purple-600 rounded text-sm text-white hover:bg-purple-700"
                 >
                   Check-In
                 </Link>
@@ -288,7 +294,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
 
               <button
                 onClick={() => setShowActions(!showActions)}
-                className="px-2 py-1.5 bg-gray-700 rounded hover:bg-gray-600"
+                className="px-2 py-1.5 bg-gray-200 rounded text-gray-700 hover:bg-gray-300"
               >
                 ...
               </button>
@@ -299,24 +305,24 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
 
       {/* Action dropdown */}
       {showActions && (
-        <div className="absolute right-4 top-16 bg-gray-900 rounded-lg shadow-lg py-2 z-10 min-w-[150px]">
+        <div className="absolute right-4 top-16 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-10 min-w-[150px]">
           <Link
             href={`/events/${event.id}`}
-            className="block px-4 py-2 hover:bg-gray-700"
+            className="block px-4 py-2 text-gray-700 hover:bg-gray-50"
             onClick={() => setShowActions(false)}
           >
             View Details
           </Link>
           <Link
             href={`/events/${event.id}/sell`}
-            className="block px-4 py-2 hover:bg-gray-700"
+            className="block px-4 py-2 text-gray-700 hover:bg-gray-50"
             onClick={() => setShowActions(false)}
           >
             Sell Tickets
           </Link>
           <Link
             href={`/events/${event.id}/check-in`}
-            className="block px-4 py-2 hover:bg-gray-700"
+            className="block px-4 py-2 text-gray-700 hover:bg-gray-50"
             onClick={() => setShowActions(false)}
           >
             Check-In
@@ -324,7 +330,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
           {event.status === 'draft' && (
             <button
               onClick={() => { publishEvent(); setShowActions(false) }}
-              className="w-full px-4 py-2 text-left hover:bg-gray-700 text-green-400"
+              className="w-full px-4 py-2 text-left hover:bg-gray-50 text-green-600"
             >
               Publish Event
             </button>
@@ -332,7 +338,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
           {event.status !== 'cancelled' && event.status !== 'completed' && (
             <button
               onClick={() => { cancelEvent(); setShowActions(false) }}
-              className="w-full px-4 py-2 text-left hover:bg-gray-700 text-red-400"
+              className="w-full px-4 py-2 text-left hover:bg-gray-50 text-red-600"
             >
               Cancel Event
             </button>

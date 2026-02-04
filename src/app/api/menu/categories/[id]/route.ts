@@ -8,7 +8,7 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, color, categoryType, printerIds } = body
+    const { name, color, categoryType, categoryShow, printerIds } = body
 
     const category = await db.category.update({
       where: { id },
@@ -16,6 +16,7 @@ export async function PUT(
         ...(name && { name }),
         ...(color && { color }),
         ...(categoryType && { categoryType }),
+        ...(categoryShow && { categoryShow }),
         // Allow setting printerIds to null to clear it (empty array also becomes null)
         ...(printerIds !== undefined && {
           printerIds: printerIds && printerIds.length > 0 ? printerIds : null
@@ -28,6 +29,7 @@ export async function PUT(
       name: category.name,
       color: category.color,
       categoryType: category.categoryType,
+      categoryShow: category.categoryShow,
       isActive: category.isActive,
       printerIds: category.printerIds
     })

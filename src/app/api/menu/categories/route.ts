@@ -12,7 +12,13 @@ export async function GET(request: NextRequest) {
     const categories = await db.category.findMany({
       where: { isActive: true, deletedAt: null, ...locationFilter },
       orderBy: { sortOrder: 'asc' },
-      include: { _count: { select: { menuItems: true } } }
+      include: {
+        _count: {
+          select: {
+            menuItems: { where: { deletedAt: null, isActive: true } }
+          }
+        }
+      }
     })
 
     return NextResponse.json({
@@ -21,6 +27,7 @@ export async function GET(request: NextRequest) {
         name: c.name,
         color: c.color,
         categoryType: c.categoryType || 'food',
+        categoryShow: c.categoryShow || 'all',
         isActive: c.isActive,
         itemCount: c._count.menuItems,
       })),
@@ -37,7 +44,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { name, color, categoryType, printerIds } = body
+    const { name, color, categoryType, categoryShow, printerIds } = body
 
     if (!name?.trim()) {
       return NextResponse.json(
@@ -67,6 +74,7 @@ export async function POST(request: NextRequest) {
         name: name.trim(),
         color: color || '#3b82f6',
         categoryType: categoryType || 'food',
+        categoryShow: categoryShow || 'all',
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         ...(printerIds && { printerIds }),
       }
@@ -77,6 +85,7 @@ export async function POST(request: NextRequest) {
       name: category.name,
       color: category.color,
       categoryType: category.categoryType,
+      categoryShow: category.categoryShow,
       isActive: category.isActive,
       printerIds: category.printerIds,
       itemCount: 0

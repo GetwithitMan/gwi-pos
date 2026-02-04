@@ -131,6 +131,8 @@ export async function POST(request: NextRequest) {
         specialNotes: item.specialNotes || null,
         seatNumber: item.seatNumber || null,
         courseNumber: item.courseNumber || null,
+        // Timed rental / entertainment fields
+        blockTimeMinutes: item.blockTimeMinutes || null,
         modifiers: {
           create: item.modifiers.map(mod => ({
             locationId,
@@ -176,6 +178,14 @@ export async function POST(request: NextRequest) {
     const total = Math.round((subtotal + taxTotal) * 100) / 100
 
     // Create the order
+    // Initialize seat management (Skill 121)
+    const initialSeatCount = guestCount || 1
+    const initialSeatTimestamps: Record<string, string> = {}
+    const now = new Date().toISOString()
+    for (let i = 1; i <= initialSeatCount; i++) {
+      initialSeatTimestamps[i.toString()] = now
+    }
+
     const order = await db.order.create({
       data: {
         locationId,
@@ -185,7 +195,11 @@ export async function POST(request: NextRequest) {
         orderTypeId: orderTypeId || null,
         tableId: tableId || null,
         tabName: tabName || null,
-        guestCount: guestCount || 1,
+        guestCount: initialSeatCount,
+        baseSeatCount: initialSeatCount,     // Skill 121: Track original seat count
+        extraSeatCount: 0,                    // Skill 121: Additional seats added
+        seatVersion: 0,                       // Skill 121: Concurrency version
+        seatTimestamps: initialSeatTimestamps, // Skill 121: When each seat was created
         status: 'open',
         subtotal,
         discountTotal: 0,
@@ -235,12 +249,13 @@ export async function POST(request: NextRequest) {
         id: order.employee.id,
         name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
       },
-      items: order.items.map(item => ({
+      items: order.items.map((item, index) => ({
         id: item.id,
         name: item.name,
         price: Number(item.price),
         quantity: item.quantity,
         itemTotal: Number(item.itemTotal),
+        correlationId: items[index]?.correlationId, // Echo back client-provided correlation ID
         modifiers: item.modifiers.map(mod => ({
           id: mod.id,
           name: mod.name,

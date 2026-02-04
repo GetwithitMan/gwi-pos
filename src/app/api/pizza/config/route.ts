@@ -29,6 +29,9 @@ export async function GET() {
           showVisualBuilder: true,
           showToppingList: true,
           defaultToListView: false,
+          builderMode: 'both',
+          defaultBuilderMode: 'quick',
+          allowModeSwitch: true,
         }
       })
     }
@@ -40,6 +43,9 @@ export async function GET() {
       extraToppingPrice: config.extraToppingPrice ? Number(config.extraToppingPrice) : null,
       printerIds: (config.printerIds as string[]) || [],
       printSettings: config.printSettings as PizzaPrintSettings | null,
+      builderMode: config.builderMode || 'both',
+      defaultBuilderMode: config.defaultBuilderMode || 'quick',
+      allowModeSwitch: config.allowModeSwitch ?? true,
     })
   } catch (error) {
     console.error('Failed to get pizza config:', error)
@@ -73,6 +79,9 @@ export async function PATCH(request: NextRequest) {
         ...(body.defaultToListView !== undefined && { defaultToListView: body.defaultToListView }),
         ...(body.printerIds !== undefined && { printerIds: body.printerIds || [] }),
         ...(body.printSettings !== undefined && { printSettings: body.printSettings }),
+        ...(body.builderMode !== undefined && { builderMode: body.builderMode }),
+        ...(body.defaultBuilderMode !== undefined && { defaultBuilderMode: body.defaultBuilderMode }),
+        ...(body.allowModeSwitch !== undefined && { allowModeSwitch: body.allowModeSwitch }),
       },
       create: {
         locationId: location.id,
@@ -90,6 +99,9 @@ export async function PATCH(request: NextRequest) {
         defaultToListView: body.defaultToListView ?? false,
         printerIds: body.printerIds || [],
         printSettings: body.printSettings,
+        builderMode: body.builderMode ?? 'both',
+        defaultBuilderMode: body.defaultBuilderMode ?? 'quick',
+        allowModeSwitch: body.allowModeSwitch ?? true,
       }
     })
 
@@ -100,6 +112,9 @@ export async function PATCH(request: NextRequest) {
       extraToppingPrice: config.extraToppingPrice ? Number(config.extraToppingPrice) : null,
       printerIds: (config.printerIds as string[]) || [],
       printSettings: config.printSettings as PizzaPrintSettings | null,
+      builderMode: config.builderMode || 'both',
+      defaultBuilderMode: config.defaultBuilderMode || 'quick',
+      allowModeSwitch: config.allowModeSwitch ?? true,
     })
   } catch (error) {
     console.error('Failed to update pizza config:', error)

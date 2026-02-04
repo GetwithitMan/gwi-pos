@@ -71,6 +71,7 @@ export function PinPad({ onSubmit, maxLength = 6, isLoading, error, showClear = 
                 className="w-full h-full text-2xl font-bold"
                 onClick={() => handleDigit(digit)}
                 disabled={isLoading}
+                data-testid={`pin-digit-${digit}`}
               >
                 {digit}
               </Button>
@@ -119,6 +120,7 @@ export function PinPad({ onSubmit, maxLength = 6, isLoading, error, showClear = 
         onClick={handleSubmit}
         disabled={pin.length < 4 || isLoading}
         isLoading={isLoading}
+        data-testid="pin-submit"
       >
         Clock In
       </Button>

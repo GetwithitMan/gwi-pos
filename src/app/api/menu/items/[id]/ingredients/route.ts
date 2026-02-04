@@ -25,16 +25,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       include: {
         ingredient: {
           include: {
-            swapModifierGroup: {
+            swapGroup: {
               select: {
                 id: true,
                 name: true,
-                modifiers: {
-                  where: { isActive: true },
+                ingredients: {
+                  where: { isActive: true, deletedAt: null },
                   select: {
                     id: true,
                     name: true,
-                    price: true,
+                    extraPrice: true,
                   },
                   orderBy: { sortOrder: 'asc' },
                 },
@@ -55,26 +55,25 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         isIncluded: mi.isIncluded,
         sortOrder: mi.sortOrder,
         // Modification options (use override if set, otherwise ingredient default)
-        allowNo: mi.ingredient.allowNo,
-        allowLite: mi.ingredient.allowLite,
-        allowOnSide: mi.ingredient.allowOnSide,
-        allowExtra: mi.ingredient.allowExtra,
-        extraPrice: Number(mi.extraPriceOverride ?? mi.ingredient.extraPrice),
+        allowNo: mi.allowNo ?? mi.ingredient.allowNo,
+        allowLite: mi.allowLite ?? mi.ingredient.allowLite,
+        allowOnSide: mi.allowOnSide ?? mi.ingredient.allowOnSide,
+        allowExtra: mi.allowExtra ?? mi.ingredient.allowExtra,
+        extraPrice: Number(mi.extraPrice ?? mi.ingredient.extraPrice),
         allowSwap: mi.ingredient.allowSwap,
-        swapUpcharge: Number(mi.swapUpchargeOverride ?? mi.ingredient.swapUpcharge),
-        // Swap options
-        swapModifierGroup: mi.ingredient.swapModifierGroup ? {
-          id: mi.ingredient.swapModifierGroup.id,
-          name: mi.ingredient.swapModifierGroup.name,
-          modifiers: mi.ingredient.swapModifierGroup.modifiers.map(m => ({
-            id: m.id,
-            name: m.name,
-            price: Number(m.price),
+        swapUpcharge: Number(mi.ingredient.swapUpcharge),
+        // Swap options (ingredients that can be swapped for this one)
+        swapGroup: mi.ingredient.swapGroup ? {
+          id: mi.ingredient.swapGroup.id,
+          name: mi.ingredient.swapGroup.name,
+          ingredients: mi.ingredient.swapGroup.ingredients.map(ing => ({
+            id: ing.id,
+            name: ing.name,
+            extraPrice: Number(ing.extraPrice),
           })),
         } : null,
         // Override flags
-        hasExtraPriceOverride: mi.extraPriceOverride !== null,
-        hasSwapUpchargeOverride: mi.swapUpchargeOverride !== null,
+        hasExtraPriceOverride: mi.extraPrice !== null,
       })),
     })
   } catch (error) {
@@ -89,7 +88,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
     const body = await request.json()
-    const { ingredients } = body // Array of { ingredientId, isIncluded?, extraPriceOverride?, swapUpchargeOverride? }
+    // Array of { ingredientId, isIncluded?, allowNo?, allowLite?, allowExtra?, allowOnSide?, extraPriceOverride?, swapUpchargeOverride? }
+    const { ingredients } = body
 
     if (!Array.isArray(ingredients)) {
       return NextResponse.json({ error: 'ingredients array is required' }, { status: 400 })
@@ -135,9 +135,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             menuItemId,
             ingredientId: ing.ingredientId,
             isIncluded: ing.isIncluded ?? true,
+            isBase: ing.isBase ?? true,
             sortOrder: ing.sortOrder ?? index,
-            extraPriceOverride: ing.extraPriceOverride ?? null,
-            swapUpchargeOverride: ing.swapUpchargeOverride ?? null,
+            quantity: ing.quantity ?? null,
+            unit: ing.unit ?? null,
+            // Pre-modifier overrides (null = use ingredient defaults)
+            allowNo: ing.allowNo ?? null,
+            allowLite: ing.allowLite ?? null,
+            allowExtra: ing.allowExtra ?? null,
+            allowOnSide: ing.allowOnSide ?? null,
+            extraPrice: ing.extraPrice ?? null,
           })),
         })
       }
@@ -149,7 +156,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       include: {
         ingredient: {
           include: {
-            swapModifierGroup: {
+            swapGroup: {
               select: { id: true, name: true },
             },
           },
@@ -165,9 +172,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         name: mi.ingredient.name,
         category: mi.ingredient.category,
         isIncluded: mi.isIncluded,
+        isBase: mi.isBase,
         sortOrder: mi.sortOrder,
-        extraPrice: Number(mi.extraPriceOverride ?? mi.ingredient.extraPrice),
-        swapUpcharge: Number(mi.swapUpchargeOverride ?? mi.ingredient.swapUpcharge),
+        extraPrice: Number(mi.extraPrice ?? mi.ingredient.extraPrice),
+        swapUpcharge: Number(mi.ingredient.swapUpcharge),
       })),
     })
   } catch (error) {

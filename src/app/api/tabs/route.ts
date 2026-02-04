@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       tabs: tabs.map(tab => ({
         id: tab.id,
-        tabName: tab.tabName || `Tab #${tab.orderNumber}`,
+        tabName: tab.tabName, // Return actual value (null if no custom name)
         orderNumber: tab.orderNumber,
         status: tab.status,
         employee: {

@@ -33,20 +33,6 @@ export type { EntertainmentVisualType } from './entertainment-visuals'
 export { AddEntertainmentPalette } from './AddEntertainmentPalette'
 export { FloorPlanEntertainment } from './FloorPlanEntertainment'
 
-// V2 Floor Plan Components (Clean architecture with server-side geometry)
-export { FloorPlanHomeV2 } from './FloorPlanHomeV2'
-export { FloorPlanTableV2 } from './FloorPlanTableV2'
-export { VirtualGroupToolbar } from './VirtualGroupToolbar'
-export { OrderPanelV2 } from './OrderPanelV2'
-export { MenuSelectorV2 } from './MenuSelectorV2'
-export {
-  useFloorPlanStore as useFloorPlanStoreV2,
-  type FloorPlanTable as FloorPlanTableV2Type,
-  type FloorPlanSeat as FloorPlanSeatV2,
-  type OrderItem as OrderItemV2,
-  type ActiveOrder as ActiveOrderV2,
-} from './useFloorPlanStore'
-
 export {
   useFloorPlanStore,
   type FloorPlanTable as FloorPlanTableType,

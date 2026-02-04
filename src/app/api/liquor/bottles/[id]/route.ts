@@ -46,6 +46,12 @@ export async function GET(
             displayName: true,
           },
         },
+        inventoryItem: {
+          select: {
+            id: true,
+            currentStock: true,
+          },
+        },
         _count: {
           select: {
             spiritModifiers: true,
@@ -79,6 +85,8 @@ export async function GET(
       currentStock: bottle.currentStock,
       lowStockAlert: bottle.lowStockAlert,
       isActive: bottle.isActive,
+      inventoryItemId: bottle.inventoryItemId,
+      inventoryStock: bottle.inventoryItem?.currentStock ? Number(bottle.inventoryItem.currentStock) : null,
       createdAt: bottle.createdAt,
       updatedAt: bottle.updatedAt,
       usageCount: {
@@ -98,6 +106,7 @@ export async function GET(
 /**
  * PUT /api/liquor/bottles/[id]
  * Update a bottle product (recalculates metrics if relevant fields change)
+ * Also syncs changes to the linked InventoryItem
  */
 export async function PUT(
   request: NextRequest,
@@ -123,6 +132,9 @@ export async function PUT(
     // Get existing bottle to check if metrics need recalculation
     const existing = await db.bottleProduct.findUnique({
       where: { id },
+      include: {
+        spiritCategory: { select: { name: true } },
+      },
     })
 
     if (!existing) {
@@ -140,17 +152,20 @@ export async function PUT(
       )
     }
 
-    // Validate spiritCategoryId if provided
+    // Validate spiritCategoryId if provided and get category name
+    let newCategoryName = existing.spiritCategory?.name
     if (spiritCategoryId !== undefined) {
-      const categoryExists = await db.spiritCategory.findUnique({
+      const category = await db.spiritCategory.findUnique({
         where: { id: spiritCategoryId },
+        select: { name: true },
       })
-      if (!categoryExists) {
+      if (!category) {
         return NextResponse.json(
           { error: 'Spirit category not found' },
           { status: 400 }
         )
       }
+      newCategoryName = category.name
     }
 
     // Determine if we need to recalculate metrics
@@ -165,7 +180,7 @@ export async function PUT(
       unitCost !== undefined ||
       pourSizeOz !== undefined
 
-    let metricsUpdate = {}
+    let metricsUpdate: { bottleSizeOz?: number; poursPerBottle?: number; pourCost?: number } = {}
     if (needsRecalc) {
       const metrics = calculateBottleMetrics(newBottleSizeMl, newUnitCost, newPourSizeOz)
       metricsUpdate = {
@@ -175,31 +190,77 @@ export async function PUT(
       }
     }
 
-    const bottle = await db.bottleProduct.update({
-      where: { id },
-      data: {
-        ...(name !== undefined && { name: name.trim() }),
-        ...(brand !== undefined && { brand: brand?.trim() || null }),
-        ...(displayName !== undefined && { displayName: displayName?.trim() || null }),
-        ...(spiritCategoryId !== undefined && { spiritCategoryId }),
-        ...(tier !== undefined && { tier }),
-        ...(bottleSizeMl !== undefined && { bottleSizeMl }),
-        ...(unitCost !== undefined && { unitCost }),
-        ...(pourSizeOz !== undefined && { pourSizeOz: pourSizeOz || null }),
-        ...(currentStock !== undefined && { currentStock }),
-        ...(lowStockAlert !== undefined && { lowStockAlert: lowStockAlert || null }),
-        ...(isActive !== undefined && { isActive }),
-        ...metricsUpdate,
-      },
-      include: {
-        spiritCategory: {
-          select: {
-            id: true,
-            name: true,
-            displayName: true,
+    // Use transaction to update both BottleProduct and InventoryItem
+    const bottle = await db.$transaction(async (tx) => {
+      // Update the BottleProduct
+      const updatedBottle = await tx.bottleProduct.update({
+        where: { id },
+        data: {
+          ...(name !== undefined && { name: name.trim() }),
+          ...(brand !== undefined && { brand: brand?.trim() || null }),
+          ...(displayName !== undefined && { displayName: displayName?.trim() || null }),
+          ...(spiritCategoryId !== undefined && { spiritCategoryId }),
+          ...(tier !== undefined && { tier }),
+          ...(bottleSizeMl !== undefined && { bottleSizeMl }),
+          ...(unitCost !== undefined && { unitCost }),
+          ...(pourSizeOz !== undefined && { pourSizeOz: pourSizeOz || null }),
+          ...(currentStock !== undefined && { currentStock }),
+          ...(lowStockAlert !== undefined && { lowStockAlert: lowStockAlert || null }),
+          ...(isActive !== undefined && { isActive }),
+          ...metricsUpdate,
+        },
+        include: {
+          spiritCategory: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
           },
         },
-      },
+      })
+
+      // Sync relevant changes to linked InventoryItem
+      if (existing.inventoryItemId) {
+        const bottleSizeOzFinal = metricsUpdate.bottleSizeOz ?? (existing.bottleSizeOz ? Number(existing.bottleSizeOz) : 25.36)
+        const pourCostFinal = metricsUpdate.pourCost ?? (existing.pourCost ? Number(existing.pourCost) : 0)
+
+        const inventoryUpdate: Record<string, unknown> = {}
+
+        if (name !== undefined) inventoryUpdate.name = name.trim()
+        if (brand !== undefined) inventoryUpdate.brand = brand?.trim() || null
+        if (displayName !== undefined) {
+          inventoryUpdate.description = displayName?.trim() || `${brand || ''} ${name}`.trim()
+        }
+        if (spiritCategoryId !== undefined) {
+          inventoryUpdate.spiritCategoryId = spiritCategoryId
+          inventoryUpdate.category = newCategoryName?.toLowerCase()
+        }
+        if (tier !== undefined) inventoryUpdate.subcategory = tier
+        if (unitCost !== undefined) inventoryUpdate.purchaseCost = unitCost
+        if (needsRecalc) {
+          inventoryUpdate.unitsPerPurchase = bottleSizeOzFinal
+          inventoryUpdate.costPerUnit = pourCostFinal
+        }
+        if (pourSizeOz !== undefined) inventoryUpdate.pourSizeOz = pourSizeOz || DEFAULT_POUR_SIZE_OZ
+        if (currentStock !== undefined) {
+          // Convert bottles to oz for inventory stock
+          inventoryUpdate.currentStock = currentStock * bottleSizeOzFinal
+        }
+        if (lowStockAlert !== undefined) {
+          inventoryUpdate.parLevel = lowStockAlert ? lowStockAlert * bottleSizeOzFinal : null
+        }
+        if (isActive !== undefined) inventoryUpdate.isActive = isActive
+
+        if (Object.keys(inventoryUpdate).length > 0) {
+          await tx.inventoryItem.update({
+            where: { id: existing.inventoryItemId },
+            data: inventoryUpdate,
+          })
+        }
+      }
+
+      return updatedBottle
     })
 
     return NextResponse.json({
@@ -219,6 +280,7 @@ export async function PUT(
       currentStock: bottle.currentStock,
       lowStockAlert: bottle.lowStockAlert,
       isActive: bottle.isActive,
+      inventoryItemId: existing.inventoryItemId,
       createdAt: bottle.createdAt,
       updatedAt: bottle.updatedAt,
     })
@@ -233,7 +295,8 @@ export async function PUT(
 
 /**
  * DELETE /api/liquor/bottles/[id]
- * Delete a bottle product (only if not used in modifiers or recipes)
+ * Soft-delete a bottle product (only if not used in modifiers or recipes)
+ * Also soft-deletes the linked InventoryItem
  */
 export async function DELETE(
   request: NextRequest,
@@ -243,9 +306,10 @@ export async function DELETE(
     const { id } = await params
 
     // Check if bottle is used in any modifiers or recipes
-    const usage = await db.bottleProduct.findUnique({
+    const bottle = await db.bottleProduct.findUnique({
       where: { id },
       select: {
+        inventoryItemId: true,
         _count: {
           select: {
             spiritModifiers: true,
@@ -255,27 +319,42 @@ export async function DELETE(
       },
     })
 
-    if (!usage) {
+    if (!bottle) {
       return NextResponse.json(
         { error: 'Bottle not found' },
         { status: 404 }
       )
     }
 
-    if (usage._count.spiritModifiers > 0 || usage._count.recipeIngredients > 0) {
+    if (bottle._count.spiritModifiers > 0 || bottle._count.recipeIngredients > 0) {
       return NextResponse.json(
         {
           error: 'Cannot delete bottle that is used in modifiers or recipes',
           usage: {
-            modifiers: usage._count.spiritModifiers,
-            recipes: usage._count.recipeIngredients,
+            modifiers: bottle._count.spiritModifiers,
+            recipes: bottle._count.recipeIngredients,
           },
         },
         { status: 400 }
       )
     }
 
-    await db.bottleProduct.delete({ where: { id } })
+    // Soft-delete both BottleProduct and linked InventoryItem
+    await db.$transaction(async (tx) => {
+      // Soft-delete the bottle
+      await tx.bottleProduct.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+      })
+
+      // Soft-delete linked inventory item
+      if (bottle.inventoryItemId) {
+        await tx.inventoryItem.update({
+          where: { id: bottle.inventoryItemId },
+          data: { deletedAt: new Date() },
+        })
+      }
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

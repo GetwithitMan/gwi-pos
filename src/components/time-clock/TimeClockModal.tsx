@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
-import { hasPermission, PERMISSIONS } from '@/lib/auth'
+import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 
 interface TimeClockEntry {
   id: string

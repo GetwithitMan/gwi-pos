@@ -1,13 +1,16 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
-import { AdminNav } from '@/components/admin/AdminNav'
 import { SPIRIT_TIERS, BOTTLE_SIZES, LIQUOR_DEFAULTS } from '@/lib/constants'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
+import { RecipeBuilder } from '@/components/menu/RecipeBuilder'
 
 interface SpiritCategory {
   id: string
@@ -41,37 +44,20 @@ interface BottleProduct {
   currentStock: number
   lowStockAlert?: number | null
   isActive: boolean
-}
-
-interface RecipeCocktail {
-  id: string
-  name: string
-  description?: string | null
-  sellPrice: number
-  category: {
+  inventoryItemId?: string | null
+  inventoryStock?: number | null // Stock in oz from linked InventoryItem
+  hasMenuItem: boolean
+  linkedMenuItems: {
     id: string
     name: string
-    color: string
-  }
-  hasRecipe: boolean
-  ingredientCount: number
-  totalPourCost: number
-  profitMargin: number
-  grossProfit: number
-  ingredients?: {
-    id: string
-    bottleProductId: string
-    bottleProductName: string
-    spiritCategory: string
-    tier: string
-    pourCount: number
-    pourCost: number
-    isSubstitutable: boolean
-    ingredientCost: number
+    price: number
+    isActive: boolean
+    sortOrder: number
+    category: { id: string; name: string }
   }[]
 }
 
-type TabType = 'bottles' | 'categories' | 'recipes'
+type TabType = 'bottles' | 'drinks' | 'modifiers'
 
 function LiquorBuilderContent() {
   const router = useRouter()
@@ -84,20 +70,32 @@ function LiquorBuilderContent() {
   // Data state
   const [categories, setCategories] = useState<SpiritCategory[]>([])
   const [bottles, setBottles] = useState<BottleProduct[]>([])
-  const [cocktails, setCocktails] = useState<RecipeCocktail[]>([])
-  const [recipeSummary, setRecipeSummary] = useState({ total: 0, withRecipes: 0, withoutRecipes: 0, averageMargin: 0 })
+  const [drinks, setDrinks] = useState<any[]>([])
+  const [selectedDrink, setSelectedDrink] = useState<any | null>(null)
+  const [modifierGroups, setModifierGroups] = useState<any[]>([])
+  const [selectedModifierGroup, setSelectedModifierGroup] = useState<any | null>(null)
 
   // Modal state
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [showBottleModal, setShowBottleModal] = useState(false)
-  const [showRecipeModal, setShowRecipeModal] = useState(false)
+  const [showCreateMenuItemModal, setShowCreateMenuItemModal] = useState(false)
   const [editingCategory, setEditingCategory] = useState<SpiritCategory | null>(null)
   const [editingBottle, setEditingBottle] = useState<BottleProduct | null>(null)
-  const [editingCocktail, setEditingCocktail] = useState<RecipeCocktail | null>(null)
+  const [bottleForMenuItem, setBottleForMenuItem] = useState<BottleProduct | null>(null)
 
   // Filter state
   const [categoryFilter, setCategoryFilter] = useState<string>('')
   const [tierFilter, setTierFilter] = useState<string>('')
+
+  // Drag and drop state
+  const [draggedBottleId, setDraggedBottleId] = useState<string | null>(null)
+  const [dragOverBottleId, setDragOverBottleId] = useState<string | null>(null)
+
+  // Flash animation for recently restored items
+  const [flashingBottleId, setFlashingBottleId] = useState<string | null>(null)
+
+  // Socket ref for real-time updates
+  const socketRef = useRef<any>(null)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -107,33 +105,59 @@ function LiquorBuilderContent() {
     loadData()
   }, [isAuthenticated, router])
 
-  // Handle ?item= query parameter to open recipe modal directly
+  // Socket connection for real-time updates
   useEffect(() => {
-    const itemId = searchParams.get('item')
-    if (itemId) {
-      setPendingItemId(itemId)
-      setActiveTab('recipes')
-    }
-  }, [searchParams])
+    let socket: any = null
 
-  // Open recipe modal when cocktails are loaded and we have a pending item
-  useEffect(() => {
-    if (pendingItemId && cocktails.length > 0 && !isLoading) {
-      const cocktail = cocktails.find(c => c.id === pendingItemId)
-      if (cocktail) {
-        setEditingCocktail(cocktail)
-        setShowRecipeModal(true)
-        setPendingItemId(null)
-        // Clear the URL param
-        router.replace('/liquor-builder', { scroll: false })
+    async function initSocket() {
+      try {
+        const { io } = await import('socket.io-client')
+        const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
+
+        socket = io(serverUrl, {
+          path: '/api/socket',
+          transports: ['websocket', 'polling'],
+          reconnection: true,
+        })
+
+        socketRef.current = socket
+
+        socket.on('connect', () => {
+          console.log('[LiquorBuilder] Socket connected')
+          // Join location room for updates
+          socket.emit('join_location', { locationId: 'default' })
+        })
+
+        // Listen for menu updates
+        socket.on('menu:updated', (data: any) => {
+          console.log('[LiquorBuilder] Menu update received:', data)
+          // Refresh data when menu changes using refs to get latest functions
+          loadBottlesRef.current?.()
+        })
+
+      } catch (error) {
+        console.log('[LiquorBuilder] Socket not available, using polling')
       }
     }
-  }, [pendingItemId, cocktails, isLoading, router])
+
+    initSocket()
+
+    return () => {
+      if (socket) {
+        socket.disconnect()
+      }
+    }
+  }, [])
+
 
   const loadData = async () => {
     setIsLoading(true)
     try {
-      await Promise.all([loadCategories(), loadBottles(), loadCocktails()])
+      const [categoriesData] = await Promise.all([loadCategories(), loadBottles(), loadDrinks(), loadModifierGroups()])
+      // Auto-select first category to reduce screen clutter
+      if (categoriesData && categoriesData.length > 0 && !categoryFilter) {
+        setCategoryFilter(categoriesData[0].id)
+      }
     } finally {
       setIsLoading(false)
     }
@@ -144,25 +168,46 @@ function LiquorBuilderContent() {
     if (res.ok) {
       const data = await res.json()
       setCategories(data)
+      return data as SpiritCategory[]
     }
+    return [] as SpiritCategory[]
   }
 
   const loadBottles = async () => {
-    const res = await fetch('/api/liquor/bottles')
+    const res = await fetch(`/api/liquor/bottles?_t=${Date.now()}`, { cache: 'no-store' })
     if (res.ok) {
       const data = await res.json()
       setBottles(data)
     }
   }
 
-  const loadCocktails = async () => {
-    const res = await fetch('/api/liquor/recipes')
+  const loadDrinks = async () => {
+    const res = await fetch('/api/menu')
     if (res.ok) {
       const data = await res.json()
-      setCocktails(data.cocktails)
-      setRecipeSummary(data.summary)
+      const liquorItems = data.items.filter((item: any) => item.categoryType === 'liquor')
+      setDrinks(liquorItems)
     }
   }
+
+  const loadModifierGroups = async () => {
+    const res = await fetch('/api/menu/modifiers')
+    if (res.ok) {
+      const data = await res.json()
+      // Filter to only liquor modifier groups
+      const liquorGroups = data.modifierGroups.filter((g: any) =>
+        g.modifierTypes && g.modifierTypes.includes('liquor')
+      )
+      setModifierGroups(liquorGroups)
+      if (liquorGroups.length > 0 && !selectedModifierGroup) {
+        setSelectedModifierGroup(liquorGroups[0])
+      }
+    }
+  }
+
+  // Refs for load functions to avoid stale closures in socket listener
+  const loadBottlesRef = useRef<(() => Promise<void>) | null>(null)
+  loadBottlesRef.current = loadBottles
 
   const getTierLabel = (tier: string) => {
     return SPIRIT_TIERS.find(t => t.value === tier)?.label || tier
@@ -185,346 +230,697 @@ function LiquorBuilderContent() {
     return true
   })
 
+  // Handle drag and drop reordering
+  const handleDragStart = (bottleId: string) => {
+    setDraggedBottleId(bottleId)
+  }
+
+  const handleDragOver = (e: React.DragEvent, bottleId: string) => {
+    e.preventDefault()
+    if (bottleId !== draggedBottleId) {
+      setDragOverBottleId(bottleId)
+    }
+  }
+
+  const handleDragEnd = () => {
+    setDraggedBottleId(null)
+    setDragOverBottleId(null)
+  }
+
+  const handleDrop = async (targetBottleId: string) => {
+    if (!draggedBottleId || draggedBottleId === targetBottleId) {
+      handleDragEnd()
+      return
+    }
+
+    const draggedBottle = filteredBottles.find(b => b.id === draggedBottleId)
+    const targetBottle = filteredBottles.find(b => b.id === targetBottleId)
+
+    // Only reorder if both have menu items
+    if (!draggedBottle?.hasMenuItem || !targetBottle?.hasMenuItem) {
+      handleDragEnd()
+      return
+    }
+
+    const draggedMenuItem = draggedBottle.linkedMenuItems[0]
+    const targetMenuItem = targetBottle.linkedMenuItems[0]
+
+    if (!draggedMenuItem || !targetMenuItem) {
+      handleDragEnd()
+      return
+    }
+
+    // Swap their positions
+    const draggedPosition = draggedMenuItem.sortOrder
+    const targetPosition = targetMenuItem.sortOrder
+
+    // Update both menu items
+    await Promise.all([
+      fetch(`/api/menu/items/${draggedMenuItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sortOrder: targetPosition }),
+      }),
+      fetch(`/api/menu/items/${targetMenuItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sortOrder: draggedPosition }),
+      }),
+    ])
+
+    handleDragEnd()
+    loadBottles()
+  }
+
   if (!isAuthenticated) return null
 
+  // Check if this is a fresh setup (no data)
+  const isEmptySetup = categories.length === 0 && bottles.length === 0
+
   return (
-    <div className="min-h-screen bg-gray-100">
-      <AdminNav />
-
-      <div className="lg:ml-64 p-6">
-        {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Liquor Builder</h1>
-          <p className="text-gray-600">Manage spirit inventory, recipes, and pour cost tracking</p>
+    <div className="min-h-screen bg-gray-50">
+      {/* Compact Header */}
+      <div className="bg-white border-b px-4 py-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold">Liquor Builder</h1>
+            <p className="text-xs text-gray-500">Manage bottles, categories & recipes</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/menu" className="text-xs text-blue-600 hover:underline">← Back to Menu</Link>
+          </div>
         </div>
+      </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6 border-b">
-          {[
-            { id: 'bottles', label: 'Bottle Library', count: bottles.length },
-            { id: 'categories', label: 'Spirit Categories', count: categories.length },
-            { id: 'recipes', label: 'Cocktail Recipes', count: recipeSummary.withRecipes },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as TabType)}
-              className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-              <span className="ml-2 bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full text-xs">
-                {tab.count}
-              </span>
-            </button>
-          ))}
+      {isLoading ? (
+        <div className="text-center py-8 text-gray-500">Loading...</div>
+      ) : isEmptySetup ? (
+        /* Getting Started Guide */
+        <div className="max-w-2xl mx-auto p-6">
+          <div className="bg-white rounded-lg border p-6">
+            <h2 className="text-xl font-bold mb-2">Getting Started</h2>
+            <p className="text-gray-600 text-sm mb-6">Set up your liquor inventory in 3 steps:</p>
+
+            <div className="space-y-4">
+              {/* Step 1 */}
+              <div className="flex gap-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                <div className="w-8 h-8 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold shrink-0">1</div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Create Spirit Categories</h3>
+                  <p className="text-sm text-gray-600 mb-2">Tequila, Vodka, Whiskey, Rum, Gin, etc.</p>
+                  <Button size="sm" onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}>
+                    + Add Category
+                  </Button>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
+                <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">2</div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-500">Add Your Bottles</h3>
+                  <p className="text-sm text-gray-400">Add bottles with cost, size, and tier (well/call/premium/top shelf)</p>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className="flex gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200 opacity-60">
+                <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold shrink-0">3</div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-gray-500">Set Up Cocktail Recipes</h3>
+                  <p className="text-sm text-gray-400">Link bottles to cocktails for cost tracking</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      ) : (
+        /* Main Interface */
+        <div className="flex h-[calc(100vh-57px)]">
+          {/* Left Sidebar - Categories + Quick Add */}
+          <div className="w-48 bg-white border-r flex flex-col shrink-0">
+            <div className="p-2 border-b">
+              <button
+                onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}
+                className="w-full text-left px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50 rounded"
+              >
+                + Add Category
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2">
+              <div className="text-[10px] uppercase text-gray-400 font-medium px-2 mb-1">Categories</div>
+              {categories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => { setCategoryFilter(cat.id); setActiveTab('bottles'); }}
+                  className={`w-full text-left px-2 py-1.5 rounded text-sm flex items-center justify-between ${
+                    categoryFilter === cat.id ? 'bg-purple-100 text-purple-700' : 'hover:bg-gray-100'
+                  }`}
+                >
+                  <span className="truncate">{cat.name}</span>
+                  <span className="text-xs text-gray-400">{cat.bottleCount}</span>
+                </button>
+              ))}
+              {categoryFilter && (
+                <button
+                  onClick={() => setCategoryFilter('')}
+                  className="w-full text-left px-2 py-1 text-xs text-gray-500 hover:text-gray-700"
+                >
+                  Clear filter
+                </button>
+              )}
+            </div>
+            {/* Quick Stats */}
+            <div className="p-2 border-t bg-gray-50 text-xs">
+              <div className="flex justify-between py-0.5">
+                <span className="text-gray-500">Bottles:</span>
+                <span className="font-medium">{bottles.length}</span>
+              </div>
+              <div className="flex justify-between py-0.5">
+                <span className="text-gray-500">Modifiers:</span>
+                <span className="font-medium">{modifierGroups.length}</span>
+              </div>
+            </div>
+          </div>
 
-        {isLoading ? (
-          <div className="text-center py-8 text-gray-500">Loading...</div>
-        ) : (
-          <>
-            {/* Bottles Tab */}
-            {activeTab === 'bottles' && (
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <div className="flex gap-2">
-                    <select
-                      value={categoryFilter}
-                      onChange={e => setCategoryFilter(e.target.value)}
-                      className="border rounded-lg px-3 py-2"
-                    >
-                      <option value="">All Categories</option>
-                      {categories.map(cat => (
-                        <option key={cat.id} value={cat.id}>{cat.name}</option>
-                      ))}
-                    </select>
+          {/* Main Content */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Tabs + Actions Bar */}
+            <div className="bg-white border-b px-3 py-2 flex items-center justify-between shrink-0">
+              <div className="flex gap-1">
+                {[
+                  { id: 'bottles', label: 'Bottles', count: filteredBottles.length },
+                  { id: 'drinks', label: 'Drinks', count: drinks.length },
+                  { id: 'modifiers', label: 'Modifiers', count: modifierGroups.length },
+                ].map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as TabType)}
+                    className={`px-3 py-1 text-sm rounded transition-colors ${
+                      activeTab === tab.id
+                        ? 'bg-purple-100 text-purple-700 font-medium'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {tab.label}
+                    <span className="ml-1 text-xs opacity-70">({tab.count})</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                {activeTab === 'bottles' && (
+                  <>
                     <select
                       value={tierFilter}
                       onChange={e => setTierFilter(e.target.value)}
-                      className="border rounded-lg px-3 py-2"
+                      className="border rounded px-2 py-1 text-sm"
                     >
                       <option value="">All Tiers</option>
                       {SPIRIT_TIERS.map(tier => (
                         <option key={tier.value} value={tier.value}>{tier.label}</option>
                       ))}
                     </select>
-                  </div>
-                  <Button onClick={() => { setEditingBottle(null); setShowBottleModal(true); }}>
-                    + Add Bottle
-                  </Button>
-                </div>
+                    <Button size="sm" onClick={() => { setEditingBottle(null); setShowBottleModal(true); }}>
+                      + Bottle
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
 
-                {filteredBottles.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <p className="text-gray-500 mb-4">No bottles in your library yet</p>
-                      <Button onClick={() => { setEditingBottle(null); setShowBottleModal(true); }}>
-                        Add Your First Bottle
-                      </Button>
-                    </CardContent>
-                  </Card>
+            {/* Content Area */}
+            <div className="flex-1 overflow-auto p-3">
+              {/* Bottles Tab */}
+              {activeTab === 'bottles' && (
+                filteredBottles.length === 0 ? (
+                  <div className="text-center py-8">
+                    <p className="text-gray-500 mb-2">No bottles {categoryFilter ? 'in this category' : 'yet'}</p>
+                    <Button size="sm" onClick={() => { setEditingBottle(null); setShowBottleModal(true); }}>
+                      + Add Bottle
+                    </Button>
+                  </div>
                 ) : (
-                  <Card>
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Product</th>
-                            <th className="px-4 py-3 text-left text-sm font-medium text-gray-600">Category</th>
-                            <th className="px-4 py-3 text-center text-sm font-medium text-gray-600">Tier</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Size</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Cost</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Pours</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Pour Cost</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Stock</th>
-                            <th className="px-4 py-3 text-right text-sm font-medium text-gray-600">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y">
-                          {filteredBottles.map(bottle => (
-                            <tr key={bottle.id} className={!bottle.isActive ? 'bg-gray-50 opacity-60' : ''}>
-                              <td className="px-4 py-3">
-                                <div className="font-medium">{bottle.name}</div>
-                                {bottle.brand && (
-                                  <div className="text-sm text-gray-500">{bottle.brand}</div>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-sm">{bottle.spiritCategory.name}</td>
-                              <td className="px-4 py-3 text-center">
-                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getTierColor(bottle.tier)}`}>
-                                  {getTierLabel(bottle.tier)}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-right text-sm">{bottle.bottleSizeMl} mL</td>
-                              <td className="px-4 py-3 text-right text-sm">{formatCurrency(bottle.unitCost)}</td>
-                              <td className="px-4 py-3 text-right text-sm">{bottle.poursPerBottle || '-'}</td>
-                              <td className="px-4 py-3 text-right">
-                                <span className="font-medium text-green-600">
-                                  {bottle.pourCost ? formatCurrency(bottle.pourCost) : '-'}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-right text-sm">
-                                <span className={bottle.lowStockAlert && bottle.currentStock <= bottle.lowStockAlert ? 'text-red-600 font-medium' : ''}>
-                                  {bottle.currentStock}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 text-right">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
+                  <div className="space-y-6">
+                    {/* ON POS Section */}
+                    <div className="bg-white rounded-lg border-2 border-green-200 overflow-hidden">
+                      <div className="bg-green-500 text-white px-4 py-2 font-semibold flex items-center gap-2">
+                        <span>✓</span>
+                        <span>On POS Menu</span>
+                        <span className="ml-auto bg-green-600 px-2 py-0.5 rounded text-sm">
+                          {filteredBottles.filter(b => b.hasMenuItem).length} items
+                        </span>
+                      </div>
+                      {filteredBottles.filter(b => b.hasMenuItem).length === 0 ? (
+                        <div className="p-8 text-center text-gray-500">
+                          No bottles on POS yet. Click a bottle below to add it.
+                        </div>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead className="bg-green-50 text-xs border-b border-green-200">
+                            <tr>
+                              <th className="w-8 px-1"></th>
+                              <th className="px-3 py-2 text-left font-medium text-gray-700">Product</th>
+                              <th className="px-3 py-2 text-center font-medium text-gray-700">Tier</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700">Size</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700">Cost</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700">Pours</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700">Pour $</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700">Price</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700">Profit</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700">Margin</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-700">Stock</th>
+                              <th className="px-3 py-2 text-center font-medium text-gray-700">Position</th>
+                              <th className="px-3 py-2 text-center font-medium text-gray-700">Hide</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredBottles.filter(b => b.hasMenuItem).map((bottle, idx) => {
+                              const isLowStock = bottle.lowStockAlert && bottle.currentStock <= bottle.lowStockAlert
+                              const menuItem = bottle.linkedMenuItems?.[0]
+                              const menuPrice = menuItem?.price || 0
+                              const pourCost = bottle.pourCost || 0
+                              const profit = menuPrice > 0 && pourCost > 0 ? menuPrice - pourCost : 0
+                              const margin = menuPrice > 0 && pourCost > 0 ? ((menuPrice - pourCost) / menuPrice) * 100 : 0
+                              const position = menuItem?.sortOrder || null
+
+                              const isDragging = draggedBottleId === bottle.id
+                              const isDragOver = dragOverBottleId === bottle.id
+
+                              const isFlashing = flashingBottleId === bottle.id
+
+                              return (
+                                <tr
+                                  key={bottle.id}
+                                  draggable={true}
+                                  onDragStart={() => handleDragStart(bottle.id)}
+                                  onDragOver={(e) => handleDragOver(e, bottle.id)}
+                                  onDragEnd={handleDragEnd}
+                                  onDrop={() => handleDrop(bottle.id)}
+                                  className={`cursor-pointer border-b border-green-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-green-50/50'} hover:bg-green-100 ${!bottle.isActive ? 'opacity-50' : ''} ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-t-2 border-purple-500' : ''} ${isFlashing ? 'animate-flash-green' : ''}`}
                                   onClick={() => { setEditingBottle(bottle); setShowBottleModal(true); }}
                                 >
-                                  Edit
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </Card>
-                )}
-              </div>
-            )}
-
-            {/* Categories Tab */}
-            {activeTab === 'categories' && (
-              <div>
-                <div className="flex justify-end mb-4">
-                  <Button onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}>
-                    + Add Category
-                  </Button>
-                </div>
-
-                {categories.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <p className="text-gray-500 mb-4">No spirit categories yet</p>
-                      <Button onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }}>
-                        Create Your First Category
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {categories.map(category => (
-                      <Card key={category.id}>
-                        <CardHeader className="flex flex-row items-center justify-between pb-2">
-                          <CardTitle className="text-lg">{category.name}</CardTitle>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => { setEditingCategory(category); setShowCategoryModal(true); }}
-                            >
-                              Edit
-                            </Button>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          {category.description && (
-                            <p className="text-sm text-gray-500 mb-3">{category.description}</p>
-                          )}
-                          <div className="flex gap-4 text-sm">
-                            <div>
-                              <span className="text-gray-500">Bottles:</span>
-                              <span className="ml-1 font-medium">{category.bottleCount}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Modifier Groups:</span>
-                              <span className="ml-1 font-medium">{category.modifierGroupCount}</span>
-                            </div>
-                          </div>
-                          {!category.isActive && (
-                            <span className="inline-block mt-2 text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                              Inactive
-                            </span>
-                          )}
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Recipes Tab */}
-            {activeTab === 'recipes' && (
-              <div>
-                {/* Summary Cards */}
-                <div className="grid grid-cols-4 gap-4 mb-6">
-                  <Card>
-                    <CardContent className="p-4 text-center">
-                      <div className="text-2xl font-bold">{recipeSummary.total}</div>
-                      <div className="text-sm text-gray-500">Total Cocktails</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-4 text-center">
-                      <div className="text-2xl font-bold text-green-600">{recipeSummary.withRecipes}</div>
-                      <div className="text-sm text-gray-500">With Recipes</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-4 text-center">
-                      <div className="text-2xl font-bold text-orange-600">{recipeSummary.withoutRecipes}</div>
-                      <div className="text-sm text-gray-500">Need Recipes</div>
-                    </CardContent>
-                  </Card>
-                  <Card>
-                    <CardContent className="p-4 text-center">
-                      <div className="text-2xl font-bold text-blue-600">{recipeSummary.averageMargin}%</div>
-                      <div className="text-sm text-gray-500">Avg Margin</div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {cocktails.length === 0 ? (
-                  <Card>
-                    <CardContent className="py-12 text-center">
-                      <p className="text-gray-500 mb-4">No cocktails found in your menu</p>
-                      <p className="text-sm text-gray-400">Add items to a &quot;Liquor&quot; category to see them here</p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="space-y-4">
-                    {cocktails.map(cocktail => (
-                      <Card key={cocktail.id}>
-                        <CardContent className="p-4">
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2">
-                                <h3 className="font-bold text-lg">{cocktail.name}</h3>
-                                <span
-                                  className="px-2 py-0.5 rounded text-xs"
-                                  style={{ backgroundColor: cocktail.category.color + '20', color: cocktail.category.color }}
-                                >
-                                  {cocktail.category.name}
-                                </span>
-                                {cocktail.hasRecipe ? (
-                                  <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs">
-                                    Recipe Set
-                                  </span>
-                                ) : (
-                                  <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs">
-                                    Needs Recipe
-                                  </span>
-                                )}
-                              </div>
-                              {cocktail.description && (
-                                <p className="text-sm text-gray-500 mt-1">{cocktail.description}</p>
-                              )}
-                              <div className="flex items-center gap-6 mt-2 text-sm">
-                                <div>
-                                  <span className="text-gray-500">Sell Price:</span>
-                                  <span className="ml-1 font-medium">{formatCurrency(cocktail.sellPrice)}</span>
-                                </div>
-                                {cocktail.hasRecipe && (
-                                  <>
-                                    <div>
-                                      <span className="text-gray-500">Pour Cost:</span>
-                                      <span className="ml-1 font-medium text-red-600">{formatCurrency(cocktail.totalPourCost)}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">Profit:</span>
-                                      <span className="ml-1 font-medium text-green-600">{formatCurrency(cocktail.grossProfit)}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">Margin:</span>
-                                      <span className={`ml-1 font-medium ${cocktail.profitMargin >= 70 ? 'text-green-600' : cocktail.profitMargin >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
-                                        {cocktail.profitMargin}%
-                                      </span>
-                                    </div>
-                                  </>
-                                )}
-                              </div>
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => { setEditingCocktail(cocktail); setShowRecipeModal(true); }}
-                            >
-                              {cocktail.hasRecipe ? 'Edit Recipe' : 'Add Recipe'}
-                            </Button>
-                          </div>
-
-                          {/* Show ingredients if recipe exists */}
-                          {cocktail.hasRecipe && cocktail.ingredients && (
-                            <div className="mt-4 pt-4 border-t">
-                              <h4 className="text-sm font-medium mb-2">Ingredients:</h4>
-                              <div className="flex flex-wrap gap-2">
-                                {cocktail.ingredients.map(ing => (
-                                  <div
-                                    key={ing.id}
-                                    className="bg-gray-50 border rounded px-3 py-1.5 text-sm"
-                                  >
-                                    <span className="font-medium">{ing.pourCount}x</span>
-                                    <span className="ml-1">{ing.bottleProductName}</span>
-                                    <span className={`ml-2 px-1.5 py-0.5 rounded text-xs ${getTierColor(ing.tier)}`}>
-                                      {getTierLabel(ing.tier)}
+                                  <td className="px-1 py-2 text-center">
+                                    <span className="cursor-grab text-gray-400 hover:text-gray-600">⋮⋮</span>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="font-medium">{bottle.name}</div>
+                                    {bottle.brand && <div className="text-xs text-gray-500">{bottle.brand}</div>}
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                      bottle.tier === 'well' ? 'bg-gray-200 text-gray-700' :
+                                      bottle.tier === 'call' ? 'bg-blue-100 text-blue-700' :
+                                      bottle.tier === 'premium' ? 'bg-purple-100 text-purple-700' :
+                                      'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {bottle.tier === 'well' ? 'WELL' :
+                                       bottle.tier === 'call' ? 'CALL' :
+                                       bottle.tier === 'premium' ? 'PREM' :
+                                       'TOP'}
                                     </span>
-                                    <span className="ml-2 text-gray-500">{formatCurrency(ing.ingredientCost)}</span>
-                                    {ing.isSubstitutable && (
-                                      <span className="ml-1 text-blue-500 text-xs" title="Can be substituted for different tier">*</span>
-                                    )}
-                                  </div>
-                                ))}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-gray-600">{bottle.bottleSizeMl}ml</td>
+                                  <td className="px-3 py-2 text-right text-red-600 font-medium">{formatCurrency(bottle.unitCost)}</td>
+                                  <td className="px-3 py-2 text-right text-gray-600">{bottle.poursPerBottle || '-'}</td>
+                                  <td className="px-3 py-2 text-right text-red-600">{pourCost ? formatCurrency(pourCost) : '-'}</td>
+                                  <td className="px-3 py-2 text-right font-semibold">{formatCurrency(menuPrice)}</td>
+                                  <td className="px-3 py-2 text-right">
+                                    <span className="text-green-600 font-semibold">{formatCurrency(profit)}</span>
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <span className={`font-semibold ${
+                                      margin >= 75 ? 'text-green-600' :
+                                      margin >= 65 ? 'text-yellow-600' :
+                                      'text-red-600'
+                                    }`}>
+                                      {margin.toFixed(0)}%
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <span className={isLowStock ? 'text-red-600 font-bold' : 'text-gray-700'}>
+                                      {bottle.currentStock}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      defaultValue={position || ''}
+                                      onClick={(e) => e.stopPropagation()}
+                                      onKeyDown={async (e) => {
+                                        if (e.key === 'Enter') {
+                                          const newPosition = parseInt((e.target as HTMLInputElement).value) || 1
+                                          await fetch(`/api/menu/items/${menuItem!.id}`, {
+                                            method: 'PUT',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ sortOrder: newPosition }),
+                                          })
+                                          loadBottles()
+                                        }
+                                      }}
+                                      onBlur={async (e) => {
+                                        const newPosition = parseInt(e.target.value) || 1
+                                        if (newPosition !== position) {
+                                          await fetch(`/api/menu/items/${menuItem!.id}`, {
+                                            method: 'PUT',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ sortOrder: newPosition }),
+                                          })
+                                          loadBottles()
+                                        }
+                                      }}
+                                      className="w-14 px-2 py-1 text-center text-sm border border-gray-300 rounded bg-white focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                                      placeholder="#"
+                                    />
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    <button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        await fetch(`/api/menu/items/${menuItem!.id}`, {
+                                          method: 'PUT',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ deletedAt: new Date().toISOString() }),
+                                        })
+                                        await loadBottles()
+                                                                  }}
+                                      className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 px-2 py-1 rounded text-xs"
+                                      title="Hide from POS"
+                                    >
+                                      ✕
+                                    </button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+
+                    {/* NOT ON POS Section */}
+                    <div className="bg-white rounded-lg border-2 border-gray-300 overflow-hidden">
+                      <div className="bg-gray-500 text-white px-4 py-2 font-semibold flex items-center gap-2">
+                        <span>○</span>
+                        <span>Not on POS</span>
+                        <span className="text-gray-300 text-sm ml-2">Out of season / Out of stock</span>
+                        <span className="ml-auto bg-gray-600 px-2 py-0.5 rounded text-sm">
+                          {filteredBottles.filter(b => !b.hasMenuItem).length} items
+                        </span>
+                      </div>
+                      {filteredBottles.filter(b => !b.hasMenuItem).length === 0 ? (
+                        <div className="p-6 text-center text-gray-500">
+                          All bottles are on POS!
+                        </div>
+                      ) : (
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-100 text-xs border-b border-gray-200">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-medium text-gray-600">Product</th>
+                              <th className="px-3 py-2 text-center font-medium text-gray-600">Tier</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-600">Size</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-600">Cost</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-600">Pours</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-600">Pour $</th>
+                              <th className="px-3 py-2 text-right font-medium text-gray-600">Stock</th>
+                              <th className="px-3 py-2 text-center font-medium text-gray-600">Add to POS</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filteredBottles.filter(b => !b.hasMenuItem).map((bottle, idx) => {
+                              const isLowStock = bottle.lowStockAlert && bottle.currentStock <= bottle.lowStockAlert
+                              const pourCost = bottle.pourCost || 0
+
+                              return (
+                                <tr
+                                  key={bottle.id}
+                                  className={`cursor-pointer border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} hover:bg-gray-100 ${!bottle.isActive ? 'opacity-50' : ''}`}
+                                  onClick={() => { setEditingBottle(bottle); setShowBottleModal(true); }}
+                                >
+                                  <td className="px-3 py-2">
+                                    <div className="font-medium text-gray-700">{bottle.name}</div>
+                                    {bottle.brand && <div className="text-xs text-gray-400">{bottle.brand}</div>}
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                      bottle.tier === 'well' ? 'bg-gray-200 text-gray-700' :
+                                      bottle.tier === 'call' ? 'bg-blue-100 text-blue-700' :
+                                      bottle.tier === 'premium' ? 'bg-purple-100 text-purple-700' :
+                                      'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {bottle.tier === 'well' ? 'WELL' :
+                                       bottle.tier === 'call' ? 'CALL' :
+                                       bottle.tier === 'premium' ? 'PREM' :
+                                       'TOP'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-gray-500">{bottle.bottleSizeMl}ml</td>
+                                  <td className="px-3 py-2 text-right text-gray-600">{formatCurrency(bottle.unitCost)}</td>
+                                  <td className="px-3 py-2 text-right text-gray-500">{bottle.poursPerBottle || '-'}</td>
+                                  <td className="px-3 py-2 text-right text-gray-600">{pourCost ? formatCurrency(pourCost) : '-'}</td>
+                                  <td className="px-3 py-2 text-right">
+                                    <span className={isLowStock ? 'text-red-600 font-bold' : 'text-gray-600'}>
+                                      {bottle.currentStock}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-center">
+                                    <button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        // First try to restore a soft-deleted menu item
+                                        const restoreRes = await fetch(`/api/liquor/bottles/${bottle.id}/restore-menu-item`, {
+                                          method: 'POST',
+                                        })
+                                        if (restoreRes.ok) {
+                                          // Set flashing state before loading data
+                                          setFlashingBottleId(bottle.id)
+                                          await loadBottles()
+                                                                        // Clear flash after animation
+                                          setTimeout(() => setFlashingBottleId(null), 2000)
+                                        } else {
+                                          // No deleted item to restore, open modal to create new one
+                                          setEditingBottle(bottle)
+                                          setShowBottleModal(true)
+                                        }
+                                      }}
+                                      className="px-3 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 font-medium"
+                                    >
+                                      + Add to POS
+                                    </button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </div>
+                )
+              )}
+
+              {/* Drinks Tab */}
+              {activeTab === 'drinks' && (
+                <div className="flex h-full">
+                  {/* Left: Drinks List */}
+                  <div className="w-80 bg-white border-r overflow-y-auto">
+                    <div className="p-3 space-y-1">
+                      {drinks.map(drink => (
+                        <div
+                          key={drink.id}
+                          onClick={() => setSelectedDrink(drink)}
+                          className={`p-3 rounded cursor-pointer transition-colors ${
+                            selectedDrink?.id === drink.id
+                              ? 'bg-purple-50 border-2 border-purple-500'
+                              : 'bg-gray-50 hover:bg-gray-100 border-2 border-transparent'
+                          }`}
+                        >
+                          <div className="font-medium text-sm">{drink.name}</div>
+                          <div className="text-xs text-gray-600 mt-1">{formatCurrency(drink.price)}</div>
+                          {drink.hasRecipe && (
+                            <div className="text-xs text-green-600 mt-1">✓ {drink.recipeIngredientCount} bottles</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Right: Drink Editor with Recipe */}
+                  <div className="flex-1 overflow-y-auto p-6">
+                    {selectedDrink ? (
+                      <div className="bg-white rounded-lg border p-6">
+                        <h2 className="text-2xl font-bold mb-2">{selectedDrink.name}</h2>
+                        <p className="text-xl text-gray-600 mb-6">{formatCurrency(selectedDrink.price)}</p>
+
+                        <RecipeBuilder
+                          menuItemId={selectedDrink.id}
+                          menuItemPrice={selectedDrink.price}
+                          isExpanded={true}
+                          onToggle={() => {}}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-400">
+                        <p>Select a drink to edit recipe</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Modifiers Tab */}
+              {activeTab === 'modifiers' && (
+                <div className="flex h-full">
+                  {/* Left Panel - Modifier Groups List */}
+                  <div className="w-80 bg-white border-r p-4">
+                    <div className="mb-4">
+                      <h3 className="text-sm font-semibold text-gray-700 mb-2">Liquor Modifier Groups</h3>
+                      <p className="text-xs text-gray-500">Mixers, Garnishes, Ice, Spirit Upgrades</p>
+                    </div>
+                    {modifierGroups.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500 text-sm">
+                        <p>No liquor modifiers yet</p>
+                        <p className="text-xs mt-2">Create modifier groups in the Modifiers admin</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {modifierGroups.map(group => (
+                          <div
+                            key={group.id}
+                            onClick={() => setSelectedModifierGroup(group)}
+                            className={`p-3 rounded-lg cursor-pointer transition-colors border ${
+                              selectedModifierGroup?.id === group.id
+                                ? 'bg-purple-50 border-purple-500'
+                                : 'bg-gray-50 hover:bg-gray-100 border-transparent'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <h4 className="font-medium text-sm">{group.name}</h4>
+                              {group.isSpiritGroup && <span className="text-lg">🥃</span>}
+                            </div>
+                            <p className="text-xs text-gray-500">
+                              {group.modifiers.length} options
+                              {group.isRequired && <span className="ml-2 text-red-500">Required</span>}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-4">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => router.push('/modifiers')}
+                        className="w-full"
+                      >
+                        Manage in Modifiers Admin →
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Right Panel - Selected Group Details */}
+                  <div className="flex-1 p-6">
+                    {selectedModifierGroup ? (
+                      <div className="bg-white rounded-lg border p-6">
+                        <div className="flex items-center justify-between mb-6">
+                          <div>
+                            <div className="flex items-center gap-3">
+                              <h2 className="text-xl font-bold">{selectedModifierGroup.name}</h2>
+                              {selectedModifierGroup.isSpiritGroup && (
+                                <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs font-medium">
+                                  Spirit Upgrade Group
+                                </span>
+                              )}
+                            </div>
+                            {selectedModifierGroup.displayName && (
+                              <p className="text-sm text-gray-500 mt-1">{selectedModifierGroup.displayName}</p>
+                            )}
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => router.push(`/modifiers?group=${selectedModifierGroup.id}`)}
+                          >
+                            Edit in Admin
+                          </Button>
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-4 mb-6">
+                          <div className="bg-gray-50 p-3 rounded">
+                            <p className="text-xs text-gray-500">Min Selections</p>
+                            <p className="font-semibold">{selectedModifierGroup.minSelections}</p>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded">
+                            <p className="text-xs text-gray-500">Max Selections</p>
+                            <p className="font-semibold">{selectedModifierGroup.maxSelections}</p>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded">
+                            <p className="text-xs text-gray-500">Required</p>
+                            <p className="font-semibold">{selectedModifierGroup.isRequired ? 'Yes' : 'No'}</p>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded">
+                            <p className="text-xs text-gray-500">Allow Stacking</p>
+                            <p className="font-semibold">{selectedModifierGroup.allowStacking ? 'Yes' : 'No'}</p>
+                          </div>
+                        </div>
+
+                        <h3 className="font-semibold mb-3">Modifiers ({selectedModifierGroup.modifiers.length})</h3>
+                        <div className="space-y-2">
+                          {selectedModifierGroup.modifiers.map((mod: any) => (
+                            <div
+                              key={mod.id}
+                              className={`p-3 rounded border flex items-center justify-between ${
+                                mod.isActive ? 'bg-white' : 'bg-gray-100 opacity-60'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                {mod.spiritTier && (
+                                  <span className="px-2 py-0.5 rounded text-xs text-white font-medium bg-purple-600">
+                                    {mod.spiritTier.replace('_', ' ').toUpperCase()}
+                                  </span>
+                                )}
+                                {mod.isDefault && (
+                                  <span className="px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-700">
+                                    Default
+                                  </span>
+                                )}
+                                <span className={mod.isActive ? 'font-medium' : 'line-through'}>{mod.name}</span>
+                              </div>
+                              <div className="text-sm">
+                                {mod.price > 0 ? (
+                                  <span className="text-green-600 font-medium">+{formatCurrency(mod.price)}</span>
+                                ) : (
+                                  <span className="text-gray-400">No charge</span>
+                                )}
                               </div>
                             </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    ))}
+                          ))}
+                        </div>
+
+                        {selectedModifierGroup.linkedItems && selectedModifierGroup.linkedItems.length > 0 && (
+                          <>
+                            <h3 className="font-semibold mt-6 mb-3">Used by Items</h3>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedModifierGroup.linkedItems.map((item: any) => (
+                                <span key={item.id} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+                                  {item.name}
+                                </span>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-500">
+                        Select a modifier group to view details
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Category Modal */}
       {showCategoryModal && (
@@ -592,29 +988,36 @@ function LiquorBuilderContent() {
             }
           } : undefined}
           onClose={() => { setShowBottleModal(false); setEditingBottle(null); }}
+          onMenuItemChange={async () => {
+            await loadBottles()
+          }}
         />
       )}
 
-      {/* Recipe Modal */}
-      {showRecipeModal && editingCocktail && (
-        <RecipeModal
-          cocktail={editingCocktail}
-          bottles={bottles}
-          onSave={async (ingredients) => {
-            const res = await fetch(`/api/menu/items/${editingCocktail.id}/recipe`, {
+
+      {/* Create Menu Item Modal */}
+      {showCreateMenuItemModal && bottleForMenuItem && (
+        <CreateMenuItemModal
+          bottle={bottleForMenuItem}
+          onSave={async (data) => {
+            const res = await fetch(`/api/liquor/bottles/${bottleForMenuItem.id}/create-menu-item`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ingredients }),
+              body: JSON.stringify(data),
             })
             if (res.ok) {
-              await loadCocktails()
-              setShowRecipeModal(false)
-              setEditingCocktail(null)
+              await loadBottles()
+              setShowCreateMenuItemModal(false)
+              setBottleForMenuItem(null)
+            } else {
+              const err = await res.json()
+              alert(err.error || 'Failed to create menu item')
             }
           }}
-          onClose={() => { setShowRecipeModal(false); setEditingCocktail(null); }}
+          onClose={() => { setShowCreateMenuItemModal(false); setBottleForMenuItem(null); }}
         />
       )}
+
     </div>
   )
 }
@@ -722,12 +1125,14 @@ function BottleModal({
   onSave,
   onDelete,
   onClose,
+  onMenuItemChange,
 }: {
   bottle: BottleProduct | null
   categories: SpiritCategory[]
   onSave: (data: any) => Promise<void>
   onDelete?: () => Promise<void>
   onClose: () => void
+  onMenuItemChange?: () => void
 }) {
   const [name, setName] = useState(bottle?.name || '')
   const [brand, setBrand] = useState(bottle?.brand || '')
@@ -740,6 +1145,11 @@ function BottleModal({
   const [lowStockAlert, setLowStockAlert] = useState(bottle?.lowStockAlert?.toString() || '')
   const [isActive, setIsActive] = useState(bottle?.isActive ?? true)
   const [saving, setSaving] = useState(false)
+
+  // POS Menu state
+  const [showOnPOS, setShowOnPOS] = useState(bottle?.hasMenuItem ?? false)
+  const [menuPrice, setMenuPrice] = useState(bottle?.linkedMenuItems?.[0]?.price?.toString() || '')
+  const [savingMenu, setSavingMenu] = useState(false)
 
   // Calculate pour metrics preview
   const effectivePourSizeOz = pourSizeOz ? parseFloat(pourSizeOz) : LIQUOR_DEFAULTS.pourSizeOz
@@ -917,6 +1327,112 @@ function BottleModal({
             </label>
           </div>
 
+          {/* Show on POS Menu */}
+          {bottle && (
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-medium text-purple-900">Show on POS Menu</h4>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!showOnPOS) {
+                      // Turning ON - need a price
+                      if (!menuPrice || parseFloat(menuPrice) <= 0) {
+                        // Set a suggested price based on 75% margin
+                        const suggested = pourCost > 0 ? Math.ceil(pourCost / 0.25) : 0
+                        setMenuPrice(suggested.toString())
+                      }
+                      setShowOnPOS(true)
+                    } else {
+                      // Turning OFF - remove from POS
+                      if (bottle.linkedMenuItems?.[0]?.id) {
+                        setSavingMenu(true)
+                        await fetch(`/api/menu/items/${bottle.linkedMenuItems[0].id}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ deletedAt: new Date().toISOString() }),
+                        })
+                        setSavingMenu(false)
+                        onMenuItemChange?.()
+                      }
+                      setShowOnPOS(false)
+                      setMenuPrice('')
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    showOnPOS ? 'bg-purple-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    showOnPOS ? 'translate-x-6' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+
+              {showOnPOS && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-purple-800 mb-1">Sell Price *</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        step="0.25"
+                        value={menuPrice}
+                        onChange={e => setMenuPrice(e.target.value)}
+                        className="flex-1 border rounded-lg px-3 py-2"
+                        placeholder="e.g., 8.00"
+                      />
+                      <button
+                        type="button"
+                        disabled={savingMenu || !menuPrice || parseFloat(menuPrice) <= 0}
+                        onClick={async () => {
+                          if (!menuPrice || parseFloat(menuPrice) <= 0) return
+                          setSavingMenu(true)
+
+                          if (bottle.linkedMenuItems?.[0]?.id) {
+                            // Update existing
+                            await fetch(`/api/menu/items/${bottle.linkedMenuItems[0].id}`, {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ price: parseFloat(menuPrice) }),
+                            })
+                          } else {
+                            // Create new
+                            await fetch(`/api/liquor/bottles/${bottle.id}/create-menu-item`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ price: parseFloat(menuPrice) }),
+                            })
+                          }
+
+                          setSavingMenu(false)
+                          onMenuItemChange?.()
+                        }}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                      >
+                        {savingMenu ? '...' : bottle.hasMenuItem ? 'Update' : 'Add to POS'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Margin preview */}
+                  {menuPrice && parseFloat(menuPrice) > 0 && pourCost > 0 && (
+                    <div className="text-sm text-purple-700">
+                      Margin: <span className={`font-bold ${
+                        ((parseFloat(menuPrice) - pourCost) / parseFloat(menuPrice)) * 100 >= 70
+                          ? 'text-green-600'
+                          : 'text-yellow-600'
+                      }`}>
+                        {(((parseFloat(menuPrice) - pourCost) / parseFloat(menuPrice)) * 100).toFixed(0)}%
+                      </span>
+                      {' '}(Profit: {formatCurrency(parseFloat(menuPrice) - pourCost)})
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-between pt-4 border-t">
             <div>
               {onDelete && (
@@ -940,204 +1456,141 @@ function BottleModal({
   )
 }
 
-// Recipe Modal Component
-function RecipeModal({
-  cocktail,
-  bottles,
+// Create Menu Item Modal Component
+function CreateMenuItemModal({
+  bottle,
   onSave,
   onClose,
 }: {
-  cocktail: RecipeCocktail
-  bottles: BottleProduct[]
-  onSave: (ingredients: { bottleProductId: string; pourCount: number; isSubstitutable: boolean; sortOrder: number }[]) => Promise<void>
+  bottle: BottleProduct
+  onSave: (data: { price: number; name?: string }) => Promise<void>
   onClose: () => void
 }) {
-  const [ingredients, setIngredients] = useState<{
-    bottleProductId: string
-    pourCount: number
-    isSubstitutable: boolean
-    sortOrder: number
-  }[]>(
-    cocktail.ingredients?.map((ing, i) => ({
-      bottleProductId: ing.bottleProductId,
-      pourCount: ing.pourCount,
-      isSubstitutable: ing.isSubstitutable,
-      sortOrder: i,
-    })) || []
-  )
+  const [price, setPrice] = useState('')
+  const [name, setName] = useState(bottle.name)
   const [saving, setSaving] = useState(false)
 
-  // Group bottles by category for easier selection
-  const bottlesByCategory = bottles.reduce((acc, bottle) => {
-    const cat = bottle.spiritCategory.name
-    if (!acc[cat]) acc[cat] = []
-    acc[cat].push(bottle)
-    return acc
-  }, {} as Record<string, BottleProduct[]>)
-
-  const addIngredient = () => {
-    setIngredients([...ingredients, {
-      bottleProductId: '',
-      pourCount: 1,
-      isSubstitutable: true,
-      sortOrder: ingredients.length,
-    }])
-  }
-
-  const removeIngredient = (index: number) => {
-    setIngredients(ingredients.filter((_, i) => i !== index))
-  }
-
-  const updateIngredient = (index: number, field: string, value: any) => {
-    setIngredients(ingredients.map((ing, i) =>
-      i === index ? { ...ing, [field]: value } : ing
-    ))
-  }
-
-  // Calculate total pour cost
-  const totalPourCost = ingredients.reduce((sum, ing) => {
-    const bottle = bottles.find(b => b.id === ing.bottleProductId)
-    return sum + (bottle?.pourCost || 0) * ing.pourCount
-  }, 0)
-
-  const profitMargin = cocktail.sellPrice > 0
-    ? ((cocktail.sellPrice - totalPourCost) / cocktail.sellPrice) * 100
-    : 0
+  // Suggest prices based on pour cost with different margins
+  const pourCost = bottle.pourCost || 0
+  const suggestedPrices = [
+    { margin: 70, price: Math.ceil(pourCost / 0.30) },
+    { margin: 75, price: Math.ceil(pourCost / 0.25) },
+    { margin: 80, price: Math.ceil(pourCost / 0.20) },
+  ]
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const validIngredients = ingredients.filter(ing => ing.bottleProductId)
+    if (!price || parseFloat(price) <= 0) return
     setSaving(true)
-    await onSave(validIngredients)
+    await onSave({ price: parseFloat(price), name: name !== bottle.name ? name : undefined })
     setSaving(false)
   }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-md w-full">
         <div className="p-6 border-b">
-          <h2 className="text-xl font-bold">Recipe: {cocktail.name}</h2>
-          <p className="text-sm text-gray-500">Sell Price: {formatCurrency(cocktail.sellPrice)}</p>
+          <h2 className="text-xl font-bold">Create Menu Item</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            Create a POS menu item for <strong>{bottle.name}</strong>
+          </p>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="font-medium">Ingredients</h3>
-            <Button type="button" variant="outline" size="sm" onClick={addIngredient}>
-              + Add Ingredient
-            </Button>
+          {/* Bottle Info */}
+          <div className="bg-gray-50 rounded-lg p-3 text-sm">
+            <div className="flex justify-between mb-1">
+              <span className="text-gray-600">Category:</span>
+              <span className="font-medium">{bottle.spiritCategory.name}</span>
+            </div>
+            <div className="flex justify-between mb-1">
+              <span className="text-gray-600">Tier:</span>
+              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                bottle.tier === 'well' ? 'bg-gray-100 text-gray-700' :
+                bottle.tier === 'call' ? 'bg-blue-100 text-blue-700' :
+                bottle.tier === 'premium' ? 'bg-purple-100 text-purple-700' :
+                'bg-amber-100 text-amber-700'
+              }`}>
+                {bottle.tier.replace('_', ' ').toUpperCase()}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Pour Cost:</span>
+              <span className="font-medium text-green-600">{formatCurrency(pourCost)}</span>
+            </div>
           </div>
 
-          {ingredients.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded">
-              <p className="text-gray-500">No ingredients yet</p>
-              <Button type="button" variant="ghost" onClick={addIngredient} className="mt-2">
-                Add First Ingredient
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {ingredients.map((ing, index) => {
-                const selectedBottle = bottles.find(b => b.id === ing.bottleProductId)
-                const ingredientCost = (selectedBottle?.pourCost || 0) * ing.pourCount
-                return (
-                  <div key={index} className="border rounded-lg p-4 bg-gray-50">
-                    <div className="flex gap-4 items-start">
-                      <div className="flex-1">
-                        <label className="block text-xs text-gray-500 mb-1">Spirit</label>
-                        <select
-                          value={ing.bottleProductId}
-                          onChange={e => updateIngredient(index, 'bottleProductId', e.target.value)}
-                          className="w-full border rounded px-2 py-2"
-                        >
-                          <option value="">Select...</option>
-                          {Object.entries(bottlesByCategory).map(([category, catBottles]) => (
-                            <optgroup key={category} label={category}>
-                              {catBottles.map(b => (
-                                <option key={b.id} value={b.id}>
-                                  {b.name} ({b.tier}) - {formatCurrency(b.pourCost || 0)}/pour
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="w-24">
-                        <label className="block text-xs text-gray-500 mb-1">Pours</label>
-                        <input
-                          type="number"
-                          step="0.5"
-                          min="0.5"
-                          value={ing.pourCount}
-                          onChange={e => updateIngredient(index, 'pourCount', parseFloat(e.target.value) || 1)}
-                          className="w-full border rounded px-2 py-2 text-center"
-                        />
-                      </div>
-                      <div className="w-24 text-center">
-                        <label className="block text-xs text-gray-500 mb-1">Cost</label>
-                        <div className="py-2 font-medium text-green-600">
-                          {formatCurrency(ingredientCost)}
-                        </div>
-                      </div>
-                      <div className="w-24">
-                        <label className="block text-xs text-gray-500 mb-1">Swap?</label>
-                        <label className="flex items-center gap-1 py-2">
-                          <input
-                            type="checkbox"
-                            checked={ing.isSubstitutable}
-                            onChange={e => updateIngredient(index, 'isSubstitutable', e.target.checked)}
-                          />
-                          <span className="text-sm">Yes</span>
-                        </label>
-                      </div>
-                      <div className="pt-5">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeIngredient(index)}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+          {/* Name */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Menu Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2"
+              placeholder={bottle.name}
+            />
+          </div>
+
+          {/* Price */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Sell Price *</label>
+            <input
+              type="number"
+              step="0.25"
+              value={price}
+              onChange={e => setPrice(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2"
+              placeholder="e.g., 8.00"
+              required
+            />
+          </div>
+
+          {/* Suggested Prices */}
+          {pourCost > 0 && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-2">Suggested prices (by profit margin):</label>
+              <div className="flex gap-2">
+                {suggestedPrices.map(({ margin, price: suggested }) => (
+                  <button
+                    key={margin}
+                    type="button"
+                    onClick={() => setPrice(suggested.toString())}
+                    className={`flex-1 px-2 py-1.5 text-sm border rounded hover:bg-gray-50 ${
+                      parseFloat(price) === suggested ? 'border-purple-500 bg-purple-50' : ''
+                    }`}
+                  >
+                    <div className="font-medium">{formatCurrency(suggested)}</div>
+                    <div className="text-xs text-gray-500">{margin}% margin</div>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Summary */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="grid grid-cols-4 gap-4 text-center">
-              <div>
-                <div className="text-sm text-blue-700">Sell Price</div>
-                <div className="text-lg font-bold">{formatCurrency(cocktail.sellPrice)}</div>
+          {/* Profit Preview */}
+          {price && parseFloat(price) > 0 && pourCost > 0 && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm">
+              <div className="flex justify-between mb-1">
+                <span className="text-green-700">Gross Profit:</span>
+                <span className="font-bold text-green-700">
+                  {formatCurrency(parseFloat(price) - pourCost)}
+                </span>
               </div>
-              <div>
-                <div className="text-sm text-blue-700">Pour Cost</div>
-                <div className="text-lg font-bold text-red-600">{formatCurrency(totalPourCost)}</div>
-              </div>
-              <div>
-                <div className="text-sm text-blue-700">Profit</div>
-                <div className="text-lg font-bold text-green-600">
-                  {formatCurrency(cocktail.sellPrice - totalPourCost)}
-                </div>
-              </div>
-              <div>
-                <div className="text-sm text-blue-700">Margin</div>
-                <div className={`text-lg font-bold ${profitMargin >= 70 ? 'text-green-600' : profitMargin >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
-                  {profitMargin.toFixed(1)}%
-                </div>
+              <div className="flex justify-between">
+                <span className="text-green-700">Profit Margin:</span>
+                <span className="font-bold text-green-700">
+                  {(((parseFloat(price) - pourCost) / parseFloat(price)) * 100).toFixed(1)}%
+                </span>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Saving...' : 'Save Recipe'}
+            <Button type="submit" disabled={saving || !price || parseFloat(price) <= 0}>
+              {saving ? 'Creating...' : 'Create Menu Item'}
             </Button>
           </div>
         </form>
@@ -1148,8 +1601,21 @@ function RecipeModal({
 
 export default function LiquorBuilderPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
-      <LiquorBuilderContent />
-    </Suspense>
+    <>
+      <style jsx global>{`
+        @keyframes flash-green {
+          0%, 100% { background-color: transparent; }
+          25% { background-color: #22c55e; }
+          50% { background-color: #86efac; }
+          75% { background-color: #22c55e; }
+        }
+        .animate-flash-green {
+          animation: flash-green 0.5s ease-in-out 2;
+        }
+      `}</style>
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+        <LiquorBuilderContent />
+      </Suspense>
+    </>
   )
 }

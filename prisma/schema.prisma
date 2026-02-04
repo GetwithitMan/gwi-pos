@@ -62,6 +62,8 @@ model Location {
   coupons               Coupon[]
   reservations          Reservation[]
   entertainmentWaitlist EntertainmentWaitlist[]
+  floorPlanElements     FloorPlanElement[]
+  virtualGroups         VirtualGroup[]
 
   // Seat-Level Ticketing
   seats   Seat[]
@@ -95,10 +97,11 @@ model Location {
   comboComponentOptions ComboComponentOption[]
 
   // Operations (multi-tenancy)
-  paidInOuts         PaidInOut[]
-  sectionAssignments SectionAssignment[]
-  voidLogs           VoidLog[]
-  breaks             Break[]
+  paidInOuts           PaidInOut[]
+  sectionAssignments   SectionAssignment[]
+  voidLogs             VoidLog[]
+  breaks               Break[]
+  remoteVoidApprovals  RemoteVoidApproval[]
 
   // Transactions (multi-tenancy)
   couponRedemptions        CouponRedemption[]
@@ -115,20 +118,51 @@ model Location {
   inventoryTransactions InventoryTransaction[]
   stockAlerts           StockAlert[]
 
+  // Inventory & Recipe Costing (Skill 115)
+  voidReasons               VoidReason[]
+  storageLocations          StorageLocation[]
+  inventoryItems            InventoryItem[]
+  inventoryItemStorages     InventoryItemStorage[]
+  prepItems                 PrepItem[]
+  prepItemIngredients       PrepItemIngredient[]
+  menuItemRecipes           MenuItemRecipe[]
+  menuItemRecipeIngredients MenuItemRecipeIngredient[]
+  modifierInventoryLinks    ModifierInventoryLink[]
+  inventoryCounts           InventoryCount[]
+  inventoryCountItems       InventoryCountItem[]
+  inventoryItemTransactions InventoryItemTransaction[]
+  vendors                   Vendor[]
+  invoices                  Invoice[]
+  invoiceLineItems          InvoiceLineItem[]
+  wasteLogEntries           WasteLogEntry[]
+  inventorySettings         InventorySettings?
+
   // Liquor Builder (multi-tenancy)
   recipeIngredients    RecipeIngredient[]
   spiritModifierGroups SpiritModifierGroup[]
 
   // Menu Item Ingredients (multi-tenancy)
+  ingredientCategories    IngredientCategory[]
+  ingredientSwapGroups    IngredientSwapGroup[]
   ingredients             Ingredient[]
+  ingredientRecipes       IngredientRecipe[]
   menuItemIngredients     MenuItemIngredient[]
   orderItemIngredients    OrderItemIngredient[]
 
+  // Modifier Group Templates (for quick item-specific group creation)
+  modifierGroupTemplates ModifierGroupTemplate[]
+
   // Hardware Management
-  printers   Printer[]
-  kdsScreens KDSScreen[]
-  printRules PrintRule[]
-  printJobs  PrintJob[]
+  printers       Printer[]
+  kdsScreens     KDSScreen[]
+  stations       Station[]
+  terminals      Terminal[]
+  printRules     PrintRule[]
+  printJobs      PrintJob[]
+  paymentReaders PaymentReader[]
+
+  // Sync Audit
+  syncAuditEntries SyncAuditEntry[]
 
   // Pizza Builder
   pizzaConfigs     PizzaConfig[]
@@ -150,6 +184,13 @@ model Location {
 
   // Course Configuration
   courseConfigs CourseConfig[]
+
+  // Daily Prep Counting
+  prepTrayConfigs              PrepTrayConfig[]
+  dailyPrepCounts              DailyPrepCount[]
+  dailyPrepCountItems          DailyPrepCountItem[]
+  dailyPrepCountTransactions   DailyPrepCountTransaction[]
+  ingredientStockAdjustments   IngredientStockAdjustment[]
 
   @@index([organizationId])
 }
@@ -306,6 +347,9 @@ model Employee {
   // POS Layout Preferences (personal customization)
   posLayoutSettings Json? // Bar/Food mode, favorites, category order
 
+  // Room Order Preferences (for POS floor plan)
+  preferredRoomOrder String? // JSON array of room IDs: ["room-1", "room-3", "room-2"]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -329,6 +373,18 @@ model Employee {
   payStubs           PayStub[]
   scheduledShifts    ScheduledShift[]
   availabilityEntries AvailabilityEntry[]
+
+  // Remote void approval relations
+  voidApprovalsRequested RemoteVoidApproval[] @relation("VoidRequester")
+  voidApprovalsApproved  RemoteVoidApproval[] @relation("VoidApprover")
+
+  // Daily Prep Count relations
+  prepCountsCreated   DailyPrepCount[] @relation("PrepCountCreatedBy")
+  prepCountsSubmitted DailyPrepCount[] @relation("PrepCountSubmittedBy")
+  prepCountsApproved  DailyPrepCount[] @relation("PrepCountApprovedBy")
+
+  // Stock adjustment relations
+  ingredientStockAdjustments IngredientStockAdjustment[]
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -556,7 +612,7 @@ model Category {
   imageUrl    String?
 
   // Category Type - controls item builder, modifier filtering, and reporting
-  // food, drinks, liquor, entertainment, combos
+  // food, drinks, liquor, entertainment, combos, pizza
   categoryType String @default("food")
 
   // Display
@@ -564,6 +620,10 @@ model Category {
   isActive   Boolean @default(true)
   showOnPOS  Boolean @default(true)
   showOnline Boolean @default(true)
+
+  // Bartender View - which menu section this category appears in
+  // bar, food, entertainment, all (shows in both bar and food)
+  categoryShow String @default("all")
 
   // Kitchen routing
   prepStationId String?
@@ -573,6 +633,10 @@ model Category {
   // Printer routing - printers for items in this category
   // JSON array of printer IDs, e.g., ["printer-1", "printer-2"]
   printerIds Json?
+
+  // Tag-based routing (Routing Engine) - inherited by items in this category
+  // JSON array of route tags, e.g., ["grill", "made-to-order"]
+  routeTags Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -606,8 +670,9 @@ model MenuItem {
   imageUrl    String?
 
   // Pricing
-  price Decimal
-  cost  Decimal? // For profit tracking
+  price   Decimal          // Cash price (or base price if no dual pricing)
+  priceCC Decimal?         // Credit card price (for dual pricing)
+  cost    Decimal?         // For profit tracking
 
   // Tax
   taxRate     Decimal? // Override location default
@@ -629,6 +694,10 @@ model MenuItem {
   // JSON array of printer IDs, e.g., ["printer-1", "printer-2"]
   printerIds       Json?
   backupPrinterIds Json? // Backup printers if primary fails
+
+  // Tag-based routing (Routing Engine) - overrides category's routeTags if set
+  // JSON array of route tags, e.g., ["pizza", "expo-only"]
+  routeTags Json?
 
   // Inventory
   trackInventory Boolean @default(false)
@@ -680,17 +749,22 @@ model MenuItem {
   syncedAt  DateTime?
 
   // Relations
-  modifierGroups         MenuItemModifierGroup[]
+  modifierGroups         MenuItemModifierGroup[] // Legacy junction - kept for backwards compatibility
+  ownedModifierGroups    ModifierGroup[] @relation("ItemModifierGroups") // NEW: Item-specific modifier groups
   orderItems             OrderItem[]
   upsellTriggers         UpsellConfig[]          @relation("TriggerItem")
   upsellSuggestions      UpsellConfig[]          @relation("SuggestionItem")
   comboComponentItems    ComboComponent[]        @relation("ComboComponentItem")
   comboComponentDefaults ComboComponent[]        @relation("ComboComponentDefault")
   comboOptions           ComboComponentOption[]
-  entertainmentWaitlist  EntertainmentWaitlist[]
 
   // Liquor Builder - Recipe ingredients for cocktails
   recipeIngredients RecipeIngredient[]
+
+  // Direct link to bottle product (for spirit items like "Patron Silver" on the menu)
+  // This enables bottles to be the source of truth for liquor menu items
+  linkedBottleProductId String?
+  linkedBottleProduct   BottleProduct? @relation("LinkedBottleMenuItems", fields: [linkedBottleProductId], references: [id])
 
   // Modifiers that link to this item (for spirit upgrades, etc.)
   linkedModifiers Modifier[] @relation("LinkedModifierItem")
@@ -698,11 +772,17 @@ model MenuItem {
   // Menu Item Ingredients - what's in this item
   ingredients MenuItemIngredient[]
 
+  // Recipe costing (Skill 115)
+  recipe MenuItemRecipe?
+
   // Print routing rules for this specific item
   printRules PrintRule[]
 
   // Pizza Builder - specialty pizza configuration
   pizzaSpecialty PizzaSpecialty?
+
+  // Floor Plan Elements linked to this item (for entertainment items)
+  floorPlanElements FloorPlanElement[]
 
   @@unique([locationId, sku])
   @@index([locationId])
@@ -715,6 +795,11 @@ model ModifierGroup {
   id         String   @id @default(cuid())
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
+
+  // NEW: Item ownership - each modifier group belongs to ONE specific menu item
+  // This enables per-item reporting and customization without affecting other items
+  menuItemId String?
+  menuItem   MenuItem? @relation("ItemModifierGroups", fields: [menuItemId], references: [id], onDelete: Cascade)
 
   name        String
   displayName String?
@@ -744,7 +829,7 @@ model ModifierGroup {
   syncedAt  DateTime?
 
   modifiers Modifier[]
-  menuItems MenuItemModifierGroup[]
+  menuItems MenuItemModifierGroup[] // Legacy junction - kept for backwards compatibility
 
   // Modifiers that use this group as a sub-modifier
   parentModifiers Modifier[] @relation("SubModifier")
@@ -755,10 +840,8 @@ model ModifierGroup {
   // Liquor Builder - Spirit configuration
   spiritConfig SpiritModifierGroup?
 
-  // Ingredients that can swap to this group
-  swappableIngredients Ingredient[] @relation("IngredientSwapGroup")
-
   @@index([locationId])
+  @@index([menuItemId])
 }
 
 model Modifier {
@@ -779,10 +862,22 @@ model Modifier {
   upsellPrice Decimal? // Special price when offered as upsell
   cost        Decimal?
 
-  // Pre-modifier support (Skill 32)
+  // Pre-modifier support - explicit boolean fields for each option
+  // These work just like ingredient pre-mods for consistent inventory tracking
+  allowNo      Boolean  @default(true)
+  allowLite    Boolean  @default(false)
+  allowOnSide  Boolean  @default(false)
+  allowExtra   Boolean  @default(false)
+  extraPrice   Decimal  @default(0) // Price when "extra" is selected
+
+  // Legacy JSON field - kept for backwards compatibility
   allowedPreModifiers Json? // Array of allowed prefixes: ["no", "lite", "extra", "side"]
-  extraPrice          Decimal? // Price when "extra" is selected
   extraUpsellPrice    Decimal? // Upsell price for "extra"
+
+  // Link to ingredient for inventory deduction
+  // When this modifier is ordered, deduct from this ingredient's stock
+  ingredientId String?
+  ingredient   Ingredient? @relation("ModifierIngredient", fields: [ingredientId], references: [id])
 
   // Sub-modifier support - when selected, prompts for additional modifiers
   childModifierGroupId String?
@@ -812,6 +907,9 @@ model Modifier {
   showOnPOS    Boolean @default(true)  // Visible to servers on POS
   showOnline   Boolean @default(true)  // Visible for online ordering
 
+  // Inventory tracking (Skill 115)
+  isLabel      Boolean @default(false) // True = grouping only, no inventory tracking
+
   // Printer routing for modifiers
   // printerRouting: "follow" (default) = prints with main item
   //                 "also" = prints with main item AND to printerIds
@@ -829,6 +927,9 @@ model Modifier {
 
   // Print routing rules for this specific modifier
   printRules PrintRule[]
+
+  // Inventory link (Skill 115)
+  inventoryLink ModifierInventoryLink?
 
   @@index([locationId])
   @@index([modifierGroupId])
@@ -984,8 +1085,9 @@ model Section {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  tables      Table[]
-  assignments SectionAssignment[]
+  tables            Table[]
+  assignments       SectionAssignment[]
+  floorPlanElements FloorPlanElement[]
 
   @@index([locationId])
 }
@@ -1021,8 +1123,17 @@ model Table {
   sectionId  String?
   section    Section? @relation(fields: [sectionId], references: [id])
 
-  name     String // "Table 1", "Bar 3", "Patio A"
-  capacity Int    @default(4)
+  name         String  // "Table 1", "Bar 3", "Patio A"
+  abbreviation String? // Short display name for floor plan: "T1", "B3", "PA"
+  capacity     Int     @default(4)
+  // ⚠️ CAPACITY SYNC WARNING (Phase 3 TODO):
+  // This column can drift from actual Seat count if updated via direct DB edit or third-party API.
+  // RECOMMENDED FIX: Implement one of these to keep capacity in sync with seats.length:
+  //   1. PostgreSQL Trigger: CREATE TRIGGER update_table_capacity AFTER INSERT OR DELETE ON "Seat"
+  //      FOR EACH ROW EXECUTE FUNCTION sync_table_capacity();
+  //   2. Prisma Middleware: Intercept Seat create/delete and update Table.capacity
+  //   3. API Middleware: Wrap all /api/tables/[id]/seats endpoints to sync capacity
+  // Until implemented, always derive capacity from seats.length in application code.
 
   // Floor plan position (Skill 80)
   posX     Int    @default(0)
@@ -1030,7 +1141,8 @@ model Table {
   width    Int    @default(80)
   height   Int    @default(80)
   rotation Int    @default(0) // Degrees 0-359
-  shape    String @default("rectangle") // rectangle, circle, square, booth, bar
+  shape       String @default("rectangle") // rectangle, circle, square, booth, bar
+  seatPattern String @default("all_around") // all_around, front_only, three_sides, two_sides, inside
 
   // For timed rentals (pool tables, dart boards)
   isTimedRental Boolean @default(false)
@@ -1045,12 +1157,24 @@ model Table {
   combinedTableIds Json?   // JSON array of table IDs that are combined into this one (on primary)
   originalName     String? // Stores original name when combined for restoration on split
 
-  // Original position (admin-defined, used for reset-to-default)
-  originalPosX     Int?    // Admin-defined X position
-  originalPosY     Int?    // Admin-defined Y position
+  // Position before combine (for undo/split operations)
+  originalPosX     Int?    // Position before combine
+  originalPosY     Int?    // Position before combine
+
+  // Default layout (admin-defined, used for reset-to-default)
+  // Set via "Save as Default Layout" button in floor plan admin
+  defaultPosX      Int?    // Admin-defined default X position
+  defaultPosY      Int?    // Admin-defined default Y position
+  defaultSectionId String? // Admin-defined default section
 
   // Locked items (T019) - bolted down furniture that cannot be moved
   isLocked         Boolean @default(false)
+
+  // Virtual Table Combine - tables logically grouped without physically moving
+  virtualGroupId        String?   // UUID shared by all tables in group
+  virtualGroupPrimary   Boolean   @default(false) // Is this the primary (master) table?
+  virtualGroupColor     String?   // Hex color for matching pulsing glow
+  virtualGroupCreatedAt DateTime? // When group was created (for EOD cleanup/debugging)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1058,15 +1182,134 @@ model Table {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  orders              Order[]
-  reservations        Reservation[]
-  timedSessions       TimedSession[]
-  seats               Seat[]
-  tickets             Ticket[]
-  eventConfigurations EventTableConfig[]
+  orders                 Order[]
+  reservations           Reservation[]
+  timedSessions          TimedSession[]
+  seats                  Seat[]
+  tickets                Ticket[]
+  eventConfigurations    EventTableConfig[]
+  sourceTableOrderItems  OrderItem[] @relation("SourceTableOrderItems") // Items ordered from this table (virtual combine T-S notation)
+  entertainmentWaitlist  EntertainmentWaitlist[]
 
   @@index([locationId])
   @@index([sectionId])
+  @@index([status])
+  @@index([virtualGroupId])
+}
+
+// ============================================
+// VIRTUAL GROUPS (Logical table grouping across rooms)
+// ============================================
+
+model VirtualGroup {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name           String  // Generated or custom name: "T1+T2+B3"
+  primaryTableId String  // Which table holds the order
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([primaryTableId])
+}
+
+// ============================================
+// FLOOR PLAN ELEMENTS (Entertainment, Decorations)
+// ============================================
+
+model FloorPlanElement {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  sectionId  String?
+  section    Section? @relation(fields: [sectionId], references: [id])
+
+  name         String   // "Pool Table 1", "Dartboard A"
+  abbreviation String?  // Short display name: "PT1", "DB-A"
+
+  // Element classification
+  elementType  String   @default("entertainment") // "entertainment", "decoration", "barrier", "stage"
+  visualType   String   // "pool_table", "dartboard", "arcade", "foosball", "shuffleboard", etc.
+
+  // Link to menu item (for entertainment items with pricing/sessions)
+  linkedMenuItemId String?
+  linkedMenuItem   MenuItem? @relation(fields: [linkedMenuItemId], references: [id])
+
+  // Position & dimensions
+  posX     Int @default(100)
+  posY     Int @default(100)
+  width    Int @default(120)
+  height   Int @default(80)
+  rotation Int @default(0)
+
+  // Visual customization
+  fillColor   String? // Override default SVG fill
+  strokeColor String? // Override default SVG stroke
+  opacity     Float   @default(1.0)
+
+  // Status (for entertainment)
+  status          String    @default("available") // "available", "in_use", "reserved", "maintenance"
+  currentOrderId  String?   // Active order using this element
+  sessionStartedAt DateTime?
+  sessionExpiresAt DateTime?
+
+  sortOrder Int     @default(0)
+  isVisible Boolean @default(true)
+  isLocked  Boolean @default(false) // Prevent moving
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  waitlistEntries EntertainmentWaitlist[]
+
+  @@index([locationId])
+  @@index([sectionId])
+  @@index([linkedMenuItemId])
+  @@index([status])
+}
+
+model EntertainmentWaitlist {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Can be for a specific element OR any element of a type
+  elementId    String?           // Specific element (e.g., "Pool Table 2")
+  element      FloorPlanElement? @relation(fields: [elementId], references: [id])
+  visualType   String?           // OR any of this type (e.g., "any pool_table")
+
+  // Who's waiting
+  tableId      String?  // Table that's waiting
+  table        Table?   @relation(fields: [tableId], references: [id])
+  customerName String?  // Walk-in name
+  partySize    Int      @default(1)
+  phone        String?  // For SMS notification
+
+  // Status
+  status       String   @default("waiting") // "waiting", "notified", "seated", "cancelled", "expired"
+  position     Int      @default(0) // Queue position
+  requestedAt  DateTime @default(now())
+  notifiedAt   DateTime?
+  seatedAt     DateTime?
+  expiresAt    DateTime? // Auto-expire after X minutes if not claimed
+
+  notes String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([elementId])
+  @@index([visualType])
   @@index([status])
 }
 
@@ -1152,19 +1395,31 @@ model Order {
   tableId      String?
   table        Table?     @relation(fields: [tableId], references: [id])
   guestCount   Int        @default(1)
+
+  // Atomic Seat Management (Skill 121)
+  baseSeatCount   Int      @default(1)  // Original seat count when order opened
+  extraSeatCount  Int      @default(0)  // Additional seats added (can be negative if removed)
+  seatVersion     Int      @default(0)  // Monotonic counter for concurrency control
+  seatTimestamps  Json?                 // When each seat was added: { "1": "2026-02-01T10:00:00Z", ... }
+
   tabName      String? // For bar tabs
 
   // Custom fields collected for this order type (e.g., phone, pickupTime, vehicleColor)
   customFields Json?
 
   // Status
-  status String @default("open") // open, sent, paid, closed, voided
+  status String @default("open") // open, sent, paid, closed, voided, merged
 
   // Timing
   openedAt DateTime  @default(now())
   sentAt   DateTime?
   paidAt   DateTime?
   closedAt DateTime?
+
+  // Reopen tracking (for closed orders that are reopened)
+  reopenedAt     DateTime?
+  reopenedBy     String? // Employee ID who reopened
+  reopenReason   String?
 
   // Totals
   subtotal      Decimal @default(0)
@@ -1193,6 +1448,12 @@ model Order {
   currentCourse Int    @default(1) // Currently active course
   courseMode    String @default("off") // 'off' | 'manual' | 'auto'
 
+  // Offline Sync (Store and Forward)
+  offlineId        String?   @unique // UUID from terminal for deduplication
+  offlineLocalId   String?   // Terminal-prefixed ID (e.g., "BAR1-102")
+  offlineTimestamp DateTime? // When order was created offline
+  offlineTerminalId String?  // Which terminal created this offline
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -1204,6 +1465,8 @@ model Order {
   payments  Payment[]
   discounts OrderDiscount[]
   voidLogs  VoidLog[]
+  syncAuditEntries SyncAuditEntry[]
+  remoteVoidApprovals RemoteVoidApproval[]
 
   @@index([locationId])
   @@index([employeeId])
@@ -1215,6 +1478,7 @@ model Order {
   @@index([orderType])
   @@index([orderTypeId])
   @@index([parentOrderId])
+  @@index([offlineId])
 }
 
 model OrderItem {
@@ -1233,6 +1497,10 @@ model OrderItem {
 
   // Seat tracking (Skill 24)
   seatNumber Int?
+
+  // Virtual combine - source table for T-S notation (e.g., T2-S3)
+  sourceTableId String? // Which table this item was ordered from
+  sourceTable   Table?  @relation("SourceTableOrderItems", fields: [sourceTableId], references: [id])
 
   // Course (Skill 14)
   courseNumber Int?
@@ -1366,6 +1634,16 @@ model Payment {
   authCode      String?
   transactionId String?
 
+  // Datacap Direct integration
+  paymentReaderId  String? // Which reader processed this payment
+  datacapRefNumber String? // Datacap reference for voids/refunds
+  entryMethod      String? // "Chip" | "Tap" | "Swipe" | "Manual"
+
+  // Partial Approvals & Signature (Chargeback Defense)
+  amountRequested  Decimal? // Original amount requested
+  amountAuthorized Decimal? // Actual amount approved (may be less for partial approvals)
+  signatureData    String?  // Base64 signature from reader (chargeback defense)
+
   // Status
   status String @default("completed") // pending, completed, refunded, voided
 
@@ -1373,6 +1651,27 @@ model Payment {
   refundedAmount Decimal   @default(0)
   refundedAt     DateTime?
   refundReason   String?
+
+  // Void tracking (separate from refunds - voids mark payment as invalid)
+  voidedAt     DateTime?
+  voidedBy     String? // Employee ID who voided
+  voidReason   String?
+
+  // Offline Payment Tracking (Store and Forward)
+  offlineIntentId    String?   @unique // UUID from PaymentIntentManager for deduplication
+  idempotencyKey     String?   @unique // Terminal+Order+Timestamp fingerprint for deduplication
+  isOfflineCapture   Boolean   @default(false) // Was this captured while offline?
+  offlineCapturedAt  DateTime? // When it was queued for offline capture
+  offlineTerminalId  String?   // Which terminal processed this offline
+
+  // Reconciliation (for EOD reports)
+  needsReconciliation Boolean   @default(false) // Flag for accountant review
+  reconciledAt        DateTime? // When verified against bank statement
+  reconciledBy        String?   // Employee who verified
+
+  // Sync audit tracking
+  syncAttempts       Int       @default(0) // How many times sync was attempted
+  wasDuplicateBlocked Boolean  @default(false) // Was a duplicate blocked by idempotency?
 
   processedAt DateTime @default(now())
   createdAt DateTime @default(now())
@@ -1387,6 +1686,50 @@ model Payment {
   @@index([orderId])
   @@index([processedAt])
   @@index([employeeId])
+  @@index([isOfflineCapture])
+  @@index([needsReconciliation])
+}
+
+// Sync Audit Entry - Tracks all sync events for idempotency audit log
+model SyncAuditEntry {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Transaction details
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id])
+  paymentId      String?  // If payment was created
+  terminalId     String
+  terminalName   String
+  employeeId     String?
+
+  // Amount
+  amount Decimal
+
+  // Idempotency tracking
+  idempotencyKey String
+  localIntentId  String?  // Original intent ID from terminal
+
+  // Status: SUCCESS, DUPLICATE_BLOCKED, OFFLINE_SYNC, VOIDED, FAILED
+  status      String
+  statusNote  String?  // Additional context
+
+  // Card details (for display)
+  cardLast4 String?
+
+  createdAt DateTime @default(now())
+
+  // Sync fields
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([terminalId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([idempotencyKey])
 }
 
 // ============================================
@@ -1699,6 +2042,10 @@ model VoidLog {
   approvedById String?
   approvedAt   DateTime?
 
+  // Remote approval reference
+  remoteApprovalId String?
+  remoteApproval   RemoteVoidApproval? @relation(fields: [remoteApprovalId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1710,6 +2057,69 @@ model VoidLog {
   @@index([orderId])
   @@index([employeeId])
   @@index([createdAt])
+}
+
+// ============================================
+// REMOTE VOID APPROVAL (Skill 121)
+// SMS-based manager approval for voids when manager not present
+// ============================================
+
+model RemoteVoidApproval {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Request Details
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  orderItemId   String?  // If voiding specific item
+  requestedById String
+  requestedBy   Employee @relation("VoidRequester", fields: [requestedById], references: [id])
+  voidReason    String
+  voidType      String   // "item" | "order" | "comp"
+  amount        Decimal
+  itemName      String   // Cached for SMS
+  orderNumber   Int      // Cached for SMS
+
+  // Manager Assignment
+  managerId    String
+  manager      Employee @relation("VoidApprover", fields: [managerId], references: [id])
+  managerPhone String   // Cached phone for SMS
+
+  // SMS Tracking
+  twilioMessageSid    String?
+  approvalToken       String   @unique // 32 hex chars for web link
+  approvalTokenExpiry DateTime          // 30 minutes
+
+  // Approval Code (generated after approval)
+  approvalCode       String?   // 6-digit code
+  approvalCodeExpiry DateTime? // 5 minutes after approval
+
+  // Status
+  status          String    @default("pending") // pending | approved | rejected | expired | used
+  approvedAt      DateTime?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  usedAt          DateTime? // When code was successfully entered
+
+  // Terminal tracking for socket notifications
+  requestingTerminalId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  voidLogs VoidLog[]
+
+  @@index([locationId])
+  @@index([status])
+  @@index([approvalToken])
+  @@index([approvalCode, status])
+  @@index([managerPhone, status])
+  @@index([managerId])
+  @@index([requestedById])
 }
 
 model AuditLog {
@@ -2121,54 +2531,6 @@ model TimedSession {
 }
 
 // ============================================
-// ENTERTAINMENT WAITLIST (Skill 95)
-// ============================================
-
-model EntertainmentWaitlist {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-  menuItemId String // The entertainment item they're waiting for
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
-
-  // Customer info
-  customerName String
-  phoneNumber  String?
-  partySize    Int     @default(1)
-  notes        String?
-
-  // Link to existing tab (optional)
-  tabId   String?
-  tabName String?
-
-  // Deposit to hold position (optional)
-  depositAmount    Decimal?
-  depositMethod    String? // 'cash', 'card'
-  depositCardLast4 String?
-  depositRefunded  Boolean  @default(false)
-
-  // Status tracking
-  status     String    @default("waiting") // waiting, notified, seated, cancelled
-  notifiedAt DateTime?
-  seatedAt   DateTime?
-
-  // For linking to order when seated
-  seatedOrderId String?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  @@index([locationId])
-  @@index([menuItemId])
-  @@index([tabId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-// ============================================
 // SEAT-LEVEL TICKETING
 // Seats, Events, Tickets for shows, concerts, private events
 // ============================================
@@ -2188,6 +2550,11 @@ model Seat {
   relativeX Int @default(0)
   relativeY Int @default(0)
   angle     Int @default(0) // Facing direction (0-359 degrees)
+
+  // Original positions from floor plan builder (for restore after combine/split)
+  originalRelativeX Int? // Saved X position before combine
+  originalRelativeY Int? // Saved Y position before combine
+  originalAngle     Int? // Saved angle before combine
 
   // Seat properties
   seatType String @default("standard") // standard, premium, accessible, booth_end
@@ -2535,6 +2902,625 @@ model StockAlert {
 }
 
 // ============================================
+// INVENTORY & RECIPE COSTING (Skill 115)
+// ============================================
+
+// Void reasons with automatic inventory deduction flag
+model VoidReason {
+  id              String   @id @default(cuid())
+  locationId      String
+  location        Location @relation(fields: [locationId], references: [id])
+
+  name            String   // "Kitchen Error - Made", "Customer Changed Mind"
+  description     String?
+  deductInventory Boolean  @default(false) // Auto-deduct from theoretical inventory
+  requiresManager Boolean  @default(false) // Requires manager PIN
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+// Storage locations for inventory (Walk-in, Dry Storage, Bar, etc.)
+model StorageLocation {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String   // "Main Walk-in", "Bar Well 1", "Dry Storage"
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+
+  inventoryItems  InventoryItemStorage[]
+  inventoryCounts InventoryCount[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+// Core inventory item - everything you purchase
+model InventoryItem {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  // Identity
+  name        String   // "Chicken Breast", "Tito's Vodka"
+  sku         String?  // Optional SKU/barcode
+  description String?
+
+  // Classification - CRITICAL FOR COGS REPORTING
+  department    String   // "Food", "Beverage", "Retail" - for P&L COGS split
+  itemType      String   // "food", "liquor", "beer", "wine", "supply"
+  revenueCenter String   // "kitchen", "bar"
+  category      String   // "protein", "dairy", "whiskey", "vodka"
+  subcategory   String?  // "bourbon", "scotch"
+  brand         String?  // "Tyson", "Tito's"
+
+  // Purchase info
+  purchaseUnit     String   // "case", "lb", "bottle", "each"
+  purchaseSize     Decimal  // 15 (for 15lb case), 1 (for single bottle)
+  purchaseCost     Decimal  // $65.00 per case
+  defaultVendorId  String?
+  defaultVendor    Vendor?  @relation("DefaultVendor", fields: [defaultVendorId], references: [id])
+
+  // Storage/usage unit (what you count in)
+  storageUnit      String   // "oz", "each", "bottle"
+  unitsPerPurchase Decimal  // 240 oz per 15lb case
+  costPerUnit      Decimal  // Auto-calc: purchaseCost / unitsPerPurchase
+
+  // Costing method & tracking
+  costingMethod    String   @default("weighted_average") // "weighted_average" or "fifo"
+  lastPriceUpdate  DateTime? // When cost was last updated
+  priceSource      String   @default("manual") // "manual", "invoice", "api"
+
+  // Yield (for items with waste)
+  yieldPercent     Decimal  @default(100) // 75% = 25% trim/cooking loss
+  yieldCostPerUnit Decimal? // Cost adjusted for yield
+
+  // For liquor items
+  spiritCategoryId String?
+  spiritCategory   SpiritCategory? @relation("InventoryItemSpirit", fields: [spiritCategoryId], references: [id])
+  pourSizeOz       Decimal?  // Standard pour size (overrides location default)
+  proofPercent     Decimal?  // Alcohol proof
+
+  // Inventory levels (aggregate across all storage locations)
+  currentStock     Decimal  @default(0)  // Total in storage units
+  parLevel         Decimal? // Minimum to keep on hand (total)
+  reorderPoint     Decimal? // When to reorder
+  reorderQty       Decimal? // How much to order
+
+  // Status
+  isActive         Boolean  @default(true)
+  trackInventory   Boolean  @default(true)
+
+  // Relations
+  storageLocations InventoryItemStorage[]
+  prepItemInputs   PrepItemIngredient[]
+  recipeUsages     MenuItemRecipeIngredient[]
+  modifierLinks    ModifierInventoryLink[]
+  countItems       InventoryCountItem[]
+  transactions     InventoryItemTransaction[]
+  invoiceLines     InvoiceLineItem[]
+  wasteEntries     WasteLogEntry[]
+
+  // Pizza component relations (Skill 115)
+  pizzaCrusts      PizzaCrust[]   @relation("PizzaCrustInventory")
+  pizzaSauces      PizzaSauce[]   @relation("PizzaSauceInventory")
+  pizzaCheeses     PizzaCheese[]  @relation("PizzaCheeseInventory")
+  pizzaToppings    PizzaTopping[] @relation("PizzaToppingInventory")
+
+  // Ingredients that link to this inventory item for deduction
+  ingredientLinks  Ingredient[]   @relation("IngredientInventoryLink")
+
+  // Reverse relation from BottleProduct
+  bottleProduct BottleProduct? @relation("BottleInventoryLink")
+
+  // Daily prep count deductions
+  dailyPrepCountTransactions DailyPrepCountTransaction[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([department])
+  @@index([itemType])
+  @@index([revenueCenter])
+  @@index([category])
+}
+
+// Links inventory items to storage locations (item can be in multiple locations)
+model InventoryItemStorage {
+  id                String          @id @default(cuid())
+  locationId        String
+  location          Location        @relation(fields: [locationId], references: [id])
+  inventoryItemId   String
+  inventoryItem     InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+  storageLocationId String
+  storageLocation   StorageLocation @relation(fields: [storageLocationId], references: [id])
+
+  currentStock      Decimal  @default(0)  // Stock at THIS location
+  parLevel          Decimal? // Par level for THIS location
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([inventoryItemId, storageLocationId])
+  @@index([locationId])
+  @@index([storageLocationId])
+}
+
+// Prep items - made from inventory items
+model PrepItem {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String   // "Shredded Chicken", "Simple Syrup"
+  description String?
+
+  // Output specifications
+  outputUnit    String   // "oz", "each", "qt"
+  batchYield    Decimal  // How much one batch makes
+  batchUnit     String   // Unit for batch (may differ from output)
+  costPerUnit   Decimal? // Auto-calculated from ingredients
+
+  // Shelf life
+  shelfLifeHours Int?
+  storageNotes   String?
+
+  // Daily Prep Count configuration
+  isDailyCountItem  Boolean  @default(false)  // Can this item be counted daily?
+  currentPrepStock  Decimal  @default(0)      // Current prepared quantity on hand
+  lastCountedAt     DateTime?                 // When was this last counted?
+
+  // Stock alert thresholds
+  lowStockThreshold      Decimal?  // Show 🟡 warning when below this
+  criticalStockThreshold Decimal?  // Show 🔴 critical when below this
+  onlineStockThreshold   Decimal?  // Show "Limited availability" online when below this
+
+  // Relations
+  ingredients    PrepItemIngredient[]
+  recipeUsages   MenuItemRecipeIngredient[]
+  modifierLinks  ModifierInventoryLink[]
+
+  // Ingredients that link to this prep item for deduction
+  ingredientLinks  Ingredient[]   @relation("IngredientPrepLink")
+
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+// What goes into a prep item
+model PrepItemIngredient {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  prepItemId      String
+  prepItem        PrepItem      @relation(fields: [prepItemId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  quantity        Decimal       // Amount used
+  unit            String        // Unit (should match inventory storageUnit)
+
+  sortOrder       Int           @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([prepItemId, inventoryItemId])
+  @@index([locationId])
+}
+
+// Recipe - links menu items to ingredients
+model MenuItemRecipe {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  menuItemId  String   @unique
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  // Calculated costs
+  totalCost     Decimal?  // Sum of all ingredients
+  foodCostPct   Decimal?  // totalCost / menuItem.price
+
+  // Relations
+  ingredients   MenuItemRecipeIngredient[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([menuItemId])
+}
+
+// Individual ingredient in a recipe
+model MenuItemRecipeIngredient {
+  id          String          @id @default(cuid())
+  locationId  String
+  location    Location        @relation(fields: [locationId], references: [id])
+  recipeId    String
+  recipe      MenuItemRecipe  @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  // Link to either inventory item OR prep item (one must be set)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  prepItemId      String?
+  prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
+
+  quantity    Decimal  // Amount used
+  unit        String   // Unit
+  cost        Decimal? // Calculated cost for this ingredient
+
+  sortOrder   Int      @default(0)
+  notes       String?  // "lightly toasted", "diced"
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([recipeId])
+}
+
+// Links modifiers to inventory for tracking
+model ModifierInventoryLink {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  modifierId  String   @unique
+  modifier    Modifier @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+
+  // Link to either inventory item OR prep item
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  prepItemId      String?
+  prepItem        PrepItem?      @relation(fields: [prepItemId], references: [id])
+
+  // Usage amount when modifier is selected
+  usageQuantity   Decimal
+  usageUnit       String
+  calculatedCost  Decimal?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+}
+
+// Inventory count session
+model InventoryCount {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  countDate   DateTime @default(now())
+  countType   String   // "full", "area", "spot", "cycle"
+  status      String   @default("in_progress") // "in_progress", "completed", "reviewed"
+
+  // Link to storage location (for area counts)
+  storageLocationId String?
+  storageLocation   StorageLocation? @relation(fields: [storageLocationId], references: [id])
+
+  // Who did it
+  startedById   String?
+  completedById String?
+  reviewedById  String?
+
+  // Totals
+  expectedValue Decimal?
+  countedValue  Decimal?
+  varianceValue Decimal?
+  variancePct   Decimal?
+
+  notes       String?
+
+  // Relations
+  items       InventoryCountItem[]
+
+  completedAt DateTime?
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  syncedAt    DateTime?
+
+  @@index([locationId])
+  @@index([storageLocationId])
+  @@index([countDate])
+  @@index([status])
+}
+
+// Individual item in a count
+model InventoryCountItem {
+  id               String          @id @default(cuid())
+  locationId       String
+  location         Location        @relation(fields: [locationId], references: [id])
+  inventoryCountId String
+  inventoryCount   InventoryCount  @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
+  inventoryItemId  String
+  inventoryItem    InventoryItem   @relation(fields: [inventoryItemId], references: [id])
+
+  expectedQty      Decimal   // What system says
+  countedQty       Decimal?  // What was counted
+  variance         Decimal?  // countedQty - expectedQty
+  varianceValue    Decimal?  // variance * costPerUnit
+  variancePct      Decimal?
+
+  countedAt        DateTime?
+  notes            String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([inventoryCountId])
+}
+
+// Inventory transactions for InventoryItems (purchases, adjustments, transfers)
+model InventoryItemTransaction {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  // Transaction type
+  type            String   // "purchase", "sale", "adjustment", "waste", "transfer", "count"
+
+  // Quantities
+  quantityBefore  Decimal
+  quantityChange  Decimal  // Positive for additions, negative for deductions
+  quantityAfter   Decimal
+
+  // Cost info
+  unitCost        Decimal?
+  totalCost       Decimal?
+
+  // Reference info
+  reason          String?
+  referenceType   String?  // "invoice", "order", "waste_log", "count"
+  referenceId     String?  // ID of related record
+  notes           String?
+
+  // Who did it
+  employeeId      String?
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([inventoryItemId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// Vendor management
+model Vendor {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String
+  accountNum  String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+
+  // Payment terms
+  paymentTerms String?  // "Net 30", "COD"
+
+  isActive    Boolean  @default(true)
+
+  // Relations
+  invoices    Invoice[]
+  defaultForItems InventoryItem[] @relation("DefaultVendor")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
+// Invoice/Purchase tracking
+model Invoice {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
+
+  invoiceNumber String
+  invoiceDate   DateTime
+  dueDate       DateTime?
+  receivedDate  DateTime?
+
+  // Totals
+  subtotal      Decimal
+  taxAmount     Decimal  @default(0)
+  shippingCost  Decimal  @default(0)
+  totalAmount   Decimal
+
+  // Status
+  status        String   @default("pending") // "pending", "received", "paid"
+  paidDate      DateTime?
+
+  // Options
+  updateCosts     Boolean @default(true)  // Update item costs from invoice
+  addToInventory  Boolean @default(true)  // Add quantities to inventory
+
+  notes         String?
+
+  // Relations
+  lineItems     InvoiceLineItem[]
+
+  // Who entered it
+  enteredById   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([vendorId])
+  @@index([invoiceDate])
+  @@index([status])
+}
+
+// Invoice line items
+model InvoiceLineItem {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  invoiceId       String
+  invoice         Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  // If not linked to inventory item
+  description     String?
+
+  quantity        Decimal
+  unit            String
+  unitCost        Decimal
+  totalCost       Decimal
+
+  // For cost comparison
+  previousCost    Decimal?  // What it cost before
+  costChange      Decimal?  // Difference
+  costChangePct   Decimal?  // % change
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([invoiceId])
+}
+
+// Waste log for non-void waste
+model WasteLogEntry {
+  id              String        @id @default(cuid())
+  locationId      String
+  location        Location      @relation(fields: [locationId], references: [id])
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+
+  quantity        Decimal
+  unit            String
+  costImpact      Decimal?
+
+  reason          String   // "spoilage", "spill", "overcooked", "contamination", "training"
+  notes           String?
+
+  // Who logged it
+  employeeId      String?
+
+  wasteDate       DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  deletedAt       DateTime?
+  syncedAt        DateTime?
+
+  @@index([locationId])
+  @@index([wasteDate])
+  @@index([reason])
+}
+
+// Settings for inventory management
+model InventorySettings {
+  id          String   @id @default(cuid())
+  locationId  String   @unique
+  location    Location @relation(fields: [locationId], references: [id])
+
+  // Tracking mode: determines what features are enabled
+  // - "usage_only": Track what goes out (sales, waste) - no incoming inventory logging required
+  // - "full_tracking": Track incoming + outgoing = variance reports, theoretical vs actual
+  trackingMode          String  @default("usage_only") // "usage_only", "full_tracking"
+
+  // When to deduct inventory
+  // - "on_send": Deduct when order sent to kitchen (committed to making it)
+  // - "on_pay": Deduct when order is paid (legacy behavior)
+  deductionTiming       String  @default("on_send") // "on_send", "on_pay"
+
+  // Prep stock settings
+  trackPrepStock        Boolean @default(true) // Track prep item stock levels
+  deductPrepOnSend      Boolean @default(true) // Deduct prep stock when sent to kitchen
+  restorePrepOnVoid     Boolean @default(true) // Restore prep stock when voided (if not made)
+
+  // Count settings
+  defaultCountFrequency String  @default("weekly") // "daily", "weekly", "biweekly", "monthly"
+  countReminderDay      String? // "sunday", "monday"
+  countReminderTime     String? // "06:00"
+  requireManagerReview  Boolean @default(true)
+  varianceAlertPct      Decimal @default(5) // Alert if >5% variance
+
+  // Cost settings
+  costChangeAlertPct    Decimal @default(10) // Alert if cost changes >10%
+  targetFoodCostPct     Decimal? // Target food cost %
+  targetLiquorCostPct   Decimal? // Target liquor cost %
+
+  // Modifier instruction multipliers (for Lite, Extra, etc.)
+  multiplierLite        Decimal @default(0.5)  // "Lite" = 50% of standard amount
+  multiplierExtra       Decimal @default(2.0)  // "Extra" = 200% of standard amount
+  multiplierTriple      Decimal @default(3.0)  // "Triple" = 300% of standard amount
+
+  // Default pour sizes (for liquor)
+  defaultPourSizeOz     Decimal @default(1.5)
+
+  // Integration settings
+  exportEnabled         Boolean @default(false)
+  exportTarget          String? // "marginedge", "restaurant365"
+  exportApiKey          String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+}
+
+// ============================================
 // EMPLOYEE BREAKS (Skill 48)
 // ============================================
 
@@ -2594,6 +3580,7 @@ model SpiritCategory {
   // Relations
   bottleProducts       BottleProduct[]
   spiritModifierGroups SpiritModifierGroup[]
+  inventoryItems       InventoryItem[]      @relation("InventoryItemSpirit")
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -2640,6 +3627,11 @@ model BottleProduct {
   // Relations
   spiritModifiers   Modifier[] // Modifiers that link to this bottle
   recipeIngredients RecipeIngredient[] // Recipes that use this bottle
+  linkedMenuItems   MenuItem[] @relation("LinkedBottleMenuItems") // Menu items created from this bottle
+
+  // Link to unified inventory for stock tracking
+  inventoryItemId String?        @unique
+  inventoryItem   InventoryItem? @relation("BottleInventoryLink", fields: [inventoryItemId], references: [id])
 
   @@unique([locationId, name])
   @@index([locationId])
@@ -2748,72 +3740,401 @@ model SpiritUpsellEvent {
 // Tracks what's in each menu item with modification options
 // ============================================
 
+// Admin-configurable ingredient categories
+model IngredientCategory {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  // Identity - code is IMMUTABLE after creation (for historical tracking)
+  code        Int      // Auto-assigned sequential number, NEVER changes
+  name        String   // "Produce", "Protein" - can be renamed
+  description String?
+
+  // Display
+  icon        String?  // Emoji or icon name: "🥬", "🍖"
+  color       String?  // Hex color for UI grouping
+  sortOrder   Int      @default(0)
+
+  // Status
+  isActive    Boolean  @default(true)
+
+  // Relations
+  ingredients Ingredient[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  syncedAt    DateTime?
+
+  @@unique([locationId, code])  // Code unique per location
+  @@unique([locationId, name])  // Name unique per location
+  @@index([locationId])
+}
+
+// Group of swappable ingredients (e.g., "Proteins", "Cheese Options")
+model IngredientSwapGroup {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  name        String   // "Proteins", "Cheese Options", "Bread Choices"
+  description String?
+
+  // Members of this swap group
+  ingredients Ingredient[]
+
+  sortOrder   Int     @default(0)
+  isActive    Boolean @default(true)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  syncedAt    DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+}
+
 // Global ingredient library - reusable across menu items
 model Ingredient {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  // Identity
+  name        String   // "Lettuce", "Bacon", "Ranch"
+  description String?  // Optional description
+
+  // Legacy category string - deprecated, use categoryId instead
+  category   String? // "produce", "protein", "dairy" - kept for backwards compatibility
+
+  // New Category relation (optional for backwards compatibility, required in UI)
+  categoryId       String?
+  categoryRelation IngredientCategory? @relation(fields: [categoryId], references: [id])
+
+  // Inventory Link (for deduction tracking)
+  // Links to InventoryItem OR PrepItem - one must be set for inventory tracking
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation("IngredientInventoryLink", fields: [inventoryItemId], references: [id])
+  prepItemId      String?
+  prepItem        PrepItem?      @relation("IngredientPrepLink", fields: [prepItemId], references: [id])
+
+  // Standard portion (used in recipes and for deduction)
+  standardQuantity Decimal?  // e.g., 1.5
+  standardUnit     String?   // "oz", "slice", "each", "g"
+
+  // Source type: How is this item obtained?
+  sourceType       String    @default("delivered")  // "delivered" = purchased from vendor, "made" = made from recipe
+
+  // Purchase info (for delivered items)
+  purchaseUnit     String?   // What you order: "case", "bag", "bottle", "gallon", "box", "jar", "each"
+  purchaseCost     Decimal?  // Cost per purchase unit (e.g., $45 per case)
+  unitsPerPurchase Decimal?  // How many storage units per purchase (e.g., 120 slices per case)
+  // Note: standardUnit is the storage/usage unit (slices, lb, oz, etc.)
+  // costPerUnit is calculated: purchaseCost / unitsPerPurchase
+
+  // Order Customization Options
+  allowNo         Boolean @default(true)   // Customer can say "No X"
+  allowLite       Boolean @default(true)   // Customer can say "Lite X"
+  allowExtra      Boolean @default(true)   // Customer can say "Extra X"
+  allowOnSide     Boolean @default(false)  // Customer can say "X on side"
+
+  // Pricing for customizations
+  extraPrice      Decimal @default(0)      // Upcharge for "Extra"
+
+  // Inventory multipliers for customizations
+  liteMultiplier  Decimal @default(0.5)    // Lite = 50% of standard
+  extraMultiplier Decimal @default(2.0)    // Extra = 200% of standard
+
+  // Swap configuration
+  allowSwap           Boolean              @default(false)
+  swapGroupId         String?              // Links to a group of swappable ingredients
+  swapGroup           IngredientSwapGroup? @relation(fields: [swapGroupId], references: [id])
+  swapUpcharge        Decimal              @default(0)
+
+  // Visibility (for future use)
+  // "visible" = staff sees in counts/POS
+  // "admin_only" = only managers see (for cost tracking)
+  // "hidden" = system internal, deprecated items
+  visibility      String  @default("visible")  // "visible", "admin_only", "hidden"
+
+  // Display
+  sortOrder       Int     @default(0)
+  isActive        Boolean @default(true)
+
+  // Menu Item links (which items use this ingredient)
+  menuItemIngredients MenuItemIngredient[]
+
+  // Modifiers that deduct from this ingredient
+  linkedModifiers     Modifier[] @relation("ModifierIngredient")
+
+  // ========== INGREDIENT HIERARCHY (Parent/Child Preparations) ==========
+  // Allows tracking preparations like: Raw Chicken → Sliced Chicken, Diced Chicken
+  // Child ingredient cost = Parent cost / yieldPercent
+  parentIngredientId String?
+  parentIngredient   Ingredient?  @relation("IngredientHierarchy", fields: [parentIngredientId], references: [id])
+  childIngredients   Ingredient[] @relation("IngredientHierarchy")
+
+  // Preparation info (for child ingredients)
+  preparationType    String?   // "Sliced", "Diced", "Cooked", "Marinated", "Ground"
+  yieldPercent       Decimal?  // e.g., 0.94 = 94% yield (6% cooking loss)
+  batchYield         Decimal?  // How many of this prep item from 1 unit of parent (e.g., 16 slices from 1 lb)
+
+  // ========== EXPLICIT INPUT → OUTPUT (New Model) ==========
+  // For prep items: defines the transformation from parent to this item
+  // Example: 6 oz Raw Chicken → 2 oz Shredded Chicken
+
+  // INPUT: How much of parent is consumed to make this prep item
+  inputQuantity      Decimal?  // e.g., 6 (oz of raw chicken)
+  inputUnit          String?   // e.g., "oz" - should match or be convertible to parent's unit
+
+  // OUTPUT: How much of this prep item is produced
+  outputQuantity     Decimal?  @default(1)  // e.g., 2 (oz shredded) or 1 (crust)
+  outputUnit         String?   @default("each")  // e.g., "oz" for bulk, "each" for discrete items
+
+  // ========== RECIPE BATCH YIELD (For Inventory Items) ==========
+  // For inventory items with recipes: defines how much one recipe batch makes
+  // Example: "This dough recipe makes 50 lb" or "This sauce recipe makes 1 gallon"
+  recipeYieldQuantity Decimal?  // e.g., 50
+  recipeYieldUnit     String?   // e.g., "lb", "gallons", "batches"
+
+  // DEPRECATED: Legacy fields - kept for migration, use inputQuantity/outputQuantity instead
+  portionSize        Decimal?  // DEPRECATED: Use inputQuantity
+  portionUnit        String?   // DEPRECATED: Use inputUnit
+
+  // Daily counting (for prep items counted each morning)
+  isDailyCountItem   Boolean @default(false)  // Include in daily prep count
+  currentPrepStock   Decimal @default(0)      // Current stock from last count
+  lastCountedAt      DateTime?                // When last counted
+  countPrecision     String  @default("whole") // 'whole' = integers only (pizzas), 'decimal' = allow decimals (oz, lbs)
+
+  // Stock alert thresholds (for prep items)
+  lowStockThreshold      Decimal?  // Show 🟡 warning on POS when below this
+  criticalStockThreshold Decimal?  // Show 🔴 critical on POS when below this
+  onlineStockThreshold   Decimal?  // Show "Limited availability" online when below this
+
+  // Daily count behavior
+  resetDailyToZero       Boolean @default(true)   // true = fresh prep (expect 0), false = carry forward
+  varianceHandling       String  @default("auto_adjust")  // 'auto_adjust', 'require_reason', 'auto_waste'
+  varianceThreshold      Decimal @default(10)     // % threshold for requiring reason (e.g., 10 = 10%)
+
+  // Is this a base ingredient (root) or a preparation (child)?
+  isBaseIngredient   Boolean @default(true)
+
+  // ========== 86 STATUS (Out of Stock) ==========
+  // When an ingredient is 86'd, all menu items and modifiers using it become unavailable
+  is86d              Boolean   @default(false)   // Currently out of stock
+  last86dAt          DateTime?                   // When it was last marked as 86
+  last86dBy          String?                     // Employee ID who marked it
+  showOnQuick86      Boolean   @default(false)   // Show in Quick 86 custom list at top
+
+  // Daily Prep Count relations (for prep-style ingredients)
+  trayConfigs              PrepTrayConfig[]             @relation("IngredientTrayConfigs")
+  dailyCountItems          DailyPrepCountItem[]         @relation("IngredientDailyCountItems")
+  dailyCountTransactions   DailyPrepCountTransaction[]  @relation("IngredientDailyCountTransactions")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Recipe components - what raw materials make this inventory item
+  recipeComponents   IngredientRecipe[] @relation("RecipeOutput")
+  // Where this ingredient is used as a component
+  usedInRecipes      IngredientRecipe[] @relation("RecipeComponent")
+
+  // Stock adjustment history
+  stockAdjustments IngredientStockAdjustment[]
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([categoryId])
+  @@index([parentIngredientId])
+}
+
+// ============================================
+// INGREDIENT STOCK ADJUSTMENTS (Skill 127)
+// ============================================
+// Tracks all manual stock adjustments for cost reporting and audit trails
+// Created by Quick Stock Adjust page and other manual adjustment workflows
+model IngredientStockAdjustment {
+  id           String   @id @default(cuid())
+  locationId   String
+  location     Location @relation(fields: [locationId], references: [id])
+
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+
+  // Adjustment type
+  type         String   // "manual", "count", "waste", "transfer", "receiving"
+
+  // Quantity tracking
+  quantityBefore  Decimal
+  quantityChange  Decimal  // Positive for additions, negative for deductions
+  quantityAfter   Decimal
+  unit            String?  // Unit of measurement
+
+  // Cost tracking (captured at time of adjustment)
+  unitCost        Decimal? // Cost per unit at time of adjustment
+  totalCostImpact Decimal? // quantityChange * unitCost (for reporting)
+
+  // Who and why
+  employeeId   String?
+  employee     Employee? @relation(fields: [employeeId], references: [id])
+  reason       String?   // "Morning count", "Waste - dropped", "Received delivery", etc.
+  notes        String?
+
+  // Reference to source (if from another workflow)
+  referenceType String?  // "daily_count", "waste_log", "purchase_order"
+  referenceId   String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([ingredientId])
+  @@index([employeeId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+// Recipe for making an inventory item from raw materials
+// Example: Pizza Dough = 2 lb Flour + 0.5 oz Yeast + 2 oz Oil + 1 lb Water
+model IngredientRecipe {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  // The output item (what gets made) - e.g., Pizza Dough
+  outputId    String
+  output      Ingredient @relation("RecipeOutput", fields: [outputId], references: [id], onDelete: Cascade)
+
+  // The component/raw material used - e.g., Flour
+  componentId String
+  component   Ingredient @relation("RecipeComponent", fields: [componentId], references: [id])
+
+  // How much of the component is needed
+  quantity    Decimal   // e.g., 2
+  unit        String    // e.g., "lb"
+
+  // For batch recipes - this makes X units of output
+  // If null, assumes recipe makes 1 unit of output
+  batchSize   Decimal?
+  batchUnit   String?
+
+  sortOrder   Int       @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  syncedAt    DateTime?
+
+  @@unique([outputId, componentId])
+  @@index([locationId])
+  @@index([outputId])
+  @@index([componentId])
+}
+
+// Links ingredients to menu items with quantity overrides
+model MenuItemIngredient {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  menuItemId  String
+  menuItem    MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  ingredientId String
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+
+  // Legacy field - kept for backwards compatibility
+  isIncluded Boolean @default(true) // Comes on item by default?
+
+  // Override quantity for this specific item (null = use ingredient's standard)
+  quantity    Decimal?
+  unit        String?
+
+  // Override customization options for this item
+  allowNo     Boolean?  // null = use ingredient default
+  allowLite   Boolean?
+  allowExtra  Boolean?
+  allowOnSide Boolean?
+  extraPrice  Decimal?  // Override extra price for this item
+
+  // Is this a "base" ingredient or optional add-on?
+  isBase      Boolean @default(true)  // Base ingredients show by default
+
+  sortOrder   Int     @default(0)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  syncedAt    DateTime?
+
+  @@unique([menuItemId, ingredientId])
+  @@index([locationId])
+  @@index([menuItemId])
+}
+
+// ============================================
+// MODIFIER GROUP TEMPLATES
+// Templates for quick creation of item-specific modifier groups
+// These are NOT linked - just copied when used
+// ============================================
+
+model ModifierGroupTemplate {
   id         String   @id @default(cuid())
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
-  name     String  // "Lettuce", "Tomato", "Bacon"
-  category String? // "produce", "protein", "dairy", "sauce", "bread"
+  name        String // "Salad Dressings", "Meat Temps", "Burger Add-ons"
+  description String?
 
-  // Default modification options (can be overridden per menu item)
-  allowNo      Boolean @default(true)
-  allowLite    Boolean @default(true)
-  allowOnSide  Boolean @default(true)
-  allowExtra   Boolean @default(true)
-  extraPrice   Decimal @default(0) // Charge for Extra
-
-  // Swap configuration - links to a modifier group for replacements
-  allowSwap           Boolean        @default(false)
-  swapModifierGroupId String?
-  swapModifierGroup   ModifierGroup? @relation("IngredientSwapGroup", fields: [swapModifierGroupId], references: [id])
-  swapUpcharge        Decimal        @default(0) // Base upcharge for any swap
+  // Default settings copied to new groups
+  minSelections Int     @default(0)
+  maxSelections Int     @default(1)
+  isRequired    Boolean @default(false)
 
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  // Relations
-  menuItemIngredients MenuItemIngredient[]
+  modifiers ModifierTemplate[]
 
   @@unique([locationId, name])
   @@index([locationId])
-  @@index([category])
 }
 
-// Links ingredients to menu items with per-item configuration
-model MenuItemIngredient {
-  id           String     @id @default(cuid())
-  locationId   String
-  location     Location   @relation(fields: [locationId], references: [id])
-  menuItemId   String
-  menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
-  ingredientId String
-  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+model ModifierTemplate {
+  id         String                @id @default(cuid())
+  templateId String
+  template   ModifierGroupTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  isIncluded Boolean @default(true) // Comes on item by default?
-  sortOrder  Int     @default(0)
+  name  String
+  price Decimal @default(0)
 
-  // Per-item price overrides (null = use ingredient defaults)
-  extraPriceOverride   Decimal?
-  swapUpchargeOverride Decimal?
+  // Pre-modifier options
+  allowNo     Boolean @default(true)
+  allowLite   Boolean @default(false)
+  allowOnSide Boolean @default(false)
+  allowExtra  Boolean @default(false)
+  extraPrice  Decimal @default(0)
+
+  // Display
+  sortOrder Int     @default(0)
+  isDefault Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  @@unique([menuItemId, ingredientId])
-  @@index([locationId])
-  @@index([menuItemId])
+  @@index([templateId])
 }
 
 // Tracks ingredient modifications on orders for reporting
@@ -2891,10 +4212,90 @@ model Printer {
   // Relations
   printJobs  PrintJob[]
   printRules PrintRule[]
+  terminals  Terminal[] @relation("TerminalReceiptPrinter") // Terminals using this as receipt printer
 
-  @@unique([locationId, ipAddress])
+  @@unique([locationId, name])  // Same IP can be used multiple times with different names/roles
   @@index([locationId])
   @@index([printerRole])
+  @@index([ipAddress])
+}
+
+// ============================================
+// UNIFIED STATION (Routing Engine)
+// Replaces scattered printerIds with tag-based routing
+// One model for both PRINTER and KDS destinations
+// ============================================
+
+model Station {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Identity
+  name        String  // "Pizza Oven", "Main Expo", "Grill KDS", "Bar Printer"
+  displayName String? // Optional friendly name for UI
+  type        String  // "PRINTER" | "KDS"
+
+  // Network Configuration (for PRINTER type)
+  ipAddress String?
+  port      Int?    @default(9100)
+
+  // Tag-based routing (the core of pub/sub)
+  // Items with matching tags route to this station
+  // e.g., ["pizza", "made-to-order"], ["grill"], ["expo"]
+  tags   Json    @default("[]")
+  isExpo Boolean @default(false) // Receives ALL items regardless of tags
+
+  // Template Configuration
+  templateType String @default("STANDARD_KITCHEN")
+  // Values: STANDARD_KITCHEN, PIZZA_STATION, EXPO_SUMMARY, ENTERTAINMENT_TICKET, BAR_TICKET
+
+  // Printer-specific settings (only for PRINTER type)
+  printerType   String?  // "thermal" | "impact"
+  printerModel  String?  // "TM-T88VII", "TM-U220"
+  paperWidth    Int?     @default(80) // 80, 58, 40mm
+  supportsCut   Boolean  @default(true)
+  printSettings Json?    // PrinterSettings JSON object
+
+  // KDS-specific settings (only for KDS type)
+  columns      Int?    @default(4)
+  fontSize     String? @default("normal") // "small" | "normal" | "large"
+  colorScheme  String? @default("dark") // "dark" | "light"
+  agingWarning Int?    @default(8) // Minutes until yellow
+  lateWarning  Int?    @default(15) // Minutes until red
+  playSound    Boolean @default(true)
+  flashOnNew   Boolean @default(true)
+
+  // Reference Items - show other items in order that go to different stations
+  // Helps line cooks know "this burger is part of a larger order with a pizza"
+  showReferenceItems Boolean @default(true)
+
+  // Atomic Print Configuration - per-element print formatting
+  // JSON: { headers: { stationName: {...}, orderNumber: {...} }, dividers: {...}, items: {...} }
+  atomicPrintConfig Json?
+
+  // Backup/Failover (for PRINTER type)
+  backupStationId String?
+  backupStation   Station?  @relation("StationBackup", fields: [backupStationId], references: [id])
+  backsUpFor      Station[] @relation("StationBackup")
+  failoverTimeout Int?      @default(5000) // ms to wait before trying backup
+
+  // Status
+  isActive   Boolean   @default(true)
+  isDefault  Boolean   @default(false) // Default station for its type
+  lastPingAt DateTime?
+  lastPingOk Boolean   @default(false)
+  sortOrder  Int       @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([type])
+  @@index([isExpo])
 }
 
 model KDSScreen {
@@ -2975,6 +4376,138 @@ model KDSScreenStation {
   @@unique([kdsScreenId, stationId])
   @@index([kdsScreenId])
   @@index([stationId])
+}
+
+// ============================================
+// TERMINALS (POS Stations / Handhelds)
+// Physical devices where employees clock in and enter orders
+// ============================================
+
+model Terminal {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Identity
+  name     String // "Bar Terminal 1", "Server Station", "Handheld 3"
+  category String @default("FIXED_STATION") // "FIXED_STATION" | "HANDHELD"
+
+  // Network Configuration
+  staticIp String? // For fixed stations, helps identify device
+
+  // Device Pairing (similar to KDS pairing)
+  deviceToken          String?   @unique // Secure token assigned after pairing
+  pairingCode          String?   // 6-digit temporary pairing code
+  pairingCodeExpiresAt DateTime? // When pairing code expires
+  isPaired             Boolean   @default(false)
+
+  // Device Info
+  deviceFingerprint String? // Browser/app fingerprint for handhelds
+  lastKnownIp       String? // Last IP address seen
+  deviceInfo        Json?   // User agent, screen size, model, etc.
+
+  // Local Receipt Printer
+  // The physical receipt printer attached to or near this terminal
+  receiptPrinterId String?
+  receiptPrinter   Printer? @relation("TerminalReceiptPrinter", fields: [receiptPrinterId], references: [id])
+
+  // Role-Based Skip Rules
+  // Format: { "bartender": ["bar"], "manager": ["bar", "kitchen"], "chef": ["kitchen"] }
+  // When an employee with this role logs in at this terminal,
+  // tickets with these printer roles won't print (they see it on KDS instead)
+  roleSkipRules Json?
+
+  // Manual Override
+  // When true, ignores all skip rules and prints everything
+  forceAllPrints Boolean @default(false)
+
+  // Status
+  isActive   Boolean   @default(true)
+  isOnline   Boolean   @default(false)
+  lastSeenAt DateTime?
+
+  // Failover Configuration
+  // If this terminal goes offline, redirect tickets to the backup
+  backupTerminalId String?
+  backupTerminal   Terminal?  @relation("TerminalFailover", fields: [backupTerminalId], references: [id])
+  primaryFor       Terminal[] @relation("TerminalFailover")
+  failoverEnabled  Boolean    @default(false)
+  failoverTimeout  Int        @default(45000) // ms before considered offline
+
+  // Payment Reader Binding (Datacap Direct Integration)
+  paymentReaderId       String?
+  paymentReader         PaymentReader? @relation("TerminalPaymentReader", fields: [paymentReaderId], references: [id])
+  paymentProvider       String         @default("SIMULATED") // "DATACAP_DIRECT" | "SIMULATED"
+  backupPaymentReaderId String?
+  backupPaymentReader   PaymentReader? @relation("TerminalBackupReader", fields: [backupPaymentReaderId], references: [id])
+  readerFailoverTimeout Int            @default(10000) // 10s before trying backup reader
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([category])
+  @@index([staticIp])
+  @@index([deviceToken])
+  @@index([backupTerminalId])
+  @@index([paymentReaderId])
+}
+
+// Payment Reader - Datacap Direct card reader devices
+model PaymentReader {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Identity
+  name         String // "Bar Reader", "Lobby Reader", "Mobile Reader 1"
+  serialNumber String @unique // Datacap reader serial - key for identity verification
+  ipAddress    String // Reader IP address on local network
+  port         Int    @default(8080) // Datacap default port
+
+  // Datacap Configuration
+  merchantId String? // Datacap merchant ID if different per reader
+  terminalId String? // Datacap terminal ID (their concept, not ours)
+
+  // Verification Settings
+  verificationType String @default("SERIAL_HANDSHAKE") // "SERIAL_HANDSHAKE" | "IP_ONLY"
+
+  // Status
+  isActive        Boolean   @default(true)
+  isOnline        Boolean   @default(false)
+  lastSeenAt      DateTime?
+  lastErrorAt     DateTime?
+  lastError       String?
+  firmwareVersion String?
+
+  // Health Metrics
+  avgResponseTime Int?     // Average ms for last 10 transactions
+  successRate     Decimal? // % successful in last 24 hours
+
+  sortOrder Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Sync fields
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  // Relations
+  terminals Terminal[] @relation("TerminalPaymentReader")
+  backupFor Terminal[] @relation("TerminalBackupReader")
+
+  @@unique([locationId, ipAddress])
+  @@unique([locationId, name])
+  @@index([locationId])
+  @@index([isActive])
+  @@index([isOnline])
+  @@index([serialNumber])
 }
 
 model PrintRule {
@@ -3095,6 +4628,11 @@ model PizzaConfig {
   showToppingList   Boolean @default(true) // Show list view of toppings
   defaultToListView Boolean @default(false) // Start in list view instead of visual
 
+  // Builder mode settings (Skill 109)
+  builderMode        String  @default("both") // 'quick' | 'visual' | 'both'
+  defaultBuilderMode String  @default("quick") // 'quick' | 'visual' - which opens by default
+  allowModeSwitch    Boolean @default(true) // Can servers switch between modes?
+
   // Printer routing - multiple printers supported
   printerIds Json? // Array of printer IDs: ["printer-id-1", "printer-id-2"]
 
@@ -3128,6 +4666,11 @@ model PizzaSize {
   // Free toppings per size (when freeToppingsMode = "per_size")
   freeToppings Int @default(0) // Number of free toppings for this size
 
+  // Inventory tracking (Skill 115)
+  // Multiplier for ingredient usage - base usage is defined on each component (crust/sauce/cheese/topping)
+  // Small=0.75, Medium=1.0, Large=1.3, XL=1.6 (example)
+  inventoryMultiplier Decimal @default(1.0)
+
   sortOrder Int     @default(0)
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
@@ -3155,6 +4698,13 @@ model PizzaCrust {
   displayName String?
   description String?
   price       Decimal @default(0) // Upcharge for specialty crusts
+
+  // Inventory tracking (Skill 115)
+  // Links to dough inventory - usage is for MEDIUM size, scaled by size multiplier
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation("PizzaCrustInventory", fields: [inventoryItemId], references: [id])
+  usageQuantity   Decimal?       // Base usage for medium pizza (e.g., 12 oz dough)
+  usageUnit       String?        // "oz", "each"
 
   sortOrder Int     @default(0)
   isDefault Boolean @default(false)
@@ -3190,6 +4740,12 @@ model PizzaSauce {
   allowExtra Boolean @default(true)
   extraPrice Decimal @default(0)
 
+  // Inventory tracking (Skill 115)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation("PizzaSauceInventory", fields: [inventoryItemId], references: [id])
+  usageQuantity   Decimal?       // Base usage for medium pizza (e.g., 4 oz sauce)
+  usageUnit       String?        // "oz"
+
   sortOrder Int     @default(0)
   isDefault Boolean @default(false)
   isActive  Boolean @default(true)
@@ -3223,6 +4779,12 @@ model PizzaCheese {
   allowLight Boolean @default(true)
   allowExtra Boolean @default(true)
   extraPrice Decimal @default(0)
+
+  // Inventory tracking (Skill 115)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation("PizzaCheeseInventory", fields: [inventoryItemId], references: [id])
+  usageQuantity   Decimal?       // Base usage for medium pizza (e.g., 8 oz cheese)
+  usageUnit       String?        // "oz"
 
   sortOrder Int     @default(0)
   isDefault Boolean @default(false)
@@ -3262,6 +4824,12 @@ model PizzaTopping {
   // Visual (for visual pizza builder)
   color   String? // Hex color for visual builder representation
   iconUrl String? // Optional icon image
+
+  // Inventory tracking (Skill 115)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation("PizzaToppingInventory", fields: [inventoryItemId], references: [id])
+  usageQuantity   Decimal?       // Base usage for medium whole pizza (e.g., 2 oz pepperoni)
+  usageUnit       String?        // "oz", "each"
 
   sortOrder Int     @default(0)
   isActive  Boolean @default(true)
@@ -3686,4 +5254,153 @@ model PayrollSettings {
   syncedAt  DateTime?
 
   @@index([locationId])
+}
+
+// ============================================
+// DAILY PREP COUNTING
+// Morning prep workflow: count trays → calculate total → add to prep stock → reverse-deduct from inventory
+// ============================================
+
+// Tray configurations for a prep item (e.g., "Large Dough Tray = 6 balls")
+model PrepTrayConfig {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  prepItemId  String   // Actually stores Ingredient ID (prep-style ingredients)
+  ingredient  Ingredient @relation("IngredientTrayConfigs", fields: [prepItemId], references: [id], onDelete: Cascade)
+
+  // Identity
+  name        String   // "Large Dough Tray", "Small Dough Tray", "Loose"
+  capacity    Decimal  // 6 (balls, portions, etc.)
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([prepItemId, name])
+  @@index([locationId])
+  @@index([prepItemId])
+}
+
+// Daily Prep Count session - represents a morning count session
+model DailyPrepCount {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  // Session details
+  countDate   DateTime @default(now()) // Date of the count (morning of prep day)
+  status      String   @default("draft") // "draft", "submitted", "approved", "rejected"
+
+  // Who created, submitted, approved
+  createdById String
+  createdBy   Employee @relation("PrepCountCreatedBy", fields: [createdById], references: [id])
+
+  submittedById String?
+  submittedBy   Employee? @relation("PrepCountSubmittedBy", fields: [submittedById], references: [id])
+  submittedAt   DateTime?
+
+  approvedById String?
+  approvedBy   Employee? @relation("PrepCountApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+
+  rejectionReason String? // If status = "rejected", why?
+  notes           String?
+
+  // Relations
+  countItems   DailyPrepCountItem[]
+  transactions DailyPrepCountTransaction[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([countDate])
+  @@index([status])
+  @@index([createdById])
+}
+
+// Individual prep item count within a daily count session
+model DailyPrepCountItem {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  dailyCountId String
+  dailyCount   DailyPrepCount @relation(fields: [dailyCountId], references: [id], onDelete: Cascade)
+
+  prepItemId  String   // Actually stores Ingredient ID (prep-style ingredients)
+  ingredient  Ingredient @relation("IngredientDailyCountItems", fields: [prepItemId], references: [id])
+
+  // Tray breakdown - JSON: { "Large Tray": 3, "Small Tray": 2, "Loose": 4 }
+  // Keys are tray names, values are quantities counted
+  trayBreakdown Json?
+
+  // Calculated values
+  totalCounted      Decimal   // Sum of all trays: (Large * 6) + (Small * 12) + loose
+  expectedQuantity  Decimal?  // Previous closing stock (for variance)
+  variance          Decimal?  // totalCounted - expectedQuantity
+  variancePercent   Decimal?  // (variance / expectedQuantity) * 100
+
+  // Cost impact (calculated on approval)
+  costPerUnit       Decimal?  // Snapshot of prep item cost
+  totalCost         Decimal?  // totalCounted * costPerUnit
+
+  notes String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([dailyCountId, prepItemId])
+  @@index([locationId])
+  @@index([dailyCountId])
+  @@index([prepItemId])
+}
+
+// Audit trail for inventory movements from daily prep counts
+model DailyPrepCountTransaction {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+
+  dailyCountId String
+  dailyCount   DailyPrepCount @relation(fields: [dailyCountId], references: [id], onDelete: Cascade)
+
+  // Type of transaction: "prep_stock_add" or "ingredient_deduct"
+  type        String
+
+  // For prep item stock additions (actually Ingredient ID)
+  prepItemId  String?
+  ingredient  Ingredient? @relation("IngredientDailyCountTransactions", fields: [prepItemId], references: [id])
+
+  // For raw ingredient deductions
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+
+  // Quantity movement
+  quantityBefore  Decimal
+  quantityChange  Decimal  // Positive for prep item add, negative for ingredient deduct
+  quantityAfter   Decimal
+  unit            String?
+
+  // Cost tracking (for reporting)
+  unitCost        Decimal?
+  totalCost       Decimal?
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([dailyCountId])
+  @@index([type])
+  @@index([createdAt])
 }

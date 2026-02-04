@@ -1,5 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+
+    const item = await db.menuItem.findFirst({
+      where: { id, deletedAt: null },
+      include: {
+        category: {
+          select: { id: true, name: true, categoryType: true },
+        },
+        modifierGroups: {
+          where: { modifierGroup: { deletedAt: null } },
+          select: { modifierGroupId: true },
+        },
+      },
+    })
+
+    if (!item) {
+      return NextResponse.json(
+        { error: 'Item not found' },
+        { status: 404 }
+      )
+    }
+
+    // Check if this is a pizza item based on category type OR item type
+    const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
+
+    return NextResponse.json({
+      item: {
+        id: item.id,
+        categoryId: item.categoryId,
+        categoryName: item.category?.name,
+        categoryType: item.category?.categoryType,
+        name: item.name,
+        price: Number(item.price),
+        priceCC: item.priceCC ? Number(item.priceCC) : null,
+        description: item.description,
+        isActive: item.isActive,
+        isAvailable: item.isAvailable,
+        itemType: item.itemType,
+        isPizza: isPizzaItem,
+        hasModifiers: item.modifierGroups.length > 0 || isPizzaItem,
+        modifierGroups: item.modifierGroups,
+        // Entertainment/timed rental fields
+        entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
+        blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
+        timedPricing: item.itemType === 'timed_rental' ? item.timedPricing : null,
+        pourSizes: item.pourSizes,
+        defaultPourSize: item.defaultPourSize,
+      },
+    })
+  } catch (error) {
+    console.error('Failed to get item:', error)
+    return NextResponse.json(
+      { error: 'Failed to get item' },
+      { status: 500 }
+    )
+  }
+}
 
 export async function PUT(
   request: NextRequest,
@@ -11,8 +75,13 @@ export async function PUT(
     const {
       name,
       price,
+      priceCC,
       description,
+      isActive,
       isAvailable,
+      showOnPOS,
+      sortOrder,
+      deletedAt,
       commissionType,
       commissionValue,
       availableFrom,
@@ -34,8 +103,13 @@ export async function PUT(
       data: {
         ...(name !== undefined && { name }),
         ...(price !== undefined && { price }),
+        ...(priceCC !== undefined && { priceCC: priceCC || null }),
         ...(description !== undefined && { description }),
+        ...(isActive !== undefined && { isActive }),
         ...(isAvailable !== undefined && { isAvailable }),
+        ...(showOnPOS !== undefined && { showOnPOS }),
+        ...(sortOrder !== undefined && { sortOrder }),
+        ...(deletedAt !== undefined && { deletedAt: deletedAt ? new Date(deletedAt) : null }),
         ...(commissionType !== undefined && { commissionType: commissionType || null }),
         ...(commissionValue !== undefined && { commissionValue: commissionValue ?? null }),
         ...(availableFrom !== undefined && { availableFrom: availableFrom || null }),
@@ -57,11 +131,21 @@ export async function PUT(
       }
     })
 
+    // Dispatch socket event for real-time update
+    const action = deletedAt ? 'deleted' : (item.deletedAt === null && deletedAt === undefined) ? 'updated' : 'restored'
+    dispatchMenuUpdate(item.locationId, {
+      action,
+      menuItemId: item.id,
+      bottleId: item.linkedBottleProductId || undefined,
+      name: item.name,
+    }, { async: true })
+
     return NextResponse.json({
       id: item.id,
       categoryId: item.categoryId,
       name: item.name,
       price: Number(item.price),
+      priceCC: item.priceCC ? Number(item.priceCC) : null,
       description: item.description,
       isActive: item.isActive,
       isAvailable: item.isAvailable,

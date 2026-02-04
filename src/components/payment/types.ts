@@ -108,3 +108,54 @@ export const DEFAULT_TIP_SETTINGS: TipSettings = {
   suggestedPercentages: [15, 18, 20, 25],
   calculateOn: 'subtotal',
 }
+
+// Virtual Group Checkout Types
+export interface GroupTableItem {
+  id: string
+  name: string
+  quantity: number
+  price: number
+  modifierTotal?: number
+  itemTotal?: number
+  seatNumber?: number
+}
+
+export interface GroupTableFinancials {
+  tableId: string
+  tableName: string
+  tableAbbreviation?: string
+  isPrimary: boolean
+  sectionId?: string
+  sectionName?: string
+  itemCount: number
+  subtotal: number
+  tax: number
+  total: number
+  paid: number
+  remaining: number
+  items: GroupTableItem[]
+}
+
+export interface VirtualGroupCheckoutData {
+  virtualGroupId: string
+  groupColor: string
+  createdAt?: string
+  primaryTableId: string
+  primaryTableName: string
+  tableCount: number
+  order: {
+    id: string
+    orderNumber: number
+    displayNumber?: string
+    status: string
+  } | null
+  totals: {
+    subtotal: number
+    tax: number
+    total: number
+    paid: number
+    remaining: number
+    itemCount: number
+  }
+  financials: GroupTableFinancials[]
+}

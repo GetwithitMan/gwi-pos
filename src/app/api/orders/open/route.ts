@@ -141,46 +141,9 @@ export async function GET(request: NextRequest) {
       // Entertainment fields may not exist
     }
 
-    try {
-      const waitlistEntries = await db.entertainmentWaitlist.findMany({
-        where: {
-          tabId: { in: orderIds },
-          status: 'waiting',
-        },
-        include: {
-          menuItem: { select: { displayName: true, name: true } },
-        },
-        orderBy: { createdAt: 'asc' },
-      })
-
-      // Group by order and calculate positions
-      const positionsByItem: Record<string, number> = {}
-      for (const entry of waitlistEntries) {
-        if (!positionsByItem[entry.menuItemId]) {
-          // Count how many are ahead in line for this item
-          const ahead = await db.entertainmentWaitlist.count({
-            where: {
-              menuItemId: entry.menuItemId,
-              status: 'waiting',
-              createdAt: { lt: entry.createdAt },
-            },
-          })
-          positionsByItem[entry.menuItemId] = ahead + 1
-        }
-
-        if (entry.tabId) {
-          if (!waitlistByOrder[entry.tabId]) {
-            waitlistByOrder[entry.tabId] = []
-          }
-          waitlistByOrder[entry.tabId].push({
-            position: positionsByItem[entry.menuItemId],
-            menuItemName: entry.menuItem.displayName || entry.menuItem.name,
-          })
-        }
-      }
-    } catch {
-      // Waitlist table may not exist
-    }
+    // Note: Entertainment waitlist is now floor plan element based,
+    // not tab/order based. Waitlist entries link to FloorPlanElement via elementId.
+    // Tab-linked waitlist functionality has been removed.
 
     return NextResponse.json({
       orders: orders.map(order => ({

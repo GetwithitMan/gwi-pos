@@ -3,6 +3,62 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { tableEvents } from '@/lib/realtime/table-events'
 
+type SeatPattern = 'all_around' | 'front_only' | 'three_sides' | 'two_sides' | 'inside'
+
+/**
+ * Generate seats distributed around all 4 sides of a rectangle (default pattern)
+ */
+function generateSeatsAllAround(
+  tableWidth: number,
+  tableHeight: number,
+  count: number
+): Array<{ seatNumber: number; label: string; relativeX: number; relativeY: number; angle: number }> {
+  const seats: Array<{ seatNumber: number; label: string; relativeX: number; relativeY: number; angle: number }> = []
+  const offset = 25
+  const perimeter = 2 * (tableWidth + tableHeight)
+  const spacing = perimeter / count
+
+  let currentDist = 0 // Start from top-left corner
+
+  for (let i = 0; i < count; i++) {
+    let x = 0, y = 0, angle = 0
+
+    if (currentDist < tableWidth) {
+      x = -tableWidth / 2 + currentDist
+      y = -tableHeight / 2 - offset
+      angle = 180
+    } else if (currentDist < tableWidth + tableHeight) {
+      const sideDist = currentDist - tableWidth
+      x = tableWidth / 2 + offset
+      y = -tableHeight / 2 + sideDist
+      angle = 270
+    } else if (currentDist < 2 * tableWidth + tableHeight) {
+      const sideDist = currentDist - tableWidth - tableHeight
+      x = tableWidth / 2 - sideDist
+      y = tableHeight / 2 + offset
+      angle = 0
+    } else {
+      const sideDist = currentDist - 2 * tableWidth - tableHeight
+      x = -tableWidth / 2 - offset
+      y = tableHeight / 2 - sideDist
+      angle = 90
+    }
+
+    seats.push({
+      seatNumber: i + 1,
+      label: String(i + 1),
+      relativeX: Math.round(x),
+      relativeY: Math.round(y),
+      angle,
+    })
+
+    currentDist += spacing
+    if (currentDist > perimeter) currentDist -= perimeter
+  }
+
+  return seats
+}
+
 /**
  * POST /api/tables/[id]/split
  *
@@ -85,274 +141,57 @@ export async function POST(
       )
     }
 
+    // SAFETY CHECK: Cannot split tables with open orders
+    // This protects active service - close the check first before splitting
     const currentOrder = primaryTable.orders[0]
+    if (currentOrder) {
+      return NextResponse.json(
+        { error: 'Cannot split tables with open orders. Close the check first.' },
+        { status: 400 }
+      )
+    }
 
     // Start transaction
+    // Since we prevent split with open orders (safety check above),
+    // we can directly restore tables without handling order distribution
     const result = await db.$transaction(async (tx) => {
       const restoredTables: string[] = []
 
-      // If there's an active order, we need to split items
-      if (currentOrder) {
-        const items = currentOrder.items
-        const numTables = combinedTables.length + 1 // +1 for primary table
+      // Restore the combined tables with scattered positions
+      // Use scatter offset to prevent tables stacking at 0,0
+      const basePosX = primaryTable.posX || 100
+      const basePosY = primaryTable.posY || 100
+      const scatterOffset = 40 // px between scattered tables
 
-        if (splitMode === 'by_seat') {
-          // Group items by their original table (based on seat assignment)
-          // For simplicity, we'll assign items with seatNumber to combined tables sequentially
-          const itemsByTable: Record<string, typeof items> = {
-            [primaryTable.id]: [],
-          }
-          combinedTables.forEach(t => {
-            itemsByTable[t.id] = []
-          })
+      for (let i = 0; i < combinedTables.length; i++) {
+        const combinedTable = combinedTables[i]
+        // Use original position if saved, otherwise scatter from primary's position
+        const restoredPosX = combinedTable.originalPosX ?? (basePosX + (i + 1) * scatterOffset)
+        const restoredPosY = combinedTable.originalPosY ?? (basePosY + (i + 1) * scatterOffset)
 
-          // Distribute items based on seat number
-          // Seats 1-N go to primary, N+1-M go to first combined, etc.
-          const primaryCapacity = (primaryTable.capacity || 4) / numTables
-          const tableOrder = [primaryTable.id, ...combinedTableIds]
+        await tx.table.update({
+          where: { id: combinedTable.id },
+          data: {
+            status: 'available',
+            combinedWithId: null,
+            name: combinedTable.originalName || combinedTable.name.split('+').pop() || combinedTable.name,
+            // Restore to admin-defined position or scatter if not available
+            posX: restoredPosX > 0 ? restoredPosX : basePosX + (i + 1) * scatterOffset,
+            posY: restoredPosY > 0 ? restoredPosY : basePosY + (i + 1) * scatterOffset,
+          },
+        })
 
-          items.forEach(item => {
-            if (item.seatNumber) {
-              // Calculate which table this seat belongs to
-              const targetTableIndex = Math.min(
-                Math.floor((item.seatNumber - 1) / primaryCapacity),
-                numTables - 1
-              )
-              const targetTableId = tableOrder[targetTableIndex]
-              itemsByTable[targetTableId].push(item)
-            } else {
-              // No seat number - stays with primary
-              itemsByTable[primaryTable.id].push(item)
-            }
-          })
-
-          // Create orders for each combined table with their items
-          for (const combinedTable of combinedTables) {
-            const tableItems = itemsByTable[combinedTable.id]
-
-            if (tableItems.length > 0) {
-              // Calculate totals for this subset
-              const subtotal = tableItems.reduce(
-                (sum, item) => sum + Number(item.price) * item.quantity,
-                0
-              )
-              const taxRate = 0.08 // Should come from location settings
-              const taxTotal = subtotal * taxRate
-              const total = subtotal + taxTotal
-
-              // Get next order number
-              const lastOrder = await tx.order.findFirst({
-                where: { locationId },
-                orderBy: { orderNumber: 'desc' },
-              })
-              const nextOrderNumber = (lastOrder?.orderNumber || 0) + 1
-
-              // Create new order for this table
-              const newOrder = await tx.order.create({
-                data: {
-                  locationId,
-                  employeeId: currentOrder.employeeId,
-                  orderNumber: nextOrderNumber,
-                  orderType: currentOrder.orderType,
-                  tableId: combinedTable.id,
-                  guestCount: Math.ceil(currentOrder.guestCount / numTables),
-                  subtotal,
-                  taxTotal,
-                  total,
-                  notes: `Split from order #${currentOrder.orderNumber}`,
-                },
-              })
-
-              // Move items to new order
-              for (const item of tableItems) {
-                await tx.orderItem.update({
-                  where: { id: item.id },
-                  data: { orderId: newOrder.id },
-                })
-              }
-
-              // Update combined table status and restore original position
-              await tx.table.update({
-                where: { id: combinedTable.id },
-                data: {
-                  status: 'occupied',
-                  combinedWithId: null,
-                  name: combinedTable.originalName || combinedTable.name.split('+').pop() || combinedTable.name,
-                  // Restore to admin-defined position
-                  posX: combinedTable.originalPosX ?? combinedTable.posX,
-                  posY: combinedTable.originalPosY ?? combinedTable.posY,
-                },
-              })
-
-              restoredTables.push(combinedTable.id)
-            } else {
-              // No items for this table - just restore it with original position
-              await tx.table.update({
-                where: { id: combinedTable.id },
-                data: {
-                  status: 'available',
-                  combinedWithId: null,
-                  name: combinedTable.originalName || combinedTable.name.split('+').pop() || combinedTable.name,
-                  // Restore to admin-defined position
-                  posX: combinedTable.originalPosX ?? combinedTable.posX,
-                  posY: combinedTable.originalPosY ?? combinedTable.posY,
-                },
-              })
-
-              restoredTables.push(combinedTable.id)
-            }
-          }
-
-          // Update primary table order totals (items remaining with primary)
-          const primaryItems = itemsByTable[primaryTable.id]
-          const primarySubtotal = primaryItems.reduce(
-            (sum, item) => sum + Number(item.price) * item.quantity,
-            0
-          )
-          const primaryTax = primarySubtotal * 0.08
-          const primaryTotal = primarySubtotal + primaryTax
-
-          await tx.order.update({
-            where: { id: currentOrder.id },
-            data: {
-              subtotal: primarySubtotal,
-              taxTotal: primaryTax,
-              total: primaryTotal,
-              guestCount: Math.ceil(currentOrder.guestCount / numTables),
-              notes: currentOrder.notes
-                ? `${currentOrder.notes}\n[Split - items distributed by seat]`
-                : '[Split - items distributed by seat]',
-            },
-          })
-        } else {
-          // Split evenly - distribute items randomly
-          const itemsPerTable = Math.ceil(items.length / numTables)
-          const shuffledItems = [...items].sort(() => Math.random() - 0.5)
-
-          let itemIndex = 0
-
-          for (const combinedTable of combinedTables) {
-            const tableItems = shuffledItems.slice(itemIndex, itemIndex + itemsPerTable)
-            itemIndex += itemsPerTable
-
-            if (tableItems.length > 0) {
-              // Calculate totals
-              const subtotal = tableItems.reduce(
-                (sum, item) => sum + Number(item.price) * item.quantity,
-                0
-              )
-              const taxRate = 0.08
-              const taxTotal = subtotal * taxRate
-              const total = subtotal + taxTotal
-
-              // Get next order number
-              const lastOrder = await tx.order.findFirst({
-                where: { locationId },
-                orderBy: { orderNumber: 'desc' },
-              })
-              const nextOrderNumber = (lastOrder?.orderNumber || 0) + 1
-
-              // Create new order
-              const newOrder = await tx.order.create({
-                data: {
-                  locationId,
-                  employeeId: currentOrder.employeeId,
-                  orderNumber: nextOrderNumber,
-                  orderType: currentOrder.orderType,
-                  tableId: combinedTable.id,
-                  guestCount: Math.ceil(currentOrder.guestCount / numTables),
-                  subtotal,
-                  taxTotal,
-                  total,
-                  notes: `Split from order #${currentOrder.orderNumber}`,
-                },
-              })
-
-              // Move items
-              for (const item of tableItems) {
-                await tx.orderItem.update({
-                  where: { id: item.id },
-                  data: { orderId: newOrder.id },
-                })
-              }
-
-              // Update combined table with original position
-              await tx.table.update({
-                where: { id: combinedTable.id },
-                data: {
-                  status: 'occupied',
-                  combinedWithId: null,
-                  name: combinedTable.originalName || combinedTable.name.split('+').pop() || combinedTable.name,
-                  // Restore to admin-defined position
-                  posX: combinedTable.originalPosX ?? combinedTable.posX,
-                  posY: combinedTable.originalPosY ?? combinedTable.posY,
-                },
-              })
-
-              restoredTables.push(combinedTable.id)
-            } else {
-              // No items - just restore with original position
-              await tx.table.update({
-                where: { id: combinedTable.id },
-                data: {
-                  status: 'available',
-                  combinedWithId: null,
-                  name: combinedTable.originalName || combinedTable.name.split('+').pop() || combinedTable.name,
-                  // Restore to admin-defined position
-                  posX: combinedTable.originalPosX ?? combinedTable.posX,
-                  posY: combinedTable.originalPosY ?? combinedTable.posY,
-                },
-              })
-
-              restoredTables.push(combinedTable.id)
-            }
-          }
-
-          // Recalculate primary table order totals
-          const remainingItems = shuffledItems.slice(0, itemsPerTable)
-          const primarySubtotal = remainingItems.reduce(
-            (sum, item) => sum + Number(item.price) * item.quantity,
-            0
-          )
-          const primaryTax = primarySubtotal * 0.08
-          const primaryTotal = primarySubtotal + primaryTax
-
-          await tx.order.update({
-            where: { id: currentOrder.id },
-            data: {
-              subtotal: primarySubtotal,
-              taxTotal: primaryTax,
-              total: primaryTotal,
-              guestCount: Math.ceil(currentOrder.guestCount / numTables),
-              notes: currentOrder.notes
-                ? `${currentOrder.notes}\n[Split evenly]`
-                : '[Split evenly]',
-            },
-          })
-        }
-      } else {
-        // No order - just restore the combined tables with original positions
-        for (const combinedTable of combinedTables) {
-          await tx.table.update({
-            where: { id: combinedTable.id },
-            data: {
-              status: 'available',
-              combinedWithId: null,
-              name: combinedTable.originalName || combinedTable.name.split('+').pop() || combinedTable.name,
-              // Restore to admin-defined position
-              posX: combinedTable.originalPosX ?? combinedTable.posX,
-              posY: combinedTable.originalPosY ?? combinedTable.posY,
-            },
-          })
-
-          restoredTables.push(combinedTable.id)
-        }
+        restoredTables.push(combinedTable.id)
       }
 
       // Restore primary table with original position
       const originalCapacity = Math.floor(
         primaryTable.capacity / (combinedTables.length + 1)
       )
+
+      // Use original position if saved, otherwise keep current (which is already basePosX/Y)
+      const primaryRestoredPosX = primaryTable.originalPosX ?? basePosX
+      const primaryRestoredPosY = primaryTable.originalPosY ?? basePosY
 
       const updatedPrimary = await tx.table.update({
         where: { id: primaryTable.id },
@@ -361,12 +200,105 @@ export async function POST(
           name: primaryTable.originalName || primaryTable.name.split('+')[0],
           originalName: null,
           capacity: originalCapacity > 0 ? originalCapacity : primaryTable.capacity,
-          status: currentOrder ? 'occupied' : 'available',
-          // Restore to admin-defined position
-          posX: primaryTable.originalPosX ?? primaryTable.posX,
-          posY: primaryTable.originalPosY ?? primaryTable.posY,
+          status: 'available', // Always available since we require closing orders before split
+          // Restore to admin-defined position or keep current if not available
+          posX: primaryRestoredPosX > 0 ? primaryRestoredPosX : 100,
+          posY: primaryRestoredPosY > 0 ? primaryRestoredPosY : 100,
         },
       })
+
+      // Restore seats to their original positions from floor plan builder
+      const allSplitTableIds = [primaryTable.id, ...combinedTableIds]
+
+      // Fetch all seats from all split tables
+      const allSeats = await tx.seat.findMany({
+        where: {
+          tableId: { in: allSplitTableIds },
+          isActive: true,
+          deletedAt: null,
+        },
+        orderBy: [
+          { tableId: 'asc' },
+          { seatNumber: 'asc' },
+        ],
+      })
+
+      // Group seats by table for proper sequential numbering
+      const seatsByTable = new Map<string, typeof allSeats>()
+      for (const seat of allSeats) {
+        const tableSeats = seatsByTable.get(seat.tableId) || []
+        tableSeats.push(seat)
+        seatsByTable.set(seat.tableId, tableSeats)
+      }
+
+      // Restore each seat to its original position
+      for (const [tableId, tableSeats] of seatsByTable) {
+        // Check if seats have original positions saved
+        const hasOriginalPositions = tableSeats.some(
+          s => s.originalRelativeX !== null || s.originalRelativeY !== null
+        )
+
+        if (hasOriginalPositions) {
+          // Restore from saved original positions
+          for (const seat of tableSeats) {
+            await tx.seat.update({
+              where: { id: seat.id },
+              data: {
+                // Restore original position (fall back to current if not saved)
+                relativeX: seat.originalRelativeX ?? seat.relativeX,
+                relativeY: seat.originalRelativeY ?? seat.relativeY,
+                angle: seat.originalAngle ?? seat.angle,
+                // Clear original fields after restore
+                originalRelativeX: null,
+                originalRelativeY: null,
+                originalAngle: null,
+                // Restore label to match seatNumber (don't change seatNumber - it's the identity)
+                label: String(seat.seatNumber),
+              },
+            })
+          }
+        } else {
+          // No original positions saved - regenerate default positions
+          const tableForSeats = tableId === primaryTable.id
+            ? primaryTable
+            : combinedTables.find(t => t.id === tableId)
+
+          if (tableForSeats) {
+            // Soft delete existing seats
+            await tx.seat.updateMany({
+              where: { tableId, isActive: true, deletedAt: null },
+              data: { isActive: false, deletedAt: new Date() },
+            })
+
+            // Generate default positions
+            const tableCapacity = tableId === primaryTable.id
+              ? (originalCapacity > 0 ? originalCapacity : 4)
+              : (tableForSeats.capacity || 4)
+
+            const seatPositions = generateSeatsAllAround(
+              tableForSeats.width,
+              tableForSeats.height,
+              tableCapacity
+            )
+
+            // Create new seats
+            for (const pos of seatPositions) {
+              await tx.seat.create({
+                data: {
+                  locationId,
+                  tableId,
+                  label: pos.label,
+                  seatNumber: pos.seatNumber,
+                  relativeX: pos.relativeX,
+                  relativeY: pos.relativeY,
+                  angle: pos.angle,
+                  seatType: 'standard',
+                },
+              })
+            }
+          }
+        }
+      }
 
       // Create audit log
       await tx.auditLog.create({
@@ -380,8 +312,7 @@ export async function POST(
             primaryTableId: primaryTable.id,
             restoredTableIds: restoredTables,
             splitMode,
-            hadActiveOrder: !!currentOrder,
-            orderNumber: currentOrder?.orderNumber,
+            hadActiveOrder: false, // We return early if there's an active order
           },
         },
       })

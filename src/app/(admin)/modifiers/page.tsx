@@ -1,11 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 // Modifier type definitions
 const MODIFIER_TYPES = [
@@ -15,6 +18,14 @@ const MODIFIER_TYPES = [
   { value: 'retail', label: 'Retail', color: '#f59e0b', description: 'Retail item modifiers (sizes, colors, etc.)' },
   { value: 'entertainment', label: 'Entertainment', color: '#f97316', description: 'Entertainment modifiers (add-ons, upgrades)' },
   { value: 'combo', label: 'Combo', color: '#ec4899', description: 'Combo/bundle modifiers' },
+]
+
+// Spirit tier options
+const SPIRIT_TIERS = [
+  { value: 'well', label: 'Well', color: '#71717a', description: 'House/default option' },
+  { value: 'call', label: 'Call', color: '#0ea5e9', description: 'Mid-tier brands' },
+  { value: 'premium', label: 'Premium', color: '#8b5cf6', description: 'Premium brands' },
+  { value: 'top_shelf', label: 'Top Shelf', color: '#f59e0b', description: 'Top shelf brands' },
 ]
 
 interface Modifier {
@@ -33,6 +44,7 @@ interface Modifier {
   childModifierGroupId?: string | null
   commissionType?: string | null
   commissionValue?: number | null
+  spiritTier?: 'well' | 'call' | 'premium' | 'top_shelf' | null
 }
 
 interface ModifierGroup {
@@ -45,6 +57,7 @@ interface ModifierGroup {
   isRequired: boolean
   allowStacking: boolean
   hasOnlineOverride: boolean
+  isSpiritGroup: boolean
   modifiers: Modifier[]
   linkedItems: { id: string; name: string }[]
 }
@@ -84,6 +97,62 @@ export default function ModifiersPage() {
     }
   }
 
+  // Check for circular references in child modifier groups
+  // This prevents infinite recursion in the POS modal (A → B → C → A)
+  const checkCircularReference = useCallback(async (
+    currentGroupId: string | undefined,
+    childGroupIds: string[]
+  ): Promise<{ hasCircle: boolean; path: string[] }> => {
+    if (!currentGroupId || childGroupIds.length === 0) {
+      return { hasCircle: false, path: [] }
+    }
+
+    const visited = new Set<string>()
+    const path: string[] = []
+
+    const checkGroup = async (groupId: string): Promise<boolean> => {
+      if (groupId === currentGroupId) {
+        return true // Found circular reference back to current group
+      }
+      if (visited.has(groupId)) {
+        return false // Already checked this branch
+      }
+
+      visited.add(groupId)
+      path.push(groupId)
+
+      try {
+        // Fetch the group to check its children
+        const response = await fetch(`/api/menu/modifiers/${groupId}`)
+        if (!response.ok) return false
+
+        const group = await response.json()
+        const childIds = (group.modifiers || [])
+          .map((m: { childModifierGroupId?: string | null }) => m.childModifierGroupId)
+          .filter(Boolean) as string[]
+
+        for (const childId of childIds) {
+          if (await checkGroup(childId)) {
+            return true
+          }
+        }
+      } catch {
+        // Ignore fetch errors, just skip this branch
+      }
+
+      path.pop()
+      return false
+    }
+
+    for (const childId of childGroupIds) {
+      if (await checkGroup(childId)) {
+        return { hasCircle: true, path: [...path] }
+      }
+    }
+
+    return { hasCircle: false, path: [] }
+  }, [])
+
   const handleSaveGroup = async (groupData: {
     name: string
     displayName?: string
@@ -93,9 +162,27 @@ export default function ModifiersPage() {
     isRequired: boolean
     allowStacking: boolean
     hasOnlineOverride: boolean
-    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; showOnPOS?: boolean; showOnline?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null }[]
+    isSpiritGroup: boolean
+    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; showOnPOS?: boolean; showOnline?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null; spiritTier?: 'well' | 'call' | 'premium' | 'top_shelf' | null }[]
   }) => {
     try {
+      // Check for circular references before saving
+      const childGroupIds = groupData.modifiers
+        .map(m => m.childModifierGroupId)
+        .filter(Boolean) as string[]
+
+      if (editingGroup && childGroupIds.length > 0) {
+        const { hasCircle, path } = await checkCircularReference(editingGroup.id, childGroupIds)
+        if (hasCircle) {
+          const groupNames = modifierGroups
+            .filter(g => path.includes(g.id))
+            .map(g => g.name)
+            .join(' → ')
+          toast.error(`Circular reference detected: ${groupNames} → ${editingGroup.name}. This would cause infinite loops.`)
+          return
+        }
+      }
+
       const method = editingGroup ? 'PUT' : 'POST'
       const url = editingGroup
         ? `/api/menu/modifiers/${editingGroup.id}`
@@ -111,14 +198,15 @@ export default function ModifiersPage() {
         loadModifiers()
         setShowGroupModal(false)
         setEditingGroup(null)
+        toast.success(`Modifier group ${editingGroup ? 'updated' : 'created'}`)
       } else {
         const errorData = await response.json()
         console.error('API error:', errorData)
-        alert(`Failed to save: ${errorData.error || 'Unknown error'}`)
+        toast.error(`Failed to save: ${errorData.error || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Failed to save modifier group:', error)
-      alert('Failed to save modifier group. Check console for details.')
+      toast.error('Failed to save modifier group')
     }
   }
 
@@ -149,30 +237,25 @@ export default function ModifiersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      {/* Header */}
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.push('/menu')}>
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to Menu
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Modifier Groups"
+        breadcrumbs={[{ label: 'Menu', href: '/menu' }]}
+        actions={
+          <Button
+            variant="primary"
+            onClick={() => {
+              setEditingGroup(null)
+              setShowGroupModal(true)
+            }}
+          >
+            + New Modifier Group
           </Button>
-          <h1 className="text-2xl font-bold text-gray-900">Modifier Groups</h1>
-        </div>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setEditingGroup(null)
-            setShowGroupModal(true)
-          }}
-        >
-          + New Modifier Group
-        </Button>
-      </header>
+        }
+      />
+      <AdminSubNav items={menuSubNav} basePath="/menu" />
 
-      <div className="flex">
+      <div className="flex mt-6">
         {/* Sidebar - Modifier Groups List */}
         <div className="w-80 bg-white border-r min-h-[calc(100vh-73px)] p-4">
           {/* Type Filter */}
@@ -236,6 +319,9 @@ export default function ModifiersPage() {
                             {group.hasOnlineOverride && (
                               <span className="ml-2 text-purple-600" title="Online ordering override enabled">🌐</span>
                             )}
+                            {group.isSpiritGroup && (
+                              <span className="ml-2" title="Spirit Upgrade Group">🥃</span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -294,7 +380,18 @@ export default function ModifiersPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-4 gap-4 mb-6 text-sm">
+                {/* Spirit Group Banner */}
+                {selectedGroup.isSpiritGroup && (
+                  <div className="mb-4 p-3 bg-gradient-to-r from-amber-50 to-purple-50 border border-amber-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">🥃</span>
+                      <span className="font-semibold text-amber-800">Spirit Upgrade Group</span>
+                      <span className="text-sm text-amber-600">- Modifiers organized by tier (Well → Top Shelf)</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-5 gap-4 mb-6 text-sm">
                   <div className="bg-gray-50 p-3 rounded">
                     <p className="text-gray-500">Min Selections</p>
                     <p className="font-semibold">{selectedGroup.minSelections}</p>
@@ -311,6 +408,12 @@ export default function ModifiersPage() {
                     <p className="text-gray-500">Online Override</p>
                     <p className={`font-semibold ${selectedGroup.hasOnlineOverride ? 'text-purple-600' : ''}`}>
                       {selectedGroup.hasOnlineOverride ? 'Enabled' : 'Off'}
+                    </p>
+                  </div>
+                  <div className={`p-3 rounded ${selectedGroup.isSpiritGroup ? 'bg-amber-50' : 'bg-gray-50'}`}>
+                    <p className="text-gray-500">Spirit Group</p>
+                    <p className={`font-semibold ${selectedGroup.isSpiritGroup ? 'text-amber-600' : ''}`}>
+                      {selectedGroup.isSpiritGroup ? 'Yes' : 'No'}
                     </p>
                   </div>
                 </div>
@@ -332,6 +435,17 @@ export default function ModifiersPage() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 flex-wrap">
+                            {/* Spirit Tier Badge */}
+                            {selectedGroup.isSpiritGroup && mod.spiritTier && (
+                              <span
+                                className="text-xs px-2 py-0.5 rounded text-white font-medium"
+                                style={{
+                                  backgroundColor: SPIRIT_TIERS.find(t => t.value === mod.spiritTier)?.color || '#71717a'
+                                }}
+                              >
+                                {SPIRIT_TIERS.find(t => t.value === mod.spiritTier)?.label || mod.spiritTier}
+                              </span>
+                            )}
                             {mod.isDefault && (
                               <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded">
                                 Default
@@ -457,7 +571,8 @@ function ModifierGroupModal({
     isRequired: boolean
     allowStacking: boolean
     hasOnlineOverride: boolean
-    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; showOnPOS?: boolean; showOnline?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null }[]
+    isSpiritGroup: boolean
+    modifiers: { id?: string; name: string; price: number; upsellPrice?: number | null; allowedPreModifiers?: string[] | null; extraPrice?: number | null; extraUpsellPrice?: number | null; isDefault?: boolean; isActive?: boolean; showOnPOS?: boolean; showOnline?: boolean; childModifierGroupId?: string | null; commissionType?: string | null; commissionValue?: number | null; spiritTier?: 'well' | 'call' | 'premium' | 'top_shelf' | null }[]
   }) => void
   onClose: () => void
 }) {
@@ -469,6 +584,7 @@ function ModifierGroupModal({
   const [isRequired, setIsRequired] = useState(group?.isRequired || false)
   const [allowStacking, setAllowStacking] = useState(group?.allowStacking || false)
   const [hasOnlineOverride, setHasOnlineOverride] = useState(group?.hasOnlineOverride || false)
+  const [isSpiritGroup, setIsSpiritGroup] = useState(group?.isSpiritGroup || false)
   const [modifiers, setModifiers] = useState<{
     id?: string
     name: string
@@ -484,6 +600,7 @@ function ModifierGroupModal({
     childModifierGroupId?: string | null
     commissionType?: string | null
     commissionValue?: number | null
+    spiritTier?: 'well' | 'call' | 'premium' | 'top_shelf' | null
   }[]>(
     group?.modifiers.map(m => ({
       id: m.id,
@@ -500,6 +617,7 @@ function ModifierGroupModal({
       childModifierGroupId: m.childModifierGroupId,
       commissionType: m.commissionType,
       commissionValue: m.commissionValue,
+      spiritTier: m.spiritTier,
     })) || []
   )
 
@@ -507,7 +625,7 @@ function ModifierGroupModal({
   const availableChildGroups = allGroups.filter(g => g.id !== group?.id)
 
   const addModifier = () => {
-    setModifiers([...modifiers, { name: '', price: 0, upsellPrice: null, allowedPreModifiers: null, extraPrice: null, extraUpsellPrice: null, isDefault: false, isActive: true, showOnPOS: true, showOnline: true, childModifierGroupId: null, commissionType: null, commissionValue: null }])
+    setModifiers([...modifiers, { name: '', price: 0, upsellPrice: null, allowedPreModifiers: null, extraPrice: null, extraUpsellPrice: null, isDefault: false, isActive: true, showOnPOS: true, showOnline: true, childModifierGroupId: null, commissionType: null, commissionValue: null, spiritTier: isSpiritGroup ? 'well' : null }])
   }
 
   const togglePreModifier = (index: number, prefix: string) => {
@@ -551,6 +669,7 @@ function ModifierGroupModal({
       isRequired,
       allowStacking,
       hasOnlineOverride,
+      isSpiritGroup,
       modifiers: modifiers.filter(m => m.name.trim()),
     }
     console.log('Saving modifier group:', dataToSave)
@@ -800,6 +919,52 @@ function ModifierGroupModal({
             )}
           </div>
 
+          {/* Spirit Group Section */}
+          <div className="border rounded-lg overflow-hidden">
+            <div
+              className={`p-3 flex items-center gap-3 cursor-pointer transition-colors ${
+                isSpiritGroup ? 'bg-amber-50 border-b border-amber-200' : 'bg-gray-50 hover:bg-gray-100'
+              }`}
+              onClick={() => setIsSpiritGroup(!isSpiritGroup)}
+            >
+              <input
+                type="checkbox"
+                checked={isSpiritGroup}
+                onChange={e => setIsSpiritGroup(e.target.checked)}
+                className="w-4 h-4 accent-amber-600"
+                onClick={e => e.stopPropagation()}
+              />
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🥃</span>
+                <div>
+                  <span className="text-sm font-medium">Spirit Upgrade Group</span>
+                  <p className="text-xs text-gray-500">
+                    Enable tier-based spirit selection (Well, Call, Premium, Top Shelf)
+                  </p>
+                </div>
+              </div>
+            </div>
+            {isSpiritGroup && (
+              <div className="p-3 bg-amber-50/50 text-sm">
+                <p className="text-amber-800">
+                  <strong>How it works:</strong> Assign each modifier below a spirit tier.
+                  In the POS, bartenders can quickly upgrade drinks by tier (e.g., &quot;Make it Premium&quot;).
+                </p>
+                <div className="flex gap-2 mt-2">
+                  {SPIRIT_TIERS.map(tier => (
+                    <span
+                      key={tier.value}
+                      className="px-2 py-1 rounded text-xs text-white"
+                      style={{ backgroundColor: tier.color }}
+                    >
+                      {tier.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium">Modifiers</label>
@@ -867,6 +1032,29 @@ function ModifierGroupModal({
                       </svg>
                     </button>
                   </div>
+                  {/* Spirit Tier Selection - only show when spirit group is enabled */}
+                  {isSpiritGroup && (
+                    <div className="flex items-center gap-2 mb-2 p-2 bg-amber-50 rounded border border-amber-200">
+                      <span className="text-amber-700 text-sm font-medium whitespace-nowrap">Spirit Tier:</span>
+                      <div className="flex gap-1 flex-1">
+                        {SPIRIT_TIERS.map(tier => (
+                          <button
+                            key={tier.value}
+                            type="button"
+                            onClick={() => updateModifier(index, 'spiritTier', tier.value)}
+                            className={`flex-1 px-2 py-1.5 rounded text-xs font-medium transition-all ${
+                              mod.spiritTier === tier.value
+                                ? 'text-white shadow-md scale-105'
+                                : 'bg-white text-gray-600 border hover:bg-gray-50'
+                            }`}
+                            style={mod.spiritTier === tier.value ? { backgroundColor: tier.color } : {}}
+                          >
+                            {tier.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {/* Prefix options row */}
                   <div className="flex items-center gap-4 mb-2 text-sm">
                     <span className="text-gray-500 whitespace-nowrap">Prefixes:</span>

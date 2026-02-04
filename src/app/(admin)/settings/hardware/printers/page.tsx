@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import PrintSettingsEditor from '@/components/hardware/PrintSettingsEditor'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 import { PrinterSettingsEditor } from '@/components/hardware/PrinterSettingsEditor'
-import type { PrintTemplateSettings } from '@/types/print-settings'
-import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print-settings'
+import { ReceiptVisualEditor, type PrintTemplateSettings as VisualEditorSettings } from '@/components/hardware/ReceiptVisualEditor'
 import type { PrinterSettings } from '@/types/printer-settings'
+import type { TemplateType } from '@/types/routing'
+import type { GlobalReceiptSettings } from '@/types/receipt-settings'
+import { DEFAULT_GLOBAL_RECEIPT_SETTINGS } from '@/types/receipt-settings'
 
 interface Printer {
   id: string
@@ -15,7 +18,7 @@ interface Printer {
   model: string | null
   ipAddress: string
   port: number
-  printerRole: 'receipt' | 'kitchen' | 'bar'
+  printerRole: 'receipt' | 'kitchen' | 'bar' | 'entertainment'
   isDefault: boolean
   paperWidth: number
   supportsCut: boolean
@@ -23,7 +26,7 @@ interface Printer {
   lastPingOk: boolean
   lastPingAt: string | null
   sortOrder: number
-  printSettings: PrintTemplateSettings | PrinterSettings | null
+  printSettings: VisualEditorSettings | PrinterSettings | null
 }
 
 interface PrinterFormData {
@@ -32,7 +35,7 @@ interface PrinterFormData {
   model: string
   ipAddress: string
   port: number
-  printerRole: 'receipt' | 'kitchen' | 'bar'
+  printerRole: 'receipt' | 'kitchen' | 'bar' | 'entertainment'
   isDefault: boolean
   paperWidth: number
   supportsCut: boolean
@@ -60,8 +63,9 @@ export default function PrintersPage() {
   const [error, setError] = useState('')
   const [testingId, setTestingId] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<{ id: string; success: boolean; message: string } | null>(null)
-  const [settingsPrinter, setSettingsPrinter] = useState<Printer | null>(null)
   const [hardwareSettingsPrinter, setHardwareSettingsPrinter] = useState<Printer | null>(null)
+  const [visualEditorPrinter, setVisualEditorPrinter] = useState<Printer | null>(null)
+  const [globalReceiptSettings, setGlobalReceiptSettings] = useState<GlobalReceiptSettings>(DEFAULT_GLOBAL_RECEIPT_SETTINGS)
 
   const fetchPrinters = useCallback(async () => {
     try {
@@ -77,9 +81,25 @@ export default function PrintersPage() {
     }
   }, [])
 
+  // Fetch global receipt settings from location
+  const fetchGlobalSettings = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.settings?.receiptDisplay) {
+          setGlobalReceiptSettings(data.settings.receiptDisplay)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch global settings:', error)
+    }
+  }, [])
+
   useEffect(() => {
     fetchPrinters()
-  }, [fetchPrinters])
+    fetchGlobalSettings()
+  }, [fetchPrinters, fetchGlobalSettings])
 
   const handleAddPrinter = () => {
     setEditingPrinter(null)
@@ -219,25 +239,6 @@ export default function PrintersPage() {
     }
   }
 
-  const handleSavePrintSettings = async (settings: PrintTemplateSettings) => {
-    if (!settingsPrinter) return
-
-    try {
-      const res = await fetch(`/api/hardware/printers/${settingsPrinter.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ printSettings: settings }),
-      })
-
-      if (res.ok) {
-        setSettingsPrinter(null)
-        fetchPrinters()
-      }
-    } catch (error) {
-      console.error('Failed to save print settings:', error)
-    }
-  }
-
   const handleSaveHardwareSettings = async (settings: PrinterSettings) => {
     if (!hardwareSettingsPrinter) return
 
@@ -257,6 +258,39 @@ export default function PrintersPage() {
     }
   }
 
+  const handleSaveVisualEditorSettings = async (settings: VisualEditorSettings) => {
+    if (!visualEditorPrinter) return
+
+    try {
+      const res = await fetch(`/api/hardware/printers/${visualEditorPrinter.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ printSettings: settings }),
+      })
+
+      if (res.ok) {
+        setVisualEditorPrinter(null)
+        fetchPrinters()
+      }
+    } catch (error) {
+      console.error('Failed to save visual editor settings:', error)
+    }
+  }
+
+  // Map printer role to template type for visual editor
+  const getTemplateType = (role: string): TemplateType => {
+    switch (role) {
+      case 'bar':
+        return 'BAR_TICKET'
+      case 'receipt':
+        return 'STANDARD_KITCHEN' // receipts use standard format
+      case 'entertainment':
+        return 'ENTERTAINMENT_TICKET'
+      default:
+        return 'STANDARD_KITCHEN'
+    }
+  }
+
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
       case 'receipt':
@@ -265,6 +299,8 @@ export default function PrintersPage() {
         return 'bg-orange-100 text-orange-800'
       case 'bar':
         return 'bg-purple-100 text-purple-800'
+      case 'entertainment':
+        return 'bg-green-100 text-green-800'
       default:
         return 'bg-gray-100 text-gray-800'
     }
@@ -272,32 +308,25 @@ export default function PrintersPage() {
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
-      <div className="mx-auto max-w-4xl">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/settings/hardware"
-              className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              <span>Hardware</span>
-            </Link>
-            <h1 className="text-2xl font-bold text-gray-900">Printers</h1>
-          </div>
+      <AdminPageHeader
+        title="Printers"
+        subtitle="Configure receipt and kitchen printers"
+        breadcrumbs={[
+          { label: 'Settings', href: '/settings' },
+          { label: 'Hardware', href: '/settings/hardware' },
+        ]}
+        actions={
           <button
             onClick={handleAddPrinter}
             className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
           >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Printer
+            + Add Printer
           </button>
-        </div>
+        }
+      />
+      <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
 
+      <div className="mx-auto max-w-4xl">
         {/* Printers List */}
         {loading ? (
           <div className="flex h-64 items-center justify-center rounded-xl bg-white shadow">
@@ -424,10 +453,10 @@ export default function PrintersPage() {
                     Text & Color
                   </button>
                   <button
-                    onClick={() => setSettingsPrinter(printer)}
-                    className="rounded bg-purple-100 px-3 py-1.5 text-sm font-medium text-purple-700 hover:bg-purple-200"
+                    onClick={() => setVisualEditorPrinter(printer)}
+                    className="rounded bg-cyan-100 px-3 py-1.5 text-sm font-medium text-cyan-700 hover:bg-cyan-200"
                   >
-                    Template Settings
+                    Visual Editor
                   </button>
                 </div>
               </div>
@@ -487,7 +516,7 @@ export default function PrintersPage() {
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        printerRole: e.target.value as 'receipt' | 'kitchen' | 'bar',
+                        printerRole: e.target.value as 'receipt' | 'kitchen' | 'bar' | 'entertainment',
                       })
                     }
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-blue-500 focus:outline-none"
@@ -495,6 +524,7 @@ export default function PrintersPage() {
                     <option value="kitchen">Kitchen</option>
                     <option value="bar">Bar</option>
                     <option value="receipt">Receipt</option>
+                    <option value="entertainment">Entertainment</option>
                   </select>
                 </div>
               </div>
@@ -591,21 +621,6 @@ export default function PrintersPage() {
         </div>
       )}
 
-      {/* Print Settings Modal */}
-      {settingsPrinter && (
-        <PrintSettingsEditor
-          settings={
-            (settingsPrinter.printSettings as PrintTemplateSettings) ||
-            (settingsPrinter.printerRole === 'receipt'
-              ? DEFAULT_RECEIPT_TEMPLATE
-              : DEFAULT_KITCHEN_TEMPLATE)
-          }
-          printerRole={settingsPrinter.printerRole}
-          onSave={handleSavePrintSettings}
-          onCancel={() => setSettingsPrinter(null)}
-        />
-      )}
-
       {/* Hardware/Printer Settings Modal */}
       {hardwareSettingsPrinter && (
         <PrinterSettingsEditor
@@ -615,6 +630,23 @@ export default function PrintersPage() {
           onSave={handleSaveHardwareSettings}
           onClose={() => setHardwareSettingsPrinter(null)}
         />
+      )}
+
+      {/* Visual Receipt Editor Modal */}
+      {visualEditorPrinter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="max-h-[90vh] w-full max-w-6xl overflow-auto rounded-2xl">
+            <ReceiptVisualEditor
+              templateType={getTemplateType(visualEditorPrinter.printerRole)}
+              printerType={visualEditorPrinter.printerType}
+              printerRole={visualEditorPrinter.printerRole}
+              initialSettings={visualEditorPrinter.printSettings as unknown as VisualEditorSettings | undefined}
+              globalSettings={globalReceiptSettings}
+              onSave={handleSaveVisualEditorSettings}
+              onCancel={() => setVisualEditorPrinter(null)}
+            />
+          </div>
+        </div>
       )}
     </div>
   )

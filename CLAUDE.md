@@ -79,16 +79,45 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
 
 The database is a local SQLite file stored at `prisma/pos.db`. This was migrated from PostgreSQL for easier local development and deployment.
 
-### ⚠️ IMPORTANT: Protecting Your Data
+### 🚨 CRITICAL: Protecting Your Data
 
-**NEVER run these commands without backing up first:**
-- `npm run reset` - DELETES ALL DATA and reseeds
-- `npm run db:push` - Can cause data loss if schema changes are destructive
-- `npm run db:migrate` - May drop tables/columns
+> **DATA LOSS INCIDENT:** During development, manually-added modifier groups and hardware
+> were lost when the database was reset. Custom data not in `seed.ts` will be DELETED
+> by reset commands. This is unrecoverable without backups.
 
-**ALWAYS backup before schema changes:**
+**🔴 DESTRUCTIVE COMMANDS - CAN DELETE ALL DATA:**
+
+| Command | Risk Level | What It Does |
+|---------|------------|--------------|
+| `npm run reset` | 🔴 EXTREME | **DELETES EVERYTHING** - All tables wiped, re-seeded from scratch |
+| `npm run db:push` | 🔴 HIGH | Can drop tables/columns if schema changed |
+| `npm run db:migrate` | 🟡 MEDIUM | May drop columns, usually safer than push |
+| `prisma migrate reset` | 🔴 EXTREME | Same as npm run reset |
+
+**⚠️ BEFORE ANY SCHEMA CHANGE:**
 ```bash
-npm run db:backup   # Creates timestamped backup in prisma/backups/
+# Step 1: ALWAYS backup first
+npm run db:backup
+
+# Step 2: Verify backup was created
+ls -la prisma/backups/
+
+# Step 3: THEN make your changes
+npm run db:push  # or db:migrate
+```
+
+**If you added data via the UI (modifiers, printers, etc.):**
+- That data is NOT in `seed.ts`
+- Running `reset` will DELETE it permanently
+- Either: 1) Add it to seed.ts, or 2) NEVER run reset
+
+**Recovery from data loss:**
+```bash
+# List available backups
+npm run db:list-backups
+
+# Restore from a backup (OVERWRITES current database)
+cp prisma/backups/pos-YYYYMMDD-HHMMSS.db prisma/pos.db
 ```
 
 ### Safe Database Commands
@@ -125,6 +154,26 @@ npm run db:seed
 # 🔴 DANGER: Reset database (DELETES EVERYTHING, auto-backs up first)
 npm run reset
 ```
+
+### Production Database Rules (MANDATORY)
+
+When we go to production, these rules are NON-NEGOTIABLE:
+
+| Rule | Enforcement |
+|------|-------------|
+| No `reset` command | Blocked by environment check |
+| No `db:push` | Migrations only in production |
+| Backup before migrate | Automatic pre-migration backup |
+| Test migrations first | Staging environment required |
+| Soft deletes only | Never hard delete, use `deletedAt` |
+| PostgreSQL required | SQLite is dev-only |
+
+**Why PostgreSQL for production:**
+- ACID compliance (atomic transactions)
+- Point-in-time recovery (restore to any second)
+- Read replicas for backup
+- Better concurrent write handling
+- Production-grade reliability
 
 ### Backup Location
 
@@ -295,6 +344,7 @@ Dev server runs at: http://localhost:3000
 | `/reports/tips` | Tips report (tip shares, banked tips) |
 | `/customers` | Customer management |
 | `/reservations` | Reservation system |
+| `/ingredients` | Food inventory (base ingredients + prep items) |
 | `/inventory` | Inventory tracking |
 | `/liquor-builder` | Liquor/spirit recipe builder |
 
@@ -577,6 +627,8 @@ gwi-pos/
 - `/api/menu/items/[id]` - Update/delete items
 - `/api/menu/modifiers` - CRUD for modifier groups
 - `/api/menu/modifiers/[id]` - Single modifier group operations
+- `/api/orders/[id]/items` - POST to atomically append items (prevents race conditions)
+- `/api/orders/[id]/send` - POST to send order to kitchen
 
 ### Response Format
 ```typescript
@@ -618,6 +670,75 @@ gwi-pos/
 
 **Category**:
 - `categoryType`: Determines item builder and filtering behavior
+
+## Inventory & Recipe Costing
+
+### Modifier Instruction Multipliers (Lite, Extra, No Logic)
+
+The inventory calculation engine supports instruction-based multipliers for modifiers,
+allowing precise tracking of ingredient usage based on how orders are customized.
+
+**Multiplier Defaults (configurable per-location in InventorySettings):**
+| Instruction | Multiplier | Example |
+|-------------|------------|---------|
+| NO, HOLD, REMOVE | 0.0 | "No Onions" - skip deduction |
+| LITE, LIGHT, EASY | 0.5 | "Lite Mayo" - half portion |
+| NORMAL, REGULAR | 1.0 | Standard amount |
+| EXTRA, DOUBLE | 2.0 | "Extra Cheese" - double portion |
+| TRIPLE, 3X | 3.0 | "Triple Buffalo" - triple portion |
+
+**The "NO" Logic (Base Recipe Intelligence):**
+When a customer orders "No Onions" on a Burger that includes onions in the base recipe,
+the system skips the onion deduction entirely. This prevents false "shrinkage" in variance reports.
+
+**Key Files:**
+- `src/lib/inventory-calculations.ts` - `getModifierMultiplier()`, `isRemovalInstruction()`
+- `src/app/api/inventory/settings/route.ts` - Location settings for custom multipliers
+- Schema: `OrderItemModifier.preModifier` - stores "no", "lite", "extra", etc.
+- Schema: `InventorySettings.multiplierLite/Extra/Triple` - configurable multipliers
+
+**API Example - Custom Multipliers:**
+```json
+POST /api/inventory/settings
+{
+  "locationId": "xxx",
+  "multiplierLite": 0.75,   // 75% instead of 50%
+  "multiplierExtra": 1.5    // 150% instead of 200%
+}
+```
+
+### Auto-Deduction on Order Paid/Voided
+
+Inventory is automatically deducted when orders are paid or items are voided (if food was made).
+
+**Two Entry Points:**
+
+| Trigger | Function | Transaction Type | Description |
+|---------|----------|------------------|-------------|
+| Order Paid | `deductInventoryForOrder()` | `sale` | Deducts all recipe ingredients when order is closed |
+| Item Voided/Comped | `deductInventoryForVoidedItem()` | `waste` | Deducts ingredients + creates WasteLogEntry |
+
+**Waste Void Reasons (deduction required):**
+- `kitchen_error` - Kitchen made wrong item
+- `customer_disliked` - Customer didn't like it (food was served)
+- `wrong_order` - Server rang in wrong item
+- `remade` - Item had to be remade
+- `quality_issue` - Food didn't meet quality standards
+
+**Fire-and-Forget Pattern:**
+Deductions run asynchronously after payment/void to not block the POS:
+```typescript
+deductInventoryForOrder(orderId, employeeId).catch(err => {
+  console.error('Background inventory deduction failed:', err)
+})
+```
+
+**Key Files:**
+- `src/lib/inventory-calculations.ts` - `deductInventoryForOrder()`, `deductInventoryForVoidedItem()`
+- `src/app/api/orders/[id]/pay/route.ts` - Hook after payment (line ~477)
+- `src/app/api/orders/[id]/comp-void/route.ts` - Hook after void/comp
+
+**Full Code Reference:** `docs/inventory-auto-deduction-code.txt`
 
 ## Liquor Builder
 
@@ -806,6 +927,328 @@ model DeviceSession {
 
 ## Recent Changes
 
+### Quick Stock Adjustment with Cost Tracking (Skill 127 - Feb 2026)
+Manager-facing page for rapid inventory adjustments with full audit trail.
+
+**Features:**
+- Quick Stock Adjust page at `/inventory/quick-adjust`
+- Touch-friendly +/- controls, collapsed categories
+- Double verification: type "VERIFY" + employee PIN
+- Staged changes (not saved until verified)
+- Color-coded stock levels (critical/low/ok/good)
+
+**New Schema: `IngredientStockAdjustment`**
+- Tracks all stock changes with cost data
+- `unitCost`, `totalCostImpact` captured at adjustment time
+- Links to employee for accountability
+- Supports types: manual, count, waste, transfer, receiving
+
+**New API: `/api/auth/verify-pin`**
+- Verifies employee PIN without full login
+- Returns employee ID for attribution
+
+**Socket Dispatch:**
+- `dispatchInventoryAdjustment()` - Bulk notification
+- `dispatchStockLevelChange()` - Single item changes
+
+**Key Files:**
+- `src/app/(admin)/inventory/quick-adjust/page.tsx` - Quick adjust UI
+- `src/app/api/inventory/stock-adjust/route.ts` - Enhanced API
+- `src/app/api/auth/verify-pin/route.ts` - PIN verification
+- `src/lib/socket-dispatch.ts` - Socket functions
+
+### Ingredient Library Refactor (Skill 204 - Feb 2026)
+Major refactor of ingredient library to improve maintainability, performance, and UX.
+
+**Component Size Reduction:**
+- Main component: **1,091 → 419 lines (61% smaller)**
+- Logic extracted to `useIngredientLibrary` hook (487 lines)
+- UI split into `BulkActionBar` (108 lines) and `DeletedItemsPanel` (225 lines)
+
+**Performance Improvements:**
+- Race protection with `loadRequestIdRef` prevents stale data
+- Debounced search (300ms) reduces re-renders by ~80%
+- Bulk API endpoint (`bulk-parent`) reduces N calls → 1 (90% reduction)
+- Separate static vs dynamic data loading (~70% reduction in reloads)
+
+**UX Enhancements:**
+- "Restore to Previous Location" quick button (⏮️)
+- Two-step wizard for custom restore
+- Auto-clear selection after mutations
+- Consistent toast notifications (replaced all `alert()` calls)
+
+**Accessibility:**
+- `aria-label` on all inputs and buttons
+- `aria-checked="mixed"` on indeterminate checkboxes
+- `aria-pressed` on toggle buttons
+- `aria-expanded` on collapsible panels
+
+**Key Files:**
+- `src/hooks/useIngredientLibrary.ts` - All business logic
+- `src/hooks/useDebounce.ts` - Search debouncing
+- `src/components/ingredients/BulkActionBar.tsx` - Bulk operations UI
+- `src/components/ingredients/DeletedItemsPanel.tsx` - Restore workflow
+- `src/app/api/ingredients/bulk-parent/route.ts` - Bulk move endpoint
+
+**Skill Doc:** `docs/skills/204-INGREDIENT-LIBRARY-REFACTOR.md`
+
+### Ingredient Component Improvements (Skill 205 - Feb 2026)
+Component-specific enhancements for PrepItemEditor, InventoryItemEditor, and IngredientHierarchy.
+
+**Shared Cost Hook:**
+- Created `useIngredientCost` hook (83 lines)
+- Eliminates 45 lines of duplicate logic in PrepItemEditor
+- Consistent cost calculation across components
+
+**Recipe Cost Aggregation:**
+- New `/api/ingredients/[id]/recipe-cost` endpoint
+- Reduces N fetches → 1 fetch (90% reduction for 10-component recipes)
+- Server-side calculation for accuracy
+
+**Hierarchy Caching:**
+- Created `useHierarchyCache` hook with 5-minute TTL
+- Instant expansion for recently-viewed items
+- Reduces unnecessary API calls by ~85%
+
+**Error Handling:**
+- Recipe component updates now rollback on failure
+- Optimistic UI updates with automatic recovery
+- User never sees broken state
+
+**Accessibility:**
+- Added `aria-label` to all numeric inputs
+- Screen reader friendly
+
+**Key Files:**
+- `src/hooks/useIngredientCost.ts` - Shared cost calculation
+- `src/hooks/useHierarchyCache.ts` - LRU cache with TTL
+- `src/app/api/ingredients/[id]/recipe-cost/route.ts` - Aggregated cost API
+- `src/components/ingredients/PrepItemEditor.tsx` - Uses shared hook
+- `src/components/ingredients/InventoryItemEditor.tsx` - Aggregated API + error handling
+- `src/components/ingredients/IngredientHierarchy.tsx` - Caching integration
+
+**Skill Doc:** `docs/skills/205-INGREDIENT-COMPONENT-IMPROVEMENTS.md`
+
+### Explicit Input → Output Model (Skill 126 - Feb 2026)
+Major enhancement to prep item tracking with explicit input/output transformation model.
+
+**The Problem (Before):**
+- Simple `portionSize` implied 1:1 relationship
+- No way to capture bulk-to-bulk transformations (6 oz raw → 2 oz cooked)
+- Manual yield calculations
+
+**The Solution (After):**
+Explicit Input → Output model with auto-calculated yield and cost:
+```
+INPUT: 6 oz of Raw Chicken
+           ↓
+OUTPUT: 2 oz of Shredded Chicken (33% yield, $0.75/oz)
+```
+
+**Transformation Types:**
+| Type | Example |
+|------|---------|
+| Bulk → Bulk | 6 oz Raw Chicken → 2 oz Shredded (33% yield) |
+| Bulk → Count | 1 lb Cheese → 16 slices |
+| Count → Count | 1 Dough Ball → 1 Pizza Crust |
+
+**New Schema Fields:**
+```prisma
+inputQuantity      Decimal?  // How much parent consumed (e.g., 6)
+inputUnit          String?   // Unit for input (e.g., "oz")
+outputQuantity     Decimal?  // How much produced (e.g., 2)
+outputUnit         String?   // Unit for output (e.g., "oz" or "each")
+recipeYieldQuantity Decimal? // For inventory items: batch yield
+recipeYieldUnit    String?   // Unit for recipe yield
+```
+
+**Split Editor Architecture:**
+- `IngredientEditorModal.tsx` - Thin wrapper with type selection
+- `PrepItemEditor.tsx` - Input/output fields, cost preview, validation
+- `InventoryItemEditor.tsx` - Delivery size, recipe management
+
+**New Unit System (`src/lib/units.ts`):**
+- 50+ units organized by category (count, weight, liquid, cooking, portion, package)
+- Precision hints ('whole' vs 'decimal')
+- `getUnitPrecision()`, `getSuggestedUnits()`, `areUnitsCompatible()`
+
+**New Conversion System (`src/lib/unit-conversions.ts`):**
+- Weight conversions (oz, lb, g, kg → grams base)
+- Volume conversions (ml, cups, gallons, etc. → ml base)
+- `convert()`, `calculateYield()`, `calculateCostPerOutputUnit()`
+
+**Cost API:** `GET /api/ingredients/[id]/cost`
+- Returns `costPerUnit`, `costUnit`, `costSource` (parent/recipe/purchase)
+
+**Hierarchy API:** `GET /api/ingredients/[id]/hierarchy`
+- Returns full hierarchy: inventoryItem, recipeIngredients[], prepItems[]
+
+**HierarchyView Component** (`src/components/ingredients/HierarchyView.tsx`):
+- Tree view: Inventory item with recipe ingredients above, prep items below
+- Details panel: Shows transformation, stock levels, daily count settings
+- Stock badges: Color-coded (green/yellow/red) based on thresholds
+- Actions: Add prep item, edit item, generate usage report (future)
+
+**Key Files:**
+- `src/lib/units.ts` - Unit definitions and helpers
+- `src/lib/unit-conversions.ts` - Conversion functions
+- `src/components/ingredients/PrepItemEditor.tsx` - Prep item editor
+- `src/components/ingredients/InventoryItemEditor.tsx` - Inventory editor
+- `src/app/api/ingredients/[id]/cost/route.ts` - Cost calculation API
+
+### Ingredient Library Enhancements (Feb 2026)
+UX improvements to the Food Inventory (`/ingredients`) page.
+
+**Hierarchy View Checkbox Selection:**
+- Added checkbox selection to hierarchy view (was only available in list view)
+- Category-level "Select All" with indeterminate state for partial selections
+- Recursive ID collection for nested prep items under base ingredients
+- Changed default view from 'list' to 'hierarchy'
+
+**Key Files:**
+- `src/components/ingredients/IngredientHierarchy.tsx` - Checkbox selection support
+- `src/components/ingredients/IngredientLibrary.tsx` - Default view, checkbox props
+
+**API Fields Used:**
+- `Ingredient.isDailyCountItem` - Include in morning prep count
+- `Ingredient.inputQuantity/inputUnit` - Input transformation
+- `Ingredient.outputQuantity/outputUnit` - Output transformation
+
+### FloorPlanHome Stale Closure & Position Restoration Fixes (Feb 2026)
+Fixed intermittent seat count display issues and race conditions when combining tables.
+
+**Root Cause:**
+Multiple useCallback hooks in `FloorPlanHome.tsx` were capturing stale `tables` state in their closures. When tables were combined and data refreshed, callbacks still referenced old data, causing:
+- Incorrect seat counts (e.g., showing 5 seats instead of 13 for combined 8+5 tables)
+- Stale position data being sent to combine API
+
+**Solution - tablesRef Pattern:**
+```typescript
+// Create a ref that always points to latest tables data
+const tablesRef = useRef(tables)
+tablesRef.current = tables
+
+// In useCallback functions, use tablesRef.current instead of tables
+const handleTableCombine = useCallback(async (...) => {
+  const allTablesData = tablesRef.current.map(t => ({...}))  // Always fresh
+  // ...
+}, [locationId, employeeId])  // No 'tables' in deps - using ref instead
+```
+
+**Callbacks Fixed:**
+| Callback | Issue | Fix |
+|----------|-------|-----|
+| `handleTableCombine` | Stale position data sent to API | Use `tablesRef.current.map()` |
+| `handleConfirmVirtualCombine` | Stale virtual group status | Use `tablesRef.current.find()` |
+| `handleSeatTap` | Stale combined table detection | Use `tablesRef.current.find()` |
+| `handlePointerMove` | Stale hit detection during drag | Use `for (const t of tablesRef.current)` |
+| `handleResetToDefault` | Data not awaited before UI update | Added `await loadFloorPlanData()` |
+
+**Key Files:**
+- `src/components/floor-plan/FloorPlanHome.tsx` - All stale closure fixes
+
+**When to Use This Pattern:**
+Use `tablesRef.current` (or similar refs) instead of state in `useCallback` when:
+1. The callback is frequently recreated due to state changes
+2. You need the latest state value at execution time, not closure time
+3. The callback makes API calls or calculates based on current state
+
+### Menu Builder - Item-Owned Modifier Groups with Child Modifiers (Skill 123)
+Single-screen menu builder where all modifier groups are **item-owned** (not shared between items).
+
+**Architecture:**
+- Left Panel: Hierarchy tree showing items and nested structure
+- Center Panel: ItemEditor for quick item details with compact group display
+- Right Panel: ModifiersPanel for detailed modifier group editing
+
+**Child Modifier Groups (Unlimited Depth):**
+```
+MenuItem
+  └─ ModifierGroup (menuItemId = item.id)
+       └─ Modifier
+            └─ childModifierGroup → ModifierGroup (also item-owned)
+                 └─ Modifier → childModifierGroup → ...
+```
+
+**Key Features:**
+- Click [+] on any modifier to create child group
+- Recursive rendering in ModifiersPanel with indentation
+- Pre-modifier toggles: No, Lite, Extra on each modifier
+- Ingredient linking for inventory tracking
+- Legacy group cleanup section (for old shared groups)
+
+**API Changes:**
+- `GET /api/menu/items/[id]/modifier-groups` - Returns nested child groups recursively
+- `POST /api/menu/items/[id]/modifier-groups` - New `parentModifierId` field for child groups
+
+**Key Files:**
+- `src/components/menu-builder/ModifiersPanel.tsx` - Full group editor with recursive modifiers
+- `src/components/menu-builder/ItemEditor.tsx` - Compact group display
+- `src/app/api/menu/items/[id]/modifier-groups/route.ts` - Nested group support
+
+**Skill Doc:** `docs/skills/123-MENU-BUILDER-CHILD-MODIFIERS.md`
+
+### Remote Void Approval via SMS (Skill 122)
+SMS-based manager approval for voids/comps when no manager is present:
+
+**Flow:**
+1. Server opens CompVoidModal → Selects action → Enters reason
+2. Clicks "Request Remote Manager Approval"
+3. Selects manager from dropdown (managers with void permission + phone)
+4. SMS sent to manager with void details + approval link
+5. Manager approves via SMS reply ("YES") or mobile web page
+6. 6-digit approval code generated (5-min expiry)
+7. Code auto-fills on POS via socket → Void completes
+
+**Components:**
+- `RemoteVoidApprovalModal` - POS modal for requesting approval
+- `/approve-void/[token]` - Mobile-friendly approval page
+- `CompVoidModal` - Added "Request Remote Manager Approval" button
+
+**API Endpoints:**
+- `GET /api/voids/remote-approval/managers` - List managers with phone
+- `POST /api/voids/remote-approval/request` - Create request + send SMS
+- `GET /api/voids/remote-approval/[id]/status` - Poll status
+- `POST /api/voids/remote-approval/validate-code` - Validate 6-digit code
+- `POST /api/webhooks/twilio/sms` - Twilio webhook for SMS replies
+- `GET/POST /api/voids/remote-approval/[token]/*` - Web approval endpoints
+
+**Twilio Integration:**
+- `src/lib/twilio.ts` - SMS sending, signature validation, code generation
+- Requires `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` env vars
+
+**Socket Events:**
+- `void:approval-update` - Notifies POS when manager approves/rejects
+- `dispatchVoidApprovalUpdate()` in `src/lib/socket-dispatch.ts`
+
+### Spirit Tier Admin Management (Skill 118)
+Admin UI for configuring spirit upgrade groups in `/modifiers`:
+
+**Features:**
+- "Spirit Upgrade Group" toggle on modifier groups
+- Per-modifier tier assignment: Well, Call, Premium, Top Shelf
+- Visual tier badges with color coding
+- API returns `isSpiritGroup` and `spiritTier` fields
+
+### BartenderView Personalization (Skill 119)
+Enhanced customization for bartender POS interface:
+
+**Quick Selection:**
+- Spirit tier buttons (Call | Prem | Top) on cocktail items
+- Pour size buttons (Shot | Dbl | Tall | Shrt) on liquor items
+- One-tap upgrade without full modifier modal
+
+**Item Effects:**
+- Font styles: normal, bold, italic, boldItalic
+- Font families: default, rounded, mono, serif, handwritten
+- Animations: pulse, shimmer, rainbow, neon
+- Glow and border color customization
+
+**Settings:**
+- Scrolling vs pagination toggle for items
+- Per-employee localStorage persistence
+- Long-press Items button to access settings
+
 ### POS Personalization - Category & Menu Item Customization
 Each employee can personalize their POS interface with custom colors and effects:
 
@@ -848,6 +1291,190 @@ Each employee can personalize their POS interface with custom colors and effects
 - Added `pourSizes`, `defaultPourSize`, `applyPourToModifiers` to MenuItem
 - Enables quick pour selection buttons for liquor items
 - Multipliers automatically adjust pricing
+
+### FloorPlanHome Integration (Jan 2026)
+Major overhaul to make FloorPlanHome the primary POS interface:
+
+**Completed:**
+- FloorPlanHome is now the default view for ALL users (including bartenders)
+- Inline ordering: Add items → Send to kitchen → Pay (all from floor plan)
+- Created `/api/orders/[id]/send` route for sending orders to kitchen
+- Created `POST /api/orders/[id]/items` for atomic item append (race condition fix)
+- Fixed order loading from Open Orders panel (`orderToLoad` prop)
+- Fixed PaymentModal React hooks violation (useState after early returns)
+- Fixed race condition in order item updates (PUT replaced → POST appends)
+- Added ReceiptModal after payment in floor-plan view
+- Auto-clear order panel after receipt close (`paidOrderId` flow)
+- Fixed CSS borderColor/border conflict in CategoriesBar
+- Timed rental items display with duration badge and session info
+- Entertainment session timers start on "Send to Kitchen"
+
+**Key Props for FloorPlanHome:**
+- `orderToLoad` / `onOrderLoaded` - Load existing order for editing
+- `paidOrderId` / `onPaidOrderCleared` - Clear order after payment complete
+- `onOpenPayment` - Callback to open PaymentModal
+- `onOpenModifiers` - Callback to open ModifierModal
+- `onOpenTimedRental` - Callback for entertainment item session selection
+- `onOpenPizzaBuilder` - Callback for pizza item customization
+
+**Payment Flow:**
+1. User clicks Pay → `onOpenPayment(orderId)` called
+2. PaymentModal opens, fetches order if total=0
+3. Payment processed → `onPaymentComplete` shows ReceiptModal
+4. Receipt closed → `paidOrderId` set → FloorPlanHome clears order → returns to floor plan
+
+### Entertainment Floor Plan Integration (Feb 2026)
+Entertainment menu items can now be placed directly on the floor plan builder:
+
+**Features:**
+- Place entertainment items (pool tables, dart boards, etc.) on the floor plan
+- Each menu item can only be placed once (multiple pool tables = multiple menu items)
+- 12 visual SVG types: pool_table, dartboard, arcade, foosball, shuffleboard, ping_pong, bowling_lane, karaoke_stage, dj_booth, photo_booth, vr_station, game_table
+- Visual-only rotation (label stays horizontal for readability)
+- Extended rotation handle (40px stem) for easier grabbing with 15° snap
+- Status-based glow effects (available=green, in_use=amber, reserved=indigo, maintenance=red)
+- Time remaining badge for active sessions
+- Waitlist count badge
+
+**Key Components:**
+- `FloorPlanElement` model - Stores element position, size, rotation, linked menu item
+- `AddEntertainmentPalette` - Bottom sheet for selecting and placing items
+- `FloorPlanEntertainment` - Renders element with resize/rotate handles
+- `entertainment-visuals.tsx` - SVG components for each visual type
+
+**API Endpoints:**
+- `GET /api/floor-plan-elements?locationId=` - List elements
+- `POST /api/floor-plan-elements` - Create element
+- `PUT /api/floor-plan-elements/[id]` - Update position/size/rotation
+- `DELETE /api/floor-plan-elements/[id]` - Soft delete (returns item to available pool)
+
+**Usage:**
+1. Create entertainment items in Menu Builder with category type "entertainment"
+2. Open Floor Plan → Click "Add Entertainment"
+3. Select menu item → Choose visual style → Add to floor plan
+4. Drag to position, use corner handles to resize, use top handle to rotate
+
+## Upcoming Work (TODO)
+
+### Priority 1: Bar Tabs Screen
+The tabs panel needs work for bartender workflow:
+- [ ] Improve tab list UI in OpenOrdersPanel
+- [ ] Quick tab creation from floor plan
+- [ ] Pre-auth card capture for tabs
+- [ ] Tab transfer between employees
+- [ ] Tab merge functionality
+
+### Priority 2: Closed Orders Management
+Need ability to view and manage closed/paid orders:
+- [ ] Closed orders list view with search/filter
+- [ ] View closed order details
+- [ ] Void payments on closed orders (manager approval)
+- [ ] Adjust tips after close
+- [ ] Reprint receipts
+- [ ] Reopen closed orders (with reason)
+
+### Priority 3: Kitchen/Print Integration
+- [ ] Actually send tickets to printers (currently just TODO in send route)
+- [x] Kitchen display updates via WebSocket (Socket.io implemented - see `src/lib/socket-server.ts`)
+- [ ] Print route configuration
+- [ ] PrintTemplateFactory for template-based ticket generation
+
+### Priority 4: Tip Guide Basis Configuration
+Servers are tipped less when discounts/promos/gift cards are applied because tip suggestions are based on net total.
+- [ ] Add `tipGuideSettings` to Location (basis: net_total | pre_discount | gross_subtotal | custom)
+- [ ] Create tip calculation function that respects settings
+- [ ] Add settings UI at `/settings/tips`
+- [ ] Update PaymentModal and Receipt to show tips on correct basis
+- [ ] Show explanation text: "(on $X pre-discount)"
+- **Spec:** `docs/features/tip-guide-basis.md`
+
+### Priority 5: Inventory System Refinements
+- [ ] **Unify Liquor + Food Inventory Engines**: Currently `processLiquorInventory()` (for BottleProduct/RecipeIngredient)
+      runs separately from `deductInventoryForOrder()` (for MenuItemRecipe/ModifierInventoryLink).
+      Migrate liquor cocktail recipes into the unified MenuItemRecipe structure so one order = one deduction pass.
+      This reduces risk of one engine failing while the other succeeds.
+- [ ] Inventory UI Pages: Dashboard, item management, transaction history, variance reports
+- [ ] Low stock alerts and reorder point notifications
+- [ ] Vendor purchase order integration
+
+### Priority 6: Tag-Based Routing Completion
+- [x] Station model with tag-based pub/sub routing
+- [x] OrderRouter with primaryItems/referenceItems separation
+- [x] Socket.io real-time KDS updates
+- [ ] PrintTemplateFactory for PIZZA_STATION, EXPO_SUMMARY, etc.
+- [ ] PitBossDashboard for entertainment expo
+- [ ] Migration script testing (`scripts/migrate-routing.ts`)
+
+### Priority 7: Ingredient System Enhancements
+- [x] **Checkbox Selection in Hierarchy View**: Added checkbox multi-select to hierarchy view
+  - [x] Checkboxes on each ingredient row (base + child prep items)
+  - [x] Category-level "Select All" with indeterminate state
+  - [x] Recursive ID collection for nested ingredients
+  - [ ] Bulk "Move to Category" action for selected items
+- [ ] **Remove Customization Options from Ingredient Admin**: The Allow No/Lite/Extra/On Side,
+      Extra Price, Multipliers, and Swap Options should NOT be configured at the ingredient level.
+      These belong in the **Modifier Groups** when building items in the Item Builder.
+- [ ] **Add Customization to Item Builder Modifiers**: When building out the item builder,
+      ensure modifier-level customization options are available:
+      - Allow No/Lite/Extra/On Side toggles
+      - Extra price upcharge
+      - Lite/Extra multipliers for inventory
+      - Swap group configuration
+      (Some of this may already exist in ModifierGroup/Modifier models)
+
+### Priority 8: Table Capacity/Seats Sync (Database Integrity)
+The `Table.capacity` column can drift from actual `Seat` count if updated via direct DB edit or third-party API.
+This caused the "8 seats for two 4-tops" bug and can recur without proper safeguards.
+
+**Recommended Solutions (choose one):**
+- [ ] **PostgreSQL Trigger (Production)**: Create a trigger that updates `Table.capacity` whenever seats are inserted/deleted
+  ```sql
+  CREATE OR REPLACE FUNCTION sync_table_capacity()
+  RETURNS TRIGGER AS $$
+  BEGIN
+    UPDATE "Table" SET capacity = (SELECT COUNT(*) FROM "Seat" WHERE "tableId" = COALESCE(NEW."tableId", OLD."tableId"))
+    WHERE id = COALESCE(NEW."tableId", OLD."tableId");
+    RETURN NULL;
+  END;
+  $$ LANGUAGE plpgsql;
+
+  CREATE TRIGGER update_table_capacity
+  AFTER INSERT OR DELETE ON "Seat"
+  FOR EACH ROW EXECUTE FUNCTION sync_table_capacity();
+  ```
+- [ ] **Prisma Middleware**: Add middleware in `src/lib/db.ts` to intercept Seat create/delete and update Table.capacity
+- [ ] **API Wrapper**: Ensure all `/api/tables/[id]/seats` endpoints call a `syncTableCapacity(tableId)` helper after seat operations
+- [ ] **Remove Column (Breaking)**: Delete `capacity` column entirely and always derive from `seats.length` (requires migration + code updates)
+
+**Until implemented**: Application code must always derive capacity from `seats.length`, never trust `Table.capacity` directly.
+
+## Toast Notification System
+
+App-wide toast notifications for user feedback on actions and errors.
+
+**Usage:**
+```typescript
+import { toast } from '@/stores/toast-store'
+
+// Show notifications
+toast.success('Order saved successfully')
+toast.error('Failed to connect to printer')
+toast.warning('Maximum selections reached')
+toast.info('Tip: Double-tap for 2x')
+
+// Optional custom duration (ms)
+toast.error('Connection lost', 8000)
+```
+
+**Key Files:**
+- `src/stores/toast-store.ts` - Zustand store with toast methods
+- `src/components/ui/ToastContainer.tsx` - Display component (bottom-right)
+
+**Behavior:**
+- Auto-dismiss after 5s (success/info) or 7s (error/warning)
+- Click to dismiss early
+- Stacks multiple toasts vertically
+- Color-coded by type (green/red/yellow/blue)
 
 ## Troubleshooting
 

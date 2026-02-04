@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { ItemTreeView } from '@/components/menu/ItemTreeView'
+import { ItemEditor } from '@/components/menu/ItemEditor'
+import { ModifierGroupsEditor } from '@/components/menu/ModifierGroupsEditor'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 // Category types for reporting and item builder selection
 const CATEGORY_TYPES = [
@@ -22,10 +27,19 @@ interface Category {
   name: string
   color: string
   categoryType: string
+  categoryShow: string // 'bar' | 'food' | 'entertainment' | 'all'
   itemCount: number
   isActive: boolean
   printerIds?: string[] | null
 }
+
+// Bartender view section options
+const CATEGORY_SHOW_OPTIONS = [
+  { value: 'bar', label: 'Bar', color: '#3b82f6', description: 'Shows in Bar section only' },
+  { value: 'food', label: 'Food', color: '#f97316', description: 'Shows in Food section only' },
+  { value: 'entertainment', label: 'Entertainment', color: '#8b5cf6', description: 'Shows in Entertainment mode' },
+  { value: 'all', label: 'All', color: '#22c55e', description: 'Shows in both Bar and Food sections' },
+]
 
 interface Printer {
   id: string
@@ -192,6 +206,12 @@ export default function MenuManagementPage() {
   const [showItemModal, setShowItemModal] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
+  const [selectedItemForEditor, setSelectedItemForEditor] = useState<MenuItem | null>(null)
+  const [selectedTreeNode, setSelectedTreeNode] = useState<{ type: string; id: string } | null>(null)
+
+  // Refs for scroll containers
+  const categoriesScrollRef = useRef<HTMLDivElement>(null)
+  const itemsScrollRef = useRef<HTMLDivElement>(null)
 
   // Define loadMenu first so it can be used in useEffects
   const loadMenu = useCallback(async () => {
@@ -225,7 +245,11 @@ export default function MenuManagementPage() {
             status: i.entertainmentStatus
           })))
         }
-        setCategories(data.categories)
+        // Filter out liquor and drinks categories - they belong in Liquor Builder
+        const foodCategories = data.categories.filter((c: Category) =>
+          c.categoryType !== 'liquor' && c.categoryType !== 'drinks'
+        )
+        setCategories(foodCategories)
         // Force new array reference to ensure React re-renders
         setItems([...data.items])
       }
@@ -419,319 +443,243 @@ export default function MenuManagementPage() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.push('/orders')}>
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to POS
-          </Button>
-          <h1 className="text-2xl font-bold">Menu Management</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <Button variant="outline" onClick={() => router.push('/modifiers')}>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-            </svg>
-            Modifiers
-          </Button>
-          <Button variant="outline" onClick={() => router.push('/liquor-builder')}>
-            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-            </svg>
-            Liquor Builder
-          </Button>
-          <div className="text-sm text-gray-500">
-            {employee?.displayName} · {employee?.role.name}
-          </div>
-        </div>
-      </header>
+      <div className="bg-white border-b shrink-0 px-4 py-2">
+        <AdminPageHeader
+          title="Menu Items"
+          backHref="/orders"
+        />
+        <AdminSubNav items={menuSubNav} basePath="/menu" />
+      </div>
 
-      <div className="flex h-[calc(100vh-73px)]">
-        {/* Categories Sidebar */}
-        <div className="w-72 bg-white border-r p-4 overflow-y-auto">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-lg">Categories</h2>
+      {/* Categories Bar - Horizontal Scroll */}
+      <div className="bg-white border-b px-4 py-3 shrink-0">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-sm font-medium text-gray-500">Categories</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-blue-600"
+            onClick={() => {
+              setEditingCategory(null)
+              setShowCategoryModal(true)
+            }}
+          >
+            + Add
+          </Button>
+        </div>
+        <div
+          ref={categoriesScrollRef}
+          className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300"
+        >
+          {isLoading ? (
+            <div className="text-gray-400 py-2">Loading...</div>
+          ) : categories.length === 0 ? (
+            <div className="text-gray-400 py-2">No categories - click + Add to create one</div>
+          ) : (
+            categories.map(category => {
+              const typeInfo = CATEGORY_TYPES.find(t => t.value === category.categoryType)
+              const isSelected = selectedCategory === category.id
+              return (
+                <button
+                  key={category.id}
+                  onClick={() => {
+                    setSelectedCategory(category.id)
+                    setSelectedItemForEditor(null)
+                  }}
+                  className={`shrink-0 px-4 py-2 rounded-lg border-2 transition-all flex items-center gap-2 ${
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-transparent bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  <div
+                    className="w-3 h-3 rounded"
+                    style={{ backgroundColor: category.color }}
+                  />
+                  <span className={`font-medium whitespace-nowrap ${isSelected ? 'text-blue-700' : ''}`}>
+                    {category.name}
+                  </span>
+                  <span className={`text-sm ${isSelected ? 'text-blue-500' : 'text-gray-400'}`}>
+                    ({category.itemCount})
+                  </span>
+                  {isSelected && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setEditingCategory(category)
+                        setShowCategoryModal(true)
+                      }}
+                      className="ml-1 p-1 hover:bg-blue-100 rounded"
+                    >
+                      <svg className="w-3 h-3 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+                  )}
+                </button>
+              )
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Items Bar - Horizontal Scroll */}
+      {selectedCategory && (
+        <div className="bg-white border-b px-4 py-3 shrink-0">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-sm font-medium text-gray-500">
+              {selectedCategoryData?.name} Items
+            </span>
+            {selectedCategoryData?.categoryType === 'liquor' && (
+              <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                → Opens in Liquor Builder
+              </span>
+            )}
             <Button
-              variant="primary"
+              variant="ghost"
               size="sm"
+              className="text-blue-600"
               onClick={() => {
-                setEditingCategory(null)
-                setShowCategoryModal(true)
+                // Route liquor categories to the Liquor Builder
+                if (selectedCategoryData?.categoryType === 'liquor') {
+                  router.push('/liquor-builder')
+                } else {
+                  setEditingItem(null)
+                  setShowItemModal(true)
+                }
               }}
             >
-              + Add
+              + Add Item
             </Button>
           </div>
-
-          {isLoading ? (
-            <div className="text-center py-8 text-gray-400">Loading...</div>
-          ) : categories.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
-              <p>No categories yet</p>
-              <p className="text-sm">Click + Add to create one</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {categories.map(category => {
-                const typeInfo = CATEGORY_TYPES.find(t => t.value === category.categoryType)
+          <div
+            ref={itemsScrollRef}
+            className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300"
+          >
+            {filteredItems.length === 0 ? (
+              <div className="text-gray-400 py-2">No items - click + Add Item to create one</div>
+            ) : (
+              filteredItems.map(item => {
+                const isSelected = selectedItemForEditor?.id === item.id
                 return (
-                  <div
-                    key={category.id}
-                    className={`p-3 rounded-lg cursor-pointer transition-all ${
-                      selectedCategory === category.id
-                        ? 'bg-blue-50 border-2 border-blue-500'
-                        : 'bg-gray-50 border-2 border-transparent hover:bg-gray-100'
-                    }`}
+                  <button
+                    key={item.id}
                     onClick={() => {
-                      if (category.categoryType === 'pizza') {
-                        router.push('/pizza')
-                      } else if (category.categoryType === 'combos') {
-                        router.push('/combos')
+                      // Route liquor items to the Liquor Builder
+                      if (selectedCategoryData?.categoryType === 'liquor') {
+                        router.push(`/liquor-builder?item=${item.id}`)
                       } else {
-                        setSelectedCategory(category.id)
+                        setSelectedItemForEditor(item)
                       }
                     }}
+                    className={`shrink-0 px-4 py-3 rounded-lg border-2 transition-all text-left min-w-[140px] ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-50'
+                        : !item.isAvailable
+                        ? 'border-transparent bg-gray-100 opacity-50'
+                        : 'border-transparent bg-gray-100 hover:bg-gray-200'
+                    }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-4 h-4 rounded"
-                          style={{ backgroundColor: category.color }}
-                        />
-                        <span className="font-medium">{category.name}</span>
-                      </div>
-                      <span className="text-sm text-gray-500">{category.itemCount}</span>
-                    </div>
-                    {typeInfo && (
-                      <span
-                        className="text-xs px-1.5 py-0.5 rounded mt-1 inline-block"
-                        style={{ backgroundColor: typeInfo.color + '20', color: typeInfo.color }}
-                      >
-                        {typeInfo.label}
+                    <div className="flex items-start justify-between gap-2">
+                      <span className={`font-medium text-sm ${isSelected ? 'text-blue-700' : ''}`}>
+                        {item.name}
                       </span>
-                    )}
-                    {selectedCategory === category.id && (
-                      <div className="flex gap-2 mt-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setEditingCategory(category)
-                            setShowCategoryModal(true)
-                          }}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeleteCategory(category.id)
-                          }}
-                        >
-                          Delete
-                        </Button>
+                      {!item.isAvailable && (
+                        <span className="text-[10px] bg-red-100 text-red-700 px-1 rounded">86</span>
+                      )}
+                    </div>
+                    <div className={`text-sm font-bold mt-1 ${isSelected ? 'text-blue-600' : 'text-green-600'}`}>
+                      {formatCurrency(item.price)}
+                    </div>
+                    {item.modifierGroupCount && item.modifierGroupCount > 0 && (
+                      <div className="text-[10px] text-purple-600 mt-1">
+                        {item.modifierGroupCount} mod group{item.modifierGroupCount > 1 ? 's' : ''}
                       </div>
                     )}
-                  </div>
+                    {item.itemType === 'timed_rental' && (
+                      <div className={`text-[10px] mt-1 ${
+                        item.entertainmentStatus === 'in_use' ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        {item.entertainmentStatus === 'in_use' ? '● IN USE' : '● AVAILABLE'}
+                      </div>
+                    )}
+                  </button>
                 )
-              })}
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Area - 3 Columns: Tree View + Editor + Modifier Groups Builder */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* LEFT: Tree View - Navigation map */}
+        <div className={`shrink-0 transition-all duration-300 overflow-hidden ${
+          selectedItemForEditor ? 'w-48' : 'w-0'
+        }`}>
+          <ItemTreeView
+            item={selectedItemForEditor}
+            selectedNode={selectedTreeNode}
+            onSelectNode={(type, id) => setSelectedTreeNode({ type, id })}
+          />
+        </div>
+
+        {/* CENTER: Item Editor (what's live on the front end) */}
+        <div className="flex-1 overflow-hidden border-l">
+          {!selectedCategory ? (
+            <div className="h-full flex items-center justify-center text-gray-400 bg-gray-50">
+              <div className="text-center">
+                <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <p className="font-medium">Select a category</p>
+                <p className="text-xs mt-1">Click on a category above</p>
+              </div>
             </div>
+          ) : !selectedItemForEditor ? (
+            <div className="h-full flex items-center justify-center text-gray-400 bg-gray-50">
+              <div className="text-center">
+                <svg className="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                <p className="font-medium">Select an item</p>
+                <p className="text-xs mt-1">Click on an item above</p>
+              </div>
+            </div>
+          ) : (
+            <ItemEditor
+              item={selectedItemForEditor}
+              ingredientsLibrary={ingredientsLibrary}
+              onItemUpdated={() => {
+                loadMenu()
+                const currentItem = selectedItemForEditor
+                setSelectedItemForEditor(null)
+                setTimeout(() => setSelectedItemForEditor(currentItem), 100)
+              }}
+              onToggle86={handleToggleItem86}
+              onDelete={(itemId) => {
+                handleDeleteItem(itemId)
+                setSelectedItemForEditor(null)
+              }}
+            />
           )}
         </div>
 
-        {/* Items Grid */}
-        <div className="flex-1 p-6 overflow-y-auto">
-          {selectedCategory ? (
-            <>
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-semibold">
-                    {selectedCategoryData?.name} Items
-                  </h2>
-                  {selectedCategoryData?.categoryType === 'entertainment' && (
-                    <p className="text-sm text-orange-600">Entertainment items support timed billing</p>
-                  )}
-                  {selectedCategoryData?.categoryType === 'liquor' && (
-                    <p className="text-sm text-purple-600">
-                      Liquor items support recipe tracking.{' '}
-                      <button
-                        onClick={() => router.push('/liquor-builder')}
-                        className="underline hover:text-purple-800"
-                      >
-                        Manage in Liquor Builder
-                      </button>
-                    </p>
-                  )}
-                </div>
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    setEditingItem(null)
-                    setShowItemModal(true)
-                  }}
-                >
-                  + Add Item
-                </Button>
-              </div>
-
-              {filteredItems.length === 0 ? (
-                <Card className="p-8 text-center">
-                  <p className="text-gray-400">No items in this category</p>
-                  <p className="text-sm text-gray-400">Click + Add Item to create one</p>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {filteredItems.map(item => (
-                    <Card
-                      key={item.id}
-                      className={`overflow-hidden ${!item.isAvailable ? 'opacity-60' : ''}`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <h3 className="font-semibold">{item.name}</h3>
-                          {!item.isAvailable && (
-                            <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded">
-                              86'd
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-lg font-bold text-blue-600 mb-2">
-                          {formatCurrency(item.price)}
-                        </p>
-                        {/* Entertainment status indicator */}
-                        {item.itemType === 'timed_rental' && (
-                          <div className={`text-xs font-bold mb-2 px-2 py-1 rounded inline-block ${
-                            item.entertainmentStatus === 'in_use'
-                              ? 'bg-red-100 text-red-700'
-                              : item.entertainmentStatus === 'maintenance'
-                              ? 'bg-gray-100 text-gray-700'
-                              : 'bg-green-100 text-green-700'
-                          }`}>
-                            {item.entertainmentStatus === 'in_use' ? '● IN USE' :
-                             item.entertainmentStatus === 'maintenance' ? '● MAINTENANCE' :
-                             '● AVAILABLE'}
-                          </div>
-                        )}
-                        {/* Timed pricing display */}
-                        {item.itemType === 'timed_rental' && item.timedPricing && (
-                          <div className="text-xs text-orange-600 mb-2 space-y-0.5">
-                            {item.timedPricing.per15Min && (
-                              <p>15 min: {formatCurrency(item.timedPricing.per15Min)}</p>
-                            )}
-                            {item.timedPricing.per30Min && (
-                              <p>30 min: {formatCurrency(item.timedPricing.per30Min)}</p>
-                            )}
-                            {item.timedPricing.perHour && (
-                              <p>Hour: {formatCurrency(item.timedPricing.perHour)}</p>
-                            )}
-                          </div>
-                        )}
-                        {item.modifierGroupCount && item.modifierGroupCount > 0 && (
-                          <p className="text-xs text-purple-600 mb-2">
-                            <svg className="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-                            </svg>
-                            {item.modifierGroupCount} modifier group{item.modifierGroupCount > 1 ? 's' : ''}
-                          </p>
-                        )}
-                        {item.commissionType && item.commissionValue && (
-                          <p className="text-xs text-indigo-600 mb-2">
-                            <svg className="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            Comm: {item.commissionType === 'fixed' ? formatCurrency(item.commissionValue) : `${item.commissionValue}%`}
-                          </p>
-                        )}
-                        {/* Liquor item recipe info */}
-                        {item.isLiquorItem && (
-                          <div className="mb-2">
-                            {item.hasRecipe ? (
-                              <div className="bg-purple-50 rounded p-2 text-xs">
-                                <div className="flex items-center justify-between text-purple-700">
-                                  <span>{item.recipeIngredientCount} ingredient{item.recipeIngredientCount !== 1 ? 's' : ''}</span>
-                                  <span className={`font-medium ${
-                                    (item.profitMargin || 0) >= 70 ? 'text-green-600' :
-                                    (item.profitMargin || 0) >= 50 ? 'text-yellow-600' : 'text-red-600'
-                                  }`}>
-                                    {item.profitMargin}% margin
-                                  </span>
-                                </div>
-                                <div className="flex items-center justify-between mt-1 text-purple-600">
-                                  <span>Pour cost: {formatCurrency(item.totalPourCost || 0)}</span>
-                                  <span>Profit: {formatCurrency(item.price - (item.totalPourCost || 0))}</span>
-                                </div>
-                              </div>
-                            ) : (
-                              <p className="text-xs text-orange-600">
-                                <svg className="w-3 h-3 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
-                                No recipe set
-                              </p>
-                            )}
-                          </div>
-                        )}
-                        {item.description && (
-                          <p className="text-sm text-gray-500 mb-3 line-clamp-2">
-                            {item.description}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setEditingItem(item)
-                              setShowItemModal(true)
-                            }}
-                          >
-                            Edit
-                          </Button>
-                          {item.isLiquorItem && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-purple-600 border-purple-300 hover:bg-purple-50"
-                              onClick={() => router.push(`/liquor-builder?item=${item.id}`)}
-                            >
-                              Recipe
-                            </Button>
-                          )}
-                          <Button
-                            variant={item.isAvailable ? 'outline' : 'primary'}
-                            size="sm"
-                            onClick={() => handleToggleItem86(item)}
-                          >
-                            {item.isAvailable ? '86 It' : 'Restore'}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-500"
-                            onClick={() => handleDeleteItem(item.id)}
-                          >
-                            Delete
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : (
-            <Card className="p-8 text-center">
-              <p className="text-gray-400">Select a category to view items</p>
-            </Card>
-          )}
+        {/* RIGHT: Modifier Groups Builder (where you build and manage) */}
+        <div className={`shrink-0 transition-all duration-300 overflow-hidden border-l ${
+          selectedItemForEditor ? 'w-80' : 'w-0'
+        }`}>
+          <ModifierGroupsEditor
+            item={selectedItemForEditor}
+            onUpdated={() => {
+              loadMenu()
+              const currentItem = selectedItemForEditor
+              setSelectedItemForEditor(null)
+              setTimeout(() => setSelectedItemForEditor(currentItem), 100)
+            }}
+          />
         </div>
       </div>
 
@@ -1048,8 +996,15 @@ function ItemModal({
   )
   const [isLoadingModifiers, setIsLoadingModifiers] = useState(false)
 
-  // Ingredients state
-  const [selectedIngredients, setSelectedIngredients] = useState<{ ingredientId: string; isIncluded: boolean }[]>([])
+  // Ingredients state - includes pre-modifier overrides
+  const [selectedIngredients, setSelectedIngredients] = useState<{
+    ingredientId: string
+    isIncluded: boolean
+    allowNo?: boolean
+    allowLite?: boolean
+    allowExtra?: boolean
+    allowOnSide?: boolean
+  }[]>([])
   const [isLoadingIngredients, setIsLoadingIngredients] = useState(false)
   const [showIngredientPicker, setShowIngredientPicker] = useState(false)
 
@@ -1117,7 +1072,11 @@ function ItemModal({
           if (data.data) {
             setSelectedIngredients(data.data.map((ing: MenuItemIngredient) => ({
               ingredientId: ing.ingredientId,
-              isIncluded: ing.isIncluded
+              isIncluded: ing.isIncluded,
+              allowNo: ing.allowNo,
+              allowLite: ing.allowLite,
+              allowExtra: ing.allowExtra,
+              allowOnSide: ing.allowOnSide,
             })))
           }
         })
@@ -1197,6 +1156,12 @@ function ItemModal({
   const toggleIngredientIncluded = (ingredientId: string) => {
     setSelectedIngredients(selectedIngredients.map(i =>
       i.ingredientId === ingredientId ? { ...i, isIncluded: !i.isIncluded } : i
+    ))
+  }
+
+  const updateIngredientOption = (ingredientId: string, option: 'allowNo' | 'allowLite' | 'allowExtra' | 'allowOnSide', value: boolean) => {
+    setSelectedIngredients(selectedIngredients.map(i =>
+      i.ingredientId === ingredientId ? { ...i, [option]: value } : i
     ))
   }
 
@@ -1590,36 +1555,85 @@ function ItemModal({
                     return (
                       <div
                         key={sel.ingredientId}
-                        className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                        className="p-2 bg-gray-50 rounded space-y-2"
                       >
-                        <div className="flex items-center gap-3">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={sel.isIncluded}
-                              onChange={() => toggleIngredientIncluded(sel.ingredientId)}
-                              className="w-4 h-4"
-                            />
-                            <span className={sel.isIncluded ? '' : 'text-gray-400 line-through'}>
-                              {ing.name}
-                            </span>
-                          </label>
-                          {ing.category && (
-                            <span className="text-xs text-gray-400">{ing.category}</span>
-                          )}
-                          {ing.extraPrice > 0 && (
-                            <span className="text-xs text-green-600">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={sel.isIncluded}
+                                onChange={() => toggleIngredientIncluded(sel.ingredientId)}
+                                className="w-4 h-4"
+                              />
+                              <span className={`font-medium ${sel.isIncluded ? '' : 'text-gray-400 line-through'}`}>
+                                {ing.name}
+                              </span>
+                            </label>
+                            {ing.category && (
+                              <span className="text-xs text-gray-400">{ing.category}</span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeIngredient(sel.ingredientId)}
+                            className="text-red-500 hover:text-red-700 text-sm"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        {/* Pre-modifier options - colored toggle buttons */}
+                        <div className="flex items-center gap-2 ml-6">
+                          <button
+                            type="button"
+                            onClick={() => updateIngredientOption(sel.ingredientId, 'allowNo', !(sel.allowNo ?? ing.allowNo))}
+                            className={`px-2 py-1 text-xs rounded transition-all ${
+                              (sel.allowNo ?? ing.allowNo)
+                                ? 'bg-red-500 text-white'
+                                : 'bg-red-100 text-red-700 hover:bg-red-200'
+                            }`}
+                          >
+                            No
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateIngredientOption(sel.ingredientId, 'allowLite', !(sel.allowLite ?? ing.allowLite))}
+                            className={`px-2 py-1 text-xs rounded transition-all ${
+                              (sel.allowLite ?? ing.allowLite)
+                                ? 'bg-yellow-500 text-white'
+                                : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200'
+                            }`}
+                          >
+                            Lite
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateIngredientOption(sel.ingredientId, 'allowOnSide', !(sel.allowOnSide ?? ing.allowOnSide))}
+                            className={`px-2 py-1 text-xs rounded transition-all ${
+                              (sel.allowOnSide ?? ing.allowOnSide)
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                            }`}
+                          >
+                            Side
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateIngredientOption(sel.ingredientId, 'allowExtra', !(sel.allowExtra ?? ing.allowExtra))}
+                            className={`px-2 py-1 text-xs rounded transition-all ${
+                              (sel.allowExtra ?? ing.allowExtra)
+                                ? 'bg-green-500 text-white'
+                                : 'bg-green-100 text-green-700 hover:bg-green-200'
+                            }`}
+                          >
+                            Ex
+                          </button>
+                          {(sel.allowExtra ?? ing.allowExtra) && ing.extraPrice > 0 && (
+                            <span className="text-green-600 ml-2">
                               Extra +{formatCurrency(ing.extraPrice)}
                             </span>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => removeIngredient(sel.ingredientId)}
-                          className="text-red-500 hover:text-red-700 text-sm"
-                        >
-                          Remove
-                        </button>
                       </div>
                     )
                   })}

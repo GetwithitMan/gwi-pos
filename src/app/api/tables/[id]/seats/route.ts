@@ -92,16 +92,25 @@ export async function POST(
       finalSeatNumber = (maxSeat?.seatNumber || 0) + 1
     }
 
+    // Calculate final positions
+    const finalRelativeX = relativeX || 0
+    const finalRelativeY = relativeY || 0
+    const finalAngle = angle || 0
+
     const seat = await db.seat.create({
       data: {
         locationId: table.locationId,
         tableId,
         label: label || String(finalSeatNumber),
         seatNumber: finalSeatNumber,
-        relativeX: relativeX || 0,
-        relativeY: relativeY || 0,
-        angle: angle || 0,
+        relativeX: finalRelativeX,
+        relativeY: finalRelativeY,
+        angle: finalAngle,
         seatType: seatType || 'standard',
+        // Save initial position as the "builder default" for restore after combine/split
+        originalRelativeX: finalRelativeX,
+        originalRelativeY: finalRelativeY,
+        originalAngle: finalAngle,
       },
     })
 

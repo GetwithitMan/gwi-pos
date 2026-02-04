@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getAllMenuItemsStockStatus } from '@/lib/stock-status'
 
 // Force dynamic rendering - never cache (entertainment status changes frequently)
 export const dynamic = 'force-dynamic'
@@ -14,22 +15,43 @@ export async function GET(request: NextRequest) {
     const locationFilter = locationId ? { locationId } : {}
 
     const categories = await db.category.findMany({
-      where: { isActive: true, ...locationFilter },
+      where: { isActive: true, deletedAt: null, ...locationFilter },
       orderBy: { sortOrder: 'asc' },
-      include: { _count: { select: { menuItems: true } } }
+      include: {
+        _count: {
+          select: {
+            menuItems: { where: { deletedAt: null, isActive: true } }
+          }
+        }
+      }
     })
 
     const items = await db.menuItem.findMany({
-      where: { isActive: true, ...locationFilter },
+      where: { isActive: true, deletedAt: null, ...locationFilter },
       orderBy: { sortOrder: 'asc' },
       include: {
         category: {
           select: { categoryType: true }
         },
         modifierGroups: {
+          where: {
+            deletedAt: null,
+            modifierGroup: { deletedAt: null }
+          },
           include: {
             modifierGroup: {
-              select: { id: true, name: true }
+              include: {
+                modifiers: {
+                  where: { deletedAt: null, isActive: true },
+                  select: {
+                    id: true,
+                    name: true,
+                    price: true,
+                    spiritTier: true,
+                  },
+                  orderBy: { sortOrder: 'asc' }
+                }
+              }
             }
           }
         },
@@ -43,11 +65,30 @@ export async function GET(request: NextRequest) {
               }
             }
           }
+        },
+        // Include ingredients to check 86 status
+        ingredients: {
+          where: { deletedAt: null },
+          include: {
+            ingredient: {
+              select: {
+                id: true,
+                name: true,
+                is86d: true
+              }
+            }
+          }
         }
       }
     })
 
-    // Calculate pour cost for items with recipes
+    // Get stock status for all menu items (if locationId provided)
+    let stockStatusMap = new Map()
+    if (locationId) {
+      stockStatusMap = await getAllMenuItemsStockStatus(locationId)
+    }
+
+    // Calculate pour cost for items with recipes and check 86 status
     const itemsWithPourCost = items.map(item => {
       let totalPourCost = 0
       let hasRecipe = false
@@ -65,13 +106,53 @@ export async function GET(request: NextRequest) {
         ? ((sellPrice - totalPourCost) / sellPrice) * 100
         : null
 
+      // Check if any ingredient is 86'd
+      const ingredients86d = item.ingredients
+        ?.filter(mi => mi.ingredient?.is86d)
+        .map(mi => mi.ingredient?.name) || []
+      const is86d = ingredients86d.length > 0
+
+      // Get prep stock status
+      const stockStatus = stockStatusMap.get(item.id)
+
+      // Check for spirit upgrade group
+      const spiritGroup = item.modifierGroups.find(mg => mg.modifierGroup.isSpiritGroup)
+      const spiritModifiers = spiritGroup?.modifierGroup.modifiers || []
+
+      // Group spirit modifiers by tier
+      const spiritTiers = spiritModifiers.length > 0 ? {
+        well: spiritModifiers.filter(m => m.spiritTier === 'well').map(m => ({
+          id: m.id, name: m.name, price: Number(m.price)
+        })),
+        call: spiritModifiers.filter(m => m.spiritTier === 'call').map(m => ({
+          id: m.id, name: m.name, price: Number(m.price)
+        })),
+        premium: spiritModifiers.filter(m => m.spiritTier === 'premium').map(m => ({
+          id: m.id, name: m.name, price: Number(m.price)
+        })),
+        top_shelf: spiritModifiers.filter(m => m.spiritTier === 'top_shelf').map(m => ({
+          id: m.id, name: m.name, price: Number(m.price)
+        })),
+      } : null
+
       return {
         ...item,
         hasRecipe,
         recipeIngredientCount: item.recipeIngredients?.length || 0,
         totalPourCost: hasRecipe ? Math.round(totalPourCost * 100) / 100 : null,
         profitMargin: profitMargin !== null ? Math.round(profitMargin * 10) / 10 : null,
-        isLiquorItem: item.category?.categoryType === 'liquor'
+        isLiquorItem: item.category?.categoryType === 'liquor',
+        // 86 status from ingredients
+        is86d,
+        reasons86d: ingredients86d,
+        // Prep stock status
+        stockStatus: stockStatus?.status || 'ok',
+        stockCount: stockStatus?.lowestCount || null,
+        stockIngredientName: stockStatus?.lowestIngredientName || null,
+        // Spirit tier data for quick selection
+        spiritTiers,
+        // Has non-spirit modifier groups
+        hasOtherModifiers: item.modifierGroups.filter(mg => !mg.modifierGroup.isSpiritGroup).length > 0,
       }
     })
 
@@ -81,6 +162,7 @@ export async function GET(request: NextRequest) {
         name: c.name,
         color: c.color,
         categoryType: c.categoryType || 'food', // Ensure fallback for legacy data
+        categoryShow: c.categoryShow || 'all', // Bartender view section (bar/food/entertainment/all)
         isActive: c.isActive,
         itemCount: c._count.menuItems,
         printerIds: c.printerIds,
@@ -88,8 +170,10 @@ export async function GET(request: NextRequest) {
       items: itemsWithPourCost.map(item => ({
         id: item.id,
         categoryId: item.categoryId,
+        categoryType: item.category?.categoryType || 'food',
         name: item.name,
         price: Number(item.price),
+        priceCC: item.priceCC ? Number(item.priceCC) : null,
         description: item.description,
         isActive: item.isActive,
         isAvailable: item.isAvailable,
@@ -120,11 +204,21 @@ export async function GET(request: NextRequest) {
         pourSizes: item.pourSizes as Record<string, number> | null,
         defaultPourSize: item.defaultPourSize,
         applyPourToModifiers: item.applyPourToModifiers,
+        // Spirit tier data for quick selection
+        spiritTiers: item.spiritTiers,
+        hasOtherModifiers: item.hasOtherModifiers,
         // Printer routing
         printerIds: item.printerIds,
         backupPrinterIds: item.backupPrinterIds,
         // Combo print mode
         comboPrintMode: item.comboPrintMode,
+        // 86 status (ingredient out of stock)
+        is86d: item.is86d,
+        reasons86d: item.reasons86d,
+        // Prep stock status
+        stockStatus: item.stockStatus,
+        stockCount: item.stockCount,
+        stockIngredientName: item.stockIngredientName,
       }))
     })
   } catch (error) {

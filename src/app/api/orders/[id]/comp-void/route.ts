@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { deductInventoryForVoidedItem, restorePrepStockForVoid, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -7,6 +8,7 @@ interface CompVoidRequest {
   reason: string
   employeeId: string
   approvedById?: string  // Manager ID if approval required
+  remoteApprovalCode?: string  // 6-digit code from remote manager approval (Skill 121)
 }
 
 // POST - Comp or void an item
@@ -18,13 +20,46 @@ export async function POST(
     const { id: orderId } = await params
     const body = await request.json() as CompVoidRequest
 
-    const { action, itemId, reason, employeeId, approvedById } = body
+    const { action, itemId, reason, employeeId, approvedById, remoteApprovalCode } = body
 
     if (!action || !itemId || !reason || !employeeId) {
       return NextResponse.json(
         { error: 'Action, item ID, reason, and employee ID are required' },
         { status: 400 }
       )
+    }
+
+    // If remote approval code is provided, validate it
+    let remoteApproval = null
+    if (remoteApprovalCode) {
+      remoteApproval = await db.remoteVoidApproval.findFirst({
+        where: {
+          approvalCode: remoteApprovalCode,
+          status: 'approved',
+          orderId,
+          approvalCodeExpiry: { gt: new Date() },
+        },
+        include: {
+          manager: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+        },
+      })
+
+      if (!remoteApproval) {
+        return NextResponse.json(
+          { error: 'Invalid or expired approval code' },
+          { status: 400 }
+        )
+      }
+
+      // Check if code was for this specific item (if item-level void)
+      if (remoteApproval.orderItemId && remoteApproval.orderItemId !== itemId) {
+        return NextResponse.json(
+          { error: 'Approval code is for a different item' },
+          { status: 400 }
+        )
+      }
     }
 
     // Get the order and item
@@ -82,6 +117,10 @@ export async function POST(
       },
     })
 
+    // Determine the approving manager (from remote approval or direct)
+    const effectiveApprovedById = remoteApproval?.manager.id || approvedById || null
+    const effectiveApprovedAt = remoteApproval?.approvedAt || (approvedById ? new Date() : null)
+
     // Create void log entry
     await db.voidLog.create({
       data: {
@@ -92,10 +131,40 @@ export async function POST(
         itemId,
         amount: itemTotal,
         reason,
-        approvedById: approvedById || null,
-        approvedAt: approvedById ? new Date() : null,
+        approvedById: effectiveApprovedById,
+        approvedAt: effectiveApprovedAt,
+        remoteApprovalId: remoteApproval?.id || null,
       },
     })
+
+    // If remote approval was used, mark it as used
+    if (remoteApproval) {
+      await db.remoteVoidApproval.update({
+        where: { id: remoteApproval.id },
+        data: {
+          status: 'used',
+          usedAt: new Date(),
+        },
+      })
+    }
+
+    // Deduct inventory for voids where food was made (fire-and-forget)
+    // For comps, food was definitely made so always deduct
+    // For voids, check if reason indicates food was prepared
+    const normalizedReason = reason.toLowerCase().replace(/\s+/g, '_')
+    const shouldDeductInventory = action === 'comp' || WASTE_VOID_REASONS.includes(normalizedReason)
+
+    if (shouldDeductInventory) {
+      deductInventoryForVoidedItem(itemId, reason, employeeId).catch(err => {
+        console.error('Background waste inventory deduction failed:', err)
+      })
+    } else {
+      // For voids where food was NOT made, restore prep stock (fire-and-forget)
+      // This handles cases like "never_made", "customer_left", "mistake", etc.
+      restorePrepStockForVoid(orderId, [itemId], false).catch(err => {
+        console.error('Background prep stock restoration failed:', err)
+      })
+    }
 
     // Recalculate order totals
     // Get all active items

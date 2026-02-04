@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 
 interface Category {
   id: string
@@ -212,20 +214,18 @@ export default function RoutingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Print Routing"
+        subtitle="Configure which printers each category and item prints to"
+        breadcrumbs={[
+          { label: 'Settings', href: '/settings' },
+          { label: 'Hardware', href: '/settings/hardware' },
+        ]}
+      />
+      <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
+
       <div className="max-w-5xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Print Routing</h1>
-            <p className="text-gray-600 mt-1">
-              Configure which printers each category and item prints to
-            </p>
-          </div>
-          <Button variant="outline" onClick={() => router.push('/settings/hardware')}>
-            Back to Hardware
-          </Button>
-        </div>
 
         {/* Info Card */}
         <Card className="mb-6 bg-blue-50 border-blue-200">

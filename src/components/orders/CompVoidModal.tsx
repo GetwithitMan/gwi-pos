@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
+import { RemoteVoidApprovalModal } from './RemoteVoidApprovalModal'
 
 interface OrderItem {
   id: string
@@ -20,6 +21,8 @@ interface CompVoidModalProps {
   orderId: string
   item: OrderItem
   employeeId: string
+  locationId: string
+  terminalId?: string
   onComplete: (result: {
     action: 'comp' | 'void' | 'restore'
     orderTotals: {
@@ -57,6 +60,8 @@ export function CompVoidModal({
   orderId,
   item,
   employeeId,
+  locationId,
+  terminalId,
   onComplete,
 }: CompVoidModalProps) {
   const [action, setAction] = useState<'comp' | 'void' | null>(null)
@@ -64,6 +69,8 @@ export function CompVoidModal({
   const [customReason, setCustomReason] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showRemoteApproval, setShowRemoteApproval] = useState(false)
+  const [remoteApprovalCode, setRemoteApprovalCode] = useState<string | null>(null)
 
   if (!isOpen) return null
 
@@ -97,6 +104,7 @@ export function CompVoidModal({
           itemId: item.id,
           reason: finalReason,
           employeeId,
+          ...(remoteApprovalCode && { remoteApprovalCode }),
         }),
       })
 
@@ -145,6 +153,61 @@ export function CompVoidModal({
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to restore')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleRemoteApprovalSuccess = async (approvalData: {
+    approvalId: string
+    managerId: string
+    managerName: string
+  }) => {
+    // Code has been validated by RemoteVoidApprovalModal
+    // The approval code is now used - close remote modal and complete void
+    setShowRemoteApproval(false)
+
+    // Store a flag that remote approval was used - the validate-code endpoint
+    // already marked it as used, but we need to know for the void log
+    // We'll re-fetch the code from the approval to link it
+    setRemoteApprovalCode(approvalData.approvalId) // Using approvalId for tracking
+
+    // Auto-submit the void with remote approval
+    setIsProcessing(true)
+    setError(null)
+    const finalReason = reason === 'custom' ? customReason : reason
+
+    try {
+      // Fetch the actual approval code for the API call
+      const statusResponse = await fetch(`/api/voids/remote-approval/${approvalData.approvalId}/status`)
+      const statusData = await statusResponse.json()
+      const code = statusData.data?.approvalCode
+
+      const response = await fetch(`/api/orders/${orderId}/comp-void`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          itemId: item.id,
+          reason: finalReason,
+          employeeId,
+          remoteApprovalCode: code,
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to process')
+      }
+
+      const result = await response.json()
+      onComplete({
+        action: action!,
+        orderTotals: result.orderTotals,
+      })
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to process')
     } finally {
       setIsProcessing(false)
     }
@@ -312,16 +375,33 @@ export function CompVoidModal({
 
               {/* Submit */}
               {action && (
-                <Button
-                  variant={action === 'comp' ? 'primary' : 'danger'}
-                  className="w-full"
-                  onClick={handleSubmit}
-                  disabled={isProcessing || !reason || (reason === 'custom' && !customReason.trim())}
-                >
-                  {isProcessing
-                    ? 'Processing...'
-                    : `${action === 'comp' ? 'Comp' : 'Void'} Item`}
-                </Button>
+                <div className="space-y-2">
+                  <Button
+                    variant={action === 'comp' ? 'primary' : 'danger'}
+                    className="w-full"
+                    onClick={handleSubmit}
+                    disabled={isProcessing || !reason || (reason === 'custom' && !customReason.trim())}
+                  >
+                    {isProcessing
+                      ? 'Processing...'
+                      : `${action === 'comp' ? 'Comp' : 'Void'} Item`}
+                  </Button>
+
+                  {/* Remote Approval Option */}
+                  {reason && (reason !== 'custom' || customReason.trim()) && (
+                    <Button
+                      variant="outline"
+                      className="w-full text-blue-600 border-blue-300 hover:bg-blue-50"
+                      onClick={() => setShowRemoteApproval(true)}
+                      disabled={isProcessing}
+                    >
+                      <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                      </svg>
+                      Request Remote Manager Approval
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -334,6 +414,21 @@ export function CompVoidModal({
           </Button>
         </div>
       </div>
+
+      {/* Remote Void Approval Modal */}
+      <RemoteVoidApprovalModal
+        isOpen={showRemoteApproval}
+        onClose={() => setShowRemoteApproval(false)}
+        locationId={locationId}
+        orderId={orderId}
+        orderItemId={item.id}
+        itemName={item.name}
+        amount={itemTotal}
+        voidType={action === 'comp' ? 'comp' : 'item'}
+        employeeId={employeeId}
+        terminalId={terminalId}
+        onSuccess={handleRemoteApprovalSuccess}
+      />
     </div>
   )
 }

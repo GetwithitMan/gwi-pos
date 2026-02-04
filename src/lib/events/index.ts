@@ -144,6 +144,7 @@ export type {
   PaymentProcessedEvent,
   TabUpdatedEvent,
   TableStatus,
+  FloorPlanUpdatedEvent,
 } from './types'
 
 export { buildChannelName, parseChannelName } from './types'

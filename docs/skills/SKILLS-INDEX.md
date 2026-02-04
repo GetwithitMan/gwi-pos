@@ -68,11 +68,12 @@
 | 17 | Table Status | DONE | 16 | Available/occupied/reserved/dirty, quick toggle |
 | 18 | Table Transfer | DONE | 16, 02 | Transfer API, moves orders with audit log |
 | 19 | Reservations | DONE | 16 | Full booking system, admin page, status tracking |
+| 117 | Virtual Table Combine | DONE | 106, 107 | Long-press to link tables, pulsing glow, T-S notation, manager dashboard |
 
 ### Bar Features
 | Skill | Name | Status | Dependencies | Notes |
 |-------|------|--------|--------------|-------|
-| 20 | Bar Tabs | DONE | 02 | Create, view, edit, pay tabs |
+| 20 | Bar Tabs | PARTIAL | 02 | Create, view, edit, pay tabs. **NEEDS: Improved UI for bartender workflow, quick tab creation from floor plan** |
 | 21 | Pre-auth | DONE | 30 | Card hold on tab open |
 | 22 | Tab Transfer | DONE | 20 | Move tabs between employees, audit log |
 
@@ -94,6 +95,7 @@
 | 28 | Discounts | DONE | 02 | Manual discounts, preset rules, % or $ |
 | 29 | Commissioned Items | DONE | 01 | Sales commissions |
 | 34 | Comps & Voids | DONE | 02, 01 | Comp/void items, reasons, reports |
+| 122 | Remote Void Approval | DONE | 34 | SMS-based manager approval for voids when off-site, Twilio integration |
 | 35 | Coupons | DONE | 28 | Promo codes, admin page, redemption tracking |
 
 ### Inventory & Menu
@@ -104,6 +106,12 @@
 | 39 | Low Stock Alerts | DONE | 38 | Alerts API, acknowledge, priority levels |
 | 40 | Menu Scheduling | DONE | 03, 09 | Daypart menus, time windows |
 | 41 | Combo Meals | DONE | 03 | Item-based combos, modifier price overrides, admin page, POS modal |
+| 125 | Ingredient Costing & Recipes | DONE | 38 | Recipe components for inventory items, batch yield, yield %, portion size, modifier multipliers |
+| 126 | Explicit Input → Output Model | DONE | 125 | Prep items with explicit input/output transformation, unit conversions, auto-calculated yield, cost derivation |
+| 127 | Quick Stock Adjustment | DONE | 126 | Manager quick adjust page with verification, cost tracking, socket dispatch, audit trail |
+| 141 | Menu/Liquor Builder Separation | DONE | 09 | Filter /menu to show only food categories, exclude liquor/drinks; comprehensive liquor inventory seeding (147 bottles, 6 categories, auto-tiered) |
+| 204 | Ingredient Library Refactor | DONE | 125, 126, 127 | Major refactor: 61% code reduction, race protection, bulk API, debounced search, toast notifications, accessibility |
+| 205 | Component Improvements | DONE | 204 | Shared cost hook, recipe cost aggregation (N→1), hierarchy caching (5min TTL), error rollback, accessibility |
 
 ### Reporting
 | Skill | Name | Status | Dependencies | Notes |
@@ -120,7 +128,7 @@
 | 104 | Daily Store Report | DONE | 42, 43, 50 | Comprehensive EOD report: revenue, payments, cash, sales by category/type, voids, discounts, labor, tips |
 | 105 | Tip Share Report | DONE | - | Standalone tip share report, by recipient/giver, mark as paid, payroll/manual settings |
 | 106 | Interactive Floor Plan (SVG) | DONE | 16, 80 | SVG floor plan with zoom, pan, status colors, seat display |
-| 107 | Table Combine/Split | DONE | 106 | Drag-combine, long-press split, 30s undo, audit log |
+| 107 | Table Combine/Split | DONE | 106 | Drag-combine, split-all, remove-single undo, 5min window, clockwise seats from top-left |
 | 108 | Event Ticketing APIs | TODO | 106 | Event CRUD, seat hold/release, ticket purchase, check-in |
 | 109 | Visual Pizza Builder | TODO | 106 | Konva-based pizza customizer with section selection, topping drag-drop |
 | 110 | Real-time Events (Pusher) | TODO | - | WebSocket abstraction for instant updates (seats, orders, KDS) |
@@ -148,11 +156,17 @@
 | 56 | Cash Drawer | TODO | 49 | Drawer control |
 | 57 | Card Reader | TODO | 30 | Payment terminal |
 | 58 | Barcode Scanner | TODO | 03 | Item lookup |
+| 115 | Hardware Status Dashboard | TODO | 55, 56, 57 | Live connection status for all hardware, last ping times, alerts |
 
 ### Advanced
 | Skill | Name | Status | Dependencies | Notes |
 |-------|------|--------|--------------|-------|
 | 60 | Offline Mode | TODO | ALL | Work without internet |
+
+### Admin & Navigation
+| Skill | Name | Status | Dependencies | Notes |
+|-------|------|--------|--------------|-------|
+| 124 | Admin Navigation | DONE | - | Standardized AdminPageHeader and AdminSubNav components across all admin pages |
 
 ### Additional Skills (80+)
 | Skill | Name | Status | Dependencies | Notes |
@@ -174,18 +188,20 @@
 | Payment | 4 | 0 | 0 | 4 | 100% |
 | Advanced Orders | 5 | 0 | 0 | 5 | 100% |
 | Table Management | 4 | 0 | 0 | 4 | 100% |
-| Bar Features | 3 | 0 | 0 | 3 | 100% |
+| Bar Features | 2 | 1 | 0 | 3 | 83% |
 | Kitchen Display | 4 | 1 | 2 | 7 | 71% |
 | Pricing & Discounts | 5 | 0 | 0 | 5 | 100% |
-| Inventory & Menu | 5 | 0 | 0 | 5 | 100% |
+| Inventory & Menu | 8 | 0 | 0 | 8 | 100% |
 | Reporting | 13 | 0 | 0 | 13 | 100% |
 | Employee Features | 3 | 1 | 0 | 4 | 88% |
 | Customer Features | 2 | 0 | 2 | 4 | 50% |
 | Hardware | 0 | 0 | 4 | 4 | 0% |
 | Advanced | 0 | 0 | 1 | 1 | 0% |
-| Additional (80-105) | 21 | 0 | 0 | 21 | 100% |
-| Canvas/Events (106-112) | 3 | 0 | 4 | 7 | 43% |
-| **TOTAL** | **80** | **3** | **11** | **94** | **88%** |
+| Admin & Navigation | 1 | 0 | 0 | 1 | 100% |
+| Additional (80-105) | 20 | 1 | 0 | 21 | 98% |
+| Canvas/Events (106-123) | 9 | 0 | 5 | 14 | 64% |
+| Routing & KDS (200s) | 3 | 0 | 0 | 3 | 100% |
+| **TOTAL** | **93** | **5** | **12** | **110** | **90%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -306,6 +322,42 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-03)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 204 | Ingredient Library Refactor | Major refactor of /ingredients page: extracted useIngredientLibrary hook (487 lines), split UI into BulkActionBar (108 lines) and DeletedItemsPanel (225 lines), reduced main component from 1,091 → 419 lines (61%). Race protection with loadRequestIdRef, debounced search (300ms), bulk-parent API endpoint (N→1 calls), "Restore to Previous Location" quick button, auto-clear selection after mutations, toast notifications, ARIA accessibility. Performance: ~80% reduction in re-renders, ~90% reduction in bulk operations, ~70% reduction in data reloads. |
+| 205 | Ingredient Component Improvements | Component-specific enhancements: created useIngredientCost shared hook (83 lines) eliminating 45 lines of duplicate logic, recipe-cost aggregation API reducing N fetches → 1 (90% reduction for 10-component recipes), useHierarchyCache hook with 5-minute TTL for instant expansion, error handling with optimistic updates and automatic rollback, accessibility labels on all numeric inputs. Overall: ~85% reduction in network calls, better consistency, improved UX with no broken states. Fixed hardcoded locationId in PrepItemEditor. |
+| 141 | Menu/Liquor Builder Separation | Filtered /menu page to exclude liquor/drinks categories (only food categories visible). Created seed-liquor-inventory.ts script to populate Liquor Builder: 147 bottles across 6 categories (Whiskey, Vodka, Rum, Tequila, Gin, Cocktails), auto-tiered by price (Well/Call/Premium/Top Shelf), creates linked InventoryItem for unified tracking. Established clear separation: Menu = Food, Liquor Builder = ALL drinks. |
+
+## Recently Completed (2026-02-02)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 125 | Ingredient Costing & Recipes | Complete tracking system: IngredientRecipe model for raw materials → inventory items, batch yield, yield %, portion size, modifier multipliers (Lite/Extra/No). Recipe components UI in inventory editor, costing fields in prep item editor, daily count badge in hierarchy view. |
+| - | FloorPlanHome Stale Closure Fixes | Fixed intermittent seat count display after combining tables. Added `tablesRef` pattern to prevent stale closures in useCallback hooks. Callbacks fixed: handleTableCombine, handleConfirmVirtualCombine, handleSeatTap, handlePointerMove. Added await to loadFloorPlanData() in handleResetToDefault. |
+
+## Recently Completed (2026-01-31)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 120 | Datacap Direct Integration | PaymentReader model, semi-integrated local card readers, useDatacap hook with failover, DatacapPaymentProcessor component, SwapConfirmationModal, admin page at /settings/hardware/payment-readers, terminal binding, PCI-compliant (no raw card data) |
+| 121 | Atomic Seat Management | Dynamic mid-meal seat add/remove, positional indexing (seats shift automatically), baseSeatCount/extraSeatCount/seatVersion fields, seating API with INSERT/REMOVE actions, SeatOrbiter/SeatBar components, per-seat balance calculations, seat status colors (empty/active/stale/printed/paid), useSeating hook |
+| 201 | Tag-Based Routing Engine | Station model with tag-based pub/sub routing, OrderRouter class, routeTags on MenuItem/Category, template types (PIZZA_STATION, EXPO_SUMMARY, etc.), migration script |
+| 202 | Socket.io Real-Time KDS | WebSocket server with room architecture (location/tag/terminal), dispatchNewOrder/ItemStatus/OrderBumped helpers, useKDSSockets React hook, <50ms latency vs 3-5s polling |
+| 203 | Reference Items & Atomic Print | primaryItems/referenceItems separation in routing, showReferenceItems toggle per station, AtomicPrintConfig types for per-element formatting |
+| 118 | Spirit Tier Admin | Admin UI in /modifiers for marking groups as spirit groups, tier assignment per modifier (Well/Call/Premium/Top Shelf), API updates for isSpiritGroup and spiritTier, visual indicators |
+| 119 | BartenderView Personalization | Quick spirit tier buttons, pour size buttons, scrolling vs pagination toggle, item customization effects (fonts, animations), per-employee localStorage persistence |
+| 117 | Virtual Table Combine | Long-press to link tables without physical move, pulsing glow UI, T-S notation on tickets, ExistingOrdersModal for order merging, GroupSummary checkout, ManagerGroupDashboard at /virtual-groups, EOD self-healing cleanup, server transfer API |
+
+## Recently Completed (2026-01-30)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 113 | FloorPlanHome Integration | FloorPlanHome as primary POS interface, inline ordering flow, /api/orders/[id]/send route, order loading from Open Orders, receipt modal after payment, auto-clear on payment complete |
+| - | PaymentModal Hooks Fix | Fixed React hooks violation (useState after early returns) |
+| - | CategoriesBar CSS Fix | Fixed borderColor/border conflict causing React warnings |
+
 ## Recently Completed (2026-01-29)
 
 | Skill | Name | What Was Built |
@@ -392,6 +444,7 @@ Skills that can be developed simultaneously:
 | 64 | KDS ↔ POS Sync | MADE badge on POS when kitchen completes |
 | 28 | Discounts | Preset rules, custom discounts, admin page |
 | 34 | Comps & Voids | Comp/void items, reasons, restore, reports |
+| 122 | Remote Void Approval | SMS-based manager approval for voids, Twilio integration, mobile approval page |
 | 22 | Tab Transfer | Transfer tabs between employees, audit logging |
 | 68 | Item Transfer | Move items between orders with totals recalc |
 | 69 | Split Item Payment | Split single item among N guests |
@@ -448,7 +501,7 @@ These skills emerged during development and are now part of the system:
 | 72 | Table Reports | DONE | 16, 42 | Sales by table, turn times, sections |
 | 73 | Customer Reports | DONE | 51 | Spend tiers, frequency, VIP tracking |
 | 74 | Employee Reports | DONE | 47, 30 | Sales, tips, purse balance, by day |
-| 75 | Closed Orders View | DONE | 02, 30 | View today's paid/closed orders |
+| 75 | Closed Orders View | PARTIAL | 02, 30 | View today's paid/closed orders. **NEEDS: Void payments, adjust tips, reopen orders, manager approval flow** |
 | 76 | Course/Seat Management UI | DONE | 11, 12 | POS UI for seat/course assignment |
 | 77 | Hold & Fire UI | DONE | 13 | POS controls for holding/firing items |
 | 78 | Coupon Reports | DONE | 35 | Usage, redemptions, daily trend, by type |
@@ -479,14 +532,60 @@ These skills emerged during development and are now part of the system:
 | 104 | Daily Store Report | DONE | 42, 43, 50 | Comprehensive EOD: revenue, payments, cash, sales by category/type, voids, discounts, labor, tip shares |
 | 105 | Tip Share Report | DONE | - | Standalone report, by recipient/giver, mark as paid, payroll/manual payout settings |
 | 106 | Interactive Floor Plan (SVG) | DONE | 16, 80 | SVG floor plan with zoom, pan, status colors, seat display |
-| 107 | Table Combine/Split | DONE | 106 | Drag-combine, long-press split, 30s undo, audit log |
+| 107 | Table Combine/Split | DONE | 106 | Drag-combine, split-all, remove-single undo, 5min window, clockwise seats from top-left |
 | 108 | Event Ticketing APIs | TODO | 106 | Event CRUD, seat hold/release (10min TTL), ticket purchase, barcode check-in |
 | 109 | Visual Pizza Builder | TODO | 106 | Konva-based pizza customizer with section selection, topping drag-drop, live KDS preview |
 | 110 | Real-time Events (Pusher/Ably) | TODO | - | WebSocket abstraction layer for instant updates across all terminals |
 | 111 | Training Mode | TODO | 30 | Sandbox mode with temp database for server training, nothing hits production |
 | 112 | Simulated Card Reader | DONE | 30 | Dev/training tap vs chip simulation, 55 mock cards, 5% decline rate |
-| 111 | Training Mode | TODO | 30 | Sandbox mode with temp database, nothing recorded to production, for server training |
-| 112 | Simulated Card Reader | DONE | 30 | Dev/training tap vs chip simulation, 55 mock cards, 5% decline rate |
+| 113 | FloorPlanHome Integration | DONE | 106, 02, 30 | FloorPlanHome as primary POS, inline ordering, send to kitchen, payment flow, receipt modal, order auto-clear |
+| 114 | Closed Order Management | TODO | 75 | Manager actions: void payments, adjust tips, reopen orders, reprint receipts |
+| 115 | Hardware Status Dashboard | TODO | 55, 56, 57 | Live hardware connection page: printers, card readers, KDS screens with status icons, last ping, alerts |
+| 116 | Drag Item to Seat | TODO | 11, 106 | Drag order items from panel onto seat dots to reassign - high-volume bar workflow |
+| 117 | Virtual Table Combine | DONE | 106, 107, 16 | Long-press to link tables, pulsing glow, T-S notation, manager dashboard, EOD cleanup |
+| 118 | Spirit Tier Admin | DONE | 04 | Admin UI for spirit groups, tier assignment per modifier, isSpiritGroup/spiritTier API |
+| 119 | BartenderView Personalization | DONE | 118 | Quick spirit/pour buttons, item effects, fonts, animations, per-employee settings |
+| 120 | Datacap Direct Integration | DONE | 30 | Semi-integrated local card readers, PaymentReader model, failover swap, admin UI |
+| 121 | Atomic Seat Management | DONE | 11 | Mid-meal seat add/remove, positional shifting, per-seat balances, seatVersion concurrency |
+| 122 | Remote Void Approval | DONE | 34 | SMS-based manager approval for voids when off-site, Twilio integration, mobile approval page |
+| 123 | Entertainment Floor Plan | DONE | 81, 106 | Place entertainment menu items on floor plan, FloorPlanElement model, visual-only rotation, 12 SVG types |
+| 124 | Admin Navigation | DONE | - | Standardized AdminPageHeader and AdminSubNav components across all admin pages |
+| 125 | Ingredient Costing & Recipes | DONE | 38 | IngredientRecipe model, batch yield, yield %, portion size, modifier multipliers for full PMX tracking |
+| 126 | Explicit Input → Output Model | DONE | 125 | Prep items with explicit input/output transformation, unit conversions, auto-calculated yield, cost derivation |
+| 127 | Quick Stock Adjustment | DONE | 126 | Manager quick adjust page with verification, cost tracking, socket dispatch, audit trail |
+| 141 | Menu/Liquor Builder Separation | DONE | 09 | Filter /menu to show only food categories, exclude liquor/drinks; comprehensive liquor inventory seeding |
+| 204 | Ingredient Library Refactor | DONE | 125, 126, 127 | useIngredientLibrary hook, BulkActionBar, DeletedItemsPanel, 61% code reduction, race protection, bulk API, accessibility |
+| 205 | Ingredient Component Improvements | DONE | 204 | useIngredientCost hook, recipe-cost aggregation, useHierarchyCache, error rollback, 85% network reduction |
+
+### Routing & Kitchen Display (200-Series)
+| Skill | Name | Status | Dependencies | Notes |
+|-------|------|--------|--------------|-------|
+| 201 | Tag-Based Routing Engine | DONE | 67, 103 | Unified pub/sub routing replacing scattered printerIds, Station model, OrderRouter class |
+| 202 | Socket.io Real-Time KDS | DONE | 201 | WebSocket-based KDS updates replacing polling, room architecture (location/tag/terminal) |
+| 203 | Reference Items & Atomic Print | DONE | 201 | Context items on tickets, per-element print formatting (size/align/reverse/dividers) |
+
+---
+
+## Next Session Priority (2026-02-01+)
+
+### Priority 1: Bar Tabs UI (Skill 20 Enhancement)
+- Improve OpenOrdersPanel tab list UI for bartenders
+- Quick tab creation from floor plan (Bar Tab button)
+- Pre-auth card capture flow
+- Tab transfer/merge within FloorPlanHome
+
+### Priority 2: Closed Order Management (Skill 114)
+- Closed orders list view with search/filter by date, server, table
+- View full order details for closed orders
+- Void payments (manager PIN required)
+- Adjust tips after close
+- Reprint receipts for closed orders
+- Reopen closed orders with reason tracking
+
+### Priority 3: Kitchen Print Integration
+- Connect /api/orders/[id]/send to actual print API
+- Route tickets to correct printers based on print routes
+- Handle printer offline gracefully
 
 ---
 

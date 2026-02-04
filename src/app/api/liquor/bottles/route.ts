@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     const bottles = await db.bottleProduct.findMany({
       where: {
         locationId: location.id,
+        deletedAt: null,
         ...(tier && { tier }),
         ...(spiritCategoryId && { spiritCategoryId }),
         ...(isActive !== null && { isActive: isActive === 'true' }),
@@ -58,6 +59,28 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             displayName: true,
+          },
+        },
+        inventoryItem: {
+          select: {
+            id: true,
+            currentStock: true,
+          },
+        },
+        linkedMenuItems: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            price: true,
+            isActive: true,
+            sortOrder: true,
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
           },
         },
       },
@@ -86,6 +109,17 @@ export async function GET(request: NextRequest) {
         currentStock: bottle.currentStock,
         lowStockAlert: bottle.lowStockAlert,
         isActive: bottle.isActive,
+        inventoryItemId: bottle.inventoryItemId,
+        inventoryStock: bottle.inventoryItem?.currentStock ? Number(bottle.inventoryItem.currentStock) : null,
+        linkedMenuItems: bottle.linkedMenuItems.map((item) => ({
+          id: item.id,
+          name: item.name,
+          price: Number(item.price),
+          isActive: item.isActive,
+          sortOrder: item.sortOrder,
+          category: item.category,
+        })),
+        hasMenuItem: bottle.linkedMenuItems.length > 0,
         createdAt: bottle.createdAt,
         updatedAt: bottle.updatedAt,
       }))
@@ -102,6 +136,7 @@ export async function GET(request: NextRequest) {
 /**
  * POST /api/liquor/bottles
  * Create a new bottle product with auto-calculated metrics
+ * Also creates a linked InventoryItem for unified stock tracking
  */
 export async function POST(request: NextRequest) {
   try {
@@ -155,10 +190,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify spirit category exists and get location
+    // Verify spirit category exists and get location + category name
     const spiritCategory = await db.spiritCategory.findUnique({
       where: { id: spiritCategoryId },
-      select: { id: true, locationId: true },
+      select: { id: true, locationId: true, name: true },
     })
 
     if (!spiritCategory) {
@@ -171,53 +206,99 @@ export async function POST(request: NextRequest) {
     // Calculate bottle metrics
     const metrics = calculateBottleMetrics(bottleSizeMl, unitCost, pourSizeOz)
 
-    const bottle = await db.bottleProduct.create({
-      data: {
-        locationId: spiritCategory.locationId,
-        name: name.trim(),
-        brand: brand?.trim() || null,
-        displayName: displayName?.trim() || null,
-        spiritCategoryId,
-        tier,
-        bottleSizeMl,
-        bottleSizeOz: metrics.bottleSizeOz,
-        unitCost,
-        pourSizeOz: pourSizeOz || null,
-        poursPerBottle: metrics.poursPerBottle,
-        pourCost: metrics.pourCost,
-        currentStock: currentStock || 0,
-        lowStockAlert: lowStockAlert || null,
-      },
-      include: {
-        spiritCategory: {
-          select: {
-            id: true,
-            name: true,
-            displayName: true,
+    // Use transaction to create both InventoryItem and BottleProduct atomically
+    const result = await db.$transaction(async (tx) => {
+      // Create InventoryItem for unified stock tracking
+      const inventoryItem = await tx.inventoryItem.create({
+        data: {
+          locationId: spiritCategory.locationId,
+          name: name.trim(),
+          description: displayName?.trim() || `${brand || ''} ${name}`.trim(),
+
+          // Classification for COGS reporting
+          department: 'Beverage',
+          itemType: 'liquor',
+          revenueCenter: 'bar',
+          category: spiritCategory.name.toLowerCase(), // whiskey, vodka, etc.
+          subcategory: tier, // well, call, premium, top_shelf
+          brand: brand?.trim() || null,
+
+          // Purchase info (bottle-based)
+          purchaseUnit: 'bottle',
+          purchaseSize: 1,
+          purchaseCost: unitCost,
+
+          // Storage/usage in ounces for pour tracking
+          storageUnit: 'oz',
+          unitsPerPurchase: metrics.bottleSizeOz,
+          costPerUnit: metrics.pourCost, // Cost per oz
+
+          // For liquor items
+          spiritCategoryId,
+          pourSizeOz: pourSizeOz || DEFAULT_POUR_SIZE_OZ,
+
+          // Inventory levels (in bottles for par, but tracked in oz)
+          currentStock: (currentStock || 0) * metrics.bottleSizeOz, // Convert bottles to oz
+          parLevel: lowStockAlert ? lowStockAlert * metrics.bottleSizeOz : null,
+
+          isActive: true,
+          trackInventory: true,
+        },
+      })
+
+      // Create BottleProduct linked to the InventoryItem
+      const bottle = await tx.bottleProduct.create({
+        data: {
+          locationId: spiritCategory.locationId,
+          name: name.trim(),
+          brand: brand?.trim() || null,
+          displayName: displayName?.trim() || null,
+          spiritCategoryId,
+          tier,
+          bottleSizeMl,
+          bottleSizeOz: metrics.bottleSizeOz,
+          unitCost,
+          pourSizeOz: pourSizeOz || null,
+          poursPerBottle: metrics.poursPerBottle,
+          pourCost: metrics.pourCost,
+          currentStock: currentStock || 0,
+          lowStockAlert: lowStockAlert || null,
+          inventoryItemId: inventoryItem.id,
+        },
+        include: {
+          spiritCategory: {
+            select: {
+              id: true,
+              name: true,
+              displayName: true,
+            },
           },
         },
-      },
+      })
+
+      return { bottle, inventoryItemId: inventoryItem.id }
     })
 
     return NextResponse.json({
-      id: bottle.id,
-      name: bottle.name,
-      brand: bottle.brand,
-      displayName: bottle.displayName,
-      spiritCategoryId: bottle.spiritCategoryId,
-      spiritCategory: bottle.spiritCategory,
-      tier: bottle.tier,
-      bottleSizeMl: bottle.bottleSizeMl,
-      bottleSizeOz: bottle.bottleSizeOz ? Number(bottle.bottleSizeOz) : null,
-      unitCost: Number(bottle.unitCost),
-      pourSizeOz: bottle.pourSizeOz ? Number(bottle.pourSizeOz) : null,
-      poursPerBottle: bottle.poursPerBottle,
-      pourCost: bottle.pourCost ? Number(bottle.pourCost) : null,
-      currentStock: bottle.currentStock,
-      lowStockAlert: bottle.lowStockAlert,
-      isActive: bottle.isActive,
-      createdAt: bottle.createdAt,
-      updatedAt: bottle.updatedAt,
+      id: result.bottle.id,
+      name: result.bottle.name,
+      brand: result.bottle.brand,
+      displayName: result.bottle.displayName,
+      spiritCategoryId: result.bottle.spiritCategoryId,
+      spiritCategory: result.bottle.spiritCategory,
+      tier: result.bottle.tier,
+      bottleSizeMl: result.bottle.bottleSizeMl,
+      bottleSizeOz: result.bottle.bottleSizeOz ? Number(result.bottle.bottleSizeOz) : null,
+      unitCost: Number(result.bottle.unitCost),
+      pourSizeOz: result.bottle.pourSizeOz ? Number(result.bottle.pourSizeOz) : null,
+      poursPerBottle: result.bottle.poursPerBottle,
+      pourCost: result.bottle.pourCost ? Number(result.bottle.pourCost) : null,
+      currentStock: result.bottle.currentStock,
+      lowStockAlert: result.bottle.lowStockAlert,
+      isActive: result.bottle.isActive,
+      inventoryItemId: result.inventoryItemId,
+      createdAt: result.bottle.createdAt,
+      updatedAt: result.bottle.updatedAt,
     })
   } catch (error) {
     console.error('Failed to create bottle:', error)

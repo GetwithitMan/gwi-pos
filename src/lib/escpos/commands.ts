@@ -162,16 +162,32 @@ export function threeColumnLine(
 
 /**
  * Build a complete receipt/ticket by combining commands
+ * Note: COLOR_BLACK at end ensures TM-U220 (impact) printers don't retain red state
  */
 export function buildDocument(...parts: Buffer[]): Buffer {
-  return Buffer.concat([ESCPOS.INIT, ...parts, ESCPOS.FEED_LINES(3), ESCPOS.CUT_PARTIAL])
+  return Buffer.concat([
+    ESCPOS.INIT,
+    ...parts,
+    ESCPOS.COLOR_BLACK, // Safety reset - TM-U220 is stateful
+    ESCPOS.NORMAL_SIZE,
+    ESCPOS.FEED_LINES(3),
+    ESCPOS.CUT_PARTIAL,
+  ])
 }
 
 /**
  * Build a document without cut (for impact printers that may not support it)
+ * Note: COLOR_BLACK at end ensures TM-U220 doesn't retain red state between jobs
  */
 export function buildDocumentNoCut(...parts: Buffer[]): Buffer {
-  return Buffer.concat([ESCPOS.INIT, ...parts, ESCPOS.FEED_LINES(5)])
+  return Buffer.concat([
+    ESCPOS.INIT,
+    ESCPOS.COLOR_BLACK, // Ensure we start in black (belt-and-suspenders with INIT)
+    ...parts,
+    ESCPOS.COLOR_BLACK, // Safety reset - TM-U220 is stateful
+    ESCPOS.IMPACT_NORMAL, // Reset text size for impact printers
+    ESCPOS.FEED_LINES(5),
+  ])
 }
 
 /**

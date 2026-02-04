@@ -3,6 +3,41 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { tableEvents } from '@/lib/realtime/table-events'
 
+// Helper to restore seats to original positions
+async function restoreSeatsForTable(
+  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
+  tableId: string,
+  locationId: string
+) {
+  // Fetch all seats for this table
+  const seats = await tx.seat.findMany({
+    where: { tableId, isActive: true, deletedAt: null },
+    orderBy: { seatNumber: 'asc' },
+  })
+
+  // Restore each seat to its original position
+  let seatNum = 1
+  for (const seat of seats) {
+    // Only restore if original positions were saved
+    if (seat.originalRelativeX !== null || seat.originalRelativeY !== null) {
+      await tx.seat.update({
+        where: { id: seat.id },
+        data: {
+          relativeX: seat.originalRelativeX ?? seat.relativeX,
+          relativeY: seat.originalRelativeY ?? seat.relativeY,
+          angle: seat.originalAngle ?? seat.angle,
+          originalRelativeX: null,
+          originalRelativeY: null,
+          originalAngle: null,
+          label: String(seatNum),
+          seatNumber: seatNum,
+        },
+      })
+      seatNum++
+    }
+  }
+}
+
 /**
  * POST /api/tables/reset-to-default
  *
@@ -114,15 +149,23 @@ export async function POST(request: NextRequest) {
               where: { id: combined.id },
               data: {
                 combinedWithId: null,
-                // Restore original position if available
-                posX: combined.originalPosX ?? combined.posX,
-                posY: combined.originalPosY ?? combined.posY,
+                // Restore position: originalPosX (pre-combine) → defaultPosX (admin default) → posX (current)
+                // This ensures tables return to where they were before combining
+                posX: combined.originalPosX ?? combined.defaultPosX ?? combined.posX,
+                posY: combined.originalPosY ?? combined.defaultPosY ?? combined.posY,
+                sectionId: combined.defaultSectionId ?? combined.sectionId,
                 // Restore original name if available
                 name: combined.originalName || combined.name,
                 originalName: null,
+                // Clear combine-related original positions (already consumed above)
+                originalPosX: null,
+                originalPosY: null,
                 status: 'available',
               },
             })
+
+            // Restore seats to original positions
+            await restoreSeatsForTable(tx, combined.id, locationId)
 
             resetResults.push({
               id: combined.id,
@@ -141,17 +184,25 @@ export async function POST(request: NextRequest) {
             where: { id: table.id },
             data: {
               combinedTableIds: Prisma.JsonNull,
-              // Restore original position
-              posX: table.originalPosX ?? table.posX,
-              posY: table.originalPosY ?? table.posY,
+              // Restore position: originalPosX (pre-combine) → defaultPosX (admin default) → posX (current)
+              // Primary table typically doesn't move during combine, but check originalPosX just in case
+              posX: table.originalPosX ?? table.defaultPosX ?? table.posX,
+              posY: table.originalPosY ?? table.defaultPosY ?? table.posY,
+              sectionId: table.defaultSectionId ?? table.sectionId,
               // Restore original name
               name: table.originalName || table.name.split('+')[0],
               originalName: null,
+              // Clear combine-related original positions (already consumed above)
+              originalPosX: null,
+              originalPosY: null,
               // Restore original capacity (approximation)
               capacity: originalCapacity > 0 ? originalCapacity : table.capacity,
               status: 'available',
             },
           })
+
+          // Restore seats to original positions for primary table
+          await restoreSeatsForTable(tx, table.id, locationId)
 
           resetResults.push({
             id: table.id,
@@ -162,13 +213,14 @@ export async function POST(request: NextRequest) {
           // This table is combined INTO another - it will be handled by its parent
           continue
         } else {
-          // Not combined, but maybe position needs reset
-          if (table.originalPosX !== null || table.originalPosY !== null) {
+          // Not combined - reset to admin-defined default position if available
+          if (table.defaultPosX !== null || table.defaultPosY !== null) {
             await tx.table.update({
               where: { id: table.id },
               data: {
-                posX: table.originalPosX ?? table.posX,
-                posY: table.originalPosY ?? table.posY,
+                posX: table.defaultPosX ?? table.posX,
+                posY: table.defaultPosY ?? table.posY,
+                sectionId: table.defaultSectionId ?? table.sectionId,
               },
             })
 
@@ -178,10 +230,12 @@ export async function POST(request: NextRequest) {
               wasReset: true,
             })
           } else {
+            // No default layout saved - skip this table
             resetResults.push({
               id: table.id,
               name: table.name,
               wasReset: false,
+              reason: 'no_default_layout',
             })
           }
         }

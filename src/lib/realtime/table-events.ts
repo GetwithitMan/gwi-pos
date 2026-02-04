@@ -48,6 +48,50 @@ export interface TableOrderUpdatedEvent {
   timestamp: string
 }
 
+// Virtual Group Events
+export interface VirtualGroupCreatedEvent {
+  virtualGroupId: string
+  primaryTableId: string
+  tableIds: string[]
+  groupColor: string
+  locationId: string
+  timestamp: string
+  triggeredBy?: string
+}
+
+export interface VirtualGroupDissolvedEvent {
+  virtualGroupId: string
+  tableIds: string[]
+  locationId: string
+  timestamp: string
+  triggeredBy?: string
+}
+
+export interface VirtualGroupMemberAddedEvent {
+  virtualGroupId: string
+  tableId: string
+  locationId: string
+  timestamp: string
+  triggeredBy?: string
+}
+
+export interface VirtualGroupMemberRemovedEvent {
+  virtualGroupId: string
+  tableId: string
+  locationId: string
+  timestamp: string
+  triggeredBy?: string
+}
+
+export interface VirtualGroupPrimaryChangedEvent {
+  virtualGroupId: string
+  previousPrimaryId: string
+  newPrimaryId: string
+  locationId: string
+  timestamp: string
+  triggeredBy?: string
+}
+
 /**
  * Table events emitter - abstraction for real-time updates
  *
@@ -114,6 +158,46 @@ export const tableEvents = {
 
     // Tomorrow: Real-time push
     // pusher.trigger(`tables-${event.locationId}`, 'order-updated', event)
+  },
+
+  /**
+   * Emit when a virtual table group is created
+   */
+  virtualGroupCreated: (event: VirtualGroupCreatedEvent): void => {
+    console.log('[TableEvents] Virtual group created:', event)
+    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-created', event)
+  },
+
+  /**
+   * Emit when a virtual table group is dissolved
+   */
+  virtualGroupDissolved: (event: VirtualGroupDissolvedEvent): void => {
+    console.log('[TableEvents] Virtual group dissolved:', event)
+    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-dissolved', event)
+  },
+
+  /**
+   * Emit when a table is added to a virtual group
+   */
+  virtualGroupMemberAdded: (event: VirtualGroupMemberAddedEvent): void => {
+    console.log('[TableEvents] Virtual group member added:', event)
+    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-member-added', event)
+  },
+
+  /**
+   * Emit when a table is removed from a virtual group
+   */
+  virtualGroupMemberRemoved: (event: VirtualGroupMemberRemovedEvent): void => {
+    console.log('[TableEvents] Virtual group member removed:', event)
+    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-member-removed', event)
+  },
+
+  /**
+   * Emit when the primary table of a virtual group is changed
+   */
+  virtualGroupPrimaryChanged: (event: VirtualGroupPrimaryChangedEvent): void => {
+    console.log('[TableEvents] Virtual group primary changed:', event)
+    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-primary-changed', event)
   },
 }
 

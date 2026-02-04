@@ -1,6 +1,196 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// GET /api/menu/items - Fetch menu items, optionally filtered by category
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const categoryId = searchParams.get('categoryId')
+    const locationId = searchParams.get('locationId')
+    const includeStock = searchParams.get('includeStock') === 'true'
+
+    // Build filter
+    const where: {
+      isActive: boolean
+      deletedAt: null
+      categoryId?: string
+      locationId?: string
+    } = {
+      isActive: true,
+      deletedAt: null,
+    }
+
+    if (categoryId) {
+      where.categoryId = categoryId
+    }
+    if (locationId) {
+      where.locationId = locationId
+    }
+
+    const items = await db.menuItem.findMany({
+      where,
+      orderBy: { sortOrder: 'asc' },
+      include: {
+        category: {
+          select: { name: true, categoryType: true }
+        },
+        modifierGroups: {
+          where: {
+            deletedAt: null,
+            modifierGroup: { deletedAt: null }
+          },
+          include: {
+            modifierGroup: {
+              include: {
+                modifiers: {
+                  where: { deletedAt: null, isActive: true },
+                  select: {
+                    id: true,
+                    name: true,
+                    price: true,
+                    spiritTier: true,
+                  },
+                  orderBy: { sortOrder: 'asc' }
+                }
+              }
+            }
+          }
+        },
+        // Include ingredients for stock status (only if requested)
+        ...(includeStock ? {
+          ingredients: {
+            where: { deletedAt: null },
+            include: {
+              ingredient: {
+                select: {
+                  id: true,
+                  name: true,
+                  isDailyCountItem: true,
+                  currentPrepStock: true,
+                  lowStockThreshold: true,
+                  criticalStockThreshold: true,
+                  onlineStockThreshold: true,
+                }
+              }
+            }
+          }
+        } : {})
+      }
+    })
+
+    // Helper to calculate stock status for an item
+    type StockStatus = 'in_stock' | 'low_stock' | 'critical' | 'out_of_stock'
+    function getStockStatus(item: typeof items[0]): {
+      status: StockStatus
+      lowestIngredient?: { name: string; stock: number; threshold: number }
+    } {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const itemWithIngredients = item as any
+      if (!includeStock || !itemWithIngredients.ingredients) {
+        return { status: 'in_stock' }
+      }
+
+      let worstStatus: StockStatus = 'in_stock'
+      let lowestIngredient: { name: string; stock: number; threshold: number } | undefined
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const link of itemWithIngredients.ingredients) {
+        const ing = link.ingredient
+        if (!ing || !ing.isDailyCountItem) continue
+
+        const stock = Number(ing.currentPrepStock || 0)
+        const criticalThreshold = Number(ing.criticalStockThreshold || 0)
+        const lowThreshold = Number(ing.lowStockThreshold || 0)
+
+        // Check stock levels - worst status wins
+        if (stock <= 0) {
+          worstStatus = 'out_of_stock'
+          lowestIngredient = { name: ing.name, stock, threshold: criticalThreshold }
+          break // Can't get worse than out of stock
+        } else if (stock <= criticalThreshold && criticalThreshold > 0) {
+          if (worstStatus === 'in_stock' || worstStatus === 'low_stock') {
+            worstStatus = 'critical'
+            lowestIngredient = { name: ing.name, stock, threshold: criticalThreshold }
+          }
+        } else if (stock <= lowThreshold && lowThreshold > 0 && worstStatus === 'in_stock') {
+          worstStatus = 'low_stock'
+          lowestIngredient = { name: ing.name, stock, threshold: lowThreshold }
+        }
+      }
+
+      return { status: worstStatus, lowestIngredient }
+    }
+
+    return NextResponse.json({
+      items: items.map(item => {
+        // Check if this is a pizza item based on category type OR item type
+        const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
+
+        // Check for spirit upgrade group
+        const spiritGroup = item.modifierGroups.find(mg => mg.modifierGroup.isSpiritGroup)
+        const spiritModifiers = spiritGroup?.modifierGroup.modifiers || []
+
+        // Group spirit modifiers by tier
+        const spiritTiers = spiritModifiers.length > 0 ? {
+          well: spiritModifiers.filter(m => m.spiritTier === 'well').map(m => ({
+            id: m.id, name: m.name, price: Number(m.price)
+          })),
+          call: spiritModifiers.filter(m => m.spiritTier === 'call').map(m => ({
+            id: m.id, name: m.name, price: Number(m.price)
+          })),
+          premium: spiritModifiers.filter(m => m.spiritTier === 'premium').map(m => ({
+            id: m.id, name: m.name, price: Number(m.price)
+          })),
+          top_shelf: spiritModifiers.filter(m => m.spiritTier === 'top_shelf').map(m => ({
+            id: m.id, name: m.name, price: Number(m.price)
+          })),
+        } : null
+
+        // Get stock status
+        const stockInfo = getStockStatus(item)
+
+        return {
+          id: item.id,
+          categoryId: item.categoryId,
+          categoryName: item.category?.name,
+          categoryType: item.category?.categoryType,
+          name: item.name,
+          price: Number(item.price),
+          priceCC: item.priceCC ? Number(item.priceCC) : null,
+          description: item.description,
+          isActive: item.isActive,
+          isAvailable: item.isAvailable,
+          itemType: item.itemType,
+          hasModifiers: item.modifierGroups.length > 0 || isPizzaItem,
+          // Only count non-spirit modifier groups for "other" modifiers
+          hasOtherModifiers: item.modifierGroups.filter(mg => !mg.modifierGroup.isSpiritGroup).length > 0 || isPizzaItem,
+          isPizza: isPizzaItem,
+          // Entertainment/timed rental fields
+          entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
+          blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
+          timedPricing: item.itemType === 'timed_rental' ? item.timedPricing : null,
+          pourSizes: item.pourSizes,
+          defaultPourSize: item.defaultPourSize,
+          applyPourToModifiers: item.applyPourToModifiers,
+          // Spirit tier data for quick selection
+          spiritTiers,
+          // Stock status (only included if requested)
+          ...(includeStock ? {
+            stockStatus: stockInfo.status,
+            stockWarning: stockInfo.lowestIngredient,
+          } : {}),
+        }
+      })
+    })
+  } catch (error) {
+    console.error('Failed to fetch items:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch items' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()

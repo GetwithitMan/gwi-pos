@@ -1894,7 +1894,12 @@ async function main() {
   for (const itemId of allLiquorItemIds) {
     // Mixers
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-mixers` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: mixersGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-mixers`,
@@ -1906,7 +1911,12 @@ async function main() {
     })
     // Garnish
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-garnish` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: garnishGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-garnish`,
@@ -1918,7 +1928,12 @@ async function main() {
     })
     // Ice
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-ice` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: iceGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-ice`,
@@ -1933,7 +1948,12 @@ async function main() {
 
   // Link steak temp to ribeye
   await prisma.menuItemModifierGroup.upsert({
-    where: { id: 'link-steak-temp' },
+    where: {
+      menuItemId_modifierGroupId: {
+        menuItemId: 'item-7',
+        modifierGroupId: steakTempGroup.id,
+      },
+    },
     update: {},
     create: {
       id: 'link-steak-temp',
@@ -1946,7 +1966,12 @@ async function main() {
 
   // Link wing sauce to wings
   await prisma.menuItemModifierGroup.upsert({
-    where: { id: 'link-wing-sauce' },
+    where: {
+      menuItemId_modifierGroupId: {
+        menuItemId: 'item-1',
+        modifierGroupId: wingSauceGroup.id,
+      },
+    },
     update: {},
     create: {
       id: 'link-wing-sauce',
@@ -1959,7 +1984,12 @@ async function main() {
 
   // Link burger add-ons to burger
   await prisma.menuItemModifierGroup.upsert({
-    where: { id: 'link-burger-add' },
+    where: {
+      menuItemId_modifierGroupId: {
+        menuItemId: 'item-5',
+        modifierGroupId: burgerAddGroup.id,
+      },
+    },
     update: {},
     create: {
       id: 'link-burger-add',
@@ -1975,7 +2005,12 @@ async function main() {
   const margaritaItems = ['cocktail-margarita', 'cocktail-marg-frozen', 'cocktail-marg-rocks']
   for (const itemId of margaritaItems) {
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-style` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: margStyleGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-style`,
@@ -1986,7 +2021,12 @@ async function main() {
       },
     })
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-flavor` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: margFlavorGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-flavor`,
@@ -1997,7 +2037,12 @@ async function main() {
       },
     })
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-tequila` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: tequilaUpgradeGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-tequila`,
@@ -2008,7 +2053,12 @@ async function main() {
       },
     })
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-garnish` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: garnishGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-garnish`,
@@ -2025,7 +2075,12 @@ async function main() {
     'cocktail-lemon-drop', 'cocktail-vodka-martini', 'cocktail-screwdriver', 'cocktail-vodka-tonic', 'cocktail-vodka-soda']
   for (const itemId of vodkaCocktails) {
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-vodka` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: vodkaUpgradeGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-vodka`,
@@ -2036,7 +2091,12 @@ async function main() {
       },
     })
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-garnish` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: garnishGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-garnish`,
@@ -2053,7 +2113,12 @@ async function main() {
     'cocktail-dark-stormy', 'cocktail-cuba-libre', 'cocktail-mai-tai', 'cocktail-zombie']
   for (const itemId of rumCocktails) {
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-rum` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: rumUpgradeGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-rum`,
@@ -2064,7 +2129,12 @@ async function main() {
       },
     })
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-garnish` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: garnishGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-garnish`,
@@ -2080,7 +2150,12 @@ async function main() {
   const tequilaCocktails = ['cocktail-paloma', 'cocktail-tequila-sunrise', 'cocktail-ranch-water', 'cocktail-mexican-mule']
   for (const itemId of tequilaCocktails) {
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-tequila` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: tequilaUpgradeGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-tequila`,
@@ -2091,7 +2166,12 @@ async function main() {
       },
     })
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-garnish` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: garnishGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-garnish`,
@@ -2108,7 +2188,12 @@ async function main() {
     'cocktail-tom-collins', 'cocktail-gimlet', 'cocktail-french-75', 'cocktail-aviation']
   for (const itemId of ginCocktails) {
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-gin` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: ginUpgradeGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-gin`,
@@ -2119,7 +2204,12 @@ async function main() {
       },
     })
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-garnish` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: garnishGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-garnish`,
@@ -2136,7 +2226,12 @@ async function main() {
     'cocktail-mint-julep', 'cocktail-jack-coke']
   for (const itemId of whiskeyCocktails) {
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-whiskey` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: whiskeyUpgradeGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-whiskey`,
@@ -2147,7 +2242,12 @@ async function main() {
       },
     })
     await prisma.menuItemModifierGroup.upsert({
-      where: { id: `link-${itemId}-garnish` },
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: garnishGroup.id,
+        },
+      },
       update: {},
       create: {
         id: `link-${itemId}-garnish`,
@@ -2161,7 +2261,820 @@ async function main() {
 
   console.log('Linked modifiers to cocktails')
 
+  // ========================================
+  // PIZZA BUILDER DATA (Skill 109)
+  // ========================================
   console.log('')
+  console.log('Creating pizza builder data...')
+
+  // Create Pizza Category
+  const pizzaCategory = await prisma.category.upsert({
+    where: { id: 'cat-pizza' },
+    update: { categoryType: 'pizza' }, // Ensure existing pizza category gets updated
+    create: {
+      id: 'cat-pizza',
+      locationId: location.id,
+      name: 'Pizza',
+      color: '#ea580c',
+      categoryType: 'pizza', // This triggers the Pizza Builder modal
+      sortOrder: 0, // First category
+    },
+  })
+  console.log('Created pizza category')
+
+  // Create Pizza Config
+  await prisma.pizzaConfig.upsert({
+    where: { locationId: location.id },
+    update: {},
+    create: {
+      locationId: location.id,
+      maxSections: 8,
+      defaultSections: 2,
+      sectionOptions: [1, 2, 4, 8],
+      pricingMode: 'fractional',
+      freeToppingsEnabled: false,
+      freeToppingsCount: 0,
+      freeToppingsMode: 'per_pizza',
+      showVisualBuilder: true,
+      showToppingList: true,
+      defaultToListView: false,
+      builderMode: 'both',
+      defaultBuilderMode: 'quick',
+      allowModeSwitch: true,
+    },
+  })
+  console.log('Created pizza config')
+
+  // Create Pizza Sizes
+  const pizzaSizes = [
+    { id: 'size-personal', name: 'Personal', displayName: '8" Personal', inches: 8, slices: 4, basePrice: 8.99, priceMultiplier: 0.5, toppingMultiplier: 0.6, freeToppings: 0, sortOrder: 0, isDefault: false },
+    { id: 'size-small', name: 'Small', displayName: '10" Small', inches: 10, slices: 6, basePrice: 11.99, priceMultiplier: 0.7, toppingMultiplier: 0.8, freeToppings: 0, sortOrder: 1, isDefault: false },
+    { id: 'size-medium', name: 'Medium', displayName: '12" Medium', inches: 12, slices: 8, basePrice: 14.99, priceMultiplier: 0.85, toppingMultiplier: 0.9, freeToppings: 0, sortOrder: 2, isDefault: true },
+    { id: 'size-large', name: 'Large', displayName: '14" Large', inches: 14, slices: 8, basePrice: 17.99, priceMultiplier: 1.0, toppingMultiplier: 1.0, freeToppings: 0, sortOrder: 3, isDefault: false },
+    { id: 'size-xlarge', name: 'X-Large', displayName: '16" X-Large', inches: 16, slices: 10, basePrice: 20.99, priceMultiplier: 1.15, toppingMultiplier: 1.2, freeToppings: 0, sortOrder: 4, isDefault: false },
+    { id: 'size-party', name: 'Party', displayName: '18" Party', inches: 18, slices: 12, basePrice: 24.99, priceMultiplier: 1.35, toppingMultiplier: 1.4, freeToppings: 0, sortOrder: 5, isDefault: false },
+  ]
+
+  for (const size of pizzaSizes) {
+    await prisma.pizzaSize.upsert({
+      where: { id: size.id },
+      update: {},
+      create: {
+        ...size,
+        locationId: location.id,
+        isActive: true,
+      },
+    })
+  }
+  console.log(`Created ${pizzaSizes.length} pizza sizes`)
+
+  // Create Pizza Crusts
+  const pizzaCrusts = [
+    { id: 'crust-hand', name: 'Hand-Tossed', displayName: 'Hand-Tossed', price: 0, sortOrder: 0, isDefault: true },
+    { id: 'crust-thin', name: 'Thin', displayName: 'Thin & Crispy', price: 0, sortOrder: 1, isDefault: false },
+    { id: 'crust-deep', name: 'Deep Dish', displayName: 'Deep Dish', price: 2.00, sortOrder: 2, isDefault: false },
+    { id: 'crust-stuffed', name: 'Stuffed', displayName: 'Stuffed Crust', price: 3.00, sortOrder: 3, isDefault: false },
+    { id: 'crust-gf', name: 'Gluten-Free', displayName: 'Gluten-Free', price: 3.00, sortOrder: 4, isDefault: false },
+    { id: 'crust-cauli', name: 'Cauliflower', displayName: 'Cauliflower', price: 4.00, sortOrder: 5, isDefault: false },
+  ]
+
+  for (const crust of pizzaCrusts) {
+    await prisma.pizzaCrust.upsert({
+      where: { id: crust.id },
+      update: {},
+      create: {
+        ...crust,
+        locationId: location.id,
+        isActive: true,
+      },
+    })
+  }
+  console.log(`Created ${pizzaCrusts.length} pizza crusts`)
+
+  // Create Pizza Sauces
+  const pizzaSauces = [
+    { id: 'sauce-marinara', name: 'Marinara', displayName: 'Classic Marinara', price: 0, sortOrder: 0, isDefault: true, allowLight: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'sauce-garlic', name: 'Garlic Butter', displayName: 'Garlic Butter', price: 0, sortOrder: 1, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'sauce-bbq', name: 'BBQ', displayName: 'BBQ Sauce', price: 0, sortOrder: 2, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'sauce-buffalo', name: 'Buffalo', displayName: 'Buffalo Sauce', price: 0, sortOrder: 3, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'sauce-alfredo', name: 'Alfredo', displayName: 'Alfredo Sauce', price: 1.00, sortOrder: 4, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'sauce-pesto', name: 'Pesto', displayName: 'Basil Pesto', price: 1.50, sortOrder: 5, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'sauce-olive', name: 'Olive Oil', displayName: 'Olive Oil', price: 0, sortOrder: 6, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'sauce-none', name: 'No Sauce', displayName: 'No Sauce', price: 0, sortOrder: 7, isDefault: false, allowLight: false, allowExtra: false, extraPrice: 0 },
+  ]
+
+  for (const sauce of pizzaSauces) {
+    await prisma.pizzaSauce.upsert({
+      where: { id: sauce.id },
+      update: {},
+      create: {
+        ...sauce,
+        locationId: location.id,
+        isActive: true,
+      },
+    })
+  }
+  console.log(`Created ${pizzaSauces.length} pizza sauces`)
+
+  // Create Pizza Cheeses
+  const pizzaCheeses = [
+    { id: 'cheese-mozz', name: 'Mozzarella', displayName: 'Mozzarella', price: 0, sortOrder: 0, isDefault: true, allowLight: true, allowExtra: true, extraPrice: 2.00 },
+    { id: 'cheese-light', name: 'Light Cheese', displayName: 'Light Cheese', price: 0, sortOrder: 1, isDefault: false, allowLight: false, allowExtra: false, extraPrice: 0 },
+    { id: 'cheese-extra', name: 'Extra Cheese', displayName: 'Extra Mozzarella', price: 2.00, sortOrder: 2, isDefault: false, allowLight: false, allowExtra: false, extraPrice: 0 },
+    { id: 'cheese-none', name: 'No Cheese', displayName: 'No Cheese', price: 0, sortOrder: 3, isDefault: false, allowLight: false, allowExtra: false, extraPrice: 0 },
+    { id: 'cheese-vegan', name: 'Vegan', displayName: 'Vegan Cheese', price: 2.00, sortOrder: 4, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 2.00 },
+    { id: 'cheese-ricotta', name: 'Ricotta', displayName: 'Ricotta Dollops', price: 1.50, sortOrder: 5, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'cheese-feta', name: 'Feta', displayName: 'Feta Crumbles', price: 1.50, sortOrder: 6, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'cheese-parm', name: 'Parmesan', displayName: 'Parmesan', price: 1.00, sortOrder: 7, isDefault: false, allowLight: true, allowExtra: true, extraPrice: 1.00 },
+  ]
+
+  for (const cheese of pizzaCheeses) {
+    await prisma.pizzaCheese.upsert({
+      where: { id: cheese.id },
+      update: {},
+      create: {
+        ...cheese,
+        locationId: location.id,
+        isActive: true,
+      },
+    })
+  }
+  console.log(`Created ${pizzaCheeses.length} pizza cheeses`)
+
+  // Create Pizza Toppings (50+)
+  const pizzaToppings = [
+    // MEATS (15 items)
+    { id: 'top-pepperoni', name: 'Pepperoni', price: 1.50, category: 'meat', sortOrder: 0 },
+    { id: 'top-sausage', name: 'Italian Sausage', price: 1.50, category: 'meat', sortOrder: 1 },
+    { id: 'top-bacon', name: 'Bacon', price: 2.00, category: 'meat', sortOrder: 2 },
+    { id: 'top-ham', name: 'Ham', price: 1.50, category: 'meat', sortOrder: 3 },
+    { id: 'top-beef', name: 'Ground Beef', price: 1.50, category: 'meat', sortOrder: 4 },
+    { id: 'top-chicken', name: 'Chicken', price: 2.50, category: 'meat', sortOrder: 5 },
+    { id: 'top-grchicken', name: 'Grilled Chicken', price: 2.50, category: 'meat', sortOrder: 6 },
+    { id: 'top-bufchicken', name: 'Buffalo Chicken', price: 2.50, category: 'meat', sortOrder: 7 },
+    { id: 'top-anchovies', name: 'Anchovies', price: 2.00, category: 'meat', sortOrder: 8 },
+    { id: 'top-meatballs', name: 'Meatballs', price: 2.50, category: 'meat', sortOrder: 9 },
+    { id: 'top-pulledpork', name: 'Pulled Pork', price: 2.50, category: 'meat', sortOrder: 10 },
+    { id: 'top-salami', name: 'Salami', price: 2.00, category: 'meat', sortOrder: 11 },
+    { id: 'top-capicola', name: 'Capicola', price: 2.50, category: 'meat', sortOrder: 12 },
+    { id: 'top-canadbacon', name: 'Canadian Bacon', price: 2.00, category: 'meat', sortOrder: 13 },
+    { id: 'top-chorizo', name: 'Chorizo', price: 2.50, category: 'meat', sortOrder: 14 },
+
+    // VEGETABLES (20 items)
+    { id: 'top-mushrooms', name: 'Mushrooms', price: 1.00, category: 'veggie', sortOrder: 20 },
+    { id: 'top-onions', name: 'Onions', price: 1.00, category: 'veggie', sortOrder: 21 },
+    { id: 'top-redonion', name: 'Red Onion', price: 1.00, category: 'veggie', sortOrder: 22 },
+    { id: 'top-greenpepp', name: 'Green Peppers', price: 1.00, category: 'veggie', sortOrder: 23 },
+    { id: 'top-blackolives', name: 'Black Olives', price: 1.00, category: 'veggie', sortOrder: 24 },
+    { id: 'top-greenolives', name: 'Green Olives', price: 1.00, category: 'veggie', sortOrder: 25 },
+    { id: 'top-jalapenos', name: 'Jalapenos', price: 1.00, category: 'veggie', sortOrder: 26 },
+    { id: 'top-bananapepp', name: 'Banana Peppers', price: 1.00, category: 'veggie', sortOrder: 27 },
+    { id: 'top-tomatoes', name: 'Tomatoes', price: 1.00, category: 'veggie', sortOrder: 28 },
+    { id: 'top-sundried', name: 'Sun-Dried Tomatoes', price: 1.50, category: 'veggie', sortOrder: 29 },
+    { id: 'top-spinach', name: 'Spinach', price: 1.00, category: 'veggie', sortOrder: 30 },
+    { id: 'top-broccoli', name: 'Broccoli', price: 1.00, category: 'veggie', sortOrder: 31 },
+    { id: 'top-garlic', name: 'Roasted Garlic', price: 1.00, category: 'veggie', sortOrder: 32 },
+    { id: 'top-basil', name: 'Fresh Basil', price: 1.00, category: 'veggie', sortOrder: 33 },
+    { id: 'top-artichoke', name: 'Artichoke Hearts', price: 1.50, category: 'veggie', sortOrder: 34 },
+    { id: 'top-roastedpepp', name: 'Roasted Red Peppers', price: 1.50, category: 'veggie', sortOrder: 35 },
+    { id: 'top-pineapple', name: 'Pineapple', price: 1.00, category: 'veggie', sortOrder: 36 },
+    { id: 'top-kalamata', name: 'Kalamata Olives', price: 1.50, category: 'veggie', sortOrder: 37 },
+    { id: 'top-corn', name: 'Sweet Corn', price: 1.00, category: 'veggie', sortOrder: 38 },
+    { id: 'top-zucchini', name: 'Zucchini', price: 1.00, category: 'veggie', sortOrder: 39 },
+
+    // PREMIUM (10 items)
+    { id: 'top-prosciutto', name: 'Prosciutto', price: 3.00, category: 'premium', sortOrder: 40 },
+    { id: 'top-phillysteak', name: 'Philly Steak', price: 3.00, category: 'premium', sortOrder: 41 },
+    { id: 'top-freshmozz', name: 'Fresh Mozzarella', price: 2.50, category: 'premium', sortOrder: 42 },
+    { id: 'top-goatcheese', name: 'Goat Cheese', price: 2.50, category: 'premium', sortOrder: 43 },
+    { id: 'top-bluecheese', name: 'Blue Cheese', price: 2.50, category: 'premium', sortOrder: 44 },
+    { id: 'top-truffleoil', name: 'Truffle Oil', price: 3.50, category: 'premium', sortOrder: 45 },
+    { id: 'top-arugula', name: 'Arugula', price: 2.00, category: 'premium', sortOrder: 46 },
+    { id: 'top-burrata', name: 'Burrata', price: 3.50, category: 'premium', sortOrder: 47 },
+    { id: 'top-pancetta', name: 'Pancetta', price: 3.00, category: 'premium', sortOrder: 48 },
+    { id: 'top-soppressata', name: 'Soppressata', price: 3.00, category: 'premium', sortOrder: 49 },
+
+    // SEAFOOD (5 items)
+    { id: 'top-shrimp', name: 'Shrimp', price: 3.50, category: 'seafood', sortOrder: 50 },
+    { id: 'top-crab', name: 'Crab Meat', price: 4.00, category: 'seafood', sortOrder: 51 },
+    { id: 'top-clams', name: 'Clams', price: 3.00, category: 'seafood', sortOrder: 52 },
+    { id: 'top-salmon', name: 'Smoked Salmon', price: 4.00, category: 'seafood', sortOrder: 53 },
+    { id: 'top-tuna', name: 'Tuna', price: 3.50, category: 'seafood', sortOrder: 54 },
+  ]
+
+  for (const topping of pizzaToppings) {
+    await prisma.pizzaTopping.upsert({
+      where: { id: topping.id },
+      update: {},
+      create: {
+        ...topping,
+        locationId: location.id,
+        isActive: true,
+      },
+    })
+  }
+  console.log(`Created ${pizzaToppings.length} pizza toppings`)
+
+  // Create Specialty Pizza Menu Items
+  const specialtyPizzas = [
+    {
+      id: 'pizza-pepperoni-lovers',
+      name: 'Pepperoni Lovers',
+      description: 'Double pepperoni with extra cheese',
+      price: 19.99,
+    },
+    {
+      id: 'pizza-meat-lovers',
+      name: 'Meat Lovers',
+      description: 'Pepperoni, sausage, bacon, ham, ground beef',
+      price: 22.99,
+    },
+    {
+      id: 'pizza-supreme',
+      name: 'Supreme',
+      description: 'Pepperoni, sausage, mushrooms, onions, green peppers, black olives',
+      price: 21.99,
+    },
+    {
+      id: 'pizza-veggie-supreme',
+      name: 'Veggie Supreme',
+      description: 'Mushrooms, onions, green peppers, black olives, tomatoes, spinach',
+      price: 19.99,
+    },
+    {
+      id: 'pizza-hawaiian',
+      name: 'Hawaiian',
+      description: 'Ham, pineapple, extra cheese',
+      price: 18.99,
+    },
+    {
+      id: 'pizza-bbq-chicken',
+      name: 'BBQ Chicken',
+      description: 'BBQ sauce, grilled chicken, red onion, cilantro',
+      price: 20.99,
+    },
+    {
+      id: 'pizza-buffalo-chicken',
+      name: 'Buffalo Chicken',
+      description: 'Buffalo sauce, buffalo chicken, ranch drizzle',
+      price: 20.99,
+    },
+    {
+      id: 'pizza-margherita',
+      name: 'Margherita',
+      description: 'Marinara, fresh mozzarella, tomatoes, fresh basil',
+      price: 18.99,
+    },
+    {
+      id: 'pizza-white',
+      name: 'White Pizza',
+      description: 'Alfredo sauce, ricotta, roasted garlic, spinach',
+      price: 19.99,
+    },
+    {
+      id: 'pizza-philly',
+      name: 'Philly Cheesesteak',
+      description: 'Garlic butter, philly steak, green peppers, onions, extra cheese',
+      price: 22.99,
+    },
+    {
+      id: 'pizza-works',
+      name: 'The Works',
+      description: 'Pepperoni, sausage, bacon, ham, mushrooms, onions, green peppers, black olives',
+      price: 24.99,
+    },
+    {
+      id: 'pizza-four-cheese',
+      name: 'Four Cheese',
+      description: 'Mozzarella, parmesan, ricotta, feta',
+      price: 19.99,
+    },
+  ]
+
+  for (const pizza of specialtyPizzas) {
+    await prisma.menuItem.upsert({
+      where: { id: pizza.id },
+      update: {},
+      create: {
+        id: pizza.id,
+        locationId: location.id,
+        categoryId: pizzaCategory.id,
+        name: pizza.name,
+        description: pizza.description,
+        price: pizza.price,
+        isAvailable: true,
+        itemType: 'standard',
+              },
+    })
+  }
+  console.log(`Created ${specialtyPizzas.length} specialty pizzas`)
+
+  // Create Build Your Own Pizza item
+  await prisma.menuItem.upsert({
+    where: { id: 'pizza-custom' },
+    update: {},
+    create: {
+      id: 'pizza-custom',
+      locationId: location.id,
+      categoryId: pizzaCategory.id,
+      name: 'Build Your Own',
+      description: 'Create your perfect pizza with our fresh ingredients',
+      price: 14.99, // Base price (medium)
+      isAvailable: true,
+      itemType: 'standard',
+          },
+  })
+  console.log('Created Build Your Own Pizza')
+
+  console.log('')
+  // =====================================================
+  // VOID REASONS (for inventory tracking)
+  // =====================================================
+  console.log('Creating void reasons...')
+
+  const voidReasons = await Promise.all([
+    prisma.voidReason.upsert({
+      where: { id: 'void-made-wrong' },
+      update: {},
+      create: {
+        id: 'void-made-wrong',
+        locationId: location.id,
+        name: 'Made Wrong',
+        description: 'Item was prepared incorrectly',
+        deductInventory: true,
+        requiresManager: false,
+        sortOrder: 0,
+      },
+    }),
+    prisma.voidReason.upsert({
+      where: { id: 'void-customer-changed-mind' },
+      update: {},
+      create: {
+        id: 'void-customer-changed-mind',
+        locationId: location.id,
+        name: 'Customer Changed Mind',
+        description: 'Customer changed order before it was made',
+        deductInventory: false,
+        requiresManager: false,
+        sortOrder: 1,
+      },
+    }),
+    prisma.voidReason.upsert({
+      where: { id: 'void-rang-wrong' },
+      update: {},
+      create: {
+        id: 'void-rang-wrong',
+        locationId: location.id,
+        name: 'Rang Wrong',
+        description: 'Server entered incorrect item',
+        deductInventory: false,
+        requiresManager: false,
+        sortOrder: 2,
+      },
+    }),
+    prisma.voidReason.upsert({
+      where: { id: 'void-spilled' },
+      update: {},
+      create: {
+        id: 'void-spilled',
+        locationId: location.id,
+        name: 'Spilled/Dropped',
+        description: 'Item was spilled or dropped',
+        deductInventory: true,
+        requiresManager: false,
+        sortOrder: 3,
+      },
+    }),
+    prisma.voidReason.upsert({
+      where: { id: 'void-returned' },
+      update: {},
+      create: {
+        id: 'void-returned',
+        locationId: location.id,
+        name: 'Returned (Quality)',
+        description: 'Customer returned due to quality issue',
+        deductInventory: true,
+        requiresManager: true,
+        sortOrder: 4,
+      },
+    }),
+    prisma.voidReason.upsert({
+      where: { id: 'void-comp' },
+      update: {},
+      create: {
+        id: 'void-comp',
+        locationId: location.id,
+        name: 'Manager Comp',
+        description: 'Complimentary item (manager approved)',
+        deductInventory: true,
+        requiresManager: true,
+        sortOrder: 5,
+      },
+    }),
+    prisma.voidReason.upsert({
+      where: { id: 'void-86d' },
+      update: {},
+      create: {
+        id: 'void-86d',
+        locationId: location.id,
+        name: '86d Item',
+        description: 'Item out of stock after ordering',
+        deductInventory: false,
+        requiresManager: true,
+        sortOrder: 6,
+      },
+    }),
+  ])
+  console.log(`Created ${voidReasons.length} void reasons`)
+
+  // =====================================================
+  // STORAGE LOCATIONS (for inventory counts)
+  // =====================================================
+  console.log('Creating storage locations...')
+
+  const storageLocations = await Promise.all([
+    prisma.storageLocation.upsert({
+      where: { id: 'storage-walk-in-cooler' },
+      update: {},
+      create: {
+        id: 'storage-walk-in-cooler',
+        locationId: location.id,
+        name: 'Walk-in Cooler',
+        description: 'Main refrigerated storage',
+        sortOrder: 0,
+      },
+    }),
+    prisma.storageLocation.upsert({
+      where: { id: 'storage-walk-in-freezer' },
+      update: {},
+      create: {
+        id: 'storage-walk-in-freezer',
+        locationId: location.id,
+        name: 'Walk-in Freezer',
+        description: 'Main frozen storage',
+        sortOrder: 1,
+      },
+    }),
+    prisma.storageLocation.upsert({
+      where: { id: 'storage-dry-storage' },
+      update: {},
+      create: {
+        id: 'storage-dry-storage',
+        locationId: location.id,
+        name: 'Dry Storage',
+        description: 'Shelf-stable items',
+        sortOrder: 2,
+      },
+    }),
+    prisma.storageLocation.upsert({
+      where: { id: 'storage-bar-rail' },
+      update: {},
+      create: {
+        id: 'storage-bar-rail',
+        locationId: location.id,
+        name: 'Bar Rail',
+        description: 'Well and speed rack bottles',
+        sortOrder: 3,
+      },
+    }),
+    prisma.storageLocation.upsert({
+      where: { id: 'storage-bar-back' },
+      update: {},
+      create: {
+        id: 'storage-bar-back',
+        locationId: location.id,
+        name: 'Bar Back',
+        description: 'Back bar display and storage',
+        sortOrder: 4,
+      },
+    }),
+    prisma.storageLocation.upsert({
+      where: { id: 'storage-liquor-room' },
+      update: {},
+      create: {
+        id: 'storage-liquor-room',
+        locationId: location.id,
+        name: 'Liquor Room',
+        description: 'Secure liquor storage',
+        sortOrder: 5,
+      },
+    }),
+    prisma.storageLocation.upsert({
+      where: { id: 'storage-beer-cooler' },
+      update: {},
+      create: {
+        id: 'storage-beer-cooler',
+        locationId: location.id,
+        name: 'Beer Cooler',
+        description: 'Keg and bottled beer storage',
+        sortOrder: 6,
+      },
+    }),
+    prisma.storageLocation.upsert({
+      where: { id: 'storage-kitchen-line' },
+      update: {},
+      create: {
+        id: 'storage-kitchen-line',
+        locationId: location.id,
+        name: 'Kitchen Line',
+        description: 'Prep and line coolers',
+        sortOrder: 7,
+      },
+    }),
+  ])
+  console.log(`Created ${storageLocations.length} storage locations`)
+
+  // ========================================
+  // INGREDIENT CATEGORIES
+  // ========================================
+  console.log('Creating ingredient categories...')
+
+  const ingredientCategories = [
+    { id: 'ing-cat-proteins', code: 1, name: 'Proteins', icon: '🍖', color: '#ef4444' },
+    { id: 'ing-cat-seafood', code: 2, name: 'Seafood', icon: '🦐', color: '#0ea5e9' },
+    { id: 'ing-cat-cheeses', code: 3, name: 'Cheeses', icon: '🧀', color: '#eab308' },
+    { id: 'ing-cat-vegetables', code: 4, name: 'Vegetables', icon: '🥬', color: '#22c55e' },
+    { id: 'ing-cat-sauces', code: 5, name: 'Sauces', icon: '🥫', color: '#f97316' },
+    { id: 'ing-cat-breads', code: 6, name: 'Breads', icon: '🍞', color: '#a16207' },
+    { id: 'ing-cat-toppings', code: 7, name: 'Toppings', icon: '🧅', color: '#8b5cf6' },
+    { id: 'ing-cat-garnishes', code: 8, name: 'Garnishes', icon: '🌿', color: '#10b981' },
+  ]
+
+  // Create category lookup map
+  const categoryMap: Record<string, string> = {}
+  for (const cat of ingredientCategories) {
+    await prisma.ingredientCategory.upsert({
+      where: { id: cat.id },
+      update: {},
+      create: {
+        id: cat.id,
+        locationId: location.id,
+        code: cat.code,
+        name: cat.name,
+        icon: cat.icon,
+        color: cat.color,
+        sortOrder: cat.code - 1,
+      },
+    })
+    categoryMap[cat.name] = cat.id
+  }
+  console.log(`Created ${ingredientCategories.length} ingredient categories`)
+
+  // ========================================
+  // INGREDIENTS - Comprehensive Library
+  // ========================================
+  console.log('Creating ingredient library...')
+
+  // Define all ingredients with modification options
+  const allIngredients = [
+    // ==========================================
+    // PROTEINS
+    // ==========================================
+    { id: 'ing-beef-patty', name: 'Beef Patty', category: 'Proteins', allowNo: false, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 5.00 },
+    { id: 'ing-chicken-breast', name: 'Grilled Chicken', category: 'Proteins', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 4.00 },
+    { id: 'ing-crispy-chicken', name: 'Crispy Chicken', category: 'Proteins', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 4.50 },
+    { id: 'ing-pulled-pork', name: 'Pulled Pork', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 3.50 },
+    { id: 'ing-bacon', name: 'Bacon', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 2.50 },
+    { id: 'ing-turkey', name: 'Turkey', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 3.00 },
+    { id: 'ing-ham', name: 'Ham', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 2.50 },
+    { id: 'ing-salami', name: 'Salami', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 2.00 },
+    { id: 'ing-pepperoni', name: 'Pepperoni', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 2.00 },
+    { id: 'ing-sausage', name: 'Italian Sausage', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 2.50 },
+    { id: 'ing-meatball', name: 'Meatballs', category: 'Proteins', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 3.00 },
+    { id: 'ing-steak', name: 'Steak', category: 'Proteins', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 6.00 },
+    { id: 'ing-ribeye', name: 'Ribeye', category: 'Proteins', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 8.00 },
+    { id: 'ing-brisket', name: 'Brisket', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 5.00 },
+    { id: 'ing-chorizo', name: 'Chorizo', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 2.50 },
+    { id: 'ing-prosciutto', name: 'Prosciutto', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 3.50 },
+    { id: 'ing-pancetta', name: 'Pancetta', category: 'Proteins', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 3.00 },
+
+    // ==========================================
+    // SEAFOOD
+    // ==========================================
+    { id: 'ing-shrimp', name: 'Shrimp', category: 'Seafood', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 5.00 },
+    { id: 'ing-salmon', name: 'Salmon', category: 'Seafood', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 6.00 },
+    { id: 'ing-tuna', name: 'Tuna', category: 'Seafood', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 5.50 },
+    { id: 'ing-crab', name: 'Crab', category: 'Seafood', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 7.00 },
+    { id: 'ing-lobster', name: 'Lobster', category: 'Seafood', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 10.00 },
+    { id: 'ing-calamari', name: 'Calamari', category: 'Seafood', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 4.50 },
+    { id: 'ing-scallops', name: 'Scallops', category: 'Seafood', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 6.00 },
+    { id: 'ing-anchovies', name: 'Anchovies', category: 'Seafood', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+
+    // ==========================================
+    // CHEESES
+    // ==========================================
+    { id: 'ing-american', name: 'American Cheese', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-cheddar', name: 'Cheddar', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-swiss', name: 'Swiss', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-provolone', name: 'Provolone', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-mozzarella', name: 'Mozzarella', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-pepper-jack', name: 'Pepper Jack', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-blue-cheese', name: 'Blue Cheese', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-gouda', name: 'Gouda', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-brie', name: 'Brie', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 2.00 },
+    { id: 'ing-feta', name: 'Feta', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-parmesan', name: 'Parmesan', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-goat-cheese', name: 'Goat Cheese', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 2.00 },
+    { id: 'ing-cream-cheese', name: 'Cream Cheese', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-ricotta', name: 'Ricotta', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-cotija', name: 'Cotija', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-queso-fresco', name: 'Queso Fresco', category: 'Cheeses', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+
+    // ==========================================
+    // VEGETABLES
+    // ==========================================
+    { id: 'ing-lettuce', name: 'Lettuce', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-romaine', name: 'Romaine', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-spinach', name: 'Spinach', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-arugula', name: 'Arugula', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-kale', name: 'Kale', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-mixed-greens', name: 'Mixed Greens', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-tomato', name: 'Tomato', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-cherry-tomato', name: 'Cherry Tomatoes', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-sun-dried-tomato', name: 'Sun-Dried Tomatoes', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-onion', name: 'Onion', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-red-onion', name: 'Red Onion', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-green-onion', name: 'Green Onion', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-caramelized-onion', name: 'Caramelized Onions', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-pickles', name: 'Pickles', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-cucumber', name: 'Cucumber', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-bell-pepper', name: 'Bell Peppers', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-roasted-pepper', name: 'Roasted Red Peppers', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-jalapeno', name: 'Jalapeños', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-banana-pepper', name: 'Banana Peppers', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-mushroom', name: 'Mushrooms', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-portobello', name: 'Portobello', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-avocado', name: 'Avocado', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 2.00 },
+    { id: 'ing-guacamole', name: 'Guacamole', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 2.50 },
+    { id: 'ing-corn', name: 'Corn', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-black-beans', name: 'Black Beans', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-pinto-beans', name: 'Pinto Beans', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-olives', name: 'Black Olives', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-kalamata', name: 'Kalamata Olives', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-artichoke', name: 'Artichoke Hearts', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-broccoli', name: 'Broccoli', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-zucchini', name: 'Zucchini', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-eggplant', name: 'Eggplant', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-cabbage', name: 'Cabbage', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-coleslaw', name: 'Coleslaw', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-sprouts', name: 'Sprouts', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-pico', name: 'Pico de Gallo', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.75 },
+
+    // ==========================================
+    // SAUCES & CONDIMENTS
+    // ==========================================
+    { id: 'ing-ketchup', name: 'Ketchup', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-mustard', name: 'Yellow Mustard', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-dijon', name: 'Dijon Mustard', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-honey-mustard', name: 'Honey Mustard', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-mayo', name: 'Mayo', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-chipotle-mayo', name: 'Chipotle Mayo', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-garlic-aioli', name: 'Garlic Aioli', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-sriracha-aioli', name: 'Sriracha Aioli', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-special-sauce', name: 'Special Sauce', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-bbq', name: 'BBQ Sauce', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-honey-bbq', name: 'Honey BBQ', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-carolina-bbq', name: 'Carolina Gold BBQ', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-buffalo', name: 'Buffalo Sauce', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-hot-sauce', name: 'Hot Sauce', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-sriracha', name: 'Sriracha', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-ranch', name: 'Ranch', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-blue-dressing', name: 'Blue Cheese Dressing', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-caesar', name: 'Caesar Dressing', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-balsamic', name: 'Balsamic Vinaigrette', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-italian-dressing', name: 'Italian Dressing', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-thousand', name: 'Thousand Island', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-sour-cream', name: 'Sour Cream', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-salsa', name: 'Salsa', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-salsa-verde', name: 'Salsa Verde', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-marinara', name: 'Marinara', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-alfredo', name: 'Alfredo Sauce', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-pesto', name: 'Pesto', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-teriyaki', name: 'Teriyaki', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-soy-sauce', name: 'Soy Sauce', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-ginger-sauce', name: 'Ginger Sauce', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-sweet-chili', name: 'Sweet Chili', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-tzatziki', name: 'Tzatziki', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-hummus', name: 'Hummus', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-tahini', name: 'Tahini', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-queso', name: 'Queso', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-gravy', name: 'Gravy', category: 'Sauces', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.75 },
+
+    // ==========================================
+    // BREADS & BASES
+    // ==========================================
+    { id: 'ing-brioche-bun', name: 'Brioche Bun', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-sesame-bun', name: 'Sesame Bun', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-pretzel-bun', name: 'Pretzel Bun', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 1.00 },
+    { id: 'ing-ciabatta', name: 'Ciabatta', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.75 },
+    { id: 'ing-sourdough', name: 'Sourdough', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.50 },
+    { id: 'ing-wheat-bread', name: 'Wheat Bread', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-white-bread', name: 'White Bread', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-rye-bread', name: 'Rye Bread', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.50 },
+    { id: 'ing-texas-toast', name: 'Texas Toast', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.50 },
+    { id: 'ing-hoagie-roll', name: 'Hoagie Roll', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-french-bread', name: 'French Bread', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.50 },
+    { id: 'ing-baguette', name: 'Baguette', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.75 },
+    { id: 'ing-croissant', name: 'Croissant', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 1.00 },
+    { id: 'ing-english-muffin', name: 'English Muffin', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-pita', name: 'Pita Bread', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-naan', name: 'Naan', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 1.00 },
+    { id: 'ing-flatbread', name: 'Flatbread', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.50 },
+    { id: 'ing-tortilla-flour', name: 'Flour Tortilla', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-tortilla-corn', name: 'Corn Tortilla', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-wrap-spinach', name: 'Spinach Wrap', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.50 },
+    { id: 'ing-wrap-tomato', name: 'Tomato Wrap', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0.50 },
+    { id: 'ing-lettuce-wrap', name: 'Lettuce Wrap', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 0 },
+    { id: 'ing-gf-bun', name: 'Gluten-Free Bun', category: 'Breads', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: false, extraPrice: 2.00 },
+
+    // ==========================================
+    // TOPPINGS & EXTRAS
+    // ==========================================
+    { id: 'ing-egg', name: 'Fried Egg', category: 'Toppings', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-egg-scrambled', name: 'Scrambled Egg', category: 'Toppings', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 1.50 },
+    { id: 'ing-onion-rings', name: 'Onion Ring', category: 'Toppings', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-fried-onion', name: 'Crispy Fried Onions', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-croutons', name: 'Croutons', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-walnuts', name: 'Walnuts', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-pecans', name: 'Pecans', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-almonds', name: 'Almonds', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 1.00 },
+    { id: 'ing-sunflower', name: 'Sunflower Seeds', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-dried-cranberry', name: 'Dried Cranberries', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-tortilla-strips', name: 'Tortilla Strips', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-wontons', name: 'Crispy Wontons', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-sesame-seeds', name: 'Sesame Seeds', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-everything-seasoning', name: 'Everything Seasoning', category: 'Toppings', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.25 },
+
+    // ==========================================
+    // GARNISHES & HERBS
+    // ==========================================
+    { id: 'ing-cilantro', name: 'Cilantro', category: 'Garnishes', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-parsley', name: 'Parsley', category: 'Garnishes', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-basil', name: 'Fresh Basil', category: 'Garnishes', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-dill', name: 'Fresh Dill', category: 'Garnishes', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-chives', name: 'Chives', category: 'Garnishes', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.25 },
+    { id: 'ing-mint', name: 'Fresh Mint', category: 'Garnishes', allowNo: true, allowLite: true, allowOnSide: true, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-lime-wedge', name: 'Lime Wedge', category: 'Garnishes', allowNo: true, allowLite: false, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+    { id: 'ing-lemon-wedge', name: 'Lemon Wedge', category: 'Garnishes', allowNo: true, allowLite: false, allowOnSide: true, allowExtra: true, extraPrice: 0 },
+  ]
+
+  // Create all ingredients
+  for (const ing of allIngredients) {
+    await prisma.ingredient.upsert({
+      where: { id: ing.id },
+      update: {},
+      create: {
+        id: ing.id,
+        locationId: location.id,
+        name: ing.name,
+        category: ing.category, // Legacy string category
+        categoryId: categoryMap[ing.category] || null, // New category relation
+        allowNo: ing.allowNo,
+        allowLite: ing.allowLite,
+        allowOnSide: ing.allowOnSide,
+        allowExtra: ing.allowExtra,
+        extraPrice: ing.extraPrice,
+        sortOrder: allIngredients.indexOf(ing),
+      },
+    })
+  }
+  console.log(`Created ${allIngredients.length} ingredients`)
+
+  // Link ingredients to Classic Burger (item-5)
+  const burgerIngredientLinks = [
+    { id: 'link-burger-patty', ingredientId: 'ing-beef-patty', isIncluded: true },
+    { id: 'link-burger-bun', ingredientId: 'ing-brioche-bun', isIncluded: true },
+    { id: 'link-burger-lettuce', ingredientId: 'ing-lettuce', isIncluded: true },
+    { id: 'link-burger-tomato', ingredientId: 'ing-tomato', isIncluded: true },
+    { id: 'link-burger-onion', ingredientId: 'ing-onion', isIncluded: true },
+    { id: 'link-burger-pickles', ingredientId: 'ing-pickles', isIncluded: false }, // Not included by default, available to add
+    { id: 'link-burger-ketchup', ingredientId: 'ing-ketchup', isIncluded: false },
+    { id: 'link-burger-mustard', ingredientId: 'ing-mustard', isIncluded: false },
+    { id: 'link-burger-mayo', ingredientId: 'ing-mayo', isIncluded: false },
+    { id: 'link-burger-special', ingredientId: 'ing-special-sauce', isIncluded: true }, // Comes with special sauce
+  ]
+
+  for (const link of burgerIngredientLinks) {
+    await prisma.menuItemIngredient.upsert({
+      where: {
+        menuItemId_ingredientId: {
+          menuItemId: 'item-5',
+          ingredientId: link.ingredientId,
+        },
+      },
+      update: {},
+      create: {
+        id: link.id,
+        locationId: location.id,
+        menuItemId: 'item-5', // Classic Burger
+        ingredientId: link.ingredientId,
+        isIncluded: link.isIncluded,
+        sortOrder: burgerIngredientLinks.indexOf(link),
+      },
+    })
+  }
+  console.log(`Linked ${burgerIngredientLinks.length} ingredients to Classic Burger`)
+
   console.log('========================================')
   console.log('  Database seeded successfully!')
   console.log('========================================')
@@ -2180,6 +3093,29 @@ async function main() {
   console.log('  - ' + cocktailItems.length + ' cocktails')
   console.log('  - ' + beerItems.length + ' beers')
   console.log('  - ' + wineItems.length + ' wines')
+  console.log('')
+  console.log('Pizza Builder Created:')
+  console.log('  - ' + pizzaSizes.length + ' sizes')
+  console.log('  - ' + pizzaCrusts.length + ' crusts')
+  console.log('  - ' + pizzaSauces.length + ' sauces')
+  console.log('  - ' + pizzaCheeses.length + ' cheeses')
+  console.log('  - ' + pizzaToppings.length + ' toppings')
+  console.log('  - ' + (specialtyPizzas.length + 1) + ' specialty pizzas (including Build Your Own)')
+  console.log('')
+  console.log('Inventory System Created:')
+  console.log('  - ' + voidReasons.length + ' void reasons')
+  console.log('  - ' + storageLocations.length + ' storage locations')
+  console.log('')
+  console.log('Ingredients Library Created:')
+  console.log('  - ' + allIngredients.length + ' total ingredients')
+  console.log('  - ' + burgerIngredientLinks.length + ' burger recipe links')
+  console.log('')
+  console.log('Ingredient Categories:')
+  const ingCategories = [...new Set(allIngredients.map(i => i.category))]
+  ingCategories.forEach(cat => {
+    const count = allIngredients.filter(i => i.category === cat).length
+    console.log(`  - ${cat}: ${count} items`)
+  })
   console.log('')
 }
 

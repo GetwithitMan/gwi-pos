@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
-import { AdminNav } from '@/components/admin/AdminNav'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 interface Modifier {
   id: string
@@ -333,17 +334,16 @@ export default function CombosPage() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <AdminNav />
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Combo Meals"
+        subtitle="Bundle menu items with their modifiers"
+        breadcrumbs={[{ label: 'Menu', href: '/menu' }]}
+        actions={<Button onClick={() => handleOpenModal()}>+ New Combo</Button>}
+      />
+      <AdminSubNav items={menuSubNav} basePath="/menu" />
 
-      <div className="lg:ml-64 p-6">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Combo Meals</h1>
-            <p className="text-gray-600">Bundle menu items with their modifiers</p>
-          </div>
-          <Button onClick={() => handleOpenModal()}>+ New Combo</Button>
-        </div>
+      <div className="max-w-7xl mx-auto mt-6">
 
         {isLoading ? (
           <div className="text-center py-8 text-gray-500">Loading...</div>

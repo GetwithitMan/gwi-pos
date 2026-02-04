@@ -12,6 +12,8 @@ interface OrderItem {
   price: number
   itemTotal: number
   seatNumber?: number | null
+  sourceTableId?: string | null  // For virtual combined tables - T-S notation
+  sourceTableName?: string | null  // Display name for the source table
   modifiers?: { name: string; price: number }[]
 }
 
@@ -28,7 +30,7 @@ interface SplitCheckModalProps {
 }
 
 interface SplitResult {
-  type: 'even' | 'by_item' | 'by_seat' | 'custom_amount' | 'split_item'
+  type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'split_item'
   originalOrderId: string
   // For even split
   splits?: { splitNumber: number; amount: number }[]
@@ -37,13 +39,15 @@ interface SplitResult {
   newOrderNumber?: number
   // For by_seat split
   seatSplits?: { seatNumber: number; total: number; splitOrderId: string }[]
+  // For by_table split (virtual combined tables)
+  tableSplits?: { tableId: string; tableName: string; total: number; splitOrderId: string }[]
   // For custom amount
   splitAmount?: number
   // For split item
   itemSplits?: { itemId: string; itemName: string; splitNumber: number; amount: number }[]
 }
 
-type SplitMode = 'select' | 'even' | 'by_seat' | 'by_item' | 'custom' | 'split_item' | 'navigate_splits'
+type SplitMode = 'select' | 'even' | 'by_seat' | 'by_table' | 'by_item' | 'custom' | 'split_item' | 'navigate_splits'
 
 interface SplitOrderInfo {
   id: string
@@ -98,6 +102,13 @@ export function SplitCheckModal({
     unassignedTotal: number
   } | null>(null)
 
+  // Split by table state (for virtual combined tables)
+  const [tableSplitResult, setTableSplitResult] = useState<{
+    splits: { tableId: string; tableName: string; total: number; splitOrderId: string; displayNumber: string; itemCount: number }[]
+    hasUnassignedItems: boolean
+    unassignedTotal: number
+  } | null>(null)
+
   const remainingBalance = orderTotal - paidAmount
 
   // Check if items have seat assignments
@@ -108,6 +119,15 @@ export function SplitCheckModal({
     return acc
   }, new Set<number>())
   const canSplitBySeat = seatsWithItems.size >= 2
+
+  // Check if items have source table assignments (from virtual combined tables)
+  const tablesWithItems = items.reduce((acc, item) => {
+    if (item.sourceTableId) {
+      acc.set(item.sourceTableId, item.sourceTableName || `Table ${item.sourceTableId.slice(0, 4)}`)
+    }
+    return acc
+  }, new Map<string, string>())
+  const canSplitByTable = tablesWithItems.size >= 2
 
   // Fetch existing splits
   const fetchExistingSplits = async () => {
@@ -144,6 +164,7 @@ export function SplitCheckModal({
       setItemSplitWays(2)
       setItemSplitResult(null)
       setSeatSplitResult(null)
+      setTableSplitResult(null)
       setError(null)
       setExistingSplits([])
       setCurrentSplitId(null)
@@ -287,6 +308,49 @@ export function SplitCheckModal({
     })
   }
 
+  const handleTableSplit = async () => {
+    setIsProcessing(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/orders/${orderId}/split`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'by_table' }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to split by table')
+      }
+
+      const result = await response.json()
+      setTableSplitResult({
+        splits: result.splits,
+        hasUnassignedItems: result.parentOrder.hasUnassignedItems,
+        unassignedTotal: result.parentOrder.total,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to split by table')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleConfirmTableSplit = () => {
+    if (!tableSplitResult) return
+    onSplitComplete({
+      type: 'by_table',
+      originalOrderId: orderId,
+      tableSplits: tableSplitResult.splits.map(s => ({
+        tableId: s.tableId,
+        tableName: s.tableName,
+        total: s.total,
+        splitOrderId: s.splitOrderId,
+      })),
+    })
+  }
+
   const toggleItemSelection = (itemId: string) => {
     setSelectedItemIds(prev =>
       prev.includes(itemId)
@@ -375,6 +439,23 @@ export function SplitCheckModal({
                     {canSplitBySeat
                       ? `Each seat gets its own check (${seatsWithItems.size} seats)`
                       : 'Requires items assigned to seats'}
+                  </div>
+                </div>
+              </Button>
+
+              <Button
+                variant="outline"
+                className={`w-full h-16 text-lg justify-start gap-4 ${!canSplitByTable ? 'opacity-50' : ''}`}
+                onClick={() => setMode('by_table')}
+                disabled={!canSplitByTable}
+              >
+                <span className="text-2xl">🔗</span>
+                <div className="text-left">
+                  <div>Split by Table</div>
+                  <div className="text-sm text-gray-500 font-normal">
+                    {canSplitByTable
+                      ? `Each table gets its own check (${tablesWithItems.size} tables)`
+                      : 'Only for combined table groups'}
                   </div>
                 </div>
               </Button>
@@ -729,6 +810,134 @@ export function SplitCheckModal({
                       variant="primary"
                       className="flex-1"
                       onClick={handleConfirmSeatSplit}
+                    >
+                      View Split Checks
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* By Table Mode - for virtual combined table groups */}
+          {mode === 'by_table' && (
+            <div className="space-y-4">
+              <h3 className="font-medium">Split by Table</h3>
+
+              {!tableSplitResult ? (
+                <>
+                  <p className="text-sm text-gray-500">
+                    Each table in the group will get its own check with their items.
+                  </p>
+
+                  {/* Preview items by table */}
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {Array.from(tablesWithItems.entries()).map(([tableId, tableName]) => {
+                      const tableItems = items.filter(item => item.sourceTableId === tableId)
+                      const tableTotal = tableItems.reduce((sum, item) => sum + item.itemTotal, 0)
+                      return (
+                        <Card key={tableId} className="p-3">
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="font-medium flex items-center gap-2">
+                              <span className="text-lg">🔗</span> {tableName}
+                            </span>
+                            <span className="font-bold">{formatCurrency(tableTotal)}</span>
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            {tableItems.map(item => (
+                              <div key={item.id} className="flex justify-between">
+                                <span>
+                                  {item.quantity > 1 && `${item.quantity}x `}{item.name}
+                                  {item.seatNumber && <span className="text-xs text-cyan-600 ml-1">(S{item.seatNumber})</span>}
+                                </span>
+                                <span>{formatCurrency(item.itemTotal)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </Card>
+                      )
+                    })}
+
+                    {/* Show unassigned items if any */}
+                    {items.some(item => !item.sourceTableId) && (
+                      <Card className="p-3 bg-amber-50 border-amber-200">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="font-medium text-amber-700">Unassigned Items</span>
+                          <span className="font-bold text-amber-700">
+                            {formatCurrency(items.filter(i => !i.sourceTableId).reduce((sum, i) => sum + i.itemTotal, 0))}
+                          </span>
+                        </div>
+                        <p className="text-xs text-amber-600">
+                          These items will stay on the original check
+                        </p>
+                      </Card>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setMode('select')}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={handleTableSplit}
+                      disabled={isProcessing}
+                    >
+                      {isProcessing ? 'Splitting...' : `Create ${tablesWithItems.size} Checks`}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500">
+                    Checks have been created for each table.
+                  </p>
+
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {tableSplitResult.splits.map((split) => (
+                      <Card key={split.splitOrderId} className="p-3">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <span className="font-medium flex items-center gap-2">
+                              <span>🔗</span> {split.tableName}
+                            </span>
+                            <div className="text-sm text-gray-500">
+                              Check #{split.displayNumber} • {split.itemCount} items
+                            </div>
+                          </div>
+                          <span className="text-lg font-bold">{formatCurrency(split.total)}</span>
+                        </div>
+                      </Card>
+                    ))}
+
+                    {tableSplitResult.hasUnassignedItems && (
+                      <Card className="p-3 bg-amber-50 border-amber-200">
+                        <div className="flex justify-between items-center">
+                          <span className="font-medium text-amber-700">Original Check</span>
+                          <span className="font-bold text-amber-700">{formatCurrency(tableSplitResult.unassignedTotal)}</span>
+                        </div>
+                        <p className="text-xs text-amber-600">Unassigned items remain here</p>
+                      </Card>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 mt-4">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={onClose}
+                    >
+                      Done
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={handleConfirmTableSplit}
                     >
                       View Split Checks
                     </Button>

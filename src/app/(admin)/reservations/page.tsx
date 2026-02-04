@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, floorSubNav } from '@/components/admin/AdminSubNav'
 
 interface Table {
   id: string
@@ -138,17 +141,19 @@ export default function ReservationsPage() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold">Reservations</h1>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700"
-        >
-          New Reservation
-        </button>
-      </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Reservations"
+        actions={
+          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+            New Reservation
+          </Button>
+        }
+      />
+      <AdminSubNav items={floorSubNav} basePath="/reservations" />
 
+      {/* Main Content */}
+      <main className="max-w-7xl mx-auto mt-6">
       {/* Date Picker & Filters */}
       <div className="flex gap-4 mb-6">
         <div className="flex items-center gap-2">
@@ -255,6 +260,7 @@ export default function ReservationsPage() {
           </div>
         )}
       </div>
+      </main>
 
       {/* Create/Edit Modal */}
       {(showCreateModal || editingReservation) && (
