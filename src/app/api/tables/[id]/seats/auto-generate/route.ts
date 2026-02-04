@@ -521,16 +521,16 @@ export async function POST(
           }
         }
 
-          // If collisions detected and not forcing, return warning
-          if (collisionResult.hasCollisions && !forceGenerate) {
-            return NextResponse.json({
-              warning: 'Seat collisions detected',
-              collisions: collisionResult.collisions,
-              seatPattern: pattern,
-              suggestedAction: 'Move or resize the table to avoid collisions, or use forceGenerate: true to proceed anyway.',
-            }, { status: 409 }) // Conflict
-          }
-        } // End else block (table has valid position)
+        // If collisions detected and not forcing, return warning
+        if (collisionResult.hasCollisions && !forceGenerate) {
+          return NextResponse.json({
+            warning: 'Seat collisions detected',
+            collisions: collisionResult.collisions,
+            seatPattern: pattern,
+            suggestedAction: 'Move or resize the table to avoid collisions, or use forceGenerate: true to proceed anyway.',
+          }, { status: 409 }) // Conflict
+        }
+      } // End else block (table has valid position)
     } // End if (checkCollisions)
 
     // Use transaction to replace existing seats and optionally update table pattern
