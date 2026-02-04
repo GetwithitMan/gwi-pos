@@ -6,8 +6,23 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
-import { AdminNav } from '@/components/admin/AdminNav'
 import { ReceiptModal } from '@/components/receipt'
+import { AdjustTipModal } from '@/components/orders/AdjustTipModal'
+import { VoidPaymentModal } from '@/components/orders/VoidPaymentModal'
+import { ReopenOrderModal } from '@/components/orders/ReopenOrderModal'
+import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
+
+interface Payment {
+  id: string
+  method: string
+  paymentMethod: string
+  amount: number
+  tipAmount: number
+  totalAmount: number
+  cardLast4?: string
+  cardBrand?: string
+}
 
 interface Order {
   id: string
@@ -24,7 +39,7 @@ interface Order {
   employee?: { id: string; firstName: string; lastName: string }
   customer?: { id: string; firstName: string; lastName: string; phone?: string }
   itemCount: number
-  payments: { method: string; amount: number; tipAmount: number }[]
+  payments: Payment[]
   createdAt: string
   closedAt?: string
 }
@@ -82,6 +97,13 @@ export default function OrderHistoryPage() {
   // Receipt modal
   const [showReceipt, setShowReceipt] = useState(false)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+
+  // Action modals
+  const [showAdjustTip, setShowAdjustTip] = useState(false)
+  const [showVoidPayment, setShowVoidPayment] = useState(false)
+  const [showReopenOrder, setShowReopenOrder] = useState(false)
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -152,10 +174,14 @@ export default function OrderHistoryPage() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <AdminNav />
+    <div className="min-h-screen bg-gray-50 p-6">
+      <AdminPageHeader
+        title="Order History"
+        breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
+      />
+      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
-      <div className="lg:ml-64 p-6">
+      <div className="max-w-7xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Order History</h1>
           <p className="text-gray-600">View and search past orders</p>
@@ -357,16 +383,77 @@ export default function OrderHistoryPage() {
                           {formatDateTime(order.createdAt)}
                         </td>
                         <td className="p-3 text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setSelectedOrderId(order.id)
-                              setShowReceipt(true)
-                            }}
-                          >
-                            View
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            {/* Quick Receipt Button */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedOrderId(order.id)
+                                setShowReceipt(true)
+                              }}
+                              title="Reprint Receipt"
+                            >
+                              🖨️
+                            </Button>
+
+                            {/* Actions Dropdown */}
+                            <div className="relative group">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="px-2"
+                              >
+                                ⋮
+                              </Button>
+
+                              {/* Dropdown Menu */}
+                              <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10 hidden group-hover:block">
+                                <div className="py-1">
+                                  {/* Adjust Tip - only for paid/closed orders with payments */}
+                                  {(order.status === 'paid' || order.status === 'closed') && order.payments.length > 0 && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedOrder(order)
+                                        setSelectedPayment(order.payments[0])
+                                        setShowAdjustTip(true)
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center gap-2"
+                                    >
+                                      💵 Adjust Tip
+                                    </button>
+                                  )}
+
+                                  {/* Void Payment - only for paid/closed orders with payments */}
+                                  {(order.status === 'paid' || order.status === 'closed') && order.payments.length > 0 && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedOrder(order)
+                                        setSelectedPayment(order.payments[0])
+                                        setShowVoidPayment(true)
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center gap-2 text-red-600"
+                                    >
+                                      ⛔ Void Payment
+                                    </button>
+                                  )}
+
+                                  {/* Reopen Order - only for closed/paid orders */}
+                                  {(order.status === 'closed' || order.status === 'paid') && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedOrder(order)
+                                        setShowReopenOrder(true)
+                                      }}
+                                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 flex items-center gap-2"
+                                    >
+                                      🔓 Reopen Order
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -411,6 +498,58 @@ export default function OrderHistoryPage() {
           setSelectedOrderId(null)
         }}
       />
+
+      {/* Adjust Tip Modal */}
+      {selectedOrder && selectedPayment && (
+        <AdjustTipModal
+          isOpen={showAdjustTip}
+          onClose={() => {
+            setShowAdjustTip(false)
+            setSelectedOrder(null)
+            setSelectedPayment(null)
+          }}
+          order={selectedOrder}
+          payment={selectedPayment}
+          locationId={employee?.location?.id || ''}
+          onSuccess={() => {
+            loadOrders() // Reload orders after adjustment
+          }}
+        />
+      )}
+
+      {/* Void Payment Modal */}
+      {selectedOrder && selectedPayment && (
+        <VoidPaymentModal
+          isOpen={showVoidPayment}
+          onClose={() => {
+            setShowVoidPayment(false)
+            setSelectedOrder(null)
+            setSelectedPayment(null)
+          }}
+          order={selectedOrder}
+          payment={selectedPayment}
+          locationId={employee?.location?.id || ''}
+          onSuccess={() => {
+            loadOrders() // Reload orders after void
+          }}
+        />
+      )}
+
+      {/* Reopen Order Modal */}
+      {selectedOrder && (
+        <ReopenOrderModal
+          isOpen={showReopenOrder}
+          onClose={() => {
+            setShowReopenOrder(false)
+            setSelectedOrder(null)
+          }}
+          order={selectedOrder}
+          locationId={employee?.location?.id || ''}
+          onSuccess={() => {
+            loadOrders() // Reload orders after reopen
+          }}
+        />
+      )}
     </div>
   )
 }
