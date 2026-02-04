@@ -19,6 +19,9 @@ export async function GET(
         posY: true,
         width: true,
         height: true,
+        widthFeet: true,
+        heightFeet: true,
+        gridSizeFeet: true,
         sortOrder: true,
         isVisible: true,
       },
@@ -44,7 +47,7 @@ export async function PUT(
 
   try {
     const body = await req.json()
-    const { name, color, isVisible, posX, posY, width, height } = body
+    const { name, color, isVisible, posX, posY, width, height, widthFeet, heightFeet, gridSizeFeet } = body
 
     const section = await db.section.update({
       where: { id },
@@ -56,6 +59,9 @@ export async function PUT(
         ...(posY !== undefined && { posY }),
         ...(width !== undefined && { width }),
         ...(height !== undefined && { height }),
+        ...(widthFeet !== undefined && { widthFeet }),
+        ...(heightFeet !== undefined && { heightFeet }),
+        ...(gridSizeFeet !== undefined && { gridSizeFeet }),
       },
       select: {
         id: true,
@@ -65,6 +71,9 @@ export async function PUT(
         posY: true,
         width: true,
         height: true,
+        widthFeet: true,
+        heightFeet: true,
+        gridSizeFeet: true,
         sortOrder: true,
         isVisible: true,
       },

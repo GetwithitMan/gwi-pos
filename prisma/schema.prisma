@@ -1076,6 +1076,11 @@ model Section {
   shape       String @default("rectangle") // rectangle, polygon
   coordinates Json? // For polygon: [{x, y}, {x, y}, ...]
 
+  // Floor plan dimensions in feet (for editor grid snapping)
+  widthFeet    Float  @default(40)   // Room width in feet
+  heightFeet   Float  @default(30)   // Room height in feet
+  gridSizeFeet Float  @default(0.25) // Grid snap size in feet (0.25 = 3 inch)
+
   sortOrder Int     @default(0)
   isVisible Boolean @default(true)
 
@@ -1240,12 +1245,19 @@ model FloorPlanElement {
   linkedMenuItemId String?
   linkedMenuItem   MenuItem? @relation(fields: [linkedMenuItemId], references: [id])
 
-  // Position & dimensions
+  // Position & dimensions (in pixels, for rectangle/circle elements)
   posX     Int @default(100)
   posY     Int @default(100)
   width    Int @default(120)
   height   Int @default(80)
   rotation Int @default(0)
+
+  // Geometry in feet (for wall/line elements, replaces posX/posY for lines)
+  // JSON: { "type": "line", "start": { "x": 0, "y": 0 }, "end": { "x": 10, "y": 0 } }
+  // Or: { "type": "rectangle", "x": 0, "y": 0, "width": 5, "height": 3 }
+  // Or: { "type": "circle", "x": 5, "y": 5, "radius": 2 }
+  geometry    Json?
+  thickness   Float   @default(0.5) // Wall thickness in feet
 
   // Visual customization
   fillColor   String? // Override default SVG fill

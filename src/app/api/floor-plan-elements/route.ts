@@ -68,6 +68,8 @@ export async function GET(req: Request) {
         width: el.width,
         height: el.height,
         rotation: el.rotation,
+        geometry: el.geometry,
+        thickness: el.thickness,
         fillColor: el.fillColor,
         strokeColor: el.strokeColor,
         opacity: el.opacity,
@@ -106,8 +108,11 @@ export async function POST(req: Request) {
       width,
       height,
       rotation = 0,
+      geometry,
+      thickness = 0.5,
       fillColor,
       strokeColor,
+      opacity = 1.0,
     } = body
 
     if (!locationId || !name || !visualType) {
@@ -168,8 +173,11 @@ export async function POST(req: Request) {
         width: width || 100,
         height: height || 100,
         rotation,
+        geometry: geometry || null,
+        thickness,
         fillColor,
         strokeColor,
+        opacity,
         sortOrder: (lastElement?.sortOrder ?? -1) + 1,
       },
       include: {

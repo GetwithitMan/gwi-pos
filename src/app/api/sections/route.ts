@@ -43,6 +43,9 @@ export async function GET(request: NextRequest) {
         posY: section.posY,
         width: section.width,
         height: section.height,
+        widthFeet: section.widthFeet,
+        heightFeet: section.heightFeet,
+        gridSizeFeet: section.gridSizeFeet,
         tableCount: section.tables.length,
         assignedEmployees: section.assignments.map(a => ({
           id: a.employee.id,
@@ -64,7 +67,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, name, color } = body
+    const { locationId, name, color, widthFeet, heightFeet, gridSizeFeet } = body
 
     if (!locationId || !name) {
       return NextResponse.json(
@@ -88,6 +91,9 @@ export async function POST(request: NextRequest) {
         name,
         color: color || '#6366f1',
         sortOrder: newSortOrder,
+        widthFeet: widthFeet ?? 40,
+        heightFeet: heightFeet ?? 30,
+        gridSizeFeet: gridSizeFeet ?? 0.25,
       },
     })
 
@@ -101,6 +107,9 @@ export async function POST(request: NextRequest) {
         posY: section.posY,
         width: section.width,
         height: section.height,
+        widthFeet: section.widthFeet,
+        heightFeet: section.heightFeet,
+        gridSizeFeet: section.gridSizeFeet,
         tableCount: 0,
         assignedEmployees: [],
       },
