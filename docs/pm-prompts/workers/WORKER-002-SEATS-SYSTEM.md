@@ -526,6 +526,35 @@ Create/modify components:
 7. Visual feedback clearly shows valid/invalid positions
 8. Performance remains smooth with 20+ tables and 80+ seats
 
+## 🚨 BOUNDARY RULES (MANDATORY)
+
+**You are ONLY allowed to modify these files/directories:**
+
+| Directory/File | Permission |
+|----------------|------------|
+| `src/domains/floor-plan/seats/*` | CREATE/MODIFY |
+| `src/app/api/tables/[id]/seats/*` | CREATE (API routes for seats) |
+| `src/app/api/seats/*` | CREATE (API routes for individual seats) |
+| `prisma/schema.prisma` | MODIFY (Seat model only - ask PM first) |
+
+**You MUST NOT touch:**
+- `src/domains/floor-plan/shared/collisionDetection.ts` - Import from WORKER-001, do NOT modify
+- `src/components/floor-plan/FloorPlanHome.tsx` - FOH component (separate worker)
+- `src/components/floor-plan/TableNode.tsx` - Table rendering (separate worker)
+- `src/domains/floor-plan/admin/*` - Editor files
+- `src/domains/floor-plan/tables/*` - Tables layer (WORKER-003)
+- `src/app/api/tables/route.ts` - Main tables API (only touch seats sub-routes)
+
+**Import, Don't Duplicate:**
+- IMPORT collision detection from `src/domains/floor-plan/shared/collisionDetection.ts`
+- IMPORT table data via TableAPI or existing hooks
+- Do NOT recreate collision logic or table fetching
+
+**If you discover you need to modify something outside your boundary:**
+1. STOP
+2. Report the boundary conflict to your PM
+3. Wait for instructions before proceeding
+
 ## Notes for WORKER
 
 - Review existing `src/domains/floor-plan/seats/` directory - some infrastructure may exist

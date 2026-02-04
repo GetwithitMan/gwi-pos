@@ -328,6 +328,37 @@ const deleteTable = async (tableId: string) => {
 7. Changes sync via socket dispatch (real-time to FOH)
 8. All table shapes render correctly
 
+## 🚨 BOUNDARY RULES (MANDATORY)
+
+**You are ONLY allowed to modify these files/directories:**
+
+| Directory/File | Permission |
+|----------------|------------|
+| `src/domains/floor-plan/admin/FloorPlanEditor.tsx` | MODIFY |
+| `src/domains/floor-plan/admin/EditorCanvas.tsx` | MODIFY |
+| `src/domains/floor-plan/admin/types.ts` | MODIFY |
+| `src/domains/floor-plan/admin/TableRenderer.tsx` | CREATE |
+| `src/domains/floor-plan/admin/TableProperties.tsx` | CREATE |
+| `src/app/test-floorplan/editor/page.tsx` | MODIFY (if needed) |
+
+**You MUST NOT touch:**
+- `src/domains/floor-plan/shared/collisionDetection.ts` - Import from WORKER-001, do NOT modify
+- `src/components/floor-plan/FloorPlanHome.tsx` - FOH component (different system)
+- `src/components/floor-plan/TableNode.tsx` - FOH table rendering (READ ONLY for reference)
+- `src/components/floor-plan/hooks/*` - FOH hooks (different system)
+- `src/domains/floor-plan/seats/*` - Seats layer (WORKER-002)
+- `src/app/api/tables/*` - Tables API routes (use as-is, do NOT modify)
+
+**Import, Don't Duplicate:**
+- IMPORT collision detection from `src/domains/floor-plan/shared/collisionDetection.ts`
+- REFERENCE `TableNode.tsx` for shape rendering logic, but implement your own `TableRenderer.tsx` for the Editor
+- USE the Tables API as-is - do NOT modify API routes
+
+**If you discover you need to modify something outside your boundary:**
+1. STOP
+2. Report the boundary conflict to your PM
+3. Wait for instructions before proceeding
+
 ## Notes for WORKER
 
 - The Tables API already handles seat generation - just pass capacity and pattern

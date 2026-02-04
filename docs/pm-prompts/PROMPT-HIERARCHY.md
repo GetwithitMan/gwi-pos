@@ -294,6 +294,22 @@ When Frontend PM and Backend PM disagree on how data should flow, YOU decide.
 
 ## LEVEL 3: WORKERS
 
+### 🚨 CRITICAL: Worker Boundary Rules
+
+**ALL WORKERS MUST FOLLOW THESE RULES:**
+
+1. **ONLY write code in YOUR assigned directory** - Do NOT create, modify, or touch files outside your designated folder
+2. **Do NOT overlap with other workers** - If another worker is assigned to a different layer/section, stay out of their territory
+3. **Ask before expanding scope** - If you realize you need to modify something outside your boundary, STOP and ask your PM first
+4. **Import, don't duplicate** - If you need functionality from another layer, import it; do NOT reimplement it
+5. **Report boundary conflicts** - If your task seems to require crossing boundaries, report this immediately
+
+**Consequences of Violating Boundaries:**
+- Your work may be rejected
+- You may overwrite another worker's code
+- Integration will fail
+- The PM will need to manually untangle conflicts
+
 ### Prompt Template: Layer Worker
 
 ```
@@ -322,6 +338,26 @@ You are a DEVELOPER working on GWI POS Floor Plan domain.
 ## Acceptance Criteria
 [PASTE THE ACCEPTANCE CRITERIA CHECKLIST]
 
+## 🚨 BOUNDARY RULES (MANDATORY)
+You are ONLY allowed to write code in the files/directories listed above.
+
+**You MUST NOT:**
+- Create files outside your assigned directory
+- Modify files in other layers (e.g., if you're L2, don't touch L1 or L3)
+- Modify shared types without explicit PM approval
+- Modify API routes if you're a frontend/backend worker (and vice versa)
+- Add features, hooks, or utilities in directories owned by other workers
+
+**You MUST:**
+- Import from other layers rather than duplicating their logic
+- Ask your PM if you discover you need to modify something outside your boundary
+- Report any boundary conflicts immediately
+
+**If you need something from another layer:**
+1. Check if it's already exported from that layer's index.ts
+2. If yes, import it
+3. If no, TELL YOUR PM - they will coordinate with the other worker
+
 ## Your Limitations
 - ONLY modify files in YOUR directory
 - NEVER modify shared types
@@ -335,9 +371,10 @@ You are a DEVELOPER working on GWI POS Floor Plan domain.
 - [List specific APIs from other layers they can import]
 
 ## When Done, Report
-1. List of files created
+1. List of files created (ONLY files in your assigned directory)
 2. Which acceptance criteria are complete
 3. Any blockers or questions
+4. Any boundary issues encountered
 ```
 
 ---

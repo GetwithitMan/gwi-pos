@@ -312,6 +312,29 @@ const handlePointerMove = useCallback((e: React.PointerEvent) => {
 4. Code is clean, typed, and follows project patterns
 5. All test checklist items pass
 
+## 🚨 BOUNDARY RULES (MANDATORY)
+
+**You are ONLY allowed to modify these files/directories:**
+
+| Directory/File | Permission |
+|----------------|------------|
+| `src/domains/floor-plan/shared/collisionDetection.ts` | CREATE/MODIFY |
+| `src/components/floor-plan/hooks/useFloorPlanDrag.ts` | MODIFY |
+| `src/components/floor-plan/FloorPlanHome.tsx` | MODIFY (collision integration only) |
+| `src/components/floor-plan/TableNode.tsx` | MODIFY (visual feedback only) |
+
+**You MUST NOT touch:**
+- `src/domains/floor-plan/admin/*` - Editor files owned by other workers
+- `src/app/api/*` - API routes (unless explicitly told)
+- `src/domains/floor-plan/seats/*` - Seats layer (WORKER-002)
+- `src/domains/floor-plan/tables/*` - Tables layer (WORKER-003)
+- Any files not listed above
+
+**If you discover you need to modify something outside your boundary:**
+1. STOP
+2. Report the boundary conflict to your PM
+3. Wait for instructions before proceeding
+
 ## Notes for WORKER
 
 - Use the existing fixture data already being fetched in FloorPlanHome (check `dbFixtures` or similar)
