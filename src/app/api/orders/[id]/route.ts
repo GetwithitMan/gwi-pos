@@ -101,6 +101,21 @@ export async function GET(
           quantity: item.quantity,
           itemTotal: Number(item.itemTotal),
           specialNotes: item.specialNotes,
+
+          // Item lifecycle status
+          seatNumber: item.seatNumber,
+          courseNumber: item.courseNumber,
+          courseStatus: item.courseStatus,
+          isHeld: item.isHeld,
+          kitchenStatus: item.kitchenStatus,          // 'pending' | 'cooking' | 'ready' | 'delivered'
+          isCompleted: item.isCompleted,              // KDS bumped
+          completedAt: item.completedAt?.toISOString() || null,
+          resendCount: item.resendCount,              // Number of times resent
+          lastResentAt: item.lastResentAt?.toISOString() || null,
+          resendNote: item.resendNote,                // Last resend note
+          status: item.status,                        // 'active' | 'voided' | 'comped'
+          createdAt: item.createdAt.toISOString(),    // When item was added
+
           // Entertainment/timed rental fields
           blockTimeMinutes: item.blockTimeMinutes,
           blockTimeStartedAt: item.blockTimeStartedAt?.toISOString() || null,

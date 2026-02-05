@@ -56,6 +56,8 @@ import { CourseOverviewPanel } from '@/components/orders/CourseOverviewPanel'
 import { ModifierModal } from '@/components/modifiers/ModifierModal'
 import { PizzaBuilderModal } from '@/components/pizza/PizzaBuilderModal'
 import { AddToWaitlistModal } from '@/components/entertainment/AddToWaitlistModal'
+import { EntertainmentSessionStart } from '@/components/entertainment/EntertainmentSessionStart'
+import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import { OrderSettingsModal } from '@/components/orders/OrderSettingsModal'
 import { AdminNav } from '@/components/admin/AdminNav'
 import { TablePickerModal } from '@/components/orders/TablePickerModal'
@@ -63,6 +65,9 @@ import { FloorPlanHome } from '@/components/floor-plan'
 import { BartenderView } from '@/components/bartender'
 import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
+import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
+import { useMenuSearch } from '@/hooks/useMenuSearch'
+import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig } from '@/types'
 
 export default function OrdersPage() {
@@ -349,6 +354,123 @@ export default function OrdersPage() {
     orderItemId?: string
   }[]>([])
   const [loadingSession, setLoadingSession] = useState(false)
+
+  // Entertainment session start modal state
+  const [showEntertainmentStart, setShowEntertainmentStart] = useState(false)
+  const [entertainmentItem, setEntertainmentItem] = useState<{
+    id: string
+    name: string
+    ratePerMinute?: number
+    prepaidPackages?: PrepaidPackage[]
+    happyHourEnabled?: boolean
+    happyHourPrice?: number
+  } | null>(null)
+
+  // Menu search state (order-entry mode only)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+  const {
+    query: menuSearchQuery,
+    setQuery: setMenuSearchQuery,
+    isSearching: isMenuSearching,
+    results: menuSearchResults,
+    clearSearch: clearMenuSearch
+  } = useMenuSearch({
+    locationId: employee?.location?.id,
+    menuItems: menuItems.map(item => ({
+      id: item.id,
+      name: item.name,
+      price: Number(item.price),
+      categoryId: item.categoryId,
+      is86d: !item.isAvailable,
+    })),
+    enabled: viewMode === 'order-entry'
+  })
+
+  // OrderPanel data mapping
+  const orderPanelItems: OrderPanelItemData[] = useMemo(() => {
+    if (!currentOrder?.items) return []
+
+    return currentOrder.items.map(item => {
+      // Check if this is a timed rental item
+      const menuItemInfo = menuItems.find(m => m.id === item.menuItemId)
+      const isTimedRental = menuItemInfo?.itemType === 'timed_rental'
+
+      // Determine kitchen status from order item properties
+      const kitchenStatus = item.isCompleted
+        ? 'ready'
+        : item.sentToKitchen
+        ? 'sent'
+        : 'pending'
+
+      return {
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        modifiers: item.modifiers?.map(m => ({ name: m.name, price: m.price })),
+        specialNotes: item.specialNotes,
+        kitchenStatus,
+        isHeld: item.isHeld,
+        isTimedRental,
+        menuItemId: item.menuItemId,
+        blockTimeMinutes: item.blockTimeMinutes ?? undefined,
+        blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
+        blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
+      }
+    })
+  }, [currentOrder?.items, menuItems])
+
+  // OrderPanel calculations
+  const { subtotal, taxAmount, totalDiscounts, grandTotal } = useMemo(() => {
+    const storedSubtotal = currentOrder?.subtotal || 0
+    const discountPct = dualPricing.cashDiscountPercent || 4.0
+    const cardSubtotal = dualPricing.enabled
+      ? calculateCardPrice(storedSubtotal, discountPct)
+      : storedSubtotal
+    const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash'
+      ? cardSubtotal - storedSubtotal
+      : 0
+    const discount = currentOrder?.discountTotal || 0
+    const taxableAmount = cardSubtotal - cashDiscountAmount - discount
+    const tax = taxableAmount * taxRate
+    const gratuity = currentOrder?.tipTotal || 0
+    const unroundedTotal = taxableAmount + tax + gratuity
+    const total = applyPriceRounding(unroundedTotal, priceRounding, paymentMethod)
+
+    return {
+      subtotal: cardSubtotal,
+      taxAmount: tax,
+      totalDiscounts: discount + cashDiscountAmount,
+      grandTotal: total,
+    }
+  }, [currentOrder?.subtotal, currentOrder?.discountTotal, currentOrder?.tipTotal, dualPricing, paymentMethod, taxRate, priceRounding])
+
+  // Menu search: Click outside to close
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+        clearMenuSearch()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [clearMenuSearch])
+
+  // Menu search: Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && menuSearchQuery) {
+        clearMenuSearch()
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault()
+        const searchInput = document.querySelector('input[placeholder*="Search menu"]') as HTMLInputElement
+        searchInput?.focus()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [menuSearchQuery, clearMenuSearch])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -1479,6 +1601,15 @@ export default function OrdersPage() {
     setContextMenu(null)
   }
 
+  // Handle menu search item selection
+  const handleSearchItemSelect = (item: { id: string; name: string; price: number; categoryId: string }) => {
+    const menuItem = menuItems.find(m => m.id === item.id)
+    if (menuItem) {
+      handleAddItem(menuItem)
+      clearMenuSearch()
+    }
+  }
+
   const handleAddItemWithModifiers = (modifiers: SelectedModifier[], specialNotes?: string, pourSize?: string, pourMultiplier?: number, ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => {
     if (!selectedItem) return
 
@@ -2004,6 +2135,131 @@ export default function OrdersPage() {
     }
   }
 
+  // Handle opening entertainment session start modal
+  const handleOpenTimedRental = (
+    item: any,
+    onComplete: (price: number, blockMinutes: number) => void
+  ) => {
+    // Store item info for the modal
+    setEntertainmentItem({
+      id: item.id,
+      name: item.name,
+      ratePerMinute: (item as any).ratePerMinute || 0.25,
+      prepaidPackages: (item as any).prepaidPackages || [],
+      happyHourEnabled: (item as any).happyHourEnabled || false,
+      happyHourPrice: (item as any).happyHourPrice || null,
+    })
+    setShowEntertainmentStart(true)
+    // Store callback for later use if needed
+    inlineTimedRentalCallbackRef.current = onComplete
+  }
+
+  // Handle starting entertainment with new tab
+  const handleStartEntertainmentWithNewTab = async (tabName: string, pkg?: PrepaidPackage) => {
+    if (!entertainmentItem || !employee?.location?.id) return
+
+    try {
+      // 1. Create new order
+      const orderRes = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: employee.location.id,
+          employeeId: employee.id,
+          orderType: 'bar_tab',
+          tabName,
+        }),
+      })
+      const orderData = await orderRes.json()
+      const orderId = orderData.data?.id
+
+      if (!orderId) throw new Error('Failed to create order')
+
+      // 2. Add entertainment item to order
+      const itemRes = await fetch(`/api/orders/${orderId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          menuItemId: entertainmentItem.id,
+          quantity: 1,
+          price: pkg?.price || 0,
+          blockTimeMinutes: pkg?.minutes || 0,
+        }),
+      })
+      const itemData = await itemRes.json()
+
+      // 3. Start the timer if prepaid
+      if (pkg && itemData.data?.id) {
+        await fetch('/api/entertainment/block-time', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderItemId: itemData.data.id,
+            locationId: employee.location.id,
+            minutes: pkg.minutes,
+          }),
+        })
+      }
+
+      setShowEntertainmentStart(false)
+      setEntertainmentItem(null)
+      // Trigger refresh of floor plan data if needed
+      loadMenu()
+    } catch (err) {
+      console.error('Failed to start entertainment session:', err)
+      alert('Failed to start session')
+    }
+  }
+
+  // Handle starting entertainment with existing tab
+  const handleStartEntertainmentWithExistingTab = async (orderId: string, pkg?: PrepaidPackage) => {
+    if (!entertainmentItem || !employee?.location?.id) return
+
+    try {
+      // Add item to existing order
+      const itemRes = await fetch(`/api/orders/${orderId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          menuItemId: entertainmentItem.id,
+          quantity: 1,
+          price: pkg?.price || 0,
+          blockTimeMinutes: pkg?.minutes || 0,
+        }),
+      })
+      const itemData = await itemRes.json()
+
+      // Start timer if prepaid
+      if (pkg && itemData.data?.id) {
+        await fetch('/api/entertainment/block-time', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderItemId: itemData.data.id,
+            locationId: employee.location.id,
+            minutes: pkg.minutes,
+          }),
+        })
+      }
+
+      setShowEntertainmentStart(false)
+      setEntertainmentItem(null)
+      loadMenu()
+    } catch (err) {
+      console.error('Failed to add entertainment to order:', err)
+      alert('Failed to add to order')
+    }
+  }
+
+  // Handle starting entertainment with current order
+  const handleStartEntertainmentWithCurrentOrder = async (pkg?: PrepaidPackage) => {
+    // Use savedOrderId if available
+    const orderId = savedOrderId
+    if (orderId) {
+      await handleStartEntertainmentWithExistingTab(orderId, pkg)
+    }
+  }
+
   // Handle editing an existing order item
   const handleEditOrderItem = async (orderItem: NonNullable<typeof currentOrder>['items'][0]) => {
     // Find the menu item
@@ -2249,13 +2505,7 @@ export default function OrdersPage() {
               // T023: Open the open orders panel/modal
               setShowTabsPanel(true)
             }}
-            onOpenTimedRental={(item, onComplete) => {
-              // T023: Open timed rental modal for inline ordering
-              inlineTimedRentalCallbackRef.current = onComplete
-              setSelectedTimedItem(item as MenuItem)
-              setSelectedRateType('perHour')
-              setShowTimedRentalModal(true)
-            }}
+            onOpenTimedRental={handleOpenTimedRental}
             onOpenPizzaBuilder={(item, onComplete) => {
               // T023: Open pizza builder modal for inline ordering
               inlinePizzaCallbackRef.current = onComplete
@@ -2353,6 +2603,35 @@ export default function OrdersPage() {
               inlinePizzaCallbackRef.current = null
             }}
           />
+        )}
+        {/* Entertainment Session Start Modal */}
+        {showEntertainmentStart && entertainmentItem && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <EntertainmentSessionStart
+              itemName={entertainmentItem.name}
+              itemId={entertainmentItem.id}
+              locationId={employee?.location?.id || ''}
+              ratePerMinute={entertainmentItem.ratePerMinute || 0.25}
+              prepaidPackages={entertainmentItem.prepaidPackages}
+              happyHour={entertainmentItem.happyHourEnabled ? {
+                enabled: true,
+                discount: 0,
+                start: '',
+                end: '',
+                days: [],
+              } : undefined}
+              currentOrderId={savedOrderId || null}
+              currentOrderName={currentOrder?.tabName || null}
+              openTabs={[]}
+              onStartWithCurrentOrder={handleStartEntertainmentWithCurrentOrder}
+              onStartWithNewTab={handleStartEntertainmentWithNewTab}
+              onStartWithExistingTab={handleStartEntertainmentWithExistingTab}
+              onClose={() => {
+                setShowEntertainmentStart(false)
+                setEntertainmentItem(null)
+              }}
+            />
+          </div>
         )}
         {/* Timed Rental Modal - shared with floor plan inline ordering */}
         {showTimedRentalModal && selectedTimedItem && (
@@ -2890,6 +3169,26 @@ export default function OrdersPage() {
           />
         )}
 
+        {/* Menu Search Bar (order-entry mode only) */}
+        <div className="px-4 py-2 bg-gray-900/50 border-b border-gray-800/50" ref={searchContainerRef}>
+          <div className="relative max-w-xl">
+            <MenuSearchInput
+              value={menuSearchQuery}
+              onChange={setMenuSearchQuery}
+              onClear={clearMenuSearch}
+              placeholder="Search menu items or ingredients... (⌘K)"
+              isSearching={isMenuSearching}
+            />
+            <MenuSearchResults
+              results={menuSearchResults}
+              query={menuSearchQuery}
+              isSearching={isMenuSearching}
+              onSelectItem={handleSearchItemSelect}
+              onClose={clearMenuSearch}
+            />
+          </div>
+        </div>
+
         {/* Categories - Mode Buttons Left, Categories Right */}
         <div className="bg-white/60 backdrop-blur-md border-b border-white/30 px-4 py-3">
           <div className="flex gap-4">
@@ -3101,8 +3400,13 @@ export default function OrdersPage() {
 
         {/* Menu Items Grid */}
         <div className="flex-1 p-4 overflow-y-auto">
-          <div className={`grid ${gridColsClass} gap-3`}>
-            {filteredItems.map(item => {
+          {menuSearchQuery ? (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              <p>Use the search results above</p>
+            </div>
+          ) : (
+            <div className={`grid ${gridColsClass} gap-3`}>
+              {filteredItems.map(item => {
               const isInUse = item.itemType === 'timed_rental' && item.entertainmentStatus === 'in_use'
               const isFavorite = favorites.includes(item.id)
               const hoverColor = currentMode === 'bar' ? 'blue' : 'orange'
@@ -3217,7 +3521,8 @@ export default function OrdersPage() {
                 <span className="absolute top-2 right-2 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs px-2 py-0.5 rounded-full font-semibold shadow-md">86</span>
               </Button>
             ))}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -3321,665 +3626,38 @@ export default function OrdersPage() {
           )}
         </div>
 
-        {/* Order Items */}
-        <div className={`flex-1 overflow-y-auto p-4 ${
-          currentMode === 'bar'
-            ? 'bg-gradient-to-b from-blue-50/30 via-transparent to-transparent'
-            : 'bg-gradient-to-b from-orange-50/30 via-transparent to-transparent'
-        }`}>
-          {currentOrder?.items.length === 0 ? (
-            currentOrder?.total && currentOrder.total > 0 ? (
-              // Split order with no items - show split info
-              <div className="text-center py-8">
-                <div className={`rounded-2xl p-5 mb-4 backdrop-blur-sm ${
-                  currentMode === 'bar'
-                    ? 'bg-gradient-to-br from-blue-100/80 to-cyan-100/60 border border-blue-200/50'
-                    : 'bg-gradient-to-br from-orange-100/80 to-amber-100/60 border border-orange-200/50'
-                }`}>
-                  <p className={`font-bold text-lg ${currentMode === 'bar' ? 'text-blue-800' : 'text-orange-800'}`}>Split Check</p>
-                  <p className={`text-sm ${currentMode === 'bar' ? 'text-blue-600' : 'text-orange-600'}`}>Order #{currentOrder.orderNumber}</p>
-                </div>
-                <p className={`text-3xl font-bold ${
-                  currentMode === 'bar' ? 'text-blue-600' : 'text-orange-600'
-                }`}>{formatCurrency(currentOrder.total)}</p>
-                <p className="text-sm text-gray-500 mt-2">This is a split portion of the original order</p>
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className={`w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center ${
-                  currentMode === 'bar'
-                    ? 'bg-gradient-to-br from-blue-100 to-cyan-100'
-                    : 'bg-gradient-to-br from-orange-100 to-amber-100'
-                }`}>
-                  <svg className={`w-8 h-8 ${currentMode === 'bar' ? 'text-blue-400' : 'text-orange-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                </div>
-                <p className="text-gray-500 font-medium">No items yet</p>
-                <p className="text-sm text-gray-400 mt-1">Tap menu items to add</p>
-              </div>
-            )
-          ) : (
-            <div className="space-y-1.5">
-              {currentOrder?.items.map(item => {
-                // Group modifiers by depth for hierarchical display
-                const topLevelMods = item.modifiers.filter(m => !m.depth || m.depth === 0)
-                const childMods = item.modifiers.filter(m => m.depth && m.depth > 0)
-                const hasModifiers = item.modifiers.length > 0
-                const menuItemInfo = menuItems.find(m => m.id === item.menuItemId)
-                const canEdit = (menuItemInfo?.modifierGroupCount && menuItemInfo.modifierGroupCount > 0) || item.pizzaConfig
-
-                return (
-                  <Card key={item.id} variant="glassSubtle" className={`p-2 ${
-                    item.sentToKitchen
-                      ? 'bg-gradient-to-r from-emerald-50/80 to-green-50/60 border-l-3 border-l-emerald-500 shadow-emerald-500/10'
-                      : 'hover:bg-white/80 transition-all duration-200'
-                  }`}>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          {/* Sent indicator */}
-                          {item.sentToKitchen ? (
-                            <div className="flex items-center gap-0.5">
-                              <span className="w-4 h-4 rounded bg-emerald-500 flex items-center justify-center" title="Sent to kitchen">
-                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                </svg>
-                              </span>
-                              <span className="w-5 text-center text-sm font-semibold text-gray-600">{item.quantity}</span>
-                              {/* Printer icon to resend */}
-                              <button
-                                className="w-5 h-5 rounded bg-gray-100/80 flex items-center justify-center text-gray-400 hover:bg-blue-100 hover:text-blue-600 transition-colors"
-                                onClick={() => handleResendItem(item.id, item.name)}
-                                title="Resend to kitchen"
-                              >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                </svg>
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-0.5">
-                              <button
-                                className={`w-5 h-5 rounded flex items-center justify-center text-xs font-semibold transition-colors ${
-                                  currentMode === 'bar'
-                                    ? 'bg-blue-100/80 hover:bg-blue-200 text-blue-700'
-                                    : 'bg-orange-100/80 hover:bg-orange-200 text-orange-700'
-                                }`}
-                                onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                              >
-                                -
-                              </button>
-                              <span className="w-5 text-center text-sm font-semibold text-gray-800">{item.quantity}</span>
-                              <button
-                                className={`w-5 h-5 rounded flex items-center justify-center text-xs font-semibold transition-colors ${
-                                  currentMode === 'bar'
-                                    ? 'bg-blue-100/80 hover:bg-blue-200 text-blue-700'
-                                    : 'bg-orange-100/80 hover:bg-orange-200 text-orange-700'
-                                }`}
-                                onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                              >
-                                +
-                              </button>
-                            </div>
-                          )}
-                          <button
-                            className={`text-sm font-medium text-left ${item.sentToKitchen ? 'text-gray-600' : 'text-gray-800'} ${canEdit && !item.sentToKitchen ? 'hover:text-blue-600 cursor-pointer' : ''}`}
-                            onClick={() => canEdit && !item.sentToKitchen && handleEditOrderItem(item)}
-                            disabled={!canEdit || item.sentToKitchen}
-                          >
-                            {item.name}
-                            {/* Inline badges for seat/course/hold */}
-                            <ItemBadges
-                              seatNumber={item.seatNumber}
-                              courseNumber={item.courseNumber}
-                              courseStatus={item.courseStatus}
-                              isHeld={item.isHeld}
-                            />
-                            {item.sentToKitchen && !item.isCompleted && !item.isHeld && (
-                              <span className="ml-1 text-[10px] text-blue-500 font-medium">Sent</span>
-                            )}
-                            {item.isCompleted && (
-                              <span className="ml-1 text-[10px] text-emerald-600 font-bold">
-                                ✓ MADE
-                                {item.completedAt && (
-                                  <span className="ml-0.5 text-emerald-500">
-                                    {new Date(item.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                )}
-                              </span>
-                            )}
-                            {canEdit && !item.sentToKitchen && (
-                              <svg className="w-3 h-3 inline ml-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            )}
-                          </button>
-                        </div>
-                        {/* Display ingredient modifications */}
-                        {item.ingredientModifications && item.ingredientModifications.length > 0 && (
-                          <div
-                            className={`ml-[52px] mt-0.5 ${canEdit && !item.sentToKitchen ? 'cursor-pointer' : ''}`}
-                            onClick={() => canEdit && !item.sentToKitchen && handleEditOrderItem(item)}
-                          >
-                            {item.ingredientModifications.map((ing, idx) => (
-                              <div
-                                key={ing.ingredientId || idx}
-                                className={`text-xs leading-tight font-medium ${
-                                  ing.modificationType === 'no' ? 'text-red-500' :
-                                  ing.modificationType === 'lite' ? 'text-amber-600' :
-                                  ing.modificationType === 'on_side' ? 'text-blue-500' :
-                                  ing.modificationType === 'extra' ? 'text-green-600' :
-                                  ing.modificationType === 'swap' ? 'text-purple-500' : 'text-gray-500'
-                                }`}
-                              >
-                                {ing.modificationType === 'no' && `❌ NO ${ing.name}`}
-                                {ing.modificationType === 'lite' && `⬇ LITE ${ing.name}`}
-                                {ing.modificationType === 'on_side' && `📦 SIDE ${ing.name}`}
-                                {ing.modificationType === 'extra' && `⬆ EXTRA ${ing.name}`}
-                                {ing.modificationType === 'swap' && `🔄 ${ing.name} → ${ing.swappedTo?.name}`}
-                                {ing.priceAdjustment > 0 && <span className="text-emerald-600 ml-1">+{formatCurrency(ing.priceAdjustment)}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {/* Display modifiers with hierarchy using dashes */}
-                        {hasModifiers && (
-                          <div
-                            className={`ml-[52px] mt-0.5 ${canEdit && !item.sentToKitchen ? 'cursor-pointer' : ''}`}
-                            onClick={() => canEdit && !item.sentToKitchen && handleEditOrderItem(item)}
-                          >
-                            {/* All modifiers with dash hierarchy */}
-                            {item.modifiers.map((mod, idx) => {
-                              const depth = mod.depth || 0
-                              const dashes = depth > 0 ? '-'.repeat(depth) + ' ' : ''
-                              return (
-                                <div
-                                  key={mod.id || idx}
-                                  className={`text-xs leading-tight ${depth === 0 ? 'text-gray-500' : 'text-gray-400'}`}
-                                >
-                                  {depth === 0 ? '• ' : dashes}{mod.name}{mod.price > 0 && <span className="text-emerald-600 ml-1">+{formatCurrency(mod.price)}</span>}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )}
-                        {item.specialNotes && (
-                          <div className="ml-[52px] mt-0.5 text-xs text-amber-600">
-                            <span className="font-medium">Note:</span> {item.specialNotes}
-                          </div>
-                        )}
-                        {/* Seat/Course/Hold Controls - show for all items */}
-                        {!item.sentToKitchen && (
-                          <div className="ml-[52px] mt-1 flex items-center gap-2">
-                            {item.isHeld ? (
-                              <button
-                                className="px-2 py-0.5 text-[10px] rounded bg-emerald-500 text-white hover:bg-emerald-600 font-medium"
-                                onClick={() => updateItem(item.id, { isHeld: false })}
-                              >
-                                Fire
-                              </button>
-                            ) : (
-                              <button
-                                className="px-2 py-0.5 text-[10px] rounded bg-amber-100 text-amber-700 hover:bg-amber-200 font-medium"
-                                onClick={() => updateItem(item.id, { isHeld: true })}
-                              >
-                                Hold
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {savedOrderId && item.sentToKitchen && (
-                          <SeatCourseHoldControls
-                            orderId={savedOrderId}
-                            itemId={item.id}
-                            itemName={item.name}
-                            seatNumber={item.seatNumber}
-                            courseNumber={item.courseNumber}
-                            courseStatus={item.courseStatus}
-                            isHeld={item.isHeld}
-                            holdUntil={item.holdUntil}
-                            firedAt={item.firedAt}
-                            sentToKitchen={item.sentToKitchen}
-                            guestCount={currentOrder?.guestCount || 4}
-                            onUpdate={(updates) => {
-                              updateItem(item.id, updates)
-                            }}
-                          />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className={`font-semibold text-xs ${
-                          item.sentToKitchen ? 'text-emerald-700' : 'text-gray-700'
-                        }`}>
-                          {formatCurrency((item.price + item.modifiers.reduce((sum, m) => sum + m.price, 0)) * item.quantity)}
-                        </span>
-                        {/* Notes button */}
-                        {!item.sentToKitchen && (
-                          <button
-                            className={`p-1 rounded transition-colors ${
-                              item.specialNotes
-                                ? 'text-amber-500 hover:text-amber-600'
-                                : 'text-gray-300 hover:text-gray-500'
-                            }`}
-                            onClick={() => handleOpenNotesEditor(item.id, item.specialNotes)}
-                            title={item.specialNotes ? 'Edit note' : 'Add note'}
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                            </svg>
-                          </button>
-                        )}
-                        {/* Comp/Void button for sent items */}
-                        {item.sentToKitchen && (
-                          <button
-                            className="p-1 rounded text-amber-500 hover:text-amber-600 transition-colors"
-                            onClick={() => handleOpenCompVoid(item)}
-                            title="Comp or Void"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </button>
-                        )}
-                        {/* Delete button (only for unsent items) */}
-                        {!item.sentToKitchen && (
-                          <button
-                            className="p-1 rounded text-red-400 hover:text-red-600 transition-colors"
-                            onClick={() => removeItem(item.id)}
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Entertainment Session Controls - for timed rental items */}
-                    {(item.blockTimeMinutes || item.blockTimeStartedAt || item.blockTimeExpiresAt || menuItemInfo?.itemType === 'timed_rental') && (
-                      <EntertainmentSessionControls
-                        orderItemId={item.id}
-                        menuItemId={item.menuItemId}
-                        itemName={item.name}
-                        blockTimeMinutes={item.blockTimeMinutes || null}
-                        blockTimeStartedAt={item.blockTimeStartedAt || null}
-                        blockTimeExpiresAt={item.blockTimeExpiresAt || null}
-                        isTimedRental={menuItemInfo?.itemType === 'timed_rental'}
-                        defaultBlockMinutes={menuItemInfo?.blockTimeMinutes || 60}
-                        onSessionEnded={() => {
-                          // Refresh the order using loadOrder
-                          if (savedOrderId) {
-                            fetch(`/api/orders/${savedOrderId}`)
-                              .then(res => res.json())
-                              .then(data => {
-                                if (data.id) {
-                                  loadOrder(data)
-                                }
-                              })
-                              .catch(console.error)
-                          }
-                        }}
-                        onTimerStarted={() => {
-                          // Refresh the order using loadOrder
-                          if (savedOrderId) {
-                            fetch(`/api/orders/${savedOrderId}`)
-                              .then(res => res.json())
-                              .then(data => {
-                                if (data.id) {
-                                  loadOrder(data)
-                                }
-                              })
-                              .catch(console.error)
-                          }
-                        }}
-                        onTimeExtended={() => {
-                          // Refresh the order using loadOrder
-                          if (savedOrderId) {
-                            fetch(`/api/orders/${savedOrderId}`)
-                              .then(res => res.json())
-                              .then(data => {
-                                if (data.id) {
-                                  loadOrder(data)
-                                }
-                              })
-                              .catch(console.error)
-                          }
-                        }}
-                      />
-                    )}
-                  </Card>
-                )
-              })}
-            </div>
-          )}
-
-        </div>
-
-        {/* Course Manager Panel */}
-        {savedOrderId && currentOrder && (
-          <CourseOverviewPanel
-            orderId={savedOrderId}
-            onCourseUpdate={() => {
-              // Refresh the order to get updated course statuses
-              if (savedOrderId) {
-                fetch(`/api/orders/${savedOrderId}`)
-                  .then(res => res.json())
-                  .then(data => {
-                    if (data.items) {
-                      // Update items in the store with new course statuses
-                      data.items.forEach((item: { id: string; courseStatus?: string; isHeld?: boolean; firedAt?: string }) => {
-                        updateItem(item.id, {
-                          courseStatus: item.courseStatus as 'pending' | 'fired' | 'ready' | 'served' | undefined,
-                          isHeld: item.isHeld,
-                          firedAt: item.firedAt,
-                        })
-                      })
-                    }
-                  })
-                  .catch(console.error)
-              }
-            }}
-          />
-        )}
-
-        {/* Payment Method Toggle with Totals */}
-        {dualPricing.enabled && (
-          <div className="border-t border-white/30 p-3 bg-gradient-to-r from-gray-50/80 to-white/60 backdrop-blur-sm">
-            {(() => {
-              // Calculate both totals for display on buttons
-              const storedSubtotal = currentOrder?.subtotal || 0
-              const discountPct = dualPricing.cashDiscountPercent || 4.0
-              const cardSubtotal = calculateCardPrice(storedSubtotal, discountPct)
-              const discount = currentOrder?.discountTotal || 0
-
-              // Card total calculation
-              const cardTaxableAmount = cardSubtotal - discount
-              const cardTax = cardTaxableAmount * taxRate
-              const cardUnroundedTotal = cardTaxableAmount + cardTax
-              const cardTotal = applyPriceRounding(cardUnroundedTotal, priceRounding, 'card')
-
-              // Cash total calculation (with cash discount)
-              const cashDiscountAmount = cardSubtotal - storedSubtotal
-              const cashTaxableAmount = cardSubtotal - cashDiscountAmount - discount
-              const cashTax = cashTaxableAmount * taxRate
-              const cashUnroundedTotal = cashTaxableAmount + cashTax
-              const cashTotal = applyPriceRounding(cashUnroundedTotal, priceRounding, 'cash')
-
-              return (
-                <div className="flex gap-2">
-                  <button
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
-                      paymentMethod === 'cash'
-                        ? 'bg-emerald-500 text-white'
-                        : 'bg-white/60 text-gray-600 hover:bg-white/80'
-                    }`}
-                    onClick={() => setPaymentMethod('cash')}
-                  >
-                    <span>Cash</span>
-                    <span className={`font-bold ${paymentMethod === 'cash' ? 'text-white' : 'text-emerald-600'}`}>
-                      {formatCurrency(cashTotal)}
-                    </span>
-                  </button>
-                  <button
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold transition-all ${
-                      paymentMethod === 'card'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white/60 text-gray-600 hover:bg-white/80'
-                    }`}
-                    onClick={() => setPaymentMethod('card')}
-                  >
-                    <span>Card</span>
-                    <span className={`font-bold ${paymentMethod === 'card' ? 'text-white' : 'text-blue-600'}`}>
-                      {formatCurrency(cardTotal)}
-                    </span>
-                  </button>
-                </div>
-              )
-            })()}
-          </div>
-        )}
-
-        {/* Order Totals - Clickable to expand item breakdown */}
-        <div className="border-t border-white/30 bg-gradient-to-b from-white/40 to-white/60 backdrop-blur-sm">
-          {(() => {
-            const storedSubtotal = currentOrder?.subtotal || 0
-            const discountPct = dualPricing.cashDiscountPercent || 4.0
-            const cardSubtotal = dualPricing.enabled
-              ? calculateCardPrice(storedSubtotal, discountPct)
-              : storedSubtotal
-            const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash'
-              ? cardSubtotal - storedSubtotal
-              : 0
-            const discount = currentOrder?.discountTotal || 0
-            const taxableAmount = cardSubtotal - cashDiscountAmount - discount
-            const tax = taxableAmount * taxRate
-            const gratuity = currentOrder?.tipTotal || 0
-            const unroundedTotal = taxableAmount + tax + gratuity
-            const total = applyPriceRounding(unroundedTotal, priceRounding, paymentMethod)
-            const roundingAdjustment = total - unroundedTotal
-
-            return (
-              <>
-                {/* Clickable Total Row */}
-                <button
-                  className="w-full p-3 flex justify-between items-center hover:bg-white/30 transition-colors"
-                  onClick={() => setShowTotalBreakdown(!showTotalBreakdown)}
-                >
-                  <div className="flex items-center gap-2">
-                    <svg
-                      className={`w-4 h-4 text-gray-400 transition-transform ${showTotalBreakdown ? 'rotate-90' : ''}`}
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                    <span className="font-bold text-gray-700">Total</span>
-                    <span className="text-xs text-gray-400">({currentOrder?.items.length || 0} items)</span>
-                  </div>
-                  <span className={`px-3 py-1 rounded-lg font-bold text-lg ${
-                    dualPricing.enabled && paymentMethod === 'cash'
-                      ? 'bg-emerald-500 text-white'
-                      : dualPricing.enabled
-                        ? 'bg-blue-500 text-white'
-                        : currentMode === 'bar'
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-orange-500 text-white'
-                  }`}>
-                    {formatCurrency(total)}
-                  </span>
-                </button>
-
-                {/* Expanded Breakdown */}
-                {showTotalBreakdown && (
-                  <div className="px-3 pb-3 space-y-1 text-xs border-t border-white/30">
-                    {/* Item-by-item breakdown */}
-                    <div className="pt-2 space-y-0.5">
-                      {currentOrder?.items.map((item, idx) => {
-                        const itemTotal = (item.price + item.modifiers.reduce((sum, m) => sum + m.price, 0)) * item.quantity
-                        return (
-                          <div key={item.id}>
-                            <div className="flex justify-between text-gray-600">
-                              <span>{item.quantity}x {item.name}</span>
-                              <span>{formatCurrency(itemTotal)}</span>
-                            </div>
-                            {item.modifiers.length > 0 && (
-                              <div className="ml-4 text-gray-400">
-                                {item.modifiers.map((mod, midx) => {
-                                  const depth = mod.depth || 0
-                                  const prefix = depth === 0 ? '+ ' : '-'.repeat(depth + 1) + ' '
-                                  return (
-                                    <div key={mod.id || midx} className="flex justify-between">
-                                      <span>{prefix}{mod.name}</span>
-                                      {mod.price > 0 && <span>{formatCurrency(mod.price * item.quantity)}</span>}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    {/* Subtotal */}
-                    <div className="flex justify-between pt-2 border-t border-gray-200/50 text-gray-600 font-medium">
-                      <span>Subtotal</span>
-                      <span>{formatCurrency(cardSubtotal)}</span>
-                    </div>
-
-                    {/* Cash discount */}
-                    {dualPricing.enabled && paymentMethod === 'cash' && cashDiscountAmount > 0 && (
-                      <div className="flex justify-between text-emerald-600">
-                        <span>Cash Discount ({discountPct}%)</span>
-                        <span>-{formatCurrency(cashDiscountAmount)}</span>
-                      </div>
-                    )}
-
-                    {/* Discounts */}
-                    {discount > 0 && (
-                      <div className="flex justify-between text-emerald-600">
-                        <span>Discount</span>
-                        <span>-{formatCurrency(discount)}</span>
-                      </div>
-                    )}
-
-                    {/* Tax */}
-                    <div className="flex justify-between text-gray-600">
-                      <span>Tax ({(taxRate * 100).toFixed(1)}%)</span>
-                      <span>{formatCurrency(tax)}</span>
-                    </div>
-
-                    {/* Gratuity */}
-                    {gratuity > 0 && (
-                      <div className="flex justify-between text-blue-600">
-                        <span>Gratuity</span>
-                        <span>{formatCurrency(gratuity)}</span>
-                      </div>
-                    )}
-
-                    {/* Rounding */}
-                    {priceRounding.enabled && Math.abs(roundingAdjustment) > 0.001 && (
-                      <div className="flex justify-between text-gray-400">
-                        <span>Rounding</span>
-                        <span>{roundingAdjustment >= 0 ? '+' : ''}{formatCurrency(roundingAdjustment)}</span>
-                      </div>
-                    )}
-
-                    {/* Final Total */}
-                    <div className={`flex justify-between pt-2 border-t font-bold ${
-                      dualPricing.enabled && paymentMethod === 'cash'
-                        ? 'border-emerald-200 text-emerald-700'
-                        : 'border-gray-200/50 text-gray-700'
-                    }`}>
-                      <span>Total</span>
-                      <span>{formatCurrency(total)}</span>
-                    </div>
-
-                    {/* Savings message */}
-                    {dualPricing.enabled && dualPricing.showSavingsMessage && paymentMethod === 'cash' && storedSubtotal > 0 && (
-                      <div className="text-center text-emerald-600 pt-1">
-                        You save {formatCurrency(cashDiscountAmount)} with cash!
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )
-          })()}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="p-4 border-t border-white/30 space-y-3 bg-gradient-to-b from-white/50 to-white/70 backdrop-blur-sm">
-          {(() => {
-            const newItemCount = currentOrder?.items.filter(i => !i.sentToKitchen).length || 0
-            const hasNewItems = newItemCount > 0
-            const isExistingOrder = !!savedOrderId
-
-            return (
-              <button
-                className={`w-full py-4 rounded-xl font-bold text-lg text-white transition-all duration-200 ${
-                  (!currentOrder?.items.length || isSendingOrder || (isExistingOrder && !hasNewItems))
-                    ? 'bg-gray-300 cursor-not-allowed'
-                    : currentMode === 'bar'
-                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 hover:scale-[1.01] active:scale-[0.99]'
-                      : 'bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg shadow-orange-500/30 hover:shadow-xl hover:shadow-orange-500/40 hover:scale-[1.01] active:scale-[0.99]'
-                }`}
-                disabled={!currentOrder?.items.length || isSendingOrder || (isExistingOrder && !hasNewItems)}
-                onClick={handleSendToKitchen}
-              >
-                {isSendingOrder ? 'Sending...' :
-                  isExistingOrder ?
-                    (hasNewItems ? `Send ${newItemCount} New Item${newItemCount > 1 ? 's' : ''} to Kitchen` : 'No New Items')
-                    : 'Send to Kitchen'}
-              </button>
-            )
-          })()}
-          <div className="grid grid-cols-5 gap-2">
-            <button
-              className={`py-2.5 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                !currentOrder?.items.length
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white/70 hover:bg-white/90 text-gray-700 border border-white/40 hover:shadow-md hover:border-purple-300 hover:text-purple-700'
-              }`}
-              disabled={!currentOrder?.items.length}
-              onClick={handleOpenDiscount}
-            >
-              Disc
-            </button>
-            <button
-              className={`py-2.5 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                !currentOrder?.items.length || !savedOrderId
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white/70 hover:bg-white/90 text-gray-700 border border-white/40 hover:shadow-md hover:border-blue-300 hover:text-blue-700'
-              }`}
-              disabled={!currentOrder?.items.length || !savedOrderId}
-              onClick={() => setShowItemTransferModal(true)}
-            >
-              Move
-            </button>
-            <button
-              className={`py-2.5 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                !currentOrder?.items.length || !savedOrderId
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-white/70 hover:bg-white/90 text-gray-700 border border-white/40 hover:shadow-md hover:border-cyan-300 hover:text-cyan-700'
-              }`}
-              disabled={!currentOrder?.items.length || !savedOrderId}
-              onClick={handleOpenSplitTicket}
-              title="Split order into separate tickets"
-            >
-              Split
-            </button>
-            <button
-              className={`py-2.5 px-2 rounded-xl text-sm font-bold transition-all duration-200 ${
-                !currentOrder?.items.length && !(currentOrder?.total && currentOrder.total > 0)
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-emerald-500 to-green-500 text-white shadow-md shadow-emerald-500/25 hover:shadow-lg hover:shadow-emerald-500/35 hover:scale-[1.02]'
-              }`}
-              disabled={!currentOrder?.items.length && !(currentOrder?.total && currentOrder.total > 0)}
-              onClick={handleOpenPayment}
-            >
-              Pay
-            </button>
-            <button
-              className={`py-2.5 px-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
-                !currentOrder?.items.length
-                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-md shadow-red-500/25 hover:shadow-lg hover:shadow-red-500/35 hover:scale-[1.02]'
-              }`}
-              onClick={() => {
-                clearOrder()
-                setSavedOrderId(null)
-                setOrderSent(false)
-                setAppliedDiscounts([])
-              }}
-              disabled={!currentOrder?.items.length}
-            >
-              Clear
-            </button>
-          </div>
-        </div>
+        <OrderPanel
+          orderId={savedOrderId || currentOrder?.id}
+          orderNumber={currentOrder?.orderNumber}
+          orderType={selectedOrderType?.name}
+          tabName={currentOrder?.tabName}
+          tableId={currentOrder?.tableId}
+          locationId={employee?.location?.id}
+          items={orderPanelItems}
+          subtotal={subtotal}
+          tax={taxAmount}
+          discounts={totalDiscounts}
+          total={grandTotal}
+          showItemControls={true}
+          showEntertainmentTimers={true}
+          onItemClick={(item) => {
+            const fullItem = currentOrder?.items.find(i => i.id === item.id)
+            if (fullItem) handleEditOrderItem(fullItem)
+          }}
+          onItemRemove={(itemId) => removeItem(itemId)}
+          onQuantityChange={(itemId, delta) => updateQuantity(itemId, delta)}
+          onSend={handleSendToKitchen}
+          onPay={() => setShowPaymentModal(true)}
+          onDiscount={handleOpenDiscount}
+          onClear={() => {
+            clearOrder()
+            setSavedOrderId(null)
+            setOrderSent(false)
+            setAppliedDiscounts([])
+          }}
+          isSending={isSendingOrder}
+          className="flex-1"
+        />
       </div>
 
       {/* Admin Navigation Sidebar */}

@@ -461,17 +461,561 @@ Background process that:
 
 ---
 
-## API Audit Summary
+## API Audit Summary (UPDATED - Workers E1-E3 Complete)
 
 | API | locationId | Socket Dispatch | Soft Deletes | Issues |
 |-----|------------|-----------------|--------------|--------|
 | `/api/entertainment/status` GET | ✅ | N/A | ✅ | None |
-| `/api/entertainment/status` PATCH | ❌ MISSING | ❌ MISSING | N/A | **CRITICAL** |
-| `/api/entertainment/block-time` POST | ⚠️ Partial | ❌ MISSING | N/A | **HIGH** |
-| `/api/entertainment/block-time` PATCH | ⚠️ Partial | ❌ MISSING | N/A | **HIGH** |
-| `/api/entertainment/block-time` DELETE | ⚠️ Partial | ❌ MISSING | N/A | **HIGH** |
+| `/api/entertainment/status` PATCH | ✅ Fixed (E1) | ✅ Fixed (E1) | N/A | None |
+| `/api/entertainment/block-time` POST | ✅ Fixed (E2) | ✅ Fixed (E2) | N/A | None |
+| `/api/entertainment/block-time` PATCH | ✅ Fixed (E2) | ✅ Fixed (E2) | N/A | None |
+| `/api/entertainment/block-time` DELETE | ✅ Fixed (E2) | ✅ Fixed (E2) | N/A | None |
 | `/api/entertainment/waitlist` GET | ✅ | N/A | ✅ | None |
-| `/api/entertainment/waitlist` POST | ✅ | ❌ MISSING | N/A | Race condition |
+| `/api/entertainment/waitlist` POST | ✅ | ✅ Fixed (E3) | N/A | Race condition fixed |
+| `/api/entertainment/waitlist/[id]` PATCH | ✅ Fixed (E3) | ✅ Fixed (E3) | N/A | None |
+| `/api/entertainment/waitlist/[id]` DELETE | ✅ Fixed (E3) | ✅ Fixed (E3) | N/A | Position recalc added |
+
+---
+
+## Session: February 5, 2026 (API Audit - Workers E1-E4)
+
+### Workers Completed
+
+| Worker | Task | Status |
+|--------|------|--------|
+| E1 | Status API Audit | ✅ Complete |
+| E2 | Block Time API Audit | ✅ Complete |
+| E3 | Waitlist API Audit | ✅ Complete |
+| E4 | Session Flow Testing | ✅ Complete - Found 3 bugs |
+
+### Bugs Found by Worker E4 (Testing)
+
+| Bug | Severity | File | Description |
+|-----|----------|------|-------------|
+| **1** | 🔴 CRITICAL | `EntertainmentSessionControls.tsx` | Missing `locationId` in all API calls (DELETE, PATCH, POST) |
+| **2** | 🟡 HIGH | `/api/orders/[id]/send/route.ts` | Send to Kitchen updates MenuItem but NOT FloorPlanElement |
+| **3** | 🟢 LOW | `EntertainmentSessionControls.tsx` | `isExpiringSoon` threshold wrong (`< 5` should be `<= 10`) |
+
+---
+
+## Worker Prompts (Ready to Send - Bugs from E4)
+
+### Worker E6: Fix EntertainmentSessionControls Missing locationId
+
+```
+You are a DEVELOPER fixing API call parameters in GWI POS Entertainment domain.
+
+## Context
+Worker E4 (testing) discovered that EntertainmentSessionControls.tsx is missing locationId in all API calls. The block-time API now requires locationId after Worker E2's security fixes, causing all session controls to fail with 400 "Location ID is required".
+
+═══════════════════════════════════════════════════════════════════════════════
+⚠️  STRICT BOUNDARY - ONLY MODIFY THIS FILE
+═══════════════════════════════════════════════════════════════════════════════
+
+**File to Modify:** `src/components/orders/EntertainmentSessionControls.tsx`
+
+## Problem
+The component doesn't have access to locationId and doesn't pass it to API calls.
+
+## Changes Required
+
+### 1. Add locationId to Props Interface (lines 6-18)
+```typescript
+interface EntertainmentSessionControlsProps {
+  orderItemId: string
+  menuItemId: string
+  locationId: string  // ADD THIS
+  itemName: string
+  // ... rest of props
+}
+```
+
+### 2. Add to Destructured Props (line 20-32)
+```typescript
+export function EntertainmentSessionControls({
+  orderItemId,
+  menuItemId,
+  locationId,  // ADD THIS
+  itemName,
+  // ... rest
+}: EntertainmentSessionControlsProps) {
+```
+
+### 3. Fix DELETE Request (line 95)
+```typescript
+// Before:
+const response = await fetch(`/api/entertainment/block-time?orderItemId=${orderItemId}`, {
+
+// After:
+const response = await fetch(`/api/entertainment/block-time?orderItemId=${orderItemId}&locationId=${locationId}`, {
+```
+
+### 4. Fix PATCH Request Body (lines 121-124)
+```typescript
+// Before:
+body: JSON.stringify({
+  orderItemId,
+  additionalMinutes: minutes,
+}),
+
+// After:
+body: JSON.stringify({
+  orderItemId,
+  locationId,
+  additionalMinutes: minutes,
+}),
+```
+
+### 5. Fix POST Request Body (lines 148-151)
+```typescript
+// Before:
+body: JSON.stringify({
+  orderItemId,
+  minutes,
+}),
+
+// After:
+body: JSON.stringify({
+  orderItemId,
+  locationId,
+  minutes,
+}),
+```
+
+### 6. Fix isExpiringSoon Threshold (line 79)
+```typescript
+// Before:
+setIsExpiringSoon(mins < 5)
+
+// After (match status API threshold):
+setIsExpiringSoon(mins <= 10)
+```
+
+## Acceptance Criteria
+- [ ] locationId is a required prop
+- [ ] DELETE includes locationId in query string
+- [ ] PATCH includes locationId in body
+- [ ] POST includes locationId in body
+- [ ] isExpiringSoon triggers at 10 minutes or less
+- [ ] No TypeScript errors
+
+## Note
+Parent components that use this component will need to pass locationId. Check for TypeScript errors after this change to identify which files need updating.
+```
+
+---
+
+### Worker E7: Fix Send to Kitchen Missing FloorPlanElement Update
+
+```
+You are a DEVELOPER fixing the Send to Kitchen flow in GWI POS Entertainment domain.
+
+## Context
+Worker E4 (testing) discovered that when entertainment items are sent to kitchen, the MenuItem status is updated to 'in_use' but the FloorPlanElement is NOT updated. This causes the floor plan display to show the item as 'available' even though it's in use.
+
+═══════════════════════════════════════════════════════════════════════════════
+⚠️  STRICT BOUNDARY - ONLY MODIFY THIS FILE
+═══════════════════════════════════════════════════════════════════════════════
+
+**File to Modify:** `src/app/api/orders/[id]/send/route.ts`
+
+## Current Code (lines 62-70)
+```typescript
+// Update the menu item status to in_use
+await db.menuItem.update({
+  where: { id: item.menuItem.id },
+  data: {
+    entertainmentStatus: 'in_use',
+    currentOrderId: order.id,
+    currentOrderItemId: item.id,
+  }
+})
+```
+
+## Changes Required
+
+### After the menuItem.update (line 70), add FloorPlanElement update:
+
+```typescript
+// Update the menu item status to in_use
+await db.menuItem.update({
+  where: { id: item.menuItem.id },
+  data: {
+    entertainmentStatus: 'in_use',
+    currentOrderId: order.id,
+    currentOrderItemId: item.id,
+  }
+})
+
+// Also update linked FloorPlanElement (if exists)
+await db.floorPlanElement.updateMany({
+  where: {
+    linkedMenuItemId: item.menuItem.id,
+    deletedAt: null,
+  },
+  data: {
+    status: 'in_use',
+    currentOrderId: order.id,
+    sessionStartedAt: now,
+    sessionExpiresAt: updateData.blockTimeExpiresAt,
+  },
+})
+```
+
+## Acceptance Criteria
+- [ ] FloorPlanElement is updated when timed rental sent to kitchen
+- [ ] FloorPlanElement.status = 'in_use'
+- [ ] FloorPlanElement.sessionStartedAt = now
+- [ ] FloorPlanElement.sessionExpiresAt matches OrderItem
+- [ ] No TypeScript errors
+
+## Verification
+1. Add entertainment item to floor plan
+2. Create order with that item
+3. Send to kitchen
+4. Check: FloorPlanElement.status should be 'in_use'
+5. Check: Floor plan display shows item as in-use (amber glow)
+```
+
+---
+
+### Worker E8: Update Parent Components to Pass locationId
+
+```
+You are a DEVELOPER updating parent components in GWI POS Entertainment domain.
+
+## Context
+Worker E6 added locationId as a required prop to EntertainmentSessionControls. Now all parent components that use this component need to be updated to pass locationId.
+
+═══════════════════════════════════════════════════════════════════════════════
+⚠️  SEARCH FOR ALL USAGES AND MODIFY AS NEEDED
+═══════════════════════════════════════════════════════════════════════════════
+
+## Step 1: Find All Usages
+Search for `<EntertainmentSessionControls` in the codebase to find all parent components.
+
+Likely locations:
+- Open Orders panel components
+- Order details components
+- KDS entertainment components
+
+## Step 2: For Each Usage, Add locationId Prop
+
+The locationId should come from:
+- The order object: `order.locationId`
+- The location context/store
+- Props passed down from parent
+
+Example fix:
+```typescript
+// Before:
+<EntertainmentSessionControls
+  orderItemId={item.id}
+  menuItemId={item.menuItemId}
+  itemName={item.name}
+  // ...
+/>
+
+// After:
+<EntertainmentSessionControls
+  orderItemId={item.id}
+  menuItemId={item.menuItemId}
+  locationId={order.locationId}  // ADD THIS
+  itemName={item.name}
+  // ...
+/>
+```
+
+## Acceptance Criteria
+- [ ] All usages of EntertainmentSessionControls include locationId prop
+- [ ] No TypeScript errors
+- [ ] Session controls work (stop/extend/start buttons functional)
+```
+
+---
+
+## Workers E6-E8 Complete (February 5, 2026)
+
+| Worker | Task | Status |
+|--------|------|--------|
+| E6 | Fix locationId in EntertainmentSessionControls | ✅ Complete |
+| E7 | Fix Send to Kitchen FloorPlanElement update | ✅ Complete |
+| E8 | Update parent components (verified - already done) | ✅ Complete |
+
+### Changes Applied
+
+**Worker E6 - EntertainmentSessionControls.tsx:**
+- Added `locationId` as required prop
+- DELETE includes locationId in query string
+- PATCH includes locationId in body
+- POST includes locationId in body
+- Fixed isExpiringSoon threshold (`< 5` → `<= 10`)
+
+**Worker E7 - /api/orders/[id]/send/route.ts:**
+- Added FloorPlanElement update after MenuItem update (lines 72-84)
+- Sets status='in_use', currentOrderId, sessionStartedAt, sessionExpiresAt
+
+**Worker E8 - Verification:**
+- Found single usage in orders/page.tsx (line 3604)
+- Already passing `locationId={employee?.location?.id || ''}`
+- No changes needed
+
+---
+
+## All Entertainment API Audit Workers Complete ✅
+
+| Worker | Task | Status |
+|--------|------|--------|
+| E1 | Status API Audit | ✅ Complete |
+| E2 | Block Time API Audit | ✅ Complete |
+| E3 | Waitlist API Audit | ✅ Complete |
+| E4 | Session Flow Testing | ✅ Complete |
+| E6 | Fix locationId in controls | ✅ Complete |
+| E7 | Fix Send to Kitchen | ✅ Complete |
+| E8 | Update parent components | ✅ Complete |
+
+---
+
+---
+
+## Phase 1: Per-Minute Pricing & Compact UI (February 5, 2026)
+
+### Workers Completed
+
+| Worker | Task | Status |
+|--------|------|--------|
+| E9 | Schema: Add per-minute pricing fields | ✅ Complete |
+| E10 | Library: Create entertainment-pricing.ts | ✅ Complete |
+| E11 | UI: Compact builder redesign | ✅ Complete |
+
+### Changes Applied
+
+**Worker E9 - prisma/schema.prisma (MenuItem model):**
+- Added `ratePerMinute` Decimal field
+- Added `minimumCharge` Decimal field
+- Added `incrementMinutes` Int field with @default(15)
+- Kept existing `timedPricing` JSON for backward compatibility
+
+**Worker E10 - src/lib/entertainment-pricing.ts (NEW FILE):**
+- `calculateCharge()` - Core pricing with minimum, increments, grace period
+- `formatCharge()` - Format dollar amounts
+- `minutesUntilNextCharge()` - Time until next increment
+- `getPricingSummary()` - Human-readable pricing text
+- `DEFAULT_PRICING` - Default configuration constant
+
+**Worker E11 - src/app/(admin)/timed-rentals/page.tsx:**
+- Removed scrolling (no max-h/overflow)
+- Visual types in 6-column grid (2 rows)
+- 4 pricing fields on 2 lines (rate, minimum, increment, grace)
+- Live pricing hint that updates dynamically
+- Inline status radio buttons
+- Backward compatibility with legacy pricing fields
+
+### New Pricing Model
+
+```
+Rate Per Minute: $0.25/min
+Minimum Charge: $15 (covers 60 min)
+Increment: 15 min (charges in 15-min blocks after minimum)
+Grace Period: 5 min (leeway before next charge)
+```
+
+Example calculation at 86 minutes:
+- First 60 min = $15.00 (minimum)
+- 26 min overage - 5 min grace = 21 min chargeable
+- 21 min / 15 min = 2 increments × $3.75 = $7.50
+- **Total: $22.50**
+
+---
+
+---
+
+## Phase 2: Dynamic Pricing - Prepaid Packages + Happy Hour (February 5, 2026)
+
+### Workers Completed
+
+| Worker | Task | Status |
+|--------|------|--------|
+| E12 | Schema: Add prepaid + happy hour fields | ✅ Complete |
+| E13 | Library: Prepaid + happy hour calculations | ✅ Complete |
+| E14 | UI: Builder with dynamic pricing sections | ✅ Complete |
+| E15 | Component: EntertainmentSessionStart | ✅ Complete |
+
+### Changes Applied
+
+**Worker E12 - prisma/schema.prisma (MenuItem model):**
+- `prepaidPackages` Json - Array of {minutes, price, label}
+- `happyHourEnabled` Boolean @default(false)
+- `happyHourDiscount` Int @default(50) - Percentage off
+- `happyHourStart` String - "13:00" format
+- `happyHourEnd` String - "16:00" format
+- `happyHourDays` Json - ["monday", "tuesday", ...]
+
+**Worker E13 - src/lib/entertainment-pricing.ts:**
+- `PrepaidPackage` interface
+- `HappyHourConfig` interface
+- `isHappyHour()` - Check if current time is happy hour
+- `getActiveRate()` - Get rate with happy hour discount
+- `calculateChargeWithPrepaid()` - Full prepaid + overage calculation
+- `getPackageSavings()` - Calculate savings vs open play
+- `formatPackage()` - Format for display
+- `DEFAULT_PREPAID_PACKAGES` - 30/60/90 min defaults
+
+**Worker E14 - src/app/(admin)/timed-rentals/page.tsx:**
+- ① Base Rate section (rate + grace + hourly preview)
+- ② Prepaid Packages section (add/remove/edit with savings)
+- ③ Happy Hour section (toggle, discount%, time range, day picker)
+- All fits on screen without scrolling
+- Backward compatibility with legacy timedPricing fields
+
+**Worker E15 - src/components/entertainment/EntertainmentSessionStart.tsx (NEW):**
+- Happy hour badge when active
+- Open play option with discounted rate
+- Prepaid package grid with savings display
+- Callbacks for session start
+
+### New Dynamic Pricing Model
+
+```
+① BASE RATE
+   $0.25/min = $15/hr
+   Grace: 5 min
+
+② PREPAID PACKAGES
+   30 min = $10 (saves $2.50)
+   60 min = $15 (saves $0.00)
+   90 min = $20 (saves $2.50)
+
+③ HAPPY HOUR
+   50% off from 1:00 PM - 4:00 PM
+   Days: Mon-Fri
+   Happy Hour Rate: $0.125/min ($7.50/hr)
+```
+
+---
+
+---
+
+## Phase 3: UI Fixes + Tab Selection (February 5, 2026)
+
+### Workers Completed
+
+| Worker | Task | Status |
+|--------|------|--------|
+| E16 | Fix builder modal height (scrollable) | ✅ Complete |
+| E17 | Session start with tab selection | ✅ Complete |
+
+### Changes Applied
+
+**Worker E16 - src/app/(admin)/timed-rentals/page.tsx:**
+- Card: Added `max-h-[90vh] flex flex-col`
+- CardContent: Added `overflow-y-auto flex-1`
+- Moved action buttons to fixed footer with `border-t bg-white`
+- Save/Cancel buttons now always visible
+
+**Worker E17 - src/components/entertainment/EntertainmentSessionStart.tsx:**
+- Added two-step flow: Tab Selection → Pricing
+- New props: `currentOrderId`, `currentOrderName`, `openTabs`
+- New callbacks: `onStartWithCurrentOrder`, `onStartWithNewTab`, `onStartWithExistingTab`
+- "Open New Tab" with name input
+- Existing tabs list (scrollable)
+- "Change" button to go back to tab selection
+- Auto-skips tab selection if `currentOrderId` exists
+
+### Tab Selection Flow
+
+```
+No Open Tab:
+┌─────────────────────────────────────────┐
+│  🎱 Start Pool Table 1                   │
+├─────────────────────────────────────────┤
+│  Select or create a tab:                │
+│                                          │
+│  [+ OPEN NEW TAB]                       │
+│                                          │
+│  Or add to existing tab:                │
+│  ┌────────────────────────────────┐     │
+│  │ Mike's Party - $45.00          │     │
+│  │ Table 5 - $23.50               │     │
+│  └────────────────────────────────┘     │
+└─────────────────────────────────────────┘
+
+With Open Tab (auto-skips to pricing):
+┌─────────────────────────────────────────┐
+│  🎱 Start Pool Table 1                   │
+├─────────────────────────────────────────┤
+│  Adding to: Mike's Party                │
+│                                          │
+│  ⏱️  OPEN PLAY - $0.25/min              │
+│  [30 min $10] [60 min $15] [90 min $20] │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Worker E18: Compact Builder UI (February 5, 2026)
+
+### Changes Applied
+
+**Worker E18 - src/app/(admin)/timed-rentals/page.tsx:**
+- Visual type: 12-button grid → dropdown
+- Name + Visual on same row
+- Rate + Grace inline on same line
+- Happy Hour: Full section with days/times → checkbox + price field only
+- Prepaid packages: Compact single-line rows
+- Height reduced from ~800px to ~350px
+
+### New Compact Layout
+
+```
+Name: [Pool Table 1___]  Visual: [🎱 Pool Table ▼]
+
+PRICING ─────────────────────────────────────────
+Rate: [$0.25]/min ($15/hr)   Grace: [5] min
+[✓] Happy Hour: [$0.15]/min ($9/hr)
+
+PREPAID PACKAGES ─────────────────────── [+ Add]
+[30] min = $[10] (saves $2.50)  [✕]
+[60] min = $[15]                [✕]
+
+Status: (•) Available  ( ) Maintenance
+```
+
+---
+
+## Worker E19: Floor Plan Integration (February 5, 2026)
+
+### Changes Applied
+
+**Worker E19 - src/app/(pos)/orders/page.tsx:**
+- Imported `EntertainmentSessionStart` component
+- Added state for modal (`showEntertainmentStart`, `entertainmentItem`)
+- Created `handleOpenTimedRental` callback
+- Created helper functions:
+  - `handleStartEntertainmentWithNewTab` - Creates order + adds item + starts timer
+  - `handleStartEntertainmentWithExistingTab` - Adds to existing order
+  - `handleStartEntertainmentWithCurrentOrder` - Uses current open order
+- Passed `onOpenTimedRental` to `FloorPlanHome`
+- Rendered modal with all callbacks wired
+
+### User Flow
+
+```
+1. Tap entertainment element on floor plan
+2. EntertainmentSessionStart modal opens
+3. Select tab:
+   - "Add to current" (if order open)
+   - "Open New Tab" → Enter name
+   - Select from existing tabs list
+4. Select pricing:
+   - Open Play ($X/min)
+   - Prepaid package (30/60/90 min)
+5. Session starts:
+   - Order created (if new)
+   - Item added
+   - Timer started (if prepaid)
+   - Floor plan updates to "in_use"
+```
 
 ---
 
@@ -479,12 +1023,24 @@ Background process that:
 
 1. **Start with:** `PM Mode: Entertainment`
 2. **Review:** This changelog
-3. **Priority Order:**
-   - Send Worker E1 (Status API audit)
-   - Send Worker E2 (Block Time API audit)
-   - Send Worker E3 (Waitlist API audit)
-   - Send Worker E4 (Session flow testing)
-4. **After workers complete:** Review and test
+3. **Next Steps:**
+   - Test full flow: tap element → select tab → start session
+   - Verify floor plan shows "in_use" status
+   - Test prepaid vs open play timers
+4. **Future:** Real-time charge display via socket
+
+---
+
+## All Entertainment Workers Complete ✅
+
+| Phase | Workers | Status |
+|-------|---------|--------|
+| API Audit | E1-E4, E6-E8 | ✅ Complete |
+| Per-Minute Pricing | E9-E11 | ✅ Complete |
+| Dynamic Pricing | E12-E15 | ✅ Complete |
+| UI Fixes + Tab Selection | E16-E17 | ✅ Complete |
+| Compact Builder | E18 | ✅ Complete |
+| Floor Plan Integration | E19 | ✅ Complete |
 
 ---
 
@@ -493,7 +1049,74 @@ Background process that:
 | Domain | Integration Point | Status |
 |--------|-------------------|--------|
 | **Floor Plan** | Entertainment elements on canvas | ✅ Complete |
+| **Floor Plan** | Tap → Session Start modal | ✅ Complete |
 | **Orders** | Entertainment items in orders | ✅ Complete |
+| **Orders** | Create order from modal | ✅ Complete |
 | **KDS** | Entertainment dashboard | Needs testing |
 | **Menu** | Category routing to builder | ✅ Complete |
 | **Payments** | Block time pricing in payments | Needs review |
+| **Session Start** | EntertainmentSessionStart component | ✅ Complete |
+
+---
+
+## EOD Summary - February 5, 2026
+
+### Session Accomplishments
+
+**Phase 1: API Audit & Bug Fixes (Workers E1-E8)**
+- Security: Added locationId verification to all Entertainment APIs
+- Socket dispatch: Added real-time updates to all mutation endpoints
+- FloorPlanElement sync: Floor plan now updates with MenuItem status
+- Bug fixes: Fixed session controls missing locationId
+
+**Phase 2: Per-Minute Pricing (Workers E9-E11)**
+- New schema fields: ratePerMinute, minimumCharge, incrementMinutes
+- New library: entertainment-pricing.ts with full calculation logic
+- Builder UI: Compact layout with live pricing preview
+
+**Phase 3: Dynamic Pricing (Workers E12-E15)**
+- Prepaid packages: 30/60/90 min bundles with savings display
+- Happy Hour: Simplified to checkbox + HH price (global settings for future)
+- EntertainmentSessionStart: Tab selection → pricing modal
+
+**Phase 4: Floor Plan Integration (Workers E16-E19)**
+- Builder modal: Fixed height issues, scrollable with fixed footer
+- Tab selection: Current order, new tab, existing tab options
+- Compact redesign: Visual dropdown, inline pricing, checkbox happy hour
+- Floor plan wiring: Tap element → modal → start session
+
+### Files Modified
+
+| Category | Files |
+|----------|-------|
+| **Schema** | `prisma/schema.prisma` (MenuItem pricing fields) |
+| **Library** | `src/lib/entertainment-pricing.ts` (NEW) |
+| **Builder** | `src/app/(admin)/timed-rentals/page.tsx` |
+| **Component** | `src/components/entertainment/EntertainmentSessionStart.tsx` (NEW) |
+| **Integration** | `src/app/(pos)/orders/page.tsx` |
+| **API Fixes** | `/api/entertainment/status/route.ts` |
+| **API Fixes** | `/api/entertainment/block-time/route.ts` |
+| **API Fixes** | `/api/entertainment/waitlist/route.ts` |
+| **API Fixes** | `/api/entertainment/waitlist/[id]/route.ts` |
+| **Send Fix** | `/api/orders/[id]/send/route.ts` |
+| **Controls** | `EntertainmentSessionControls.tsx` |
+
+### Remaining Work (Future Sessions)
+
+1. **KDS Dashboard Testing** - Verify entertainment KDS shows active sessions
+2. **Waitlist Notifications** - SMS/push when turn comes up (Worker E5)
+3. **Global Happy Hour Settings** - Admin page for location-wide happy hour
+4. **Payment Integration** - Verify block time pricing in PaymentModal
+5. **Real-time Charge Display** - Socket-based running total for open play
+
+### How to Resume
+
+```
+PM Mode: Entertainment
+```
+
+Then:
+1. Test full flow: tap element → select tab → start session
+2. Verify floor plan shows "in_use" status
+3. Test prepaid vs open play timers
+4. Review KDS dashboard

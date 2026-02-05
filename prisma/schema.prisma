@@ -347,6 +347,11 @@ model Employee {
   // POS Layout Preferences (personal customization)
   posLayoutSettings Json? // Bar/Food mode, favorites, category order
 
+  // Default screen after login: 'orders' | 'bar' | 'kds'
+  defaultScreen     String?   @default("orders")
+  // Default order type slug to pre-select
+  defaultOrderType  String?
+
   // Room Order Preferences (for POS floor plan)
   preferredRoomOrder String? // JSON array of room IDs: ["room-1", "room-3", "room-2"]
 
@@ -716,8 +721,23 @@ model MenuItem {
 
   // Timed Rental Pricing (Skill 81) - for pool tables, dart boards, etc.
   timedPricing   Json? // { per15Min: 5.00, per30Min: 8.00, perHour: 15.00, minimum: 15 }
+  // Per-minute pricing (replaces timedPricing JSON)
+  ratePerMinute      Decimal?  // e.g., 0.25 = $0.25/min
+  minimumCharge      Decimal?  // e.g., 15.00 = $15 minimum
+  incrementMinutes   Int?      @default(15)  // Charges in blocks after minimum
   minimumMinutes Int? // Minimum rental time in minutes
   graceMinutes   Int? // Grace period before next increment
+
+  // Prepaid packages - discounted upfront deals
+  // Format: [{ minutes: 30, price: 10, label: "30 Min Deal" }, { minutes: 60, price: 15, label: "1 Hour Special" }]
+  prepaidPackages    Json?
+
+  // Happy Hour - automatic time-based discounts
+  happyHourEnabled   Boolean?  @default(false)
+  happyHourDiscount  Int?      @default(50)  // Percentage off (50 = 50% off)
+  happyHourStart     String?   // "13:00" (1 PM in 24h format)
+  happyHourEnd       String?   // "16:00" (4 PM in 24h format)
+  happyHourDays      Json?     // ["monday", "tuesday", "wednesday", "thursday", "friday"]
 
   // Entertainment tracking (Skill 94-97)
   entertainmentStatus String? // 'available', 'in_use', 'maintenance'

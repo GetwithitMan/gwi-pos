@@ -37,9 +37,27 @@ function LoginContent() {
       setHasDevAccess(data.employee.isDevAccess || false)
 
       login(data.employee)
-      // Redirect to the original destination or default to /orders
-      const redirectTo = searchParams.get('redirect') || '/orders'
-      router.push(redirectTo)
+
+      // Redirect based on defaultScreen preference
+      const redirectParam = searchParams.get('redirect')
+      if (redirectParam) {
+        router.push(redirectParam)
+      } else {
+        const defaultScreen = data.employee.defaultScreen || 'orders'
+
+        switch (defaultScreen) {
+          case 'bar':
+            router.push('/bar')
+            break
+          case 'kds':
+            router.push('/kds')
+            break
+          case 'orders':
+          default:
+            router.push('/orders')
+            break
+        }
+      }
     } catch (err) {
       setError('Connection error. Please try again.')
     } finally {

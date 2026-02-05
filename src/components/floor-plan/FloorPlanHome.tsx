@@ -28,6 +28,8 @@ import { StockBadge } from '@/components/menu/StockBadge'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
 import { useEvents } from '@/lib/events'
+import { useMenuSearch } from '@/hooks/useMenuSearch'
+import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import './styles/floor-plan.css'
 
 interface Category {
@@ -83,6 +85,12 @@ interface InlineOrderItem {
   isCompleted?: boolean
   status?: 'active' | 'voided' | 'comped'
   blockTimeMinutes?: number // For timed rental items
+  // Item lifecycle status
+  kitchenStatus?: 'pending' | 'cooking' | 'ready' | 'delivered'
+  completedAt?: string
+  resendCount?: number
+  resendNote?: string
+  createdAt?: string
 }
 
 interface OpenOrder {
@@ -196,6 +204,9 @@ export function FloorPlanHome({
   // Notes editing state
   const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
   const [editingNotesText, setEditingNotesText] = useState('')
+
+  // Modifiers editing state
+  const [editingModifiersItemId, setEditingModifiersItemId] = useState<string | null>(null)
 
   // Item controls expansion state
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
@@ -562,6 +573,25 @@ export function FloorPlanHome({
   const [isEditingFavorites, setIsEditingFavorites] = useState(false)
   const [isEditingCategories, setIsEditingCategories] = useState(false)
   const [isEditingMenuItems, setIsEditingMenuItems] = useState(false)
+
+  // Menu search
+  const searchContainerRef = useRef<HTMLDivElement>(null)
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    isSearching,
+    results: searchResults,
+    clearSearch
+  } = useMenuSearch({
+    locationId,
+    menuItems: menuItems.map(item => ({
+      id: item.id,
+      name: item.name,
+      price: Number(item.price),
+      categoryId: item.categoryId,
+    })),
+    enabled: showOrderPanel  // Only search when order panel is open
+  })
 
   // Sort sections based on employee's preferred room order
   const sortedSections = useMemo(() => {
@@ -1032,7 +1062,7 @@ export function FloorPlanHome({
         setShowOrderPanel(true)
 
         // Load items
-        const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; blockTimeMinutes?: number }) => ({
+        const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
           id: item.id,
           menuItemId: item.menuItemId,
           name: item.name || 'Unknown',
@@ -1052,6 +1082,12 @@ export function FloorPlanHome({
           sentToKitchen: item.kitchenStatus !== 'pending' && item.kitchenStatus !== undefined,
           status: item.status as 'active' | 'voided' | 'comped' | undefined,
           blockTimeMinutes: item.blockTimeMinutes,
+          // Item lifecycle status
+          kitchenStatus: item.kitchenStatus as 'pending' | 'cooking' | 'ready' | 'delivered' | undefined,
+          completedAt: item.completedAt,
+          resendCount: item.resendCount,
+          resendNote: item.resendNote,
+          createdAt: item.createdAt,
         }))
         setInlineOrderItems(items)
 
@@ -1465,7 +1501,7 @@ export function FloorPlanHome({
         const res = await fetch(`/api/orders/${primaryTable.currentOrder.id}`)
         if (res.ok) {
           const data = await res.json()
-          const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; blockTimeMinutes?: number }) => ({
+          const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
             id: item.id,
             menuItemId: item.menuItemId,
             name: item.name || 'Unknown',
@@ -1485,6 +1521,12 @@ export function FloorPlanHome({
             sentToKitchen: item.kitchenStatus !== 'pending' && item.kitchenStatus !== undefined,
             status: item.status as 'active' | 'voided' | 'comped' | undefined,
             blockTimeMinutes: item.blockTimeMinutes,
+            // Item lifecycle status
+            kitchenStatus: item.kitchenStatus as 'pending' | 'cooking' | 'ready' | 'delivered' | undefined,
+            completedAt: item.completedAt,
+            resendCount: item.resendCount,
+            resendNote: item.resendNote,
+            createdAt: item.createdAt,
           }))
           setInlineOrderItems(items)
         }
@@ -1492,11 +1534,17 @@ export function FloorPlanHome({
         console.error('[FloorPlanHome] Failed to load order:', error)
       }
     } else {
-      setActiveOrderId(null)
-      setActiveOrderNumber(null)
-      setInlineOrderItems([])
+      // FIX: Only clear items if we're switching to a DIFFERENT table
+      // If tapping the same table we already have selected, preserve unsaved items
+      const isSameTable = activeTableId === primaryTable.id
+      if (!isSameTable) {
+        setActiveOrderId(null)
+        setActiveOrderNumber(null)
+        setInlineOrderItems([])
+      }
+      // If same table, keep existing items (user may have added items but not sent yet)
     }
-  }, [selectedSeat, clearSelectedSeat, getTotalSeats, virtualCombineMode, toggleVirtualCombineSelection, virtualCombineSelectedIds.size, virtualCombinePrimaryId])
+  }, [selectedSeat, clearSelectedSeat, getTotalSeats, virtualCombineMode, toggleVirtualCombineSelection, virtualCombineSelectedIds.size, virtualCombinePrimaryId, activeTableId])
 
   // Handle quick order type (Takeout, Delivery, Bar Tab)
   const handleQuickOrderType = useCallback((orderType: QuickOrderType) => {
@@ -1626,6 +1674,16 @@ export function FloorPlanHome({
     }
   }, [showOrderPanel, onOpenModifiers, onOpenTimedRental, onOpenPizzaBuilder, activeSeatNumber, activeSourceTableId])
 
+  // Handle search result selection
+  const handleSearchSelect = useCallback((item: { id: string; name: string; price: number; categoryId: string }) => {
+    // Find full menu item data
+    const fullItem = menuItems.find(m => m.id === item.id)
+    if (fullItem) {
+      handleMenuItemTap(fullItem)
+    }
+    clearSearch()
+  }, [menuItems, clearSearch, handleMenuItemTap])
+
   // Handle quick bar item click - add to order
   const handleQuickBarItemClick = useCallback(async (itemId: string) => {
     // Find the item in quickBarItems to get full info
@@ -1704,6 +1762,33 @@ export function FloorPlanHome({
     setEditingNotesItemId(itemId)
     setEditingNotesText(currentNotes || '')
   }, [])
+
+  // Handle tapping an existing order item to edit modifiers
+  const handleOrderItemTap = useCallback((item: InlineOrderItem) => {
+    // Don't allow editing sent items
+    if (item.sentToKitchen) {
+      return
+    }
+
+    // Find the menu item to get modifier groups
+    const menuItem = menuItems.find(m => m.id === item.menuItemId)
+    if (!menuItem) return
+
+    // Open modifier modal in "edit" mode with current modifiers
+    if (onOpenModifiers) {
+      onOpenModifiers(menuItem, (newModifiers) => {
+        // Update the item's modifiers
+        setInlineOrderItems(prev => prev.map(i =>
+          i.id === item.id
+            ? {
+                ...i,
+                modifiers: newModifiers,
+              }
+            : i
+        ))
+      }, item.modifiers) // Pass existing modifiers for pre-selection
+    }
+  }, [menuItems, onOpenModifiers])
 
   // Save notes
   const handleSaveNotes = useCallback(() => {
@@ -1818,6 +1903,55 @@ export function FloorPlanHome({
       }, item.modifiers)
     }
   }, [menuItems, onOpenModifiers])
+
+  // Save modifier changes to API and update local state
+  const handleSaveModifierChanges = useCallback(async (
+    itemId: string,
+    newModifiers: { id: string; name: string; price: number }[]
+  ) => {
+    if (!activeOrderId) return
+
+    try {
+      const response = await fetch(`/api/orders/${activeOrderId}/items/${itemId}/modifiers`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modifiers: newModifiers })
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        toast.error(data.error || 'Failed to update modifiers')
+        return
+      }
+
+      // Update local state
+      setInlineOrderItems(prev => prev.map(item =>
+        item.id === itemId
+          ? { ...item, modifiers: newModifiers, resendCount: (item.resendCount || 0) + 1 }
+          : item
+      ))
+
+      setEditingModifiersItemId(null)
+      toast.success('Modifiers updated')
+    } catch (error) {
+      console.error('Failed to update modifiers:', error)
+      toast.error('Connection error. Please try again.')
+    }
+  }, [activeOrderId])
+
+  // Edit modifiers on a sent item
+  const handleEditSentItemModifiers = useCallback((item: InlineOrderItem) => {
+    const menuItem = menuItems.find(mi => mi.id === item.menuItemId)
+    if (!menuItem) return
+
+    setEditingModifiersItemId(item.id)
+
+    if (onOpenModifiers) {
+      onOpenModifiers(menuItem, (newModifiers) => {
+        handleSaveModifierChanges(item.id, newModifiers)
+      }, item.modifiers)
+    }
+  }, [menuItems, onOpenModifiers, handleSaveModifierChanges])
 
   // Send order to kitchen
   const handleSendToKitchen = useCallback(async () => {
@@ -1966,9 +2100,22 @@ export function FloorPlanHome({
         )
       )
 
-      // Refresh data (without showing loading indicator)
-      loadFloorPlanData(false)
+      // Refresh floor plan data (without showing loading indicator)
+      // This updates the table to show it has an active order
+      await loadFloorPlanData(false)
       loadOpenOrdersCount()
+
+      // After successful send: Close the order panel and return to floor plan view
+      // The table will now show a visual indicator that it has an order
+      // User can tap the table again to view/add to the order
+      setShowOrderPanel(false)
+      setInlineOrderItems([])
+      setActiveTableId(null)
+      setActiveOrderId(null)
+      setActiveOrderNumber(null)
+      setActiveOrderType(null)
+      setActiveSeatNumber(null)
+      setActiveSourceTableId(null)
 
     } catch (error) {
       console.error('[FloorPlanHome] Failed to send order:', error)
@@ -2344,7 +2491,10 @@ export function FloorPlanHome({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (viewMode === 'menu') {
+        if (searchQuery) {
+          // Escape clears search if active
+          clearSearch()
+        } else if (viewMode === 'menu') {
           // Escape in menu mode goes back to tables
           setSelectedCategoryId(null)
           setViewMode('tables')
@@ -2359,11 +2509,27 @@ export function FloorPlanHome({
         e.preventDefault()
         handleUndo()
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        const searchInput = searchContainerRef.current?.querySelector('input')
+        searchInput?.focus()
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [viewMode, closeInfoPanel, selectTable, handleUndo, handleCloseOrderPanel])
+  }, [viewMode, closeInfoPanel, selectTable, handleUndo, handleCloseOrderPanel, searchQuery, clearSearch])
+
+  // Close search results on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        if (searchQuery) clearSearch()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [searchQuery, clearSearch])
 
   // Close employee dropdown when clicking outside
   useEffect(() => {
@@ -3022,6 +3188,28 @@ export function FloorPlanHome({
           onRemoveItem={removeFromQuickBar}
           isEditMode={isEditingFavorites}
         />
+      )}
+
+      {/* Menu Search Bar */}
+      {showOrderPanel && (
+        <div className="px-4 py-2 bg-gray-900/50 border-b border-gray-800/50" ref={searchContainerRef}>
+          <div className="relative max-w-xl">
+            <MenuSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              onClear={clearSearch}
+              placeholder="Search menu items or ingredients... (⌘K)"
+              isSearching={isSearching}
+            />
+            <MenuSearchResults
+              results={searchResults}
+              query={searchQuery}
+              isSearching={isSearching}
+              onSelectItem={handleSearchSelect}
+              onClose={clearSearch}
+            />
+          </div>
+        </div>
       )}
 
       {/* Categories Bar */}
@@ -4051,9 +4239,36 @@ export function FloorPlanHome({
                     </p>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {/* Group items by seat when table has seats */}
-                    {groupedOrderItems.map((group) => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* PENDING ITEMS SECTION */}
+                    {(() => {
+                      const pendingItems = inlineOrderItems.filter(item =>
+                        !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
+                      )
+
+                      if (pendingItems.length === 0) return null
+
+                      return (
+                        <div>
+                          <div style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#94a3b8',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            marginBottom: '12px',
+                            paddingBottom: '8px',
+                            borderBottom: '2px solid rgba(148, 163, 184, 0.3)'
+                          }}>
+                            PENDING ITEMS ({pendingItems.length})
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {/* Group pending items by seat when table has seats */}
+                    {groupedOrderItems.filter(group =>
+                      group.items.some(item =>
+                        !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
+                      )
+                    ).map((group) => (
                       <div key={group.label}>
                         {/* Group Header (only show when using seats) */}
                         {activeTable && getTotalSeats(activeTable) > 0 && groupedOrderItems.length > 1 && (
@@ -4087,9 +4302,12 @@ export function FloorPlanHome({
 
                         {/* Items in this group */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {group.items.map((item) => (
+                          {group.items.filter(item =>
+                            !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
+                          ).map((item) => (
                       <div
                         key={item.id}
+                        onClick={() => handleOrderItemTap(item)}
                         style={{
                           padding: '12px',
                           background: item.sentToKitchen
@@ -4101,6 +4319,20 @@ export function FloorPlanHome({
                               : 'rgba(255, 255, 255, 0.08)'
                           }`,
                           borderRadius: '10px',
+                          cursor: item.sentToKitchen ? 'default' : 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!item.sentToKitchen) {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)'
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!item.sentToKitchen) {
+                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'
+                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)'
+                          }
                         }}
                       >
                         {/* Item Header */}
@@ -4239,7 +4471,10 @@ export function FloorPlanHome({
                           {/* Quantity Controls */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <button
-                              onClick={() => handleUpdateQuantity(item.id, item.quantity - 1)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleUpdateQuantity(item.id, item.quantity - 1)
+                              }}
                               disabled={item.sentToKitchen}
                               style={{
                                 width: '26px',
@@ -4261,7 +4496,10 @@ export function FloorPlanHome({
                               {item.quantity}
                             </span>
                             <button
-                              onClick={() => handleUpdateQuantity(item.id, item.quantity + 1)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleUpdateQuantity(item.id, item.quantity + 1)
+                              }}
                               disabled={item.sentToKitchen}
                               style={{
                                 width: '26px',
@@ -4284,7 +4522,10 @@ export function FloorPlanHome({
                           {/* Note Button */}
                           {!item.sentToKitchen && (
                             <button
-                              onClick={() => handleOpenNotesEditor(item.id, item.specialNotes)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleOpenNotesEditor(item.id, item.specialNotes)
+                              }}
                               style={{
                                 padding: '5px 8px',
                                 background: item.specialNotes ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.05)',
@@ -4309,7 +4550,10 @@ export function FloorPlanHome({
                           {/* Hold Button */}
                           {!item.sentToKitchen && (
                             <button
-                              onClick={() => handleToggleHold(item.id)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleToggleHold(item.id)
+                              }}
                               style={{
                                 padding: '5px 8px',
                                 background: item.isHeld ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
@@ -4334,7 +4578,10 @@ export function FloorPlanHome({
                           {/* Edit Button */}
                           {!item.sentToKitchen && item.modifiers && item.modifiers.length > 0 && (
                             <button
-                              onClick={() => handleEditItem(item)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditItem(item)
+                              }}
                               style={{
                                 padding: '5px 8px',
                                 background: 'rgba(255, 255, 255, 0.05)',
@@ -4356,10 +4603,41 @@ export function FloorPlanHome({
                             </button>
                           )}
 
+                          {/* Edit Mods Button - Sent items only */}
+                          {item.sentToKitchen && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditSentItemModifiers(item)
+                              }}
+                              style={{
+                                padding: '5px 8px',
+                                background: 'rgba(59, 130, 246, 0.1)',
+                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                borderRadius: '6px',
+                                color: '#60a5fa',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '11px',
+                              }}
+                              title="Edit modifiers (will increment resend count)"
+                            >
+                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                              Edit Mods
+                            </button>
+                          )}
+
                           {/* More Options Toggle */}
                           {!item.sentToKitchen && (
                             <button
-                              onClick={() => handleToggleItemControls(item.id)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleToggleItemControls(item.id)
+                              }}
                               style={{
                                 padding: '5px 8px',
                                 background: expandedItemId === item.id ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)',
@@ -4377,7 +4655,10 @@ export function FloorPlanHome({
                           {/* Delete Button */}
                           {!item.sentToKitchen && (
                             <button
-                              onClick={() => handleRemoveItem(item.id)}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleRemoveItem(item.id)
+                              }}
                               style={{
                                 marginLeft: 'auto',
                                 padding: '5px',
@@ -4417,7 +4698,10 @@ export function FloorPlanHome({
                               <span style={{ fontSize: '11px', color: '#64748b', width: '45px' }}>Seat:</span>
                               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                                 <button
-                                  onClick={() => handleUpdateSeat(item.id, null)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleUpdateSeat(item.id, null)
+                                  }}
                                   style={{
                                     width: '24px',
                                     height: '24px',
@@ -4437,7 +4721,10 @@ export function FloorPlanHome({
                                 {Array.from({ length: Math.max(guestCount, 4) }, (_, i) => i + 1).map(seat => (
                                   <button
                                     key={seat}
-                                    onClick={() => handleUpdateSeat(item.id, seat)}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleUpdateSeat(item.id, seat)
+                                    }}
                                     style={{
                                       width: '24px',
                                       height: '24px',
@@ -4464,7 +4751,10 @@ export function FloorPlanHome({
                               <span style={{ fontSize: '11px', color: '#64748b', width: '45px' }}>Course:</span>
                               <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                                 <button
-                                  onClick={() => handleUpdateCourse(item.id, null)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleUpdateCourse(item.id, null)
+                                  }}
                                   style={{
                                     width: '24px',
                                     height: '24px',
@@ -4484,7 +4774,10 @@ export function FloorPlanHome({
                                 {[1, 2, 3, 4, 5].map(course => (
                                   <button
                                     key={course}
-                                    onClick={() => handleUpdateCourse(item.id, course)}
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleUpdateCourse(item.id, course)
+                                    }}
                                     style={{
                                       width: '24px',
                                       height: '24px',
@@ -4507,11 +4800,202 @@ export function FloorPlanHome({
                             </div>
                           </motion.div>
                         )}
-                          </div>
-                        ))}
-                        </div>
                       </div>
                     ))}
+                          </div>
+                        </div>
+                      ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {/* SENT TO KITCHEN SECTION */}
+                    {(() => {
+                      const STATUS_CONFIG = {
+                        pending: { icon: '○', color: '#94a3b8', label: 'Pending' },
+                        cooking: { icon: '~', color: '#f59e0b', label: 'Cooking' },
+                        ready: { icon: '✓', color: '#22c55e', label: 'Ready' },
+                        delivered: { icon: '→', color: '#3b82f6', label: 'Served' },
+                      }
+
+                      const sentItems = inlineOrderItems.filter(item =>
+                        item.sentToKitchen || (item.kitchenStatus && item.kitchenStatus !== 'pending')
+                      )
+
+                      if (sentItems.length === 0) return null
+
+                      // Format timestamp
+                      const formatTimestamp = (timestamp?: string) => {
+                        if (!timestamp) return ''
+                        const date = new Date(timestamp)
+                        const hours = date.getHours()
+                        const minutes = date.getMinutes().toString().padStart(2, '0')
+                        const ampm = hours >= 12 ? 'pm' : 'am'
+                        const displayHours = hours % 12 || 12
+                        return `${displayHours}:${minutes}${ampm}`
+                      }
+
+                      return (
+                        <div>
+                          <div style={{
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: '#3b82f6',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            marginBottom: '12px',
+                            paddingBottom: '8px',
+                            borderBottom: '2px solid rgba(59, 130, 246, 0.3)'
+                          }}>
+                            SENT TO KITCHEN ({sentItems.length})
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {sentItems.map((item) => {
+                              const status = item.kitchenStatus || 'cooking'
+                              const config = STATUS_CONFIG[status]
+
+                              return (
+                                <div
+                                  key={item.id}
+                                  style={{
+                                    padding: '12px',
+                                    background: status === 'ready' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(59, 130, 246, 0.05)',
+                                    border: `1px solid ${status === 'ready' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(59, 130, 246, 0.2)'}`,
+                                    borderRadius: '10px',
+                                  }}
+                                >
+                                  {/* Item Header */}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
+                                        {/* Status Icon */}
+                                        <span style={{
+                                          fontSize: '16px',
+                                          color: config.color,
+                                          fontWeight: 700,
+                                          width: '20px',
+                                          textAlign: 'center'
+                                        }}>
+                                          {config.icon}
+                                        </span>
+
+                                        <span style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>
+                                          {item.quantity > 1 && <span style={{ color: '#94a3b8' }}>{item.quantity}x </span>}
+                                          {item.name}
+                                        </span>
+
+                                        {/* Seat Badge */}
+                                        {item.seatNumber && (
+                                          <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', fontWeight: 600 }}>
+                                            S{item.seatNumber}
+                                          </span>
+                                        )}
+
+                                        {/* Resend Count Badge */}
+                                        {item.resendCount && item.resendCount > 0 && (
+                                          <span style={{
+                                            fontSize: '9px',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            background: 'rgba(245, 158, 11, 0.2)',
+                                            color: '#f59e0b',
+                                            fontWeight: 600
+                                          }}>
+                                            Resent {item.resendCount}x
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      {/* Timestamp and Status */}
+                                      <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px' }}>
+                                        Sent {formatTimestamp(item.completedAt || item.createdAt)} · <span style={{ color: config.color, fontWeight: 600 }}>{config.label}</span>
+                                      </div>
+
+                                      {/* Modifiers */}
+                                      {item.modifiers && item.modifiers.length > 0 && (
+                                        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
+                                          {item.modifiers.map((m, idx) => (
+                                            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                              <span style={{ color: '#64748b' }}>•</span>
+                                              <span>{m.name}{m.price > 0 ? ` (+$${m.price.toFixed(2)})` : ''}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
+                                      {/* Kitchen Note */}
+                                      {item.specialNotes && (
+                                        <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                                          </svg>
+                                          {item.specialNotes}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Price */}
+                                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#22c55e', marginLeft: '8px' }}>
+                                      ${((item.price + (item.modifiers || []).reduce((sum, m) => sum + m.price, 0)) * item.quantity).toFixed(2)}
+                                    </div>
+                                  </div>
+
+                                  {/* Action Buttons Row */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                                    {/* Edit Mods Button */}
+                                    <button
+                                      onClick={() => {
+                                        // TODO (Worker O21): Open modifier edit modal
+                                        console.log('Edit modifiers for sent item:', item.id)
+                                      }}
+                                      style={{
+                                        padding: '5px 10px',
+                                        background: 'rgba(59, 130, 246, 0.15)',
+                                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                                        borderRadius: '6px',
+                                        color: '#60a5fa',
+                                        fontSize: '11px',
+                                        fontWeight: 500,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease',
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)'
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)'
+                                      }}
+                                    >
+                                      Edit Mods
+                                    </button>
+
+                                    {/* Grayed Remove Button (requires void approval) */}
+                                    <button
+                                      disabled
+                                      style={{
+                                        padding: '5px 10px',
+                                        background: 'rgba(255, 255, 255, 0.03)',
+                                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                                        borderRadius: '6px',
+                                        color: '#64748b',
+                                        fontSize: '11px',
+                                        fontWeight: 500,
+                                        cursor: 'not-allowed',
+                                        opacity: 0.5,
+                                      }}
+                                      title="Void requires manager approval"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 )}
               </div>

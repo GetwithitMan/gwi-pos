@@ -23,18 +23,22 @@ This document maps every significant file/folder in the current codebase to its 
 
 ## Domain Reference
 
-| # | Domain | Code | Description |
-|---|--------|------|-------------|
-| 1 | Floor Plan | FP | Tables, seats, groups, waitlist, entertainment |
-| 2 | Order Management | OM | Tickets, items, payments, kitchen routing |
-| 3 | Menu | MN | Items, categories, modifiers, combos |
-| 4 | Inventory | IN | Stock, purchasing, waste, counts |
-| 5 | Employee | EM | Profiles, scheduling, time clock, payroll |
-| 6 | Reporting | RP | Sales, labor, trends, exports |
-| 7 | Guest | GU | Profiles, loyalty, reservations |
-| 8 | Hardware | HW | Terminals, printers, KDS, card readers |
-| 9 | Events | EV | Event creation, ticketing, check-in |
-| 10 | Financial | FN | Gift cards, house accounts, discounts, tax |
+| # | Domain | Code | Trigger | Description |
+|---|--------|------|---------|-------------|
+| 1 | Floor Plan | FP | `PM Mode: Floor Plan` | Tables, seats, groups, waitlist |
+| 2 | Inventory | IN | `PM Mode: Inventory` | Stock, purchasing, waste, counts |
+| 3 | Orders | OM | `PM Mode: Orders` | Tickets, items, kitchen routing |
+| 4 | Menu | MN | `PM Mode: Menu` | Items, categories, modifiers, combos |
+| 5 | Employees | EM | `PM Mode: Employees` | Profiles, scheduling, time clock, payroll |
+| 6 | KDS | KD | `PM Mode: KDS` | Kitchen display system, stations |
+| 7 | Payments | PM | `PM Mode: Payments` | Payment processing, tips, receipts |
+| 8 | Reports | RP | `PM Mode: Reports` | Sales, labor, trends, exports |
+| 9 | Hardware | HW | `PM Mode: Hardware` | Terminals, printers, card readers |
+| 10 | Settings | ST | `PM Mode: Settings` | Location settings, order types, tax |
+| 11 | Entertainment | EN | `PM Mode: Entertainment` | Timed rentals, sessions, pricing |
+| 12 | Guest | GU | `PM Mode: Guest` | Profiles, loyalty, reservations |
+| 13 | Events | EV | `PM Mode: Events` | Event creation, ticketing, check-in |
+| 14 | Financial | FN | `PM Mode: Financial` | Gift cards, house accounts, discounts |
 
 ---
 

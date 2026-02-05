@@ -78,6 +78,8 @@ export async function GET(
       isActive: employee.isActive,
       color: employee.color,
       avatarUrl: employee.avatarUrl,
+      defaultScreen: employee.defaultScreen,
+      defaultOrderType: employee.defaultOrderType,
       createdAt: employee.createdAt.toISOString(),
       updatedAt: employee.updatedAt.toISOString(),
       // Stats
@@ -118,6 +120,8 @@ export async function PUT(
       hireDate,
       color,
       isActive,
+      defaultScreen,
+      defaultOrderType,
     } = body as {
       firstName?: string
       lastName?: string
@@ -130,6 +134,8 @@ export async function PUT(
       hireDate?: string
       color?: string
       isActive?: boolean
+      defaultScreen?: string
+      defaultOrderType?: string
     }
 
     // Check employee exists
@@ -156,6 +162,8 @@ export async function PUT(
     if (hireDate !== undefined) updateData.hireDate = hireDate ? new Date(hireDate) : null
     if (color !== undefined) updateData.color = color || null
     if (isActive !== undefined) updateData.isActive = isActive
+    if (defaultScreen !== undefined) updateData.defaultScreen = defaultScreen || null
+    if (defaultOrderType !== undefined) updateData.defaultOrderType = defaultOrderType || null
 
     // Handle PIN change
     if (pin) {
@@ -216,6 +224,8 @@ export async function PUT(
       hireDate: employee.hireDate?.toISOString() || null,
       isActive: employee.isActive,
       color: employee.color,
+      defaultScreen: employee.defaultScreen,
+      defaultOrderType: employee.defaultOrderType,
       updatedAt: employee.updatedAt.toISOString(),
     })
   } catch (error) {

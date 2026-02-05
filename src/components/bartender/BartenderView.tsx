@@ -6,6 +6,7 @@ import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { getDualPrices } from '@/lib/pricing'
+import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 
 // ============================================================================
 // TYPES
@@ -446,13 +447,24 @@ export function BartenderView({
     return result
   }, [tabs, searchQuery, showMineOnly, employeeId, tabSortBy])
 
-  const orderTotal = useMemo(() => {
-    return orderItems.reduce((sum, item) => {
+  const orderTotals = useMemo(() => {
+    const subtotal = orderItems.reduce((sum, item) => {
       const itemTotal = item.price * item.quantity
       const modTotal = (item.modifiers || []).reduce((m, mod) => m + mod.price, 0) * item.quantity
       return sum + itemTotal + modTotal
     }, 0)
+
+    // Get tax rate from location settings (default 8%)
+    const taxRate = 0.08
+    const tax = Math.round(subtotal * taxRate * 100) / 100
+    const discounts = 0 // No discounts in bartender view yet
+    const total = Math.round((subtotal + tax - discounts) * 100) / 100
+
+    return { subtotal, tax, discounts, total }
   }, [orderItems])
+
+  // Backward compatibility - keep orderTotal for existing code
+  const orderTotal = orderTotals.total
 
   const unsavedItemCount = useMemo(() => {
     return orderItems.filter(i => !i.sentToKitchen).length
@@ -859,9 +871,20 @@ export function BartenderView({
     return () => clearInterval(interval)
   }, [loadTabs])
 
-  // Load tab items when selecting a tab
+  // Track which tab ID we last loaded items for (to prevent re-polling from overwriting local changes)
+  const loadedTabIdRef = useRef<string | null>(null)
+
+  // Load tab items when selecting a DIFFERENT tab
   useEffect(() => {
     if (selectedTab) {
+      // FIX: Only reload items if we're switching to a DIFFERENT tab
+      // This prevents the 3-second polling from overwriting locally added items
+      if (loadedTabIdRef.current === selectedTab.id) {
+        // Same tab - don't overwrite local items (they may have unsaved additions)
+        return
+      }
+
+      loadedTabIdRef.current = selectedTab.id
       const items: OrderItem[] = selectedTab.items.map(item => ({
         id: item.id,
         menuItemId: item.menuItemId,
@@ -873,7 +896,11 @@ export function BartenderView({
       }))
       setOrderItems(items)
     } else {
-      setOrderItems([])
+      // Only clear if we had a tab selected before
+      if (loadedTabIdRef.current !== null) {
+        loadedTabIdRef.current = null
+        setOrderItems([])
+      }
     }
   }, [selectedTab])
 
@@ -982,6 +1009,11 @@ export function BartenderView({
 
   const handleRemoveItem = useCallback((itemId: string) => {
     setOrderItems(prev => prev.filter(item => item.id !== itemId))
+  }, [])
+
+  const handleEditItem = useCallback((item: OrderPanelItemData) => {
+    // TODO: Open modifier modal for editing
+    toast.info(`Edit ${item.name} (coming soon)`)
   }, [])
 
   // Handle clicking a spirit tier button on a cocktail item
@@ -1175,12 +1207,14 @@ export function BartenderView({
       }
 
       toast.success('Order sent')
-      setOrderItems(prev => prev.map(item => ({ ...item, sentToKitchen: true })))
-      await loadTabs()
 
-      if (!selectedTabId && orderId) {
-        setSelectedTabId(orderId)
-      }
+      // After send: Clear everything and deselect tab so next items start fresh
+      // This is the expected bar flow: Send → ready for next customer
+      setOrderItems([])
+      setSelectedTabId(null)
+      loadedTabIdRef.current = null  // Reset so we can load a new tab
+
+      await loadTabs()
 
     } catch (error) {
       console.error('[BartenderView] Failed to send:', error)
@@ -2386,125 +2420,40 @@ export function BartenderView({
 
         {/* ====== RIGHT: ORDER PANEL (hidden when tabs expanded) ====== */}
         {!isTabPanelExpanded && (
-          <div className="w-72 flex-shrink-0 bg-slate-800/50 border-l border-white/10 flex flex-col">
-            {/* Panel Header */}
-            <div className="p-3 border-b border-white/10">
-              <div className="font-bold text-white text-lg">
-                {selectedTab
-                  ? selectedTab.tabName || selectedTab.customerName || `Tab #${selectedTab.orderNumber}`
-                  : 'New Order'
-                }
-              </div>
-              {selectedTab && (
-                <div className="text-xs text-slate-400 mt-1">
-                  {selectedTab.itemCount} items • {getTimeOpen(selectedTab.openedAt)} • {selectedTab.employeeName}
-                </div>
-              )}
-            </div>
-
-            {/* Order Items */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {orderItems.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 text-sm">
-                  Tap items to add
-                </div>
-              ) : (
-                orderItems.map(item => (
-                  <div
-                    key={item.id}
-                    className={`p-2 rounded-lg ${
-                      item.sentToKitchen ? 'bg-slate-700/20' : 'bg-slate-700/40'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-medium text-sm ${item.sentToKitchen ? 'text-slate-400' : 'text-white'}`}>
-                          {item.name}
-                        </div>
-                        {item.modifiers && item.modifiers.length > 0 && (
-                          <div className="text-xs text-slate-500 mt-0.5 truncate">
-                            {item.modifiers.map(m => m.name).join(', ')}
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5">
-                        {!item.sentToKitchen ? (
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              onClick={() => handleUpdateQuantity(item.id, -1)}
-                              className="w-6 h-6 rounded bg-slate-600 text-white text-sm hover:bg-slate-500 flex items-center justify-center"
-                            >
-                              -
-                            </button>
-                            <span className="w-5 text-center text-white text-sm">{item.quantity}</span>
-                            <button
-                              onClick={() => handleUpdateQuantity(item.id, 1)}
-                              className="w-6 h-6 rounded bg-slate-600 text-white text-sm hover:bg-slate-500 flex items-center justify-center"
-                            >
-                              +
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500 text-xs">x{item.quantity}</span>
-                        )}
-
-                        <span className={`text-sm font-medium min-w-[50px] text-right ${item.sentToKitchen ? 'text-slate-500' : 'text-green-400'}`}>
-                          {formatCurrency(item.price * item.quantity)}
-                        </span>
-
-                        {!item.sentToKitchen && (
-                          <button
-                            onClick={() => handleRemoveItem(item.id)}
-                            className="text-slate-500 hover:text-red-400 text-sm ml-1"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Order Total */}
-            <div className="p-3 border-t border-white/10">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-slate-400">Total</span>
-                <span className="text-2xl font-bold text-green-400">
-                  {formatCurrency(orderTotal)}
-                </span>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={handleSend}
-                  disabled={unsavedItemCount === 0 || isSending}
-                  className={`flex-1 py-3 rounded-lg font-semibold text-white transition-colors ${
-                    unsavedItemCount === 0 || isSending
-                      ? 'bg-slate-700 cursor-not-allowed opacity-50'
-                      : 'bg-green-600 hover:bg-green-500'
-                  }`}
-                >
-                  {isSending ? 'Sending...' : `SEND${unsavedItemCount > 0 ? ` (${unsavedItemCount})` : ''}`}
-                </button>
-
-                <button
-                  onClick={handlePay}
-                  disabled={!selectedTab || selectedTab.total === 0}
-                  className={`flex-1 py-3 rounded-lg font-semibold text-white transition-colors ${
-                    !selectedTab || selectedTab.total === 0
-                      ? 'bg-slate-700 cursor-not-allowed opacity-50'
-                      : 'bg-indigo-600 hover:bg-indigo-500'
-                  }`}
-                >
-                  PAY
-                </button>
-              </div>
-            </div>
-          </div>
+          <OrderPanel
+            orderId={selectedTabId}
+            orderNumber={selectedTab?.orderNumber}
+            orderType="bar_tab"
+            tabName={selectedTab?.tabName || selectedTab?.customerName || undefined}
+            locationId={locationId}
+            items={orderItems.map(item => ({
+              id: item.id,
+              name: item.name,
+              quantity: item.quantity,
+              price: item.price,
+              modifiers: item.modifiers?.map(m => ({
+                name: m.name,
+                price: m.price,
+              })),
+              kitchenStatus: item.sentToKitchen ? 'sent' : 'pending',
+              menuItemId: item.menuItemId,
+            }))}
+            subtotal={orderTotals.subtotal}
+            tax={orderTotals.tax}
+            discounts={orderTotals.discounts}
+            total={orderTotals.total}
+            showItemControls={true}
+            cardLast4={selectedTab?.cardLast4 || undefined}
+            cardBrand={selectedTab?.cardBrand || undefined}
+            hasCard={!!selectedTab?.cardLast4}
+            onItemClick={handleEditItem}
+            onItemRemove={handleRemoveItem}
+            onQuantityChange={handleUpdateQuantity}
+            onSend={handleSend}
+            onPay={handlePay}
+            isSending={isSending}
+            className="w-72 flex-shrink-0"
+          />
         )}
       </div>
 

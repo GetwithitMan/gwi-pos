@@ -55,6 +55,7 @@ export async function PUT(request: NextRequest) {
       tipShares: { ...currentSettings.tipShares, ...(settings.tipShares || {}) },
       receipts: { ...currentSettings.receipts, ...(settings.receipts || {}) },
       loyalty: { ...currentSettings.loyalty, ...(settings.loyalty || {}) },
+      barTabs: { ...currentSettings.barTabs, ...(settings.barTabs || {}) },
     })
 
     // Update location

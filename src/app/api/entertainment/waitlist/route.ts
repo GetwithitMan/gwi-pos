@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // GET - List waitlist entries for floor plan elements
 export async function GET(request: NextRequest) {
@@ -159,53 +160,57 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Get current position
-    const currentWaitlistCount = await db.entertainmentWaitlist.count({
-      where: {
-        locationId,
-        deletedAt: null,
-        status: 'waiting',
-        ...(elementId ? { elementId } : { visualType }),
-      },
-    })
-
     // Calculate expiry
     const expiresAt = expiresInMinutes
       ? new Date(Date.now() + expiresInMinutes * 60 * 1000)
       : null
 
-    // Create waitlist entry
-    const entry = await db.entertainmentWaitlist.create({
-      data: {
-        locationId,
-        elementId: elementId || null,
-        visualType: visualType || null,
-        tableId: tableId || null,
-        customerName: customerName?.trim() || null,
-        phone: phone?.trim() || null,
-        partySize: partySize || 1,
-        notes: notes?.trim() || null,
-        position: currentWaitlistCount + 1,
-        status: 'waiting',
-        expiresAt,
-      },
-      include: {
-        element: {
-          select: {
-            id: true,
-            name: true,
-            visualType: true,
-            status: true,
+    // Create waitlist entry with transaction to prevent race condition
+    const entry = await db.$transaction(async (tx) => {
+      const currentWaitlistCount = await tx.entertainmentWaitlist.count({
+        where: {
+          locationId,
+          deletedAt: null,
+          status: 'waiting',
+          ...(elementId ? { elementId } : { visualType }),
+        },
+      })
+
+      return tx.entertainmentWaitlist.create({
+        data: {
+          locationId,
+          elementId: elementId || null,
+          visualType: visualType || null,
+          tableId: tableId || null,
+          customerName: customerName?.trim() || null,
+          phone: phone?.trim() || null,
+          partySize: partySize || 1,
+          notes: notes?.trim() || null,
+          position: currentWaitlistCount + 1,
+          status: 'waiting',
+          expiresAt,
+        },
+        include: {
+          element: {
+            select: {
+              id: true,
+              name: true,
+              visualType: true,
+              status: true,
+            },
+          },
+          table: {
+            select: {
+              id: true,
+              name: true,
+            },
           },
         },
-        table: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
+      })
     })
+
+    // Dispatch real-time update
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       entry: {

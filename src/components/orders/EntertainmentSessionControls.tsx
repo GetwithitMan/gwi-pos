@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 interface EntertainmentSessionControlsProps {
   orderItemId: string
   menuItemId: string
+  locationId: string
   itemName: string
   blockTimeMinutes: number | null
   blockTimeStartedAt: string | null
@@ -20,6 +21,7 @@ interface EntertainmentSessionControlsProps {
 export function EntertainmentSessionControls({
   orderItemId,
   menuItemId,
+  locationId,
   itemName,
   blockTimeMinutes,
   blockTimeStartedAt,
@@ -76,7 +78,7 @@ export function EntertainmentSessionControls({
       const secs = Math.floor((remainingMs % 60000) / 1000)
       setTimeDisplay(`${mins}:${secs.toString().padStart(2, '0')}`)
       setIsExpired(false)
-      setIsExpiringSoon(mins < 5)
+      setIsExpiringSoon(mins <= 10)
     }
 
     updateCountdown()
@@ -92,7 +94,7 @@ export function EntertainmentSessionControls({
     setIsProcessing(true)
     try {
       // Stop the block time - this also updates MenuItem status to 'available'
-      const response = await fetch(`/api/entertainment/block-time?orderItemId=${orderItemId}`, {
+      const response = await fetch(`/api/entertainment/block-time?orderItemId=${orderItemId}&locationId=${locationId}`, {
         method: 'DELETE',
       })
 
@@ -120,6 +122,7 @@ export function EntertainmentSessionControls({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderItemId,
+          locationId,
           additionalMinutes: minutes,
         }),
       })
@@ -147,6 +150,7 @@ export function EntertainmentSessionControls({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderItemId,
+          locationId,
           minutes,
         }),
       })

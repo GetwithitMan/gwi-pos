@@ -68,6 +68,20 @@ export async function POST(
             currentOrderItemId: item.id,
           }
         })
+
+        // Also update linked FloorPlanElement (if exists)
+        await db.floorPlanElement.updateMany({
+          where: {
+            linkedMenuItemId: item.menuItem.id,
+            deletedAt: null,
+          },
+          data: {
+            status: 'in_use',
+            currentOrderId: order.id,
+            sessionStartedAt: now,
+            sessionExpiresAt: updateData.blockTimeExpiresAt,
+          },
+        })
       }
 
       await db.orderItem.update({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -206,11 +207,11 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { elementId, status, currentOrderId, sessionStartedAt, sessionExpiresAt } = body
+    const { elementId, locationId, status, currentOrderId, sessionStartedAt, sessionExpiresAt } = body
 
-    if (!elementId) {
+    if (!elementId || !locationId) {
       return NextResponse.json(
-        { error: 'Element ID is required' },
+        { error: 'Element ID and Location ID are required' },
         { status: 400 }
       )
     }
@@ -220,6 +221,18 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(
         { error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` },
         { status: 400 }
+      )
+    }
+
+    // Verify element belongs to location (multi-tenancy security)
+    const element = await db.floorPlanElement.findFirst({
+      where: { id: elementId, locationId, deletedAt: null },
+    })
+
+    if (!element) {
+      return NextResponse.json(
+        { error: 'Element not found' },
+        { status: 404 }
       )
     }
 
@@ -264,7 +277,14 @@ export async function PATCH(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ element: updatedElement })
+    // Dispatch real-time update to all connected clients
+    dispatchFloorPlanUpdate(locationId, { async: true })
+
+    return NextResponse.json({
+      data: {
+        element: updatedElement
+      }
+    })
   } catch (error) {
     console.error('Failed to update entertainment status:', error)
     return NextResponse.json(

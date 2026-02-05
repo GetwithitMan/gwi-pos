@@ -125,6 +125,16 @@ export interface HappyHourSettings {
   showOriginalPrice: boolean       // Show original price crossed out
 }
 
+export interface BarTabSettings {
+  // Card Requirements
+  requireCardForTab: boolean           // Require credit card to start a tab
+  pullCustomerFromCard: boolean        // Auto-fill customer name from card holder
+  allowNameOnlyTab: boolean            // Allow tabs with just a name (no card)
+
+  // Tab Management
+  tabTimeoutMinutes: number            // Show timeout warning after X minutes of inactivity
+}
+
 export interface POSDisplaySettings {
   // Menu Item Sizing
   menuItemSize: 'compact' | 'normal' | 'large'
@@ -246,6 +256,7 @@ export interface LocationSettings {
   payments: PaymentSettings
   loyalty: LoyaltySettings
   happyHour: HappyHourSettings
+  barTabs: BarTabSettings
   posDisplay: POSDisplaySettings
   receiptDisplay: GlobalReceiptSettings  // Controls WHAT features are available in the Visual Editor
 }
@@ -334,6 +345,12 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     showBadge: true,
     showOriginalPrice: true,
   },
+  barTabs: {
+    requireCardForTab: false,        // Don't require card by default
+    pullCustomerFromCard: true,      // Auto-fill name when card is used
+    allowNameOnlyTab: true,          // Allow tabs with just a name
+    tabTimeoutMinutes: 240,          // 4 hours default timeout warning
+  },
   posDisplay: {
     menuItemSize: 'normal',
     menuItemsPerRow: 5,
@@ -390,6 +407,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       schedules: (partial.happyHour?.schedules?.length)
         ? partial.happyHour.schedules
         : DEFAULT_SETTINGS.happyHour.schedules,
+    },
+    barTabs: {
+      ...DEFAULT_SETTINGS.barTabs,
+      ...(partial.barTabs || {}),
     },
     posDisplay: {
       ...DEFAULT_SETTINGS.posDisplay,

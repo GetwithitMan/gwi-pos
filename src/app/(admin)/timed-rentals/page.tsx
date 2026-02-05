@@ -8,6 +8,14 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminNav } from '@/components/admin/AdminNav'
 import type { EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals'
+import {
+  getPricingSummary,
+  DEFAULT_PRICING,
+  DEFAULT_PREPAID_PACKAGES,
+  getPackageSavings,
+  type PrepaidPackage,
+  type HappyHourConfig,
+} from '@/lib/entertainment-pricing'
 
 interface TimedSession {
   id: string
@@ -48,12 +56,14 @@ interface TimedItem {
 interface ItemBuilderForm {
   name: string
   visualType: EntertainmentVisualType
-  blockTimeMinutes: number
-  per15Min: number
-  per30Min: number
-  perHour: number
-  minimumMinutes: number
+  ratePerMinute: number
   gracePeriodMinutes: number
+  // Prepaid packages
+  prepaidPackages: PrepaidPackage[]
+  // Happy hour
+  happyHourEnabled: boolean
+  happyHourPrice: number | null  // Simple HH price instead of full config
+  // Status
   status: 'available' | 'maintenance'
 }
 
@@ -75,12 +85,11 @@ export default function TimedRentalsPage() {
   const [builderForm, setBuilderForm] = useState<ItemBuilderForm>({
     name: '',
     visualType: 'pool_table',
-    blockTimeMinutes: 60,
-    per15Min: 0,
-    per30Min: 0,
-    perHour: 15,
-    minimumMinutes: 30,
-    gracePeriodMinutes: 5,
+    ratePerMinute: DEFAULT_PRICING.ratePerMinute,
+    gracePeriodMinutes: DEFAULT_PRICING.graceMinutes,
+    prepaidPackages: DEFAULT_PREPAID_PACKAGES,
+    happyHourEnabled: false,
+    happyHourPrice: null,
     status: 'available'
   })
   const [isSaving, setIsSaving] = useState(false)
@@ -106,12 +115,11 @@ export default function TimedRentalsPage() {
       setBuilderForm({
         name: '',
         visualType: 'pool_table',
-        blockTimeMinutes: 60,
-        per15Min: 0,
-        per30Min: 0,
-        perHour: 15,
-        minimumMinutes: 30,
-        gracePeriodMinutes: 5,
+        ratePerMinute: DEFAULT_PRICING.ratePerMinute,
+        gracePeriodMinutes: DEFAULT_PRICING.graceMinutes,
+        prepaidPackages: DEFAULT_PREPAID_PACKAGES,
+        happyHourEnabled: false,
+        happyHourPrice: null,
         status: 'available'
       })
       setShowBuilder(true)
@@ -119,15 +127,18 @@ export default function TimedRentalsPage() {
       // Load existing item
       const item = timedItems.find(i => i.id === itemIdFromUrl)
       if (item) {
+        // Try to extract per-minute rate from existing pricing
+        const perHour = item.timedPricing?.perHour || item.price || 15
+        const ratePerMinute = perHour / 60
+
         setBuilderForm({
           name: item.name,
           visualType: item.visualType || 'pool_table',
-          blockTimeMinutes: item.blockTimeMinutes || 60,
-          per15Min: item.timedPricing?.per15Min || 0,
-          per30Min: item.timedPricing?.per30Min || 0,
-          perHour: item.timedPricing?.perHour || item.price || 15,
-          minimumMinutes: item.minimumMinutes || 30,
-          gracePeriodMinutes: item.gracePeriodMinutes || 5,
+          ratePerMinute,
+          gracePeriodMinutes: item.gracePeriodMinutes || DEFAULT_PRICING.graceMinutes,
+          prepaidPackages: (item.timedPricing as any)?.prepaidPackages || DEFAULT_PREPAID_PACKAGES,
+          happyHourEnabled: (item.timedPricing as any)?.happyHour?.enabled || false,
+          happyHourPrice: (item.timedPricing as any)?.happyHour?.price || null,
           status: item.entertainmentStatus || 'available'
         })
         setShowBuilder(true)
@@ -226,14 +237,19 @@ export default function TimedRentalsPage() {
         locationId: employee.location.id,
         name: builderForm.name,
         itemType: 'timed_rental',
-        price: builderForm.perHour, // Base price = hourly rate
+        price: builderForm.ratePerMinute * 60, // Base price = hourly rate
         timedPricing: {
-          per15Min: builderForm.per15Min,
-          per30Min: builderForm.per30Min,
-          perHour: builderForm.perHour,
+          ratePerMinute: builderForm.ratePerMinute,
+          prepaidPackages: builderForm.prepaidPackages,
+          happyHour: builderForm.happyHourEnabled ? {
+            enabled: true,
+            price: builderForm.happyHourPrice,
+          } : null,
+          // Keep legacy fields for backward compatibility
+          per15Min: builderForm.ratePerMinute * 15,
+          per30Min: builderForm.ratePerMinute * 30,
+          perHour: builderForm.ratePerMinute * 60,
         },
-        blockTimeMinutes: builderForm.blockTimeMinutes,
-        minimumMinutes: builderForm.minimumMinutes,
         gracePeriodMinutes: builderForm.gracePeriodMinutes,
         entertainmentStatus: builderForm.status,
         visualType: builderForm.visualType,
@@ -287,6 +303,22 @@ export default function TimedRentalsPage() {
 
   const activeSessions = sessions.filter(s => s.status === 'active' || s.status === 'paused')
   const completedSessions = sessions.filter(s => s.status === 'completed')
+
+  // Visual type options with icons
+  const VISUAL_TYPES = [
+    { value: 'pool_table', label: 'Pool Table', icon: '🎱' },
+    { value: 'dartboard', label: 'Dartboard', icon: '🎯' },
+    { value: 'arcade', label: 'Arcade', icon: '🕹️' },
+    { value: 'foosball', label: 'Foosball', icon: '⚽' },
+    { value: 'bowling_lane', label: 'Bowling', icon: '🎳' },
+    { value: 'ping_pong', label: 'Ping Pong', icon: '🏓' },
+    { value: 'karaoke_stage', label: 'Karaoke', icon: '🎤' },
+    { value: 'dj_booth', label: 'DJ Booth', icon: '🎧' },
+    { value: 'photo_booth', label: 'Photo', icon: '📸' },
+    { value: 'vr_station', label: 'VR', icon: '🥽' },
+    { value: 'game_table', label: 'Game', icon: '🎮' },
+    { value: 'shuffleboard', label: 'Shuffle', icon: '🪑' },
+  ]
 
   if (!isAuthenticated) return null
 
@@ -503,17 +535,30 @@ export default function TimedRentalsPage() {
       {/* Entertainment Builder Modal */}
       {showBuilder && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <CardHeader>
-              <CardTitle>
-                {itemIdFromUrl === 'new' ? 'Create Entertainment Item' : 'Edit Entertainment Item'}
-              </CardTitle>
+          <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">
+                  {itemIdFromUrl === 'new' ? 'Create Entertainment Item' : 'Edit Entertainment Item'}
+                </CardTitle>
+                <button
+                  onClick={() => {
+                    setShowBuilder(false)
+                    router.push('/timed-rentals')
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                {/* Item Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Item Name</label>
+            <CardContent className="space-y-4 overflow-y-auto flex-1">
+              {/* Name + Visual Type Row */}
+              <div className="flex gap-4 items-end">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                   <input
                     type="text"
                     value={builderForm.name}
@@ -522,182 +567,189 @@ export default function TimedRentalsPage() {
                     placeholder="Pool Table 1"
                   />
                 </div>
-
-                {/* Visual Type Selector */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Visual Type</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { value: 'pool_table', label: 'Pool Table' },
-                      { value: 'dartboard', label: 'Dartboard' },
-                      { value: 'arcade', label: 'Arcade' },
-                      { value: 'foosball', label: 'Foosball' },
-                      { value: 'shuffleboard', label: 'Shuffleboard' },
-                      { value: 'ping_pong', label: 'Ping Pong' },
-                      { value: 'bowling_lane', label: 'Bowling Lane' },
-                      { value: 'karaoke_stage', label: 'Karaoke' },
-                      { value: 'dj_booth', label: 'DJ Booth' },
-                      { value: 'photo_booth', label: 'Photo Booth' },
-                      { value: 'vr_station', label: 'VR Station' },
-                      { value: 'game_table', label: 'Game Table' },
-                    ].map(type => (
-                      <button
-                        key={type.value}
-                        onClick={() => setBuilderForm({ ...builderForm, visualType: type.value as EntertainmentVisualType })}
-                        className={`p-3 border rounded-lg text-sm ${
-                          builderForm.visualType === type.value
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        {type.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Block Time Presets */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Block Time (Default Duration)</label>
-                  <div className="flex gap-2">
-                    {[30, 60, 90].map(minutes => (
-                      <button
-                        key={minutes}
-                        onClick={() => setBuilderForm({ ...builderForm, blockTimeMinutes: minutes })}
-                        className={`flex-1 px-4 py-2 border rounded-lg ${
-                          builderForm.blockTimeMinutes === minutes
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        {minutes} min
-                      </button>
-                    ))}
-                    <input
-                      type="number"
-                      value={builderForm.blockTimeMinutes}
-                      onChange={(e) => setBuilderForm({ ...builderForm, blockTimeMinutes: parseInt(e.target.value) || 0 })}
-                      className="w-24 border rounded px-3 py-2"
-                      placeholder="Custom"
-                    />
-                  </div>
-                </div>
-
-                {/* Pricing */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Per 15 Min</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={builderForm.per15Min}
-                      onChange={(e) => setBuilderForm({ ...builderForm, per15Min: parseFloat(e.target.value) || 0 })}
-                      className="w-full border rounded px-3 py-2"
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Per 30 Min</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={builderForm.per30Min}
-                      onChange={(e) => setBuilderForm({ ...builderForm, per30Min: parseFloat(e.target.value) || 0 })}
-                      className="w-full border rounded px-3 py-2"
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Per Hour</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={builderForm.perHour}
-                      onChange={(e) => setBuilderForm({ ...builderForm, perHour: parseFloat(e.target.value) || 0 })}
-                      className="w-full border rounded px-3 py-2"
-                      placeholder="0.00"
-                    />
-                  </div>
-                </div>
-
-                {/* Minimum Minutes */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Minutes</label>
+                <div className="w-48">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Visual</label>
                   <select
-                    value={builderForm.minimumMinutes}
-                    onChange={(e) => setBuilderForm({ ...builderForm, minimumMinutes: parseInt(e.target.value) })}
+                    value={builderForm.visualType}
+                    onChange={(e) => setBuilderForm({...builderForm, visualType: e.target.value as EntertainmentVisualType})}
                     className="w-full border rounded px-3 py-2"
                   >
-                    <option value={0}>No Minimum</option>
-                    <option value={15}>15 minutes</option>
-                    <option value={30}>30 minutes</option>
-                    <option value={45}>45 minutes</option>
-                    <option value={60}>60 minutes</option>
+                    {VISUAL_TYPES.map(type => (
+                      <option key={type.value} value={type.value}>
+                        {type.icon} {type.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
+              </div>
 
-                {/* Grace Period */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Grace Period (Minutes)</label>
-                  <input
-                    type="number"
-                    value={builderForm.gracePeriodMinutes}
-                    onChange={(e) => setBuilderForm({ ...builderForm, gracePeriodMinutes: parseInt(e.target.value) || 0 })}
-                    className="w-full border rounded px-3 py-2"
-                    placeholder="5"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Extra time before charging next block</p>
-                </div>
+              {/* Pricing */}
+              <div className="border-t pt-3 mt-3">
+                <div className="text-sm font-medium text-gray-700 mb-2">Pricing</div>
 
-                {/* Status Toggle */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setBuilderForm({ ...builderForm, status: 'available' })}
-                      className={`flex-1 px-4 py-2 border rounded-lg ${
-                        builderForm.status === 'available'
-                          ? 'border-green-500 bg-green-50 text-green-700'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      Available
-                    </button>
-                    <button
-                      onClick={() => setBuilderForm({ ...builderForm, status: 'maintenance' })}
-                      className={`flex-1 px-4 py-2 border rounded-lg ${
-                        builderForm.status === 'maintenance'
-                          ? 'border-red-500 bg-red-50 text-red-700'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      Maintenance
-                    </button>
+                {/* Rate + Grace inline */}
+                <div className="flex items-center gap-4 mb-2">
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-500">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={builderForm.ratePerMinute}
+                      onChange={e => setBuilderForm({...builderForm, ratePerMinute: parseFloat(e.target.value) || 0.25})}
+                      className="w-16 px-2 py-1 border rounded text-right text-sm"
+                    />
+                    <span className="text-gray-500 text-sm">/min</span>
+                    <span className="text-gray-400 text-sm ml-1">(${(builderForm.ratePerMinute * 60).toFixed(2)}/hr)</span>
+                  </div>
+                  <div className="flex items-center gap-1 ml-auto">
+                    <span className="text-gray-500 text-sm">Grace:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="15"
+                      value={builderForm.gracePeriodMinutes}
+                      onChange={e => setBuilderForm({...builderForm, gracePeriodMinutes: parseInt(e.target.value) || 0})}
+                      className="w-12 px-2 py-1 border rounded text-right text-sm"
+                    />
+                    <span className="text-gray-500 text-sm">min</span>
                   </div>
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    variant="outline"
+                {/* Happy Hour checkbox + price */}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={builderForm.happyHourEnabled}
+                    onChange={e => setBuilderForm({...builderForm, happyHourEnabled: e.target.checked})}
+                    className="rounded"
+                  />
+                  <span className="text-amber-700">Happy Hour:</span>
+                  {builderForm.happyHourEnabled && (
+                    <>
+                      <span className="text-gray-500">$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        value={builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5}
+                        onChange={e => setBuilderForm({...builderForm, happyHourPrice: parseFloat(e.target.value) || 0})}
+                        className="w-16 px-2 py-1 border rounded text-right text-sm"
+                      />
+                      <span className="text-gray-500 text-sm">/min</span>
+                      <span className="text-amber-600 text-sm ml-1">(${((builderForm.happyHourPrice || builderForm.ratePerMinute * 0.5) * 60).toFixed(2)}/hr)</span>
+                    </>
+                  )}
+                </label>
+              </div>
+
+              {/* Prepaid Packages */}
+              <div className="border-t pt-3 mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700">Prepaid Packages</span>
+                  <button
+                    type="button"
                     onClick={() => {
-                      setShowBuilder(false)
-                      router.push('/timed-rentals')
+                      const newPkg = { minutes: 30, price: 10, label: '' }
+                      setBuilderForm({...builderForm, prepaidPackages: [...builderForm.prepaidPackages, newPkg]})
                     }}
-                    className="flex-1"
+                    className="text-xs text-green-600 hover:text-green-800"
                   >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleSaveItem}
-                    disabled={isSaving || !builderForm.name.trim()}
-                    className="flex-1"
-                  >
-                    {isSaving ? 'Saving...' : 'Save Item'}
-                  </Button>
+                    + Add
+                  </button>
+                </div>
+
+                <div className="space-y-1">
+                  {builderForm.prepaidPackages.map((pkg, idx) => {
+                    const savings = getPackageSavings(pkg, builderForm.ratePerMinute)
+                    return (
+                      <div key={idx} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="number"
+                          value={pkg.minutes}
+                          onChange={e => {
+                            const updated = [...builderForm.prepaidPackages]
+                            updated[idx] = {...pkg, minutes: parseInt(e.target.value) || 0}
+                            setBuilderForm({...builderForm, prepaidPackages: updated})
+                          }}
+                          className="w-12 px-1 py-0.5 border rounded text-right text-sm"
+                        />
+                        <span className="text-gray-500">min = $</span>
+                        <input
+                          type="number"
+                          step="0.50"
+                          value={pkg.price}
+                          onChange={e => {
+                            const updated = [...builderForm.prepaidPackages]
+                            updated[idx] = {...pkg, price: parseFloat(e.target.value) || 0}
+                            setBuilderForm({...builderForm, prepaidPackages: updated})
+                          }}
+                          className="w-14 px-1 py-0.5 border rounded text-right text-sm"
+                        />
+                        {savings > 0 && (
+                          <span className="text-green-600 text-xs">(saves ${savings.toFixed(2)})</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = builderForm.prepaidPackages.filter((_, i) => i !== idx)
+                            setBuilderForm({...builderForm, prepaidPackages: updated})
+                          }}
+                          className="ml-auto text-red-400 hover:text-red-600 text-xs"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
+
+              {/* Inline Status Radio Buttons */}
+              <div className="flex items-center gap-6 border-t pt-3 mt-3">
+                <span className="text-sm font-medium text-gray-700">Status:</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="status"
+                    checked={builderForm.status === 'available'}
+                    onChange={() => setBuilderForm({...builderForm, status: 'available'})}
+                    className="text-green-600 focus:ring-green-500"
+                  />
+                  <span className="text-sm text-green-700">Available</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="status"
+                    checked={builderForm.status === 'maintenance'}
+                    onChange={() => setBuilderForm({...builderForm, status: 'maintenance'})}
+                    className="text-amber-600 focus:ring-amber-500"
+                  />
+                  <span className="text-sm text-amber-700">Maintenance</span>
+                </label>
+              </div>
             </CardContent>
+            {/* Actions - Fixed at bottom, always visible */}
+            <div className="flex gap-2 p-4 border-t bg-white">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowBuilder(false)
+                  router.push('/timed-rentals')
+                }}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveItem}
+                disabled={isSaving || !builderForm.name.trim()}
+                className="flex-1"
+              >
+                {isSaving ? 'Saving...' : 'Save Item'}
+              </Button>
+            </div>
           </Card>
         </div>
       )}

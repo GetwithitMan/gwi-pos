@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // POST - Start block time for an order item
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { orderItemId, minutes } = body
+    const { orderItemId, minutes, locationId } = body
 
     if (!orderItemId) {
       return NextResponse.json(
         { error: 'Order item ID is required' },
+        { status: 400 }
+      )
+    }
+
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'Location ID is required' },
         { status: 400 }
       )
     }
@@ -37,6 +45,7 @@ export async function POST(request: NextRequest) {
           select: {
             id: true,
             status: true,
+            locationId: true,
           },
         },
       },
@@ -46,6 +55,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Order item not found' },
         { status: 404 }
+      )
+    }
+
+    // Verify locationId matches
+    if (orderItem.order.locationId !== locationId) {
+      return NextResponse.json(
+        { error: 'Location ID mismatch' },
+        { status: 403 }
       )
     }
 
@@ -95,6 +112,25 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Update floor plan element if exists
+    if (orderItem.menuItem.id) {
+      await db.floorPlanElement.updateMany({
+        where: {
+          linkedMenuItemId: orderItem.menuItem.id,
+          deletedAt: null,
+        },
+        data: {
+          status: 'in_use',
+          currentOrderId: orderItem.orderId,
+          sessionStartedAt: now,
+          sessionExpiresAt: expiresAt,
+        },
+      })
+    }
+
+    // Dispatch socket update
+    dispatchFloorPlanUpdate(orderItem.order.locationId, { async: true })
+
     return NextResponse.json({
       orderItem: {
         id: updatedItem.id,
@@ -118,11 +154,18 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { orderItemId, additionalMinutes } = body
+    const { orderItemId, additionalMinutes, locationId } = body
 
     if (!orderItemId) {
       return NextResponse.json(
         { error: 'Order item ID is required' },
+        { status: 400 }
+      )
+    }
+
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'Location ID is required' },
         { status: 400 }
       )
     }
@@ -142,6 +185,7 @@ export async function PATCH(request: NextRequest) {
           select: {
             id: true,
             status: true,
+            locationId: true,
           },
         },
       },
@@ -151,6 +195,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json(
         { error: 'Order item not found' },
         { status: 404 }
+      )
+    }
+
+    // Verify locationId matches
+    if (orderItem.order.locationId !== locationId) {
+      return NextResponse.json(
+        { error: 'Location ID mismatch' },
+        { status: 403 }
       )
     }
 
@@ -193,6 +245,9 @@ export async function PATCH(request: NextRequest) {
       },
     })
 
+    // Dispatch socket update
+    dispatchFloorPlanUpdate(orderItem.order.locationId, { async: true })
+
     return NextResponse.json({
       orderItem: {
         id: updatedItem.id,
@@ -217,10 +272,18 @@ export async function DELETE(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const orderItemId = searchParams.get('orderItemId')
+    const locationId = searchParams.get('locationId')
 
     if (!orderItemId) {
       return NextResponse.json(
         { error: 'Order item ID is required' },
+        { status: 400 }
+      )
+    }
+
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'Location ID is required' },
         { status: 400 }
       )
     }
@@ -234,6 +297,12 @@ export async function DELETE(request: NextRequest) {
             id: true,
           },
         },
+        order: {
+          select: {
+            id: true,
+            locationId: true,
+          },
+        },
       },
     })
 
@@ -241,6 +310,14 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { error: 'Order item not found' },
         { status: 404 }
+      )
+    }
+
+    // Verify locationId matches
+    if (orderItem.order.locationId !== locationId) {
+      return NextResponse.json(
+        { error: 'Location ID mismatch' },
+        { status: 403 }
       )
     }
 
@@ -262,7 +339,6 @@ export async function DELETE(request: NextRequest) {
     })
 
     // Reset the menu item status
-    console.log('Resetting menu item status to available:', orderItem.menuItemId)
     const updatedMenuItem = await db.menuItem.update({
       where: { id: orderItem.menuItemId },
       data: {
@@ -278,7 +354,23 @@ export async function DELETE(request: NextRequest) {
         currentOrderItemId: true,
       },
     })
-    console.log('Menu item after update:', updatedMenuItem)
+
+    // Reset floor plan element
+    await db.floorPlanElement.updateMany({
+      where: {
+        linkedMenuItemId: orderItem.menuItemId,
+        deletedAt: null,
+      },
+      data: {
+        status: 'available',
+        currentOrderId: null,
+        sessionStartedAt: null,
+        sessionExpiresAt: null,
+      },
+    })
+
+    // Dispatch socket update
+    dispatchFloorPlanUpdate(orderItem.order.locationId, { async: true })
 
     return NextResponse.json({
       success: true,
