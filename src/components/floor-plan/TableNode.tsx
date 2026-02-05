@@ -261,6 +261,44 @@ export const TableNode = memo(function TableNode({
       onPointerCancel={handlePointerUp}
       whileTap={{ scale: 0.98 }}
     >
+      {/* Pulsing glow for virtual combined tables - OUTSIDE table-node-inner to avoid overflow:hidden clipping */}
+      {isInVirtualGroup && (() => {
+        const virtualGlowColor = effectiveVirtualGroupColor || '#06b6d4'
+        return (
+          <motion.div
+            className="absolute virtual-group-pulse"
+            style={{
+              inset: -8,
+              borderRadius: 'inherit',
+              pointerEvents: 'none',
+              zIndex: 0,
+            }}
+            animate={{
+              boxShadow: [
+                `0 0 20px ${virtualGlowColor}, 0 0 40px ${virtualGlowColor}80`,
+                `0 0 35px ${virtualGlowColor}, 0 0 60px ${virtualGlowColor}80`,
+                `0 0 20px ${virtualGlowColor}, 0 0 40px ${virtualGlowColor}80`,
+              ],
+            }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )
+      })()}
+
+      {/* Solid ring indicator for virtual groups - OUTSIDE table-node-inner to avoid overflow:hidden clipping */}
+      {isInVirtualGroup && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: -4,
+            borderRadius: 'inherit',
+            border: `4px solid ${effectiveVirtualGroupColor || '#06b6d4'}`,
+            pointerEvents: 'none',
+            zIndex: 1,
+          }}
+        />
+      )}
+
       <motion.div
         className="table-node-inner"
         style={{
@@ -338,39 +376,6 @@ export const TableNode = memo(function TableNode({
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Pulsing glow for virtual combined tables */}
-        {isInVirtualGroup && (() => {
-          const glowColor = effectiveVirtualGroupColor || '#06b6d4'
-          return (
-            <motion.div
-              className="absolute inset-[-4px] virtual-group-pulse"
-              style={{ borderRadius: 'inherit', pointerEvents: 'none' }}
-              animate={{
-                boxShadow: [
-                  `0 0 20px ${glowColor}, 0 0 40px ${glowColor}80, inset 0 0 15px ${glowColor}50`,
-                  `0 0 35px ${glowColor}, 0 0 60px ${glowColor}80, inset 0 0 25px ${glowColor}70`,
-                  `0 0 20px ${glowColor}, 0 0 40px ${glowColor}80, inset 0 0 15px ${glowColor}50`,
-                ],
-              }}
-              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-            />
-          )
-        })()}
-
-        {/* Solid ring indicator for virtual groups - always visible */}
-        {isInVirtualGroup && (
-          <div
-            style={{
-              position: 'absolute',
-              inset: -6,
-              borderRadius: 'inherit',
-              border: `4px solid ${effectiveVirtualGroupColor || '#06b6d4'}`,
-              pointerEvents: 'none',
-              zIndex: 5,
-            }}
-          />
-        )}
 
         {/* Selection checkmark for virtual combine mode */}
         {isVirtualCombineMode && isVirtualCombineSelected && (
