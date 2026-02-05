@@ -4812,11 +4812,12 @@ export function FloorPlanHome({
 
                     {/* SENT TO KITCHEN SECTION */}
                     {(() => {
-                      const STATUS_CONFIG = {
+                      const STATUS_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
                         pending: { icon: '○', color: '#94a3b8', label: 'Pending' },
+                        sent: { icon: '↗', color: '#3b82f6', label: 'Sent' },
                         cooking: { icon: '~', color: '#f59e0b', label: 'Cooking' },
                         ready: { icon: '✓', color: '#22c55e', label: 'Ready' },
-                        delivered: { icon: '→', color: '#3b82f6', label: 'Served' },
+                        delivered: { icon: '→', color: '#6366f1', label: 'Served' },
                       }
 
                       const sentItems = inlineOrderItems.filter(item =>
@@ -4852,8 +4853,8 @@ export function FloorPlanHome({
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {sentItems.map((item) => {
-                              const status = item.kitchenStatus || 'cooking'
-                              const config = STATUS_CONFIG[status]
+                              const status = item.kitchenStatus || 'sent'
+                              const config = STATUS_CONFIG[status] || STATUS_CONFIG.sent
 
                               return (
                                 <div
