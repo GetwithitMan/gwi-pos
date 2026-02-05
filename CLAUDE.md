@@ -1697,6 +1697,25 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
+#### Entertainment Domain
+**Trigger:** `PM Mode: Entertainment`
+**Documentation:** `/docs/domains/ENTERTAINMENT-DOMAIN.md`
+**Changelog:** `/docs/changelogs/ENTERTAINMENT-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| Builder | Item configuration | `/src/app/(admin)/timed-rentals/page.tsx` |
+| Status API | Status management | `/api/entertainment/status` |
+| Block Time API | Session timers | `/api/entertainment/block-time` |
+| Waitlist API | Queue management | `/api/entertainment/waitlist`, `/api/entertainment/waitlist/[id]` |
+| KDS Dashboard | Real-time monitoring | `/src/app/(kds)/entertainment/page.tsx` |
+| Components | UI components | `/src/components/entertainment/`, `/src/components/floor-plan/entertainment-visuals.tsx` |
+| Utilities | Helper functions | `/src/lib/entertainment.ts` |
+
+**Visual Types:** pool_table, dartboard, arcade, foosball, shuffleboard, ping_pong, bowling_lane, karaoke_stage, dj_booth, photo_booth, vr_station, game_table
+
+---
+
 ### Layer Separation Rule (CRITICAL)
 
 **A worker assigned to one layer must NOT touch code in another layer, even if it's in the same file.**
