@@ -104,15 +104,6 @@ export const TableNode = memo(function TableNode({
   const isVirtualGroupPrimary = table.virtualGroupPrimary
   const effectiveVirtualGroupColor = virtualGroupColor || table.virtualGroupColor || (isInVirtualGroup ? '#06b6d4' : null)
 
-  // Enhanced debug logging - log ALL tables to see data
-  console.log('Table Debug:', {
-    tableName: table.name,
-    virtualGroupId: table.virtualGroupId,
-    virtualGroupColor: table.virtualGroupColor,
-    isInVirtualGroup,
-    effectiveColor: effectiveVirtualGroupColor,
-  })
-
   // Calculate dynamic font sizes based on table dimensions
   const minDimension = Math.min(table.width, table.height)
   const isNarrow = table.width < 70 || table.height < 70
@@ -156,17 +147,13 @@ export const TableNode = memo(function TableNode({
   }, [showSeats, table.seats, table.width, table.height])
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    console.log('[DRAG] pointerDown on table:', table.id, { isLocked, isVirtualCombineMode, target: e.target })
-
     // In virtual combine mode, we're just selecting tables - handle tap directly
     if (isVirtualCombineMode) {
-      console.log('[DRAG] In virtual combine mode, will handle as tap on pointerUp')
       return
     }
 
     // Locked tables cannot be dragged
     if (isLocked) {
-      console.log('[DRAG] Table is locked, skipping drag')
       return
     }
 
@@ -174,8 +161,7 @@ export const TableNode = memo(function TableNode({
       onLongPress()
     }, 500)
     onDragStart()
-    console.log('[DRAG] Started drag for table:', table.id)
-  }, [onDragStart, onLongPress, isLocked, isVirtualCombineMode, table.id])
+  }, [onDragStart, onLongPress, isLocked, isVirtualCombineMode])
 
   const handlePointerUp = useCallback(() => {
     if (longPressTimer.current) {
@@ -184,7 +170,6 @@ export const TableNode = memo(function TableNode({
     }
     // In virtual combine mode, handle as a tap to toggle selection
     if (isVirtualCombineMode) {
-      console.log('[TableNode] pointerUp in virtual combine mode - calling onTap for table:', table.id)
       onTap()
       return
     }
@@ -193,7 +178,7 @@ export const TableNode = memo(function TableNode({
     if (isDragging) {
       onDragEnd()
     }
-  }, [onDragEnd, isDragging, isVirtualCombineMode, onTap, table.id])
+  }, [onDragEnd, isDragging, isVirtualCombineMode, onTap])
 
   const handlePointerMove = useCallback(() => {
     if (longPressTimer.current) {
