@@ -1,5 +1,66 @@
 # Floor Plan Domain - Change Log
 
+## Session: February 5, 2026 (Final Session)
+
+### 🏁 FLOOR PLAN DOMAIN COMPLETE
+
+The Floor Plan domain has been completed and is now ready for production. All core functionality is working:
+- Tables, seats, fixtures, sections
+- Virtual groups with colored borders
+- Entertainment elements integration (now moving to dedicated Entertainment domain)
+
+### Workers Completed Today
+
+| Worker | Task | Status | Files Changed |
+|--------|------|--------|---------------|
+| **74** | Virtual Group Glow/Ring Visibility Fix | ✅ Complete | `TableNode.tsx` - moved glow elements outside overflow:hidden container |
+| **75** | Virtual Group Styling Refinement | ✅ Complete | `TableNode.tsx` - softened border, removed pulsing animation |
+| **76** | Debug Console.log Cleanup | ✅ Complete | `TableNode.tsx` - removed all debug logging |
+| **77** | Integrate Entertainment Palette into Editor | ✅ Complete | `FloorPlanEditor.tsx` - AddEntertainmentPalette integration |
+| **78** | Render Entertainment in EditorCanvas | ✅ Complete | `EditorCanvas.tsx` - renderEntertainmentElements() with SVG visuals |
+| **79** | Add Entertainment to /api/floor-plan | ✅ Complete | `route.ts` - entertainment in aggregate response |
+| **80** | Create EntertainmentProperties Panel | ✅ Complete | NEW: `EntertainmentProperties.tsx` |
+| **82** | Route Entertainment to Builder | ✅ Complete | `menu/page.tsx` - routes to /timed-rentals |
+| **83** | Enhance Timed Rentals Page | ✅ Complete | `timed-rentals/page.tsx` - full entertainment builder |
+
+### Entertainment Integration (Moving to New Domain)
+
+Entertainment features were integrated into Floor Plan but are now being spun off into a dedicated Entertainment domain for better organization:
+
+**Completed in Floor Plan:**
+- `AddEntertainmentPalette` component for placing items
+- `FloorPlanEntertainment` rendering component
+- 12 SVG visual types (pool_table, dartboard, arcade, etc.)
+- Integration in EditorCanvas and FloorPlanEditor
+- `/api/floor-plan` returns entertainment elements
+
+**Moving to Entertainment Domain:**
+- `/timed-rentals` page (entertainment builder)
+- Entertainment session management
+- Waitlist functionality
+- Block time / per-minute pricing
+- Entertainment status tracking
+
+### Files Changed Today
+
+| File | Changes |
+|------|---------|
+| `src/components/floor-plan/TableNode.tsx` | Virtual group styling, removed debug logs |
+| `src/domains/floor-plan/admin/FloorPlanEditor.tsx` | Entertainment palette integration |
+| `src/domains/floor-plan/admin/EditorCanvas.tsx` | Entertainment rendering |
+| `src/domains/floor-plan/admin/EntertainmentProperties.tsx` | NEW - Properties panel |
+| `src/app/api/floor-plan/route.ts` | Entertainment in aggregate |
+| `src/app/(admin)/menu/page.tsx` | Entertainment routing to /timed-rentals |
+| `src/app/(admin)/timed-rentals/page.tsx` | Full entertainment builder UI |
+
+### Domain Handoff: Entertainment
+
+The Entertainment domain is now being created as a separate domain. See:
+- `/docs/changelogs/ENTERTAINMENT-CHANGELOG.md` (to be created)
+- `/docs/domains/ENTERTAINMENT-DOMAIN.md` (to be created)
+
+---
+
 ## Session: February 4, 2026
 
 ### Workers Completed

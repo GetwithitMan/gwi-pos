@@ -8,12 +8,14 @@
  * NOW WITH DATABASE PERSISTENCE!
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { FloorCanvasAPI, RoomSelector } from '../canvas';
 import { EditorCanvas } from './EditorCanvas';
 import { FixtureToolbar } from './FixtureToolbar';
 import { FixtureProperties } from './FixtureProperties';
 import { TableProperties } from './TableProperties';
+import { EntertainmentProperties } from './EntertainmentProperties';
+import { AddEntertainmentPalette } from '@/components/floor-plan/AddEntertainmentPalette';
 import type { EditorToolMode, FixtureType, EditorTable, TableShape } from './types';
 import type { Fixture } from '../shared/types';
 import {
@@ -51,6 +53,10 @@ interface FloorPlanElement {
   fillColor: string | null;
   opacity: number;
   isLocked: boolean;
+  // Entertainment-specific fields
+  linkedMenuItemId?: string;
+  linkedMenuItem?: { name: string; price: number; blockTimeMinutes?: number };
+  status?: string;
 }
 
 // =============================================================================
@@ -242,6 +248,10 @@ export function FloorPlanEditor({
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
 
+  // Entertainment palette state
+  const [isEntertainmentPaletteOpen, setIsEntertainmentPaletteOpen] = useState(false);
+  const [placedEntertainmentIds, setPlacedEntertainmentIds] = useState<string[]>([]);
+
   // Force refresh key for immediate updates (eliminates polling lag)
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -269,6 +279,19 @@ export function FloorPlanEditor({
     gridSizeFeet: number;
   }
   const [dbSections, setDbSections] = useState<DbSection[]>([]);
+
+  // Check if selected fixture is entertainment
+  const selectedEntertainmentElement = useMemo(() => {
+    if (!selectedFixtureId) return null;
+
+    // Check dbElements for entertainment type
+    const element = dbElements.find(el =>
+      el.id === selectedFixtureId &&
+      el.elementType === 'entertainment'
+    );
+
+    return element || null;
+  }, [selectedFixtureId, dbElements]);
 
   // Fetch sections from database
   const fetchSections = useCallback(async () => {
@@ -366,6 +389,22 @@ export function FloorPlanEditor({
     }
     setSelectedFixtureId(null);
   }, [useDatabase]);
+
+  // Track which entertainment items are already placed
+  useEffect(() => {
+    if (useDatabase) {
+      const entertainmentIds = dbElements
+        .filter(el => el.linkedMenuItemId)
+        .map(el => el.linkedMenuItemId as string);
+      setPlacedEntertainmentIds(entertainmentIds);
+    } else {
+      const fixtures = FloorCanvasAPI.getFixtures(selectedRoomId);
+      const entertainmentIds = fixtures
+        .filter(f => f.type === 'entertainment' && (f as any).linkedMenuItemId)
+        .map(f => (f as any).linkedMenuItemId as string);
+      setPlacedEntertainmentIds(entertainmentIds);
+    }
+  }, [useDatabase, dbElements, selectedRoomId]);
 
   // Handle tool change
   const handleToolChange = useCallback((tool: EditorToolMode) => {
@@ -503,6 +542,105 @@ export function FloorPlanEditor({
     },
     [useDatabase, locationId]
   );
+
+  // Handle entertainment update
+  const handleEntertainmentUpdate = useCallback(async (updates: {
+    visualType?: string;
+    width?: number;
+    height?: number;
+    rotation?: number;
+  }) => {
+    if (!selectedEntertainmentElement || !locationId) return;
+
+    try {
+      const response = await fetch(`/api/floor-plan-elements/${selectedEntertainmentElement.id}?locationId=${locationId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          ...updates,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDbElements(prev => prev.map(el =>
+          el.id === selectedEntertainmentElement.id ? { ...el, ...data.element } : el
+        ));
+        setRefreshKey(prev => prev + 1);
+      }
+    } catch (error) {
+      console.error('Failed to update entertainment:', error);
+    }
+  }, [selectedEntertainmentElement, locationId]);
+
+  // Handle entertainment delete
+  const handleEntertainmentDelete = useCallback(async () => {
+    if (!selectedEntertainmentElement || !locationId) return;
+
+    try {
+      const response = await fetch(`/api/floor-plan-elements/${selectedEntertainmentElement.id}?locationId=${locationId}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        // Remove from local state
+        setDbElements(prev => prev.filter(el => el.id !== selectedEntertainmentElement.id));
+        // Remove from placed IDs
+        if (selectedEntertainmentElement.linkedMenuItemId) {
+          setPlacedEntertainmentIds(prev =>
+            prev.filter(id => id !== selectedEntertainmentElement.linkedMenuItemId)
+          );
+        }
+        // Clear selection
+        setSelectedFixtureId(null);
+        setRefreshKey(prev => prev + 1);
+      }
+    } catch (error) {
+      console.error('Failed to delete entertainment:', error);
+    }
+  }, [selectedEntertainmentElement, locationId]);
+
+  // Handle adding entertainment element from palette
+  const handleAddEntertainment = useCallback(async (element: {
+    name: string;
+    visualType: string;
+    linkedMenuItemId: string;
+    width: number;
+    height: number;
+  }) => {
+    if (!locationId) return;
+
+    try {
+      const response = await fetch('/api/floor-plan-elements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          sectionId: selectedRoomId,
+          name: element.name,
+          elementType: 'entertainment',
+          visualType: element.visualType,
+          linkedMenuItemId: element.linkedMenuItemId,
+          posX: 200,
+          posY: 200,
+          width: element.width,
+          height: element.height,
+          rotation: 0,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const newFixture = elementToFixture(data.element, selectedRoomId || '');
+        setDbElements(prev => [...prev, data.element]);
+        setPlacedEntertainmentIds(prev => [...prev, element.linkedMenuItemId]);
+        setRefreshKey((prev) => prev + 1);
+      }
+    } catch (error) {
+      console.error('Failed to add entertainment:', error);
+    }
+  }, [locationId, selectedRoomId]);
 
   // Handle table creation
   const handleTableCreate = useCallback(
@@ -871,6 +1009,29 @@ export function FloorPlanEditor({
             </button>
           )}
 
+          {/* Add Entertainment Button */}
+          {useDatabase && (
+            <button
+              onClick={() => setIsEntertainmentPaletteOpen(true)}
+              style={{
+                padding: '8px 16px',
+                backgroundColor: '#9333ea',
+                color: 'white',
+                border: 'none',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontSize: 14,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <span>🎮</span>
+              <span>Add Entertainment</span>
+            </button>
+          )}
+
           {/* Zoom Controls */}
           <div style={{
             display: 'flex',
@@ -1117,13 +1278,29 @@ export function FloorPlanEditor({
 
         {/* Right Panel: Properties */}
         <div style={{ width: 250, flexShrink: 0, position: 'relative', zIndex: 10 }}>
-          {/* Show TableProperties when a table is selected, otherwise show FixtureProperties */}
+          {/* Show TableProperties when a table is selected, EntertainmentProperties when entertainment selected, otherwise FixtureProperties */}
           {selectedTableId ? (
             <TableProperties
               table={dbTables.find(t => t.id === selectedTableId) || null}
               onUpdate={handleTableUpdate}
               onDelete={handleTableDelete}
               onRegenerateSeats={handleRegenerateSeats}
+            />
+          ) : selectedEntertainmentElement ? (
+            <EntertainmentProperties
+              element={{
+                id: selectedEntertainmentElement.id,
+                name: selectedEntertainmentElement.name || '',
+                visualType: selectedEntertainmentElement.visualType || 'game_table',
+                linkedMenuItemId: selectedEntertainmentElement.linkedMenuItemId,
+                linkedMenuItem: selectedEntertainmentElement.linkedMenuItem,
+                width: selectedEntertainmentElement.width || 100,
+                height: selectedEntertainmentElement.height || 60,
+                rotation: selectedEntertainmentElement.rotation || 0,
+                status: selectedEntertainmentElement.status,
+              }}
+              onUpdate={handleEntertainmentUpdate}
+              onDelete={handleEntertainmentDelete}
             />
           ) : (
             <FixtureProperties
@@ -1154,6 +1331,18 @@ export function FloorPlanEditor({
           1: Select | 2: Table | 3: Wall | 4: Fixture | 5: Circle | 6: Delete | Del: Remove | Esc: Deselect
         </span>
       </div>
+
+      {/* Entertainment Palette Modal */}
+      {useDatabase && (
+        <AddEntertainmentPalette
+          isOpen={isEntertainmentPaletteOpen}
+          onClose={() => setIsEntertainmentPaletteOpen(false)}
+          locationId={locationId || ''}
+          selectedSectionId={selectedRoomId}
+          placedMenuItemIds={placedEntertainmentIds}
+          onAddElement={handleAddEntertainment}
+        />
+      )}
     </div>
   );
 }

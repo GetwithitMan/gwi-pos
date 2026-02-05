@@ -3,13 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 /**
- * GET /api/floor-plan?locationId=xxx&sectionId=yyy&include=tables,seats,sections,elements,virtualGroups
+ * GET /api/floor-plan?locationId=xxx&sectionId=yyy&include=tables,seats,sections,entertainment,elements,virtualGroups
  *
  * Returns complete floor plan data in a single call.
  * - tables: Table records with positions and virtual group info
  * - seats: Seat positions for all tables
  * - sections: Section/room definitions
- * - elements: Floor plan elements (walls, bars, entertainment items)
+ * - entertainment: Entertainment elements (pool tables, dartboards, etc.) with session data
+ * - elements: Floor plan elements (walls, bars, etc.)
  * - virtualGroups: Combined table groups
  *
  * Used by FloorPlanHome to load initial data.
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
   const includeParam = searchParams.get('include')
   const include = includeParam
     ? includeParam.split(',').map(s => s.trim())
-    : ['tables', 'seats', 'sections', 'elements', 'virtualGroups']
+    : ['tables', 'seats', 'sections', 'entertainment', 'elements', 'virtualGroups']
 
   if (!locationId) {
     return NextResponse.json(
@@ -113,6 +114,56 @@ export async function GET(request: NextRequest) {
       orderBy: [{ tableId: 'asc' }, { seatNumber: 'asc' }],
     })
       : []
+
+    // Fetch entertainment elements (if requested)
+    const entertainmentElements = include.includes('entertainment')
+      ? await db.floorPlanElement.findMany({
+          where: {
+            locationId,
+            elementType: 'entertainment',
+            deletedAt: null,
+          },
+          include: {
+            linkedMenuItem: {
+              select: {
+                id: true,
+                name: true,
+                price: true,
+                blockTimeMinutes: true,
+                entertainmentStatus: true,
+                currentOrderId: true,
+              },
+            },
+            waitlistEntries: {
+              where: { status: 'waiting', deletedAt: null },
+              select: { id: true },
+            },
+          },
+          orderBy: { sortOrder: 'asc' },
+        })
+      : []
+
+    // Transform entertainment data
+    const transformedEntertainment = entertainmentElements.map(el => ({
+      id: el.id,
+      name: el.name,
+      abbreviation: el.abbreviation,
+      elementType: el.elementType,
+      visualType: el.visualType,
+      linkedMenuItemId: el.linkedMenuItemId,
+      linkedMenuItem: el.linkedMenuItem,
+      posX: el.posX,
+      posY: el.posY,
+      width: el.width,
+      height: el.height,
+      rotation: el.rotation,
+      status: el.status || el.linkedMenuItem?.entertainmentStatus || 'available',
+      currentOrderId: el.currentOrderId,
+      sessionStartedAt: el.sessionStartedAt,
+      sessionExpiresAt: el.sessionExpiresAt,
+      waitlistCount: el.waitlistEntries?.length || 0,
+      sectionId: el.sectionId,
+    }))
 
     // Fetch floor plan elements (if requested)
     const elements = include.includes('elements')
@@ -258,6 +309,7 @@ export async function GET(request: NextRequest) {
     if (include.includes('tables')) response.data.tables = formattedTables
     if (include.includes('seats')) response.data.seats = formattedSeats
     if (include.includes('sections')) response.data.sections = sections
+    if (include.includes('entertainment')) response.data.entertainment = transformedEntertainment
     if (include.includes('elements')) response.data.elements = elements
     if (include.includes('virtualGroups')) response.data.virtualGroups = virtualGroups
 

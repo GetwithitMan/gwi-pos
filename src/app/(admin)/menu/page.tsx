@@ -537,6 +537,11 @@ export default function MenuManagementPage() {
                 → Opens in Liquor Builder
               </span>
             )}
+            {selectedCategoryData?.categoryType === 'entertainment' && (
+              <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+                → Opens in Entertainment Builder
+              </span>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -545,6 +550,8 @@ export default function MenuManagementPage() {
                 // Route liquor categories to the Liquor Builder
                 if (selectedCategoryData?.categoryType === 'liquor') {
                   router.push('/liquor-builder')
+                } else if (selectedCategoryData?.categoryType === 'entertainment') {
+                  router.push('/timed-rentals')
                 } else {
                   setEditingItem(null)
                   setShowItemModal(true)
@@ -570,6 +577,8 @@ export default function MenuManagementPage() {
                       // Route liquor items to the Liquor Builder
                       if (selectedCategoryData?.categoryType === 'liquor') {
                         router.push(`/liquor-builder?item=${item.id}`)
+                      } else if (selectedCategoryData?.categoryType === 'entertainment') {
+                        router.push(`/timed-rentals?item=${item.id}`)
                       } else {
                         setSelectedItemForEditor(item)
                       }

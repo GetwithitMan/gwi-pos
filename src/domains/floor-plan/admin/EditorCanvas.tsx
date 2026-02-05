@@ -14,6 +14,7 @@ import type { EditorToolMode, FixtureType, EditorTable, TableShape, EditorSeat }
 import { getFixtureTypeMetadata, getTableShapeMetadata } from './types';
 import { TableRenderer, type ResizeHandle } from './TableRenderer';
 import { SeatRenderer } from './SeatRenderer';
+import { EntertainmentVisual, type EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals';
 import {
   SEAT_RADIUS,
   SEAT_HIT_RADIUS,
@@ -1139,6 +1140,16 @@ export function EditorCanvas({
 
         // Then check fixtures
         const clickedFixture = fixtures.find((f) => {
+          // Check entertainment elements (may have different geometry structure)
+          if ((f as any).elementType === 'entertainment') {
+            const geo = f.geometry as { type: string; position?: { x: number; y: number }; width?: number; height?: number } | undefined;
+            const x = geo?.position?.x ?? (f as any).x ?? 0;
+            const y = geo?.position?.y ?? (f as any).y ?? 0;
+            const w = geo?.width ?? (f as any).width ?? 5;
+            const h = geo?.height ?? (f as any).height ?? 3;
+            return point.x >= x && point.x <= x + w && point.y >= y && point.y <= y + h;
+          }
+
           if (f.geometry.type === 'rectangle') {
             const { position, width, height } = f.geometry;
             return (
@@ -2358,6 +2369,119 @@ export function EditorCanvas({
     });
   };
 
+  // Render entertainment elements
+  const renderEntertainmentElements = () => {
+    // Filter entertainment from fixtures (they come from dbElements via props)
+    const entertainmentFixtures = fixtures.filter(f =>
+      (f as any).elementType === 'entertainment'
+    );
+
+    return entertainmentFixtures.map((fixture) => {
+      const isSelected = fixture.id === selectedFixtureId;
+      const visualType = ((fixture as any).visualType || 'game_table') as EntertainmentVisualType;
+
+      // Get position from fixture geometry or direct props
+      const geo = fixture.geometry as { type: string; position?: { x: number; y: number }; width?: number; height?: number } | undefined;
+      const posX = geo?.position?.x ?? (fixture as any).x ?? 0;
+      const posY = geo?.position?.y ?? (fixture as any).y ?? 0;
+      const width = geo?.width ?? (fixture as any).width ?? 5;
+      const height = geo?.height ?? (fixture as any).height ?? 3;
+      const rotation = (fixture as any).rotation ?? 0;
+
+      const pixelX = FloorCanvasAPI.feetToPixels(posX);
+      const pixelY = FloorCanvasAPI.feetToPixels(posY);
+      const pixelWidth = FloorCanvasAPI.feetToPixels(width);
+      const pixelHeight = FloorCanvasAPI.feetToPixels(height);
+
+      return (
+        <div
+          key={fixture.id}
+          style={{
+            position: 'absolute',
+            left: pixelX,
+            top: pixelY,
+            width: pixelWidth,
+            height: pixelHeight,
+            transform: `rotate(${rotation}deg)`,
+            transformOrigin: 'center center',
+            cursor: toolMode === 'SELECT' ? 'move' : toolMode === 'DELETE' ? 'pointer' : 'default',
+            zIndex: isSelected ? 100 : 10,
+            border: isSelected ? '2px solid #9333ea' : 'none',
+            boxShadow: isSelected ? '0 0 12px rgba(147, 51, 234, 0.5)' : 'none',
+            borderRadius: 8,
+          }}
+        >
+          {/* SVG Visual */}
+          <EntertainmentVisual
+            visualType={visualType}
+            status="available"
+            width={pixelWidth}
+            height={pixelHeight}
+          />
+
+          {/* Label below */}
+          <div style={{
+            position: 'absolute',
+            bottom: -20,
+            left: '50%',
+            transform: `translateX(-50%) rotate(-${rotation}deg)`,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            color: 'white',
+            padding: '2px 8px',
+            borderRadius: 4,
+            fontSize: 10,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+          }}>
+            {fixture.label || (fixture as any).name}
+          </div>
+
+          {/* Resize handles when selected */}
+          {isSelected && toolMode === 'SELECT' && (
+            <>
+              {/* NW handle */}
+              <div
+                onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'nw')}
+                style={{
+                  position: 'absolute', top: -4, left: -4,
+                  width: 8, height: 8, background: 'white',
+                  border: '1px solid #9333ea', cursor: 'nw-resize', zIndex: 10,
+                }}
+              />
+              {/* NE handle */}
+              <div
+                onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'ne')}
+                style={{
+                  position: 'absolute', top: -4, right: -4,
+                  width: 8, height: 8, background: 'white',
+                  border: '1px solid #9333ea', cursor: 'ne-resize', zIndex: 10,
+                }}
+              />
+              {/* SW handle */}
+              <div
+                onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'sw')}
+                style={{
+                  position: 'absolute', bottom: -4, left: -4,
+                  width: 8, height: 8, background: 'white',
+                  border: '1px solid #9333ea', cursor: 'sw-resize', zIndex: 10,
+                }}
+              />
+              {/* SE handle */}
+              <div
+                onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'se')}
+                style={{
+                  position: 'absolute', bottom: -4, right: -4,
+                  width: 8, height: 8, background: 'white',
+                  border: '1px solid #9333ea', cursor: 'se-resize', zIndex: 10,
+                }}
+              />
+            </>
+          )}
+        </div>
+      );
+    });
+  };
+
   // Render tables
   const renderTables = () => {
     return tables.map((table) => (
@@ -2529,6 +2653,9 @@ export function EditorCanvas({
 
       {/* Fixtures */}
       {renderFixtures()}
+
+      {/* Entertainment Elements */}
+      {renderEntertainmentElements()}
 
       {/* Tables */}
       {renderTables()}
