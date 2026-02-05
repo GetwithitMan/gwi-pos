@@ -55,6 +55,7 @@ import { EntertainmentSessionControls } from '@/components/orders/EntertainmentS
 import { CourseOverviewPanel } from '@/components/orders/CourseOverviewPanel'
 import { ModifierModal } from '@/components/modifiers/ModifierModal'
 import { PizzaBuilderModal } from '@/components/pizza/PizzaBuilderModal'
+import { ComboStepFlow } from '@/components/modifiers/ComboStepFlow'
 import { AddToWaitlistModal } from '@/components/entertainment/AddToWaitlistModal'
 import { EntertainmentSessionStart } from '@/components/entertainment/EntertainmentSessionStart'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
@@ -1926,8 +1927,8 @@ export default function OrdersPage() {
     setEditingPizzaItem(null)
   }
 
-  // Handle adding combo to order
-  const handleAddComboToOrder = () => {
+  // Handle adding combo to order with selections from ComboStepFlow
+  const handleAddComboToOrderWithSelections = (selections: Record<string, Record<string, string[]>>) => {
     if (!selectedComboItem || !comboTemplate) return
 
     // Calculate total with upcharges and build modifiers for KDS display
@@ -1946,7 +1947,7 @@ export default function OrdersPage() {
         })
 
         // Process each modifier group for this item
-        const componentSelections = comboSelections[component.id] || {}
+        const componentSelections = selections[component.id] || {}
         for (const mg of component.menuItem.modifierGroups || []) {
           const groupSelections = componentSelections[mg.modifierGroup.id] || []
           for (const modifierId of groupSelections) {
@@ -1967,8 +1968,8 @@ export default function OrdersPage() {
         }
       } else if (component.options && component.options.length > 0) {
         // Legacy: use options array (flat structure)
-        const selections = (comboSelections[component.id] as unknown as string[]) || []
-        for (const optionId of selections) {
+        const legacySelections = (selections[component.id] as unknown as string[]) || []
+        for (const optionId of legacySelections) {
           const option = component.options.find(o => o.id === optionId)
           if (option) {
             totalUpcharge += option.upcharge
@@ -1995,6 +1996,11 @@ export default function OrdersPage() {
     setSelectedComboItem(null)
     setComboTemplate(null)
     setComboSelections({})
+  }
+
+  // Handle adding combo to order (legacy inline modal - kept for backward compatibility)
+  const handleAddComboToOrder = () => {
+    handleAddComboToOrderWithSelections(comboSelections)
   }
 
   // Handle starting a timed rental session
@@ -3717,204 +3723,19 @@ export default function OrdersPage() {
         />
       )}
 
-      {/* Combo Selection Modal */}
-      {showComboModal && selectedComboItem && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden">
-            <div className="p-4 border-b bg-orange-50">
-              <h2 className="text-lg font-bold text-orange-800">{selectedComboItem.name}</h2>
-              <p className="text-sm text-orange-600">
-                {comboTemplate?.comparePrice && (
-                  <span className="line-through mr-2">{formatCurrency(comboTemplate.comparePrice)}</span>
-                )}
-                <span className="font-bold">{formatCurrency(comboTemplate?.basePrice || selectedComboItem.price)}</span>
-                {comboTemplate?.comparePrice && (
-                  <span className="ml-2 text-green-600">
-                    Save {formatCurrency(comboTemplate.comparePrice - (comboTemplate?.basePrice || 0))}!
-                  </span>
-                )}
-              </p>
-            </div>
-            <div className="p-4 overflow-y-auto max-h-[60vh]">
-              {!comboTemplate ? (
-                <p className="text-gray-500 text-center py-8">Loading combo options...</p>
-              ) : comboTemplate.components.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No customization options</p>
-              ) : (
-                <div className="space-y-6">
-                  {comboTemplate.components.map(component => {
-                    // New structure: component has menuItem with modifierGroups
-                    if (component.menuItem) {
-                      return (
-                        <div key={component.id} className="border rounded-lg p-3 bg-gray-50">
-                          <h3 className="font-semibold text-gray-800 mb-3 flex items-center">
-                            <span className="bg-orange-500 text-white px-2 py-0.5 rounded text-sm mr-2">
-                              {component.displayName}
-                            </span>
-                            {component.itemPriceOverride !== null && component.itemPriceOverride !== undefined && (
-                              <span className="text-sm font-normal text-green-600">
-                                (Included)
-                              </span>
-                            )}
-                          </h3>
-
-                          {/* Show modifier groups for this item */}
-                          {component.menuItem.modifierGroups && component.menuItem.modifierGroups.length > 0 ? (
-                            <div className="space-y-4">
-                              {component.menuItem.modifierGroups.map(mg => {
-                                const group = mg.modifierGroup
-                                const componentSelections = comboSelections[component.id] || {}
-                                const groupSelections = componentSelections[group.id] || []
-
-                                return (
-                                  <div key={group.id}>
-                                    <p className="text-sm text-gray-600 mb-2">
-                                      {group.displayName || group.name}
-                                      {group.isRequired && <span className="text-red-500 ml-1">*</span>}
-                                      {group.maxSelections > 1 && (
-                                        <span className="text-xs text-gray-400 ml-1">
-                                          (up to {group.maxSelections})
-                                        </span>
-                                      )}
-                                    </p>
-                                    <div className="grid grid-cols-2 gap-2">
-                                      {group.modifiers.map(mod => {
-                                        const isSelected = groupSelections.includes(mod.id)
-                                        // In combos, modifiers are included ($0) unless explicitly set as upcharge
-                                        const overridePrice = component.modifierPriceOverrides?.[mod.id]
-                                        const displayPrice = overridePrice !== undefined ? overridePrice : 0
-
-                                        return (
-                                          <button
-                                            key={mod.id}
-                                            onClick={() => {
-                                              setComboSelections(prev => {
-                                                const compSelections = prev[component.id] || {}
-                                                const current = compSelections[group.id] || []
-
-                                                let newGroupSelections: string[]
-                                                if (isSelected) {
-                                                  newGroupSelections = current.filter(id => id !== mod.id)
-                                                } else if (group.maxSelections === 1) {
-                                                  newGroupSelections = [mod.id]
-                                                } else if (current.length < group.maxSelections) {
-                                                  newGroupSelections = [...current, mod.id]
-                                                } else {
-                                                  return prev
-                                                }
-
-                                                return {
-                                                  ...prev,
-                                                  [component.id]: {
-                                                    ...compSelections,
-                                                    [group.id]: newGroupSelections,
-                                                  },
-                                                }
-                                              })
-                                            }}
-                                            className={`p-2 rounded border-2 text-left text-sm transition-colors ${
-                                              isSelected
-                                                ? 'border-orange-500 bg-orange-50'
-                                                : 'border-gray-200 hover:border-gray-300 bg-white'
-                                            }`}
-                                          >
-                                            <span className="font-medium">{mod.name}</span>
-                                            {displayPrice > 0 && (
-                                              <span className="text-green-600 text-xs ml-1">
-                                                +{formatCurrency(displayPrice)}
-                                              </span>
-                                            )}
-                                          </button>
-                                        )
-                                      })}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-gray-400 italic">No modifiers for this item</p>
-                          )}
-                        </div>
-                      )
-                    }
-
-                    // Legacy: use options array
-                    if (component.options && component.options.length > 0) {
-                      return (
-                        <div key={component.id}>
-                          <h3 className="font-semibold text-gray-800 mb-2">
-                            {component.displayName}
-                            {component.isRequired && <span className="text-red-500 ml-1">*</span>}
-                          </h3>
-                          <div className="grid grid-cols-2 gap-2">
-                            {component.options.map(option => {
-                              const legacySelections = (comboSelections[component.id] as unknown as string[]) || []
-                              const isSelected = legacySelections.includes(option.id)
-                              return (
-                                <button
-                                  key={option.id}
-                                  onClick={() => {
-                                    setComboSelections(prev => {
-                                      const current = (prev[component.id] as unknown as string[]) || []
-                                      let newSelections: string[]
-                                      if (isSelected) {
-                                        newSelections = current.filter(id => id !== option.id)
-                                      } else if (component.maxSelections === 1) {
-                                        newSelections = [option.id]
-                                      } else if (current.length < component.maxSelections) {
-                                        newSelections = [...current, option.id]
-                                      } else {
-                                        return prev
-                                      }
-                                      return { ...prev, [component.id]: newSelections as unknown as Record<string, string[]> }
-                                    })
-                                  }}
-                                  className={`p-3 rounded-lg border-2 text-left transition-colors ${
-                                    isSelected
-                                      ? 'border-orange-500 bg-orange-50'
-                                      : 'border-gray-200 hover:border-gray-300'
-                                  }`}
-                                >
-                                  <span className="font-medium">{option.name}</span>
-                                  {option.upcharge > 0 && (
-                                    <span className="text-green-600 text-sm ml-1">+{formatCurrency(option.upcharge)}</span>
-                                  )}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )
-                    }
-
-                    return null
-                  })}
-                </div>
-              )}
-            </div>
-            <div className="p-4 border-t bg-gray-50 flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setShowComboModal(false)
-                  setSelectedComboItem(null)
-                  setComboTemplate(null)
-                  setComboSelections({})
-                }}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={handleAddComboToOrder}
-                className="flex-1 bg-orange-500 hover:bg-orange-600"
-              >
-                Add to Order
-              </Button>
-            </div>
-          </div>
-        </div>
+      {/* Combo Selection Modal - Stepped Flow */}
+      {showComboModal && selectedComboItem && comboTemplate && (
+        <ComboStepFlow
+          item={selectedComboItem}
+          template={comboTemplate}
+          onConfirm={handleAddComboToOrderWithSelections}
+          onCancel={() => {
+            setShowComboModal(false)
+            setSelectedComboItem(null)
+            setComboTemplate(null)
+            setComboSelections({})
+          }}
+        />
       )}
 
       {/* Timed Rental Modal */}

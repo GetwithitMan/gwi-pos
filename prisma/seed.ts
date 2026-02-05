@@ -3316,6 +3316,1274 @@ async function main() {
   }
   console.log(`Linked ${burgerIngredientLinks.length} ingredients to Classic Burger`)
 
+  // =====================================================
+  // COMPREHENSIVE FOOD MENU WITH NESTED MODIFIERS
+  // =====================================================
+  console.log('')
+  console.log('Creating comprehensive food menu with nested modifiers...')
+
+  // -------------------------------------------------------
+  // NEW CATEGORIES
+  // -------------------------------------------------------
+  const breakfastCategory = await prisma.category.upsert({
+    where: { id: 'cat-breakfast' },
+    update: {},
+    create: {
+      id: 'cat-breakfast',
+      locationId: location.id,
+      name: 'Breakfast',
+      color: '#f59e0b',
+      categoryType: 'food',
+      categoryShow: 'food',
+      sortOrder: 18,
+      showOnPOS: true,
+    },
+  })
+
+  const wingsCategory = await prisma.category.upsert({
+    where: { id: 'cat-wings' },
+    update: {},
+    create: {
+      id: 'cat-wings',
+      locationId: location.id,
+      name: 'Wings',
+      color: '#ef4444',
+      categoryType: 'food',
+      categoryShow: 'food',
+      sortOrder: 19,
+      showOnPOS: true,
+    },
+  })
+
+  const steaksCategory = await prisma.category.upsert({
+    where: { id: 'cat-steaks' },
+    update: {},
+    create: {
+      id: 'cat-steaks',
+      locationId: location.id,
+      name: 'Steaks',
+      color: '#991b1b',
+      categoryType: 'food',
+      categoryShow: 'food',
+      sortOrder: 20,
+      showOnPOS: true,
+    },
+  })
+
+  const tacosCategory = await prisma.category.upsert({
+    where: { id: 'cat-tacos' },
+    update: {},
+    create: {
+      id: 'cat-tacos',
+      locationId: location.id,
+      name: 'Tacos',
+      color: '#16a34a',
+      categoryType: 'food',
+      categoryShow: 'food',
+      sortOrder: 21,
+      showOnPOS: true,
+    },
+  })
+
+  console.log('Created new categories:', [breakfastCategory.name, wingsCategory.name, steaksCategory.name, tacosCategory.name].join(', '))
+
+  // -------------------------------------------------------
+  // NEW MENU ITEMS
+  // -------------------------------------------------------
+  const breakfastItems = [
+    { id: 'brkfst-1', categoryId: 'cat-breakfast', name: 'Build Your Own Omelette', price: 13.99, description: 'Choose up to 5 fillings, served with toast and potatoes' },
+    { id: 'brkfst-2', categoryId: 'cat-breakfast', name: 'Classic Breakfast', price: 11.99, description: '2 eggs any style, toast, choice of meat, choice of potato' },
+    { id: 'brkfst-3', categoryId: 'cat-breakfast', name: 'Pancakes', price: 9.99, description: 'Stack of 3 fluffy buttermilk pancakes with maple syrup' },
+    { id: 'brkfst-4', categoryId: 'cat-breakfast', name: 'French Toast', price: 10.99, description: 'Thick-cut brioche dipped in cinnamon egg batter' },
+    { id: 'brkfst-5', categoryId: 'cat-breakfast', name: 'Breakfast Burrito', price: 12.99, description: 'Flour tortilla stuffed with eggs, cheese, and your choice of fillings' },
+    { id: 'brkfst-6', categoryId: 'cat-breakfast', name: 'Eggs Benedict', price: 14.99, description: 'Poached eggs on English muffin with Canadian bacon and hollandaise' },
+    { id: 'brkfst-7', categoryId: 'cat-breakfast', name: 'Biscuits & Gravy', price: 9.99, description: 'Flaky biscuits smothered in sausage gravy' },
+  ]
+
+  for (const item of breakfastItems) {
+    await prisma.menuItem.upsert({
+      where: { id: item.id },
+      update: {},
+      create: {
+        id: item.id,
+        locationId: location.id,
+        categoryId: item.categoryId,
+        name: item.name,
+        price: item.price,
+        description: item.description,
+      },
+    })
+  }
+  console.log('Created', breakfastItems.length, 'breakfast items')
+
+  const wingItems = [
+    { id: 'wings-6', categoryId: 'cat-wings', name: '6pc Wings', price: 9.99, description: '6 crispy boneless wings tossed in your choice of sauce' },
+    { id: 'wings-12', categoryId: 'cat-wings', name: '12pc Wings', price: 16.99, description: '12 crispy boneless wings tossed in your choice of sauce' },
+    { id: 'wings-18', categoryId: 'cat-wings', name: '18pc Wings', price: 23.99, description: '18 crispy boneless wings - perfect for sharing' },
+    { id: 'wings-24', categoryId: 'cat-wings', name: '24pc Wings', price: 29.99, description: '24 crispy boneless wings - party size' },
+    { id: 'wings-bone-in-6', categoryId: 'cat-wings', name: '6pc Bone-In Wings', price: 10.99, description: '6 traditional bone-in wings' },
+    { id: 'wings-bone-in-12', categoryId: 'cat-wings', name: '12pc Bone-In Wings', price: 18.99, description: '12 traditional bone-in wings' },
+  ]
+
+  for (const item of wingItems) {
+    await prisma.menuItem.upsert({
+      where: { id: item.id },
+      update: {},
+      create: {
+        id: item.id,
+        locationId: location.id,
+        categoryId: item.categoryId,
+        name: item.name,
+        price: item.price,
+        description: item.description,
+      },
+    })
+  }
+  console.log('Created', wingItems.length, 'wing items')
+
+  const steakItems = [
+    { id: 'steak-ny', categoryId: 'cat-steaks', name: 'NY Strip 12oz', price: 32.99, description: 'Hand-cut New York strip, served with two sides' },
+    { id: 'steak-filet', categoryId: 'cat-steaks', name: 'Filet Mignon 8oz', price: 38.99, description: 'Center-cut filet, the most tender steak' },
+    { id: 'steak-ribeye-16', categoryId: 'cat-steaks', name: 'Ribeye 16oz', price: 36.99, description: 'Bone-in ribeye, rich marbling and full flavor' },
+    { id: 'steak-sirloin', categoryId: 'cat-steaks', name: 'Top Sirloin 10oz', price: 24.99, description: 'Lean and flavorful top sirloin' },
+    { id: 'steak-porterhouse', categoryId: 'cat-steaks', name: 'Porterhouse 20oz', price: 44.99, description: 'The best of both worlds - strip and filet' },
+    { id: 'steak-surf-turf', categoryId: 'cat-steaks', name: 'Surf & Turf', price: 42.99, description: '8oz filet paired with grilled lobster tail' },
+  ]
+
+  for (const item of steakItems) {
+    await prisma.menuItem.upsert({
+      where: { id: item.id },
+      update: {},
+      create: {
+        id: item.id,
+        locationId: location.id,
+        categoryId: item.categoryId,
+        name: item.name,
+        price: item.price,
+        description: item.description,
+      },
+    })
+  }
+  console.log('Created', steakItems.length, 'steak items')
+
+  const tacoItems = [
+    { id: 'taco-street', categoryId: 'cat-tacos', name: 'Street Tacos (3)', price: 11.99, description: 'Three street-style tacos on corn tortillas with cilantro and onion' },
+    { id: 'taco-fish', categoryId: 'cat-tacos', name: 'Fish Tacos (3)', price: 13.99, description: 'Beer-battered cod with cabbage slaw and chipotle crema' },
+    { id: 'taco-shrimp', categoryId: 'cat-tacos', name: 'Shrimp Tacos (3)', price: 14.99, description: 'Grilled shrimp with mango salsa and avocado' },
+    { id: 'taco-carnitas', categoryId: 'cat-tacos', name: 'Carnitas Tacos (3)', price: 12.99, description: 'Slow-braised pork shoulder with pickled onion' },
+    { id: 'taco-birria', categoryId: 'cat-tacos', name: 'Birria Tacos (3)', price: 14.99, description: 'Braised beef birria tacos with consomme for dipping' },
+  ]
+
+  for (const item of tacoItems) {
+    await prisma.menuItem.upsert({
+      where: { id: item.id },
+      update: {},
+      create: {
+        id: item.id,
+        locationId: location.id,
+        categoryId: item.categoryId,
+        name: item.name,
+        price: item.price,
+        description: item.description,
+      },
+    })
+  }
+  console.log('Created', tacoItems.length, 'taco items')
+
+  // -------------------------------------------------------
+  // DEEPEST CHILD MODIFIER GROUPS (Level 3 - create first)
+  // -------------------------------------------------------
+
+  // Loaded Fry Toppings (child of "Loaded" fry style)
+  const loadedFryTopGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-loaded-fry-top' },
+    update: {},
+    create: {
+      id: 'mod-loaded-fry-top',
+      locationId: location.id,
+      name: 'Loaded Toppings',
+      displayName: 'Loaded Toppings',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 3,
+      isRequired: false,
+      sortOrder: 100,
+    },
+  })
+
+  const loadedFryToppings = [
+    { id: 'lft-bacon', name: 'Bacon', price: 0 },
+    { id: 'lft-cheese-sauce', name: 'Cheese Sauce', price: 0 },
+    { id: 'lft-sour-cream', name: 'Sour Cream', price: 0 },
+    { id: 'lft-chives', name: 'Chives', price: 0 },
+    { id: 'lft-jalapenos', name: 'Jalapenos', price: 0 },
+    { id: 'lft-ranch', name: 'Ranch', price: 0 },
+  ]
+
+  for (const mod of loadedFryToppings) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: loadedFryTopGroup.id,
+        name: mod.name,
+        price: mod.price,
+        sortOrder: loadedFryToppings.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created loaded fry toppings (deepest child)')
+
+  // -------------------------------------------------------
+  // MID-LEVEL CHILD MODIFIER GROUPS (Level 2)
+  // -------------------------------------------------------
+
+  // Fry Style (child of fries in side choice)
+  const fryStyleGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-fry-style' },
+    update: {},
+    create: {
+      id: 'mod-fry-style',
+      locationId: location.id,
+      name: 'Fry Style',
+      displayName: 'Fry Style',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 1,
+      isRequired: false,
+      sortOrder: 101,
+    },
+  })
+
+  const fryStyles: Array<{ id: string; name: string; price: number; isDefault?: boolean; childModifierGroupId?: string }> = [
+    { id: 'fstyle-regular', name: 'Regular', price: 0, isDefault: true },
+    { id: 'fstyle-seasoned', name: 'Seasoned', price: 0 },
+    { id: 'fstyle-cajun', name: 'Cajun', price: 0 },
+    { id: 'fstyle-truffle', name: 'Truffle Parmesan', price: 2 },
+    { id: 'fstyle-loaded', name: 'Loaded', price: 3, childModifierGroupId: loadedFryTopGroup.id },
+  ]
+
+  for (const mod of fryStyles) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: fryStyleGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: fryStyles.indexOf(mod),
+        childModifierGroupId: mod.childModifierGroupId || null,
+      },
+    })
+  }
+  console.log('Created fry style modifiers with nested loaded toppings')
+
+  // Gravy Choice (child of mashed potatoes)
+  const gravyChoiceGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-gravy-choice' },
+    update: {},
+    create: {
+      id: 'mod-gravy-choice',
+      locationId: location.id,
+      name: 'Gravy',
+      displayName: 'Gravy?',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 1,
+      isRequired: false,
+      sortOrder: 102,
+    },
+  })
+
+  const gravyChoices: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'gravy-none', name: 'No Gravy', price: 0, isDefault: true },
+    { id: 'gravy-brown', name: 'Brown Gravy', price: 0 },
+    { id: 'gravy-white', name: 'White Gravy', price: 0 },
+    { id: 'gravy-mushroom', name: 'Mushroom Gravy', price: 1 },
+  ]
+
+  for (const mod of gravyChoices) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: gravyChoiceGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: gravyChoices.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created gravy choice modifiers')
+
+  // Baked Potato Toppings (child of baked potato)
+  const bakedPotatoTopGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-baked-potato-top' },
+    update: {},
+    create: {
+      id: 'mod-baked-potato-top',
+      locationId: location.id,
+      name: 'Baked Potato Toppings',
+      displayName: 'Baked Potato Toppings',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 5,
+      isRequired: false,
+      sortOrder: 103,
+    },
+  })
+
+  const bakedPotatoToppings: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'bpt-butter', name: 'Butter', price: 0, isDefault: true },
+    { id: 'bpt-sour-cream', name: 'Sour Cream', price: 0 },
+    { id: 'bpt-cheese', name: 'Cheese', price: 0 },
+    { id: 'bpt-bacon', name: 'Bacon Bits', price: 0 },
+    { id: 'bpt-chives', name: 'Chives', price: 0 },
+    { id: 'bpt-broc-cheese', name: 'Broccoli & Cheese', price: 1 },
+  ]
+
+  for (const mod of bakedPotatoToppings) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: bakedPotatoTopGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: bakedPotatoToppings.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created baked potato toppings')
+
+  // Side Salad Type (child of side salad in side choice)
+  const sideSaladTypeGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-side-salad-type' },
+    update: {},
+    create: {
+      id: 'mod-side-salad-type',
+      locationId: location.id,
+      name: 'Salad Type',
+      displayName: 'Salad Type',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 104,
+    },
+  })
+
+  // Side salad type modifiers: house salad -> reuses existing salad dressing, wedge -> also reuses salad dressing
+  const sideSaladTypes: Array<{ id: string; name: string; price: number; isDefault?: boolean; childModifierGroupId?: string }> = [
+    { id: 'sst-house', name: 'House Salad', price: 0, isDefault: true, childModifierGroupId: saladDressingGroup.id },
+    { id: 'sst-caesar', name: 'Caesar Salad', price: 0 },
+    { id: 'sst-wedge', name: 'Wedge Salad', price: 1, childModifierGroupId: saladDressingGroup.id },
+  ]
+
+  for (const mod of sideSaladTypes) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: sideSaladTypeGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: sideSaladTypes.indexOf(mod),
+        childModifierGroupId: mod.childModifierGroupId || null,
+      },
+    })
+  }
+  console.log('Created side salad type modifiers (house/caesar/wedge) with dressing nesting')
+
+  // Heat Level (child of spicy wing flavors)
+  const heatLevelGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-heat-level' },
+    update: {},
+    create: {
+      id: 'mod-heat-level',
+      locationId: location.id,
+      name: 'Heat Level',
+      displayName: 'Heat Level',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 1,
+      isRequired: false,
+      sortOrder: 105,
+    },
+  })
+
+  const heatLevels: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'heat-mild', name: 'Mild', price: 0, isDefault: true },
+    { id: 'heat-medium', name: 'Medium', price: 0 },
+    { id: 'heat-hot', name: 'Hot', price: 0 },
+    { id: 'heat-extra-hot', name: 'Extra Hot', price: 0 },
+  ]
+
+  for (const mod of heatLevels) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: heatLevelGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: heatLevels.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created heat level modifiers')
+
+  // -------------------------------------------------------
+  // TOP-LEVEL MODIFIER GROUPS (with child references)
+  // -------------------------------------------------------
+
+  // === SIDE CHOICE (shared across entrees, steaks, sandwiches) ===
+  const sideChoiceGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-side-choice' },
+    update: {},
+    create: {
+      id: 'mod-side-choice',
+      locationId: location.id,
+      name: 'Side Choice',
+      displayName: 'Choose Your Side',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 30,
+    },
+  })
+
+  const sideChoices: Array<{ id: string; name: string; price: number; isDefault?: boolean; childModifierGroupId?: string }> = [
+    { id: 'side-ch-fries', name: 'French Fries', price: 0, isDefault: true, childModifierGroupId: fryStyleGroup.id },
+    { id: 'side-ch-sweet-fries', name: 'Sweet Potato Fries', price: 2, childModifierGroupId: fryStyleGroup.id },
+    { id: 'side-ch-mashed', name: 'Mashed Potatoes', price: 0, childModifierGroupId: gravyChoiceGroup.id },
+    { id: 'side-ch-baked', name: 'Baked Potato', price: 0, childModifierGroupId: bakedPotatoTopGroup.id },
+    { id: 'side-ch-mac', name: 'Mac & Cheese', price: 1 },
+    { id: 'side-ch-onion-rings', name: 'Onion Rings', price: 1 },
+    { id: 'side-ch-coleslaw', name: 'Coleslaw', price: 0 },
+    { id: 'side-ch-broccoli', name: 'Steamed Broccoli', price: 0 },
+    { id: 'side-ch-salad', name: 'Side Salad', price: 0, childModifierGroupId: sideSaladTypeGroup.id },
+    { id: 'side-ch-rice', name: 'Rice Pilaf', price: 0 },
+    { id: 'side-ch-corn', name: 'Corn on the Cob', price: 0 },
+  ]
+
+  for (const mod of sideChoices) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: sideChoiceGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: sideChoices.indexOf(mod),
+        childModifierGroupId: mod.childModifierGroupId || null,
+      },
+    })
+  }
+  console.log('Created side choice modifiers with nested sub-choices')
+
+  // === SIDE CHOICE 2 (steaks get two sides) ===
+  const sideChoice2Group = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-side-choice-2' },
+    update: {},
+    create: {
+      id: 'mod-side-choice-2',
+      locationId: location.id,
+      name: 'Second Side',
+      displayName: 'Choose Second Side',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 31,
+    },
+  })
+
+  const sideChoices2: Array<{ id: string; name: string; price: number; isDefault?: boolean; childModifierGroupId?: string }> = [
+    { id: 'side-ch2-fries', name: 'French Fries', price: 0, isDefault: true, childModifierGroupId: fryStyleGroup.id },
+    { id: 'side-ch2-sweet-fries', name: 'Sweet Potato Fries', price: 2, childModifierGroupId: fryStyleGroup.id },
+    { id: 'side-ch2-mashed', name: 'Mashed Potatoes', price: 0, childModifierGroupId: gravyChoiceGroup.id },
+    { id: 'side-ch2-baked', name: 'Baked Potato', price: 0, childModifierGroupId: bakedPotatoTopGroup.id },
+    { id: 'side-ch2-mac', name: 'Mac & Cheese', price: 1 },
+    { id: 'side-ch2-onion-rings', name: 'Onion Rings', price: 1 },
+    { id: 'side-ch2-coleslaw', name: 'Coleslaw', price: 0 },
+    { id: 'side-ch2-broccoli', name: 'Steamed Broccoli', price: 0 },
+    { id: 'side-ch2-salad', name: 'Side Salad', price: 0, childModifierGroupId: sideSaladTypeGroup.id },
+    { id: 'side-ch2-rice', name: 'Rice Pilaf', price: 0 },
+    { id: 'side-ch2-corn', name: 'Corn on the Cob', price: 0 },
+  ]
+
+  for (const mod of sideChoices2) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: sideChoice2Group.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: sideChoices2.indexOf(mod),
+        childModifierGroupId: mod.childModifierGroupId || null,
+      },
+    })
+  }
+  console.log('Created second side choice modifiers (for steaks)')
+
+  // === OMELETTE FILLINGS ===
+  const omeletteFillingGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-omelette-fillings' },
+    update: {},
+    create: {
+      id: 'mod-omelette-fillings',
+      locationId: location.id,
+      name: 'Omelette Fillings',
+      displayName: 'Choose Fillings (up to 5)',
+      modifierTypes: ['food'],
+      minSelections: 2,
+      maxSelections: 5,
+      isRequired: true,
+      sortOrder: 32,
+    },
+  })
+
+  const omeletteFillings = [
+    { id: 'omfill-cheddar', name: 'Cheddar Cheese', price: 0 },
+    { id: 'omfill-swiss', name: 'Swiss Cheese', price: 0 },
+    { id: 'omfill-pepperjack', name: 'Pepper Jack', price: 0 },
+    { id: 'omfill-mushrooms', name: 'Mushrooms', price: 0 },
+    { id: 'omfill-onions', name: 'Onions', price: 0 },
+    { id: 'omfill-bellpepper', name: 'Bell Peppers', price: 0 },
+    { id: 'omfill-tomatoes', name: 'Tomatoes', price: 0 },
+    { id: 'omfill-spinach', name: 'Spinach', price: 0 },
+    { id: 'omfill-ham', name: 'Ham', price: 1 },
+    { id: 'omfill-bacon', name: 'Bacon', price: 1.50 },
+    { id: 'omfill-sausage', name: 'Sausage', price: 1 },
+    { id: 'omfill-avocado', name: 'Avocado', price: 1.50 },
+    { id: 'omfill-jalapenos', name: 'Jalapenos', price: 0 },
+    { id: 'omfill-broccoli', name: 'Broccoli', price: 0 },
+  ]
+
+  for (const mod of omeletteFillings) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: omeletteFillingGroup.id,
+        name: mod.name,
+        price: mod.price,
+        sortOrder: omeletteFillings.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created', omeletteFillings.length, 'omelette filling modifiers')
+
+  // === OMELETTE STYLE ===
+  const omeletteStyleGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-omelette-style' },
+    update: {},
+    create: {
+      id: 'mod-omelette-style',
+      locationId: location.id,
+      name: 'Omelette Style',
+      displayName: 'Style',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 33,
+    },
+  })
+
+  const omeletteStyles: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'omstyle-traditional', name: 'Traditional', price: 0, isDefault: true },
+    { id: 'omstyle-eggwhite', name: 'Egg White Only', price: 1 },
+    { id: 'omstyle-stuffed', name: 'Stuffed', price: 0 },
+  ]
+
+  for (const mod of omeletteStyles) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: omeletteStyleGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: omeletteStyles.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created omelette style modifiers')
+
+  // === TOAST CHOICE ===
+  const toastChoiceGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-toast-choice' },
+    update: {},
+    create: {
+      id: 'mod-toast-choice',
+      locationId: location.id,
+      name: 'Toast',
+      displayName: 'Toast',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 34,
+    },
+  })
+
+  const toastChoices: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'toast-white', name: 'White', price: 0, isDefault: true },
+    { id: 'toast-wheat', name: 'Wheat', price: 0 },
+    { id: 'toast-sourdough', name: 'Sourdough', price: 0 },
+    { id: 'toast-rye', name: 'Rye', price: 0 },
+    { id: 'toast-english-muffin', name: 'English Muffin', price: 0 },
+    { id: 'toast-biscuit', name: 'Biscuit', price: 0 },
+    { id: 'toast-none', name: 'No Toast', price: 0 },
+  ]
+
+  for (const mod of toastChoices) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: toastChoiceGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: toastChoices.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created toast choice modifiers')
+
+  // === BREAKFAST MEAT ===
+  const breakfastMeatGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-breakfast-meat' },
+    update: {},
+    create: {
+      id: 'mod-breakfast-meat',
+      locationId: location.id,
+      name: 'Breakfast Meat',
+      displayName: 'Choose Meat',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 35,
+    },
+  })
+
+  const breakfastMeats: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'bmeat-bacon', name: 'Bacon', price: 0, isDefault: true },
+    { id: 'bmeat-sausage-patty', name: 'Sausage Patties', price: 0 },
+    { id: 'bmeat-sausage-link', name: 'Sausage Links', price: 0 },
+    { id: 'bmeat-ham', name: 'Ham', price: 0 },
+    { id: 'bmeat-turkey-sausage', name: 'Turkey Sausage', price: 1 },
+  ]
+
+  for (const mod of breakfastMeats) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: breakfastMeatGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: breakfastMeats.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created breakfast meat modifiers')
+
+  // === EGG STYLE ===
+  const eggStyleGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-egg-style' },
+    update: {},
+    create: {
+      id: 'mod-egg-style',
+      locationId: location.id,
+      name: 'Egg Style',
+      displayName: 'How do you like your eggs?',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 36,
+    },
+  })
+
+  const eggStyles: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'egg-scrambled', name: 'Scrambled', price: 0, isDefault: true },
+    { id: 'egg-over-easy', name: 'Over Easy', price: 0 },
+    { id: 'egg-over-medium', name: 'Over Medium', price: 0 },
+    { id: 'egg-over-hard', name: 'Over Hard', price: 0 },
+    { id: 'egg-sunny-side', name: 'Sunny Side Up', price: 0 },
+    { id: 'egg-poached', name: 'Poached', price: 0 },
+  ]
+
+  for (const mod of eggStyles) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: eggStyleGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: eggStyles.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created egg style modifiers')
+
+  // === BREAKFAST POTATO ===
+  const breakfastPotatoGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-breakfast-potato' },
+    update: {},
+    create: {
+      id: 'mod-breakfast-potato',
+      locationId: location.id,
+      name: 'Breakfast Potato',
+      displayName: 'Potato Choice',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 37,
+    },
+  })
+
+  const breakfastPotatoes: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'bpot-hashbrown', name: 'Hash Browns', price: 0, isDefault: true },
+    { id: 'bpot-homefries', name: 'Home Fries', price: 0 },
+    { id: 'bpot-country', name: 'Country Potatoes', price: 0 },
+    { id: 'bpot-none', name: 'No Potatoes', price: 0 },
+  ]
+
+  for (const mod of breakfastPotatoes) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: breakfastPotatoGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: breakfastPotatoes.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created breakfast potato modifiers')
+
+  // === WING FLAVORS (with heat level nesting) ===
+  const wingFlavorGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-wing-flavors' },
+    update: {},
+    create: {
+      id: 'mod-wing-flavors',
+      locationId: location.id,
+      name: 'Wing Flavors',
+      displayName: 'Choose Flavors',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 3,
+      isRequired: true,
+      allowStacking: true,
+      sortOrder: 38,
+    },
+  })
+
+  const wingFlavors: Array<{ id: string; name: string; price: number; childModifierGroupId?: string }> = [
+    { id: 'wflav-buffalo', name: 'Buffalo', price: 0, childModifierGroupId: heatLevelGroup.id },
+    { id: 'wflav-bbq', name: 'BBQ', price: 0 },
+    { id: 'wflav-honey-bbq', name: 'Honey BBQ', price: 0 },
+    { id: 'wflav-garlic-parm', name: 'Garlic Parmesan', price: 0 },
+    { id: 'wflav-lemon-pepper', name: 'Lemon Pepper', price: 0 },
+    { id: 'wflav-teriyaki', name: 'Teriyaki', price: 0 },
+    { id: 'wflav-mango-hab', name: 'Mango Habanero', price: 0, childModifierGroupId: heatLevelGroup.id },
+    { id: 'wflav-nashville', name: 'Nashville Hot', price: 0, childModifierGroupId: heatLevelGroup.id },
+    { id: 'wflav-sweet-chili', name: 'Sweet Chili', price: 0 },
+    { id: 'wflav-dry-rub', name: 'Dry Rub', price: 0 },
+    { id: 'wflav-old-bay', name: 'Old Bay', price: 0 },
+    { id: 'wflav-carolina-gold', name: 'Carolina Gold', price: 0 },
+  ]
+
+  for (const mod of wingFlavors) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: wingFlavorGroup.id,
+        name: mod.name,
+        price: mod.price,
+        sortOrder: wingFlavors.indexOf(mod),
+        childModifierGroupId: mod.childModifierGroupId || null,
+      },
+    })
+  }
+  console.log('Created', wingFlavors.length, 'wing flavor modifiers with heat level nesting')
+
+  // === WING DIPPING SAUCES ===
+  const wingDipsGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-wing-dips' },
+    update: {},
+    create: {
+      id: 'mod-wing-dips',
+      locationId: location.id,
+      name: 'Dipping Sauces',
+      displayName: 'Dipping Sauces',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 3,
+      isRequired: false,
+      sortOrder: 39,
+    },
+  })
+
+  const wingDips = [
+    { id: 'wdip-ranch', name: 'Ranch', price: 0 },
+    { id: 'wdip-bleu-cheese', name: 'Blue Cheese', price: 0 },
+    { id: 'wdip-honey-mustard', name: 'Honey Mustard', price: 0 },
+    { id: 'wdip-bbq', name: 'BBQ', price: 0 },
+    { id: 'wdip-hot-sauce', name: 'Hot Sauce', price: 0 },
+    { id: 'wdip-sweet-chili', name: 'Sweet Chili', price: 0 },
+    { id: 'wdip-extra-ranch', name: 'Extra Ranch', price: 0.75 },
+  ]
+
+  for (const mod of wingDips) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: wingDipsGroup.id,
+        name: mod.name,
+        price: mod.price,
+        sortOrder: wingDips.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created wing dipping sauce modifiers')
+
+  // === WING STYLE ===
+  const wingStyleGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-wing-style' },
+    update: {},
+    create: {
+      id: 'mod-wing-style',
+      locationId: location.id,
+      name: 'Wing Style',
+      displayName: 'Style',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 40,
+    },
+  })
+
+  const wingStyles: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'wstyle-tossed', name: 'Tossed', price: 0, isDefault: true },
+    { id: 'wstyle-dry-rub', name: 'Dry Rub', price: 0 },
+    { id: 'wstyle-extra-crispy', name: 'Extra Crispy', price: 0 },
+  ]
+
+  for (const mod of wingStyles) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: wingStyleGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: wingStyles.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created wing style modifiers')
+
+  // === STEAK ADD-ONS ===
+  const steakAddonsGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-steak-addons' },
+    update: {},
+    create: {
+      id: 'mod-steak-addons',
+      locationId: location.id,
+      name: 'Steak Add-Ons',
+      displayName: 'Add-Ons',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 5,
+      isRequired: false,
+      sortOrder: 41,
+    },
+  })
+
+  const steakAddons = [
+    { id: 'stadd-mushrooms', name: 'Sauteed Mushrooms', price: 2 },
+    { id: 'stadd-onions', name: 'Sauteed Onions', price: 1.50 },
+    { id: 'stadd-bleu-cheese', name: 'Blue Cheese Crumbles', price: 2 },
+    { id: 'stadd-shrimp', name: 'Shrimp Skewer', price: 8 },
+    { id: 'stadd-lobster', name: 'Lobster Tail', price: 16 },
+    { id: 'stadd-loaded-baked', name: 'Loaded Baked Potato', price: 3 },
+    { id: 'stadd-au-jus', name: 'Au Jus', price: 0 },
+    { id: 'stadd-horseradish', name: 'Horseradish Cream', price: 0 },
+    { id: 'stadd-compound-butter', name: 'Compound Butter', price: 0 },
+  ]
+
+  for (const mod of steakAddons) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: steakAddonsGroup.id,
+        name: mod.name,
+        price: mod.price,
+        sortOrder: steakAddons.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created steak add-on modifiers')
+
+  // === TACO PROTEIN ===
+  const tacoProteinGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-taco-protein' },
+    update: {},
+    create: {
+      id: 'mod-taco-protein',
+      locationId: location.id,
+      name: 'Taco Protein',
+      displayName: 'Choose Protein',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 42,
+    },
+  })
+
+  const tacoProteins: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'tprot-carne-asada', name: 'Carne Asada', price: 0, isDefault: true },
+    { id: 'tprot-chicken', name: 'Chicken', price: 0 },
+    { id: 'tprot-al-pastor', name: 'Al Pastor', price: 0 },
+    { id: 'tprot-carnitas', name: 'Carnitas', price: 0 },
+    { id: 'tprot-ground-beef', name: 'Ground Beef', price: 0 },
+    { id: 'tprot-veggie', name: 'Veggie', price: 0 },
+  ]
+
+  for (const mod of tacoProteins) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: tacoProteinGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: tacoProteins.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created taco protein modifiers')
+
+  // === TACO TOPPINGS ===
+  const tacoToppingsGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-taco-toppings' },
+    update: {},
+    create: {
+      id: 'mod-taco-toppings',
+      locationId: location.id,
+      name: 'Taco Toppings',
+      displayName: 'Customize Toppings',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 6,
+      isRequired: false,
+      sortOrder: 43,
+    },
+  })
+
+  const tacoToppings: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'ttop-cilantro', name: 'Cilantro', price: 0, isDefault: true },
+    { id: 'ttop-onion', name: 'Onion', price: 0, isDefault: true },
+    { id: 'ttop-pico', name: 'Pico de Gallo', price: 0 },
+    { id: 'ttop-guacamole', name: 'Guacamole', price: 1.50 },
+    { id: 'ttop-sour-cream', name: 'Sour Cream', price: 0 },
+    { id: 'ttop-cotija', name: 'Cotija Cheese', price: 0 },
+    { id: 'ttop-lime-crema', name: 'Lime Crema', price: 0 },
+    { id: 'ttop-pickled-onion', name: 'Pickled Onion', price: 0 },
+    { id: 'ttop-jalapenos', name: 'Jalapenos', price: 0 },
+    { id: 'ttop-salsa-verde', name: 'Salsa Verde', price: 0 },
+    { id: 'ttop-salsa-roja', name: 'Salsa Roja', price: 0 },
+  ]
+
+  for (const mod of tacoToppings) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: tacoToppingsGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: tacoToppings.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created taco topping modifiers')
+
+  // === TACO SIDE ===
+  const tacoSideGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-taco-side' },
+    update: {},
+    create: {
+      id: 'mod-taco-side',
+      locationId: location.id,
+      name: 'Taco Side',
+      displayName: 'Side',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 44,
+    },
+  })
+
+  const tacoSides: Array<{ id: string; name: string; price: number; isDefault?: boolean }> = [
+    { id: 'tside-rice-beans', name: 'Rice & Beans', price: 0, isDefault: true },
+    { id: 'tside-chips-salsa', name: 'Chips & Salsa', price: 0 },
+    { id: 'tside-street-corn', name: 'Street Corn', price: 2 },
+    { id: 'tside-elote', name: 'Elote', price: 3 },
+    { id: 'tside-none', name: 'No Side', price: 0 },
+  ]
+
+  for (const mod of tacoSides) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: tacoSideGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: tacoSides.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created taco side modifiers')
+
+  // -------------------------------------------------------
+  // MENU ITEM ↔ MODIFIER GROUP LINKS
+  // -------------------------------------------------------
+  console.log('Linking modifier groups to menu items...')
+
+  // Helper to create MenuItemModifierGroup links
+  const createModLink = async (linkId: string, menuItemId: string, modifierGroupId: string, sortOrder: number) => {
+    await prisma.menuItemModifierGroup.upsert({
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId,
+          modifierGroupId,
+        },
+      },
+      update: {},
+      create: {
+        id: linkId,
+        locationId: location.id,
+        menuItemId,
+        modifierGroupId,
+        sortOrder,
+      },
+    })
+  }
+
+  // --- BREAKFAST LINKS ---
+
+  // Build Your Own Omelette → Fillings, Style, Toast, Potato
+  await createModLink('link-brkfst1-fillings', 'brkfst-1', omeletteFillingGroup.id, 0)
+  await createModLink('link-brkfst1-style', 'brkfst-1', omeletteStyleGroup.id, 1)
+  await createModLink('link-brkfst1-toast', 'brkfst-1', toastChoiceGroup.id, 2)
+  await createModLink('link-brkfst1-potato', 'brkfst-1', breakfastPotatoGroup.id, 3)
+
+  // Classic Breakfast → Egg Style, Meat, Toast, Potato
+  await createModLink('link-brkfst2-eggs', 'brkfst-2', eggStyleGroup.id, 0)
+  await createModLink('link-brkfst2-meat', 'brkfst-2', breakfastMeatGroup.id, 1)
+  await createModLink('link-brkfst2-toast', 'brkfst-2', toastChoiceGroup.id, 2)
+  await createModLink('link-brkfst2-potato', 'brkfst-2', breakfastPotatoGroup.id, 3)
+
+  // Pancakes → Breakfast Meat
+  await createModLink('link-brkfst3-meat', 'brkfst-3', breakfastMeatGroup.id, 0)
+
+  // French Toast → Breakfast Meat
+  await createModLink('link-brkfst4-meat', 'brkfst-4', breakfastMeatGroup.id, 0)
+
+  // Breakfast Burrito → Breakfast Meat, Omelette Fillings (reuse as burrito fillings)
+  await createModLink('link-brkfst5-meat', 'brkfst-5', breakfastMeatGroup.id, 0)
+  await createModLink('link-brkfst5-fillings', 'brkfst-5', omeletteFillingGroup.id, 1)
+
+  // Eggs Benedict → Breakfast Potato
+  await createModLink('link-brkfst6-potato', 'brkfst-6', breakfastPotatoGroup.id, 0)
+
+  console.log('Linked breakfast items to modifier groups')
+
+  // --- WING LINKS ---
+  const allWingItemIds = wingItems.map(i => i.id)
+  for (const itemId of allWingItemIds) {
+    await createModLink(`link-${itemId}-flavors`, itemId, wingFlavorGroup.id, 0)
+    await createModLink(`link-${itemId}-dips`, itemId, wingDipsGroup.id, 1)
+    await createModLink(`link-${itemId}-style`, itemId, wingStyleGroup.id, 2)
+  }
+  console.log('Linked', allWingItemIds.length, 'wing items to flavor/dip/style groups')
+
+  // --- STEAK LINKS ---
+  const allSteakItemIds = steakItems.map(i => i.id)
+  for (const itemId of allSteakItemIds) {
+    await createModLink(`link-${itemId}-temp`, itemId, steakTempGroup.id, 0)
+    await createModLink(`link-${itemId}-side1`, itemId, sideChoiceGroup.id, 1)
+    await createModLink(`link-${itemId}-side2`, itemId, sideChoice2Group.id, 2)
+    await createModLink(`link-${itemId}-addons`, itemId, steakAddonsGroup.id, 3)
+  }
+  console.log('Linked', allSteakItemIds.length, 'steak items to temp/sides/add-ons groups')
+
+  // --- TACO LINKS ---
+  const allTacoItemIds = tacoItems.map(i => i.id)
+  for (const itemId of allTacoItemIds) {
+    await createModLink(`link-${itemId}-toppings`, itemId, tacoToppingsGroup.id, 0)
+    await createModLink(`link-${itemId}-tside`, itemId, tacoSideGroup.id, 1)
+  }
+  // Street Tacos additionally get protein choice
+  await createModLink('link-taco-street-protein', 'taco-street', tacoProteinGroup.id, 2)
+  console.log('Linked', allTacoItemIds.length, 'taco items to topping/side groups (+ protein for street tacos)')
+
+  // --- EXISTING ITEM ADDITIONAL LINKS ---
+
+  // Classic Burger (item-5) → Side Choice
+  await createModLink('link-burger-side', 'item-5', sideChoiceGroup.id, 2)
+
+  // Ribeye Steak (item-7) → Side Choice, Side Choice 2, Steak Add-ons
+  await createModLink('link-ribeye-side1', 'item-7', sideChoiceGroup.id, 2)
+  await createModLink('link-ribeye-side2', 'item-7', sideChoice2Group.id, 3)
+  await createModLink('link-ribeye-addons', 'item-7', steakAddonsGroup.id, 4)
+
+  // Grilled Salmon (item-6) → Side Choice
+  await createModLink('link-salmon-side', 'item-6', sideChoiceGroup.id, 1)
+
+  // All Sandwiches → Side Choice
+  const sandwichSideIds = ['sandwich-1', 'sandwich-2', 'sandwich-3', 'sandwich-4', 'sandwich-5']
+  for (const itemId of sandwichSideIds) {
+    await createModLink(`link-${itemId}-side`, itemId, sideChoiceGroup.id, 1)
+  }
+
+  // Grilled Chicken Sandwich (sandwich-3) → Salad Dressing (for the sauce)
+  await createModLink('link-sandwich3-dressing', 'sandwich-3', saladDressingGroup.id, 2)
+
+  console.log('Linked existing items (burger, ribeye, salmon, sandwiches) to side choice groups')
+
+  // -------------------------------------------------------
+  // BREAKFAST INGREDIENTS
+  // -------------------------------------------------------
+  // Breakfast ingredients - unique names only (Spinach, Avocado, Mushrooms, Bell Peppers already exist)
+  const breakfastIngredients = [
+    // Proteins
+    { id: 'ing-bacon-strips', name: 'Bacon Strips', category: 'Proteins', allowNo: false, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 2.00 },
+    { id: 'ing-sausage', name: 'Breakfast Sausage', category: 'Proteins', allowNo: false, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 2.00 },
+    { id: 'ing-ham-sliced', name: 'Ham (Sliced)', category: 'Proteins', allowNo: false, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 2.00 },
+    // Dairy
+    { id: 'ing-cheddar-shred', name: 'Cheddar Shredded', category: 'Dairy', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-swiss-slice', name: 'Swiss Sliced', category: 'Dairy', allowNo: true, allowLite: false, allowOnSide: false, allowExtra: true, extraPrice: 0.75 },
+    { id: 'ing-pepper-jack-shred', name: 'Pepper Jack Shredded', category: 'Dairy', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.75 },
+    // Vegetables
+    { id: 'ing-mushrooms-sliced', name: 'Mushrooms (Sliced)', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-bell-pepper-diced', name: 'Bell Peppers (Diced)', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.50 },
+    { id: 'ing-onion-diced-brkfst', name: 'Onion (Diced)', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.25 },
+    { id: 'ing-tomato-diced-brkfst', name: 'Tomato (Diced)', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.25 },
+    { id: 'ing-jalapeno-sliced-brkfst', name: 'Jalapeno (Sliced)', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.25 },
+    { id: 'ing-broccoli-floret-brkfst', name: 'Broccoli (Florets)', category: 'Vegetables', allowNo: true, allowLite: true, allowOnSide: false, allowExtra: true, extraPrice: 0.50 },
+  ]
+
+  for (const ing of breakfastIngredients) {
+    await prisma.ingredient.upsert({
+      where: { id: ing.id },
+      update: {},
+      create: {
+        id: ing.id,
+        locationId: location.id,
+        name: ing.name,
+        category: ing.category,
+        categoryId: categoryMap[ing.category] || null,
+        allowNo: ing.allowNo,
+        allowLite: ing.allowLite,
+        allowOnSide: ing.allowOnSide,
+        allowExtra: ing.allowExtra,
+        extraPrice: ing.extraPrice,
+        sortOrder: breakfastIngredients.indexOf(ing) + allIngredients.length,
+      },
+    })
+  }
+  console.log('Created', breakfastIngredients.length, 'breakfast ingredients')
+
+  console.log('')
+  console.log('=== NESTED MODIFIER SUMMARY ===')
+  console.log('New categories: 4 (Breakfast, Wings, Steaks, Tacos)')
+  console.log('New menu items:', breakfastItems.length + wingItems.length + steakItems.length + tacoItems.length)
+  console.log('New modifier groups: 15 (including nested child groups)')
+  console.log('Nesting depth examples:')
+  console.log('  Side Choice → French Fries → Fry Style → Loaded → Loaded Toppings (4 levels)')
+  console.log('  Side Choice → Side Salad → Salad Type → House Salad → Dressing (4 levels)')
+  console.log('  Wing Flavors → Buffalo → Heat Level (2 levels)')
+  console.log('')
+
   console.log('========================================')
   console.log('  Database seeded successfully!')
   console.log('========================================')
@@ -3335,6 +4603,12 @@ async function main() {
   console.log('  - ' + beerItems.length + ' beers')
   console.log('  - ' + wineItems.length + ' wines')
   console.log('')
+  console.log('Food Menu Created:')
+  console.log('  - ' + breakfastItems.length + ' breakfast items')
+  console.log('  - ' + wingItems.length + ' wing items')
+  console.log('  - ' + steakItems.length + ' steak items')
+  console.log('  - ' + tacoItems.length + ' taco items')
+  console.log('')
   console.log('Pizza Builder Created:')
   console.log('  - ' + pizzaSizes.length + ' sizes')
   console.log('  - ' + pizzaCrusts.length + ' crusts')
@@ -3343,12 +4617,18 @@ async function main() {
   console.log('  - ' + pizzaToppings.length + ' toppings')
   console.log('  - ' + (specialtyPizzas.length + 1) + ' specialty pizzas (including Build Your Own)')
   console.log('')
+  console.log('Nested Modifier System:')
+  console.log('  - 15 new modifier groups')
+  console.log('  - 4 levels of nesting depth')
+  console.log('  - ' + (sideChoices.length + sideChoices2.length + fryStyles.length + loadedFryToppings.length + gravyChoices.length + bakedPotatoToppings.length + sideSaladTypes.length + omeletteFillings.length + omeletteStyles.length + toastChoices.length + breakfastMeats.length + eggStyles.length + breakfastPotatoes.length + wingFlavors.length + wingDips.length + wingStyles.length + steakAddons.length + tacoProteins.length + tacoToppings.length + tacoSides.length + heatLevels.length) + ' total new modifiers')
+  console.log('')
   console.log('Inventory System Created:')
   console.log('  - ' + voidReasons.length + ' void reasons')
   console.log('  - ' + storageLocations.length + ' storage locations')
   console.log('')
   console.log('Ingredients Library Created:')
-  console.log('  - ' + allIngredients.length + ' total ingredients')
+  console.log('  - ' + allIngredients.length + ' base ingredients')
+  console.log('  - ' + breakfastIngredients.length + ' breakfast ingredients')
   console.log('  - ' + burgerIngredientLinks.length + ' burger recipe links')
   console.log('')
   console.log('Ingredient Categories:')
