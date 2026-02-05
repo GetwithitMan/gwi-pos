@@ -30,6 +30,9 @@ interface OpenTab {
   id: string
   orderNumber: number
   tabName: string | null
+  tableName?: string | null  // For dine_in orders from tables
+  tableId?: string | null
+  orderType: string
   total: number
   itemCount: number
   createdAt: string
@@ -132,8 +135,8 @@ export default function BarPage() {
           }
         }
 
-        // Load open bar tabs
-        const tabsRes = await fetch(`/api/orders/open?locationId=${employee.location.id}&orderType=bar_tab`)
+        // Load ALL open orders (bar tabs + table orders)
+        const tabsRes = await fetch(`/api/orders/open?locationId=${employee.location.id}`)
         if (tabsRes.ok) {
           const tabsData = await tabsRes.json()
           // Sort tabs by most recently updated first
@@ -284,6 +287,7 @@ export default function BarPage() {
         id: tempId,
         orderNumber: 0,
         tabName,
+        orderType: 'bar_tab',
         total: 0,
         itemCount: 0,
         createdAt: new Date().toISOString(),
@@ -311,6 +315,7 @@ export default function BarPage() {
           id: data.order.id,
           orderNumber: data.order.orderNumber,
           tabName: data.order.tabName,
+          orderType: data.order.orderType || 'bar_tab',
           total: 0,
           itemCount: 0,
           createdAt: data.order.createdAt,
@@ -379,7 +384,7 @@ export default function BarPage() {
       if (!res.ok) {
         // Rollback optimistic update on error
         const tabsRes = await fetch(
-          `/api/orders/open?locationId=${employee?.location?.id}&orderType=bar_tab`
+          `/api/orders/open?locationId=${employee?.location?.id}`
         )
         if (tabsRes.ok) {
           const tabsData = await tabsRes.json()
@@ -392,7 +397,7 @@ export default function BarPage() {
       console.error('Failed to add item:', error)
       // Rollback on error
       const tabsRes = await fetch(
-        `/api/orders/open?locationId=${employee?.location?.id}&orderType=bar_tab`
+        `/api/orders/open?locationId=${employee?.location?.id}`
       )
       if (tabsRes.ok) {
         const tabsData = await tabsRes.json()
@@ -657,9 +662,14 @@ export default function BarPage() {
                       >
                         <div className="flex items-center justify-between mb-1">
                           <div className="font-medium text-gray-900">
-                            {tab.tabName || `Tab #${tab.orderNumber}`}
+                            {tab.tableName || tab.tabName || `Tab #${tab.orderNumber}`}
                           </div>
                           <div className="flex items-center gap-1">
+                            {tab.orderType === 'dine_in' && (
+                              <span className="text-[10px] bg-indigo-500/30 text-indigo-700 px-1.5 py-0.5 rounded font-medium" title="Table order">
+                                🍽️
+                              </span>
+                            )}
                             {isMyTab && (
                               <span className="text-[10px] bg-emerald-500/30 text-emerald-700 px-1.5 py-0.5 rounded font-medium">
                                 Mine

@@ -1168,7 +1168,7 @@ export function FloorPlanHome({
     if (showLoading) setLoading(true)
     try {
       const [tablesRes, sectionsRes, elementsRes] = await Promise.all([
-        fetch(`/api/tables?locationId=${locationId}&includeSeats=true&includeOrderItems=true`),
+        fetch(`/api/tables?locationId=${locationId}&includeSeats=true&includeOrders=true&includeOrderItems=true`),
         fetch(`/api/sections?locationId=${locationId}`),
         fetch(`/api/floor-plan-elements?locationId=${locationId}`),
       ])

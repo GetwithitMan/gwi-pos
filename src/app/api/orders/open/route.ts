@@ -161,6 +161,7 @@ export async function GET(request: NextRequest) {
         } : null,
         customFields: order.customFields as Record<string, string> | null,
         tabName: order.tabName,
+        tableName: order.table?.name || null,  // Convenience field for display
         tableId: order.tableId,
         table: order.table ? {
           id: order.table.id,
