@@ -70,32 +70,70 @@ export function OrderPanel({
   const hasPendingItems = items.some(item => !item.kitchenStatus || item.kitchenStatus === 'pending')
 
   return (
-    <div className={`flex flex-col h-full bg-white border-l border-gray-200 ${className}`}>
+    <div
+      className={`flex flex-col h-full ${className}`}
+      style={{
+        background: 'rgba(15, 23, 42, 0.95)',
+        borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+      }}
+    >
       {/* Header */}
-      <div className="flex-shrink-0 border-b border-gray-200 bg-gray-50 px-4 py-3">
+      <div
+        style={{
+          padding: '16px 20px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          background: 'rgba(255, 255, 255, 0.02)',
+        }}
+      >
         <div className="flex items-center justify-between">
           <div>
             {orderNumber && (
-              <h2 className="text-lg font-bold text-gray-900">Order #{orderNumber}</h2>
+              <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
+                Order #{orderNumber}
+              </h2>
             )}
-            {tabName && (
-              <h2 className="text-lg font-bold text-gray-900">{tabName}</h2>
+            {tabName && !orderNumber && (
+              <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
+                {tabName}
+              </h2>
             )}
             {!orderNumber && !tabName && (
-              <h2 className="text-lg font-bold text-gray-900">New Order</h2>
+              <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
+                New Order
+              </h2>
             )}
             {orderType && (
-              <p className="text-sm text-gray-600 capitalize">{orderType.replace('_', ' ')}</p>
+              <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px', textTransform: 'capitalize' }}>
+                {orderType.replace('_', ' ')}
+              </p>
             )}
             {/* Card status */}
             {hasCard !== undefined && (
-              <div className="mt-1">
+              <div style={{ marginTop: '6px' }}>
                 {hasCard && cardLast4 ? (
-                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-green-100 text-green-700">
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    background: 'rgba(34, 197, 94, 0.15)',
+                    color: '#4ade80',
+                  }}>
                     💳 ****{cardLast4}
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-red-100 text-red-700">
+                  <span style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '11px',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    color: '#f87171',
+                  }}>
                     ⚠️ No Card
                   </span>
                 )}
@@ -103,15 +141,17 @@ export function OrderPanel({
             )}
           </div>
           {orderId && (
-            <div className="text-xs text-gray-400 font-mono">{orderId.slice(-8)}</div>
+            <div style={{ fontSize: '10px', color: '#475569', fontFamily: 'monospace' }}>
+              {orderId.slice(-8)}
+            </div>
           )}
         </div>
       </div>
 
       {/* Items list (scrollable) */}
-      <div className="flex-1 overflow-y-auto px-4">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
         {hasItems ? (
-          <div className="py-2">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {items.map((item) => (
               <OrderPanelItem
                 key={item.id}
@@ -129,13 +169,22 @@ export function OrderPanel({
             ))}
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">
-            <div className="text-center">
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            textAlign: 'center',
+            padding: '40px 20px',
+          }}>
+            <div>
               <svg
-                className="mx-auto h-12 w-12 text-gray-400 mb-2"
+                style={{ margin: '0 auto 16px', opacity: 0.4 }}
+                width="48"
+                height="48"
                 fill="none"
                 viewBox="0 0 24 24"
-                stroke="currentColor"
+                stroke="#64748b"
               >
                 <path
                   strokeLinecap="round"
@@ -144,8 +193,10 @@ export function OrderPanel({
                   d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"
                 />
               </svg>
-              <p className="text-sm">No items yet</p>
-              <p className="text-xs text-gray-400 mt-1">Add items to start an order</p>
+              <p style={{ fontSize: '14px', color: '#64748b' }}>No items yet</p>
+              <p style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
+                Add items to start an order
+              </p>
             </div>
           </div>
         )}
@@ -153,30 +204,45 @@ export function OrderPanel({
 
       {/* Totals section */}
       {hasItems && (
-        <div className="flex-shrink-0 border-t border-gray-200 bg-gray-50 px-4 py-3 space-y-1">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Subtotal</span>
-            <span className="font-medium text-gray-900">${subtotal.toFixed(2)}</span>
+        <div
+          style={{
+            padding: '16px 20px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'rgba(255, 255, 255, 0.02)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
+            <span style={{ color: '#94a3b8' }}>Subtotal</span>
+            <span style={{ color: '#e2e8f0', fontWeight: 500 }}>${subtotal.toFixed(2)}</span>
           </div>
           {discounts > 0 && (
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-600">Discounts</span>
-              <span className="font-medium text-red-600">-${discounts.toFixed(2)}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
+              <span style={{ color: '#94a3b8' }}>Discounts</span>
+              <span style={{ color: '#f87171', fontWeight: 500 }}>-${discounts.toFixed(2)}</span>
             </div>
           )}
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Tax</span>
-            <span className="font-medium text-gray-900">${tax.toFixed(2)}</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '10px' }}>
+            <span style={{ color: '#94a3b8' }}>Tax</span>
+            <span style={{ color: '#e2e8f0', fontWeight: 500 }}>${tax.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between text-lg font-bold pt-2 border-t border-gray-300">
-            <span className="text-gray-900">Total</span>
-            <span className="text-gray-900">${total.toFixed(2)}</span>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '18px',
+              fontWeight: 700,
+              paddingTop: '10px',
+              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+            }}
+          >
+            <span style={{ color: '#f1f5f9' }}>Total</span>
+            <span style={{ color: '#f1f5f9' }}>${total.toFixed(2)}</span>
           </div>
         </div>
       )}
 
       {/* Action buttons (sticky at bottom) */}
-      <div className="flex-shrink-0">
+      <div style={{ flexShrink: 0 }}>
         <OrderPanelActions
           hasItems={hasItems}
           hasPendingItems={hasPendingItems}

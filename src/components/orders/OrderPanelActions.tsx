@@ -1,7 +1,5 @@
 'use client'
 
-import { Button } from '@/components/ui/button'
-
 interface OrderPanelActionsProps {
   hasItems: boolean
   hasPendingItems: boolean
@@ -34,50 +32,102 @@ export function OrderPanelActions({
   }
 
   return (
-    <div className="border-t border-gray-200 bg-white p-4 space-y-2">
+    <div
+      style={{
+        padding: '16px 20px',
+        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+        background: 'rgba(255, 255, 255, 0.02)',
+      }}
+    >
       {/* Primary actions */}
-      <div className="grid grid-cols-2 gap-2">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
         {onSend && (
-          <Button
+          <button
             onClick={onSend}
             disabled={!hasPendingItems || isSending}
-            className="bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
+            style={{
+              padding: '12px 16px',
+              borderRadius: '8px',
+              border: 'none',
+              background: hasPendingItems && !isSending
+                ? 'linear-gradient(135deg, #3b82f6, #06b6d4)'
+                : 'rgba(255, 255, 255, 0.1)',
+              color: hasPendingItems && !isSending ? '#ffffff' : '#64748b',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: hasPendingItems && !isSending ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              boxShadow: hasPendingItems && !isSending ? '0 4px 12px rgba(59, 130, 246, 0.3)' : 'none',
+            }}
           >
-            {isSending ? 'Sending...' : 'Send to Kitchen'}
-          </Button>
+            {isSending ? 'Sending...' : 'Send'}
+          </button>
         )}
         {onPay && (
-          <Button
+          <button
             onClick={onPay}
             disabled={!hasItems}
-            className="bg-green-600 hover:bg-green-700 text-white disabled:bg-gray-300 disabled:text-gray-500"
+            style={{
+              padding: '12px 16px',
+              borderRadius: '8px',
+              border: 'none',
+              background: hasItems
+                ? 'linear-gradient(135deg, #22c55e, #10b981)'
+                : 'rgba(255, 255, 255, 0.1)',
+              color: hasItems ? '#ffffff' : '#64748b',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: hasItems ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              boxShadow: hasItems ? '0 4px 12px rgba(34, 197, 94, 0.3)' : 'none',
+            }}
           >
             Pay
-          </Button>
+          </button>
         )}
       </div>
 
       {/* Secondary actions */}
-      <div className="grid grid-cols-2 gap-2">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
         {onDiscount && (
-          <Button
+          <button
             onClick={onDiscount}
             disabled={!hasItems}
-            variant="outline"
-            className="border-gray-300 disabled:opacity-50"
+            style={{
+              padding: '10px 16px',
+              borderRadius: '8px',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: hasItems ? '#94a3b8' : '#475569',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: hasItems ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              opacity: hasItems ? 1 : 0.5,
+            }}
           >
             Discount
-          </Button>
+          </button>
         )}
         {onClear && (
-          <Button
+          <button
             onClick={handleClear}
             disabled={!hasItems}
-            variant="outline"
-            className="border-red-300 text-red-600 hover:bg-red-50 disabled:opacity-50"
+            style={{
+              padding: '10px 16px',
+              borderRadius: '8px',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              background: 'rgba(239, 68, 68, 0.1)',
+              color: hasItems ? '#f87171' : '#475569',
+              fontSize: '13px',
+              fontWeight: 500,
+              cursor: hasItems ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              opacity: hasItems ? 1 : 0.5,
+            }}
           >
-            Clear Order
-          </Button>
+            Clear
+          </button>
         )}
       </div>
     </div>
