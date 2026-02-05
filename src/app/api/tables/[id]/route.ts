@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { softDeleteData } from '@/lib/floorplan/queries'
+import { Prisma } from '@prisma/client'
 
 // GET - Get a single table
 export async function GET(
@@ -104,35 +106,36 @@ export async function PUT(
       status,
     } = body
 
-    // Get current table
-    const currentTable = await db.table.findUnique({
-      where: { id },
-    })
+    // Build type-safe update data
+    const updateData: Prisma.TableUpdateInput = {}
 
-    if (!currentTable) {
-      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+    if (name !== undefined) updateData.name = name
+    if (abbreviation !== undefined) updateData.abbreviation = abbreviation ?? null
+    if (sectionId !== undefined) {
+      updateData.section = sectionId ? { connect: { id: sectionId } } : { disconnect: true }
     }
+    if (capacity !== undefined) updateData.capacity = capacity
+    if (posX !== undefined) updateData.posX = posX
+    if (posY !== undefined) updateData.posY = posY
+    if (width !== undefined) updateData.width = width
+    if (height !== undefined) updateData.height = height
+    if (rotation !== undefined) updateData.rotation = rotation
+    if (shape !== undefined) updateData.shape = shape
+    if (seatPattern !== undefined) updateData.seatPattern = seatPattern
+    if (status !== undefined) updateData.status = status
 
-    // Update table
+    // Update table (will throw P2025 if not found)
     const table = await db.table.update({
       where: { id },
-      data: {
-        ...(name !== undefined ? { name } : {}),
-        ...(abbreviation !== undefined ? { abbreviation: abbreviation || null } : {}),
-        ...(sectionId !== undefined ? { sectionId: sectionId || null } : {}),
-        ...(capacity !== undefined ? { capacity } : {}),
-        ...(posX !== undefined ? { posX } : {}),
-        ...(posY !== undefined ? { posY } : {}),
-        ...(width !== undefined ? { width } : {}),
-        ...(height !== undefined ? { height } : {}),
-        ...(rotation !== undefined ? { rotation } : {}),
-        ...(shape !== undefined ? { shape } : {}),
-        ...(seatPattern !== undefined ? { seatPattern } : {}),
-        ...(status !== undefined ? { status } : {}),
-      },
+      data: updateData,
       include: {
         section: {
           select: { id: true, name: true, color: true },
+        },
+        _count: {
+          select: {
+            seats: { where: { isActive: true, deletedAt: null } },
+          },
         },
       },
     })
@@ -146,6 +149,7 @@ export async function PUT(
         name: table.name,
         abbreviation: table.abbreviation,
         capacity: table.capacity,
+        seatCount: table._count.seats,
         posX: table.posX,
         posY: table.posY,
         width: table.width,
@@ -158,6 +162,10 @@ export async function PUT(
       },
     })
   } catch (error) {
+    // Handle Prisma P2025 error (record not found)
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+    }
     console.error('Failed to update table:', error)
     return NextResponse.json(
       { error: 'Failed to update table' },
@@ -189,7 +197,7 @@ export async function DELETE(
     // Soft delete and get locationId for socket dispatch
     const table = await db.table.update({
       where: { id },
-      data: { isActive: false },
+      data: softDeleteData(),
       select: { locationId: true },
     })
 

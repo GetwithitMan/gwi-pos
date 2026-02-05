@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
+import { softDeleteData } from '@/lib/floorplan/queries'
 
 // GET - Get a single section
 export async function GET(
@@ -9,8 +10,8 @@ export async function GET(
   const { id } = await params
 
   try {
-    const section = await db.section.findUnique({
-      where: { id },
+    const section = await db.section.findFirst({
+      where: { id, deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -110,7 +111,7 @@ export async function DELETE(
     // Soft delete the section
     await db.section.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: softDeleteData(),
     })
 
     return NextResponse.json({ success: true, tablesMovedToNoSection: tablesInSection })

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { softDeleteData } from '@/lib/floorplan/queries'
+import { Prisma } from '@prisma/client'
 
 // GET - Get a single seat
 export async function GET(
@@ -14,6 +16,7 @@ export async function GET(
         id: seatId,
         tableId,
         isActive: true,
+        deletedAt: null,
       },
     })
 
@@ -70,6 +73,7 @@ export async function PUT(
         id: seatId,
         tableId,
         isActive: true,
+        deletedAt: null,
       },
       include: {
         table: {
@@ -97,8 +101,8 @@ export async function PUT(
 
     const shouldUpdateOriginal = updateOriginal || !isTableCombined
 
-    // Build update data
-    const updateData: Record<string, number | string | null> = {}
+    // Build type-safe update data
+    const updateData: Prisma.SeatUpdateInput = {}
 
     if (label !== undefined) updateData.label = label
     if (seatNumber !== undefined) updateData.seatNumber = seatNumber

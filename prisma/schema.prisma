@@ -1130,15 +1130,8 @@ model Table {
 
   name         String  // "Table 1", "Bar 3", "Patio A"
   abbreviation String? // Short display name for floor plan: "T1", "B3", "PA"
-  capacity     Int     @default(4)
-  // ⚠️ CAPACITY SYNC WARNING (Phase 3 TODO):
-  // This column can drift from actual Seat count if updated via direct DB edit or third-party API.
-  // RECOMMENDED FIX: Implement one of these to keep capacity in sync with seats.length:
-  //   1. PostgreSQL Trigger: CREATE TRIGGER update_table_capacity AFTER INSERT OR DELETE ON "Seat"
-  //      FOR EACH ROW EXECUTE FUNCTION sync_table_capacity();
-  //   2. Prisma Middleware: Intercept Seat create/delete and update Table.capacity
-  //   3. API Middleware: Wrap all /api/tables/[id]/seats endpoints to sync capacity
-  // Until implemented, always derive capacity from seats.length in application code.
+  capacity     Int     @default(4) // DEPRECATED: Use _count.seats or seats.length instead
+  // ⚠️ This field can drift from actual seat count. Always use seatCount from API responses.
 
   // Floor plan position (Skill 80)
   posX     Int    @default(0)

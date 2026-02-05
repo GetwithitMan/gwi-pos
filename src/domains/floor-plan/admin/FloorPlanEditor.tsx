@@ -16,6 +16,7 @@ import { FixtureProperties } from './FixtureProperties';
 import { TableProperties } from './TableProperties';
 import type { EditorToolMode, FixtureType, EditorTable, TableShape } from './types';
 import type { Fixture } from '../shared/types';
+import { PIXELS_PER_FOOT } from '@/lib/floorplan/constants';
 
 // =============================================================================
 // TYPES
@@ -52,9 +53,7 @@ interface FloorPlanElement {
 // =============================================================================
 // Database stores positions in PIXELS for direct FOH rendering
 // Editor canvas works in FEET (uses FloorCanvasAPI.feetToPixels for display)
-// We convert: DB (pixels) ↔ Editor (feet) using PIXELS_PER_FOOT = 20
-
-const PIXELS_PER_FOOT = 20; // Must match FloorCanvasAPI
+// We convert: DB (pixels) ↔ Editor (feet) using PIXELS_PER_FOOT from constants
 
 function pixelsToFeet(pixels: number): number {
   return pixels / PIXELS_PER_FOOT;

@@ -10,8 +10,8 @@ export async function GET(
   const { id } = await params
 
   try {
-    const element = await db.floorPlanElement.findUnique({
-      where: { id },
+    const element = await db.floorPlanElement.findFirst({
+      where: { id, deletedAt: null },
       include: {
         linkedMenuItem: {
           select: {

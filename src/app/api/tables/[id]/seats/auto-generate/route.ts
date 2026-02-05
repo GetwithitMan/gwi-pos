@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import {
+  SEAT_RADIUS,
+  SEAT_DEFAULT_OFFSET,
+  SEAT_MIN_OFFSET,
+  SEAT_MAX_OFFSET,
+  ANGLE
+} from '@/lib/floorplan/constants'
 
 type SeatPattern = 'all_around' | 'front_only' | 'three_sides' | 'two_sides' | 'inside'
 type LabelPattern = 'numeric' | 'alpha' | 'alphanumeric'
@@ -32,15 +39,11 @@ interface AvailableSpace {
 }
 
 // Calculate dynamic offset based on available space
-function getDynamicOffset(availableSpace: number | undefined, baseOffset: number = 8): number {
-  const SEAT_RADIUS = 20; // Match EditorCanvas constant
-  const MIN_OFFSET = 10;
-  const MAX_OFFSET = 50;
-
+function getDynamicOffset(availableSpace: number | undefined, baseOffset: number = SEAT_DEFAULT_OFFSET): number {
   if (availableSpace === undefined) return baseOffset;
 
   // Compress offset if space is limited
-  return Math.max(MIN_OFFSET, Math.min(baseOffset, availableSpace - SEAT_RADIUS));
+  return Math.max(SEAT_MIN_OFFSET, Math.min(baseOffset, availableSpace - SEAT_RADIUS));
 }
 
 // Generate seats distributed around all 4 sides of a rectangle
@@ -127,7 +130,7 @@ function generateSeatsFrontOnly(
       label: getLabel(i, labelPattern),
       relativeX: Math.round(-tableWidth / 2 + spacing * (i + 1)),
       relativeY: tableHeight / 2 + bottomOffset,
-      angle: 0, // Facing up toward the bar
+      angle: ANGLE.UP, // Facing up toward the bar
     })
   }
 
@@ -166,7 +169,7 @@ function generateSeatsThreeSides(
       label: getLabel(seatNum, labelPattern),
       relativeX: -tableWidth / 2 - leftOffset,
       relativeY: Math.round(y),
-      angle: 90,
+      angle: ANGLE.RIGHT,
     })
     seatNum++
   }
@@ -179,7 +182,7 @@ function generateSeatsThreeSides(
       label: getLabel(seatNum, labelPattern),
       relativeX: Math.round(x),
       relativeY: tableHeight / 2 + bottomOffset,
-      angle: 0,
+      angle: ANGLE.UP,
     })
     seatNum++
   }
@@ -192,7 +195,7 @@ function generateSeatsThreeSides(
       label: getLabel(seatNum, labelPattern),
       relativeX: tableWidth / 2 + rightOffset,
       relativeY: Math.round(y),
-      angle: 270,
+      angle: ANGLE.LEFT,
     })
     seatNum++
   }
@@ -229,7 +232,7 @@ function generateSeatsTwoSides(
       label: getLabel(seatNum, labelPattern),
       relativeX: Math.round(x),
       relativeY: tableHeight / 2 + bottomOffset,
-      angle: 0,
+      angle: ANGLE.UP,
     })
     seatNum++
   }
@@ -242,7 +245,7 @@ function generateSeatsTwoSides(
       label: getLabel(seatNum, labelPattern),
       relativeX: tableWidth / 2 + rightOffset,
       relativeY: Math.round(y),
-      angle: 270,
+      angle: ANGLE.LEFT,
     })
     seatNum++
   }
@@ -275,7 +278,7 @@ function generateSeatsInside(
       label: getLabel(seatNum, labelPattern),
       relativeX: Math.round(x),
       relativeY: -tableHeight / 4, // Upper portion
-      angle: 180,
+      angle: ANGLE.DOWN,
     })
     seatNum++
   }
@@ -288,7 +291,7 @@ function generateSeatsInside(
       label: getLabel(seatNum, labelPattern),
       relativeX: Math.round(x),
       relativeY: tableHeight / 4, // Lower portion
-      angle: 0,
+      angle: ANGLE.UP,
     })
     seatNum++
   }
@@ -321,7 +324,6 @@ function generateSeatPositions(
 }
 
 // Collision detection constants
-const SEAT_RADIUS = 12 // Seat visual radius for collision detection
 const COLLISION_PADDING = 5 // Extra padding for collision checks
 
 interface CollisionResult {

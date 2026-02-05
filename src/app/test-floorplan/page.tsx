@@ -16,6 +16,7 @@ import { Table as TableComponent, SmartObject, TableAPI } from '@/domains/floor-
 import { Seat, SeatAPI } from '@/domains/floor-plan/seats';
 import type { Point, Table, Seat as SeatType, Fixture } from '@/domains/floor-plan/shared/types';
 import { sampleFloorPlans, sampleFixtures, sampleTables } from './sampleData';
+import { PIXELS_PER_FOOT } from '@/lib/floorplan/constants';
 
 // =============================================================================
 // DATABASE FIXTURE CONVERSION
@@ -344,8 +345,6 @@ function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
 // =============================================================================
 // TABLE RENDERER - Using Layer 2 Components
 // =============================================================================
-
-const PIXELS_PER_FOOT = 40;
 
 // =============================================================================
 // TEST PAGE COMPONENT

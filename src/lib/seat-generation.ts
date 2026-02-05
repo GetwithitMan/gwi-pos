@@ -11,6 +11,8 @@
  * - Angle: 0° = Up, 90° = Right, 180° = Down, 270° = Left
  */
 
+import { SEAT_RADIUS, SEAT_DEFAULT_OFFSET, ANGLE } from '@/lib/floorplan/constants';
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -45,9 +47,8 @@ export interface GenerateSeatPositionsParams {
 // CONSTANTS
 // =============================================================================
 
-const DEFAULT_SEAT_RADIUS = 15; // pixels
 const DEFAULT_SEAT_GAP = 5; // pixels
-const CLEARANCE = 25; // Distance from table edge to seat center
+const CLEARANCE = SEAT_DEFAULT_OFFSET; // Distance from table edge to seat center
 
 // =============================================================================
 // MAIN FUNCTION
@@ -94,7 +95,7 @@ export function generateRectangleSeats(
     capacity,
     width,
     height,
-    seatRadius = DEFAULT_SEAT_RADIUS,
+    seatRadius = SEAT_RADIUS,
     seatGap = DEFAULT_SEAT_GAP,
   } = params;
 
@@ -109,13 +110,13 @@ export function generateRectangleSeats(
       seatNumber: 1,
       relativeX: 0,
       relativeY: -(halfH + CLEARANCE),
-      angle: 180, // Face down toward table
+      angle: ANGLE.DOWN, // Face down toward table
     });
     seats.push({
       seatNumber: 2,
       relativeX: 0,
       relativeY: halfH + CLEARANCE,
-      angle: 0, // Face up toward table
+      angle: ANGLE.UP, // Face up toward table
     });
     return seats;
   }
@@ -168,7 +169,7 @@ export function generateRectangleSeats(
       seatNumber: 1,
       relativeX: 0,
       relativeY: -(halfH + CLEARANCE),
-      angle: 180,
+      angle: ANGLE.DOWN,
     });
 
     const rightSeats = distributeSeatsOnEdge(
@@ -188,7 +189,7 @@ export function generateRectangleSeats(
       seatNumber: 2 + seatsPerSide,
       relativeX: 0,
       relativeY: halfH + CLEARANCE,
-      angle: 0,
+      angle: ANGLE.UP,
     });
 
     const leftSeats = distributeSeatsOnEdge(
@@ -332,7 +333,7 @@ export function generateRoundSeats(
     capacity,
     width,
     height,
-    seatRadius = DEFAULT_SEAT_RADIUS,
+    seatRadius = SEAT_RADIUS,
   } = params;
 
   const seats: SeatPosition[] = [];
@@ -378,7 +379,7 @@ export function generateOvalSeats(
     capacity,
     width,
     height,
-    seatRadius = DEFAULT_SEAT_RADIUS,
+    seatRadius = SEAT_RADIUS,
   } = params;
 
   const seats: SeatPosition[] = [];
@@ -423,7 +424,7 @@ export function generateBoothSeats(
   const {
     capacity,
     width,
-    seatRadius = DEFAULT_SEAT_RADIUS,
+    seatRadius = SEAT_RADIUS,
     seatGap = DEFAULT_SEAT_GAP,
   } = params;
 

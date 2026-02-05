@@ -887,11 +887,15 @@ export function FloorPlanHome({
     }
   }
 
-  // FIX 4: Keep refs updated with latest callbacks (runs on every render)
-  callbacksRef.current.clearExpiredUndos = clearExpiredUndos
-  callbacksRef.current.clearExpiredFlashes = clearExpiredFlashes
-  callbacksRef.current.loadFloorPlanData = () => loadFloorPlanData(false)
-  callbacksRef.current.loadOpenOrdersCount = loadOpenOrdersCount
+  // FIX 4: Keep refs updated with latest callbacks
+  useEffect(() => {
+    callbacksRef.current = {
+      clearExpiredUndos,
+      clearExpiredFlashes,
+      loadFloorPlanData: () => loadFloorPlanData(false),
+      loadOpenOrdersCount,
+    }
+  })
 
   const loadMenuItems = async (categoryId: string) => {
     setLoadingMenuItems(true)
@@ -1664,18 +1668,21 @@ export function FloorPlanHome({
 
   // Close order panel
   const handleCloseOrderPanel = useCallback(() => {
-    setShowOrderPanel(false)
-    setActiveTableId(null)
+    // Clear dependent state FIRST
+    setInlineOrderItems([])
     setActiveOrderId(null)
     setActiveOrderNumber(null)
     setActiveOrderType(null)
-    setInlineOrderItems([])
     setExpandedItemId(null)
     setEditingNotesItemId(null)
     setEditingNotesText('')
     setGuestCount(defaultGuestCount)
     setActiveSeatNumber(null)
     setActiveSourceTableId(null)
+
+    // Clear primary state LAST
+    setActiveTableId(null)
+    setShowOrderPanel(false)
   }, [defaultGuestCount])
 
   // Payment mode state (cash or card)

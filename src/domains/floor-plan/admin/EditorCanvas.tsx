@@ -14,6 +14,13 @@ import type { EditorToolMode, FixtureType, EditorTable, TableShape, EditorSeat }
 import { getFixtureTypeMetadata, getTableShapeMetadata } from './types';
 import { TableRenderer, type ResizeHandle } from './TableRenderer';
 import { SeatRenderer } from './SeatRenderer';
+import {
+  SEAT_RADIUS,
+  SEAT_HIT_RADIUS,
+  SEAT_COLLISION_RADIUS,
+  SEAT_BOUNDARY_DISTANCE,
+  SEAT_MIN_DISTANCE
+} from '@/lib/floorplan/constants';
 
 // =============================================================================
 // TYPES
@@ -146,16 +153,7 @@ export function EditorCanvas({
   // Debug mode for boundary visualization (toggle with keyboard)
   const [showBoundaryDebug, setShowBoundaryDebug] = useState(false);
 
-  // Boundary configuration (distance from table edge in pixels)
-  const SEAT_MAX_BOUNDARY = 35;       // Maximum distance when space allows (was SEAT_BOUNDARY_DISTANCE)
-  const SEAT_MIN_BOUNDARY = 5;        // Minimum distance when squeezed (was SEAT_MIN_DISTANCE)
-  const SEAT_RADIUS = 20;             // Seat visual size
-  const SEAT_HIT_RADIUS = 25;         // Larger hit target for clicking
-  const SEAT_COLLISION_RADIUS = 8;    // Small collision radius - allow seats to be very close
-
-  // For backward compatibility in existing code
-  const SEAT_BOUNDARY_DISTANCE = SEAT_MAX_BOUNDARY;
-  const SEAT_MIN_DISTANCE = SEAT_MIN_BOUNDARY;
+  // Constants imported from @/lib/floorplan/constants
 
   // Check if a table would collide with any fixture
   const checkTableFixtureCollision = useCallback((
@@ -374,7 +372,7 @@ export function EditorCanvas({
     tableRotation: number = 0
   ): AvailableSpace => {
     // Default to maximum boundary if no obstacles nearby
-    const defaultSpace = SEAT_MAX_BOUNDARY + SEAT_RADIUS;
+    const defaultSpace = SEAT_BOUNDARY_DISTANCE + SEAT_RADIUS;
     let topSpace = defaultSpace;
     let bottomSpace = defaultSpace;
     let leftSpace = defaultSpace;
@@ -472,7 +470,7 @@ export function EditorCanvas({
       left: Math.max(0, leftSpace),
       right: Math.max(0, rightSpace),
     };
-  }, [tables, fixtures, useDatabase, dbTables, dbFixtures, SEAT_MAX_BOUNDARY, SEAT_RADIUS]);
+  }, [tables, fixtures, useDatabase, dbTables, dbFixtures, SEAT_BOUNDARY_DISTANCE, SEAT_RADIUS]);
 
   // Compress seats to fit within available space
   const compressSeatsToFit = useCallback((
@@ -507,7 +505,7 @@ export function EditorCanvas({
 
         // Calculate dynamic offset (compressed if space is tight)
         const dynamicOffset = Math.max(
-          SEAT_MIN_BOUNDARY,
+          SEAT_MIN_DISTANCE,
           Math.min(baseOffset, availableOnSide - SEAT_RADIUS)
         );
 
@@ -520,7 +518,7 @@ export function EditorCanvas({
 
         // Calculate dynamic offset (compressed if space is tight)
         const dynamicOffset = Math.max(
-          SEAT_MIN_BOUNDARY,
+          SEAT_MIN_DISTANCE,
           Math.min(baseOffset, availableOnSide - SEAT_RADIUS)
         );
 
@@ -534,7 +532,7 @@ export function EditorCanvas({
         relativeY: Math.round(newRelativeY),
       };
     });
-  }, [SEAT_MIN_BOUNDARY, SEAT_RADIUS]);
+  }, [SEAT_MIN_DISTANCE, SEAT_RADIUS]);
 
   // Check if position is valid for a seat (boundary + not inside table)
   const isValidSeatPosition = useCallback((

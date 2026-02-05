@@ -2,14 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
+// Table status validation
+const VALID_STATUSES = ['available', 'occupied', 'dirty', 'reserved'] as const
+type TableStatus = typeof VALID_STATUSES[number]
+
+function isValidStatus(s: string | null): s is TableStatus {
+  return s !== null && VALID_STATUSES.includes(s as TableStatus)
+}
+
 // GET - List all tables for a location
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const sectionId = searchParams.get('sectionId')
-    const status = searchParams.get('status')
+    const rawStatus = searchParams.get('status')
     const includeSeats = searchParams.get('includeSeats') === 'true'
+    const includeOrders = searchParams.get('includeOrders') === 'true'
     const includeOrderItems = searchParams.get('includeOrderItems') === 'true'
 
     if (!locationId) {
@@ -18,6 +27,9 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Validate status parameter
+    const status = isValidStatus(rawStatus) ? rawStatus : undefined
 
     const tables = await db.table.findMany({
       where: {
@@ -31,32 +43,42 @@ export async function GET(request: NextRequest) {
         section: {
           select: { id: true, name: true, color: true },
         },
-        orders: {
-          where: { status: 'open', deletedAt: null },
+        // Always include count (lightweight)
+        _count: {
           select: {
-            id: true,
-            orderNumber: true,
-            guestCount: true,
-            total: true,
-            createdAt: true,
-            employee: {
-              select: { displayName: true, firstName: true, lastName: true },
-            },
-            ...(includeOrderItems ? {
-              items: {
-                where: { deletedAt: null },
-                select: {
-                  id: true,
-                  name: true,
-                  quantity: true,
-                  price: true,
-                },
-                orderBy: { createdAt: 'asc' as const },
-                take: 10, // Limit for performance
-              },
-            } : {}),
+            seats: { where: { isActive: true, deletedAt: null } },
           },
         },
+        // Conditionally include orders
+        ...(includeOrders ? {
+          orders: {
+            where: { status: 'open', deletedAt: null },
+            select: {
+              id: true,
+              orderNumber: true,
+              guestCount: true,
+              total: true,
+              createdAt: true,
+              employee: {
+                select: { displayName: true, firstName: true, lastName: true },
+              },
+              ...(includeOrderItems ? {
+                items: {
+                  where: { deletedAt: null },
+                  select: {
+                    id: true,
+                    name: true,
+                    quantity: true,
+                    price: true,
+                  },
+                  orderBy: { createdAt: 'asc' as const },
+                  take: 10, // Limit for performance
+                },
+              } : {}),
+            },
+          },
+        } : {}),
+        // Conditionally include seats
         ...(includeSeats ? {
           seats: {
             where: { isActive: true, deletedAt: null },
@@ -85,6 +107,8 @@ export async function GET(request: NextRequest) {
         name: table.name,
         abbreviation: table.abbreviation,
         capacity: table.capacity,
+        // Seat count from _count (always included, lightweight)
+        seatCount: table._count.seats,
         posX: table.posX,
         posY: table.posY,
         width: table.width,
@@ -109,18 +133,18 @@ export async function GET(request: NextRequest) {
         virtualGroupColor: table.virtualGroupColor,
         // Seats (if requested)
         seats: includeSeats && 'seats' in table ? table.seats : [],
-        // Current order info
-        currentOrder: table.orders[0] ? {
+        // Current order info (if orders included)
+        currentOrder: (includeOrders && 'orders' in table && table.orders[0]) ? {
           id: table.orders[0].id,
           orderNumber: table.orders[0].orderNumber,
           guestCount: table.orders[0].guestCount,
           total: Number(table.orders[0].total),
           openedAt: table.orders[0].createdAt.toISOString(),
-          server: table.orders[0].employee?.displayName ||
-            `${table.orders[0].employee?.firstName || ''} ${table.orders[0].employee?.lastName || ''}`.trim(),
+          server: (table.orders[0] as any).employee?.displayName ||
+            `${(table.orders[0] as any).employee?.firstName || ''} ${(table.orders[0] as any).employee?.lastName || ''}`.trim(),
           // Order items for info panel (if requested)
           items: includeOrderItems && 'items' in table.orders[0]
-            ? (table.orders[0].items as Array<{ id: string; name: string; quantity: number; price: unknown }>).map((item) => ({
+            ? ((table.orders[0] as any).items as Array<{ id: string; name: string; quantity: number; price: unknown }>).map((item) => ({
                 id: item.id,
                 name: item.name,
                 quantity: item.quantity,
@@ -165,31 +189,39 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const tableCapacity = capacity || 4
-    const tableWidth = width || 100
-    const tableHeight = height || 100
-    const tableShape = shape || 'rectangle'
-    const tableSeatPattern = seatPattern || 'all_around'
+    const tableCapacity = capacity ?? 4
+    const tableWidth = width ?? 100
+    const tableHeight = height ?? 100
+    const tableShape = shape ?? 'rectangle'
+    const tableSeatPattern = seatPattern ?? 'all_around'
+    const tableRotation = rotation ?? 0
+    const tablePosX = posX ?? 0
+    const tablePosY = posY ?? 0
 
     // Create the table
     const table = await db.table.create({
       data: {
         locationId,
-        sectionId: sectionId || null,
+        sectionId: sectionId ?? null,
         name,
-        abbreviation: abbreviation || null,
+        abbreviation: abbreviation ?? null,
         capacity: tableCapacity,
-        posX: posX || 0,
-        posY: posY || 0,
+        posX: tablePosX,
+        posY: tablePosY,
         width: tableWidth,
         height: tableHeight,
-        rotation: rotation || 0,
+        rotation: tableRotation,
         shape: tableShape,
         seatPattern: tableSeatPattern,
       },
       include: {
         section: {
           select: { id: true, name: true, color: true },
+        },
+        _count: {
+          select: {
+            seats: { where: { isActive: true, deletedAt: null } },
+          },
         },
       },
     })
@@ -203,6 +235,7 @@ export async function POST(request: NextRequest) {
         name: table.name,
         abbreviation: table.abbreviation,
         capacity: table.capacity,
+        seatCount: table._count.seats,
         posX: table.posX,
         posY: table.posY,
         width: table.width,

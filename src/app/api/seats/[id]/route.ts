@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
+import { softDeleteData } from '@/lib/floorplan/queries';
 
 // GET - Get a single seat with table info
 export async function GET(
@@ -10,8 +11,8 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const seat = await db.seat.findUnique({
-      where: { id },
+    const seat = await db.seat.findFirst({
+      where: { id, deletedAt: null },
       include: {
         table: {
           select: {
@@ -27,7 +28,7 @@ export async function GET(
       },
     });
 
-    if (!seat || seat.deletedAt) {
+    if (!seat) {
       return NextResponse.json(
         { error: 'Seat not found' },
         { status: 404 }
@@ -82,11 +83,11 @@ export async function PUT(
     } = body;
 
     // Get current seat for locationId
-    const currentSeat = await db.seat.findUnique({
-      where: { id },
+    const currentSeat = await db.seat.findFirst({
+      where: { id, deletedAt: null },
     });
 
-    if (!currentSeat || currentSeat.deletedAt) {
+    if (!currentSeat) {
       return NextResponse.json({ error: 'Seat not found' }, { status: 404 });
     }
 
@@ -140,19 +141,19 @@ export async function DELETE(
     const { id } = await params;
 
     // Get seat for locationId before deletion
-    const seat = await db.seat.findUnique({
-      where: { id },
-      select: { locationId: true, deletedAt: true },
+    const seat = await db.seat.findFirst({
+      where: { id, deletedAt: null },
+      select: { locationId: true },
     });
 
-    if (!seat || seat.deletedAt) {
+    if (!seat) {
       return NextResponse.json({ error: 'Seat not found' }, { status: 404 });
     }
 
     // Soft delete
     await db.seat.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: softDeleteData(),
     });
 
     // Notify POS terminals of floor plan update
