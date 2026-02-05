@@ -10,13 +10,40 @@
  * Changes made in /test-floorplan/editor will appear here automatically.
  */
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { FloorCanvas, RoomSelector, FloorCanvasAPI } from '@/domains/floor-plan/canvas';
 import { Table as TableComponent, SmartObject, TableAPI } from '@/domains/floor-plan/tables';
 import { Seat, SeatAPI } from '@/domains/floor-plan/seats';
 import type { Point, Table, Seat as SeatType, Fixture } from '@/domains/floor-plan/shared/types';
 import { sampleFloorPlans, sampleFixtures, sampleTables } from './sampleData';
 import { PIXELS_PER_FOOT, CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE } from '@/lib/floorplan/constants';
+import { useTableGroups } from '@/domains/floor-plan/hooks/useTableGroups';
+import { MERGE_CONSTANTS } from '@/domains/floor-plan/groups/types';
+import {
+  DragState,
+  DropTarget,
+  findDropTarget,
+  createDragState,
+  updateDragState,
+  getDraggedTablePosition,
+  resetDragState,
+  calculatePerimeterSeats,
+  getGroupDisplayName,
+  createPerimeterLookup,
+  createEnhancedPerimeterLookup,
+  generateVirtualSeatPositions,
+  assignColorsToGroup,
+  createColorLookup,
+  getColorFamilyForGroup,
+  getGroupGlowStyle,
+  getColorWithOpacity,
+  findBestSnap,
+  type TableForPerimeter,
+  type PerimeterSeatResult,
+  type TableColorAssignment,
+  type SnapPreview,
+  type VirtualSeatPosition,
+} from '@/domains/floor-plan/groups';
 
 // =============================================================================
 // DATABASE FIXTURE CONVERSION
@@ -66,6 +93,9 @@ interface DbTable {
   status: string;
   section: { id: string; name: string; color: string | null } | null;
   seats: DbSeat[];
+  virtualGroupId?: string | null;
+  virtualGroupColor?: string | null;
+  virtualGroupPrimary?: boolean;
 }
 
 // Convert database element to a "pixel fixture" for DIRECT rendering (no feet conversion)
@@ -238,19 +268,60 @@ interface DbTableRendererProps {
   table: DbTable;
   showSeats?: boolean;
   onClick?: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  onPointerUp?: () => void;
+  isSelectedForCombine?: boolean;
+  isHolding?: boolean;
+  tableColor?: string;
+  seatColor?: string;
+  groupGlow?: string;
+  perimeterLookup?: Map<string, number>;
+  enhancedLookup?: Map<string, { perimeterNumber: number; isVisible: boolean }>;  // Includes visibility
+  visualOffset?: { offsetX: number; offsetY: number };  // Visual snap offset for grouped tables
+  isInGroup?: boolean;  // If true, skip rendering seats (virtual seats rendered separately)
 }
 
-function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
+function DbTableRenderer({
+  table,
+  showSeats,
+  onClick,
+  onPointerDown,
+  onPointerUp,
+  isSelectedForCombine,
+  isHolding,
+  tableColor,
+  seatColor,
+  groupGlow,
+  perimeterLookup,
+  enhancedLookup,
+  visualOffset,
+  isInGroup,
+}: DbTableRendererProps) {
   const isRound = table.shape === 'round' || table.shape === 'circle';
 
-  const tableCenterX = table.posX + table.width / 2;
-  const tableCenterY = table.posY + table.height / 2;
+  // Apply visual offset if provided (for grouped tables to appear snapped together)
+  const visualPosX = table.posX + (visualOffset?.offsetX || 0);
+  const visualPosY = table.posY + (visualOffset?.offsetY || 0);
 
-  // Render seats with rotation
+  const tableCenterX = visualPosX + table.width / 2;
+  const tableCenterY = visualPosY + table.height / 2;
+
+  // Render seats with rotation and perimeter numbers
   const renderSeats = () => {
+    // If table is in a group, don't render individual seats
+    // Virtual seats are rendered separately around the combined shape
+    if (isInGroup) return null;
+
     if (!showSeats || !table.seats || table.seats.length === 0) return null;
 
     return table.seats.map((seat) => {
+      // Check if this seat should be hidden (inner seat between combined tables)
+      const enhancedInfo = enhancedLookup?.get(seat.id);
+      if (enhancedInfo && !enhancedInfo.isVisible) {
+        // This is an inner seat - don't render it
+        return null;
+      }
+
       // Apply table rotation to seat position
       const angleRad = (table.rotation * Math.PI) / 180;
       const cos = Math.cos(angleRad);
@@ -266,13 +337,17 @@ function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
       const SEAT_SIZE = 24;
       const SEAT_HALF = SEAT_SIZE / 2;
 
+      // Get perimeter number if in group (use enhanced lookup first, fallback to basic)
+      const perimeterNum = enhancedInfo?.perimeterNumber ?? perimeterLookup?.get(seat.id);
+      const seatLabel = perimeterNum !== undefined ? String(perimeterNum) : String(seat.seatNumber);
+
       return (
         <div
           key={seat.id}
           onClick={(e) => {
             e.stopPropagation();
             // When we integrate with orders, this will select the seat
-            console.log(`Seat ${seat.seatNumber} tapped on table ${table.name}`);
+            console.log(`Seat ${seatLabel} tapped on table ${table.name}`);
           }}
           style={{
             position: 'absolute',
@@ -280,7 +355,7 @@ function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
             top: seatAbsY - SEAT_HALF,
             width: SEAT_SIZE,
             height: SEAT_SIZE,
-            backgroundColor: '#fff',
+            backgroundColor: seatColor || '#fff',
             border: '2px solid #555',
             borderRadius: '50%',
             display: 'flex',
@@ -288,10 +363,11 @@ function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
             justifyContent: 'center',
             fontSize: 10,
             fontWeight: 600,
+            color: '#333',
             cursor: 'pointer',
             pointerEvents: 'auto',
             boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            transition: 'transform 0.1s, box-shadow 0.1s',
+            transition: 'all 0.2s ease',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'scale(1.15)';
@@ -303,9 +379,9 @@ function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
             e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
             e.currentTarget.style.zIndex = 'auto';
           }}
-          title={`Seat ${seat.seatNumber}`}
+          title={`Seat ${seatLabel}`}
         >
-          {seat.seatNumber}
+          {seatLabel}
         </div>
       );
     });
@@ -315,14 +391,20 @@ function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
     <>
       <div
         onClick={onClick}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
         style={{
           position: 'absolute',
-          left: table.posX,
-          top: table.posY,
+          left: visualPosX,  // Use visual position (with snap offset applied)
+          top: visualPosY,   // Use visual position (with snap offset applied)
           width: table.width,
           height: table.height,
-          backgroundColor: table.status === 'occupied' ? '#ffcdd2' : '#e8f5e9',
-          border: '2px solid #666',
+          backgroundColor: tableColor || (table.status === 'occupied' ? '#ffcdd2' : '#e8f5e9'),
+          border: isSelectedForCombine
+            ? '3px solid #06b6d4'
+            : tableColor
+            ? `3px solid ${tableColor}`
+            : '2px solid #666',
           borderRadius: isRound ? '50%' : 8,
           cursor: 'pointer',
           display: 'flex',
@@ -330,8 +412,23 @@ function DbTableRenderer({ table, showSeats, onClick }: DbTableRendererProps) {
           justifyContent: 'center',
           fontSize: 12,
           fontWeight: 600,
-          transform: `rotate(${table.rotation}deg)`,
+          color: tableColor ? '#fff' : '#333',
+          transform: isHolding
+            ? `rotate(${table.rotation}deg) scale(1.02)`
+            : `rotate(${table.rotation}deg)`,
           transformOrigin: 'center center',
+          boxShadow: isSelectedForCombine
+            ? '0 0 20px rgba(6, 182, 212, 0.6), inset 0 0 10px rgba(6, 182, 212, 0.2)'
+            : isHolding
+            ? '0 0 15px rgba(251, 191, 36, 0.5)'
+            : groupGlow
+            ? groupGlow
+            : undefined,
+          transition: visualOffset ? 'all 0.3s ease-out' : 'all 0.2s ease',  // Smooth snap animation
+          // Prevent text selection and touch scrolling during long-hold
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          touchAction: 'none',
         }}
         title={`${table.name} (${table.capacity} seats)`}
       >
@@ -372,6 +469,65 @@ export default function TestFloorPlanPage() {
   const [isDbMode, setIsDbMode] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [showDbSeats, setShowDbSeats] = useState(true);
+
+  // Virtual combining state
+  const [isCombineMode, setIsCombineMode] = useState(false);
+  const [selectedForCombine, setSelectedForCombine] = useState<string[]>([]);
+  const [holdingTableId, setHoldingTableId] = useState<string | null>(null);
+  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Drag-to-combine state
+  const [dragState, setDragState] = useState<DragState>(resetDragState());
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const longHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const canvasContainerRef = useRef<HTMLDivElement | null>(null);
+  const LONG_HOLD_MS = 750;
+  const SNAP_DISTANCE_PX = 60;
+
+  // Helper to convert screen coordinates to canvas coordinates
+  const screenToCanvas = useCallback((screenX: number, screenY: number) => {
+    if (!canvasContainerRef.current) {
+      return { x: screenX, y: screenY };
+    }
+    const rect = canvasContainerRef.current.getBoundingClientRect();
+    return {
+      x: screenX - rect.left,
+      y: screenY - rect.top,
+    };
+  }, []);
+
+  // Virtual group visual state
+  const [virtualGroupData, setVirtualGroupData] = useState<{
+    groups: Map<string, {
+      groupId: string;
+      tableIds: string[];
+      colorAssignments: TableColorAssignment[];
+      colorLookup: Map<string, { tableColor: string; seatColor: string }>;
+      perimeterSeats: PerimeterSeatResult[];
+      perimeterLookup: Map<string, number>;
+      enhancedLookup: Map<string, { perimeterNumber: number; isVisible: boolean }>;
+      virtualSeats: VirtualSeatPosition[];  // New: regenerated seat positions around combined shape
+      displayName: string;
+      groupIndex: number;
+    }>;
+  }>({ groups: new Map() });
+
+  // Visual offsets for tables in virtual groups (makes them appear snapped together)
+  // Key: tableId, Value: { offsetX, offsetY } - how much to shift the table visually
+  const [visualOffsets, setVisualOffsets] = useState<Map<string, { offsetX: number; offsetY: number }>>(new Map());
+
+  // Store snap positions when groups are created (persists the exact drag-preview position)
+  // Key: groupId, Value: { draggedTableId, snapPosition }
+  const [storedSnapPositions, setStoredSnapPositions] = useState<Map<string, { draggedTableId: string; snapPosition: { x: number; y: number } }>>(new Map());
+
+  // Snap preview during drag
+  const [snapPreview, setSnapPreview] = useState<SnapPreview | null>(null);
+
+  // Use table groups hook
+  const { createVirtualGroup, dissolveGroup, isLoading: isCreatingGroup } = useTableGroups({
+    locationId: locationId || 'loc-1',
+    autoLoad: false,
+  });
 
   // Fetch database fixtures
   const fetchDbFixtures = useCallback(async (locId: string) => {
@@ -430,6 +586,39 @@ export default function TestFloorPlanPage() {
       console.error('[FOH] Failed to fetch database tables:', error);
     }
   }, []);
+
+  // Reset all virtual groups (for testing)
+  const handleResetAllGroups = useCallback(async () => {
+    if (!locationId) return;
+
+    // Find all unique virtual group IDs
+    const groupIds = new Set<string>();
+    dbTables.forEach(table => {
+      if (table.virtualGroupId) {
+        groupIds.add(table.virtualGroupId);
+      }
+    });
+
+    if (groupIds.size === 0) {
+      alert('No virtual groups to reset');
+      return;
+    }
+
+    const confirmed = window.confirm(`Reset ${groupIds.size} virtual group(s)? Tables will return to their original positions.`);
+    if (!confirmed) return;
+
+    // Dissolve each group
+    for (const groupId of groupIds) {
+      await dissolveGroup(groupId);
+    }
+
+    // Clear stored snap positions
+    setStoredSnapPositions(new Map());
+
+    // Refresh table data
+    await fetchDbTables(locationId);
+    console.log(`[FOH] Reset ${groupIds.size} virtual groups`);
+  }, [locationId, dbTables, dissolveGroup, fetchDbTables]);
 
   // Get location ID and initialize
   useEffect(() => {
@@ -511,6 +700,182 @@ export default function TestFloorPlanPage() {
     };
   }, [locationId, fetchDbFixtures, fetchDbTables]);
 
+  // Compute virtual group data and visual offsets whenever dbTables changes
+  useEffect(() => {
+    if (!dbTables || dbTables.length === 0) {
+      setVirtualGroupData({ groups: new Map() });
+      setVisualOffsets(new Map());
+      return;
+    }
+
+    // Find all unique virtual group IDs
+    const groupIds = new Set<string>();
+    dbTables.forEach(table => {
+      if (table.virtualGroupId) {
+        groupIds.add(table.virtualGroupId);
+        console.log('[Groups] Table', table.name, 'is in group', table.virtualGroupId);
+      }
+    });
+
+    console.log('[Groups] Found', groupIds.size, 'virtual groups');
+
+    // Build group data for each virtual group
+    const groups = new Map<string, {
+      groupId: string;
+      tableIds: string[];
+      colorAssignments: TableColorAssignment[];
+      colorLookup: Map<string, { tableColor: string; seatColor: string }>;
+      perimeterSeats: PerimeterSeatResult[];
+      perimeterLookup: Map<string, number>;
+      enhancedLookup: Map<string, { perimeterNumber: number; isVisible: boolean }>;
+      virtualSeats: VirtualSeatPosition[];
+      displayName: string;
+      groupIndex: number;
+    }>();
+
+    // Calculate visual offsets for tables in groups (to make them appear snapped together)
+    const newVisualOffsets = new Map<string, { offsetX: number; offsetY: number }>();
+
+    let groupIndex = 0;
+
+    groupIds.forEach(groupId => {
+      // Get tables in this group
+      const groupTables = dbTables.filter(t => t.virtualGroupId === groupId);
+      if (groupTables.length === 0) return;
+
+      const tableIds = groupTables.map(t => t.id);
+
+      // Calculate color assignments
+      const colorAssignments = assignColorsToGroup(tableIds, groupIndex);
+      const colorLookup = createColorLookup(colorAssignments);
+
+      // Find the primary table (anchor - doesn't move visually)
+      const primaryTable = groupTables.find(t => t.virtualGroupPrimary) || groupTables[0];
+
+      // Check if we have a stored snap position for this group
+      const storedSnap = storedSnapPositions.get(groupId);
+
+      // Calculate visual snap positions for secondary tables
+      // Each secondary table should snap to the nearest edge of the primary table
+      groupTables.forEach(table => {
+        if (table.id === primaryTable.id) {
+          // Primary table doesn't move - no offset
+          newVisualOffsets.set(table.id, { offsetX: 0, offsetY: 0 });
+        } else {
+          // Use stored snap position if available (from when the drag happened)
+          // This ensures the table lands EXACTLY where the preview showed
+          if (storedSnap && storedSnap.draggedTableId === table.id) {
+            const offsetX = storedSnap.snapPosition.x - table.posX;
+            const offsetY = storedSnap.snapPosition.y - table.posY;
+            newVisualOffsets.set(table.id, { offsetX, offsetY });
+            console.log(`[VisualSnap] Table ${table.name} using STORED snap: offset (${offsetX}, ${offsetY})`);
+          } else {
+            // Fallback: Calculate where this table should visually appear (snapped to primary)
+            const snapPos = calculateSnapPositionForTable(table, primaryTable);
+            const offsetX = snapPos.x - table.posX;
+            const offsetY = snapPos.y - table.posY;
+            newVisualOffsets.set(table.id, { offsetX, offsetY });
+            console.log(`[VisualSnap] Table ${table.name} CALCULATED offset: (${offsetX}, ${offsetY})`);
+          }
+        }
+      });
+
+      // Calculate perimeter seats using VISUAL positions (snapped positions)
+      const tablesForPerimeter: TableForPerimeter[] = groupTables.map(t => {
+        const offset = newVisualOffsets.get(t.id) || { offsetX: 0, offsetY: 0 };
+        return {
+          id: t.id,
+          name: t.name,
+          posX: t.posX + offset.offsetX,  // Use visual position
+          posY: t.posY + offset.offsetY,  // Use visual position
+          width: t.width,
+          height: t.height,
+          seats: t.seats || [],
+        };
+      });
+      const perimeterSeats = calculatePerimeterSeats(tablesForPerimeter);
+      const perimeterLookup = createPerimeterLookup(perimeterSeats);
+      const enhancedLookup = createEnhancedPerimeterLookup(tablesForPerimeter);
+
+      // Generate virtual seat positions around the combined bounding box
+      // This places seats evenly around the perimeter instead of using original positions
+      // seatDistance = 18px (half seat size of 24px + small margin, close to table edge)
+      const virtualSeats = generateVirtualSeatPositions(tablesForPerimeter, 18);
+
+      // Debug: Log virtual seat positions
+      console.log('[VirtualSeats] Group', groupId, '- generated', virtualSeats.length, 'virtual seats');
+
+      // Get display name
+      const displayName = getGroupDisplayName(tablesForPerimeter);
+
+      groups.set(groupId, {
+        groupId,
+        tableIds,
+        colorAssignments,
+        colorLookup,
+        perimeterSeats,
+        perimeterLookup,
+        enhancedLookup,
+        virtualSeats,
+        displayName,
+        groupIndex,
+      });
+
+      groupIndex++;
+    });
+
+    setVirtualGroupData({ groups });
+    setVisualOffsets(newVisualOffsets);
+  }, [dbTables, storedSnapPositions]);
+
+  // Helper function to calculate where a secondary table should snap to the primary table
+  function calculateSnapPositionForTable(
+    secondary: DbTable,
+    primary: DbTable
+  ): { x: number; y: number } {
+    // Calculate centers
+    const primaryCenterX = primary.posX + primary.width / 2;
+    const primaryCenterY = primary.posY + primary.height / 2;
+    const secondaryCenterX = secondary.posX + secondary.width / 2;
+    const secondaryCenterY = secondary.posY + secondary.height / 2;
+
+    // Determine which edge to snap to based on relative position
+    const dx = secondaryCenterX - primaryCenterX;
+    const dy = secondaryCenterY - primaryCenterY;
+
+    // Determine primary direction (horizontal or vertical)
+    const isHorizontal = Math.abs(dx) > Math.abs(dy);
+
+    let snapX: number;
+    let snapY: number;
+
+    if (isHorizontal) {
+      if (dx > 0) {
+        // Secondary is to the RIGHT of primary - snap to primary's right edge
+        snapX = primary.posX + primary.width;  // Left edge of secondary touches right edge of primary
+      } else {
+        // Secondary is to the LEFT of primary - snap to primary's left edge
+        snapX = primary.posX - secondary.width;  // Right edge of secondary touches left edge of primary
+      }
+      // Align centers vertically (with small offset to preserve original offset)
+      const verticalOffset = Math.min(Math.abs(dy), Math.min(primary.height, secondary.height) * 0.3);
+      snapY = primary.posY + (primary.height - secondary.height) / 2 + (dy > 0 ? verticalOffset : -verticalOffset) * 0.5;
+    } else {
+      if (dy > 0) {
+        // Secondary is BELOW primary - snap to primary's bottom edge
+        snapY = primary.posY + primary.height;  // Top edge of secondary touches bottom edge of primary
+      } else {
+        // Secondary is ABOVE primary - snap to primary's top edge
+        snapY = primary.posY - secondary.height;  // Bottom edge of secondary touches top edge of primary
+      }
+      // Align centers horizontally (with small offset to preserve original offset)
+      const horizontalOffset = Math.min(Math.abs(dx), Math.min(primary.width, secondary.width) * 0.3);
+      snapX = primary.posX + (primary.width - secondary.width) / 2 + (dx > 0 ? horizontalOffset : -horizontalOffset) * 0.5;
+    }
+
+    return { x: snapX, y: snapY };
+  }
+
   // Get tables for current room using TableAPI
   const tablesInRoom = TableAPI.getTablesForRoom(selectedRoomId);
 
@@ -520,6 +885,204 @@ export default function TestFloorPlanPage() {
     const tableSeats = SeatAPI.getSeatsForTable(table.id);
     seatsInRoom.push(...tableSeats);
   });
+
+  // Virtual combining handlers with drag-to-combine
+  const handleTablePointerDown = useCallback((
+    tableId: string,
+    tableCenterX: number,
+    tableCenterY: number,
+    e: React.PointerEvent
+  ) => {
+    console.log('[PointerDown] Table pressed:', { tableId, isCombineMode });
+
+    // Don't start drag if already in combine mode
+    if (isCombineMode) return;
+
+    // Convert screen coordinates to canvas coordinates
+    const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+
+    console.log('[PointerDown] Starting long-hold timer');
+    setHoldingTableId(tableId);
+
+    // Start long-hold timer for drag mode
+    longHoldTimerRef.current = setTimeout(() => {
+      // After 750ms, activate drag mode
+      // Use canvas coordinates for both table center and pointer
+      console.log('[Drag] Starting drag:', { tableId, tableCenterX, tableCenterY, canvasCoords });
+      setDragState(createDragState(tableId, tableCenterX, tableCenterY, canvasCoords.x, canvasCoords.y));
+      setHoldingTableId(null);
+    }, LONG_HOLD_MS);
+  }, [isCombineMode, LONG_HOLD_MS, screenToCanvas]);
+
+  // Handle pointer move for dragging
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragState.isDragging) return;
+
+    // Convert screen coordinates to canvas coordinates
+    const canvasCoords = screenToCanvas(e.clientX, e.clientY);
+    const newState = updateDragState(dragState, canvasCoords.x, canvasCoords.y);
+    setDragState(newState);
+
+    // Find potential drop target (now using canvas coordinates)
+    const dragPos = getDraggedTablePosition(newState);
+    const target = findDropTarget(
+      dragState.draggedTableId!,
+      dragPos.x,
+      dragPos.y,
+      dbTables,
+      SNAP_DISTANCE_PX
+    );
+    setDropTarget(target);
+
+    // Calculate snap preview
+    const draggedTable = dbTables.find(t => t.id === dragState.draggedTableId);
+    if (draggedTable) {
+      // Only consider tables in the SAME SECTION as visible targets
+      // This matches the rendering filter logic
+      const visibleTables = dbTables.filter(t => {
+        if (t.section?.id === selectedRoomId) return true;
+        if (!t.section && dbSections.length > 0 && dbSections[0].id === selectedRoomId) return true;
+        return false;
+      });
+
+      const tableRects = visibleTables
+        .filter(t => t.id !== dragState.draggedTableId && !t.virtualGroupId)
+        .map(t => ({
+          id: t.id,
+          x: t.posX,
+          y: t.posY,
+          width: t.width,
+          height: t.height,
+        }));
+
+      const draggedRect = {
+        id: draggedTable.id,
+        x: dragPos.x - draggedTable.width / 2,
+        y: dragPos.y - draggedTable.height / 2,
+        width: draggedTable.width,
+        height: draggedTable.height,
+      };
+
+      // Debug logging
+      console.log('[Snap] Checking:', {
+        draggedName: draggedTable.name,
+        visibleCount: visibleTables.length,
+        availableTargets: tableRects.length,
+        selectedRoomId,
+        draggedPos: { x: draggedRect.x, y: draggedRect.y }
+      });
+
+      const snap = findBestSnap(draggedRect, tableRects);
+      setSnapPreview(snap);
+    }
+  }, [dragState, dbTables, dbSections, selectedRoomId, SNAP_DISTANCE_PX, screenToCanvas]);
+
+  // Handle pointer up - only snap and combine if we have a valid snap position
+  const handleTablePointerUp = useCallback(async () => {
+    // Clear long-hold timer
+    if (longHoldTimerRef.current) {
+      clearTimeout(longHoldTimerRef.current);
+      longHoldTimerRef.current = null;
+    }
+    setHoldingTableId(null);
+
+    // Only proceed if we were dragging AND have a valid snap preview
+    // If no valid snap, table returns to original position (no action taken)
+    if (dragState.isDragging && snapPreview?.isValid && dragState.draggedTableId) {
+      console.log('[Snap] Creating virtual group:', { draggedTableId: dragState.draggedTableId, targetTableId: snapPreview.targetTableId });
+      try {
+        // IMPORTANT: FOH view does NOT move table positions!
+        // Virtual groups are visual-only - tables stay in their original positions
+        // Only the Editor can change table positions
+
+        // Create the virtual group with TARGET table as PRIMARY (first in array)
+        // This means the dragged table will snap TO the target table's position
+        const result = await createVirtualGroup(
+          [snapPreview.targetTableId, dragState.draggedTableId],  // Target first = primary
+          'emp-1' // TODO: Get from auth context
+        );
+
+        if (result) {
+          console.log('[Snap] Virtual group created:', result.id);
+
+          // Store the snap position so we can use it for visual positioning
+          // This ensures the dragged table lands EXACTLY where the preview showed
+          setStoredSnapPositions(prev => {
+            const updated = new Map(prev);
+            updated.set(result.id, {
+              draggedTableId: dragState.draggedTableId!,
+              snapPosition: snapPreview.snapPosition,
+            });
+            return updated;
+          });
+
+          // Refresh floor plan data to show the group
+          if (locationId) {
+            await fetchDbTables(locationId);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to create virtual group:', error);
+      }
+    } else if (dragState.isDragging) {
+      // No valid snap - table returns to original position (just reset state, no API calls)
+      console.log('[Snap] No valid snap, canceling drag');
+    }
+
+    // Reset drag state - table visual returns to original position
+    setDragState(resetDragState());
+    setDropTarget(null);
+    setSnapPreview(null);
+  }, [dragState, snapPreview, dbTables, createVirtualGroup, locationId, fetchDbTables]);
+
+  // Cancel drag if pointer leaves the canvas
+  const handlePointerLeave = useCallback(() => {
+    if (longHoldTimerRef.current) {
+      clearTimeout(longHoldTimerRef.current);
+      longHoldTimerRef.current = null;
+    }
+    setHoldingTableId(null);
+    setDragState(resetDragState());
+    setDropTarget(null);
+    setSnapPreview(null);
+  }, []);
+
+  const handleTableTap = useCallback((tableId: string) => {
+    if (isCombineMode) {
+      // Toggle selection
+      setSelectedForCombine(prev =>
+        prev.includes(tableId)
+          ? prev.filter(id => id !== tableId)
+          : [...prev, tableId]
+      );
+    } else {
+      // Normal tap - show info (for now just log)
+      console.log(`Table ${tableId} tapped`);
+    }
+  }, [isCombineMode]);
+
+  const handleConfirmCombine = useCallback(async () => {
+    if (selectedForCombine.length < 2) return;
+
+    const result = await createVirtualGroup(
+      selectedForCombine,
+      'employee-default', // TODO: Get from auth context
+    );
+
+    if (result) {
+      // Refresh tables to show virtual group
+      if (locationId && selectedRoomId) {
+        await fetchDbTables(locationId, selectedRoomId);
+      }
+      setIsCombineMode(false);
+      setSelectedForCombine([]);
+    }
+  }, [selectedForCombine, createVirtualGroup, locationId, selectedRoomId, fetchDbTables]);
+
+  const handleCancelCombine = useCallback(() => {
+    setIsCombineMode(false);
+    setSelectedForCombine([]);
+  }, []);
 
   const handlePositionClick = (position: Point) => {
     setClickedPosition(position);
@@ -599,6 +1162,24 @@ export default function TestFloorPlanPage() {
           >
             {showDbSeats ? 'Hide Seats' : 'Show Seats'}
           </button>
+
+          {/* Reset All Groups Button (for testing) */}
+          <button
+            onClick={handleResetAllGroups}
+            disabled={virtualGroupData.groups.size === 0}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: '1px solid #ef4444',
+              backgroundColor: virtualGroupData.groups.size > 0 ? '#fef2f2' : '#f5f5f5',
+              color: virtualGroupData.groups.size > 0 ? '#dc2626' : '#9ca3af',
+              cursor: virtualGroupData.groups.size > 0 ? 'pointer' : 'not-allowed',
+              fontSize: 14,
+              fontWeight: 500,
+            }}
+          >
+            Reset Groups ({virtualGroupData.groups.size})
+          </button>
         </div>
       ) : (
         <RoomSelector
@@ -609,7 +1190,18 @@ export default function TestFloorPlanPage() {
 
       {/* Main Canvas */}
       <div style={{ display: 'flex', gap: 24 }}>
-        <div>
+        <div
+          ref={canvasContainerRef}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handleTablePointerUp}
+          onPointerLeave={handlePointerLeave}
+          style={{
+            position: 'relative',
+            // Prevent text selection during drag
+            userSelect: dragState.isDragging ? 'none' : 'auto',
+            WebkitUserSelect: dragState.isDragging ? 'none' : 'auto',
+          }}
+        >
           <FloorCanvas
             roomId={selectedRoomId}
             showGrid={!isDbMode} // Disable grid in DB mode (we render our own canvas)
@@ -644,14 +1236,252 @@ export default function TestFloorPlanPage() {
                 if (!table.section && dbSections.length > 0 && dbSections[0].id === selectedRoomId) return true;
                 return false;
               })
-              .map((table) => (
-                <DbTableRenderer
-                  key={table.id}
-                  table={table}
-                  showSeats={showDbSeats}
-                  onClick={() => alert(`Table: ${table.name}`)}
+              .map((table) => {
+                const isSelectedForCombine = selectedForCombine.includes(table.id);
+                const isHolding = holdingTableId === table.id;
+                const isDragged = dragState.isDragging && dragState.draggedTableId === table.id;
+                const isDropTarget = dropTarget?.tableId === table.id;
+
+                // Calculate table center
+                const tableCenterX = table.posX + table.width / 2;
+                const tableCenterY = table.posY + table.height / 2;
+
+                // Get group colors, perimeter data, and visual offset if in a virtual group
+                let tableColor: string | undefined;
+                let seatColor: string | undefined;
+                let groupGlow: string | undefined;
+                let perimeterLookup: Map<string, number> | undefined;
+                let enhancedLookup: Map<string, { perimeterNumber: number; isVisible: boolean }> | undefined;
+                let visualOffset: { offsetX: number; offsetY: number } | undefined;
+
+                if (table.virtualGroupId) {
+                  const groupData = virtualGroupData.groups.get(table.virtualGroupId);
+                  if (groupData) {
+                    const colors = groupData.colorLookup.get(table.id);
+                    tableColor = colors?.tableColor;
+                    seatColor = colors?.seatColor;
+                    perimeterLookup = groupData.perimeterLookup;
+                    enhancedLookup = groupData.enhancedLookup;
+
+                    // Get group glow
+                    const family = getColorFamilyForGroup(groupData.groupIndex);
+                    groupGlow = getGroupGlowStyle(family);
+                  }
+
+                  // Get visual offset for snapped position
+                  visualOffset = visualOffsets.get(table.id);
+                }
+
+                return (
+                  <React.Fragment key={table.id}>
+                    <DbTableRenderer
+                      table={table}
+                      showSeats={showDbSeats}
+                      onClick={() => handleTableTap(table.id)}
+                      onPointerDown={(e) => handleTablePointerDown(table.id, tableCenterX, tableCenterY, e)}
+                      onPointerUp={handleTablePointerUp}
+                      isSelectedForCombine={isSelectedForCombine}
+                      isHolding={isHolding}
+                      tableColor={tableColor}
+                      seatColor={seatColor}
+                      groupGlow={groupGlow}
+                      perimeterLookup={perimeterLookup}
+                      enhancedLookup={enhancedLookup}
+                      visualOffset={visualOffset}
+                      isInGroup={!!table.virtualGroupId}
+                    />
+
+                    {/* Drop target highlight - use visual position if available */}
+                    {isDropTarget && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          left: (table.posX + (visualOffset?.offsetX || 0)) - 4,
+                          top: (table.posY + (visualOffset?.offsetY || 0)) - 4,
+                          width: table.width + 8,
+                          height: table.height + 8,
+                          border: '3px solid #22c55e',
+                          borderRadius: table.shape === 'circle' ? '50%' : 12,
+                          backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                          pointerEvents: 'none',
+                          animation: 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        }}
+                      />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+
+            {/* Dragged table ghost - now using canvas coordinates (position: absolute) */}
+            {dragState.isDragging && dragState.draggedTableId && (() => {
+              const draggedTable = dbTables.find(t => t.id === dragState.draggedTableId);
+              if (!draggedTable) return null;
+
+              const dragPos = getDraggedTablePosition(dragState);
+
+              return (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: dragPos.x - draggedTable.width / 2,
+                    top: dragPos.y - draggedTable.height / 2,
+                    width: draggedTable.width,
+                    height: draggedTable.height,
+                    backgroundColor: 'rgba(6, 182, 212, 0.4)',
+                    border: '3px dashed #06b6d4',
+                    borderRadius: draggedTable.shape === 'circle' ? '50%' : 8,
+                    pointerEvents: 'none',
+                    zIndex: 1000,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 14,
+                    fontWeight: 600,
+                    color: '#06b6d4',
+                  }}
+                >
+                  {draggedTable.abbreviation || draggedTable.name}
+                </div>
+              );
+            })()}
+
+            {/* Snap preview ghost */}
+            {snapPreview && snapPreview.isValid && dragState.isDragging && dragState.draggedTableId && (() => {
+              const draggedTable = dbTables.find(t => t.id === dragState.draggedTableId);
+              if (!draggedTable) return null;
+
+              return (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: snapPreview.snapPosition.x,
+                    top: snapPreview.snapPosition.y,
+                    width: draggedTable.width,
+                    height: draggedTable.height,
+                    backgroundColor: 'rgba(34, 197, 94, 0.3)',
+                    border: '2px dashed #22c55e',
+                    borderRadius: draggedTable.shape === 'circle' ? '50%' : 8,
+                    pointerEvents: 'none',
+                    zIndex: 999,
+                    transition: 'all 0.15s ease-out',
+                  }}
                 />
-              ))}
+              );
+            })()}
+
+            {/* Virtual seats for combined groups - rendered around bounding box perimeter */}
+            {isDbMode && showDbSeats && Array.from(virtualGroupData.groups.entries()).map(([groupId, groupData]) => {
+              // Get tables in this group for this section
+              const groupTables = dbTables.filter(
+                t => t.virtualGroupId === groupId &&
+                (t.section?.id === selectedRoomId || (!t.section && dbSections[0]?.id === selectedRoomId))
+              );
+              if (groupTables.length === 0) return null;
+
+              const family = getColorFamilyForGroup(groupData.groupIndex);
+              const SEAT_SIZE = 24;
+              const SEAT_HALF = SEAT_SIZE / 2;
+
+              return (
+                <React.Fragment key={`group-seats-${groupId}`}>
+                  {groupData.virtualSeats.map((seat) => (
+                    <div
+                      key={seat.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        console.log(`Virtual seat ${seat.perimeterNumber} tapped (original: table ${seat.originalTableId}, seat ${seat.originalSeatNumber})`);
+                      }}
+                      style={{
+                        position: 'absolute',
+                        left: seat.absoluteX - SEAT_HALF,
+                        top: seat.absoluteY - SEAT_HALF,
+                        width: SEAT_SIZE,
+                        height: SEAT_SIZE,
+                        backgroundColor: family.seatShades[3], // Light shade from family
+                        border: `2px solid ${family.base}`,
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: '#333',
+                        cursor: 'pointer',
+                        pointerEvents: 'auto',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                        transition: 'all 0.2s ease',
+                        zIndex: 50,
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'scale(1.15)';
+                        e.currentTarget.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+                        e.currentTarget.style.zIndex = '100';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.2)';
+                        e.currentTarget.style.zIndex = '50';
+                      }}
+                      title={`Seat ${seat.perimeterNumber}`}
+                    >
+                      {seat.perimeterNumber}
+                    </div>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+
+            {/* Group display name badges - positioned using visual (snapped) positions */}
+            {isDbMode && Array.from(virtualGroupData.groups.entries()).map(([groupId, groupData]) => {
+              // Get tables in this group for this section
+              const groupTables = dbTables.filter(
+                t => t.virtualGroupId === groupId &&
+                (t.section?.id === selectedRoomId || (!t.section && dbSections[0]?.id === selectedRoomId))
+              );
+              if (groupTables.length === 0) return null;
+
+              // Calculate bounding box using VISUAL positions (with snap offsets)
+              let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+              groupTables.forEach(t => {
+                const offset = visualOffsets.get(t.id) || { offsetX: 0, offsetY: 0 };
+                const visualX = t.posX + offset.offsetX;
+                const visualY = t.posY + offset.offsetY;
+                minX = Math.min(minX, visualX);
+                minY = Math.min(minY, visualY);
+                maxX = Math.max(maxX, visualX + t.width);
+                maxY = Math.max(maxY, visualY + t.height);
+              });
+
+              const centerX = (minX + maxX) / 2;
+              const family = getColorFamilyForGroup(groupData.groupIndex);
+
+              // Account for seat extension above the table (18px offset + 12px seat radius)
+              const SEAT_EXTENSION = 30;
+
+              return (
+                <div
+                  key={`group-badge-${groupId}`}
+                  style={{
+                    position: 'absolute',
+                    left: centerX,
+                    top: minY - SEAT_EXTENSION - 25, // Position above seats (seat extension + badge margin)
+                    transform: 'translateX(-50%)',
+                    backgroundColor: getColorWithOpacity(family.base, 0.9),
+                    color: 'white',
+                    padding: '4px 12px',
+                    borderRadius: 12,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    zIndex: 100,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {groupData.displayName}
+                </div>
+              );
+            })}
 
             {/* Render tables using Layer 2 components (SVG) */}
             <svg
@@ -844,6 +1674,119 @@ export default function TestFloorPlanPage() {
           </div>
         </div>
       </div>
+
+      {/* Combine Bar - Fixed at bottom when in combine mode */}
+      {isCombineMode && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          backgroundColor: 'rgba(15, 23, 42, 0.95)',
+          padding: '12px 24px',
+          borderRadius: 12,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          zIndex: 1000,
+        }}>
+          {/* Status Indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: '#06b6d4',
+                animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              }}
+            />
+            <span style={{ color: 'white', fontWeight: 500, fontSize: 14 }}>
+              {selectedForCombine.length} table{selectedForCombine.length !== 1 ? 's' : ''} selected
+            </span>
+          </div>
+
+          {/* Hint Text */}
+          <span style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: 13, fontStyle: 'italic' }}>
+            Tap tables to add/remove
+          </span>
+
+          {/* Action Buttons */}
+          <div style={{ display: 'flex', gap: 8, marginLeft: 8 }}>
+            <button
+              onClick={handleCancelCombine}
+              disabled={isCreatingGroup}
+              style={{
+                padding: '8px 16px',
+                borderRadius: 8,
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                color: 'white',
+                cursor: isCreatingGroup ? 'not-allowed' : 'pointer',
+                fontWeight: 500,
+                fontSize: 14,
+                opacity: isCreatingGroup ? 0.5 : 1,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                if (!isCreatingGroup) {
+                  e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.3)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.2)';
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmCombine}
+              disabled={selectedForCombine.length < 2 || isCreatingGroup}
+              style={{
+                padding: '8px 20px',
+                borderRadius: 8,
+                border: 'none',
+                backgroundColor: selectedForCombine.length >= 2
+                  ? (isCreatingGroup ? 'rgba(6, 182, 212, 0.5)' : '#06b6d4')
+                  : 'rgba(100, 116, 139, 0.5)',
+                color: 'white',
+                cursor: (selectedForCombine.length >= 2 && !isCreatingGroup) ? 'pointer' : 'not-allowed',
+                fontWeight: 600,
+                fontSize: 14,
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                if (selectedForCombine.length >= 2 && !isCreatingGroup) {
+                  e.currentTarget.style.backgroundColor = '#0891b2';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (selectedForCombine.length >= 2 && !isCreatingGroup) {
+                  e.currentTarget.style.backgroundColor = '#06b6d4';
+                }
+              }}
+            >
+              {isCreatingGroup ? 'Creating...' : 'Create Group'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pulse Animation Styles */}
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 1;
+            transform: scale(1);
+          }
+          50% {
+            opacity: 0.5;
+            transform: scale(1.05);
+          }
+        }
+      `}</style>
 
       {/* Tables List */}
       <div style={{ marginTop: 24 }}>

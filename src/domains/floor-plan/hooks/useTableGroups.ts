@@ -4,15 +4,54 @@
  * useTableGroups Hook
  *
  * Manages physical and virtual table groups.
+ * Uses API routes instead of direct Prisma calls to work in the browser.
  */
 
 import { useState, useCallback, useEffect } from 'react'
 import type { TableGroup, GroupColor } from '../types'
-import * as GroupService from '../services/group-service'
 
 interface UseTableGroupsOptions {
   locationId: string
   autoLoad?: boolean
+}
+
+interface VirtualGroupAPIResponse {
+  data?: {
+    virtualGroupId: string
+    groupColor: string
+    primaryTableId: string
+    memberTableIds: string[]
+    tables: Array<{
+      id: string
+      name: string
+      virtualGroupId: string
+      virtualGroupPrimary: boolean
+      virtualGroupColor: string
+    }>
+    message?: string
+  }
+  error?: string
+  requiresAction?: boolean
+  existingOrders?: Array<{
+    tableId: string
+    tableName: string
+    orderId: string
+    orderNumber: number
+    itemCount: number
+    total: number
+  }>
+}
+
+interface VirtualGroupListItem {
+  virtualGroupId: string
+  primaryTableId: string
+  groupColor: string
+  createdAt: string
+  tables: Array<{
+    id: string
+    name: string
+    isPrimary: boolean
+  }>
 }
 
 export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOptions) {
@@ -20,7 +59,7 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Load groups
+  // Load groups via API
   const loadGroups = useCallback(async () => {
     if (!locationId) return
 
@@ -28,7 +67,27 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
     setError(null)
 
     try {
-      const loadedGroups = await GroupService.getGroupsForLocation(locationId)
+      const res = await fetch(`/api/tables/virtual-combine?locationId=${locationId}`)
+      if (!res.ok) {
+        throw new Error('Failed to load virtual groups')
+      }
+
+      const data = await res.json()
+      const virtualGroups: VirtualGroupListItem[] = data.data || []
+
+      // Convert API response to TableGroup format
+      const loadedGroups: TableGroup[] = virtualGroups.map((vg) => ({
+        id: vg.virtualGroupId,
+        locationId,
+        name: vg.tables.map((t) => t.name).join('+'),
+        color: (vg.groupColor || 'blue') as GroupColor,
+        isVirtual: true,
+        tableIds: vg.tables.map((t) => t.id),
+        primaryTableId: vg.primaryTableId,
+        createdAt: new Date(vg.createdAt),
+        createdBy: '',
+      }))
+
       setGroups(loadedGroups)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load groups')
@@ -60,9 +119,9 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
     [groups]
   )
 
-  // Create virtual group
+  // Create virtual group via API
   const createVirtualGroup = useCallback(
-    async (tableIds: string[], employeeId: string, color?: GroupColor) => {
+    async (tableIds: string[], employeeId: string, _color?: GroupColor) => {
       if (tableIds.length < 2) {
         setError('Need at least 2 tables to create a group')
         return null
@@ -72,16 +131,55 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
       setError(null)
 
       try {
-        const group = await GroupService.createVirtualGroup(
+        // First table is primary
+        const primaryTableId = tableIds[0]
+
+        const res = await fetch('/api/tables/virtual-combine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tableIds,
+            primaryTableId,
+            locationId,
+            employeeId,
+          }),
+        })
+
+        const data: VirtualGroupAPIResponse = await res.json()
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to create virtual group')
+        }
+
+        // Handle case where orders need to be dealt with first
+        if (data.requiresAction) {
+          setError(`Some tables have open orders: ${data.existingOrders?.map((o) => o.tableName).join(', ')}`)
+          return null
+        }
+
+        if (!data.data) {
+          throw new Error('No data returned from API')
+        }
+
+        // Create TableGroup from response
+        const group: TableGroup = {
+          id: data.data.virtualGroupId,
           locationId,
-          tableIds,
-          employeeId,
-          color
-        )
+          name: data.data.tables.map((t) => t.name).join('+'),
+          color: (data.data.groupColor || 'blue') as GroupColor,
+          isVirtual: true,
+          tableIds: data.data.memberTableIds,
+          primaryTableId: data.data.primaryTableId,
+          createdAt: new Date(),
+          createdBy: employeeId,
+        }
+
         setGroups((prev) => [...prev, group])
         return group
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to create group')
+        const message = err instanceof Error ? err.message : 'Failed to create group'
+        setError(message)
+        console.error('[useTableGroups] createVirtualGroup error:', err)
         return null
       } finally {
         setIsLoading(false)
@@ -90,37 +188,64 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
     [locationId]
   )
 
-  // Dissolve group
+  // Dissolve group via API
   const dissolveGroup = useCallback(
-    async (groupId: string) => {
+    async (groupId: string, employeeId: string = 'emp-1') => {
       setIsLoading(true)
       setError(null)
 
       try {
-        await GroupService.dissolveGroup(groupId)
+        const res = await fetch(`/api/tables/virtual-combine/${groupId}/dissolve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            locationId,
+            employeeId,
+          }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error || 'Failed to dissolve group')
+        }
+
         setGroups((prev) => prev.filter((g) => g.id !== groupId))
         return true
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to dissolve group')
+        console.error('[useTableGroups] dissolveGroup error:', err)
         return false
       } finally {
         setIsLoading(false)
       }
     },
-    []
+    [locationId]
   )
 
-  // Add table to existing group
+  // Add table to existing group via API
   const addToGroup = useCallback(
-    async (groupId: string, tableId: string) => {
+    async (groupId: string, tableId: string, employeeId: string = 'emp-1') => {
       setIsLoading(true)
       setError(null)
 
       try {
-        const updatedGroup = await GroupService.addTableToGroup(groupId, tableId)
-        setGroups((prev) =>
-          prev.map((g) => (g.id === groupId ? updatedGroup : g))
-        )
+        const res = await fetch(`/api/tables/virtual-combine/${groupId}/add`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tableId,
+            locationId,
+            employeeId,
+          }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          throw new Error(data.error || 'Failed to add table to group')
+        }
+
+        // Reload groups to get updated state
+        await loadGroups()
         return true
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add table to group')
@@ -129,25 +254,40 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
         setIsLoading(false)
       }
     },
-    []
+    [locationId, loadGroups]
   )
 
-  // Remove table from group
+  // Remove table from group via API
   const removeFromGroup = useCallback(
-    async (groupId: string, tableId: string) => {
+    async (groupId: string, tableId: string, employeeId: string = 'emp-1') => {
       setIsLoading(true)
       setError(null)
 
       try {
-        const updatedGroup = await GroupService.removeTableFromGroup(groupId, tableId)
-        if (updatedGroup) {
-          setGroups((prev) =>
-            prev.map((g) => (g.id === groupId ? updatedGroup : g))
-          )
-        } else {
-          // Group was dissolved
-          setGroups((prev) => prev.filter((g) => g.id !== groupId))
+        const res = await fetch(`/api/tables/virtual-combine/${groupId}/remove`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tableId,
+            locationId,
+            employeeId,
+          }),
+        })
+
+        const data = await res.json()
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to remove table from group')
         }
+
+        // Check if group was dissolved
+        if (data.data?.dissolved) {
+          setGroups((prev) => prev.filter((g) => g.id !== groupId))
+        } else {
+          // Reload groups to get updated state
+          await loadGroups()
+        }
+
         return true
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to remove table from group')
@@ -156,7 +296,7 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
         setIsLoading(false)
       }
     },
-    []
+    [locationId, loadGroups]
   )
 
   // Get virtual groups only

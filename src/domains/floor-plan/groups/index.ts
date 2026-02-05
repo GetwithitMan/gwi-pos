@@ -12,6 +12,13 @@ export type {
   VirtualGroupSelection,
   CreateGroupParams,
   MergeResult,
+  ColorFamilyName,
+  TableColorAssignment,
+  SnapEdge,
+  SnapPreview,
+  SnapConfig,
+  TableForPerimeter,
+  PerimeterSeatResult,
 } from './types';
 export { MERGE_CONSTANTS } from './types';
 
@@ -42,14 +49,30 @@ export {
 
 // Color Palette
 export {
-  getNextAvailableColor,
-  markColorInUse,
-  releaseColor,
-  clearColorAssignments,
-  getAvailableColorCount,
-  isValidGroupColor,
+  COLOR_FAMILIES,
+  getColorFamilyNames,
+  getColorFamily,
+  getColorFamilyForGroup,
+  getTableColor,
+  getSeatColor,
+  getGroupOutlineColor,
+  assignColorsToGroup,
+  createColorLookup,
+  getColorWithOpacity,
+  getGroupGlowStyle,
+  getTableBorderStyle,
+  type ColorFamily,
 } from './colorPalette';
 
 // React Components
 export { TableGroup } from './TableGroup';
 export { CrossRoomBadge, CrossRoomBadgeCompact } from './CrossRoomBadge';
+
+// Perimeter Seat Renumbering
+export * from './perimeterSeats';
+
+// Drag-to-Combine
+export * from './dragCombine';
+
+// Snap-to-Edge
+export * from './snapEngine';
