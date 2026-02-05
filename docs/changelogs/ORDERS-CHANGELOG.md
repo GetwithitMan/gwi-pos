@@ -587,10 +587,128 @@ From today's session:
 
 ---
 
-## Next Steps (After O6-O8 Complete)
+---
 
-1. **Test bar mode end-to-end** - Create tab → Add items → Pay → Close
-2. **Integrate TopBar into /orders** - Currently only in /bar
-3. **Add socket dispatch to order APIs** - Emit events on order:created/updated/closed
-4. **Tab merge functionality** - Combine multiple tabs
-5. **Pre-auth card capture** - Hold card for bar tabs
+## Session: February 5, 2026 (Workers O14-O23 - Order Item Lifecycle)
+
+### Completed Workers (Order Item Features)
+
+| Worker | Task | Status | Files |
+|--------|------|--------|-------|
+| O14-O23 | Order item lifecycle features | ✅ Complete | Various |
+
+Features implemented:
+- Menu search integration
+- Bar mode enhancements
+- Order item state management
+
+---
+
+## Session: February 5, 2026 (Workers O24-O31 - Feature Porting)
+
+### Context
+
+FloorPlanHome became the primary POS interface. All order item features from orders/page.tsx needed to be ported to FloorPlanHome.tsx.
+
+### Issues Fixed
+
+| Issue | Root Cause | Fix |
+|-------|------------|-----|
+| Orders not syncing between /orders and /bar | FloorPlanHome called `includeOrderItems=true` but NOT `includeOrders=true` | Added `includeOrders=true` to fetch |
+| /bar page only showing bar_tab orders | Filtered to `orderType=bar_tab` | Removed filter to show ALL orders |
+| Dynamic route slug conflict | `[orderId]` vs `[id]` in API routes | Moved modifiers route to `[id]` folder |
+| TypeError on 'sent' status | 'sent' missing from STATUS_CONFIG | Added 'sent' status to config |
+| White theme on OrderPanel | Components using light theme | Converted to dark theme |
+
+### Completed Workers (Feature Porting)
+
+| Worker | Feature | Status | Description |
+|--------|---------|--------|-------------|
+| O24 | Kitchen Note (specialNotes) | ✅ Already existed | No changes needed |
+| O25 | Hold/Fire | ✅ Complete | Toggle hold state, fire to kitchen |
+| O26 | Resend to Kitchen | ✅ Complete | Resend button with count badge |
+| O27 | Comp/Void Button | ✅ Complete | Opens CompVoidModal for items |
+| O28 | Seat Badge Verification | ✅ Verified working | Purple S1/S2 badges on items |
+| O29 | Course Assignment UI | ✅ Complete | C1/C2/C3 buttons and badges |
+| O30 | MADE Badge with Timestamp | ✅ Complete | Green "✓ MADE" badge when kitchen bumps |
+| O31 | Split Individual Item | ✅ Complete | Split button opens SplitTicketManager |
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/components/floor-plan/FloorPlanHome.tsx` | +491 lines - All feature porting |
+| `src/components/orders/OrderPanel.tsx` | Converted to dark theme |
+| `src/components/orders/OrderPanelItem.tsx` | Dark theme + status badges |
+| `src/components/orders/OrderPanelActions.tsx` | Dark theme + gradient buttons |
+| `src/app/(pos)/bar/page.tsx` | Removed orderType filter, added table order support |
+| `src/app/api/orders/open/route.ts` | Added `tableName` convenience field |
+| `src/app/api/orders/[id]/items/[itemId]/modifiers/route.ts` | Created (moved from [orderId]) |
+
+### Features Now in FloorPlanHome
+
+| Feature | Description |
+|---------|-------------|
+| Kitchen Note | Special notes display and edit |
+| Hold/Fire | Toggle item hold state before sending |
+| Resend to Kitchen | Resend individual items with count |
+| Comp/Void | Manager-approved voids/comps |
+| Seat Badges | Purple S1/S2 badges on items |
+| Course Assignment | C1/C2/C3 buttons for course grouping |
+| MADE Badge | Green checkmark when kitchen completes |
+| Split Item | Move items to split checks |
+
+### Dark Theme Color Palette (OrderPanel)
+
+| Element | Color |
+|---------|-------|
+| Background | `rgba(15, 23, 42, 0.95)` |
+| Border | `rgba(255, 255, 255, 0.08)` |
+| Text primary | `#f1f5f9` |
+| Text secondary | `#e2e8f0` |
+| Text muted | `#94a3b8` |
+| Send button | `linear-gradient(135deg, #3b82f6, #06b6d4)` |
+| Pay button | `linear-gradient(135deg, #22c55e, #10b981)` |
+| Clear button | `rgba(239, 68, 68, 0.1)` |
+
+### Git Commits
+
+```
+fafbf66 feat(orders): add MADE badge, course UI, and split item to FloorPlanHome
+ac53e84 style(orders): Convert OrderPanel components to dark theme
+95386e0 fix(orders): Add 'sent' status to kitchen status config
+```
+
+---
+
+## Next Steps
+
+### Priority 1: Bar Tabs Screen
+- [ ] Improve tab list UI in OpenOrdersPanel
+- [ ] Quick tab creation from floor plan
+- [ ] Pre-auth card capture for tabs
+- [ ] Tab transfer between employees
+- [ ] Tab merge functionality
+
+### Priority 2: Closed Orders Management
+- [ ] Closed orders list view with search/filter
+- [ ] View closed order details
+- [ ] Void payments on closed orders (manager approval)
+- [ ] Adjust tips after close
+- [ ] Reprint receipts
+- [ ] Reopen closed orders (with reason)
+
+### Priority 3: File Size / Refactoring
+- [ ] FloorPlanHome.tsx is now ~6,300 lines - needs splitting
+- [ ] Extract order panel logic to custom hook
+- [ ] Consider separate InlineOrderPanel component
+
+---
+
+## How to Resume
+
+```
+PM Mode: Orders
+```
+
+Then review this changelog and select tasks to work on.
