@@ -261,29 +261,19 @@ export const TableNode = memo(function TableNode({
       onPointerCancel={handlePointerUp}
       whileTap={{ scale: 0.98 }}
     >
-      {/* Subtle glow for virtual combined tables - OUTSIDE table-node-inner to avoid overflow:hidden clipping */}
-      {isInVirtualGroup && (() => {
-        const virtualGlowColor = effectiveVirtualGroupColor || '#06b6d4'
-        return (
-          <motion.div
-            className="absolute virtual-group-pulse"
-            style={{
-              inset: -6,
-              borderRadius: 'inherit',
-              pointerEvents: 'none',
-              zIndex: 0,
-            }}
-            animate={{
-              boxShadow: [
-                `0 0 12px ${virtualGlowColor}60, 0 0 24px ${virtualGlowColor}30`,
-                `0 0 16px ${virtualGlowColor}70, 0 0 32px ${virtualGlowColor}40`,
-                `0 0 12px ${virtualGlowColor}60, 0 0 24px ${virtualGlowColor}30`,
-              ],
-            }}
-            transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-          />
-        )
-      })()}
+      {/* Static subtle glow for virtual combined tables - OUTSIDE table-node-inner to avoid overflow:hidden clipping */}
+      {isInVirtualGroup && (
+        <div
+          className="absolute virtual-group-glow"
+          style={{
+            inset: -4,
+            borderRadius: 'inherit',
+            pointerEvents: 'none',
+            zIndex: 0,
+            boxShadow: `0 0 8px ${effectiveVirtualGroupColor || '#06b6d4'}50, 0 0 16px ${effectiveVirtualGroupColor || '#06b6d4'}25`,
+          }}
+        />
+      )}
 
       {/* Soft border indicator for virtual groups - OUTSIDE table-node-inner to avoid overflow:hidden clipping */}
       {isInVirtualGroup && (
