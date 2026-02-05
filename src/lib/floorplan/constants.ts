@@ -33,3 +33,18 @@ export const TABLE_DEFAULT_HEIGHT = 100;
 export const TABLE_DEFAULT_CAPACITY = 4;
 export const TABLE_MIN_WIDTH = 50;
 export const TABLE_MIN_HEIGHT = 30;
+
+// Canvas dimensions (FIXED - do not change based on section)
+export const CANVAS_WIDTH = 1600;   // 80 feet at 20px/ft
+export const CANVAS_HEIGHT = 1000;  // 50 feet at 20px/ft
+export const CANVAS_WIDTH_FEET = 80;
+export const CANVAS_HEIGHT_FEET = 50;
+
+// Zoom limits
+export const ZOOM_MIN = 0.5;   // 50%
+export const ZOOM_MAX = 2.0;   // 200%
+export const ZOOM_DEFAULT = 1.0;
+export const ZOOM_STEP = 0.1;  // 10% per scroll/button
+
+// Grid
+export const GRID_SIZE = 32;   // Pixels per grid square

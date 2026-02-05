@@ -250,10 +250,12 @@ export function FloorCanvas({
     }
   }, [roomId]);
 
-  // Calculate canvas dimensions
-  const canvasDimensions = floorPlan
-    ? FloorCanvasAPI.getCanvasDimensions(floorPlan.id)
-    : { widthPx: width ?? 800, heightPx: height ?? 600 };
+  // Calculate canvas dimensions - props override floor plan dimensions
+  const canvasDimensions = (width && height)
+    ? { widthPx: width, heightPx: height }
+    : floorPlan
+      ? FloorCanvasAPI.getCanvasDimensions(floorPlan.id)
+      : { widthPx: 800, heightPx: 600 };
 
   // Handle click on canvas
   const handleCanvasClick = useCallback(
@@ -281,6 +283,10 @@ export function FloorCanvas({
     [onPositionClick, floorPlan, showGrid]
   );
 
+  // Use CSS grid when showGrid is false but we have fixed dimensions (DB mode)
+  const usesCssGrid = !showGrid && width && height;
+  const gridSize = 32; // Match Editor GRID_SIZE
+
   return (
     <div
       ref={containerRef}
@@ -289,7 +295,12 @@ export function FloorCanvas({
         position: 'relative',
         width: canvasDimensions.widthPx,
         height: canvasDimensions.heightPx,
-        backgroundColor: '#f5f5f5',
+        backgroundColor: '#f8f9fa',
+        backgroundImage: usesCssGrid ? `
+          linear-gradient(rgba(0,0,0,0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0,0,0,0.08) 1px, transparent 1px)
+        ` : undefined,
+        backgroundSize: usesCssGrid ? `${gridSize}px ${gridSize}px` : undefined,
         border: '2px solid #ccc',
         borderRadius: 8,
         overflow: 'hidden',

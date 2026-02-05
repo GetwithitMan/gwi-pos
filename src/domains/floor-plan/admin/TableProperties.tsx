@@ -142,86 +142,82 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats }
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    padding: '8px 10px',
-    fontSize: 14,
-    borderRadius: 6,
+    padding: '6px 8px',
+    fontSize: 13,
+    borderRadius: 4,
     border: '1px solid #ccc',
     boxSizing: 'border-box',
   };
 
   const labelStyle: React.CSSProperties = {
     display: 'block',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: 600,
     color: '#555',
-    marginBottom: 4,
+    marginBottom: 2,
   };
 
   const fieldStyle: React.CSSProperties = {
-    marginBottom: 16,
+    marginBottom: 8,
   };
 
   return (
     <div
       style={{
-        padding: 16,
+        padding: 12,
         backgroundColor: '#f9f9f9',
         borderRadius: 8,
         border: '1px solid #e0e0e0',
       }}
     >
-      <h3 style={{ margin: '0 0 16px 0', fontSize: 16, fontWeight: 600, color: '#333' }}>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 600, color: '#333' }}>
         Table Properties
       </h3>
 
-      {/* Name */}
-      <div style={fieldStyle}>
-        <label style={labelStyle}>Name</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => handleNameChange(e.target.value)}
-          placeholder="Table name"
-          style={inputStyle}
-        />
-      </div>
-
-      {/* Abbreviation */}
-      <div style={fieldStyle}>
-        <label style={labelStyle}>Abbreviation (shown on table)</label>
-        <input
-          type="text"
-          value={abbreviation}
-          onChange={(e) => handleAbbreviationChange(e.target.value)}
-          placeholder="T1, B2, etc."
-          maxLength={6}
-          style={inputStyle}
-        />
+      {/* Name & Abbreviation - side by side */}
+      <div style={{ ...fieldStyle, display: 'flex', gap: 6 }}>
+        <div style={{ flex: 2 }}>
+          <label style={labelStyle}>Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => handleNameChange(e.target.value)}
+            placeholder="Table name"
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle}>Abbr</label>
+          <input
+            type="text"
+            value={abbreviation}
+            onChange={(e) => handleAbbreviationChange(e.target.value)}
+            placeholder="T1"
+            maxLength={6}
+            style={inputStyle}
+          />
+        </div>
       </div>
 
       {/* Shape */}
       <div style={fieldStyle}>
         <label style={labelStyle}>Shape</label>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
           {TABLE_SHAPES.map((shapeOption) => (
             <button
               key={shapeOption.shape}
               onClick={() => handleShapeChange(shapeOption.shape)}
+              title={shapeOption.label}
               style={{
-                padding: '8px 4px',
-                fontSize: 12,
-                borderRadius: 6,
+                padding: '4px 2px',
+                fontSize: 16,
+                borderRadius: 4,
                 border: shape === shapeOption.shape ? '2px solid #3498db' : '1px solid #ccc',
                 backgroundColor: shape === shapeOption.shape ? '#e3f2fd' : 'white',
                 cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 2,
               }}
             >
-              <span style={{ fontSize: 18 }}>{shapeOption.icon}</span>
-              <span>{shapeOption.label.split(' ')[0]}</span>
+              {shapeOption.icon}
             </button>
           ))}
         </div>
@@ -229,18 +225,18 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats }
 
       {/* Capacity */}
       <div style={fieldStyle}>
-        <label style={labelStyle}>Capacity (seats)</label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <label style={labelStyle}>Capacity</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button
             onClick={() => handleCapacityChange(capacity - 1)}
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 6,
+              width: 28,
+              height: 28,
+              borderRadius: 4,
               border: '1px solid #ccc',
               backgroundColor: 'white',
               cursor: 'pointer',
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: 700,
             }}
           >
@@ -252,18 +248,18 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats }
             onChange={(e) => handleCapacityChange(parseInt(e.target.value, 10) || 1)}
             min={1}
             max={20}
-            style={{ ...inputStyle, width: 60, textAlign: 'center' }}
+            style={{ ...inputStyle, width: 50, textAlign: 'center', padding: '4px' }}
           />
           <button
             onClick={() => handleCapacityChange(capacity + 1)}
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 6,
+              width: 28,
+              height: 28,
+              borderRadius: 4,
               border: '1px solid #ccc',
               backgroundColor: 'white',
               cursor: 'pointer',
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: 700,
             }}
           >
@@ -290,69 +286,76 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats }
 
       {/* Dimensions */}
       <div style={fieldStyle}>
-        <label style={labelStyle}>Size (pixels)</label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1 }}>
-            <input
-              type="number"
-              value={width}
-              onChange={(e) => handleWidthChange(parseInt(e.target.value, 10) || 40)}
-              min={40}
-              max={400}
-              style={{ ...inputStyle, textAlign: 'center' }}
-              title="Width"
-            />
-            <span style={{ fontSize: 10, color: '#888', display: 'block', textAlign: 'center' }}>W</span>
-          </div>
-          <span style={{ lineHeight: '38px', color: '#999' }}>x</span>
-          <div style={{ flex: 1 }}>
-            <input
-              type="number"
-              value={height}
-              onChange={(e) => handleHeightChange(parseInt(e.target.value, 10) || 40)}
-              min={40}
-              max={400}
-              style={{ ...inputStyle, textAlign: 'center' }}
-              title="Height"
-            />
-            <span style={{ fontSize: 10, color: '#888', display: 'block', textAlign: 'center' }}>H</span>
-          </div>
+        <label style={labelStyle}>Size (W × H)</label>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <input
+            type="number"
+            value={width}
+            onChange={(e) => handleWidthChange(parseInt(e.target.value, 10) || 40)}
+            min={40}
+            max={400}
+            style={{ ...inputStyle, width: 60, textAlign: 'center', padding: '4px' }}
+            title="Width"
+          />
+          <span style={{ color: '#999', fontSize: 12 }}>×</span>
+          <input
+            type="number"
+            value={height}
+            onChange={(e) => handleHeightChange(parseInt(e.target.value, 10) || 40)}
+            min={40}
+            max={400}
+            style={{ ...inputStyle, width: 60, textAlign: 'center', padding: '4px' }}
+            title="Height"
+          />
         </div>
       </div>
 
       {/* Rotation */}
       <div style={fieldStyle}>
         <label style={labelStyle}>Rotation</label>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            onClick={() => handleRotationChange(rotation - 5)}
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 4,
+              border: '1px solid #ccc',
+              backgroundColor: 'white',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 600,
+            }}
+            title="-5°"
+          >
+            -5
+          </button>
           <input
             type="range"
             value={rotation}
             onChange={(e) => handleRotationChange(parseInt(e.target.value, 10))}
             min={0}
             max={360}
-            step={15}
-            style={{ flex: 1 }}
+            step={5}
+            style={{ flex: 1, height: 4 }}
           />
-          <span style={{ width: 40, fontSize: 12, textAlign: 'right' }}>{rotation}°</span>
-        </div>
-        <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-          {[0, 45, 90, 180, 270].map((angle) => (
-            <button
-              key={angle}
-              onClick={() => handleRotationChange(angle)}
-              style={{
-                flex: 1,
-                padding: '4px 0',
-                fontSize: 11,
-                borderRadius: 4,
-                border: rotation === angle ? '2px solid #3498db' : '1px solid #ccc',
-                backgroundColor: rotation === angle ? '#e3f2fd' : 'white',
-                cursor: 'pointer',
-              }}
-            >
-              {angle}°
-            </button>
-          ))}
+          <button
+            onClick={() => handleRotationChange(rotation + 5)}
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 4,
+              border: '1px solid #ccc',
+              backgroundColor: 'white',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 600,
+            }}
+            title="+5°"
+          >
+            +5
+          </button>
+          <span style={{ width: 32, fontSize: 11, textAlign: 'right' }}>{rotation}°</span>
         </div>
       </div>
 
@@ -362,61 +365,60 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats }
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 6,
             cursor: 'pointer',
-            fontSize: 14,
+            fontSize: 12,
           }}
         >
           <input
             type="checkbox"
             checked={isLocked}
             onChange={(e) => handleLockedChange(e.target.checked)}
-            style={{ width: 18, height: 18 }}
+            style={{ width: 14, height: 14 }}
           />
-          <span>Lock Position (prevent moving)</span>
+          <span>Lock Position</span>
         </label>
       </div>
 
-      {/* Regenerate Seats */}
-      <button
-        onClick={() => onRegenerateSeats(table.id)}
-        style={{
-          width: '100%',
-          padding: '10px 16px',
-          fontSize: 14,
-          fontWeight: 600,
-          borderRadius: 6,
-          border: 'none',
-          backgroundColor: '#ff9800',
-          color: 'white',
-          cursor: 'pointer',
-          marginBottom: 8,
-        }}
-      >
-        Regenerate Seats
-      </button>
-
-      {/* Delete */}
-      <button
-        onClick={() => {
-          if (window.confirm(`Delete table "${table.name}"?`)) {
-            onDelete(table.id);
-          }
-        }}
-        style={{
-          width: '100%',
-          padding: '10px 16px',
-          fontSize: 14,
-          fontWeight: 600,
-          borderRadius: 6,
-          border: 'none',
-          backgroundColor: '#f44336',
-          color: 'white',
-          cursor: 'pointer',
-        }}
-      >
-        Delete Table
-      </button>
+      {/* Action buttons - side by side */}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button
+          onClick={() => onRegenerateSeats(table.id)}
+          style={{
+            flex: 1,
+            padding: '6px 8px',
+            fontSize: 11,
+            fontWeight: 600,
+            borderRadius: 4,
+            border: 'none',
+            backgroundColor: '#ff9800',
+            color: 'white',
+            cursor: 'pointer',
+          }}
+        >
+          Regen Seats
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm(`Delete table "${table.name}"?`)) {
+              onDelete(table.id);
+            }
+          }}
+          style={{
+            flex: 1,
+            padding: '6px 8px',
+            fontSize: 11,
+            fontWeight: 600,
+            borderRadius: 4,
+            border: 'none',
+            backgroundColor: '#f44336',
+            color: 'white',
+            cursor: 'pointer',
+          }}
+        >
+          Delete
+        </button>
+      </div>
     </div>
   );
 }

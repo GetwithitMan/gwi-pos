@@ -16,7 +16,7 @@ import { Table as TableComponent, SmartObject, TableAPI } from '@/domains/floor-
 import { Seat, SeatAPI } from '@/domains/floor-plan/seats';
 import type { Point, Table, Seat as SeatType, Fixture } from '@/domains/floor-plan/shared/types';
 import { sampleFloorPlans, sampleFixtures, sampleTables } from './sampleData';
-import { PIXELS_PER_FOOT } from '@/lib/floorplan/constants';
+import { PIXELS_PER_FOOT, CANVAS_WIDTH, CANVAS_HEIGHT, GRID_SIZE } from '@/lib/floorplan/constants';
 
 // =============================================================================
 // DATABASE FIXTURE CONVERSION
@@ -614,9 +614,9 @@ export default function TestFloorPlanPage() {
             roomId={selectedRoomId}
             showGrid={!isDbMode} // Disable grid in DB mode (we render our own canvas)
             showFixtures={!isDbMode}
-            // Pass dimensions from selected section for DB mode
-            width={isDbMode ? (dbSections.find(s => s.id === selectedRoomId)?.widthFeet || 40) * 20 : undefined}
-            height={isDbMode ? (dbSections.find(s => s.id === selectedRoomId)?.heightFeet || 30) * 20 : undefined}
+            // Use FIXED canvas dimensions to match Editor (stable coordinates)
+            width={CANVAS_WIDTH}
+            height={CANVAS_HEIGHT}
             onPositionClick={handlePositionClick}
             onFixtureClick={handleFixtureClick}
           >

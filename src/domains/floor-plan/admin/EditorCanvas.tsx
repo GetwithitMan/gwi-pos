@@ -19,7 +19,15 @@ import {
   SEAT_HIT_RADIUS,
   SEAT_COLLISION_RADIUS,
   SEAT_BOUNDARY_DISTANCE,
-  SEAT_MIN_DISTANCE
+  SEAT_MIN_DISTANCE,
+  // Canvas constants
+  CANVAS_WIDTH,
+  CANVAS_HEIGHT,
+  ZOOM_MIN,
+  ZOOM_MAX,
+  ZOOM_DEFAULT,
+  ZOOM_STEP,
+  GRID_SIZE,
 } from '@/lib/floorplan/constants';
 
 // =============================================================================
@@ -75,6 +83,14 @@ interface EditorCanvasProps {
   dbFixtures?: Fixture[];
   dbTables?: EditorTable[];
   dbFloorPlan?: VirtualFloorPlan; // Section data for database mode
+  // Zoom control callbacks (optional - parent can use these)
+  onZoomChange?: (zoom: number) => void;
+  zoomControlRef?: React.MutableRefObject<{
+    fitToScreen: () => void;
+    resetZoom: () => void;
+    setZoom: (z: number) => void;
+    zoom: number;
+  } | null>;
 }
 
 // =============================================================================
@@ -105,6 +121,8 @@ export function EditorCanvas({
   dbFixtures,
   dbTables,
   dbFloorPlan,
+  onZoomChange,
+  zoomControlRef,
 }: EditorCanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   // In database mode, use the dbFloorPlan prop; otherwise use in-memory API
@@ -152,6 +170,12 @@ export function EditorCanvas({
 
   // Debug mode for boundary visualization (toggle with keyboard)
   const [showBoundaryDebug, setShowBoundaryDebug] = useState(false);
+
+  // Zoom and pan state
+  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
+  const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [lastPanPoint, setLastPanPoint] = useState<Point | null>(null);
 
   // Constants imported from @/lib/floorplan/constants
 
@@ -705,13 +729,11 @@ export function EditorCanvas({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isDraggingSeat, originalSeatPos]);
 
-  // Get canvas dimensions - use floorPlan dimensions directly (works for both database and in-memory mode)
-  const canvasDimensions = floorPlan
-    ? {
-        widthPx: FloorCanvasAPI.feetToPixels(floorPlan.widthFeet),
-        heightPx: FloorCanvasAPI.feetToPixels(floorPlan.heightFeet),
-      }
-    : { widthPx: 800, heightPx: 600 };
+  // Get canvas dimensions - FIXED size for stable coordinates (no drift on zoom/pan/combine)
+  const canvasDimensions = {
+    widthPx: CANVAS_WIDTH,
+    heightPx: CANVAS_HEIGHT,
+  };
 
   // Calculate angle from table center to mouse position
   const calculateAngle = useCallback((tableCenter: Point, mousePos: Point): number => {
@@ -725,8 +747,9 @@ export function EditorCanvas({
     (screenX: number, screenY: number): Point => {
       if (!canvasRef.current) return { x: 0, y: 0 };
       const rect = canvasRef.current.getBoundingClientRect();
-      const x = screenX - rect.left;
-      const y = screenY - rect.top;
+      // Account for zoom when converting screen coords to canvas coords
+      const x = (screenX - rect.left) / zoom;
+      const y = (screenY - rect.top) / zoom;
       const position: Point = {
         x: FloorCanvasAPI.pixelsToFeet(x),
         y: FloorCanvasAPI.pixelsToFeet(y),
@@ -737,7 +760,7 @@ export function EditorCanvas({
       }
       return position;
     },
-    [floorPlan]
+    [floorPlan, zoom]
   );
 
   // Handle resize start for tables
@@ -1763,6 +1786,96 @@ export function EditorCanvas({
     return null;
   };
 
+  // =============================================================================
+  // ZOOM AND PAN HANDLERS
+  // =============================================================================
+
+  // Zoom handler (wheel event)
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    // Only zoom if Ctrl/Cmd is held
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+      setZoom(prev => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prev + delta)));
+    }
+  }, []);
+
+  // Pan handlers (middle mouse or Alt+drag)
+  const handlePanStart = useCallback((e: React.PointerEvent) => {
+    // Middle mouse button OR Alt key held
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      e.preventDefault();
+      setIsPanning(true);
+      setLastPanPoint({ x: e.clientX, y: e.clientY });
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    }
+  }, []);
+
+  const handlePanMove = useCallback((e: React.PointerEvent) => {
+    if (!isPanning || !lastPanPoint) return;
+
+    const dx = e.clientX - lastPanPoint.x;
+    const dy = e.clientY - lastPanPoint.y;
+
+    setPanOffset(prev => ({
+      x: prev.x + dx,
+      y: prev.y + dy,
+    }));
+    setLastPanPoint({ x: e.clientX, y: e.clientY });
+  }, [isPanning, lastPanPoint]);
+
+  const handlePanEnd = useCallback((e: React.PointerEvent) => {
+    if (isPanning) {
+      setIsPanning(false);
+      setLastPanPoint(null);
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+  }, [isPanning]);
+
+  // Fit to screen - calculate zoom to fit canvas in viewport
+  const fitToScreen = useCallback(() => {
+    if (!canvasRef.current) return;
+    const container = canvasRef.current.parentElement;
+    if (!container) return;
+
+    const containerWidth = container.clientWidth - 48; // padding
+    const containerHeight = container.clientHeight - 48;
+
+    const scaleX = containerWidth / CANVAS_WIDTH;
+    const scaleY = containerHeight / CANVAS_HEIGHT;
+    const newZoom = Math.min(scaleX, scaleY, ZOOM_MAX);
+
+    setZoom(Math.max(ZOOM_MIN, newZoom));
+    setPanOffset({ x: 0, y: 0 });
+  }, []);
+
+  // Reset zoom
+  const resetZoom = useCallback(() => {
+    setZoom(ZOOM_DEFAULT);
+    setPanOffset({ x: 0, y: 0 });
+  }, []);
+
+  // Expose zoom controls to parent
+  useEffect(() => {
+    if (zoomControlRef) {
+      zoomControlRef.current = {
+        fitToScreen,
+        resetZoom,
+        setZoom,
+        zoom,
+      };
+    }
+  }, [zoomControlRef, fitToScreen, resetZoom, zoom]);
+
+  // Notify parent of zoom changes
+  useEffect(() => {
+    onZoomChange?.(zoom);
+  }, [zoom, onZoomChange]);
+
+  // =============================================================================
+  // RENDER FUNCTIONS
+  // =============================================================================
+
   // Render fixtures with selection highlight
   const renderFixtures = () => {
     return fixtures.map((fixture) => {
@@ -1991,57 +2104,8 @@ export function EditorCanvas({
     });
   };
 
-  // Render grid
-  const renderGrid = () => {
-    if (!floorPlan) return null;
-
-    const gridSizePx = FloorCanvasAPI.feetToPixels(floorPlan.gridSizeFeet);
-    const verticalLines: number[] = [];
-    const horizontalLines: number[] = [];
-
-    for (let x = 0; x <= canvasDimensions.widthPx; x += gridSizePx) {
-      verticalLines.push(x);
-    }
-    for (let y = 0; y <= canvasDimensions.heightPx; y += gridSizePx) {
-      horizontalLines.push(y);
-    }
-
-    return (
-      <svg
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: canvasDimensions.widthPx,
-          height: canvasDimensions.heightPx,
-          pointerEvents: 'none',
-        }}
-      >
-        {verticalLines.map((x) => (
-          <line
-            key={`v-${x}`}
-            x1={x}
-            y1={0}
-            x2={x}
-            y2={canvasDimensions.heightPx}
-            stroke="#e0e0e0"
-            strokeWidth={1}
-          />
-        ))}
-        {horizontalLines.map((y) => (
-          <line
-            key={`h-${y}`}
-            x1={0}
-            y1={y}
-            x2={canvasDimensions.widthPx}
-            y2={y}
-            stroke="#e0e0e0"
-            strokeWidth={1}
-          />
-        ))}
-      </svg>
-    );
-  };
+  // Grid is now rendered via CSS backgroundImage on the canvas div
+  // No SVG grid needed - this improves performance and avoids visual conflicts
 
   if (!floorPlan) {
     return (
@@ -2053,25 +2117,67 @@ export function EditorCanvas({
 
   return (
     <div
-      ref={canvasRef}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
       style={{
+        width: '100%',
+        height: 'calc(100vh - 280px)',
+        overflow: 'auto',
         position: 'relative',
-        width: canvasDimensions.widthPx,
-        height: canvasDimensions.heightPx,
-        backgroundColor: '#f5f5f5',
-        border: '2px solid #ccc',
+        backgroundColor: '#e9ecef',
         borderRadius: 8,
-        overflow: 'hidden',
-        cursor: toolMode === 'SELECT' ? 'default' : 'crosshair',
-        userSelect: 'none',
-        WebkitUserSelect: 'none',
+        cursor: isPanning ? 'grabbing' : 'default',
       }}
+      onWheel={handleWheel}
     >
-      {/* Grid */}
-      {renderGrid()}
+      <div
+        style={{
+          transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`,
+          transformOrigin: 'top left',
+          transition: isPanning ? 'none' : 'transform 0.1s ease-out',
+        }}
+      >
+        <div
+          ref={canvasRef}
+          onPointerDown={(e) => {
+            // Check for pan first
+            if (e.button === 1 || (e.button === 0 && e.altKey)) {
+              handlePanStart(e);
+              return;
+            }
+            handleMouseDown(e as unknown as React.MouseEvent);
+          }}
+          onPointerMove={(e) => {
+            if (isPanning) {
+              handlePanMove(e);
+              return;
+            }
+            handleMouseMove(e as unknown as React.MouseEvent);
+          }}
+          onPointerUp={(e) => {
+            if (isPanning) {
+              handlePanEnd(e);
+              return;
+            }
+            handleMouseUp(e as unknown as React.MouseEvent);
+          }}
+          style={{
+            position: 'relative',
+            width: CANVAS_WIDTH,
+            height: CANVAS_HEIGHT,
+            backgroundColor: '#f8f9fa',
+            backgroundImage: `
+              linear-gradient(rgba(0,0,0,0.08) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(0,0,0,0.08) 1px, transparent 1px)
+            `,
+            backgroundSize: `${GRID_SIZE}px ${GRID_SIZE}px`,
+            border: '2px solid #ccc',
+            borderRadius: 8,
+            overflow: 'hidden',
+            cursor: toolMode === 'SELECT' ? 'default' : 'crosshair',
+            userSelect: 'none',
+            WebkitUserSelect: 'none',
+          }}
+        >
+      {/* Grid is rendered via CSS backgroundImage - no SVG needed */}
 
       {/* Fixtures */}
       {renderFixtures()}
@@ -2297,6 +2403,8 @@ export function EditorCanvas({
           ({currentPoint.x.toFixed(1)}, {currentPoint.y.toFixed(1)})
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 }

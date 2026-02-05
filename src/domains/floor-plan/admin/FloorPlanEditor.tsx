@@ -8,7 +8,7 @@
  * NOW WITH DATABASE PERSISTENCE!
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { FloorCanvasAPI, RoomSelector } from '../canvas';
 import { EditorCanvas } from './EditorCanvas';
 import { FixtureToolbar } from './FixtureToolbar';
@@ -16,7 +16,12 @@ import { FixtureProperties } from './FixtureProperties';
 import { TableProperties } from './TableProperties';
 import type { EditorToolMode, FixtureType, EditorTable, TableShape } from './types';
 import type { Fixture } from '../shared/types';
-import { PIXELS_PER_FOOT } from '@/lib/floorplan/constants';
+import {
+  PIXELS_PER_FOOT,
+  ZOOM_MIN,
+  ZOOM_MAX,
+  ZOOM_STEP,
+} from '@/lib/floorplan/constants';
 
 // =============================================================================
 // TYPES
@@ -239,6 +244,15 @@ export function FloorPlanEditor({
 
   // Force refresh key for immediate updates (eliminates polling lag)
   const [refreshKey, setRefreshKey] = useState(0);
+
+  // Zoom control state and ref
+  const [currentZoom, setCurrentZoom] = useState(1);
+  const zoomControlRef = useRef<{
+    fitToScreen: () => void;
+    resetZoom: () => void;
+    setZoom: (z: number) => void;
+    zoom: number;
+  } | null>(null);
 
   // Database state
   const [dbElements, setDbElements] = useState<FloorPlanElement[]>([]);
@@ -853,6 +867,92 @@ export function FloorPlanEditor({
               Exit
             </button>
           )}
+
+          {/* Zoom Controls */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginLeft: 16,
+            padding: '4px 12px',
+            backgroundColor: '#f5f5f5',
+            borderRadius: 6,
+          }}>
+            <button
+              onClick={() => zoomControlRef.current?.setZoom(Math.max(ZOOM_MIN, currentZoom - ZOOM_STEP))}
+              style={{
+                width: 28,
+                height: 28,
+                border: 'none',
+                borderRadius: 4,
+                backgroundColor: '#e0e0e0',
+                cursor: 'pointer',
+                fontSize: 16,
+                fontWeight: 'bold',
+              }}
+              title="Zoom Out"
+            >
+              −
+            </button>
+
+            <span style={{
+              minWidth: 50,
+              textAlign: 'center',
+              fontSize: 13,
+              fontWeight: 500,
+            }}>
+              {Math.round(currentZoom * 100)}%
+            </span>
+
+            <button
+              onClick={() => zoomControlRef.current?.setZoom(Math.min(ZOOM_MAX, currentZoom + ZOOM_STEP))}
+              style={{
+                width: 28,
+                height: 28,
+                border: 'none',
+                borderRadius: 4,
+                backgroundColor: '#e0e0e0',
+                cursor: 'pointer',
+                fontSize: 16,
+                fontWeight: 'bold',
+              }}
+              title="Zoom In"
+            >
+              +
+            </button>
+
+            <div style={{ width: 1, height: 20, backgroundColor: '#ccc', margin: '0 4px' }} />
+
+            <button
+              onClick={() => zoomControlRef.current?.fitToScreen()}
+              style={{
+                padding: '4px 8px',
+                border: 'none',
+                borderRadius: 4,
+                backgroundColor: '#e0e0e0',
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+              title="Fit to Screen"
+            >
+              Fit
+            </button>
+
+            <button
+              onClick={() => zoomControlRef.current?.resetZoom()}
+              style={{
+                padding: '4px 8px',
+                border: 'none',
+                borderRadius: 4,
+                backgroundColor: '#e0e0e0',
+                cursor: 'pointer',
+                fontSize: 12,
+              }}
+              title="Reset to 100%"
+            >
+              100%
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1006,6 +1106,9 @@ export function FloorPlanEditor({
                 gridSizeFeet: section.gridSizeFeet || 0.25,
               };
             })() : undefined}
+            // Zoom control props
+            onZoomChange={setCurrentZoom}
+            zoomControlRef={zoomControlRef}
           />
         </div>
 
