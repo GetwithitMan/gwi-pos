@@ -1421,8 +1421,10 @@ export function EditorCanvas({
           }
 
           // Check for collision with other tables (exclude self)
-          // Allow overlapping - manager can arrange tables as needed
-          // Table-to-table collision is soft (visual only), not blocking
+          if (checkTableCollision(newPosX, newPosY, currentTable.width, currentTable.height, selectedTableId)) {
+            // Don't allow table to overlap another table
+            return;
+          }
 
           // Calculate available space at new position
           const availableSpace = calculateAvailableSpace(
@@ -1492,7 +1494,7 @@ export function EditorCanvas({
         refreshFixtures();
       }
     },
-    [floorPlan, isDragging, isDraggingTable, isDraggingSeat, draggedSeatId, seatDragOffset, isRotatingTable, isResizingTable, resizeHandle, resizeStartDimensions, resizeStartPos, resizeStartMousePos, selectedFixtureId, selectedTableId, dragOffset, tableDragOffset, rotationStartAngle, rotationStartMouseAngle, fixtures, tables, seats, screenToFloor, calculateAngle, onFixtureUpdate, onTableUpdate, refreshFixtures, checkTableFixtureCollision, isValidSeatPosition]
+    [floorPlan, isDragging, isDraggingTable, isDraggingSeat, draggedSeatId, seatDragOffset, isRotatingTable, isResizingTable, resizeHandle, resizeStartDimensions, resizeStartPos, resizeStartMousePos, selectedFixtureId, selectedTableId, dragOffset, tableDragOffset, rotationStartAngle, rotationStartMouseAngle, fixtures, tables, seats, screenToFloor, calculateAngle, onFixtureUpdate, onTableUpdate, refreshFixtures, checkTableFixtureCollision, checkTableCollision, isValidSeatPosition]
   );
 
   // Handle mouse up
