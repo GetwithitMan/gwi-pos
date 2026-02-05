@@ -1576,7 +1576,23 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 - Understand layer separation
 - Create properly scoped worker prompts
 
-#### Floor Plan Domain
+| # | Domain | Trigger | Status |
+|---|--------|---------|--------|
+| 1 | Floor Plan | `PM Mode: Floor Plan` | ✅ Complete |
+| 2 | Inventory | `PM Mode: Inventory` | 🔄 Active |
+| 3 | Orders | `PM Mode: Orders` | 🔄 Active |
+| 4 | Menu | `PM Mode: Menu` | 🔄 Active |
+| 5 | Employees | `PM Mode: Employees` | 🔄 Active |
+| 6 | KDS | `PM Mode: KDS` | 🔄 Active |
+| 7 | Payments | `PM Mode: Payments` | 🔄 Active |
+| 8 | Reports | `PM Mode: Reports` | 🔄 Active |
+| 9 | Hardware | `PM Mode: Hardware` | 🔄 Active |
+| 10 | Settings | `PM Mode: Settings` | 🔄 Active |
+| 11 | Entertainment | `PM Mode: Entertainment` | 🔄 Active |
+
+---
+
+#### Domain 1: Floor Plan
 **Trigger:** `PM Mode: Floor Plan`
 **Changelog:** `/docs/changelogs/FLOOR-PLAN-CHANGELOG.md`
 
@@ -1595,7 +1611,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### Inventory Domain
+#### Domain 2: Inventory
 **Trigger:** `PM Mode: Inventory`
 
 | Layer | Scope | Files/API Routes |
@@ -1608,7 +1624,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### Orders Domain
+#### Domain 3: Orders
 **Trigger:** `PM Mode: Orders`
 
 | Layer | Scope | Files/API Routes |
@@ -1622,7 +1638,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### Menu Domain
+#### Domain 4: Menu
 **Trigger:** `PM Mode: Menu`
 
 | Layer | Scope | Files/API Routes |
@@ -1635,7 +1651,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### Employees Domain
+#### Domain 5: Employees
 **Trigger:** `PM Mode: Employees`
 
 | Layer | Scope | Files/API Routes |
@@ -1648,7 +1664,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### KDS Domain
+#### Domain 6: KDS
 **Trigger:** `PM Mode: KDS`
 
 | Layer | Scope | Files/API Routes |
@@ -1660,7 +1676,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### Payments Domain
+#### Domain 7: Payments
 **Trigger:** `PM Mode: Payments`
 
 | Layer | Scope | Files/API Routes |
@@ -1672,7 +1688,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### Reports Domain
+#### Domain 8: Reports
 **Trigger:** `PM Mode: Reports`
 
 | Layer | Scope | Files/API Routes |
@@ -1685,7 +1701,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### Hardware Domain
+#### Domain 9: Hardware
 **Trigger:** `PM Mode: Hardware`
 
 | Layer | Scope | Files/API Routes |
@@ -1697,22 +1713,30 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 ---
 
-#### Entertainment Domain
+#### Domain 11: Entertainment
 **Trigger:** `PM Mode: Entertainment`
 **Documentation:** `/docs/domains/ENTERTAINMENT-DOMAIN.md`
 **Changelog:** `/docs/changelogs/ENTERTAINMENT-CHANGELOG.md`
 
 | Layer | Scope | Files/API Routes |
 |-------|-------|------------------|
-| Builder | Item configuration | `/src/app/(admin)/timed-rentals/page.tsx` |
+| Builder | Item configuration UI | `/src/app/(admin)/timed-rentals/page.tsx` |
 | Status API | Status management | `/api/entertainment/status` |
 | Block Time API | Session timers | `/api/entertainment/block-time` |
 | Waitlist API | Queue management | `/api/entertainment/waitlist`, `/api/entertainment/waitlist/[id]` |
 | KDS Dashboard | Real-time monitoring | `/src/app/(kds)/entertainment/page.tsx` |
+| Floor Plan | Element placement | `/api/floor-plan-elements` (elementType='entertainment') |
 | Components | UI components | `/src/components/entertainment/`, `/src/components/floor-plan/entertainment-visuals.tsx` |
+| Order Controls | Session start/extend/stop | `/src/components/orders/EntertainmentSessionControls.tsx` |
 | Utilities | Helper functions | `/src/lib/entertainment.ts` |
 
 **Visual Types:** pool_table, dartboard, arcade, foosball, shuffleboard, ping_pong, bowling_lane, karaoke_stage, dj_booth, photo_booth, vr_station, game_table
+
+**Integration Points:**
+- Floor Plan Domain: Entertainment elements on canvas
+- Orders Domain: Entertainment items in orders, session controls
+- KDS Domain: Entertainment dashboard
+- Menu Domain: Category routing to builder
 
 ---
 
