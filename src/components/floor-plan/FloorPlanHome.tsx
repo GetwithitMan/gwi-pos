@@ -25,6 +25,8 @@ import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { StockBadge } from '@/components/menu/StockBadge'
+import { CompVoidModal } from '@/components/orders/CompVoidModal'
+import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
 import { useEvents } from '@/lib/events'
@@ -208,6 +210,18 @@ export function FloorPlanHome({
   // Modifiers editing state
   const [editingModifiersItemId, setEditingModifiersItemId] = useState<string | null>(null)
 
+  // Comp/Void modal state
+  const [compVoidItem, setCompVoidItem] = useState<{
+    id: string
+    name: string
+    price: number
+    quantity: number
+  } | null>(null)
+
+  // Split ticket manager state
+  const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
+  const [splitItemId, setSplitItemId] = useState<string | null>(null)
+
   // Item controls expansion state
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
@@ -235,6 +249,11 @@ export function FloorPlanHome({
 
   // Dismissed virtual group banners (auto-dismiss after 5 seconds)
   const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set())
+
+  // Resend to kitchen state
+  const [resendModal, setResendModal] = useState<{ itemId: string; itemName: string } | null>(null)
+  const [resendNote, setResendNote] = useState('')
+  const [resendLoading, setResendLoading] = useState(false)
 
   const {
     tables,
@@ -1952,6 +1971,61 @@ export function FloorPlanHome({
       }, item.modifiers)
     }
   }, [menuItems, onOpenModifiers, handleSaveModifierChanges])
+
+  // Handle resend item to kitchen
+  const handleResendItem = useCallback((itemId: string, itemName: string) => {
+    setResendNote('')
+    setResendModal({ itemId, itemName })
+  }, [])
+
+  // Confirm resend item to kitchen
+  const confirmResendItem = useCallback(async () => {
+    if (!resendModal) return
+
+    setResendLoading(true)
+    try {
+      const response = await fetch('/api/kds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemIds: [resendModal.itemId],
+          action: 'resend',
+          resendNote: resendNote.trim() || undefined,
+        }),
+      })
+
+      if (response.ok) {
+        // Update local state to increment resend count
+        setInlineOrderItems(prev => prev.map(item =>
+          item.id === resendModal.itemId
+            ? { ...item, resendCount: (item.resendCount || 0) + 1 }
+            : item
+        ))
+
+        setResendModal(null)
+        setResendNote('')
+        toast.success('Item resent to kitchen')
+      } else {
+        const data = await response.json()
+        toast.error(data.error || 'Failed to resend item')
+      }
+    } catch (error) {
+      console.error('Failed to resend item:', error)
+      toast.error('Failed to resend item')
+    } finally {
+      setResendLoading(false)
+    }
+  }, [resendModal, resendNote])
+
+  // Open comp/void modal for a sent item
+  const handleOpenCompVoid = useCallback((item: InlineOrderItem) => {
+    setCompVoidItem({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+    })
+  }, [])
 
   // Send order to kitchen
   const handleSendToKitchen = useCallback(async () => {
@@ -4547,32 +4621,80 @@ export function FloorPlanHome({
                             </button>
                           )}
 
-                          {/* Hold Button */}
+                          {/* Hold/Fire Button */}
                           {!item.sentToKitchen && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleToggleHold(item.id)
-                              }}
-                              style={{
-                                padding: '5px 8px',
-                                background: item.isHeld ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                border: `1px solid ${item.isHeld ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
-                                borderRadius: '6px',
-                                color: item.isHeld ? '#f87171' : '#94a3b8',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '11px',
-                              }}
-                              title={item.isHeld ? 'Release hold' : 'Hold item'}
-                            >
-                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              {item.isHeld ? 'Held' : 'Hold'}
-                            </button>
+                            item.isHeld ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleToggleHold(item.id)
+                                }}
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: '10px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(34, 197, 94, 0.8)',
+                                  color: 'white',
+                                  border: 'none',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                                title="Fire item - send to kitchen"
+                              >
+                                Fire
+                              </button>
+                            ) : (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  handleToggleHold(item.id)
+                                }}
+                                style={{
+                                  padding: '2px 8px',
+                                  fontSize: '10px',
+                                  borderRadius: '4px',
+                                  background: 'rgba(245, 158, 11, 0.2)',
+                                  color: '#f59e0b',
+                                  border: 'none',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                                title="Hold item - don't send to kitchen"
+                              >
+                                Hold
+                              </button>
+                            )
+                          )}
+
+                          {/* Course Assignment Buttons */}
+                          {!item.sentToKitchen && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
+                              <span style={{ fontSize: '10px', color: '#64748b' }}>Course:</span>
+                              {[1, 2, 3].map(c => (
+                                <button
+                                  key={c}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setInlineOrderItems(prev => prev.map(i =>
+                                      i.id === item.id ? { ...i, courseNumber: item.courseNumber === c ? undefined : c } : i
+                                    ))
+                                  }}
+                                  style={{
+                                    padding: '2px 6px',
+                                    fontSize: '10px',
+                                    borderRadius: '4px',
+                                    background: item.courseNumber === c ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+                                    color: item.courseNumber === c ? '#60a5fa' : '#64748b',
+                                    border: item.courseNumber === c ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
+                                    cursor: 'pointer',
+                                    fontWeight: item.courseNumber === c ? 600 : 400,
+                                  }}
+                                  title={`Course ${c}`}
+                                >
+                                  C{c}
+                                </button>
+                              ))}
+                            </div>
                           )}
 
                           {/* Edit Button */}
@@ -4628,6 +4750,62 @@ export function FloorPlanHome({
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
                               Edit Mods
+                            </button>
+                          )}
+
+                          {/* Comp/Void Button - Sent items only */}
+                          {item.sentToKitchen && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleOpenCompVoid(item)
+                              }}
+                              style={{
+                                padding: '5px 8px',
+                                background: 'rgba(245, 158, 11, 0.1)',
+                                border: '1px solid rgba(245, 158, 11, 0.2)',
+                                borderRadius: '6px',
+                                color: '#f59e0b',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '11px',
+                              }}
+                              title="Comp or Void"
+                            >
+                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                            </button>
+                          )}
+
+                          {/* Move to Split Check Button - Sent items only */}
+                          {item.sentToKitchen && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSplitItemId(item.id)
+                                setShowSplitTicketManager(true)
+                              }}
+                              style={{
+                                padding: '5px 8px',
+                                background: 'rgba(168, 85, 247, 0.1)',
+                                border: '1px solid rgba(168, 85, 247, 0.2)',
+                                borderRadius: '6px',
+                                color: '#a855f7',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                fontSize: '11px',
+                              }}
+                              title="Move to split check"
+                            >
+                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                              </svg>
+                              Split
                             </button>
                           )}
 
@@ -4906,6 +5084,46 @@ export function FloorPlanHome({
                                             Resent {item.resendCount}x
                                           </span>
                                         )}
+
+                                        {/* Course Badge */}
+                                        {item.courseNumber && (
+                                          <span style={{
+                                            fontSize: '9px',
+                                            padding: '2px 6px',
+                                            borderRadius: '4px',
+                                            background: item.courseStatus === 'fired' ? 'rgba(251, 191, 36, 0.2)'
+                                              : item.courseStatus === 'ready' ? 'rgba(34, 197, 94, 0.2)'
+                                              : 'rgba(59, 130, 246, 0.2)',
+                                            color: item.courseStatus === 'fired' ? '#fbbf24'
+                                              : item.courseStatus === 'ready' ? '#4ade80'
+                                              : '#60a5fa',
+                                            fontWeight: 600
+                                          }}>
+                                            C{item.courseNumber}
+                                          </span>
+                                        )}
+
+                                        {/* MADE Badge - shows when kitchen has completed the item */}
+                                        {item.isCompleted && (
+                                          <span style={{
+                                            fontSize: '10px',
+                                            padding: '2px 8px',
+                                            borderRadius: '4px',
+                                            background: 'rgba(34, 197, 94, 0.25)',
+                                            color: '#4ade80',
+                                            fontWeight: 700,
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                          }}>
+                                            ✓ MADE
+                                            {item.completedAt && (
+                                              <span style={{ fontWeight: 500, opacity: 0.8, fontSize: '9px' }}>
+                                                {new Date(item.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                              </span>
+                                            )}
+                                          </span>
+                                        )}
                                       </div>
 
                                       {/* Timestamp and Status */}
@@ -4969,6 +5187,37 @@ export function FloorPlanHome({
                                       }}
                                     >
                                       Edit Mods
+                                    </button>
+
+                                    {/* Resend to Kitchen Button */}
+                                    <button
+                                      onClick={() => handleResendItem(item.id, item.name)}
+                                      style={{
+                                        padding: '5px 10px',
+                                        background: 'rgba(245, 158, 11, 0.15)',
+                                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                                        borderRadius: '6px',
+                                        color: '#fbbf24',
+                                        fontSize: '11px',
+                                        fontWeight: 500,
+                                        cursor: 'pointer',
+                                        transition: 'all 0.15s ease',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                      onMouseEnter={(e) => {
+                                        e.currentTarget.style.background = 'rgba(245, 158, 11, 0.25)'
+                                      }}
+                                      onMouseLeave={(e) => {
+                                        e.currentTarget.style.background = 'rgba(245, 158, 11, 0.15)'
+                                      }}
+                                      title="Resend to kitchen"
+                                    >
+                                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                      </svg>
+                                      Resend
                                     </button>
 
                                     {/* Grayed Remove Button (requires void approval) */}
@@ -5427,6 +5676,224 @@ export function FloorPlanHome({
         currentOrder={preferredRoomOrder}
         onSave={handleSaveRoomOrder}
       />
+
+      {/* Resend to Kitchen Modal */}
+      {resendModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              background: '#1e293b',
+              borderRadius: '12px',
+              padding: '24px',
+              width: '400px',
+              maxWidth: '90vw',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+            }}
+          >
+            <h3
+              style={{
+                color: '#f1f5f9',
+                fontSize: '18px',
+                fontWeight: 600,
+                marginBottom: '16px',
+              }}
+            >
+              Resend to Kitchen
+            </h3>
+            <p
+              style={{
+                color: '#94a3b8',
+                fontSize: '14px',
+                marginBottom: '16px',
+              }}
+            >
+              Resending: <strong style={{ color: '#e2e8f0' }}>{resendModal.itemName}</strong>
+            </p>
+            <textarea
+              value={resendNote}
+              onChange={(e) => setResendNote(e.target.value)}
+              placeholder="Add a note for the kitchen (optional)"
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '8px',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: 'rgba(255, 255, 255, 0.05)',
+                color: '#e2e8f0',
+                fontSize: '14px',
+                resize: 'none',
+                height: '80px',
+                marginBottom: '16px',
+                fontFamily: 'inherit',
+              }}
+            />
+            <div
+              style={{
+                display: 'flex',
+                gap: '12px',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <button
+                onClick={() => setResendModal(null)}
+                style={{
+                  padding: '10px 20px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '8px',
+                  color: '#94a3b8',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmResendItem}
+                disabled={resendLoading}
+                style={{
+                  padding: '10px 20px',
+                  background: resendLoading ? 'rgba(245, 158, 11, 0.5)' : '#f59e0b',
+                  border: 'none',
+                  borderRadius: '8px',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: resendLoading ? 'not-allowed' : 'pointer',
+                  transition: 'all 0.15s ease',
+                  opacity: resendLoading ? 0.7 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!resendLoading) {
+                    e.currentTarget.style.background = '#d97706'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!resendLoading) {
+                    e.currentTarget.style.background = '#f59e0b'
+                  }
+                }}
+              >
+                {resendLoading ? 'Sending...' : 'Resend'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Comp/Void Modal */}
+      {compVoidItem && activeOrderId && employeeId && (
+        <CompVoidModal
+          isOpen={true}
+          onClose={() => setCompVoidItem(null)}
+          orderId={activeOrderId}
+          orderItemId={compVoidItem.id}
+          itemName={compVoidItem.name}
+          itemPrice={compVoidItem.price}
+          itemQuantity={compVoidItem.quantity}
+          employeeId={employeeId}
+          onSuccess={async () => {
+            setCompVoidItem(null)
+            // Refresh order data by reloading the order
+            if (activeOrderId) {
+              try {
+                const response = await fetch(`/api/orders/${activeOrderId}`)
+                if (response.ok) {
+                  const orderData = await response.json()
+                  // Update inline order items from the fresh order data
+                  const freshItems = orderData.items?.map((item: any) => ({
+                    id: item.id,
+                    menuItemId: item.menuItemId,
+                    name: item.name,
+                    price: Number(item.price),
+                    quantity: item.quantity,
+                    modifiers: item.modifiers?.map((mod: any) => ({
+                      id: mod.modifierId,
+                      name: mod.name,
+                      price: Number(mod.price),
+                    })) || [],
+                    seatNumber: item.seatNumber,
+                    courseNumber: item.courseNumber,
+                    specialNotes: item.specialNotes,
+                    sentToKitchen: true,
+                    resendCount: item.resendCount,
+                  })) || []
+                  setInlineOrderItems(freshItems)
+                }
+              } catch (error) {
+                console.error('Failed to refresh order:', error)
+              }
+            }
+            toast.success('Item comped/voided successfully')
+          }}
+        />
+      )}
+
+      {/* Split Ticket Manager */}
+      {showSplitTicketManager && activeOrderId && (
+        <SplitTicketManager
+          orderId={activeOrderId}
+          isOpen={showSplitTicketManager}
+          onClose={() => {
+            setShowSplitTicketManager(false)
+            setSplitItemId(null)
+          }}
+          preSelectedItemId={splitItemId || undefined}
+          onSplitComplete={async () => {
+            // Refresh order data by reloading the order
+            if (activeOrderId) {
+              try {
+                const response = await fetch(`/api/orders/${activeOrderId}`)
+                if (response.ok) {
+                  const orderData = await response.json()
+                  // Update inline order items from the fresh order data
+                  const freshItems = orderData.items?.map((item: any) => ({
+                    id: item.id,
+                    menuItemId: item.menuItemId,
+                    name: item.name,
+                    price: Number(item.price),
+                    quantity: item.quantity,
+                    modifiers: item.modifiers?.map((mod: any) => ({
+                      id: mod.modifierId,
+                      name: mod.name,
+                      price: Number(mod.price),
+                    })) || [],
+                    seatNumber: item.seatNumber,
+                    courseNumber: item.courseNumber,
+                    specialNotes: item.specialNotes,
+                    sentToKitchen: true,
+                    resendCount: item.resendCount,
+                  })) || []
+                  setInlineOrderItems(freshItems)
+                }
+              } catch (error) {
+                console.error('Failed to refresh order:', error)
+              }
+            }
+            setShowSplitTicketManager(false)
+            setSplitItemId(null)
+            toast.success('Item moved to split check')
+          }}
+        />
+      )}
     </div>
   )
 }
