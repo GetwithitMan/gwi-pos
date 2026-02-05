@@ -524,7 +524,7 @@ export default function TestFloorPlanPage() {
   const [snapPreview, setSnapPreview] = useState<SnapPreview | null>(null);
 
   // Use table groups hook
-  const { createVirtualGroup, dissolveGroup, isLoading: isCreatingGroup } = useTableGroups({
+  const { createVirtualGroup, dissolveGroup, addToGroup, isLoading: isCreatingGroup } = useTableGroups({
     locationId: locationId || 'loc-1',
     autoLoad: false,
   });
@@ -762,16 +762,26 @@ export default function TestFloorPlanPage() {
           // Primary table doesn't move - no offset
           newVisualOffsets.set(table.id, { offsetX: 0, offsetY: 0 });
         } else {
+          // Check for per-table stored snap position (for tables added to existing groups)
+          const perTableSnap = storedSnapPositions.get(`${groupId}-${table.id}`);
+
           // Use stored snap position if available (from when the drag happened)
           // This ensures the table lands EXACTLY where the preview showed
-          if (storedSnap && storedSnap.draggedTableId === table.id) {
+          if (perTableSnap && perTableSnap.draggedTableId === table.id) {
+            const offsetX = perTableSnap.snapPosition.x - table.posX;
+            const offsetY = perTableSnap.snapPosition.y - table.posY;
+            newVisualOffsets.set(table.id, { offsetX, offsetY });
+            console.log(`[VisualSnap] Table ${table.name} using PER-TABLE snap: offset (${offsetX}, ${offsetY})`);
+          } else if (storedSnap && storedSnap.draggedTableId === table.id) {
+            // Original group snap position
             const offsetX = storedSnap.snapPosition.x - table.posX;
             const offsetY = storedSnap.snapPosition.y - table.posY;
             newVisualOffsets.set(table.id, { offsetX, offsetY });
-            console.log(`[VisualSnap] Table ${table.name} using STORED snap: offset (${offsetX}, ${offsetY})`);
+            console.log(`[VisualSnap] Table ${table.name} using GROUP snap: offset (${offsetX}, ${offsetY})`);
           } else {
-            // Fallback: Calculate where this table should visually appear (snapped to primary)
-            const snapPos = calculateSnapPositionForTable(table, primaryTable);
+            // Fallback: Calculate where this table should visually appear (snapped to combined group)
+            // For 3+ tables, we need to snap to the nearest already-positioned table
+            const snapPos = calculateSnapPositionForTableInGroup(table, primaryTable, groupTables, newVisualOffsets);
             const offsetX = snapPos.x - table.posX;
             const offsetY = snapPos.y - table.posY;
             newVisualOffsets.set(table.id, { offsetX, offsetY });
@@ -876,6 +886,55 @@ export default function TestFloorPlanPage() {
     return { x: snapX, y: snapY };
   }
 
+  // Helper function to calculate snap position for a table joining an existing group with multiple tables
+  // Finds the nearest already-positioned table and snaps to it
+  function calculateSnapPositionForTableInGroup(
+    newTable: DbTable,
+    primaryTable: DbTable,
+    allGroupTables: DbTable[],
+    currentOffsets: Map<string, { offsetX: number; offsetY: number }>
+  ): { x: number; y: number } {
+    // Get all tables that already have positions calculated (including primary)
+    const positionedTables = allGroupTables.filter(t =>
+      t.id === primaryTable.id || currentOffsets.has(t.id)
+    );
+
+    if (positionedTables.length === 0) {
+      // Fallback to primary
+      return calculateSnapPositionForTable(newTable, primaryTable);
+    }
+
+    // Find the nearest positioned table to snap to
+    let nearestTable = primaryTable;
+    let nearestDistance = Infinity;
+
+    for (const table of positionedTables) {
+      const offset = currentOffsets.get(table.id) || { offsetX: 0, offsetY: 0 };
+      const visualX = table.posX + offset.offsetX;
+      const visualY = table.posY + offset.offsetY;
+
+      // Calculate distance from new table's original position to this positioned table
+      const dx = newTable.posX - visualX;
+      const dy = newTable.posY - visualY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestTable = table;
+      }
+    }
+
+    // Create a virtual table with the visual position for snapping
+    const nearestOffset = currentOffsets.get(nearestTable.id) || { offsetX: 0, offsetY: 0 };
+    const virtualNearestTable: DbTable = {
+      ...nearestTable,
+      posX: nearestTable.posX + nearestOffset.offsetX,
+      posY: nearestTable.posY + nearestOffset.offsetY,
+    };
+
+    return calculateSnapPositionForTable(newTable, virtualNearestTable);
+  }
+
   // Get tables for current room using TableAPI
   const tablesInRoom = TableAPI.getTablesForRoom(selectedRoomId);
 
@@ -945,8 +1004,10 @@ export default function TestFloorPlanPage() {
         return false;
       });
 
+      // Allow snapping to ANY table (including those in groups) so users can add to existing groups
+      // Only exclude the table being dragged
       const tableRects = visibleTables
-        .filter(t => t.id !== dragState.draggedTableId && !t.virtualGroupId)
+        .filter(t => t.id !== dragState.draggedTableId)
         .map(t => ({
           id: t.id,
           x: t.posX,
@@ -989,40 +1050,116 @@ export default function TestFloorPlanPage() {
     // Only proceed if we were dragging AND have a valid snap preview
     // If no valid snap, table returns to original position (no action taken)
     if (dragState.isDragging && snapPreview?.isValid && dragState.draggedTableId) {
-      console.log('[Snap] Creating virtual group:', { draggedTableId: dragState.draggedTableId, targetTableId: snapPreview.targetTableId });
       try {
         // IMPORTANT: FOH view does NOT move table positions!
         // Virtual groups are visual-only - tables stay in their original positions
         // Only the Editor can change table positions
 
-        // Create the virtual group with TARGET table as PRIMARY (first in array)
-        // This means the dragged table will snap TO the target table's position
-        const result = await createVirtualGroup(
-          [snapPreview.targetTableId, dragState.draggedTableId],  // Target first = primary
-          'emp-1' // TODO: Get from auth context
-        );
+        // Check if the target table is already in a virtual group
+        const targetTable = dbTables.find(t => t.id === snapPreview.targetTableId);
+        const draggedTable = dbTables.find(t => t.id === dragState.draggedTableId);
 
-        if (result) {
-          console.log('[Snap] Virtual group created:', result.id);
-
-          // Store the snap position so we can use it for visual positioning
-          // This ensures the dragged table lands EXACTLY where the preview showed
-          setStoredSnapPositions(prev => {
-            const updated = new Map(prev);
-            updated.set(result.id, {
-              draggedTableId: dragState.draggedTableId!,
-              snapPosition: snapPreview.snapPosition,
-            });
-            return updated;
+        if (targetTable?.virtualGroupId) {
+          // Target is already in a group - ADD the dragged table to that existing group
+          console.log('[Snap] Adding table to existing group:', {
+            draggedTableId: dragState.draggedTableId,
+            targetGroupId: targetTable.virtualGroupId,
           });
 
-          // Refresh floor plan data to show the group
-          if (locationId) {
-            await fetchDbTables(locationId);
+          const success = await addToGroup(
+            targetTable.virtualGroupId,
+            dragState.draggedTableId,
+            'emp-1' // TODO: Get from auth context
+          );
+
+          if (success) {
+            console.log('[Snap] Table added to existing group');
+
+            // Store the snap position for this table in the existing group
+            setStoredSnapPositions(prev => {
+              const updated = new Map(prev);
+              // We need to update the stored snap for this group to include the new table
+              const existingSnap = updated.get(targetTable.virtualGroupId!);
+              // For additional tables, store under the group ID with tableId as key
+              updated.set(`${targetTable.virtualGroupId}-${dragState.draggedTableId}`, {
+                draggedTableId: dragState.draggedTableId!,
+                snapPosition: snapPreview.snapPosition,
+              });
+              return updated;
+            });
+
+            // Refresh floor plan data to show the updated group
+            if (locationId) {
+              await fetchDbTables(locationId);
+            }
+          }
+        } else if (draggedTable?.virtualGroupId) {
+          // Dragged table is already in a group - ADD the target to that group
+          console.log('[Snap] Adding target table to dragged table\'s group:', {
+            targetTableId: snapPreview.targetTableId,
+            draggedGroupId: draggedTable.virtualGroupId,
+          });
+
+          const success = await addToGroup(
+            draggedTable.virtualGroupId,
+            snapPreview.targetTableId,
+            'emp-1' // TODO: Get from auth context
+          );
+
+          if (success) {
+            console.log('[Snap] Target table added to existing group');
+
+            // Store the snap position
+            setStoredSnapPositions(prev => {
+              const updated = new Map(prev);
+              updated.set(`${draggedTable.virtualGroupId}-${snapPreview.targetTableId}`, {
+                draggedTableId: snapPreview.targetTableId,
+                snapPosition: { x: targetTable?.posX || 0, y: targetTable?.posY || 0 },
+              });
+              return updated;
+            });
+
+            // Refresh floor plan data to show the updated group
+            if (locationId) {
+              await fetchDbTables(locationId);
+            }
+          }
+        } else {
+          // Neither table is in a group - CREATE a new virtual group
+          console.log('[Snap] Creating new virtual group:', {
+            draggedTableId: dragState.draggedTableId,
+            targetTableId: snapPreview.targetTableId,
+          });
+
+          // Create the virtual group with TARGET table as PRIMARY (first in array)
+          // This means the dragged table will snap TO the target table's position
+          const result = await createVirtualGroup(
+            [snapPreview.targetTableId, dragState.draggedTableId],  // Target first = primary
+            'emp-1' // TODO: Get from auth context
+          );
+
+          if (result) {
+            console.log('[Snap] Virtual group created:', result.id);
+
+            // Store the snap position so we can use it for visual positioning
+            // This ensures the dragged table lands EXACTLY where the preview showed
+            setStoredSnapPositions(prev => {
+              const updated = new Map(prev);
+              updated.set(result.id, {
+                draggedTableId: dragState.draggedTableId!,
+                snapPosition: snapPreview.snapPosition,
+              });
+              return updated;
+            });
+
+            // Refresh floor plan data to show the group
+            if (locationId) {
+              await fetchDbTables(locationId);
+            }
           }
         }
       } catch (error) {
-        console.error('Failed to create virtual group:', error);
+        console.error('Failed to combine tables:', error);
       }
     } else if (dragState.isDragging) {
       // No valid snap - table returns to original position (just reset state, no API calls)
@@ -1033,7 +1170,7 @@ export default function TestFloorPlanPage() {
     setDragState(resetDragState());
     setDropTarget(null);
     setSnapPreview(null);
-  }, [dragState, snapPreview, dbTables, createVirtualGroup, locationId, fetchDbTables]);
+  }, [dragState, snapPreview, dbTables, createVirtualGroup, addToGroup, locationId, fetchDbTables]);
 
   // Cancel drag if pointer leaves the canvas
   const handlePointerLeave = useCallback(() => {

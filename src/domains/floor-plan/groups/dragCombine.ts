@@ -131,10 +131,10 @@ export function findDropTarget(
     // Skip the dragged table itself
     if (table.id === draggedTableId) continue;
 
-    // Skip tables already in a virtual group (for now)
-    if (table.virtualGroupId) continue;
+    // NOTE: We DO allow dropping onto tables in virtual groups
+    // This enables adding more tables to an existing group
 
-    // Skip tables that are physically combined
+    // Skip tables that are physically combined (database-level combining)
     if (table.combinedWithId) continue;
 
     const bounds = getTableBounds(table);
