@@ -142,6 +142,13 @@ export function EditorCanvas({
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<Point | null>(null);
 
+  // Resizing state (for fixtures)
+  const [isResizingFixture, setIsResizingFixture] = useState(false);
+  const [fixtureResizeHandle, setFixtureResizeHandle] = useState<string | null>(null);
+  const [fixtureResizeStartDimensions, setFixtureResizeStartDimensions] = useState<{width?: number, height?: number, length?: number, thickness?: number} | null>(null);
+  const [fixtureResizeStartPos, setFixtureResizeStartPos] = useState<{x: number, y: number} | null>(null);
+  const [fixtureResizeStartMousePos, setFixtureResizeStartMousePos] = useState<Point | null>(null);
+
   // Dragging state (for tables)
   const [isDraggingTable, setIsDraggingTable] = useState(false);
   const [tableDragOffset, setTableDragOffset] = useState<Point | null>(null);
@@ -777,6 +784,40 @@ export function EditorCanvas({
       // Mouse position will be captured in the next mouse move
     },
     [selectedTableId, tables]
+  );
+
+  // Handle resize start for fixtures
+  const handleFixtureResizeStart = useCallback(
+    (e: React.MouseEvent, fixtureId: string, handle: string) => {
+      e.stopPropagation();
+      if (!fixtureId) return;
+      const fixtureList = useDatabase ? (dbFixtures || []) : fixtures;
+      const fixture = fixtureList.find(f => f.id === fixtureId);
+      if (!fixture) return;
+
+      setIsResizingFixture(true);
+      setFixtureResizeHandle(handle);
+
+      if (fixture.geometry.type === 'rectangle') {
+        setFixtureResizeStartDimensions({
+          width: fixture.geometry.width,
+          height: fixture.geometry.height
+        });
+        setFixtureResizeStartPos({
+          x: fixture.geometry.position.x,
+          y: fixture.geometry.position.y
+        });
+      } else if (fixture.geometry.type === 'line') {
+        const { start, end } = fixture.geometry;
+        setFixtureResizeStartDimensions({});
+        if (handle === 'start') {
+          setFixtureResizeStartPos({ x: start.x, y: start.y });
+        } else {
+          setFixtureResizeStartPos({ x: end.x, y: end.y });
+        }
+      }
+    },
+    [fixtures, dbFixtures, useDatabase]
   );
 
   // Handle mouse down
@@ -1422,6 +1463,128 @@ export function EditorCanvas({
         return;
       }
 
+      // Handle fixture resizing
+      if (isResizingFixture && selectedFixtureId && fixtureResizeHandle && fixtureResizeStartDimensions && fixtureResizeStartPos && onFixtureUpdate) {
+        const fixtureList = useDatabase ? (dbFixtures || []) : fixtures;
+        const currentFixture = fixtureList.find(f => f.id === selectedFixtureId);
+        if (!currentFixture) return;
+
+        const pointPx = {
+          x: FloorCanvasAPI.feetToPixels(point.x),
+          y: FloorCanvasAPI.feetToPixels(point.y),
+        };
+
+        if (!fixtureResizeStartMousePos) {
+          setFixtureResizeStartMousePos(pointPx);
+          return;
+        }
+
+        const deltaX = FloorCanvasAPI.pixelsToFeet(pointPx.x - fixtureResizeStartMousePos.x);
+        const deltaY = FloorCanvasAPI.pixelsToFeet(pointPx.y - fixtureResizeStartMousePos.y);
+
+        if (currentFixture.geometry.type === 'rectangle') {
+          const minWidth = 1;
+          const minHeight = 0.5;
+          let newWidth = fixtureResizeStartDimensions.width || 5;
+          let newHeight = fixtureResizeStartDimensions.height || 5;
+          let newPosX = fixtureResizeStartPos.x;
+          let newPosY = fixtureResizeStartPos.y;
+
+          switch (fixtureResizeHandle) {
+            case 'se':
+              newWidth = Math.max(minWidth, (fixtureResizeStartDimensions.width || 5) + deltaX);
+              newHeight = Math.max(minHeight, (fixtureResizeStartDimensions.height || 5) + deltaY);
+              break;
+            case 'sw':
+              newWidth = Math.max(minWidth, (fixtureResizeStartDimensions.width || 5) - deltaX);
+              newHeight = Math.max(minHeight, (fixtureResizeStartDimensions.height || 5) + deltaY);
+              newPosX = fixtureResizeStartPos.x + ((fixtureResizeStartDimensions.width || 5) - newWidth);
+              break;
+            case 'ne':
+              newWidth = Math.max(minWidth, (fixtureResizeStartDimensions.width || 5) + deltaX);
+              newHeight = Math.max(minHeight, (fixtureResizeStartDimensions.height || 5) - deltaY);
+              newPosY = fixtureResizeStartPos.y + ((fixtureResizeStartDimensions.height || 5) - newHeight);
+              break;
+            case 'nw':
+              newWidth = Math.max(minWidth, (fixtureResizeStartDimensions.width || 5) - deltaX);
+              newHeight = Math.max(minHeight, (fixtureResizeStartDimensions.height || 5) - deltaY);
+              newPosX = fixtureResizeStartPos.x + ((fixtureResizeStartDimensions.width || 5) - newWidth);
+              newPosY = fixtureResizeStartPos.y + ((fixtureResizeStartDimensions.height || 5) - newHeight);
+              break;
+            case 'e':
+              newWidth = Math.max(minWidth, (fixtureResizeStartDimensions.width || 5) + deltaX);
+              break;
+            case 'w':
+              newWidth = Math.max(minWidth, (fixtureResizeStartDimensions.width || 5) - deltaX);
+              newPosX = fixtureResizeStartPos.x + ((fixtureResizeStartDimensions.width || 5) - newWidth);
+              break;
+            case 's':
+              newHeight = Math.max(minHeight, (fixtureResizeStartDimensions.height || 5) + deltaY);
+              break;
+            case 'n':
+              newHeight = Math.max(minHeight, (fixtureResizeStartDimensions.height || 5) - deltaY);
+              newPosY = fixtureResizeStartPos.y + ((fixtureResizeStartDimensions.height || 5) - newHeight);
+              break;
+          }
+
+          // Snap to grid
+          const gridSize = floorPlan.gridSizeFeet;
+          newWidth = Math.round(newWidth / gridSize) * gridSize;
+          newHeight = Math.round(newHeight / gridSize) * gridSize;
+          newPosX = Math.round(newPosX / gridSize) * gridSize;
+          newPosY = Math.round(newPosY / gridSize) * gridSize;
+
+          onFixtureUpdate(selectedFixtureId, {
+            geometry: {
+              ...currentFixture.geometry,
+              width: newWidth,
+              height: newHeight,
+              position: { x: newPosX, y: newPosY }
+            }
+          });
+        } else if (currentFixture.geometry.type === 'line') {
+          // For lines, move the selected endpoint
+          const { start, end } = currentFixture.geometry;
+
+          if (fixtureResizeHandle === 'start') {
+            // Moving the start point
+            const newStart = {
+              x: point.x,
+              y: point.y
+            };
+            // Snap to grid
+            const gridSize = floorPlan.gridSizeFeet;
+            newStart.x = Math.round(newStart.x / gridSize) * gridSize;
+            newStart.y = Math.round(newStart.y / gridSize) * gridSize;
+
+            onFixtureUpdate(selectedFixtureId, {
+              geometry: {
+                ...currentFixture.geometry,
+                start: newStart
+              }
+            });
+          } else if (fixtureResizeHandle === 'end') {
+            // Moving the end point
+            const newEnd = {
+              x: point.x,
+              y: point.y
+            };
+            // Snap to grid
+            const gridSize = floorPlan.gridSizeFeet;
+            newEnd.x = Math.round(newEnd.x / gridSize) * gridSize;
+            newEnd.y = Math.round(newEnd.y / gridSize) * gridSize;
+
+            onFixtureUpdate(selectedFixtureId, {
+              geometry: {
+                ...currentFixture.geometry,
+                end: newEnd
+              }
+            });
+          }
+        }
+        return;
+      }
+
       if (isDraggingTable && selectedTableId && tableDragOffset && onTableUpdate) {
         // Convert point to pixels for table positioning
         const pointPx = {
@@ -1624,6 +1787,16 @@ export function EditorCanvas({
         setResizeStartDimensions(null);
         setResizeStartPos(null);
         setResizeStartMousePos(null);
+        return;
+      }
+
+      // End fixture resizing
+      if (isResizingFixture) {
+        setIsResizingFixture(false);
+        setFixtureResizeHandle(null);
+        setFixtureResizeStartDimensions(null);
+        setFixtureResizeStartPos(null);
+        setFixtureResizeStartMousePos(null);
         return;
       }
 
@@ -1891,6 +2064,9 @@ export function EditorCanvas({
 
       if (fixture.geometry.type === 'rectangle') {
         const { position, width, height, rotation } = fixture.geometry;
+        const widthPx = FloorCanvasAPI.feetToPixels(width);
+        const heightPx = FloorCanvasAPI.feetToPixels(height);
+
         return (
           <div
             key={fixture.id}
@@ -1898,8 +2074,8 @@ export function EditorCanvas({
               ...baseStyle,
               left: FloorCanvasAPI.feetToPixels(position.x),
               top: FloorCanvasAPI.feetToPixels(position.y),
-              width: FloorCanvasAPI.feetToPixels(width),
-              height: FloorCanvasAPI.feetToPixels(height),
+              width: widthPx,
+              height: heightPx,
               transform: `rotate(${rotation}deg)`,
               display: 'flex',
               alignItems: 'center',
@@ -1923,6 +2099,138 @@ export function EditorCanvas({
             >
               {fixture.label}
             </span>
+
+            {/* Resize handles */}
+            {isSelected && toolMode === 'SELECT' && (
+              <>
+                {/* Corner handles */}
+                <div
+                  className="resize-handle nw"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'nw')}
+                  style={{
+                    position: 'absolute',
+                    top: -4,
+                    left: -4,
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'nw-resize',
+                    zIndex: 10,
+                  }}
+                />
+                <div
+                  className="resize-handle ne"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'ne')}
+                  style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'ne-resize',
+                    zIndex: 10,
+                  }}
+                />
+                <div
+                  className="resize-handle sw"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'sw')}
+                  style={{
+                    position: 'absolute',
+                    bottom: -4,
+                    left: -4,
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'sw-resize',
+                    zIndex: 10,
+                  }}
+                />
+                <div
+                  className="resize-handle se"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'se')}
+                  style={{
+                    position: 'absolute',
+                    bottom: -4,
+                    right: -4,
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'se-resize',
+                    zIndex: 10,
+                  }}
+                />
+                {/* Edge handles */}
+                <div
+                  className="resize-handle n"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'n')}
+                  style={{
+                    position: 'absolute',
+                    top: -4,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'n-resize',
+                    zIndex: 10,
+                  }}
+                />
+                <div
+                  className="resize-handle s"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 's')}
+                  style={{
+                    position: 'absolute',
+                    bottom: -4,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 's-resize',
+                    zIndex: 10,
+                  }}
+                />
+                <div
+                  className="resize-handle e"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'e')}
+                  style={{
+                    position: 'absolute',
+                    right: -4,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'e-resize',
+                    zIndex: 10,
+                  }}
+                />
+                <div
+                  className="resize-handle w"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'w')}
+                  style={{
+                    position: 'absolute',
+                    left: -4,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'w-resize',
+                    zIndex: 10,
+                  }}
+                />
+              </>
+            )}
           </div>
         );
       }
@@ -2002,6 +2310,46 @@ export function EditorCanvas({
             >
               {fixture.label}
             </span>
+
+            {/* Resize handles for line endpoints */}
+            {isSelected && toolMode === 'SELECT' && (
+              <>
+                <div
+                  className="resize-handle start"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'start')}
+                  style={{
+                    position: 'absolute',
+                    left: -4,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'ew-resize',
+                    zIndex: 10,
+                    borderRadius: '50%',
+                  }}
+                />
+                <div
+                  className="resize-handle end"
+                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'end')}
+                  style={{
+                    position: 'absolute',
+                    right: -4,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    width: 8,
+                    height: 8,
+                    background: 'white',
+                    border: '1px solid #3498db',
+                    cursor: 'ew-resize',
+                    zIndex: 10,
+                    borderRadius: '50%',
+                  }}
+                />
+              </>
+            )}
           </div>
         );
       }

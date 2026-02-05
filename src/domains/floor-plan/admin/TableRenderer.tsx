@@ -350,16 +350,16 @@ export function TableRenderer({
         {table.abbreviation || table.name}
       </div>
 
-      {/* Capacity badge */}
+      {/* Capacity badge - positioned inside table */}
       <div
         style={{
           position: 'absolute',
-          top: -8,
-          right: -8,
-          width: 20,
-          height: 20,
+          top: 4,
+          right: 4,
+          width: 18,
+          height: 18,
           borderRadius: '50%',
-          backgroundColor: '#4CAF50',
+          backgroundColor: 'rgba(76, 175, 80, 0.9)',
           color: 'white',
           fontSize: 11,
           fontWeight: 700,

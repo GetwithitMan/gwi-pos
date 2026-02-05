@@ -102,7 +102,16 @@ export const TableNode = memo(function TableNode({
   // Virtual group state
   const isInVirtualGroup = Boolean(table.virtualGroupId)
   const isVirtualGroupPrimary = table.virtualGroupPrimary
-  const effectiveVirtualGroupColor = virtualGroupColor || table.virtualGroupColor
+  const effectiveVirtualGroupColor = virtualGroupColor || table.virtualGroupColor || (isInVirtualGroup ? '#06b6d4' : null)
+
+  // Enhanced debug logging - log ALL tables to see data
+  console.log('Table Debug:', {
+    tableName: table.name,
+    virtualGroupId: table.virtualGroupId,
+    virtualGroupColor: table.virtualGroupColor,
+    isInVirtualGroup,
+    effectiveColor: effectiveVirtualGroupColor,
+  })
 
   // Calculate dynamic font sizes based on table dimensions
   const minDimension = Math.min(table.width, table.height)
@@ -279,10 +288,12 @@ export const TableNode = memo(function TableNode({
               ? '#22c55e'
               : hasCombinedColor
                 ? combinedGroupColor
-                : isSelected
-                  ? '#6366f1'
-                  : 'rgba(255, 255, 255, 0.1)',
-          borderWidth: isColliding || isDropTarget || isSelected || hasCombinedColor ? '3px' : '1px',
+                : isInVirtualGroup
+                  ? (effectiveVirtualGroupColor || '#06b6d4')
+                  : isSelected
+                    ? '#6366f1'
+                    : 'rgba(255, 255, 255, 0.1)',
+          borderWidth: isColliding || isDropTarget || isSelected || hasCombinedColor || isInVirtualGroup ? '3px' : '1px',
           borderStyle: isColliding ? 'solid' : isDropTarget || isCombined || isPartOfCombinedGroup ? 'dashed' : 'solid',
         }}
         transition={{ duration: 0.3 }}
@@ -329,18 +340,35 @@ export const TableNode = memo(function TableNode({
         </AnimatePresence>
 
         {/* Pulsing glow for virtual combined tables */}
-        {isInVirtualGroup && effectiveVirtualGroupColor && (
-          <motion.div
-            className="absolute inset-0 virtual-group-pulse"
-            style={{ borderRadius: 'inherit', pointerEvents: 'none' }}
-            animate={{
-              boxShadow: [
-                `0 0 10px ${effectiveVirtualGroupColor}, 0 0 5px ${effectiveVirtualGroupColor}`,
-                `0 0 25px ${effectiveVirtualGroupColor}, 0 0 15px ${effectiveVirtualGroupColor}`,
-                `0 0 10px ${effectiveVirtualGroupColor}, 0 0 5px ${effectiveVirtualGroupColor}`,
-              ],
+        {isInVirtualGroup && (() => {
+          const glowColor = effectiveVirtualGroupColor || '#06b6d4'
+          return (
+            <motion.div
+              className="absolute inset-[-4px] virtual-group-pulse"
+              style={{ borderRadius: 'inherit', pointerEvents: 'none' }}
+              animate={{
+                boxShadow: [
+                  `0 0 20px ${glowColor}, 0 0 40px ${glowColor}80, inset 0 0 15px ${glowColor}50`,
+                  `0 0 35px ${glowColor}, 0 0 60px ${glowColor}80, inset 0 0 25px ${glowColor}70`,
+                  `0 0 20px ${glowColor}, 0 0 40px ${glowColor}80, inset 0 0 15px ${glowColor}50`,
+                ],
+              }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+            />
+          )
+        })()}
+
+        {/* Solid ring indicator for virtual groups - always visible */}
+        {isInVirtualGroup && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: -6,
+              borderRadius: 'inherit',
+              border: `4px solid ${effectiveVirtualGroupColor || '#06b6d4'}`,
+              pointerEvents: 'none',
+              zIndex: 5,
             }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           />
         )}
 
@@ -446,13 +474,14 @@ export const TableNode = memo(function TableNode({
                 position: 'absolute',
                 top: -6,
                 left: -6,
-                width: 22,
-                height: 22,
+                width: 26,
+                height: 26,
                 borderRadius: '50%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                border: '2px double white',
+                border: '3px solid white',
+                boxShadow: `0 0 10px ${effectiveVirtualGroupColor || '#06b6d4'}`,
                 zIndex: 15,
               }}
               initial={{ scale: 0 }}

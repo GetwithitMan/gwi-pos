@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 /**
  * POST /api/tables/save-default-layout
@@ -64,6 +65,9 @@ export async function POST(request: NextRequest) {
         })
       )
     )
+
+    // Notify POS terminals of default layout save
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       data: {

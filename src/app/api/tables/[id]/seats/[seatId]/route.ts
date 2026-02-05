@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { softDeleteData } from '@/lib/floorplan/queries'
 import { Prisma } from '@prisma/client'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // GET - Get a single seat
 export async function GET(
@@ -125,6 +126,8 @@ export async function PUT(
       data: updateData,
     })
 
+    dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
+
     return NextResponse.json({
       seat: {
         id: seat.id,
@@ -219,6 +222,8 @@ export async function DELETE(
     })
 
     console.log(`[Seats] Deleted seat ${existingSeat.seatNumber} from table ${existingSeat.table.name}`)
+
+    dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 
     return NextResponse.json({ success: true })
   } catch (error) {

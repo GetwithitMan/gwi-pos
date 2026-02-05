@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // GET - List all sections for a location
 export async function GET(request: NextRequest) {
@@ -96,6 +97,8 @@ export async function POST(request: NextRequest) {
         gridSizeFeet: gridSizeFeet ?? 0.25,
       },
     })
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       section: {

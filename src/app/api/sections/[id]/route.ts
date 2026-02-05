@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { softDeleteData } from '@/lib/floorplan/queries'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // GET - Get a single section
 export async function GET(
@@ -10,8 +11,15 @@ export async function GET(
   const { id } = await params
 
   try {
+    const { searchParams } = new URL(req.url)
+    const locationId = searchParams.get('locationId')
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
     const section = await db.section.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, locationId, deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -48,7 +56,20 @@ export async function PUT(
 
   try {
     const body = await req.json()
-    const { name, color, isVisible, posX, posY, width, height, widthFeet, heightFeet, gridSizeFeet } = body
+    const { locationId, name, color, isVisible, posX, posY, width, height, widthFeet, heightFeet, gridSizeFeet } = body
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
+    // Verify the section belongs to this location
+    const existing = await db.section.findFirst({
+      where: { id, locationId, deletedAt: null },
+    })
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Section not found or access denied' }, { status: 404 })
+    }
 
     const section = await db.section.update({
       where: { id },
@@ -80,6 +101,8 @@ export async function PUT(
       },
     })
 
+    dispatchFloorPlanUpdate(locationId, { async: true })
+
     return NextResponse.json({ section })
   } catch (error) {
     console.error('[sections/[id]] PUT error:', error)
@@ -95,15 +118,31 @@ export async function DELETE(
   const { id } = await params
 
   try {
+    const { searchParams } = new URL(req.url)
+    const locationId = searchParams.get('locationId')
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
+    // Verify the section belongs to this location
+    const existing = await db.section.findFirst({
+      where: { id, locationId, deletedAt: null },
+    })
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Section not found or access denied' }, { status: 404 })
+    }
+
     // Check if section has tables
     const tablesInSection = await db.table.count({
-      where: { sectionId: id, deletedAt: null },
+      where: { sectionId: id, locationId, deletedAt: null },
     })
 
     if (tablesInSection > 0) {
       // Move tables to no section instead of deleting them
       await db.table.updateMany({
-        where: { sectionId: id, deletedAt: null },
+        where: { sectionId: id, locationId, deletedAt: null },
         data: { sectionId: null },
       })
     }
@@ -113,6 +152,8 @@ export async function DELETE(
       where: { id },
       data: softDeleteData(),
     })
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({ success: true, tablesMovedToNoSection: tablesInSection })
   } catch (error) {

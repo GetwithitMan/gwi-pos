@@ -2,41 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { tableEvents } from '@/lib/realtime/table-events'
-
-// Helper to restore seats to original positions
-async function restoreSeatsForTable(
-  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
-  tableId: string,
-  locationId: string
-) {
-  // Fetch all seats for this table
-  const seats = await tx.seat.findMany({
-    where: { tableId, isActive: true, deletedAt: null },
-    orderBy: { seatNumber: 'asc' },
-  })
-
-  // Restore each seat to its original position
-  let seatNum = 1
-  for (const seat of seats) {
-    // Only restore if original positions were saved
-    if (seat.originalRelativeX !== null || seat.originalRelativeY !== null) {
-      await tx.seat.update({
-        where: { id: seat.id },
-        data: {
-          relativeX: seat.originalRelativeX ?? seat.relativeX,
-          relativeY: seat.originalRelativeY ?? seat.relativeY,
-          angle: seat.originalAngle ?? seat.angle,
-          originalRelativeX: null,
-          originalRelativeY: null,
-          originalAngle: null,
-          label: String(seatNum),
-          seatNumber: seatNum,
-        },
-      })
-      seatNum++
-    }
-  }
-}
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 /**
  * POST /api/tables/reset-to-default
@@ -164,14 +130,24 @@ export async function POST(request: NextRequest) {
               },
             })
 
-            // Restore seats to original positions
-            await restoreSeatsForTable(tx, combined.id, locationId)
-
             resetResults.push({
               id: combined.id,
               name: combined.originalName || combined.name,
               wasReset: true,
             })
+          }
+
+          // Restore seats for all child tables
+          const childTableIds = combinedTables.map(ct => ct.id)
+          if (childTableIds.length > 0) {
+            fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/seats/bulk-operations?action=restore-original`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                locationId,
+                tableIds: childTableIds
+              })
+            }).catch(err => console.error('Child seat restore failed:', err))
           }
 
           // Calculate original capacity (divide current by number of tables)
@@ -201,8 +177,15 @@ export async function POST(request: NextRequest) {
             },
           })
 
-          // Restore seats to original positions for primary table
-          await restoreSeatsForTable(tx, table.id, locationId)
+          // Restore primary table's seats
+          fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/seats/bulk-operations?action=restore-original`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              locationId,
+              tableIds: [table.id]
+            })
+          }).catch(err => console.error('Primary seat restore failed:', err))
 
           resetResults.push({
             id: table.id,
@@ -271,6 +254,8 @@ export async function POST(request: NextRequest) {
         triggeredBy: employeeId,
       })
     }
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     const resetCount = result.filter(r => r.wasReset).length
     const skippedCount = skippedTableIds.length

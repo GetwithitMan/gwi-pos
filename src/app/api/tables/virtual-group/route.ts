@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { distributeSeatsOnPerimeter, getGroupBoundingBox, type TableRect } from '@/lib/table-geometry'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 type VirtualGroupAction = 'create' | 'add' | 'remove' | 'dissolve'
 
@@ -208,6 +209,9 @@ async function handleCreate(body: CreateVirtualGroupBody) {
     return { virtualGroup, color }
   })
 
+  // Notify POS terminals of virtual group creation
+  dispatchFloorPlanUpdate(locationId, { async: true })
+
   return NextResponse.json({
     data: {
       virtualGroupId: result.virtualGroup.id,
@@ -303,6 +307,9 @@ async function handleAdd(body: AddToVirtualGroupBody) {
       },
     })
   })
+
+  // Notify POS terminals of tables added to virtual group
+  dispatchFloorPlanUpdate(locationId, { async: true })
 
   return NextResponse.json({
     data: {
@@ -412,6 +419,9 @@ async function handleRemove(body: RemoveFromVirtualGroupBody) {
     })
   })
 
+  // Notify POS terminals of tables removed from virtual group
+  dispatchFloorPlanUpdate(locationId, { async: true })
+
   return NextResponse.json({
     data: {
       virtualGroupId,
@@ -467,6 +477,9 @@ async function handleDissolve(body: DissolveVirtualGroupBody) {
       },
     })
   })
+
+  // Notify POS terminals of virtual group dissolution
+  dispatchFloorPlanUpdate(locationId, { async: true })
 
   return NextResponse.json({
     data: {

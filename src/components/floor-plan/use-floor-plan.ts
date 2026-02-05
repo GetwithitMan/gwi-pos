@@ -36,6 +36,9 @@ export interface FloorPlanTable {
   virtualGroupId: string | null
   virtualGroupPrimary: boolean
   virtualGroupColor: string | null
+  virtualGroupOffsetX: number | null  // Visual offset for snapped position in virtual group
+  virtualGroupOffsetY: number | null  // Visual offset for snapped position in virtual group
+  sectionId: string | null  // Section ID for filtering by room
   currentOrder: {
     id: string
     orderNumber: number

@@ -1,251 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { generateSeatPositions as generateSeatPositionsFromLib, type SeatPattern as LibSeatPattern } from '@/lib/seat-generation'
 
-type SeatPattern = 'all_around' | 'front_only' | 'three_sides' | 'two_sides' | 'inside'
-
-interface SeatPosition {
-  seatNumber: number
-  label: string
-  relativeX: number
-  relativeY: number
-  angle: number
-}
-
+// Helper function to generate seat labels
 function getLabel(index: number): string {
   return String(index + 1)
-}
-
-// Generate seats distributed around all 4 sides of a rectangle
-function generateSeatsAllAround(
-  tableWidth: number,
-  tableHeight: number,
-  count: number
-): SeatPosition[] {
-  const seats: SeatPosition[] = []
-  const offset = 25
-  const perimeter = 2 * (tableWidth + tableHeight)
-  const spacing = perimeter / count
-
-  let currentDist = 0 // Start at top-left corner (was spacing/2 which centered on top edge)
-
-  for (let i = 0; i < count; i++) {
-    let x = 0, y = 0, angle = 0
-
-    if (currentDist < tableWidth) {
-      x = -tableWidth / 2 + currentDist
-      y = -tableHeight / 2 - offset
-      angle = 180
-    } else if (currentDist < tableWidth + tableHeight) {
-      const sideDist = currentDist - tableWidth
-      x = tableWidth / 2 + offset
-      y = -tableHeight / 2 + sideDist
-      angle = 270
-    } else if (currentDist < 2 * tableWidth + tableHeight) {
-      const sideDist = currentDist - tableWidth - tableHeight
-      x = tableWidth / 2 - sideDist
-      y = tableHeight / 2 + offset
-      angle = 0
-    } else {
-      const sideDist = currentDist - 2 * tableWidth - tableHeight
-      x = -tableWidth / 2 - offset
-      y = tableHeight / 2 - sideDist
-      angle = 90
-    }
-
-    seats.push({
-      seatNumber: i + 1,
-      label: getLabel(i),
-      relativeX: Math.round(x),
-      relativeY: Math.round(y),
-      angle,
-    })
-
-    currentDist += spacing
-    if (currentDist > perimeter) currentDist -= perimeter
-  }
-
-  return seats
-}
-
-// Generate seats in a row on front/bottom side only (for bar seating)
-function generateSeatsFrontOnly(
-  tableWidth: number,
-  tableHeight: number,
-  count: number
-): SeatPosition[] {
-  const seats: SeatPosition[] = []
-  const offset = 25
-  const spacing = tableWidth / (count + 1)
-
-  for (let i = 0; i < count; i++) {
-    seats.push({
-      seatNumber: i + 1,
-      label: getLabel(i),
-      relativeX: Math.round(-tableWidth / 2 + spacing * (i + 1)),
-      relativeY: tableHeight / 2 + offset,
-      angle: 0,
-    })
-  }
-
-  return seats
-}
-
-// Generate seats on 3 sides (against wall)
-function generateSeatsThreeSides(
-  tableWidth: number,
-  tableHeight: number,
-  count: number
-): SeatPosition[] {
-  const seats: SeatPosition[] = []
-  const offset = 25
-
-  const frontSeats = Math.ceil(count / 2)
-  const sideSeatsTotal = count - frontSeats
-  const leftSeats = Math.floor(sideSeatsTotal / 2)
-  const rightSeats = sideSeatsTotal - leftSeats
-
-  let seatNum = 0
-
-  for (let i = 0; i < leftSeats; i++) {
-    const y = -tableHeight / 2 + (tableHeight / (leftSeats + 1)) * (i + 1)
-    seats.push({
-      seatNumber: seatNum + 1,
-      label: getLabel(seatNum),
-      relativeX: -tableWidth / 2 - offset,
-      relativeY: Math.round(y),
-      angle: 90,
-    })
-    seatNum++
-  }
-
-  for (let i = 0; i < frontSeats; i++) {
-    const x = -tableWidth / 2 + (tableWidth / (frontSeats + 1)) * (i + 1)
-    seats.push({
-      seatNumber: seatNum + 1,
-      label: getLabel(seatNum),
-      relativeX: Math.round(x),
-      relativeY: tableHeight / 2 + offset,
-      angle: 0,
-    })
-    seatNum++
-  }
-
-  for (let i = 0; i < rightSeats; i++) {
-    const y = -tableHeight / 2 + (tableHeight / (rightSeats + 1)) * (i + 1)
-    seats.push({
-      seatNumber: seatNum + 1,
-      label: getLabel(seatNum),
-      relativeX: tableWidth / 2 + offset,
-      relativeY: Math.round(y),
-      angle: 270,
-    })
-    seatNum++
-  }
-
-  return seats
-}
-
-// Generate seats on 2 adjacent sides (corner booth)
-function generateSeatsTwoSides(
-  tableWidth: number,
-  tableHeight: number,
-  count: number
-): SeatPosition[] {
-  const seats: SeatPosition[] = []
-  const offset = 25
-
-  const frontSeats = Math.ceil(count / 2)
-  const rightSeats = count - frontSeats
-
-  let seatNum = 0
-
-  for (let i = 0; i < frontSeats; i++) {
-    const x = -tableWidth / 2 + (tableWidth / (frontSeats + 1)) * (i + 1)
-    seats.push({
-      seatNumber: seatNum + 1,
-      label: getLabel(seatNum),
-      relativeX: Math.round(x),
-      relativeY: tableHeight / 2 + offset,
-      angle: 0,
-    })
-    seatNum++
-  }
-
-  for (let i = 0; i < rightSeats; i++) {
-    const y = -tableHeight / 2 + (tableHeight / (rightSeats + 1)) * (i + 1)
-    seats.push({
-      seatNumber: seatNum + 1,
-      label: getLabel(seatNum),
-      relativeX: tableWidth / 2 + offset,
-      relativeY: Math.round(y),
-      angle: 270,
-    })
-    seatNum++
-  }
-
-  return seats
-}
-
-// Generate seats inside the table (booth interior)
-function generateSeatsInside(
-  tableWidth: number,
-  tableHeight: number,
-  count: number
-): SeatPosition[] {
-  const seats: SeatPosition[] = []
-  const innerPadding = 15
-
-  const backSeats = Math.ceil(count / 2)
-  const frontSeats = count - backSeats
-
-  let seatNum = 0
-
-  for (let i = 0; i < backSeats; i++) {
-    const x = -tableWidth / 2 + innerPadding + ((tableWidth - innerPadding * 2) / (backSeats + 1)) * (i + 1)
-    seats.push({
-      seatNumber: seatNum + 1,
-      label: getLabel(seatNum),
-      relativeX: Math.round(x),
-      relativeY: -tableHeight / 4,
-      angle: 180,
-    })
-    seatNum++
-  }
-
-  for (let i = 0; i < frontSeats; i++) {
-    const x = -tableWidth / 2 + innerPadding + ((tableWidth - innerPadding * 2) / (frontSeats + 1)) * (i + 1)
-    seats.push({
-      seatNumber: seatNum + 1,
-      label: getLabel(seatNum),
-      relativeX: Math.round(x),
-      relativeY: tableHeight / 4,
-      angle: 0,
-    })
-    seatNum++
-  }
-
-  return seats
-}
-
-function generateSeatPositions(
-  tableWidth: number,
-  tableHeight: number,
-  count: number,
-  pattern: SeatPattern
-): SeatPosition[] {
-  switch (pattern) {
-    case 'front_only':
-      return generateSeatsFrontOnly(tableWidth, tableHeight, count)
-    case 'three_sides':
-      return generateSeatsThreeSides(tableWidth, tableHeight, count)
-    case 'two_sides':
-      return generateSeatsTwoSides(tableWidth, tableHeight, count)
-    case 'inside':
-      return generateSeatsInside(tableWidth, tableHeight, count)
-    case 'all_around':
-    default:
-      return generateSeatsAllAround(tableWidth, tableHeight, count)
-  }
 }
 
 /**
@@ -305,18 +65,37 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      // Determine seat pattern based on shape or stored pattern
-      let pattern: SeatPattern = (table.seatPattern as SeatPattern) || 'all_around'
-      if (table.shape === 'bar') pattern = 'front_only'
-      else if (table.shape === 'booth') pattern = 'inside'
+      // Map local patterns to library patterns
+      const patternMap: Record<string, LibSeatPattern> = {
+        'all_around': 'all_around',
+        'front_only': 'one_side',
+        'two_sides': 'two_sides',
+        'three_sides': 'booth', // Maps to booth pattern (3 sides)
+        'inside': 'booth', // Maps to booth pattern
+      }
 
-      // Generate seat positions
-      const seatPositions = generateSeatPositions(
-        table.width,
-        table.height,
-        table.capacity,
-        pattern
-      )
+      // Determine seat pattern based on shape or stored pattern
+      let localPattern = table.seatPattern || 'all_around'
+      if (table.shape === 'bar') localPattern = 'front_only'
+      else if (table.shape === 'booth') localPattern = 'inside'
+
+      // Map to library pattern
+      const libraryPattern = patternMap[localPattern as string] || 'all_around'
+
+      // Generate seat positions using library function
+      const baseSeatPositions = generateSeatPositionsFromLib({
+        shape: table.shape as 'rectangle' | 'square' | 'round' | 'oval' | 'booth',
+        pattern: libraryPattern,
+        capacity: table.capacity,
+        width: table.width,
+        height: table.height,
+      })
+
+      // Add labels to seat positions
+      const seatPositions = baseSeatPositions.map((pos, index) => ({
+        ...pos,
+        label: getLabel(index),
+      }))
 
       // Create seats in database
       await db.seat.createMany({
@@ -360,6 +139,8 @@ export async function POST(request: NextRequest) {
 
       console.log(`[GenerateAllSeats] Generated seats for ${results.length} tables (${skipped} skipped)`)
     }
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       success: true,

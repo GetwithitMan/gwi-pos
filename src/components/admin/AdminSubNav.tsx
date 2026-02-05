@@ -113,6 +113,6 @@ export const teamSubNav: SubNavItem[] = [
 ]
 
 export const floorSubNav: SubNavItem[] = [
-  { label: 'Floor Plan', href: '/floor-plan' },
+  { label: 'Floor Plan', href: '/floorplan/editor' },
   { label: 'Reservations', href: '/reservations' },
 ]

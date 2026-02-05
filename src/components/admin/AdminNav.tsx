@@ -266,7 +266,7 @@ const navSections: NavSection[] = [
     icon: '🪑',
     permission: null,
     items: [
-      { name: 'Floor Plan Editor', href: '/floor-plan', icon: Icons.floorPlan },
+      { name: 'Floor Plan Editor', href: '/floorplan/editor', icon: Icons.floorPlan },
       { name: 'Reservations', href: '/reservations', icon: Icons.calendar },
       { name: 'Timed Rentals', href: '/timed-rentals', icon: Icons.clock },
     ],

@@ -116,10 +116,10 @@ export function SeatRenderer({
 
       {/* Seat circle container */}
       <div
-        onClick={(e) => {
+        onClick={onClick ? (e) => {
           e.stopPropagation();
-          onClick?.();
-        }}
+          onClick();
+        } : undefined}
         onDoubleClick={(e) => {
           e.stopPropagation();
           onDoubleClick?.();

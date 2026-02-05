@@ -18,6 +18,7 @@ export interface VirtualSeatInfo {
 export interface TableWithSeats {
   id: string
   name: string
+  abbreviation?: string | null
   posX: number
   posY: number
   seats: Array<{
@@ -79,6 +80,18 @@ export function calculateVirtualSeatNumbers(
     const sortedSeats = [...table.seats].sort((a, b) => a.seatNumber - b.seatNumber)
 
     for (const seat of sortedSeats) {
+      // Create short name: use abbreviation if set, otherwise "T" + table number
+      // Examples: "Table 20" -> "T20", "Bar Top 1" -> "BT1", abbreviation "VIP" -> "VIP"
+      const shortName = table.abbreviation || (() => {
+        // Extract numbers from table name (e.g., "Table 20" -> "20")
+        const numbers = table.name.replace(/[^0-9]/g, '')
+        if (numbers) {
+          return `T${numbers}`
+        }
+        // Fallback: First letter of each word (e.g., "Bar Top" -> "BT")
+        return table.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 3)
+      })()
+
       result.push({
         seatId: seat.id,
         tableId: table.id,
@@ -86,7 +99,7 @@ export function calculateVirtualSeatNumbers(
         originalSeatNumber: seat.seatNumber,
         virtualSeatNumber,
         originalLabel: seat.label,
-        virtualLabel: `${table.name}-${seat.seatNumber}`,
+        virtualLabel: `${shortName}-${seat.seatNumber}`,
       })
 
       virtualSeatNumber++

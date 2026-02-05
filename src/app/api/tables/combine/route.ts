@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { tableEvents } from '@/lib/realtime/table-events'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import {
   getCombinedGroupTables,
   getGroupBoundingBox,
@@ -515,6 +516,8 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
       triggeredBy: employeeId,
     })
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     const targetOrder = result.updatedTarget.orders[0] || null
 

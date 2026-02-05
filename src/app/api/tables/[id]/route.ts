@@ -11,20 +11,30 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    const { searchParams } = new URL(request.url)
+    const locationId = searchParams.get('locationId')
 
-    const table = await db.table.findUnique({
-      where: { id },
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'locationId is required' },
+        { status: 400 }
+      )
+    }
+
+    const table = await db.table.findFirst({
+      where: { id, locationId, deletedAt: null },
       include: {
         section: {
           select: { id: true, name: true, color: true },
         },
         orders: {
-          where: { status: 'open' },
+          where: { status: 'open', deletedAt: null },
           include: {
             employee: {
               select: { displayName: true, firstName: true, lastName: true },
             },
             items: {
+              where: { deletedAt: null },
               include: { modifiers: true },
             },
           },

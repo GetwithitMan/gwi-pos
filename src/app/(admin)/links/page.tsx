@@ -11,7 +11,7 @@ export default function LinksPage() {
 
           {/* FLOOR PLAN / TABLES */}
           <Section title="🏢 FLOOR PLAN">
-            <LinkItem href="/floor-plan" label="Floor Plan" />
+            <LinkItem href="/floorplan/editor" label="Floor Plan Editor" />
             <LinkItem href="/orders" label="Orders (POS)" />
           </Section>
 

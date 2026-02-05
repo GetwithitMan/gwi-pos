@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 /**
  * POST /api/tables/virtual-combine/[groupId]/transfer
@@ -137,6 +138,9 @@ export async function POST(
         },
       })
     })
+
+    // Notify POS terminals of virtual group transfer
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       data: {

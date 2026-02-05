@@ -6,6 +6,7 @@ import {
   getGroupBoundingBox,
   type TableRect,
 } from '@/lib/table-geometry'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 interface ReflowSeatsBody {
   locationId: string
@@ -231,6 +232,8 @@ export async function POST(request: NextRequest) {
         })
       }
     })
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     const updatedSeats = await db.seat.findMany({
       where: {

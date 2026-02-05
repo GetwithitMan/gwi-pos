@@ -455,7 +455,10 @@ export function FloorPlanEditor({
           const response = await fetch(`/api/floor-plan-elements/${fixtureId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(elementData),
+            body: JSON.stringify({
+              locationId: locationId || '',
+              ...elementData,
+            }),
           });
 
           if (response.ok) {
@@ -475,7 +478,7 @@ export function FloorPlanEditor({
         setRefreshKey((prev) => prev + 1);
       }
     },
-    [useDatabase, dbElements, selectedRoomId]
+    [useDatabase, dbElements, selectedRoomId, locationId]
   );
 
   // Handle fixture deletion
@@ -483,7 +486,7 @@ export function FloorPlanEditor({
     async (fixtureId: string) => {
       if (useDatabase) {
         try {
-          const response = await fetch(`/api/floor-plan-elements/${fixtureId}`, {
+          const response = await fetch(`/api/floor-plan-elements/${fixtureId}?locationId=${locationId}`, {
             method: 'DELETE',
           });
           if (response.ok) {
@@ -498,7 +501,7 @@ export function FloorPlanEditor({
       }
       setSelectedFixtureId(null);
     },
-    [useDatabase]
+    [useDatabase, locationId]
   );
 
   // Handle table creation

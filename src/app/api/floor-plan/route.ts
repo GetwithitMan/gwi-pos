@@ -3,15 +3,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 /**
- * GET /api/floor-plan?locationId=xxx&sectionId=yyy
+ * GET /api/floor-plan?locationId=xxx&sectionId=yyy&include=tables,seats,sections,elements,virtualGroups
  *
- * Returns tables and seats for the floor plan view.
+ * Returns complete floor plan data in a single call.
+ * - tables: Table records with positions and virtual group info
+ * - seats: Seat positions for all tables
+ * - sections: Section/room definitions
+ * - elements: Floor plan elements (walls, bars, entertainment items)
+ * - virtualGroups: Combined table groups
+ *
  * Used by FloorPlanHome to load initial data.
  */
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const locationId = searchParams.get('locationId')
   const sectionId = searchParams.get('sectionId')
+  const includeParam = searchParams.get('include')
+  const include = includeParam
+    ? includeParam.split(',').map(s => s.trim())
+    : ['tables', 'seats', 'sections', 'elements', 'virtualGroups']
 
   if (!locationId) {
     return NextResponse.json(
@@ -21,6 +31,20 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Fetch sections if requested
+    const sections = include.includes('sections')
+      ? await db.section.findMany({
+          where: { locationId, deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            color: true,
+            sortOrder: true,
+          },
+          orderBy: { sortOrder: 'asc' },
+        })
+      : []
+
     // Build where clause for tables
     const tableWhere: {
       locationId: string
@@ -35,8 +59,9 @@ export async function GET(request: NextRequest) {
       tableWhere.sectionId = sectionId
     }
 
-    // Fetch tables with section info
-    const tables = await db.table.findMany({
+    // Fetch tables with section info (if requested)
+    const tables = include.includes('tables')
+      ? await db.table.findMany({
       where: tableWhere,
       select: {
         id: true,
@@ -63,12 +88,14 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { name: 'asc' },
     })
+      : []
 
     // Get all table IDs for seat and order queries
     const tableIds = tables.map(t => t.id)
 
-    // Fetch seats for these tables
-    const seats = await db.seat.findMany({
+    // Fetch seats for these tables (if requested)
+    const seats = include.includes('seats') && tableIds.length > 0
+      ? await db.seat.findMany({
       where: {
         tableId: { in: tableIds },
         isActive: true,
@@ -85,9 +112,37 @@ export async function GET(request: NextRequest) {
       },
       orderBy: [{ tableId: 'asc' }, { seatNumber: 'asc' }],
     })
+      : []
+
+    // Fetch floor plan elements (if requested)
+    const elements = include.includes('elements')
+      ? await db.floorPlanElement.findMany({
+          where: { locationId, deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            elementType: true,
+            visualType: true,
+            posX: true,
+            posY: true,
+            width: true,
+            height: true,
+            rotation: true,
+            linkedMenuItemId: true,
+            linkedMenuItem: {
+              select: {
+                id: true,
+                name: true,
+                entertainmentStatus: true,
+              },
+            },
+          },
+        })
+      : []
 
     // Fetch open orders for these tables (status = open or in_progress)
-    const openOrders = await db.order.findMany({
+    const openOrders = tableIds.length > 0
+      ? await db.order.findMany({
       where: {
         tableId: { in: tableIds },
         status: { in: ['open', 'in_progress'] },
@@ -109,6 +164,7 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     })
+      : []
 
     // Create a map of tableId -> currentOrder (most recent open order)
     const ordersByTable = new Map<string, {
@@ -163,10 +219,49 @@ export async function GET(request: NextRequest) {
       angle: s.angle,
     }))
 
-    return NextResponse.json({
-      tables: formattedTables,
-      seats: formattedSeats,
-    })
+    // Extract virtual groups from tables (if requested)
+    interface VirtualGroup {
+      virtualGroupId: string
+      primaryTableId: string | null
+      groupColor: string | null
+      tableIds: string[]
+      tableNames: string[]
+    }
+
+    const virtualGroupsMap = include.includes('virtualGroups')
+      ? tables
+          .filter(t => t.virtualGroupId)
+          .reduce((acc, table) => {
+            const groupId = table.virtualGroupId!
+            if (!acc[groupId]) {
+              acc[groupId] = {
+                virtualGroupId: groupId,
+                primaryTableId: null as string | null,
+                groupColor: table.virtualGroupColor,
+                tableIds: [],
+                tableNames: [],
+              }
+            }
+            acc[groupId].tableIds.push(table.id)
+            acc[groupId].tableNames.push(table.name)
+            if (table.virtualGroupPrimary) {
+              acc[groupId].primaryTableId = table.id
+            }
+            return acc
+          }, {} as Record<string, VirtualGroup>)
+      : {}
+
+    const virtualGroups = Object.values(virtualGroupsMap)
+
+    // Build response based on include parameter
+    const response: any = { data: {} }
+    if (include.includes('tables')) response.data.tables = formattedTables
+    if (include.includes('seats')) response.data.seats = formattedSeats
+    if (include.includes('sections')) response.data.sections = sections
+    if (include.includes('elements')) response.data.elements = elements
+    if (include.includes('virtualGroups')) response.data.virtualGroups = virtualGroups
+
+    return NextResponse.json(response)
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error'
     console.error('[FloorPlan API] Error:', msg)

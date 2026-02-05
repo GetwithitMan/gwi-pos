@@ -52,8 +52,8 @@ export async function POST(
       height: table.height,
     });
 
-    // Hard delete existing seats to avoid unique constraint violation
-    // (tableId + seatNumber must be unique, soft delete doesn't clear this)
+    // Hard delete existing seats - regeneration is a complete replacement
+    // and soft-deleted seats would conflict with unique constraint on (tableId, seatNumber)
     await db.seat.deleteMany({
       where: { tableId },
     });
@@ -67,16 +67,16 @@ export async function POST(
             tableId,
             seatNumber: pos.seatNumber,
             label: String(pos.seatNumber), // Generate label from seat number
-            relativeX: pos.relativeX,
-            relativeY: pos.relativeY,
-            angle: pos.angle,
+            relativeX: Math.round(pos.relativeX),
+            relativeY: Math.round(pos.relativeY),
+            angle: Math.round(pos.angle),
             seatType: 'standard',
             // If saveAsDefault, set original positions for restore capability
             ...(saveAsDefault
               ? {
-                  originalRelativeX: pos.relativeX,
-                  originalRelativeY: pos.relativeY,
-                  originalAngle: pos.angle,
+                  originalRelativeX: Math.round(pos.relativeX),
+                  originalRelativeY: Math.round(pos.relativeY),
+                  originalAngle: Math.round(pos.angle),
                 }
               : {}),
           },

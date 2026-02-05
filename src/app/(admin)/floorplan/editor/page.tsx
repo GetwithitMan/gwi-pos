@@ -1,41 +1,24 @@
 'use client';
 
 /**
- * GWI POS - Floor Plan Editor Test Page
+ * GWI POS - Floor Plan Editor
  *
- * Test page for the Floor Plan Admin Editor.
- * Access at: http://localhost:3000/test-floorplan/editor
+ * Admin page for editing the floor plan layout.
+ * Access at: http://localhost:3000/floorplan/editor
  *
- * This uses the ORIGINAL polished FloorPlanEditor with all the UI features
+ * This uses the FloorPlanEditor with all the UI features
  * (rotation controls, wall snapping, fine-tune buttons, etc.)
  */
 
 import React, { useEffect, useState } from 'react';
 import { FloorPlanEditor } from '@/domains/floor-plan/admin';
-import { FloorCanvasAPI } from '@/domains/floor-plan/canvas';
-import { sampleFloorPlans, sampleFixtures } from '../sampleData';
-
-// =============================================================================
-// TEST PAGE COMPONENT
-// =============================================================================
 
 // Default location ID for testing
 const TEST_LOCATION_ID = 'loc-default';
 
-export default function TestFloorPlanEditorPage() {
+export default function FloorPlanEditorPage() {
   const [locationId, setLocationId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Initialize sample data when component mounts
-  useEffect(() => {
-    // Only initialize if not already done
-    if (FloorCanvasAPI.getAllRooms().length === 0) {
-      console.log('[Editor] Initializing sample floor plan data...');
-      FloorCanvasAPI.initializeFloorPlans(sampleFloorPlans, sampleFixtures);
-    } else {
-      console.log('[Editor] Sample data already initialized, skipping.');
-    }
-  }, []);
 
   // Get a location ID from the database
   useEffect(() => {
@@ -66,8 +49,8 @@ export default function TestFloorPlanEditorPage() {
   }, []);
 
   const handleExit = () => {
-    // Navigate back to Front of House to see changes
-    window.location.href = '/test-floorplan';
+    // Navigate back to orders (production FOH view)
+    window.location.href = '/orders';
   };
 
   if (isLoading) {
@@ -79,6 +62,7 @@ export default function TestFloorPlanEditorPage() {
           alignItems: 'center',
           height: '100vh',
           fontFamily: 'system-ui, sans-serif',
+          background: '#0f172a',
         }}
       >
         <div style={{ textAlign: 'center' }}>
@@ -86,14 +70,14 @@ export default function TestFloorPlanEditorPage() {
             style={{
               width: 48,
               height: 48,
-              border: '4px solid #f3f3f3',
-              borderTop: '4px solid #3498db',
+              border: '4px solid #334155',
+              borderTop: '4px solid #3b82f6',
               borderRadius: '50%',
               animation: 'spin 1s linear infinite',
               margin: '0 auto 16px',
             }}
           />
-          <p style={{ color: '#666', fontSize: 14 }}>
+          <p style={{ color: '#94a3b8', fontSize: 14 }}>
             Loading Floor Plan Editor...
           </p>
         </div>
@@ -116,9 +100,10 @@ export default function TestFloorPlanEditorPage() {
           alignItems: 'center',
           height: '100vh',
           fontFamily: 'system-ui, sans-serif',
+          background: '#0f172a',
         }}
       >
-        <div style={{ textAlign: 'center', color: '#f44336' }}>
+        <div style={{ textAlign: 'center', color: '#f87171' }}>
           <h2>No Location Found</h2>
           <p>Please create a location first.</p>
         </div>
@@ -128,11 +113,6 @@ export default function TestFloorPlanEditorPage() {
 
   return (
     <div>
-      {/*
-        Using the ORIGINAL FloorPlanEditor with DATABASE PERSISTENCE.
-        Changes are saved to FloorPlanElement table and broadcast via sockets
-        to other pages like /test-floorplan (FOH view).
-      */}
       <FloorPlanEditor
         locationId={locationId}
         useDatabase={true}

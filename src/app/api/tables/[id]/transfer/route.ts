@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // POST - Transfer table to another server
 export async function POST(
@@ -108,6 +109,9 @@ export async function POST(
         },
       },
     })
+
+    // Notify POS terminals of table transfer
+    dispatchFloorPlanUpdate(table.locationId, { async: true })
 
     return NextResponse.json({
       success: true,

@@ -118,6 +118,7 @@ export async function GET(request: NextRequest) {
         seatPattern: table.seatPattern,
         status: table.status,
         section: table.section,
+        sectionId: table.sectionId,  // Section ID for filtering
         // Combine fields (Skill 106/107)
         combinedWithId: table.combinedWithId,
         combinedTableIds: table.combinedTableIds as string[] | null,

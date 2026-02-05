@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { tableEvents } from '@/lib/realtime/table-events'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 /**
  * POST /api/tables/virtual-combine/[groupId]/dissolve
@@ -259,6 +260,8 @@ export async function POST(
       timestamp: new Date().toISOString(),
       triggeredBy: employeeId,
     })
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       data: {

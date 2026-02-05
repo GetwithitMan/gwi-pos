@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { tableEvents } from '@/lib/realtime/table-events'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 /**
  * POST /api/tables/[id]/remove-from-group
@@ -34,11 +35,6 @@ export async function POST(
     // Fetch the table to remove
     const tableToRemove = await db.table.findFirst({
       where: { id: tableIdToRemove, locationId, deletedAt: null },
-      include: {
-        seats: {
-          where: { isActive: true, deletedAt: null },
-        },
-      },
     })
 
     if (!tableToRemove) {
@@ -81,11 +77,6 @@ export async function POST(
     // Fetch the primary table
     const primaryTable = await db.table.findFirst({
       where: { id: primaryTableId, locationId, deletedAt: null },
-      include: {
-        seats: {
-          where: { isActive: true, deletedAt: null },
-        },
-      },
     })
 
     if (!primaryTable) {
@@ -125,19 +116,15 @@ export async function POST(
         },
       })
 
-      // 3. Restore removed table's seats to original positions
-      for (const seat of tableToRemove.seats) {
+      // 3. Restore seat labels for the removed table
+      const removedTableSeats = await tx.seat.findMany({
+        where: { tableId: tableIdToRemove, deletedAt: null }
+      })
+
+      for (const seat of removedTableSeats) {
         await tx.seat.update({
           where: { id: seat.id },
-          data: {
-            relativeX: seat.originalRelativeX ?? seat.relativeX,
-            relativeY: seat.originalRelativeY ?? seat.relativeY,
-            angle: seat.originalAngle ?? seat.angle,
-            originalRelativeX: null,
-            originalRelativeY: null,
-            originalAngle: null,
-            label: String(seat.seatNumber),
-          },
+          data: { label: String(seat.seatNumber) }
         })
       }
 
@@ -172,91 +159,23 @@ export async function POST(
         },
       })
 
-      // 5. If there are still combined tables, recalculate seat positions
-      if (newCombinedIds.length > 0) {
-        // Get all remaining tables in the group
-        const remainingTables = await tx.table.findMany({
-          where: {
-            id: { in: [primaryTableId, ...newCombinedIds] },
-            isActive: true,
-          },
+      // 5. If group was fully dissolved, restore primary table's seat labels
+      if (newCombinedIds.length === 0) {
+        const primaryTableSeats = await tx.seat.findMany({
+          where: { tableId: primaryTableId, deletedAt: null }
         })
 
-        // Get all seats from remaining tables
-        const remainingSeats = await tx.seat.findMany({
-          where: {
-            tableId: { in: [primaryTableId, ...newCombinedIds] },
-            isActive: true,
-            deletedAt: null,
-          },
-        })
-
-        // Calculate combined bounding box
-        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-        const tablePositions = new Map<string, { posX: number; posY: number; width: number; height: number }>()
-
-        for (const t of remainingTables) {
-          tablePositions.set(t.id, {
-            posX: t.posX,
-            posY: t.posY,
-            width: t.width,
-            height: t.height,
-          })
-          minX = Math.min(minX, t.posX)
-          minY = Math.min(minY, t.posY)
-          maxX = Math.max(maxX, t.posX + t.width)
-          maxY = Math.max(maxY, t.posY + t.height)
-        }
-
-        const combinedCenterX = (minX + maxX) / 2
-        const combinedCenterY = (minY + maxY) / 2
-
-        // Sort remaining seats by clockwise position
-        const seatsWithAngles = remainingSeats.map(seat => {
-          const tablePos = tablePositions.get(seat.tableId)
-          if (!tablePos) return null
-
-          const tableCenterX = tablePos.posX + tablePos.width / 2
-          const tableCenterY = tablePos.posY + tablePos.height / 2
-          const absoluteX = tableCenterX + seat.relativeX
-          const absoluteY = tableCenterY + seat.relativeY
-
-          const dx = absoluteX - combinedCenterX
-          const dy = absoluteY - combinedCenterY
-          let angle = Math.atan2(dy, dx) * 180 / Math.PI
-          angle = (angle + 135 + 360) % 360
-
-          return { seat, clockwiseAngle: angle }
-        }).filter(Boolean) as Array<{ seat: typeof remainingSeats[0]; clockwiseAngle: number }>
-
-        seatsWithAngles.sort((a, b) => a.clockwiseAngle - b.clockwiseAngle)
-
-        // Update labels based on new clockwise order
-        for (let i = 0; i < seatsWithAngles.length; i++) {
-          await tx.seat.update({
-            where: { id: seatsWithAngles[i].seat.id },
-            data: { label: String(i + 1) },
-          })
-        }
-      } else {
-        // No more combined tables - restore primary's seats
-        for (const seat of primaryTable.seats) {
+        for (const seat of primaryTableSeats) {
           await tx.seat.update({
             where: { id: seat.id },
-            data: {
-              relativeX: seat.originalRelativeX ?? seat.relativeX,
-              relativeY: seat.originalRelativeY ?? seat.relativeY,
-              angle: seat.originalAngle ?? seat.angle,
-              originalRelativeX: null,
-              originalRelativeY: null,
-              originalAngle: null,
-              label: String(seat.seatNumber),
-            },
+            data: { label: String(seat.seatNumber) }
           })
         }
       }
 
-      // 6. Create audit log
+      // 6. Seat label recalculation will be done via API after transaction
+
+      // 7. Create audit log
       await tx.auditLog.create({
         data: {
           locationId,
@@ -280,6 +199,59 @@ export async function POST(
       }
     })
 
+    // Fire-and-forget API calls for seat operations (after transaction completes)
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+
+    // 1. Restore the removed table's seats to original positions
+    fetch(`${baseUrl}/api/seats/bulk-operations?action=restore-original`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        locationId,
+        tableIds: [tableIdToRemove]
+      })
+    }).catch(err => console.error('[RemoveFromGroup] Seat restore failed:', err))
+
+    // 2. If tables remain in group, recalculate their seat labels
+    if (result.remainingCombinedIds.length > 0) {
+      // Fetch all remaining tables to get positions
+      const allTables = await db.table.findMany({
+        where: {
+          id: { in: [primaryTableId, ...result.remainingCombinedIds] },
+          isActive: true,
+        },
+        select: { id: true, posX: true, posY: true, width: true, height: true },
+      })
+
+      const remainingTablePositions = allTables.map(t => ({
+        id: t.id,
+        posX: t.posX,
+        posY: t.posY,
+        width: t.width,
+        height: t.height
+      }))
+
+      fetch(`${baseUrl}/api/seats/bulk-operations?action=recalculate-labels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          tableIds: [primaryTableId, ...result.remainingCombinedIds],
+          tablePositions: remainingTablePositions
+        })
+      }).catch(err => console.error('[RemoveFromGroup] Seat recalculate failed:', err))
+    } else {
+      // 3. If this was the last child, restore primary's seats too
+      fetch(`${baseUrl}/api/seats/bulk-operations?action=restore-original`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          tableIds: [primaryTableId]
+        })
+      }).catch(err => console.error('[RemoveFromGroup] Primary seat restore failed:', err))
+    }
+
     // Emit real-time event
     tableEvents.tablesSplit({
       primaryTableId,
@@ -289,6 +261,8 @@ export async function POST(
       timestamp: new Date().toISOString(),
       triggeredBy: employeeId,
     })
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       data: {

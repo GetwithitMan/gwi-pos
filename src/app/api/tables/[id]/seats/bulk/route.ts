@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 interface SeatUpdate {
   id: string
@@ -31,7 +32,7 @@ export async function PUT(
     // Verify table exists
     const table = await db.table.findUnique({
       where: { id: tableId },
-      select: { id: true },
+      select: { id: true, locationId: true },
     })
 
     if (!table) {
@@ -75,6 +76,8 @@ export async function PUT(
         })
       )
     )
+
+    dispatchFloorPlanUpdate(table.locationId, { async: true })
 
     return NextResponse.json({
       seats: updatedSeats.map(seat => ({

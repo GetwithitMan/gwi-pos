@@ -10,8 +10,15 @@ export async function GET(
   const { id } = await params
 
   try {
+    const { searchParams } = new URL(req.url)
+    const locationId = searchParams.get('locationId')
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
     const element = await db.floorPlanElement.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, locationId, deletedAt: null },
       include: {
         linkedMenuItem: {
           select: {
@@ -67,6 +74,7 @@ export async function PUT(
   try {
     const body = await req.json()
     const {
+      locationId,
       name,
       abbreviation,
       sectionId,
@@ -89,6 +97,19 @@ export async function PUT(
       isLocked,
       isVisible,
     } = body
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
+    // Verify the element belongs to this location
+    const existing = await db.floorPlanElement.findFirst({
+      where: { id, locationId, deletedAt: null },
+    })
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Element not found or access denied' }, { status: 404 })
+    }
 
     const element = await db.floorPlanElement.update({
       where: { id },
@@ -154,6 +175,22 @@ export async function DELETE(
   const { id } = await params
 
   try {
+    const { searchParams } = new URL(req.url)
+    const locationId = searchParams.get('locationId')
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
+
+    // Verify the element belongs to this location
+    const existing = await db.floorPlanElement.findFirst({
+      where: { id, locationId, deletedAt: null },
+    })
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Element not found or access denied' }, { status: 404 })
+    }
+
     const element = await db.floorPlanElement.update({
       where: { id },
       data: { deletedAt: new Date() },

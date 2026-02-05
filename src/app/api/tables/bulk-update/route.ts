@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { normalizeCoord } from '@/lib/table-geometry'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 interface TablePositionUpdate {
   id: string
@@ -70,6 +71,9 @@ export async function PUT(request: NextRequest) {
         })
       )
     )
+
+    // Notify POS terminals of bulk position updates
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       success: true,

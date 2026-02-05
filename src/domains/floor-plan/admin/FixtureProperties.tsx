@@ -428,6 +428,85 @@ export function FixtureProperties({
         </div>
       )}
 
+      {/* Dimensions (for rectangles) */}
+      {fixture.geometry.type === 'rectangle' && (
+        <div>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
+            Dimensions
+          </label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: 11, color: '#666', marginBottom: 2 }}>
+                Width (ft)
+              </label>
+              <input
+                type="number"
+                value={fixture.geometry.width}
+                onChange={(e) => {
+                  const newWidth = parseFloat(e.target.value) || 0.5;
+                  if (fixtureId && fixture.geometry.type === 'rectangle') {
+                    onUpdate(fixtureId, {
+                      geometry: {
+                        type: 'rectangle',
+                        position: fixture.geometry.position,
+                        width: newWidth,
+                        height: fixture.geometry.height,
+                        rotation: fixture.geometry.rotation,
+                      },
+                    });
+                  }
+                }}
+                min={0.5}
+                max={50}
+                step={0.5}
+                style={{
+                  width: '100%',
+                  padding: '4px 6px',
+                  border: '1px solid #ccc',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  textAlign: 'center',
+                }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', fontSize: 11, color: '#666', marginBottom: 2 }}>
+                Height (ft)
+              </label>
+              <input
+                type="number"
+                value={fixture.geometry.height}
+                onChange={(e) => {
+                  const newHeight = parseFloat(e.target.value) || 0.5;
+                  if (fixtureId && fixture.geometry.type === 'rectangle') {
+                    onUpdate(fixtureId, {
+                      geometry: {
+                        type: 'rectangle',
+                        position: fixture.geometry.position,
+                        width: fixture.geometry.width,
+                        height: newHeight,
+                        rotation: fixture.geometry.rotation,
+                      },
+                    });
+                  }
+                }}
+                min={0.5}
+                max={50}
+                step={0.5}
+                style={{
+                  width: '100%',
+                  padding: '4px 6px',
+                  border: '1px solid #ccc',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  textAlign: 'center',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Rotation (for rectangles) */}
       {fixture.geometry.type === 'rectangle' && (
         <div>

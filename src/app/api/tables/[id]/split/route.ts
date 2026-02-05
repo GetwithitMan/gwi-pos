@@ -2,62 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { tableEvents } from '@/lib/realtime/table-events'
-
-type SeatPattern = 'all_around' | 'front_only' | 'three_sides' | 'two_sides' | 'inside'
-
-/**
- * Generate seats distributed around all 4 sides of a rectangle (default pattern)
- */
-function generateSeatsAllAround(
-  tableWidth: number,
-  tableHeight: number,
-  count: number
-): Array<{ seatNumber: number; label: string; relativeX: number; relativeY: number; angle: number }> {
-  const seats: Array<{ seatNumber: number; label: string; relativeX: number; relativeY: number; angle: number }> = []
-  const offset = 25
-  const perimeter = 2 * (tableWidth + tableHeight)
-  const spacing = perimeter / count
-
-  let currentDist = 0 // Start from top-left corner
-
-  for (let i = 0; i < count; i++) {
-    let x = 0, y = 0, angle = 0
-
-    if (currentDist < tableWidth) {
-      x = -tableWidth / 2 + currentDist
-      y = -tableHeight / 2 - offset
-      angle = 180
-    } else if (currentDist < tableWidth + tableHeight) {
-      const sideDist = currentDist - tableWidth
-      x = tableWidth / 2 + offset
-      y = -tableHeight / 2 + sideDist
-      angle = 270
-    } else if (currentDist < 2 * tableWidth + tableHeight) {
-      const sideDist = currentDist - tableWidth - tableHeight
-      x = tableWidth / 2 - sideDist
-      y = tableHeight / 2 + offset
-      angle = 0
-    } else {
-      const sideDist = currentDist - 2 * tableWidth - tableHeight
-      x = -tableWidth / 2 - offset
-      y = tableHeight / 2 - sideDist
-      angle = 90
-    }
-
-    seats.push({
-      seatNumber: i + 1,
-      label: String(i + 1),
-      relativeX: Math.round(x),
-      relativeY: Math.round(y),
-      angle,
-    })
-
-    currentDist += spacing
-    if (currentDist > perimeter) currentDist -= perimeter
-  }
-
-  return seats
-}
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 /**
  * POST /api/tables/[id]/split
@@ -210,96 +155,6 @@ export async function POST(
       // Restore seats to their original positions from floor plan builder
       const allSplitTableIds = [primaryTable.id, ...combinedTableIds]
 
-      // Fetch all seats from all split tables
-      const allSeats = await tx.seat.findMany({
-        where: {
-          tableId: { in: allSplitTableIds },
-          isActive: true,
-          deletedAt: null,
-        },
-        orderBy: [
-          { tableId: 'asc' },
-          { seatNumber: 'asc' },
-        ],
-      })
-
-      // Group seats by table for proper sequential numbering
-      const seatsByTable = new Map<string, typeof allSeats>()
-      for (const seat of allSeats) {
-        const tableSeats = seatsByTable.get(seat.tableId) || []
-        tableSeats.push(seat)
-        seatsByTable.set(seat.tableId, tableSeats)
-      }
-
-      // Restore each seat to its original position
-      for (const [tableId, tableSeats] of seatsByTable) {
-        // Check if seats have original positions saved
-        const hasOriginalPositions = tableSeats.some(
-          s => s.originalRelativeX !== null || s.originalRelativeY !== null
-        )
-
-        if (hasOriginalPositions) {
-          // Restore from saved original positions
-          for (const seat of tableSeats) {
-            await tx.seat.update({
-              where: { id: seat.id },
-              data: {
-                // Restore original position (fall back to current if not saved)
-                relativeX: seat.originalRelativeX ?? seat.relativeX,
-                relativeY: seat.originalRelativeY ?? seat.relativeY,
-                angle: seat.originalAngle ?? seat.angle,
-                // Clear original fields after restore
-                originalRelativeX: null,
-                originalRelativeY: null,
-                originalAngle: null,
-                // Restore label to match seatNumber (don't change seatNumber - it's the identity)
-                label: String(seat.seatNumber),
-              },
-            })
-          }
-        } else {
-          // No original positions saved - regenerate default positions
-          const tableForSeats = tableId === primaryTable.id
-            ? primaryTable
-            : combinedTables.find(t => t.id === tableId)
-
-          if (tableForSeats) {
-            // Soft delete existing seats
-            await tx.seat.updateMany({
-              where: { tableId, isActive: true, deletedAt: null },
-              data: { isActive: false, deletedAt: new Date() },
-            })
-
-            // Generate default positions
-            const tableCapacity = tableId === primaryTable.id
-              ? (originalCapacity > 0 ? originalCapacity : 4)
-              : (tableForSeats.capacity || 4)
-
-            const seatPositions = generateSeatsAllAround(
-              tableForSeats.width,
-              tableForSeats.height,
-              tableCapacity
-            )
-
-            // Create new seats
-            for (const pos of seatPositions) {
-              await tx.seat.create({
-                data: {
-                  locationId,
-                  tableId,
-                  label: pos.label,
-                  seatNumber: pos.seatNumber,
-                  relativeX: pos.relativeX,
-                  relativeY: pos.relativeY,
-                  angle: pos.angle,
-                  seatType: 'standard',
-                },
-              })
-            }
-          }
-        }
-      }
-
       // Create audit log
       await tx.auditLog.create({
         data: {
@@ -323,6 +178,17 @@ export async function POST(
       }
     })
 
+    // Call Seats API to restore original positions for all split tables
+    const allSplitTableIds = [tableId, ...result.restoredTables]
+    fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/seats/bulk-operations?action=restore-original`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        locationId,
+        tableIds: allSplitTableIds
+      })
+    }).catch(err => console.error('[TablesSplit] Seat restore failed:', err))
+
     // Emit real-time event
     tableEvents.tablesSplit({
       primaryTableId: tableId,
@@ -332,6 +198,8 @@ export async function POST(
       timestamp: new Date().toISOString(),
       triggeredBy: employeeId,
     })
+
+    dispatchFloorPlanUpdate(locationId, { async: true })
 
     return NextResponse.json({
       data: {
