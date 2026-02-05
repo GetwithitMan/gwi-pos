@@ -62,6 +62,7 @@ export interface Modifier {
     name: string
     pourCost: number | null
   } | null
+  is86d?: boolean
 }
 
 /**

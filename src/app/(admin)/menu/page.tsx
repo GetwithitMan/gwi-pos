@@ -444,8 +444,8 @@ export default function MenuManagementPage() {
 
   return (
     <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="bg-white border-b shrink-0 px-4 py-2">
+      {/* Header - compact: override mb-6 from shared components */}
+      <div className="bg-white border-b shrink-0 px-4 py-1 [&>div]:!mb-1 [&>.flex]:!mb-1">
         <AdminPageHeader
           title="Menu Items"
           backHref="/orders"
@@ -454,13 +454,13 @@ export default function MenuManagementPage() {
       </div>
 
       {/* Categories Bar - Horizontal Scroll */}
-      <div className="bg-white border-b px-4 py-3 shrink-0">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="text-sm font-medium text-gray-500">Categories</span>
+      <div className="bg-white border-b px-4 py-1.5 shrink-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs font-medium text-gray-500">Categories</span>
           <Button
             variant="ghost"
             size="sm"
-            className="text-blue-600"
+            className="text-blue-600 h-6 text-xs px-2"
             onClick={() => {
               setEditingCategory(null)
               setShowCategoryModal(true)
@@ -471,7 +471,7 @@ export default function MenuManagementPage() {
         </div>
         <div
           ref={categoriesScrollRef}
-          className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300"
+          className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-300"
         >
           {isLoading ? (
             <div className="text-gray-400 py-2">Loading...</div>
@@ -488,7 +488,7 @@ export default function MenuManagementPage() {
                     setSelectedCategory(category.id)
                     setSelectedItemForEditor(null)
                   }}
-                  className={`shrink-0 px-4 py-2 rounded-lg border-2 transition-all flex items-center gap-2 ${
+                  className={`shrink-0 px-3 py-1.5 rounded-lg border-2 transition-all flex items-center gap-1.5 text-sm ${
                     isSelected
                       ? 'border-blue-500 bg-blue-50'
                       : 'border-transparent bg-gray-100 hover:bg-gray-200'
@@ -527,9 +527,9 @@ export default function MenuManagementPage() {
 
       {/* Items Bar - Horizontal Scroll */}
       {selectedCategory && (
-        <div className="bg-white border-b px-4 py-3 shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-sm font-medium text-gray-500">
+        <div className="bg-white border-b px-4 py-1.5 shrink-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-medium text-gray-500">
               {selectedCategoryData?.name} Items
             </span>
             {selectedCategoryData?.categoryType === 'liquor' && (
@@ -545,7 +545,7 @@ export default function MenuManagementPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="text-blue-600"
+              className="text-blue-600 h-6 text-xs px-2"
               onClick={() => {
                 // Route liquor categories to the Liquor Builder
                 if (selectedCategoryData?.categoryType === 'liquor') {
@@ -563,7 +563,7 @@ export default function MenuManagementPage() {
           </div>
           <div
             ref={itemsScrollRef}
-            className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-300"
+            className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-300"
           >
             {filteredItems.length === 0 ? (
               <div className="text-gray-400 py-2">No items - click + Add Item to create one</div>
@@ -583,7 +583,7 @@ export default function MenuManagementPage() {
                         setSelectedItemForEditor(item)
                       }
                     }}
-                    className={`shrink-0 px-4 py-3 rounded-lg border-2 transition-all text-left min-w-[140px] ${
+                    className={`shrink-0 px-3 py-1.5 rounded-lg border-2 transition-all text-left min-w-[120px] ${
                       isSelected
                         ? 'border-blue-500 bg-blue-50'
                         : !item.isAvailable
@@ -591,24 +591,26 @@ export default function MenuManagementPage() {
                         : 'border-transparent bg-gray-100 hover:bg-gray-200'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className={`font-medium text-sm ${isSelected ? 'text-blue-700' : ''}`}>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className={`font-medium text-xs ${isSelected ? 'text-blue-700' : ''}`}>
                         {item.name}
                       </span>
                       {!item.isAvailable && (
-                        <span className="text-[10px] bg-red-100 text-red-700 px-1 rounded">86</span>
+                        <span className="text-[9px] bg-red-100 text-red-700 px-1 rounded">86</span>
                       )}
                     </div>
-                    <div className={`text-sm font-bold mt-1 ${isSelected ? 'text-blue-600' : 'text-green-600'}`}>
-                      {formatCurrency(item.price)}
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-green-600'}`}>
+                        {formatCurrency(item.price)}
+                      </span>
+                      {item.modifierGroupCount && item.modifierGroupCount > 0 && (
+                        <span className="text-[9px] text-purple-600">
+                          {item.modifierGroupCount} mod
+                        </span>
+                      )}
                     </div>
-                    {item.modifierGroupCount && item.modifierGroupCount > 0 && (
-                      <div className="text-[10px] text-purple-600 mt-1">
-                        {item.modifierGroupCount} mod group{item.modifierGroupCount > 1 ? 's' : ''}
-                      </div>
-                    )}
                     {item.itemType === 'timed_rental' && (
-                      <div className={`text-[10px] mt-1 ${
+                      <div className={`text-[9px] ${
                         item.entertainmentStatus === 'in_use' ? 'text-red-600' : 'text-green-600'
                       }`}>
                         {item.entertainmentStatus === 'in_use' ? '● IN USE' : '● AVAILABLE'}
@@ -626,7 +628,7 @@ export default function MenuManagementPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* LEFT: Tree View - Navigation map */}
         <div className={`shrink-0 transition-all duration-300 overflow-hidden ${
-          selectedItemForEditor ? 'w-48' : 'w-0'
+          selectedItemForEditor ? 'w-56' : 'w-0'
         }`}>
           <ItemTreeView
             item={selectedItemForEditor}
@@ -678,10 +680,11 @@ export default function MenuManagementPage() {
 
         {/* RIGHT: Modifier Groups Builder (where you build and manage) */}
         <div className={`shrink-0 transition-all duration-300 overflow-hidden border-l ${
-          selectedItemForEditor ? 'w-80' : 'w-0'
+          selectedItemForEditor ? 'w-96' : 'w-0'
         }`}>
           <ModifierGroupsEditor
             item={selectedItemForEditor}
+            ingredientsLibrary={ingredientsLibrary}
             onUpdated={() => {
               loadMenu()
               const currentItem = selectedItemForEditor

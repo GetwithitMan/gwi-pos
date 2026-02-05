@@ -28,6 +28,7 @@ interface Ingredient {
   allowLite: boolean
   allowExtra: boolean
   allowOnSide: boolean
+  allowSwap: boolean
   extraPrice: number
 }
 
@@ -110,6 +111,8 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
     depth = 0,
     nodeType,
     nodeId,
+    isRequired = false,
+    isEmpty = false,
   }: {
     label: string
     nodeKey: string
@@ -121,6 +124,8 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
     depth?: number
     nodeType?: string
     nodeId?: string
+    isRequired?: boolean
+    isEmpty?: boolean
   }) => {
     const isExpanded = expanded[nodeKey]
     const isSelected = nodeType && nodeId ? isNodeSelected(nodeType, nodeId) : false
@@ -132,7 +137,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
           className={`flex items-center gap-1 py-1 px-2 rounded cursor-pointer transition-colors text-sm ${
             isSelected
               ? 'bg-blue-100 text-blue-800'
-              : 'hover:bg-gray-100'
+              : 'hover:bg-blue-50/50'
           }`}
           onClick={() => {
             if (!isLeaf) toggle(nodeKey)
@@ -141,14 +146,17 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
           }}
         >
           {!isLeaf ? (
-            <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-              ▶
+            <span className="flex items-center gap-0.5">
+              <span className={`text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
+                ▶
+              </span>
+              {isRequired && <span className="w-1.5 h-1.5 rounded-full bg-red-500" title="Required" />}
             </span>
           ) : (
             <span className="w-3" />
           )}
           {icon && <span className="text-gray-500">{icon}</span>}
-          <span className={`flex-1 truncate ${isLeaf ? 'text-gray-600' : 'font-medium'}`}>
+          <span className={`flex-1 truncate ${isLeaf ? 'text-gray-600' : 'font-medium'} ${isEmpty ? 'italic text-gray-400' : ''}`}>
             {label}
           </span>
           {badge}
@@ -165,6 +173,10 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
   // Render modifier group recursively
   const renderModifierGroup = (group: ModifierGroup, depth: number = 0, prefix: string = '') => {
     const groupKey = `${prefix}group-${group.id}`
+    const isEmpty = group.modifiers.length === 0
+
+    // Count child modifier groups for depth indicator
+    const childGroupCount = group.modifiers.filter(m => m.childModifierGroup).length
 
     return (
       <TreeNode
@@ -174,10 +186,19 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
         nodeType="modifierGroup"
         nodeId={group.id}
         depth={depth}
+        isRequired={group.isRequired}
+        isEmpty={isEmpty}
         badge={
-          <span className="text-xs text-gray-400">
-            {group.modifiers.length}
-          </span>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-gray-400">
+              {group.modifiers.length}
+            </span>
+            {childGroupCount > 0 && (
+              <span className="text-xs text-purple-600 font-medium" title={`${childGroupCount} nested group${childGroupCount > 1 ? 's' : ''}`}>
+                +{childGroupCount}
+              </span>
+            )}
+          </div>
         }
       >
         {group.modifiers.map(mod => (
@@ -190,9 +211,14 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
               isLeaf={!mod.childModifierGroup}
               depth={depth + 1}
               badge={
-                mod.price > 0 ? (
-                  <span className="text-xs text-green-600">+{formatCurrency(mod.price)}</span>
-                ) : null
+                <div className="flex items-center gap-1">
+                  {mod.childModifierGroup && (
+                    <span className="text-xs text-purple-500" title="Has child group">▶</span>
+                  )}
+                  {mod.price > 0 && (
+                    <span className="text-xs text-green-600">+{formatCurrency(mod.price)}</span>
+                  )}
+                </div>
               }
             >
               {mod.childModifierGroup && renderModifierGroup(mod.childModifierGroup, depth + 2, `${groupKey}-`)}
@@ -258,6 +284,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
                           {ing.allowLite && <span className="w-2 h-2 rounded-full bg-yellow-400" title="Lite" />}
                           {ing.allowOnSide && <span className="w-2 h-2 rounded-full bg-blue-400" title="Side" />}
                           {ing.allowExtra && <span className="w-2 h-2 rounded-full bg-green-400" title="Extra" />}
+                          {ing.allowSwap && <span className="w-2 h-2 rounded-full bg-purple-400" title="Swap" />}
                         </div>
                       }
                     />
@@ -273,7 +300,11 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
                 nodeId="itemModifiers"
                 icon={<span>⚙️</span>}
                 badge={
-                  <span className="text-xs text-gray-400">{itemOwnedGroups.length}</span>
+                  <span className="text-xs text-gray-400">
+                    {itemOwnedGroups.length > 0
+                      ? `${itemOwnedGroups.length} group${itemOwnedGroups.length !== 1 ? 's' : ''} · ${itemOwnedGroups.reduce((sum, g) => sum + g.modifiers.length, 0)} option${itemOwnedGroups.reduce((sum, g) => sum + g.modifiers.length, 0) !== 1 ? 's' : ''}`
+                      : '0'}
+                  </span>
                 }
               >
                 {itemOwnedGroups.length === 0 ? (

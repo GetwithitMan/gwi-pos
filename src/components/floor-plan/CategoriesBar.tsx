@@ -8,6 +8,7 @@ interface Category {
   color?: string
   itemCount?: number
   categoryType?: string  // food, drinks, liquor, entertainment, combos, retail
+  categoryShow?: string  // 'bar' | 'food' | 'entertainment' | 'all'
 }
 
 interface CategoriesBarProps {
@@ -17,24 +18,21 @@ interface CategoriesBarProps {
   onStartTabWorkflow?: () => void
 }
 
-// Category types that belong to "Bar" row (must match orders page)
-const BAR_TYPES = ['liquor', 'drinks', 'cocktails', 'beer', 'wine']
-// Category types that belong to "Food" row - everything else defaults to food
-const FOOD_TYPES = ['food', 'pizza', 'combos', 'retail', 'entertainment', 'appetizers', 'entrees', 'desserts']
-
 export function CategoriesBar({
   categories,
   selectedCategoryId,
   onCategorySelect,
   onStartTabWorkflow,
 }: CategoriesBarProps) {
-  // Split categories into Food and Bar rows
-  const foodCategories = categories.filter(c =>
-    !c.categoryType || FOOD_TYPES.includes(c.categoryType)
-  )
-  const barCategories = categories.filter(c =>
-    c.categoryType && BAR_TYPES.includes(c.categoryType)
-  )
+  // Split categories by categoryShow field (matches BartenderView logic)
+  const foodCategories = categories.filter(c => {
+    const show = (c.categoryShow || 'all').toLowerCase()
+    return show === 'food' || show === 'all'
+  })
+  const barCategories = categories.filter(c => {
+    const show = (c.categoryShow || 'all').toLowerCase()
+    return show === 'bar'
+  })
 
   const renderCategoryButton = (category: Category) => (
     <motion.button

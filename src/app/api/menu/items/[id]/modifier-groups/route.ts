@@ -79,37 +79,61 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Menu item not found' }, { status: 404 })
     }
 
-    // Get ALL item-owned modifier groups (including child groups)
-    const allGroups = await db.modifierGroup.findMany({
-      where: {
-        menuItemId,
-        deletedAt: null,
-      },
+    // Shared include shape for modifiers (used by both queries)
+    const modifierInclude = {
+      where: { deletedAt: null, isActive: true },
+      orderBy: { sortOrder: 'asc' as const },
       include: {
-        modifiers: {
-          where: { deletedAt: null, isActive: true },
-          orderBy: { sortOrder: 'asc' },
+        ingredient: {
+          select: { id: true, name: true, category: true },
+        },
+        childModifierGroup: {
           include: {
-            ingredient: {
-              select: { id: true, name: true, category: true },
-            },
-            childModifierGroup: {
+            modifiers: {
+              where: { deletedAt: null, isActive: true },
               include: {
-                modifiers: {
-                  where: { deletedAt: null, isActive: true },
-                  include: {
-                    ingredient: {
-                      select: { id: true, name: true, category: true },
-                    },
-                  },
+                ingredient: {
+                  select: { id: true, name: true, category: true },
                 },
               },
             },
           },
         },
       },
+    }
+
+    // 1. Get item-OWNED modifier groups (new pattern — menuItemId set on group)
+    const ownedGroups = await db.modifierGroup.findMany({
+      where: {
+        menuItemId,
+        deletedAt: null,
+      },
+      include: { modifiers: modifierInclude },
       orderBy: { sortOrder: 'asc' },
     })
+
+    // 2. Get SHARED modifier groups via junction table (legacy pattern)
+    const sharedLinks = await db.menuItemModifierGroup.findMany({
+      where: {
+        menuItemId,
+        deletedAt: null,
+        modifierGroup: { deletedAt: null },
+      },
+      include: {
+        modifierGroup: {
+          include: { modifiers: modifierInclude },
+        },
+      },
+      orderBy: { sortOrder: 'asc' },
+    })
+
+    // 3. Merge both sources — owned groups first, then shared (no duplicates)
+    const ownedIds = new Set(ownedGroups.map(g => g.id))
+    const sharedGroups = sharedLinks
+      .map(link => link.modifierGroup)
+      .filter(g => !ownedIds.has(g.id))
+
+    const allGroups = [...ownedGroups, ...sharedGroups]
 
     // Build a map of all groups for recursive lookup
     const groupMap = new Map<string, typeof allGroups[0]>()

@@ -13,6 +13,7 @@ interface Ingredient {
   allowLite: boolean
   allowExtra: boolean
   allowOnSide: boolean
+  allowSwap: boolean
   extraPrice: number
 }
 
@@ -26,6 +27,7 @@ interface Modifier {
   id: string
   name: string
   price: number
+  childModifierGroupId?: string | null
 }
 
 interface ModifierGroup {
@@ -114,6 +116,8 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
             allowLite: i.allowLite,
             allowExtra: i.allowExtra,
             allowOnSide: i.allowOnSide,
+            allowSwap: i.allowSwap,
+            extraPrice: i.extraPrice,
           }))
         }),
       })
@@ -131,7 +135,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
     if (!lib) return
     const newIngredients = [...ingredients, {
       id: '', ingredientId, name: lib.name, isIncluded: true,
-      allowNo: true, allowLite: true, allowExtra: true, allowOnSide: true, extraPrice: 0,
+      allowNo: true, allowLite: true, allowExtra: true, allowOnSide: true, allowSwap: true, extraPrice: 0,
     }]
     saveIngredients(newIngredients)
     setShowIngredientPicker(false)
@@ -142,8 +146,12 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
     saveIngredients(ingredients.filter(i => i.ingredientId !== ingredientId))
   }
 
-  const toggleIngredientOption = (ingredientId: string, option: 'allowNo' | 'allowLite' | 'allowExtra' | 'allowOnSide') => {
+  const toggleIngredientOption = (ingredientId: string, option: 'allowNo' | 'allowLite' | 'allowExtra' | 'allowOnSide' | 'allowSwap') => {
     saveIngredients(ingredients.map(i => i.ingredientId === ingredientId ? { ...i, [option]: !i[option] } : i))
+  }
+
+  const updateExtraPrice = (ingredientId: string, price: number) => {
+    saveIngredients(ingredients.map(i => i.ingredientId === ingredientId ? { ...i, extraPrice: price } : i))
   }
 
   const filteredLibrary = ingredientsLibrary.filter(lib =>
@@ -207,6 +215,12 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
                   <span className={`text-green-600 transition-transform ${ingredientsExpanded ? 'rotate-90' : ''}`}>▶</span>
                   <span className="font-semibold text-green-900">🥗 Ingredients</span>
                   <span className="text-sm text-green-600">({ingredients.length})</span>
+                  {(() => {
+                    const customizableCount = ingredients.filter(i => i.allowNo || i.allowLite || i.allowExtra || i.allowOnSide || i.allowSwap).length
+                    return customizableCount > 0 ? (
+                      <span className="text-xs text-green-500">· {customizableCount} customizable</span>
+                    ) : null
+                  })()}
                 </div>
                 <Button
                   variant="ghost"
@@ -231,16 +245,30 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
                         className="w-full px-2 py-1 text-sm border rounded mb-2"
                         autoFocus
                       />
-                      <div className="max-h-32 overflow-y-auto space-y-1">
-                        {filteredLibrary.slice(0, 8).map(lib => (
-                          <button
-                            key={lib.id}
-                            onClick={() => addIngredient(lib.id)}
-                            className="w-full text-left px-2 py-1 text-sm hover:bg-green-100 rounded"
-                          >
-                            {lib.name}
-                          </button>
-                        ))}
+                      <div className="max-h-48 overflow-y-auto space-y-2">
+                        {(() => {
+                          const limited = filteredLibrary.slice(0, 12)
+                          const grouped = limited.reduce((acc, lib) => {
+                            const cat = lib.category || 'Other'
+                            if (!acc[cat]) acc[cat] = []
+                            acc[cat].push(lib)
+                            return acc
+                          }, {} as Record<string, typeof limited>)
+                          return Object.entries(grouped).map(([category, items]) => (
+                            <div key={category}>
+                              <div className="text-xs font-semibold text-green-700 px-2 py-1">{category}</div>
+                              {items.map(lib => (
+                                <button
+                                  key={lib.id}
+                                  onClick={() => addIngredient(lib.id)}
+                                  className="w-full text-left px-2 py-1 text-sm hover:bg-green-100 rounded"
+                                >
+                                  {lib.name}
+                                </button>
+                              ))}
+                            </div>
+                          ))
+                        })()}
                       </div>
                     </div>
                   )}
@@ -251,7 +279,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
                     ingredients.map(ing => (
                       <div key={ing.ingredientId} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded border">
                         <span className="flex-1 text-sm truncate">{ing.name}</span>
-                        <div className="flex gap-0.5">
+                        <div className="flex gap-0.5 items-center">
                           <button
                             onClick={() => toggleIngredientOption(ing.ingredientId, 'allowNo')}
                             className={`w-5 h-5 rounded text-[9px] font-bold ${ing.allowNo ? 'bg-red-500 text-white' : 'bg-red-100 text-red-400'}`}
@@ -275,6 +303,23 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
                             className={`w-5 h-5 rounded text-[9px] font-bold ${ing.allowExtra ? 'bg-green-500 text-white' : 'bg-green-100 text-green-400'}`}
                           >
                             E
+                          </button>
+                          {ing.allowExtra && (
+                            <input
+                              type="number"
+                              value={ing.extraPrice || ''}
+                              onChange={(e) => updateExtraPrice(ing.ingredientId, parseFloat(e.target.value) || 0)}
+                              placeholder="$"
+                              className="w-12 px-1 text-xs border rounded"
+                              step="0.01"
+                              min="0"
+                            />
+                          )}
+                          <button
+                            onClick={() => toggleIngredientOption(ing.ingredientId, 'allowSwap')}
+                            className={`w-5 h-5 rounded text-[9px] font-bold ${ing.allowSwap ? 'bg-purple-500 text-white' : 'bg-purple-100 text-purple-400'}`}
+                          >
+                            Sw
                           </button>
                         </div>
                         <button onClick={() => removeIngredient(ing.ingredientId)} className="text-red-400 hover:text-red-600">×</button>
@@ -303,18 +348,27 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
                   </p>
                 ) : (
                   <div className="space-y-1">
-                    {modifierGroups.map(group => (
-                      <div key={group.id} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded border">
-                        <span className="flex-1 font-medium text-sm">{group.name}</span>
-                        <span className="text-xs text-gray-500">
-                          {group.minSelections}-{group.maxSelections}
-                        </span>
-                        {group.isRequired && (
-                          <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Req</span>
-                        )}
-                        <span className="text-xs text-gray-400">{group.modifiers.length} options</span>
-                      </div>
-                    ))}
+                    {modifierGroups.map(group => {
+                      const childGroupCount = group.modifiers.filter(m => m.childModifierGroupId).length
+                      return (
+                        <div
+                          key={group.id}
+                          className={`flex items-center gap-2 px-3 py-2 bg-gray-50 rounded border ${group.isRequired ? 'border-l-4 border-l-red-500' : ''}`}
+                        >
+                          <span className="flex-1 font-medium text-sm">{group.name}</span>
+                          <span className="text-xs text-gray-500">
+                            {group.minSelections}-{group.maxSelections}
+                          </span>
+                          {group.isRequired && (
+                            <span className="text-xs bg-red-100 text-red-600 px-1.5 py-0.5 rounded">Req</span>
+                          )}
+                          <span className="text-xs text-gray-400">{group.modifiers.length} options</span>
+                          {childGroupCount > 0 && (
+                            <span className="text-xs text-indigo-500">• {childGroupCount} sub-groups</span>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>

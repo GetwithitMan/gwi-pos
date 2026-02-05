@@ -10,12 +10,16 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
+    const categoryType = searchParams.get('categoryType')   // Optional: 'food', 'liquor', 'drinks', etc.
+    const categoryShow = searchParams.get('categoryShow')   // Optional: 'food', 'bar', 'entertainment'
 
     // Build location filter - if locationId provided, filter by it
     const locationFilter = locationId ? { locationId } : {}
+    const categoryTypeFilter = categoryType ? { categoryType } : {}
+    const categoryShowFilter = categoryShow ? { categoryShow } : {}
 
     const categories = await db.category.findMany({
-      where: { isActive: true, deletedAt: null, ...locationFilter },
+      where: { isActive: true, deletedAt: null, ...locationFilter, ...categoryTypeFilter, ...categoryShowFilter },
       orderBy: { sortOrder: 'asc' },
       include: {
         _count: {
@@ -27,7 +31,13 @@ export async function GET(request: NextRequest) {
     })
 
     const items = await db.menuItem.findMany({
-      where: { isActive: true, deletedAt: null, ...locationFilter },
+      where: {
+        isActive: true,
+        deletedAt: null,
+        ...locationFilter,
+        ...(categoryType ? { category: { categoryType } } : {}),
+        ...(categoryShow ? { category: { categoryShow } } : {}),
+      },
       orderBy: { sortOrder: 'asc' },
       include: {
         category: {

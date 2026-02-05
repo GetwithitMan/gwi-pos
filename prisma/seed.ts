@@ -318,6 +318,7 @@ async function main() {
         name: 'Appetizers',
         color: '#ef4444',
         categoryType: 'food',
+        categoryShow: 'food',
         sortOrder: 1,
       },
     }),
@@ -330,6 +331,7 @@ async function main() {
         name: 'Entrees',
         color: '#3b82f6',
         categoryType: 'food',
+        categoryShow: 'food',
         sortOrder: 2,
       },
     }),
@@ -342,6 +344,7 @@ async function main() {
         name: 'Soft Drinks',
         color: '#22c55e',
         categoryType: 'drinks',
+        categoryShow: 'bar',
         sortOrder: 3,
       },
     }),
@@ -354,6 +357,7 @@ async function main() {
         name: 'Desserts',
         color: '#a855f7',
         categoryType: 'food',
+        categoryShow: 'food',
         sortOrder: 4,
       },
     }),
@@ -366,6 +370,7 @@ async function main() {
         name: 'Combos',
         color: '#f97316',
         categoryType: 'combos',
+        categoryShow: 'food',
         sortOrder: 5,
       },
     }),
@@ -378,6 +383,7 @@ async function main() {
         name: 'Entertainment',
         color: '#8b5cf6',
         categoryType: 'entertainment',
+        categoryShow: 'entertainment',
         sortOrder: 6,
       },
     }),
@@ -391,6 +397,7 @@ async function main() {
         name: 'Whiskey',
         color: '#92400e',
         categoryType: 'liquor',
+        categoryShow: 'bar',
         sortOrder: 10,
       },
     }),
@@ -403,6 +410,7 @@ async function main() {
         name: 'Vodka',
         color: '#64748b',
         categoryType: 'liquor',
+        categoryShow: 'bar',
         sortOrder: 11,
       },
     }),
@@ -415,6 +423,7 @@ async function main() {
         name: 'Rum',
         color: '#b45309',
         categoryType: 'liquor',
+        categoryShow: 'bar',
         sortOrder: 12,
       },
     }),
@@ -427,6 +436,7 @@ async function main() {
         name: 'Tequila',
         color: '#65a30d',
         categoryType: 'liquor',
+        categoryShow: 'bar',
         sortOrder: 13,
       },
     }),
@@ -439,6 +449,7 @@ async function main() {
         name: 'Gin',
         color: '#0891b2',
         categoryType: 'liquor',
+        categoryShow: 'bar',
         sortOrder: 14,
       },
     }),
@@ -451,6 +462,7 @@ async function main() {
         name: 'Cocktails',
         color: '#db2777',
         categoryType: 'liquor',
+        categoryShow: 'bar',
         sortOrder: 15,
       },
     }),
@@ -463,6 +475,7 @@ async function main() {
         name: 'Beer',
         color: '#ca8a04',
         categoryType: 'drinks',
+        categoryShow: 'bar',
         sortOrder: 16,
       },
     }),
@@ -475,11 +488,75 @@ async function main() {
         name: 'Wine',
         color: '#7c2d12',
         categoryType: 'drinks',
+        categoryShow: 'bar',
         sortOrder: 17,
       },
     }),
   ])
   console.log('Created categories:', categories.map(c => c.name).join(', '))
+
+  // Create additional food categories
+  const sidesCategory = await prisma.category.upsert({
+    where: { id: 'cat-sides' },
+    update: {},
+    create: {
+      id: 'cat-sides',
+      locationId: location.id,
+      name: 'Sides',
+      color: '#f59e0b',
+      categoryType: 'food',
+      categoryShow: 'food',
+      sortOrder: 7,
+      showOnPOS: true,
+    },
+  })
+
+  const saladsCategory = await prisma.category.upsert({
+    where: { id: 'cat-salads' },
+    update: {},
+    create: {
+      id: 'cat-salads',
+      locationId: location.id,
+      name: 'Salads',
+      color: '#22c55e',
+      categoryType: 'food',
+      categoryShow: 'food',
+      sortOrder: 8,
+      showOnPOS: true,
+    },
+  })
+
+  const sandwichesCategory = await prisma.category.upsert({
+    where: { id: 'cat-sandwiches' },
+    update: {},
+    create: {
+      id: 'cat-sandwiches',
+      locationId: location.id,
+      name: 'Sandwiches',
+      color: '#f97316',
+      categoryType: 'food',
+      categoryShow: 'food',
+      sortOrder: 9,
+      showOnPOS: true,
+    },
+  })
+
+  const kidsCategory = await prisma.category.upsert({
+    where: { id: 'cat-kids' },
+    update: {},
+    create: {
+      id: 'cat-kids',
+      locationId: location.id,
+      name: 'Kids Menu',
+      color: '#ec4899',
+      categoryType: 'food',
+      categoryShow: 'food',
+      sortOrder: 13,
+      showOnPOS: true,
+    },
+  })
+
+  console.log('Created additional food categories:', [sidesCategory.name, saladsCategory.name, sandwichesCategory.name, kidsCategory.name].join(', '))
 
   // Create Menu Items
   const menuItems = [
@@ -504,12 +581,31 @@ async function main() {
     // Desserts
     { id: 'item-12', categoryId: 'cat-4', name: 'Chocolate Cake', price: 7.99, description: 'Rich chocolate layer cake' },
     { id: 'item-13', categoryId: 'cat-4', name: 'Cheesecake', price: 8.99, description: 'New York style cheesecake' },
-    // Sides (for combos)
-    { id: 'side-1', categoryId: 'cat-1', name: 'French Fries', price: 4.99, description: 'Crispy golden fries' },
-    { id: 'side-2', categoryId: 'cat-1', name: 'Onion Rings', price: 5.99, description: 'Beer-battered onion rings' },
-    { id: 'side-3', categoryId: 'cat-1', name: 'Coleslaw', price: 3.99, description: 'Creamy coleslaw' },
-    { id: 'side-4', categoryId: 'cat-1', name: 'Side Salad', price: 4.99, description: 'House salad' },
-    { id: 'side-5', categoryId: 'cat-1', name: 'Mashed Potatoes', price: 4.99, description: 'Garlic mashed potatoes' },
+    // Sides
+    { id: 'side-1', categoryId: 'cat-sides', name: 'French Fries', price: 4.99, description: 'Crispy golden fries' },
+    { id: 'side-2', categoryId: 'cat-sides', name: 'Onion Rings', price: 5.99, description: 'Beer-battered onion rings' },
+    { id: 'side-3', categoryId: 'cat-sides', name: 'Coleslaw', price: 3.99, description: 'Creamy coleslaw' },
+    { id: 'side-4', categoryId: 'cat-sides', name: 'Side Salad', price: 4.99, description: 'House salad' },
+    { id: 'side-5', categoryId: 'cat-sides', name: 'Mashed Potatoes', price: 4.99, description: 'Garlic mashed potatoes' },
+    { id: 'side-6', categoryId: 'cat-sides', name: 'Sweet Potato Fries', price: 6.99, description: 'Crispy sweet potato fries' },
+    { id: 'side-7', categoryId: 'cat-sides', name: 'Mac & Cheese', price: 5.99, description: 'Creamy mac and cheese' },
+    { id: 'side-8', categoryId: 'cat-sides', name: 'Steamed Broccoli', price: 4.99, description: 'Fresh steamed broccoli' },
+    // Salads
+    { id: 'salad-1', categoryId: 'cat-salads', name: 'Caesar Salad', price: 11.99, description: 'Romaine, croutons, parmesan, caesar dressing' },
+    { id: 'salad-2', categoryId: 'cat-salads', name: 'House Salad', price: 9.99, description: 'Mixed greens with house vinaigrette' },
+    { id: 'salad-3', categoryId: 'cat-salads', name: 'Cobb Salad', price: 13.99, description: 'Turkey, bacon, egg, avocado, blue cheese' },
+    { id: 'salad-4', categoryId: 'cat-salads', name: 'Wedge Salad', price: 10.99, description: 'Iceberg wedge with bacon and blue cheese' },
+    // Sandwiches
+    { id: 'sandwich-1', categoryId: 'cat-sandwiches', name: 'Club Sandwich', price: 12.99, description: 'Turkey, ham, bacon, lettuce, tomato' },
+    { id: 'sandwich-2', categoryId: 'cat-sandwiches', name: 'BLT', price: 10.99, description: 'Bacon, lettuce, tomato on sourdough' },
+    { id: 'sandwich-3', categoryId: 'cat-sandwiches', name: 'Grilled Chicken Sandwich', price: 13.99, description: 'Grilled chicken breast with aioli' },
+    { id: 'sandwich-4', categoryId: 'cat-sandwiches', name: 'Philly Cheesesteak', price: 14.99, description: 'Shaved ribeye with peppers and onions' },
+    { id: 'sandwich-5', categoryId: 'cat-sandwiches', name: 'Fish Tacos', price: 13.99, description: 'Beer-battered cod with slaw and lime crema' },
+    // Kids Menu
+    { id: 'kids-1', categoryId: 'cat-kids', name: 'Kids Burger', price: 7.99, description: 'Small burger with fries' },
+    { id: 'kids-2', categoryId: 'cat-kids', name: 'Kids Chicken Tenders', price: 7.99, description: 'Chicken tenders with fries' },
+    { id: 'kids-3', categoryId: 'cat-kids', name: 'Kids Mac & Cheese', price: 6.99, description: 'Creamy mac and cheese' },
+    { id: 'kids-4', categoryId: 'cat-kids', name: 'Kids Grilled Cheese', price: 5.99, description: 'Grilled cheese with fries' },
   ]
 
   for (const item of menuItems) {
@@ -1878,6 +1974,90 @@ async function main() {
   }
   console.log('Created burger add-on modifiers')
 
+  // Salad Dressing
+  const saladDressingGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-salad-dressing' },
+    update: {},
+    create: {
+      id: 'mod-salad-dressing',
+      locationId: location.id,
+      name: 'Dressing',
+      displayName: 'Choose Dressing',
+      modifierTypes: ['food'],
+      minSelections: 1,
+      maxSelections: 1,
+      isRequired: true,
+      sortOrder: 23,
+    },
+  })
+
+  const saladDressings = [
+    { id: 'dressing-ranch', name: 'Ranch', price: 0, isDefault: true },
+    { id: 'dressing-caesar', name: 'Caesar', price: 0 },
+    { id: 'dressing-bleu', name: 'Blue Cheese', price: 0 },
+    { id: 'dressing-italian', name: 'Italian', price: 0 },
+    { id: 'dressing-vinaigrette', name: 'Balsamic Vinaigrette', price: 0 },
+    { id: 'dressing-honey', name: 'Honey Mustard', price: 0 },
+  ]
+
+  for (const mod of saladDressings) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: saladDressingGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: mod.isDefault || false,
+        sortOrder: saladDressings.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created salad dressing modifiers')
+
+  // Salad Protein Add-On
+  const saladProteinGroup = await prisma.modifierGroup.upsert({
+    where: { id: 'mod-salad-protein' },
+    update: {},
+    create: {
+      id: 'mod-salad-protein',
+      locationId: location.id,
+      name: 'Add Protein',
+      displayName: 'Add Protein',
+      modifierTypes: ['food'],
+      minSelections: 0,
+      maxSelections: 3,
+      isRequired: false,
+      sortOrder: 24,
+    },
+  })
+
+  const saladProteins = [
+    { id: 'protein-chicken', name: 'Grilled Chicken', price: 4.99 },
+    { id: 'protein-shrimp', name: 'Shrimp', price: 6.99 },
+    { id: 'protein-steak', name: 'Steak Tips', price: 7.99 },
+    { id: 'protein-salmon', name: 'Salmon', price: 8.99 },
+  ]
+
+  for (const mod of saladProteins) {
+    await prisma.modifier.upsert({
+      where: { id: mod.id },
+      update: {},
+      create: {
+        id: mod.id,
+        locationId: location.id,
+        modifierGroupId: saladProteinGroup.id,
+        name: mod.name,
+        price: mod.price,
+        isDefault: false,
+        sortOrder: saladProteins.indexOf(mod),
+      },
+    })
+  }
+  console.log('Created salad protein modifiers')
+
   // =====================================================
   // LINK MODIFIERS TO MENU ITEMS
   // =====================================================
@@ -1999,6 +2179,66 @@ async function main() {
       sortOrder: 1,
     },
   })
+
+  // Link salad dressing to all salads
+  const saladItemIds = ['salad-1', 'salad-2', 'salad-3', 'salad-4']
+  for (const itemId of saladItemIds) {
+    await prisma.menuItemModifierGroup.upsert({
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: saladDressingGroup.id,
+        },
+      },
+      update: {},
+      create: {
+        id: `link-${itemId}-dressing`,
+        locationId: location.id,
+        menuItemId: itemId,
+        modifierGroupId: saladDressingGroup.id,
+        sortOrder: 1,
+      },
+    })
+    await prisma.menuItemModifierGroup.upsert({
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: saladProteinGroup.id,
+        },
+      },
+      update: {},
+      create: {
+        id: `link-${itemId}-protein`,
+        locationId: location.id,
+        menuItemId: itemId,
+        modifierGroupId: saladProteinGroup.id,
+        sortOrder: 2,
+      },
+    })
+  }
+  console.log('Linked dressing and protein to', saladItemIds.length, 'salads')
+
+  // Link burger add-ons to all sandwiches
+  const sandwichItemIds = ['sandwich-1', 'sandwich-2', 'sandwich-3', 'sandwich-4', 'sandwich-5']
+  for (const itemId of sandwichItemIds) {
+    await prisma.menuItemModifierGroup.upsert({
+      where: {
+        menuItemId_modifierGroupId: {
+          menuItemId: itemId,
+          modifierGroupId: burgerAddGroup.id,
+        },
+      },
+      update: {},
+      create: {
+        id: `link-${itemId}-burger-add`,
+        locationId: location.id,
+        menuItemId: itemId,
+        modifierGroupId: burgerAddGroup.id,
+        sortOrder: 1,
+      },
+    })
+  }
+  console.log('Linked burger add-ons to', sandwichItemIds.length, 'sandwiches')
 
   // Link cocktail modifiers
   // Margaritas get style, flavor, and tequila upgrade
@@ -2277,6 +2517,7 @@ async function main() {
       name: 'Pizza',
       color: '#ea580c',
       categoryType: 'pizza', // This triggers the Pizza Builder modal
+      categoryShow: 'food',
       sortOrder: 0, // First category
     },
   })
