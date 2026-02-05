@@ -1173,6 +1173,8 @@ model Table {
   virtualGroupPrimary   Boolean   @default(false) // Is this the primary (master) table?
   virtualGroupColor     String?   // Hex color for matching pulsing glow
   virtualGroupCreatedAt DateTime? // When group was created (for EOD cleanup/debugging)
+  virtualGroupOffsetX   Int?      // Visual X offset from DB position when in group
+  virtualGroupOffsetY   Int?      // Visual Y offset from DB position when in group
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

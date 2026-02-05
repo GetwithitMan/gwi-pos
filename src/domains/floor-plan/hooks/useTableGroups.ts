@@ -121,7 +121,12 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
 
   // Create virtual group via API
   const createVirtualGroup = useCallback(
-    async (tableIds: string[], employeeId: string, _color?: GroupColor) => {
+    async (
+      tableIds: string[],
+      employeeId: string,
+      _color?: GroupColor,
+      visualOffsets?: Array<{ tableId: string; offsetX: number; offsetY: number }>
+    ) => {
       if (tableIds.length < 2) {
         setError('Need at least 2 tables to create a group')
         return null
@@ -142,6 +147,7 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
             primaryTableId,
             locationId,
             employeeId,
+            visualOffsets, // Pass visual offsets to persist in DB
           }),
         })
 
@@ -224,7 +230,13 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
 
   // Add table to existing group via API
   const addToGroup = useCallback(
-    async (groupId: string, tableId: string, employeeId: string = 'emp-1') => {
+    async (
+      groupId: string,
+      tableId: string,
+      employeeId: string = 'emp-1',
+      offsetX: number = 0,
+      offsetY: number = 0
+    ) => {
       setIsLoading(true)
       setError(null)
 
@@ -236,6 +248,8 @@ export function useTableGroups({ locationId, autoLoad = true }: UseTableGroupsOp
             tableId,
             locationId,
             employeeId,
+            offsetX, // Pass visual offset to persist in DB
+            offsetY,
           }),
         })
 

@@ -96,6 +96,8 @@ interface DbTable {
   virtualGroupId?: string | null;
   virtualGroupColor?: string | null;
   virtualGroupPrimary?: boolean;
+  virtualGroupOffsetX?: number | null;
+  virtualGroupOffsetY?: number | null;
 }
 
 // Convert database element to a "pixel fixture" for DIRECT rendering (no feet conversion)
@@ -297,7 +299,7 @@ function DbTableRenderer({
   visualOffset,
   isInGroup,
 }: DbTableRendererProps) {
-  const isRound = table.shape === 'round' || table.shape === 'circle';
+  const isRound = table.shape === 'round' || table.shape === 'circle' || table.shape === 'oval';
 
   // Apply visual offset if provided (for grouped tables to appear snapped together)
   const visualPosX = table.posX + (visualOffset?.offsetX || 0);
@@ -367,7 +369,8 @@ function DbTableRenderer({
             cursor: 'pointer',
             pointerEvents: 'auto',
             boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            transition: 'all 0.2s ease',
+            // Only transition transform and box-shadow to prevent "breathing" on poll refresh
+            transition: 'transform 0.2s ease, box-shadow 0.2s ease',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'scale(1.15)';
@@ -424,7 +427,10 @@ function DbTableRenderer({
             : groupGlow
             ? groupGlow
             : undefined,
-          transition: visualOffset ? 'all 0.3s ease-out' : 'all 0.2s ease',  // Smooth snap animation
+          // Only transition transform and box-shadow to prevent "breathing" on poll refresh
+          transition: visualOffset
+            ? 'transform 0.3s ease-out, box-shadow 0.2s ease'
+            : 'box-shadow 0.2s ease',
           // Prevent text selection and touch scrolling during long-hold
           userSelect: 'none',
           WebkitUserSelect: 'none',
@@ -701,6 +707,7 @@ export default function TestFloorPlanPage() {
   }, [locationId, fetchDbFixtures, fetchDbTables]);
 
   // Compute virtual group data and visual offsets whenever dbTables changes
+  // STABLE OFFSETS: Once a snap offset is set at drop time, reuse it instead of recalculating
   useEffect(() => {
     if (!dbTables || dbTables.length === 0) {
       setVirtualGroupData({ groups: new Map() });
@@ -708,114 +715,134 @@ export default function TestFloorPlanPage() {
       return;
     }
 
-    // Find all unique virtual group IDs
+    // Collect unique virtual group IDs from the current table snapshot
     const groupIds = new Set<string>();
-    dbTables.forEach(table => {
-      if (table.virtualGroupId) {
-        groupIds.add(table.virtualGroupId);
-        console.log('[Groups] Table', table.name, 'is in group', table.virtualGroupId);
-      }
+    dbTables.forEach((t) => {
+      if (t.virtualGroupId) groupIds.add(t.virtualGroupId);
     });
 
-    console.log('[Groups] Found', groupIds.size, 'virtual groups');
+    const groups = new Map<
+      string,
+      {
+        groupId: string;
+        tableIds: string[];
+        colorAssignments: TableColorAssignment[];
+        colorLookup: Map<string, { tableColor: string; seatColor: string }>;
+        perimeterSeats: PerimeterSeatResult[];
+        perimeterLookup: Map<string, number>;
+        enhancedLookup: Map<string, { perimeterNumber: number; isVisible: boolean }>;
+        virtualSeats: VirtualSeatPosition[];
+        displayName: string;
+        groupIndex: number;
+      }
+    >();
 
-    // Build group data for each virtual group
-    const groups = new Map<string, {
-      groupId: string;
-      tableIds: string[];
-      colorAssignments: TableColorAssignment[];
-      colorLookup: Map<string, { tableColor: string; seatColor: string }>;
-      perimeterSeats: PerimeterSeatResult[];
-      perimeterLookup: Map<string, number>;
-      enhancedLookup: Map<string, { perimeterNumber: number; isVisible: boolean }>;
-      virtualSeats: VirtualSeatPosition[];
-      displayName: string;
-      groupIndex: number;
-    }>();
-
-    // Calculate visual offsets for tables in groups (to make them appear snapped together)
     const newVisualOffsets = new Map<string, { offsetX: number; offsetY: number }>();
 
     let groupIndex = 0;
 
-    groupIds.forEach(groupId => {
-      // Get tables in this group
-      const groupTables = dbTables.filter(t => t.virtualGroupId === groupId);
+    groupIds.forEach((groupId) => {
+      const groupTables = dbTables.filter((t) => t.virtualGroupId === groupId);
       if (groupTables.length === 0) return;
 
-      const tableIds = groupTables.map(t => t.id);
+      // 1) PRIMARY ANCHOR: this table never moves visually (offset 0,0)
+      const primaryTable =
+        groupTables.find((t) => t.virtualGroupPrimary) ?? groupTables[0];
 
-      // Calculate color assignments
-      const colorAssignments = assignColorsToGroup(tableIds, groupIndex);
-      const colorLookup = createColorLookup(colorAssignments);
+      newVisualOffsets.set(primaryTable.id, { offsetX: 0, offsetY: 0 });
 
-      // Find the primary table (anchor - doesn't move visually)
-      const primaryTable = groupTables.find(t => t.virtualGroupPrimary) || groupTables[0];
+      // 2) For each other table, try to use stored snap offsets from drag time
+      // If no stored snap exists, CALCULATE where it should snap to primary/nearest table
+      // This ensures tables stay snapped together after page refresh
 
-      // Check if we have a stored snap position for this group
-      const storedSnap = storedSnapPositions.get(groupId);
-
-      // Calculate visual snap positions for secondary tables
-      // Each secondary table should snap to the nearest edge of the primary table
-      groupTables.forEach(table => {
-        if (table.id === primaryTable.id) {
-          // Primary table doesn't move - no offset
-          newVisualOffsets.set(table.id, { offsetX: 0, offsetY: 0 });
-        } else {
-          // Check for per-table stored snap position (for tables added to existing groups)
-          const perTableSnap = storedSnapPositions.get(`${groupId}-${table.id}`);
-
-          // Use stored snap position if available (from when the drag happened)
-          // This ensures the table lands EXACTLY where the preview showed
-          if (perTableSnap && perTableSnap.draggedTableId === table.id) {
-            const offsetX = perTableSnap.snapPosition.x - table.posX;
-            const offsetY = perTableSnap.snapPosition.y - table.posY;
-            newVisualOffsets.set(table.id, { offsetX, offsetY });
-            console.log(`[VisualSnap] Table ${table.name} using PER-TABLE snap: offset (${offsetX}, ${offsetY})`);
-          } else if (storedSnap && storedSnap.draggedTableId === table.id) {
-            // Original group snap position
-            const offsetX = storedSnap.snapPosition.x - table.posX;
-            const offsetY = storedSnap.snapPosition.y - table.posY;
-            newVisualOffsets.set(table.id, { offsetX, offsetY });
-            console.log(`[VisualSnap] Table ${table.name} using GROUP snap: offset (${offsetX}, ${offsetY})`);
-          } else {
-            // Fallback: Calculate where this table should visually appear (snapped to combined group)
-            // For 3+ tables, we need to snap to the nearest already-positioned table
-            const snapPos = calculateSnapPositionForTableInGroup(table, primaryTable, groupTables, newVisualOffsets);
-            const offsetX = snapPos.x - table.posX;
-            const offsetY = snapPos.y - table.posY;
-            newVisualOffsets.set(table.id, { offsetX, offsetY });
-            console.log(`[VisualSnap] Table ${table.name} CALCULATED offset: (${offsetX}, ${offsetY})`);
-          }
-        }
+      // Sort secondary tables by distance to primary so we process nearest first
+      const secondaryTables = groupTables.filter(t => t.id !== primaryTable.id);
+      const sortedSecondaries = [...secondaryTables].sort((a, b) => {
+        const distA = Math.sqrt(
+          Math.pow(a.posX - primaryTable.posX, 2) +
+          Math.pow(a.posY - primaryTable.posY, 2)
+        );
+        const distB = Math.sqrt(
+          Math.pow(b.posX - primaryTable.posX, 2) +
+          Math.pow(b.posY - primaryTable.posY, 2)
+        );
+        return distA - distB;
       });
 
-      // Calculate perimeter seats using VISUAL positions (snapped positions)
-      const tablesForPerimeter: TableForPerimeter[] = groupTables.map(t => {
-        const offset = newVisualOffsets.get(t.id) || { offsetX: 0, offsetY: 0 };
+      sortedSecondaries.forEach((table) => {
+        // Priority 1: Use DB-stored offsets (persisted from when table was added to group)
+        if (table.virtualGroupOffsetX != null && table.virtualGroupOffsetY != null) {
+          newVisualOffsets.set(table.id, {
+            offsetX: table.virtualGroupOffsetX,
+            offsetY: table.virtualGroupOffsetY,
+          });
+          return;
+        }
+
+        // Priority 2: Use React state stored snap positions (from current drag session)
+        // - per table:   `${groupId}-${table.id}`
+        // - group-wide:  groupId
+        const perTableSnap = storedSnapPositions.get(`${groupId}-${table.id}`);
+        const groupSnap = storedSnapPositions.get(groupId);
+
+        if (perTableSnap && perTableSnap.draggedTableId === table.id) {
+          // Exact position captured when user dropped this table into the group
+          newVisualOffsets.set(table.id, {
+            offsetX: perTableSnap.snapPosition.x - table.posX,
+            offsetY: perTableSnap.snapPosition.y - table.posY,
+          });
+          return;
+        }
+
+        if (groupSnap && groupSnap.draggedTableId === table.id) {
+          newVisualOffsets.set(table.id, {
+            offsetX: groupSnap.snapPosition.x - table.posX,
+            offsetY: groupSnap.snapPosition.y - table.posY,
+          });
+          return;
+        }
+
+        // Priority 3: AUTO-CALCULATE where this table should snap
+        // This is a fallback when no offset is stored - calculates based on relative positions
+        const snapPos = calculateSnapPositionForTableInGroup(
+          table,
+          primaryTable,
+          groupTables,
+          newVisualOffsets
+        );
+        newVisualOffsets.set(table.id, {
+          offsetX: snapPos.x - table.posX,
+          offsetY: snapPos.y - table.posY,
+        });
+      });
+
+      // 3) Build tablesForPerimeter using visual (snapped) positions
+      // IMPORTANT: Include rotation so seat positions are calculated correctly!
+      const tablesForPerimeter: TableForPerimeter[] = groupTables.map((t) => {
+        const off = newVisualOffsets.get(t.id) ?? { offsetX: 0, offsetY: 0 };
         return {
           id: t.id,
           name: t.name,
-          posX: t.posX + offset.offsetX,  // Use visual position
-          posY: t.posY + offset.offsetY,  // Use visual position
+          posX: t.posX + off.offsetX,
+          posY: t.posY + off.offsetY,
           width: t.width,
           height: t.height,
-          seats: t.seats || [],
+          rotation: t.rotation,  // Pass rotation for correct seat position calculation
+          seats: t.seats ?? [],
         };
       });
+
+      // 4) Generate virtual seats around the combined box
+      const virtualSeats = generateVirtualSeatPositions(tablesForPerimeter, 22);
+
+      // 5) Colors + perimeter lookup
+      const tableIds = groupTables.map((t) => t.id);
+      const colorAssignments = assignColorsToGroup(tableIds, groupIndex);
+      const colorLookup = createColorLookup(colorAssignments);
+
       const perimeterSeats = calculatePerimeterSeats(tablesForPerimeter);
       const perimeterLookup = createPerimeterLookup(perimeterSeats);
       const enhancedLookup = createEnhancedPerimeterLookup(tablesForPerimeter);
-
-      // Generate virtual seat positions around the combined bounding box
-      // This places seats evenly around the perimeter instead of using original positions
-      // seatDistance = 18px (half seat size of 24px + small margin, close to table edge)
-      const virtualSeats = generateVirtualSeatPositions(tablesForPerimeter, 18);
-
-      // Debug: Log virtual seat positions
-      console.log('[VirtualSeats] Group', groupId, '- generated', virtualSeats.length, 'virtual seats');
-
-      // Get display name
       const displayName = getGroupDisplayName(tablesForPerimeter);
 
       groups.set(groupId, {
@@ -1006,15 +1033,20 @@ export default function TestFloorPlanPage() {
 
       // Allow snapping to ANY table (including those in groups) so users can add to existing groups
       // Only exclude the table being dragged
+      // IMPORTANT: Use VISUAL positions for tables in groups (with snap offsets applied)
       const tableRects = visibleTables
         .filter(t => t.id !== dragState.draggedTableId)
-        .map(t => ({
-          id: t.id,
-          x: t.posX,
-          y: t.posY,
-          width: t.width,
-          height: t.height,
-        }));
+        .map(t => {
+          // Get visual offset if table is in a group
+          const offset = visualOffsets.get(t.id) || { offsetX: 0, offsetY: 0 };
+          return {
+            id: t.id,
+            x: t.posX + offset.offsetX,  // Use visual position
+            y: t.posY + offset.offsetY,  // Use visual position
+            width: t.width,
+            height: t.height,
+          };
+        });
 
       const draggedRect = {
         id: draggedTable.id,
@@ -1036,7 +1068,7 @@ export default function TestFloorPlanPage() {
       const snap = findBestSnap(draggedRect, tableRects);
       setSnapPreview(snap);
     }
-  }, [dragState, dbTables, dbSections, selectedRoomId, SNAP_DISTANCE_PX, screenToCanvas]);
+  }, [dragState, dbTables, dbSections, selectedRoomId, SNAP_DISTANCE_PX, screenToCanvas, visualOffsets]);
 
   // Handle pointer up - only snap and combine if we have a valid snap position
   const handleTablePointerUp = useCallback(async () => {
@@ -1066,29 +1098,24 @@ export default function TestFloorPlanPage() {
             targetGroupId: targetTable.virtualGroupId,
           });
 
+          // Calculate offset from snap position
+          const draggedTableForOffset = dbTables.find(t => t.id === dragState.draggedTableId);
+          const offsetX = draggedTableForOffset ? snapPreview.snapPosition.x - draggedTableForOffset.posX : 0;
+          const offsetY = draggedTableForOffset ? snapPreview.snapPosition.y - draggedTableForOffset.posY : 0;
+
           const success = await addToGroup(
             targetTable.virtualGroupId,
             dragState.draggedTableId,
-            'emp-1' // TODO: Get from auth context
+            'emp-1', // TODO: Get from auth context
+            offsetX,
+            offsetY
           );
 
           if (success) {
-            console.log('[Snap] Table added to existing group');
-
-            // Store the snap position for this table in the existing group
-            setStoredSnapPositions(prev => {
-              const updated = new Map(prev);
-              // We need to update the stored snap for this group to include the new table
-              const existingSnap = updated.get(targetTable.virtualGroupId!);
-              // For additional tables, store under the group ID with tableId as key
-              updated.set(`${targetTable.virtualGroupId}-${dragState.draggedTableId}`, {
-                draggedTableId: dragState.draggedTableId!,
-                snapPosition: snapPreview.snapPosition,
-              });
-              return updated;
-            });
+            console.log('[Snap] Table added to existing group with offset:', { offsetX, offsetY });
 
             // Refresh floor plan data to show the updated group
+            // DB now has the offset, so we don't need storedSnapPositions anymore
             if (locationId) {
               await fetchDbTables(locationId);
             }
@@ -1100,24 +1127,19 @@ export default function TestFloorPlanPage() {
             draggedGroupId: draggedTable.virtualGroupId,
           });
 
+          // When adding target to dragged table's group, the target table doesn't move
+          // (it's the anchor). The dragged table already has an offset in the group.
+          // The target table gets offset 0,0 relative to its own position.
           const success = await addToGroup(
             draggedTable.virtualGroupId,
             snapPreview.targetTableId,
-            'emp-1' // TODO: Get from auth context
+            'emp-1', // TODO: Get from auth context
+            0, // Target table stays in place
+            0
           );
 
           if (success) {
             console.log('[Snap] Target table added to existing group');
-
-            // Store the snap position
-            setStoredSnapPositions(prev => {
-              const updated = new Map(prev);
-              updated.set(`${draggedTable.virtualGroupId}-${snapPreview.targetTableId}`, {
-                draggedTableId: snapPreview.targetTableId,
-                snapPosition: { x: targetTable?.posX || 0, y: targetTable?.posY || 0 },
-              });
-              return updated;
-            });
 
             // Refresh floor plan data to show the updated group
             if (locationId) {
@@ -1133,9 +1155,22 @@ export default function TestFloorPlanPage() {
 
           // Create the virtual group with TARGET table as PRIMARY (first in array)
           // This means the dragged table will snap TO the target table's position
+          // Calculate visual offsets: primary table has offset 0,0; dragged table has snap offset
+          const draggedTable = dbTables.find(t => t.id === dragState.draggedTableId);
+          const visualOffsets = [
+            { tableId: snapPreview.targetTableId, offsetX: 0, offsetY: 0 }, // Primary at origin
+            {
+              tableId: dragState.draggedTableId!,
+              offsetX: draggedTable ? snapPreview.snapPosition.x - draggedTable.posX : 0,
+              offsetY: draggedTable ? snapPreview.snapPosition.y - draggedTable.posY : 0,
+            },
+          ];
+
           const result = await createVirtualGroup(
             [snapPreview.targetTableId, dragState.draggedTableId],  // Target first = primary
-            'emp-1' // TODO: Get from auth context
+            'emp-1', // TODO: Get from auth context
+            undefined, // color
+            visualOffsets // Persist visual offsets to DB
           );
 
           if (result) {
@@ -1546,7 +1581,8 @@ export default function TestFloorPlanPage() {
                         cursor: 'pointer',
                         pointerEvents: 'auto',
                         boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-                        transition: 'all 0.2s ease',
+                        // Only transition transform and box-shadow to prevent "breathing" on poll refresh
+                        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
                         zIndex: 50,
                       }}
                       onMouseEnter={(e) => {
@@ -1569,6 +1605,7 @@ export default function TestFloorPlanPage() {
             })}
 
             {/* Group display name badges - positioned using visual (snapped) positions */}
+            {/* Dynamically positions at top or bottom based on available space */}
             {isDbMode && Array.from(virtualGroupData.groups.entries()).map(([groupId, groupData]) => {
               // Get tables in this group for this section
               const groupTables = dbTables.filter(
@@ -1592,8 +1629,20 @@ export default function TestFloorPlanPage() {
               const centerX = (minX + maxX) / 2;
               const family = getColorFamilyForGroup(groupData.groupIndex);
 
-              // Account for seat extension above the table (18px offset + 12px seat radius)
-              const SEAT_EXTENSION = 30;
+              // Account for seat extension (base 22px + potential stagger rings up to 40px + seat radius 12px)
+              const SEAT_EXTENSION_TOP = 60; // Larger for potential stagger
+              const SEAT_EXTENSION_BOTTOM = 60;
+              const BADGE_HEIGHT = 24; // Approximate badge height
+              const BADGE_MARGIN = 8;
+
+              // Dynamically choose top or bottom based on available space
+              // Prefer top, but use bottom if badge would go off-screen (minY - extension < threshold)
+              const MIN_TOP_SPACE = 80; // Minimum pixels from canvas top edge
+              const topPosition = minY - SEAT_EXTENSION_TOP - BADGE_MARGIN;
+              const bottomPosition = maxY + SEAT_EXTENSION_BOTTOM + BADGE_MARGIN;
+
+              // Use bottom if top would be too close to edge (or negative)
+              const useBottom = topPosition < MIN_TOP_SPACE;
 
               return (
                 <div
@@ -1601,7 +1650,7 @@ export default function TestFloorPlanPage() {
                   style={{
                     position: 'absolute',
                     left: centerX,
-                    top: minY - SEAT_EXTENSION - 25, // Position above seats (seat extension + badge margin)
+                    top: useBottom ? bottomPosition : topPosition,
                     transform: 'translateX(-50%)',
                     backgroundColor: getColorWithOpacity(family.base, 0.9),
                     color: 'white',

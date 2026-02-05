@@ -131,6 +131,8 @@ export async function GET(request: NextRequest) {
         virtualGroupId: table.virtualGroupId,
         virtualGroupPrimary: table.virtualGroupPrimary,
         virtualGroupColor: table.virtualGroupColor,
+        virtualGroupOffsetX: table.virtualGroupOffsetX,
+        virtualGroupOffsetY: table.virtualGroupOffsetY,
         // Seats (if requested)
         seats: includeSeats && 'seats' in table ? table.seats : [],
         // Current order info (if orders included)

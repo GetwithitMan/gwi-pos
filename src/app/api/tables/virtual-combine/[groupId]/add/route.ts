@@ -16,7 +16,7 @@ export async function POST(
   try {
     const { groupId } = await params
     const body = await request.json()
-    const { tableId, locationId, employeeId, mergeExistingOrder = false } = body
+    const { tableId, locationId, employeeId, mergeExistingOrder = false, offsetX = 0, offsetY = 0 } = body
 
     if (!tableId || !locationId) {
       return NextResponse.json(
@@ -183,6 +183,8 @@ export async function POST(
           virtualGroupPrimary: false,
           virtualGroupColor: primaryTable.virtualGroupColor,
           virtualGroupCreatedAt: primaryTable.virtualGroupCreatedAt,
+          virtualGroupOffsetX: offsetX,
+          virtualGroupOffsetY: offsetY,
           status: tableOrder || primaryOrder ? 'occupied' : tableToAdd.status,
         },
         include: {

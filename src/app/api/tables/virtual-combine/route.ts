@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       locationId,
       employeeId,
       existingOrderActions, // Optional: { orderId, action: 'merge' | 'close' }[]
+      visualOffsets, // Optional: { tableId: string, offsetX: number, offsetY: number }[]
     } = body
 
     if (!tableIds || !Array.isArray(tableIds) || tableIds.length < 2) {
@@ -231,6 +232,9 @@ export async function POST(request: NextRequest) {
 
       // Update all tables with virtual group info
       for (const table of tables) {
+        // Find visual offset for this table (if provided)
+        const offset = visualOffsets?.find((o: { tableId: string; offsetX: number; offsetY: number }) => o.tableId === table.id)
+
         await tx.table.update({
           where: { id: table.id },
           data: {
@@ -238,6 +242,9 @@ export async function POST(request: NextRequest) {
             virtualGroupPrimary: table.id === primaryTableId,
             virtualGroupColor,
             virtualGroupCreatedAt,
+            // Store visual offsets for rendering after refresh
+            virtualGroupOffsetX: offset?.offsetX ?? 0,
+            virtualGroupOffsetY: offset?.offsetY ?? 0,
             // Update status to occupied if any table has an order
             status: tablesWithOrders.length > 0 ? 'occupied' : table.status,
           },

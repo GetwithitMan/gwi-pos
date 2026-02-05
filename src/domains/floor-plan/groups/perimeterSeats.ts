@@ -2,18 +2,17 @@
  * GWI POS - Floor Plan Domain
  * Perimeter Seat Renumbering for Virtual Table Groups
  *
- * Traces the outer perimeter of combined tables clockwise from upper-left,
- * assigning sequential seat numbers 1, 2, 3...
+ * PROPER PERIMETER WALK for L-shapes and complex arrangements:
+ * 1. Find the topmost point (12 o'clock starting position)
+ * 2. Walk clockwise around actual table edges, not bounding box
+ * 3. Assign seat numbers sequentially along the walk
  */
-
-import type { Point } from '../shared/types';
 
 export interface SeatWithPosition {
   id: string;
   tableId: string;
   seatNumber: number;
   label: string;
-  // Absolute position on canvas (table center + seat relative offset)
   absoluteX: number;
   absoluteY: number;
 }
@@ -25,6 +24,7 @@ export interface TableForPerimeter {
   posY: number;
   width: number;
   height: number;
+  rotation?: number;
   seats: Array<{
     id: string;
     seatNumber: number;
@@ -39,136 +39,93 @@ export interface PerimeterSeatResult {
   tableId: string;
   tableName: string;
   originalNumber: number;
-  perimeterNumber: number; // 1, 2, 3... around combined group
+  perimeterNumber: number;
   originalLabel: string;
-  perimeterLabel: string; // Just the number as string
+  perimeterLabel: string;
 }
 
-/**
- * Calculate the combined bounding box of all tables
- */
-function getCombinedBounds(tables: TableForPerimeter[]): {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-  centerX: number;
-  centerY: number;
-} {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
+export interface VirtualSeatPosition {
+  id: string;
+  perimeterNumber: number;
+  absoluteX: number;
+  absoluteY: number;
+  originalSeatId: string;
+  originalTableId: string;
+  originalSeatNumber: number;
+}
 
+function getCombinedBounds(tables: TableForPerimeter[]) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const table of tables) {
     minX = Math.min(minX, table.posX);
     minY = Math.min(minY, table.posY);
     maxX = Math.max(maxX, table.posX + table.width);
     maxY = Math.max(maxY, table.posY + table.height);
   }
-
-  return {
-    minX,
-    minY,
-    maxX,
-    maxY,
-    centerX: (minX + maxX) / 2,
-    centerY: (minY + maxY) / 2,
-  };
+  return { minX, minY, maxX, maxY, centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2 };
 }
 
-/**
- * Convert relative seat positions to absolute canvas positions
- */
 function getAbsoluteSeats(tables: TableForPerimeter[]): SeatWithPosition[] {
   const seats: SeatWithPosition[] = [];
-
   for (const table of tables) {
-    const tableCenterX = table.posX + table.width / 2;
-    const tableCenterY = table.posY + table.height / 2;
-
+    const cx = table.posX + table.width / 2;
+    const cy = table.posY + table.height / 2;
+    const rad = ((table.rotation || 0) * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
     for (const seat of table.seats) {
+      const rx = seat.relativeX * cos - seat.relativeY * sin;
+      const ry = seat.relativeX * sin + seat.relativeY * cos;
       seats.push({
         id: seat.id,
         tableId: table.id,
         seatNumber: seat.seatNumber,
         label: seat.label,
-        absoluteX: tableCenterX + seat.relativeX,
-        absoluteY: tableCenterY + seat.relativeY,
+        absoluteX: cx + rx,
+        absoluteY: cy + ry,
       });
     }
   }
-
   return seats;
 }
 
 /**
- * Calculate angle from center point, normalized to start from upper-left (NW)
- * and go clockwise.
- *
- * Standard atan2: 0° = East, increases counter-clockwise
- * We want: 0° = upper-left (NW), increases clockwise
+ * Calculate angle from center to seat, normalized to start at 12 o'clock (top)
+ * Returns value 0-360 where 0 = top, 90 = right, 180 = bottom, 270 = left
  */
-function getClockwiseAngleFromUpperLeft(
-  seatX: number,
-  seatY: number,
-  centerX: number,
-  centerY: number
-): number {
-  // Standard angle (0 = East, counter-clockwise positive)
-  const standardAngle = Math.atan2(seatY - centerY, seatX - centerX);
-
-  // Convert to degrees
-  let degrees = standardAngle * (180 / Math.PI);
-
-  // Rotate so 0° is at upper-left (-135° in standard)
-  // and make clockwise positive
-  degrees = degrees + 135;
-
-  // Normalize to 0-360
-  if (degrees < 0) degrees += 360;
-  if (degrees >= 360) degrees -= 360;
-
-  return degrees;
+function getClockwiseAngle(seatX: number, seatY: number, centerX: number, centerY: number): number {
+  // atan2 returns -PI to PI, with 0 pointing right
+  // We want 0 to be at top (12 o'clock), going clockwise
+  const angle = Math.atan2(seatX - centerX, centerY - seatY); // Note: swapped and negated for clockwise from top
+  // Convert to 0-360 range
+  return ((angle * 180 / Math.PI) + 360) % 360;
 }
 
 /**
- * Main function: Calculate perimeter seat numbers for a virtual group
- *
- * @param tables - Array of tables with positions and seats
- * @returns Array of seat results with perimeter numbers, ordered clockwise from upper-left
+ * Calculate perimeter seat numbers using simple radial sorting from the combined center.
+ * Start at 12 o'clock (top-center) and go clockwise.
  */
-export function calculatePerimeterSeats(
-  tables: TableForPerimeter[]
-): PerimeterSeatResult[] {
+export function calculatePerimeterSeats(tables: TableForPerimeter[]): PerimeterSeatResult[] {
   if (tables.length === 0) return [];
 
-  // Get combined bounds
-  const bounds = getCombinedBounds(tables);
-
-  // Convert to absolute positions
   const absoluteSeats = getAbsoluteSeats(tables);
-
   if (absoluteSeats.length === 0) return [];
 
-  // Calculate clockwise angle for each seat from upper-left
-  const seatsWithAngles = absoluteSeats.map((seat) => ({
+  // Calculate the center of ALL tables combined
+  const bounds = getCombinedBounds(tables);
+  const { centerX, centerY } = bounds;
+
+  // Sort seats by their clockwise angle from center, starting at 12 o'clock
+  const seatsWithAngles = absoluteSeats.map(seat => ({
     ...seat,
-    angle: getClockwiseAngleFromUpperLeft(
-      seat.absoluteX,
-      seat.absoluteY,
-      bounds.centerX,
-      bounds.centerY
-    ),
+    angle: getClockwiseAngle(seat.absoluteX, seat.absoluteY, centerX, centerY),
   }));
 
-  // Sort by angle (clockwise from upper-left)
+  // Sort by angle (0 = top, going clockwise)
   seatsWithAngles.sort((a, b) => a.angle - b.angle);
 
-  // Find table name by ID (for results)
   const tableNameMap = new Map(tables.map((t) => [t.id, t.name]));
 
-  // Assign perimeter numbers
   return seatsWithAngles.map((seat, index) => ({
     seatId: seat.id,
     tableId: seat.tableId,
@@ -180,454 +137,454 @@ export function calculatePerimeterSeats(
   }));
 }
 
-/**
- * Get perimeter seat count for a group of tables
- */
 export function getPerimeterSeatCount(tables: TableForPerimeter[]): number {
   return tables.reduce((sum, t) => sum + t.seats.length, 0);
 }
 
-/**
- * Get display summary for a virtual group
- * e.g., "Tables 5 & 6 • Party of 12"
- */
 export function getGroupDisplayName(tables: TableForPerimeter[]): string {
-  const tableNames = tables.map((t) => t.name);
-  const seatCount = getPerimeterSeatCount(tables);
-
-  if (tableNames.length === 0) return '';
-  if (tableNames.length === 1) return `${tableNames[0]} • ${seatCount} seats`;
-  if (tableNames.length === 2) {
-    return `${tableNames[0]} & ${tableNames[1]} • Party of ${seatCount}`;
-  }
-
-  // 3+ tables: "Tables 5, 6 & 7 • Party of 18"
-  const allButLast = tableNames.slice(0, -1);
-  const last = tableNames[tableNames.length - 1];
-  return `${allButLast.join(', ')} & ${last} • Party of ${seatCount}`;
+  const names = tables.map(t => t.name);
+  const count = getPerimeterSeatCount(tables);
+  if (names.length === 0) return '';
+  if (names.length === 1) return `${names[0]} • ${count} seats`;
+  if (names.length === 2) return `${names[0]} & ${names[1]} • Party of ${count}`;
+  return `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]} • Party of ${count}`;
 }
 
-/**
- * Create a lookup map from seatId to perimeterNumber
- * Useful for quick lookups during rendering
- */
-export function createPerimeterLookup(
-  results: PerimeterSeatResult[]
-): Map<string, number> {
-  return new Map(results.map((r) => [r.seatId, r.perimeterNumber]));
+export function createPerimeterLookup(results: PerimeterSeatResult[]): Map<string, number> {
+  return new Map(results.map(r => [r.seatId, r.perimeterNumber]));
 }
 
-/**
- * Determine which seats are "inner" seats (between snapped tables)
- * These should be hidden when tables are combined.
- *
- * A seat is "inner" if:
- * 1. It's positioned in the direction of another table (facing inward)
- * 2. The other table is close enough that the seat would overlap
- *
- * When tables snap edge-to-edge, seats on the touching edges would
- * visually overlap or be sandwiched between tables.
- *
- * @returns Set of seat IDs that should be hidden
- */
 export function getInnerSeats(tables: TableForPerimeter[]): Set<string> {
   if (tables.length < 2) return new Set();
-
   const innerSeatIds = new Set<string>();
-
-  // Seat visual size (we render seats at 24px diameter)
-  const SEAT_SIZE = 24;
-  // How far seats typically extend from table edge
-  const SEAT_EXTENSION = 20;
-  // Total zone around table edge where seats from adjacent table would overlap
-  const OVERLAP_ZONE = SEAT_SIZE + SEAT_EXTENSION;
+  const OVERLAP_ZONE = 44;
 
   for (const table of tables) {
-    const tableCenterX = table.posX + table.width / 2;
-    const tableCenterY = table.posY + table.height / 2;
-
-    // Get table edges
-    const tableLeft = table.posX;
-    const tableRight = table.posX + table.width;
-    const tableTop = table.posY;
-    const tableBottom = table.posY + table.height;
+    const tL = table.posX, tR = table.posX + table.width;
+    const tT = table.posY, tB = table.posY + table.height;
 
     for (const seat of table.seats) {
-      // Calculate absolute seat position (center of the seat circle)
-      const seatAbsX = tableCenterX + seat.relativeX;
-      const seatAbsY = tableCenterY + seat.relativeY;
-
-      // Determine which edge this seat is on (based on relative position)
       const isOnRight = seat.relativeX > table.width / 4;
       const isOnLeft = seat.relativeX < -table.width / 4;
       const isOnBottom = seat.relativeY > table.height / 4;
       const isOnTop = seat.relativeY < -table.height / 4;
 
-      // Check if any other table is adjacent on the same edge
-      for (const otherTable of tables) {
-        if (otherTable.id === table.id) continue;
+      for (const other of tables) {
+        if (other.id === table.id) continue;
+        const oL = other.posX, oR = other.posX + other.width;
+        const oT = other.posY, oB = other.posY + other.height;
+        const hasV = tT < oB + OVERLAP_ZONE && tB > oT - OVERLAP_ZONE;
+        const hasH = tL < oR + OVERLAP_ZONE && tR > oL - OVERLAP_ZONE;
 
-        const otherLeft = otherTable.posX;
-        const otherRight = otherTable.posX + otherTable.width;
-        const otherTop = otherTable.posY;
-        const otherBottom = otherTable.posY + otherTable.height;
-
-        // Check vertical overlap (for horizontal adjacency)
-        const hasVerticalOverlap =
-          tableTop < otherBottom + OVERLAP_ZONE &&
-          tableBottom > otherTop - OVERLAP_ZONE;
-
-        // Check horizontal overlap (for vertical adjacency)
-        const hasHorizontalOverlap =
-          tableLeft < otherRight + OVERLAP_ZONE &&
-          tableRight > otherLeft - OVERLAP_ZONE;
-
-        // Seat on right edge, other table is to the right
-        if (isOnRight && hasVerticalOverlap) {
-          const gapToRight = otherLeft - tableRight;
-          if (gapToRight >= -5 && gapToRight <= OVERLAP_ZONE) {
-            innerSeatIds.add(seat.id);
-            break;
-          }
-        }
-
-        // Seat on left edge, other table is to the left
-        if (isOnLeft && hasVerticalOverlap) {
-          const gapToLeft = tableLeft - otherRight;
-          if (gapToLeft >= -5 && gapToLeft <= OVERLAP_ZONE) {
-            innerSeatIds.add(seat.id);
-            break;
-          }
-        }
-
-        // Seat on bottom edge, other table is below
-        if (isOnBottom && hasHorizontalOverlap) {
-          const gapToBottom = otherTop - tableBottom;
-          if (gapToBottom >= -5 && gapToBottom <= OVERLAP_ZONE) {
-            innerSeatIds.add(seat.id);
-            break;
-          }
-        }
-
-        // Seat on top edge, other table is above
-        if (isOnTop && hasHorizontalOverlap) {
-          const gapToTop = tableTop - otherBottom;
-          if (gapToTop >= -5 && gapToTop <= OVERLAP_ZONE) {
-            innerSeatIds.add(seat.id);
-            break;
-          }
-        }
+        if (isOnRight && hasV && oL - tR >= -5 && oL - tR <= OVERLAP_ZONE) { innerSeatIds.add(seat.id); break; }
+        if (isOnLeft && hasV && tL - oR >= -5 && tL - oR <= OVERLAP_ZONE) { innerSeatIds.add(seat.id); break; }
+        if (isOnBottom && hasH && oT - tB >= -5 && oT - tB <= OVERLAP_ZONE) { innerSeatIds.add(seat.id); break; }
+        if (isOnTop && hasH && tT - oB >= -5 && tT - oB <= OVERLAP_ZONE) { innerSeatIds.add(seat.id); break; }
       }
     }
   }
-
   return innerSeatIds;
 }
 
-/**
- * Create a combined lookup that includes perimeter number AND visibility
- * Returns a map of seatId to { perimeterNumber, isVisible }
- */
-export function createEnhancedPerimeterLookup(
-  tables: TableForPerimeter[]
-): Map<string, { perimeterNumber: number; isVisible: boolean }> {
-  const perimeterResults = calculatePerimeterSeats(tables);
-  const innerSeats = getInnerSeats(tables);
-
+export function createEnhancedPerimeterLookup(tables: TableForPerimeter[]): Map<string, { perimeterNumber: number; isVisible: boolean }> {
+  const results = calculatePerimeterSeats(tables);
+  const inner = getInnerSeats(tables);
   const lookup = new Map<string, { perimeterNumber: number; isVisible: boolean }>();
-
-  for (const result of perimeterResults) {
-    lookup.set(result.seatId, {
-      perimeterNumber: result.perimeterNumber,
-      isVisible: !innerSeats.has(result.seatId),
-    });
+  for (const r of results) {
+    lookup.set(r.seatId, { perimeterNumber: r.perimeterNumber, isVisible: !inner.has(r.seatId) });
   }
-
   return lookup;
 }
 
-/**
- * Virtual seat position for rendering around combined table group
- */
-export interface VirtualSeatPosition {
-  id: string;  // Generated ID like "virtual-seat-1"
-  perimeterNumber: number;
-  absoluteX: number;
-  absoluteY: number;
-  // Original seat info (for orders)
-  originalSeatId: string;
-  originalTableId: string;
-  originalSeatNumber: number;
-}
+// ============================================================================
+// VIRTUAL SEAT POSITION GENERATION
+// Generate evenly-spaced seat positions around the combined table perimeter
+// Seats hug the actual table edges, following L-shapes and complex arrangements
+// ============================================================================
 
-/**
- * Represents an edge segment of a table that may or may not be exposed (outer edge)
- */
-interface EdgeSegment {
+interface OuterEdge {
   tableId: string;
   edge: 'top' | 'right' | 'bottom' | 'left';
-  startX: number;
-  startY: number;
-  endX: number;
-  endY: number;
+  x1: number; y1: number;
+  x2: number; y2: number;
   length: number;
-  isOuter: boolean;  // true if this edge is not touching another table
+  angle: number; // Clockwise angle from 12 o'clock for sorting
 }
 
 /**
- * Check if two line segments overlap significantly (more than a small threshold)
+ * Find the starting point for seat numbering:
+ * - Find the leftmost table
+ * - Use the top-left corner of that table as the starting point
  */
-function edgesOverlap(
-  seg1Start: number, seg1End: number,
-  seg2Start: number, seg2End: number,
-  threshold: number = 10
-): boolean {
-  const overlapStart = Math.max(seg1Start, seg2Start);
-  const overlapEnd = Math.min(seg1End, seg2End);
-  return (overlapEnd - overlapStart) > threshold;
+function findStartingPoint(tables: TableForPerimeter[]): { x: number; y: number } {
+  if (tables.length === 0) return { x: 0, y: 0 };
+
+  // Find the leftmost table (smallest posX)
+  // If tied, pick the one with smallest posY (highest on screen)
+  let leftmostTable = tables[0];
+  for (const table of tables) {
+    if (table.posX < leftmostTable.posX ||
+        (table.posX === leftmostTable.posX && table.posY < leftmostTable.posY)) {
+      leftmostTable = table;
+    }
+  }
+
+  // Return the top-left corner of the leftmost table
+  return { x: leftmostTable.posX, y: leftmostTable.posY };
 }
 
 /**
- * Determine which edges of each table are "outer" (not touching another table)
+ * Get all outer edges of the combined tables (edges not touching another table)
  */
-function classifyTableEdges(tables: TableForPerimeter[]): EdgeSegment[] {
-  const allEdges: EdgeSegment[] = [];
-  const TOUCH_THRESHOLD = 5; // Tables within 5px are considered touching
+function getOuterEdges(tables: TableForPerimeter[]): OuterEdge[] {
+  // Tables snap at ~44px, so use 50px threshold to detect "touching"
+  const TOUCH_THRESHOLD = 50;
+  const edges: OuterEdge[] = [];
+  const bounds = getCombinedBounds(tables);
+  const { centerX, centerY } = bounds;
 
   for (const table of tables) {
-    const left = table.posX;
-    const right = table.posX + table.width;
-    const top = table.posY;
-    const bottom = table.posY + table.height;
+    const l = table.posX;
+    const r = table.posX + table.width;
+    const t = table.posY;
+    const b = table.posY + table.height;
 
-    // Create edge segments for all four sides
-    const edges: EdgeSegment[] = [
-      { tableId: table.id, edge: 'top', startX: left, startY: top, endX: right, endY: top, length: table.width, isOuter: true },
-      { tableId: table.id, edge: 'right', startX: right, startY: top, endX: right, endY: bottom, length: table.height, isOuter: true },
-      { tableId: table.id, edge: 'bottom', startX: right, startY: bottom, endX: left, endY: bottom, length: table.width, isOuter: true },
-      { tableId: table.id, edge: 'left', startX: left, startY: bottom, endX: left, endY: top, length: table.height, isOuter: true },
+    // Define edges in clockwise order for each table
+    const tableEdges: Array<{ edge: 'top' | 'right' | 'bottom' | 'left'; x1: number; y1: number; x2: number; y2: number }> = [
+      { edge: 'top', x1: l, y1: t, x2: r, y2: t },
+      { edge: 'right', x1: r, y1: t, x2: r, y2: b },
+      { edge: 'bottom', x1: r, y1: b, x2: l, y2: b },
+      { edge: 'left', x1: l, y1: b, x2: l, y2: t },
     ];
 
-    // Check each edge against other tables to see if it's inner (touching)
-    for (const edge of edges) {
-      for (const otherTable of tables) {
-        if (otherTable.id === table.id) continue;
+    for (const e of tableEdges) {
+      let isCovered = false;
 
-        const otherLeft = otherTable.posX;
-        const otherRight = otherTable.posX + otherTable.width;
-        const otherTop = otherTable.posY;
-        const otherBottom = otherTable.posY + otherTable.height;
+      for (const other of tables) {
+        if (other.id === table.id) continue;
+        const oL = other.posX;
+        const oR = other.posX + other.width;
+        const oT = other.posY;
+        const oB = other.posY + other.height;
 
-        // Check if this edge is touching the other table
-        if (edge.edge === 'top') {
-          // Top edge touches if other table's bottom is at our top, and they overlap horizontally
-          if (Math.abs(otherBottom - top) <= TOUCH_THRESHOLD) {
-            if (edgesOverlap(left, right, otherLeft, otherRight)) {
-              edge.isOuter = false;
-              break;
-            }
-          }
-        } else if (edge.edge === 'bottom') {
-          // Bottom edge touches if other table's top is at our bottom
-          if (Math.abs(otherTop - bottom) <= TOUCH_THRESHOLD) {
-            if (edgesOverlap(left, right, otherLeft, otherRight)) {
-              edge.isOuter = false;
-              break;
-            }
-          }
-        } else if (edge.edge === 'left') {
-          // Left edge touches if other table's right is at our left
-          if (Math.abs(otherRight - left) <= TOUCH_THRESHOLD) {
-            if (edgesOverlap(top, bottom, otherTop, otherBottom)) {
-              edge.isOuter = false;
-              break;
-            }
-          }
-        } else if (edge.edge === 'right') {
-          // Right edge touches if other table's left is at our right
-          if (Math.abs(otherLeft - right) <= TOUCH_THRESHOLD) {
-            if (edgesOverlap(top, bottom, otherTop, otherBottom)) {
-              edge.isOuter = false;
-              break;
-            }
-          }
+        if (e.edge === 'top' && Math.abs(oB - t) <= TOUCH_THRESHOLD && oL < r && oR > l) { isCovered = true; break; }
+        if (e.edge === 'bottom' && Math.abs(oT - b) <= TOUCH_THRESHOLD && oL < r && oR > l) { isCovered = true; break; }
+        if (e.edge === 'left' && Math.abs(oR - l) <= TOUCH_THRESHOLD && oT < b && oB > t) { isCovered = true; break; }
+        if (e.edge === 'right' && Math.abs(oL - r) <= TOUCH_THRESHOLD && oT < b && oB > t) { isCovered = true; break; }
+      }
+
+      if (!isCovered) {
+        const length = Math.sqrt(Math.pow(e.x2 - e.x1, 2) + Math.pow(e.y2 - e.y1, 2));
+        if (length > 0) {
+          // Calculate angle of edge midpoint for sorting
+          const midX = (e.x1 + e.x2) / 2;
+          const midY = (e.y1 + e.y2) / 2;
+          const angle = getClockwiseAngle(midX, midY, centerX, centerY);
+          edges.push({ tableId: table.id, edge: e.edge, x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2, length, angle });
         }
       }
     }
-
-    allEdges.push(...edges);
   }
 
-  return allEdges;
+  // Sort edges clockwise by their midpoint angle
+  edges.sort((a, b) => a.angle - b.angle);
+
+  // Find the starting point (top-left of leftmost table)
+  const startPoint = findStartingPoint(tables);
+
+  // Find the edge that starts closest to the starting point
+  let bestEdgeIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+    const dx = edge.x1 - startPoint.x;
+    const dy = edge.y1 - startPoint.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestEdgeIdx = i;
+    }
+  }
+
+  // Rotate the array so the best edge comes first
+  if (bestEdgeIdx > 0) {
+    const rotated = [...edges.slice(bestEdgeIdx), ...edges.slice(0, bestEdgeIdx)];
+    return rotated;
+  }
+
+  return edges;
 }
 
 /**
- * Generate virtual seat positions around the actual combined shape.
- * Places seats only along outer edges (not where tables touch each other).
- *
- * @param tables - Array of tables with their visual positions (already snapped)
- * @param seatDistance - How far from the table edge to place seats (default 18px)
- * @returns Array of virtual seat positions with absolute coordinates
+ * A point along the perimeter path with its offset direction for seat placement
  */
-export function generateVirtualSeatPositions(
-  tables: TableForPerimeter[],
-  seatDistance: number = 18
-): VirtualSeatPosition[] {
+interface PerimeterPoint {
+  x: number;
+  y: number;
+  // Offset direction (normalized) - points outward from table
+  offsetX: number;
+  offsetY: number;
+  distFromStart: number; // Cumulative distance from start of perimeter
+}
+
+/**
+ * Build a continuous perimeter path including corners.
+ * Corners get diagonal offsets so seats at corners point outward at 45 degrees.
+ */
+function buildPerimeterPath(edges: OuterEdge[]): PerimeterPoint[] {
+  if (edges.length === 0) return [];
+
+  const points: PerimeterPoint[] = [];
+  let cumDist = 0;
+
+  for (let i = 0; i < edges.length; i++) {
+    const edge = edges[i];
+    const nextEdge = edges[(i + 1) % edges.length];
+
+    // Get offset direction for this edge (perpendicular, pointing outward)
+    const edgeOffset = getEdgeOffset(edge.edge);
+
+    // Add start point of edge (this is also the corner from previous edge)
+    // For corners, we blend the offset directions
+    if (i === 0) {
+      // First point - use this edge's offset
+      points.push({
+        x: edge.x1,
+        y: edge.y1,
+        offsetX: edgeOffset.x,
+        offsetY: edgeOffset.y,
+        distFromStart: cumDist,
+      });
+    }
+
+    // Add the end point of this edge
+    cumDist += edge.length;
+
+    // Calculate corner offset (blend this edge and next edge directions)
+    const nextOffset = getEdgeOffset(nextEdge.edge);
+    // Average and normalize for diagonal corners
+    let cornerOffsetX = (edgeOffset.x + nextOffset.x);
+    let cornerOffsetY = (edgeOffset.y + nextOffset.y);
+    const cornerLen = Math.sqrt(cornerOffsetX * cornerOffsetX + cornerOffsetY * cornerOffsetY);
+    if (cornerLen > 0) {
+      cornerOffsetX /= cornerLen;
+      cornerOffsetY /= cornerLen;
+    }
+
+    points.push({
+      x: edge.x2,
+      y: edge.y2,
+      offsetX: cornerOffsetX,
+      offsetY: cornerOffsetY,
+      distFromStart: cumDist,
+    });
+  }
+
+  return points;
+}
+
+/**
+ * Get the outward offset direction for an edge type
+ */
+function getEdgeOffset(edge: 'top' | 'right' | 'bottom' | 'left'): { x: number; y: number } {
+  switch (edge) {
+    case 'top': return { x: 0, y: -1 };
+    case 'bottom': return { x: 0, y: 1 };
+    case 'left': return { x: -1, y: 0 };
+    case 'right': return { x: 1, y: 0 };
+  }
+}
+
+/**
+ * Interpolate position and offset along the perimeter path at a given distance
+ */
+function interpolatePerimeter(points: PerimeterPoint[], dist: number, totalPerimeter: number): { x: number; y: number; offsetX: number; offsetY: number } {
+  // Handle wrapping
+  const normalizedDist = ((dist % totalPerimeter) + totalPerimeter) % totalPerimeter;
+
+  // Find the two points we're between
+  for (let i = 0; i < points.length - 1; i++) {
+    const p1 = points[i];
+    const p2 = points[i + 1];
+
+    if (normalizedDist >= p1.distFromStart && normalizedDist <= p2.distFromStart) {
+      const segmentLength = p2.distFromStart - p1.distFromStart;
+      if (segmentLength === 0) {
+        return { x: p1.x, y: p1.y, offsetX: p1.offsetX, offsetY: p1.offsetY };
+      }
+
+      const t = (normalizedDist - p1.distFromStart) / segmentLength;
+
+      // Lerp position
+      const x = p1.x + (p2.x - p1.x) * t;
+      const y = p1.y + (p2.y - p1.y) * t;
+
+      // Lerp and normalize offset
+      let offsetX = p1.offsetX + (p2.offsetX - p1.offsetX) * t;
+      let offsetY = p1.offsetY + (p2.offsetY - p1.offsetY) * t;
+      const len = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+      if (len > 0) {
+        offsetX /= len;
+        offsetY /= len;
+      }
+
+      return { x, y, offsetX, offsetY };
+    }
+  }
+
+  // Fallback to last point
+  const last = points[points.length - 1];
+  return { x: last.x, y: last.y, offsetX: last.offsetX, offsetY: last.offsetY };
+}
+
+// Collision detection constants
+const SEAT_RADIUS = 12; // Half of 24px seat diameter
+const MIN_GAP = 3; // Minimum 3px gap between any objects
+const SEAT_TO_TABLE_CLEARANCE = SEAT_RADIUS + MIN_GAP; // 15px - Seat center must be this far from table edge
+const SEAT_TO_SEAT_MIN_DIST = SEAT_RADIUS * 2 + MIN_GAP; // 27px minimum between seat centers
+
+/**
+ * Check if a seat position collides with any table.
+ * A collision occurs if the seat center is closer than SEAT_TO_TABLE_CLEARANCE to any table edge.
+ * Returns true if collision detected.
+ */
+function collidesWithTable(seatX: number, seatY: number, tables: TableForPerimeter[]): boolean {
+  for (const table of tables) {
+    // Check if seat center is within the "forbidden zone" (table + clearance)
+    const left = table.posX - SEAT_TO_TABLE_CLEARANCE;
+    const right = table.posX + table.width + SEAT_TO_TABLE_CLEARANCE;
+    const top = table.posY - SEAT_TO_TABLE_CLEARANCE;
+    const bottom = table.posY + table.height + SEAT_TO_TABLE_CLEARANCE;
+
+    if (seatX > left && seatX < right && seatY > top && seatY < bottom) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Check if a seat collides with already-placed seats
+ * Returns true if collision detected
+ */
+function collidesWithSeats(
+  seatX: number,
+  seatY: number,
+  placedSeats: Array<{ x: number; y: number }>
+): boolean {
+  for (const placed of placedSeats) {
+    const dx = seatX - placed.x;
+    const dy = seatY - placed.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < SEAT_TO_SEAT_MIN_DIST) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Generate virtual seat positions evenly spaced around the perimeter.
+ * Seats follow the actual table edges (hugging L-shapes), with minimum spacing enforced.
+ * Corners are utilized - seats at corners get diagonal offsets.
+ *
+ * COLLISION RULES:
+ * - Seats must have 3px minimum gap from table edges
+ * - Seats must have 3px minimum gap from other seats (27px center-to-center)
+ * - If perimeter is too small for all seats, we cap at what fits
+ */
+export function generateVirtualSeatPositions(tables: TableForPerimeter[], seatDistance = 22): VirtualSeatPosition[] {
   if (tables.length === 0) return [];
 
-  // Get total seat count from all tables
   const totalSeats = tables.reduce((sum, t) => sum + t.seats.length, 0);
   if (totalSeats === 0) return [];
 
-  // Classify which edges are outer vs inner
-  const allEdges = classifyTableEdges(tables);
-  const outerEdges = allEdges.filter(e => e.isOuter);
+  const outerEdges = getOuterEdges(tables);
+  if (outerEdges.length === 0) return [];
 
-  // Calculate total outer perimeter length
-  const totalOuterPerimeter = outerEdges.reduce((sum, e) => sum + e.length, 0);
+  // Build continuous perimeter path with corner support
+  const perimeterPath = buildPerimeterPath(outerEdges);
+  if (perimeterPath.length < 2) return [];
 
-  if (totalOuterPerimeter === 0) return [];
+  // Calculate total perimeter
+  const totalPerimeter = perimeterPath[perimeterPath.length - 1].distFromStart;
+  if (totalPerimeter === 0) return [];
 
-  // Calculate spacing between seats along the outer perimeter
-  const seatSpacing = totalOuterPerimeter / totalSeats;
+  // STANDARD SEAT SPACING - seats must not overlap (27px = 24px diameter + 3px gap)
+  const MIN_SPACING = SEAT_TO_SEAT_MIN_DIST;
 
-  // Collect all original seats sorted by perimeter order
+  // Calculate how many seats can actually fit at minimum spacing
+  const maxSeatsAtMinSpacing = Math.floor(totalPerimeter / MIN_SPACING);
+
+  // Use the minimum of requested seats and what physically fits
+  const seatsToPlace = Math.min(totalSeats, maxSeatsAtMinSpacing);
+  if (seatsToPlace === 0) return [];
+
+  // Calculate actual spacing (evenly distributed)
+  const effectiveSpacing = totalPerimeter / seatsToPlace;
+
   const perimeterSeats = calculatePerimeterSeats(tables);
-
-  // Sort outer edges to create a continuous path around the shape
-  // Start from the top-left-most point and go clockwise
-  const sortedEdges = sortEdgesClockwise(outerEdges, tables);
-
-  // Generate positions along the outer edges
   const virtualSeats: VirtualSeatPosition[] = [];
+  const placedPositions: Array<{ x: number; y: number }> = [];
 
-  // Track cumulative distance along the perimeter
-  let cumulativeDistance = 0;
-  let seatIndex = 0;
+  // Place seats evenly around the perimeter
+  for (let seatIdx = 0; seatIdx < seatsToPlace; seatIdx++) {
+    // Calculate distance along perimeter for this seat
+    const dist = (seatIdx + 0.5) * effectiveSpacing; // +0.5 to center within segment
 
-  for (const edge of sortedEdges) {
-    // Calculate how many seats fit on this edge segment
-    const edgeStart = cumulativeDistance;
-    const edgeEnd = cumulativeDistance + edge.length;
+    // Get position and offset at this distance
+    const { x, y, offsetX, offsetY } = interpolatePerimeter(perimeterPath, dist, totalPerimeter);
 
-    // Place seats that fall within this edge
-    while (seatIndex < perimeterSeats.length) {
-      const targetDistance = (seatIndex + 0.5) * seatSpacing;
+    // Start with base offset distance
+    let currentDistance = seatDistance;
 
-      if (targetDistance >= edgeEnd) {
-        break; // This seat belongs to a later edge
-      }
+    // Calculate initial seat position
+    let seatX = x + offsetX * currentDistance;
+    let seatY = y + offsetY * currentDistance;
 
-      if (targetDistance >= edgeStart) {
-        // This seat falls on this edge
-        const distAlongEdge = targetDistance - edgeStart;
-        const pos = getPositionAlongEdge(edge, distAlongEdge, seatDistance);
-
-        const originalSeat = perimeterSeats[seatIndex];
-        virtualSeats.push({
-          id: `virtual-seat-${seatIndex + 1}`,
-          perimeterNumber: seatIndex + 1,
-          absoluteX: pos.x,
-          absoluteY: pos.y,
-          originalSeatId: originalSeat.seatId,
-          originalTableId: originalSeat.tableId,
-          originalSeatNumber: originalSeat.originalNumber,
-        });
-      }
-
-      seatIndex++;
+    // Push outward until clear of all tables (max 20 attempts, 3px each)
+    let tableAttempts = 0;
+    while (collidesWithTable(seatX, seatY, tables) && tableAttempts < 20) {
+      currentDistance += 3; // Push outward in 3px increments
+      seatX = x + offsetX * currentDistance;
+      seatY = y + offsetY * currentDistance;
+      tableAttempts++;
     }
 
-    cumulativeDistance = edgeEnd;
+    // Push outward until clear of already-placed seats (max 10 attempts, 3px each)
+    let seatAttempts = 0;
+    while (collidesWithSeats(seatX, seatY, placedPositions) && seatAttempts < 10) {
+      currentDistance += 3; // Push outward in 3px increments
+      seatX = x + offsetX * currentDistance;
+      seatY = y + offsetY * currentDistance;
+      seatAttempts++;
+    }
+
+    // Record this seat's position for future collision checks
+    placedPositions.push({ x: seatX, y: seatY });
+
+    const orig = perimeterSeats[seatIdx % perimeterSeats.length];
+    virtualSeats.push({
+      id: `virtual-seat-${seatIdx + 1}`,
+      perimeterNumber: seatIdx + 1,
+      absoluteX: seatX,
+      absoluteY: seatY,
+      originalSeatId: orig?.seatId || `seat-${seatIdx}`,
+      originalTableId: orig?.tableId || tables[0].id,
+      originalSeatNumber: orig?.originalNumber || seatIdx + 1,
+    });
   }
 
   return virtualSeats;
 }
 
 /**
- * Sort edges to form a continuous clockwise path around the combined shape.
- * Starts from the TOP-LEFT corner (highest point, furthest left) and goes clockwise.
- *
- * Order: Top edges (left to right) → Right edges (top to bottom) →
- *        Bottom edges (right to left) → Left edges (bottom to top)
+ * Get total distance along perimeter before a given edge index
  */
-function sortEdgesClockwise(edges: EdgeSegment[], tables: TableForPerimeter[]): EdgeSegment[] {
-  if (edges.length === 0) return [];
-
-  // Get combined bounds to determine the shape's extent
-  const bounds = getCombinedBounds(tables);
-
-  // Group edges by their direction/side
-  const topEdges: EdgeSegment[] = [];
-  const rightEdges: EdgeSegment[] = [];
-  const bottomEdges: EdgeSegment[] = [];
-  const leftEdges: EdgeSegment[] = [];
-
-  for (const edge of edges) {
-    switch (edge.edge) {
-      case 'top':
-        topEdges.push(edge);
-        break;
-      case 'right':
-        rightEdges.push(edge);
-        break;
-      case 'bottom':
-        bottomEdges.push(edge);
-        break;
-      case 'left':
-        leftEdges.push(edge);
-        break;
-    }
+function getTotalDistBefore(edges: OuterEdge[], edgeIndex: number): number {
+  let total = 0;
+  for (let i = 0; i < edgeIndex; i++) {
+    total += edges[i].length;
   }
-
-  // Sort each group appropriately for clockwise traversal:
-  // - Top edges: sort by X ascending (left to right)
-  // - Right edges: sort by Y ascending (top to bottom)
-  // - Bottom edges: sort by X descending (right to left)
-  // - Left edges: sort by Y descending (bottom to top)
-
-  topEdges.sort((a, b) => a.startX - b.startX);
-  rightEdges.sort((a, b) => a.startY - b.startY);
-  bottomEdges.sort((a, b) => b.startX - a.startX);  // Descending
-  leftEdges.sort((a, b) => b.startY - a.startY);    // Descending
-
-  // Combine in clockwise order starting from top-left
-  return [...topEdges, ...rightEdges, ...bottomEdges, ...leftEdges];
-}
-
-/**
- * Get the position of a point along an edge, offset outward by seatDistance
- */
-function getPositionAlongEdge(
-  edge: EdgeSegment,
-  distanceAlongEdge: number,
-  seatDistance: number
-): { x: number; y: number } {
-  // Calculate the fraction along the edge
-  const fraction = edge.length > 0 ? distanceAlongEdge / edge.length : 0;
-
-  // Interpolate position along the edge
-  const x = edge.startX + (edge.endX - edge.startX) * fraction;
-  const y = edge.startY + (edge.endY - edge.startY) * fraction;
-
-  // Offset perpendicular to the edge (outward)
-  let offsetX = 0;
-  let offsetY = 0;
-
-  switch (edge.edge) {
-    case 'top':
-      offsetY = -seatDistance; // Above the table
-      break;
-    case 'bottom':
-      offsetY = seatDistance; // Below the table
-      break;
-    case 'left':
-      offsetX = -seatDistance; // Left of the table
-      break;
-    case 'right':
-      offsetX = seatDistance; // Right of the table
-      break;
-  }
-
-  return { x: x + offsetX, y: y + offsetY };
+  return total;
 }
