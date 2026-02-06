@@ -632,14 +632,15 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
                     ) : null
                   })()}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-green-600 text-xs"
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="text-green-600 text-xs font-semibold px-2 py-1 hover:bg-green-100 rounded cursor-pointer"
                   onClick={(e) => { e.stopPropagation(); setShowIngredientPicker(!showIngredientPicker); setIngredientsExpanded(true) }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setShowIngredientPicker(!showIngredientPicker); setIngredientsExpanded(true) } }}
                 >
                   + Add
-                </Button>
+                </span>
               </button>
 
               {ingredientsExpanded && (

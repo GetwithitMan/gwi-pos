@@ -74,9 +74,10 @@ export function ModifierFlowEditor({
         const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
         if (response.ok) {
           const data = await response.json()
-          setAllGroups(data.modifierGroups || [])
+          const groups = data.data || data.modifierGroups || []
+          setAllGroups(groups)
 
-          const foundGroup = data.modifierGroups?.find((g: ModifierGroup) => g.id === selectedGroupId)
+          const foundGroup = groups.find((g: ModifierGroup) => g.id === selectedGroupId)
           if (foundGroup) {
             setGroup(foundGroup)
             setTieredPricing(foundGroup.tieredPricingConfig || {
