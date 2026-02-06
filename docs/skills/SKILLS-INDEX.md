@@ -111,7 +111,20 @@
 | 125 | Ingredient Costing & Recipes | DONE | 38 | Recipe components for inventory items, batch yield, yield %, portion size, modifier multipliers |
 | 126 | Explicit Input → Output Model | DONE | 125 | Prep items with explicit input/output transformation, unit conversions, auto-calculated yield, cost derivation |
 | 127 | Quick Stock Adjustment | DONE | 126 | Manager quick adjust page with verification, cost tracking, socket dispatch, audit trail |
+| 128 | Inventory Recipe Costing | DONE | 125 | Recipe-based food costing, historical cost tracking |
+| 130 | Inventory Historical Costs | DONE | 128 | Historical cost snapshots for trend analysis |
+| 131 | Food Cost Dashboard | DONE | 130 | Dashboard for food cost % monitoring |
+| 132 | Inventory Alerts | DONE | 38, 39 | Advanced inventory alerts beyond low stock |
+| 133 | Quick Pricing Update | DONE | 03 | Rapid batch price updates for menu items |
+| 134 | Vendor Management | DONE | 38 | Vendor CRUD, purchase orders, supplier tracking |
+| 135 | Theoretical vs Actual | DONE | 128 | Compare expected vs actual usage, variance reports |
+| 136 | Waste Logging | DONE | 38 | Track waste with reasons, reports, trend analysis |
+| 137 | Par Levels | DONE | 38 | Set par levels per ingredient, auto-order suggestions |
+| 138 | Menu Engineering | DONE | 42, 128 | Stars/Plow Horses/Puzzles/Dogs matrix, profitability analysis |
+| 139 | Inventory Count | DONE | 38 | Physical count sheets, variance to theoretical |
+| 140 | 86 Feature (Enhanced) | DONE | 37 | Enhanced 86 with quick toggle, auto-86 on zero stock |
 | 141 | Menu/Liquor Builder Separation | DONE | 09 | Filter /menu to show only food categories, exclude liquor/drinks; comprehensive liquor inventory seeding (147 bottles, 6 categories, auto-tiered) |
+| 145 | Ingredient Verification | DONE | 125, 204 | needsVerification flag for items created from Menu Builder, red highlight in inventory, verify button |
 | 204 | Ingredient Library Refactor | DONE | 125, 126, 127 | Major refactor: 61% code reduction, race protection, bulk API, debounced search, toast notifications, accessibility |
 | 205 | Component Improvements | DONE | 204 | Shared cost hook, recipe cost aggregation (N→1), hierarchy caching (5min TTL), error rollback, accessibility |
 
@@ -165,6 +178,16 @@
 |-------|------|--------|--------------|-------|
 | 60 | Offline Mode | TODO | ALL | Work without internet |
 
+### Menu Builder
+| Skill | Name | Status | Dependencies | Notes |
+|-------|------|--------|--------------|-------|
+| 129 | Menu Builder Child Modifiers | DONE | 04 | Nested child modifier groups with unlimited depth, parentModifierId linking |
+| 142 | Tiered Pricing & Exclusion Rules | DONE | 04 | Tiered pricing modes (flat_tiers, free_threshold), exclusion groups, ModifierFlowEditor right panel |
+| 143 | Item-Owned Modifier Groups | DONE | 142 | isLabel field, drag-drop reorder, cross-item copy, inline editing, ingredient linking, category-grouped dropdown |
+| 144 | Production Hardening Pass | DONE | 142, 143 | Cycle-safe recursion, toast errors (26 blocks), debounced save, price validation, static Tailwind, API validation |
+| 208 | POS Modifier Modal Redesign | DONE | 04, 100 | Dark glassmorphism theme, fixed-size modal, group progress dots, smooth transitions |
+| 209 | Combo Step Flow | DONE | 41, 208 | Step-by-step wizard for combo meal configuration in POS |
+
 ### Admin & Navigation
 | Skill | Name | Status | Dependencies | Notes |
 |-------|------|--------|--------------|-------|
@@ -193,7 +216,8 @@
 | Bar Features | 2 | 1 | 0 | 3 | 83% |
 | Kitchen Display | 4 | 1 | 2 | 7 | 71% |
 | Pricing & Discounts | 5 | 0 | 0 | 5 | 100% |
-| Inventory & Menu | 8 | 0 | 0 | 8 | 100% |
+| Inventory & Menu | 21 | 0 | 0 | 21 | 100% |
+| Menu Builder | 6 | 0 | 0 | 6 | 100% |
 | Reporting | 13 | 0 | 0 | 13 | 100% |
 | Employee Features | 3 | 1 | 0 | 4 | 88% |
 | Customer Features | 2 | 0 | 2 | 4 | 50% |
@@ -202,8 +226,8 @@
 | Admin & Navigation | 1 | 0 | 0 | 1 | 100% |
 | Additional (80-105) | 20 | 1 | 0 | 21 | 98% |
 | Canvas/Events (106-123) | 9 | 0 | 5 | 14 | 64% |
-| Routing & KDS (200s) | 3 | 0 | 0 | 3 | 100% |
-| **TOTAL** | **93** | **5** | **12** | **110** | **90%** |
+| Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
+| **TOTAL** | **114** | **5** | **12** | **131** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -323,6 +347,17 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-06)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 142 | Tiered Pricing & Exclusion Rules | ModifierFlowEditor right panel (427 lines), 2 tiered pricing modes (flat_tiers, free_threshold), exclusion groups, auto-save on blur, POS-side getTieredPrice() and getExcludedModifierIds(), refreshKey pattern for child components |
+| 143 | Item-Owned Modifier Groups | isLabel system for choice vs item modifiers, drag-drop reorder within groups, cross-item copy via drag to item buttons, inline name/price editing, ingredient link dropdown grouped by categoryRelation.name, deep copy API with recursive child groups |
+| 144 | Production Hardening Pass | Cycle-safe findGroupById/findModifierById with visited Set, max recursion depth guard, toast.error on all 26 catch blocks, replaced 9 setTimeout(saveChanges,100) with debounced save, Number.isFinite() price validation, static Tailwind depthIndent, API validation (name/price/sortOrder), consistent PUT response shapes |
+| 145 | Ingredient Verification | needsVerification/verifiedAt/verifiedBy schema fields, red highlight on unverified items in /ingredients, verify button, created-from-menu-builder workflow |
+| 208 | POS Modifier Modal Redesign | Dark glassmorphism theme, fixed-size modal, group progress indicator dots, smooth transitions, Workers A1-A3 + B1-B6 |
+| 209 | Combo Step Flow | Step-by-step wizard for combo configuration, demo seed data, Worker B7 |
 
 ## Recently Completed (2026-02-04)
 
@@ -563,9 +598,28 @@ These skills emerged during development and are now part of the system:
 | 125 | Ingredient Costing & Recipes | DONE | 38 | IngredientRecipe model, batch yield, yield %, portion size, modifier multipliers for full PMX tracking |
 | 126 | Explicit Input → Output Model | DONE | 125 | Prep items with explicit input/output transformation, unit conversions, auto-calculated yield, cost derivation |
 | 127 | Quick Stock Adjustment | DONE | 126 | Manager quick adjust page with verification, cost tracking, socket dispatch, audit trail |
+| 128 | Inventory Recipe Costing | DONE | 125 | Recipe-based food costing, historical cost tracking |
+| 129 | Menu Builder Child Modifiers | DONE | 04 | Nested child modifier groups, parentModifierId, unlimited depth |
+| 130 | Inventory Historical Costs | DONE | 128 | Historical cost snapshots for trend analysis |
+| 131 | Food Cost Dashboard | DONE | 130 | Dashboard for food cost % monitoring |
+| 132 | Inventory Alerts | DONE | 38, 39 | Advanced inventory alerts beyond low stock |
+| 133 | Quick Pricing Update | DONE | 03 | Rapid batch price updates for menu items |
+| 134 | Vendor Management | DONE | 38 | Vendor CRUD, purchase orders, supplier tracking |
+| 135 | Theoretical vs Actual | DONE | 128 | Compare expected vs actual usage, variance reports |
+| 136 | Waste Logging | DONE | 38 | Track waste with reasons, reports, trend analysis |
+| 137 | Par Levels | DONE | 38 | Set par levels per ingredient, auto-order suggestions |
+| 138 | Menu Engineering | DONE | 42, 128 | Stars/Plow Horses/Puzzles/Dogs matrix, profitability analysis |
+| 139 | Inventory Count | DONE | 38 | Physical count sheets, variance to theoretical |
+| 140 | 86 Feature (Enhanced) | DONE | 37 | Enhanced 86 with quick toggle, auto-86 on zero stock |
 | 141 | Menu/Liquor Builder Separation | DONE | 09 | Filter /menu to show only food categories, exclude liquor/drinks; comprehensive liquor inventory seeding |
+| 142 | Tiered Pricing & Exclusion Rules | DONE | 04 | Tiered pricing (flat_tiers, free_threshold), exclusion groups, ModifierFlowEditor |
+| 143 | Item-Owned Modifier Groups | DONE | 142 | isLabel, drag-drop, cross-item copy, inline editing, ingredient linking |
+| 144 | Production Hardening Pass | DONE | 142, 143 | Cycle safety, 26 toast errors, debounced save, price validation, API hardening |
+| 145 | Ingredient Verification | DONE | 125, 204 | needsVerification flag, red highlight in inventory, verify button |
 | 204 | Ingredient Library Refactor | DONE | 125, 126, 127 | useIngredientLibrary hook, BulkActionBar, DeletedItemsPanel, 61% code reduction, race protection, bulk API, accessibility |
 | 205 | Ingredient Component Improvements | DONE | 204 | useIngredientCost hook, recipe-cost aggregation, useHierarchyCache, error rollback, 85% network reduction |
+| 208 | POS Modifier Modal Redesign | DONE | 04, 100 | Dark glassmorphism, fixed-size modal, group progress dots, smooth transitions |
+| 209 | Combo Step Flow | DONE | 41, 208 | Step-by-step wizard for combo meal configuration in POS |
 
 ### Routing & Kitchen Display (200-Series)
 | Skill | Name | Status | Dependencies | Notes |
@@ -576,15 +630,21 @@ These skills emerged during development and are now part of the system:
 
 ---
 
-## Next Session Priority (2026-02-01+)
+## Next Session Priority (2026-02-06+)
 
-### Priority 1: Bar Tabs UI (Skill 20 Enhancement)
+### Priority 1: Menu Builder — Ingredient Link Dropdown (Skill 143 Enhancement)
+- Dropdown shows ALL ingredient categories (even empty ones)
+- Only prep items (children) are selectable, not parent ingredients
+- [+] button to create new inventory items + prep items inline
+- New items created with `needsVerification: true` (Skill 145)
+
+### Priority 2: Bar Tabs UI (Skill 20 Enhancement)
 - Improve OpenOrdersPanel tab list UI for bartenders
 - Quick tab creation from floor plan (Bar Tab button)
 - Pre-auth card capture flow
 - Tab transfer/merge within FloorPlanHome
 
-### Priority 2: Closed Order Management (Skill 114)
+### Priority 3: Closed Order Management (Skill 114)
 - Closed orders list view with search/filter by date, server, table
 - View full order details for closed orders
 - Void payments (manager PIN required)
@@ -592,7 +652,7 @@ These skills emerged during development and are now part of the system:
 - Reprint receipts for closed orders
 - Reopen closed orders with reason tracking
 
-### Priority 3: Kitchen Print Integration
+### Priority 4: Kitchen Print Integration
 - Connect /api/orders/[id]/send to actual print API
 - Route tickets to correct printers based on print routes
 - Handle printer offline gracefully

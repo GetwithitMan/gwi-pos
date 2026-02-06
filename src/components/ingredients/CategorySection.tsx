@@ -16,6 +16,7 @@ interface CategorySectionProps {
   onEditIngredient: (ingredient: Ingredient) => void
   onDeleteIngredient: (ingredient: Ingredient) => void
   onToggleActive: (ingredient: Ingredient) => void
+  onVerify?: (ingredient: Ingredient) => void
 }
 
 export function CategorySection({
@@ -29,6 +30,7 @@ export function CategorySection({
   onEditIngredient,
   onDeleteIngredient,
   onToggleActive,
+  onVerify,
 }: CategorySectionProps) {
   const [isExpanded, setIsExpanded] = useState(true)
 
@@ -126,6 +128,7 @@ export function CategorySection({
                 onEdit={() => onEditIngredient(ingredient)}
                 onDelete={() => onDeleteIngredient(ingredient)}
                 onToggleActive={() => onToggleActive(ingredient)}
+                onVerify={onVerify}
               />
             ))
           )}

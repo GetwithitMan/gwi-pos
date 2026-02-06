@@ -10,6 +10,7 @@ interface IngredientRowProps {
   onEdit: () => void
   onDelete: () => void
   onToggleActive: () => void
+  onVerify?: (ingredient: Ingredient) => void
 }
 
 export function IngredientRow({
@@ -19,12 +20,19 @@ export function IngredientRow({
   onEdit,
   onDelete,
   onToggleActive,
+  onVerify,
 }: IngredientRowProps) {
   return (
     <div
-      className={`px-4 py-3 hover:bg-gray-50 transition-colors ${
-        !ingredient.isActive ? 'opacity-60 bg-gray-50' : ''
-      } ${isSelected ? 'bg-blue-50' : ''}`}
+      className={`px-4 py-3 transition-colors ${
+        ingredient.needsVerification
+          ? 'border-2 border-red-400 bg-red-50'
+          : !ingredient.isActive
+          ? 'opacity-60 bg-gray-50'
+          : isSelected
+          ? 'bg-blue-50'
+          : 'hover:bg-gray-50'
+      }`}
     >
       <div className="flex items-center justify-between">
         {/* Left: Checkbox and Name */}
@@ -53,6 +61,11 @@ export function IngredientRow({
               )}
               {ingredient.visibility === 'hidden' && (
                 <Badge color="gray" label="Hidden" />
+              )}
+              {ingredient.needsVerification && (
+                <span className="px-2 py-0.5 bg-red-500 text-white rounded text-xs font-semibold">
+                  ⚠ Unverified
+                </span>
               )}
             </div>
 
@@ -89,6 +102,16 @@ export function IngredientRow({
           >
             {ingredient.isActive ? 'Deactivate' : 'Activate'}
           </Button>
+          {ingredient.needsVerification && onVerify && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onVerify(ingredient)}
+              className="border-green-500 text-green-600 hover:bg-green-50"
+            >
+              ✓ Verify
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

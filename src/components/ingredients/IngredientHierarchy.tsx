@@ -205,12 +205,16 @@ function HierarchyNode({
     <div className={depth > 0 ? 'ml-4 border-l border-gray-200' : ''}>
       <div
         className={`
-          rounded border overflow-hidden
-          ${depth === 0
-            ? (!ingredient.categoryId && ingredient.isBaseIngredient !== false
-                ? 'bg-gray-100 border-gray-300 border-dashed' // Uncategorized style
-                : 'bg-blue-50 border-blue-200') // Inventory item style
-            : 'bg-green-50 border-green-200'}
+          rounded overflow-hidden
+          ${
+            ingredient.needsVerification
+              ? 'border-2 border-red-400 bg-red-50' // Unverified - red highlight
+              : depth === 0
+              ? (!ingredient.categoryId && ingredient.isBaseIngredient !== false
+                  ? 'bg-gray-100 border-gray-300 border-dashed border' // Uncategorized style
+                  : 'bg-blue-50 border-blue-200 border') // Inventory item style
+              : 'bg-green-50 border-green-200 border'
+          }
           ${!ingredient.isActive ? 'opacity-60' : ''}
           ${depth > 0 ? 'ml-1' : ''}
           ${isSelected ? 'ring-2 ring-blue-500 ring-inset' : ''}
@@ -346,6 +350,13 @@ function HierarchyNode({
                 </span>
               )}
 
+              {/* Verification status badge */}
+              {ingredient.needsVerification && (
+                <span className="px-1.5 py-0.5 bg-red-500 text-white rounded text-[10px] font-semibold">
+                  ⚠ Unverified
+                </span>
+              )}
+
               {/* Portion info inline */}
               {ingredient.standardQuantity && ingredient.standardUnit && (
                 <span className="text-[10px] text-gray-400">
@@ -392,6 +403,19 @@ function HierarchyNode({
                 title="Show menu items using this ingredient"
               >
                 🔗 {showLinkedItems ? '▲' : '▼'}
+              </Button>
+            )}
+
+            {/* Verify button (only show if needsVerification is true) */}
+            {ingredient.needsVerification && onVerify && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onVerify(ingredient)}
+                className="h-6 px-2 text-xs border-green-500 text-green-600 hover:bg-green-50 bg-white"
+                title="Mark as verified"
+              >
+                ✓ Verify
               </Button>
             )}
 
@@ -499,6 +523,7 @@ function HierarchyNode({
                 onDelete={onDelete}
                 onAddPreparation={onAddPreparation}
                 onToggleActive={onToggleActive}
+                onVerify={onVerify}
               />
             ))}
         </div>
@@ -525,6 +550,7 @@ interface GroupedHierarchyProps {
   onDelete: (ingredient: Ingredient) => void
   onAddPreparation: (parent: Ingredient) => void
   onToggleActive: (ingredient: Ingredient) => void
+  onVerify?: (ingredient: Ingredient) => void
   onEditCategory?: (category: { id: string; name: string }) => void
 }
 
@@ -547,6 +573,7 @@ export function GroupedIngredientHierarchy({
   onDelete,
   onAddPreparation,
   onToggleActive,
+  onVerify,
   onEditCategory,
 }: GroupedHierarchyProps) {
   // Zoom state - default to Medium (index 2)
@@ -622,6 +649,7 @@ export function GroupedIngredientHierarchy({
               onDelete={onDelete}
               onAddPreparation={onAddPreparation}
               onToggleActive={onToggleActive}
+              onVerify={onVerify}
               onEditCategory={onEditCategory}
             />
           )
@@ -645,6 +673,7 @@ export function GroupedIngredientHierarchy({
           onDelete={onDelete}
           onAddPreparation={onAddPreparation}
           onToggleActive={onToggleActive}
+          onVerify={onVerify}
         />
         )}
       </div>
@@ -669,6 +698,7 @@ interface CategoryHierarchySectionProps {
   onDelete: (ingredient: Ingredient) => void
   onAddPreparation: (parent: Ingredient) => void
   onToggleActive: (ingredient: Ingredient) => void
+  onVerify?: (ingredient: Ingredient) => void
   onEditCategory?: (category: { id: string; name: string }) => void
 }
 
@@ -682,6 +712,7 @@ function CategoryHierarchySection({
   onDelete,
   onAddPreparation,
   onToggleActive,
+  onVerify,
   onEditCategory,
 }: CategoryHierarchySectionProps) {
   // Default to collapsed - less overwhelming when opening the page
@@ -781,6 +812,7 @@ function CategoryHierarchySection({
             onDelete={onDelete}
             onAddPreparation={onAddPreparation}
             onToggleActive={onToggleActive}
+            onVerify={onVerify}
           />
         </div>
       )}

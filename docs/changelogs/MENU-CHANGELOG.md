@@ -155,6 +155,104 @@ W1's `db:push` destroyed the real floor plan and all 42 orders. Always use `ALTE
 
 ---
 
+## Session: Feb 6, 2026 — Item-Owned Modifier Groups + Production Hardening
+
+### Plan
+Build out the full item-owned modifier group system with drag-drop, cross-item copy, ingredient linking, and then harden everything for production based on team code review.
+
+**Execution Order:** W7-W8 → W9+W10 (parallel) → W11 → W12 → W13-A+W13-B (parallel)
+
+**Status:** ALL 9 WORKERS COMPLETE ✅
+
+---
+
+### Workers Completed
+
+#### W7: isLabel API + ItemEditor UI ✅
+**Status:** PASSED PM Review
+**Files Modified:**
+- `src/app/api/menu/items/[id]/modifier-groups/[groupId]/modifiers/route.ts` — Added isLabel field support
+- `src/components/menu/ItemEditor.tsx` — Choice vs item modifier visual distinction (amber/folder for choices)
+
+#### W8: Drag-Drop Fix + Inline Editing ✅
+**Status:** PASSED PM Review
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Restored +▶ button for child groups, inline name/price editing via double-click
+
+#### W9: Complete Drag-Drop Overhaul ✅
+**Status:** PASSED PM Review
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Group drag isolation, modifier row reorder with ⠿ handles, visual drop indicators
+
+#### W10: Ingredient Dropdown Category Grouping ✅
+**Status:** PASSED PM Review
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Ingredient link dropdown grouped by category with sticky headers
+
+#### W11: Ingredient Dropdown Category Fix ✅
+**Status:** PASSED PM Review
+**Files Modified:**
+- `src/app/(admin)/menu/page.tsx` — Map `categoryRelation.name` instead of legacy `category` string
+
+#### W12: Cross-Item Modifier Group Copy ✅
+**Status:** PASSED PM Review
+**Files Modified:**
+- `src/app/(admin)/menu/page.tsx` — Drag-drop handlers on item buttons, `handleCopyModifierGroup()`
+- `src/app/api/menu/items/[id]/modifier-groups/route.ts` — `copyFromItemId` for deep copy with recursive child groups
+
+#### W13-A: Frontend Quality Hardening ✅
+**Status:** PASSED PM Review
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Cycle-safe recursion, 13 toast errors, price validation, static Tailwind, depth guard
+- `src/components/menu/ModifierFlowEditor.tsx` — 9 debounced saves, 5 toast errors, input validation, __new__ guard
+- `src/app/(admin)/menu/page.tsx` — 8 toast errors, success toasts
+
+#### W13-B: API Route Hardening ✅
+**Status:** PASSED PM Review
+**Files Modified:**
+- `src/app/api/menu/items/[id]/modifier-groups/route.ts` — POST validation, PATCH sortOrder validation, deep copy response enhancement
+- `src/app/api/menu/items/[id]/modifier-groups/[groupId]/route.ts` — PUT validation (name, min/max), full nested response shape
+- `src/app/api/menu/items/[id]/modifier-groups/[groupId]/modifiers/route.ts` — POST/PUT price validation, consistent response
+
+### Also Completed (During Hardening)
+- ✅ Ingredient verification system: `needsVerification`, `verifiedAt`, `verifiedBy` on Ingredient schema
+- ✅ Red highlight for unverified items in `/ingredients` page
+- ✅ Verify button clears flag with employee attribution
+
+---
+
+### Git Commits
+- `6173a2a` — feat(menu): Item-owned modifier groups with drag-drop, cross-item copy, ingredient linking (W1-W12)
+- `02737a0` — harden(menu): Production-readiness pass — code review fixes (W13-A, W13-B)
+
+### Code Review Findings Addressed
+| # | Finding | Status |
+|---|---------|--------|
+| 1 | Route handler params as Promise | NOT A BUG (Next 15+ requires await) |
+| 2 | Ingredient editor vs API shape mismatch | Deferred (old modal, being replaced) |
+| 3 | Modifier groups partial PUT response | ✅ FIXED — Full nested response |
+| 4 | Recursive choice cycle detection | ✅ FIXED — visited Set |
+| 5 | Drag-drop ghost interactions | Partially addressed (visual constraints deferred) |
+| 6 | Dynamic Tailwind classes | ✅ FIXED — Static depthIndent mapping |
+| 7 | Hardcoded ingredient defaults | Deferred (new workflow replaces) |
+| 8 | Null vs 0 price coercion | ✅ FIXED — Number.isFinite() |
+| 9 | Cross-item copy ghost ingredients | Low risk (single-location) |
+| 10 | Multiple components fetching same data | Deferred (Phase 2 architecture) |
+| 11 | setTimeout race conditions | ✅ FIXED — Debounced save |
+| 12 | __new__ exclusion key guard | ✅ FIXED — Disabled state |
+| 13 | Numeric input validation | ✅ FIXED — min/step/isFinite |
+| 14 | Silent catch blocks | ✅ FIXED — 26 toast.error() added |
+| 15 | Type duplication | Deferred (tech debt pass) |
+
+### Architectural Decisions Made
+1. **isLabel for choice vs item** — Binary flag cleaner than separate model
+2. **Cross-item copy via DataTransfer** — Standard drag API, no custom state management
+3. **categoryRelation.name over category string** — Legacy string had 162 nulls, inconsistent casing
+4. **Production hardening before feature completion** — Code review drove this, right call for stability
+5. **Ingredient verification as creation-time flag** — Don't block menu building, let inventory verify later
+
+---
+
 ## Next Session TODO — Menu Domain
 
 ### 1. Ingredient Visibility Toggle
