@@ -63,6 +63,7 @@ export interface Modifier {
     pourCost: number | null
   } | null
   is86d?: boolean
+  isLabel?: boolean
 }
 
 /**

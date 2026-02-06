@@ -114,7 +114,10 @@ interface ModifierGroup {
 interface IngredientLibraryItem {
   id: string
   name: string
-  category: string | null
+  category: string | null          // legacy string field
+  categoryName: string | null      // NEW: from categoryRelation.name
+  parentIngredientId: string | null // NEW: to identify child items
+  parentName: string | null        // NEW: parent ingredient's name for sub-headers
   allowNo: boolean
   allowLite: boolean
   allowOnSide: boolean
@@ -210,6 +213,7 @@ export default function MenuManagementPage() {
   const [selectedTreeNode, setSelectedTreeNode] = useState<{ type: string; id: string } | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
+  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null)
 
   // Refs for scroll containers
   const categoriesScrollRef = useRef<HTMLDivElement>(null)
@@ -254,7 +258,12 @@ export default function MenuManagementPage() {
 
       if (ingredientsResponse?.ok) {
         const ingData = await ingredientsResponse.json()
-        setIngredientsLibrary(ingData.data || [])
+        const ingredients = (ingData.data || []).map((ing: any) => ({
+          ...ing,
+          categoryName: ing.categoryRelation?.name || ing.category || null,
+          parentName: ing.parentIngredient?.name || null,
+        }))
+        setIngredientsLibrary(ingredients)
       }
 
       if (printersResponse?.ok) {
@@ -322,6 +331,36 @@ export default function MenuManagementPage() {
       window.removeEventListener('focus', handleFocus)
     }
   }, [selectedCategoryType])
+
+  // Handler for cross-item modifier group copy
+  const handleCopyModifierGroup = async (groupId: string, sourceItemId: string, targetItemId: string, groupName: string) => {
+    try {
+      const response = await fetch(`/api/menu/items/${targetItemId}/modifier-groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          duplicateFromGroupId: groupId,
+          copyFromItemId: sourceItemId,
+        }),
+      })
+
+      if (response.ok) {
+        // Show success toast
+        const targetItem = items.find(i => i.id === targetItemId)
+        console.log(`✓ Copied "${groupName}" to "${targetItem?.name}"`)
+
+        // Refresh menu
+        await loadMenu()
+        setRefreshKey(prev => prev + 1)
+
+        // If the target item is currently selected, refresh will show the new group
+      } else {
+        console.error('Failed to copy modifier group')
+      }
+    } catch (error) {
+      console.error('Error copying modifier group:', error)
+    }
+  }
 
   const handleSaveCategory = async (categoryData: Partial<Category>) => {
     try {
@@ -585,8 +624,33 @@ export default function MenuManagementPage() {
                         setSelectedGroupId(null)
                       }
                     }}
+                    onDragOver={(e) => {
+                      // Only accept modifier group drags
+                      if (e.dataTransfer.types.includes('application/x-modifier-group')) {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'copy'
+                        setDragOverItemId(item.id)
+                      }
+                    }}
+                    onDragLeave={() => {
+                      setDragOverItemId(null)
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      setDragOverItemId(null)
+                      const data = e.dataTransfer.getData('application/x-modifier-group')
+                      if (data) {
+                        const { groupId, sourceItemId, groupName } = JSON.parse(data)
+                        if (sourceItemId !== item.id) {
+                          // Call the cross-item copy handler
+                          handleCopyModifierGroup(groupId, sourceItemId, item.id, groupName)
+                        }
+                      }
+                    }}
                     className={`shrink-0 px-3 py-1.5 rounded-lg border-2 transition-all text-left min-w-[120px] ${
-                      isSelected
+                      dragOverItemId === item.id
+                        ? 'ring-2 ring-indigo-400 bg-indigo-50'
+                        : isSelected
                         ? 'border-blue-500 bg-blue-50'
                         : !item.isAvailable
                         ? 'border-transparent bg-gray-100 opacity-50'

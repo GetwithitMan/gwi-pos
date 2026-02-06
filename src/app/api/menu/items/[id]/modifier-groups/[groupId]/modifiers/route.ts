@@ -21,6 +21,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       isDefault = false,
       ingredientId,
       childModifierGroupId,
+      isLabel = false,
     } = body
 
     // Verify group belongs to this item
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         isDefault,
         ingredientId: ingredientId || null,
         childModifierGroupId: childModifierGroupId || null,
+        isLabel,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
       },
       include: {
@@ -81,6 +83,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ingredientName: modifier.ingredient?.name || null,
         childModifierGroupId: modifier.childModifierGroupId,
         childModifierGroupName: modifier.childModifierGroup?.name || null,
+        isLabel: modifier.isLabel,
       },
     })
   } catch (error) {
@@ -106,6 +109,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       isDefault,
       ingredientId,
       childModifierGroupId,
+      isLabel,
     } = body
 
     if (!modifierId) {
@@ -134,6 +138,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         isDefault: isDefault !== undefined ? isDefault : undefined,
         ingredientId: ingredientId !== undefined ? (ingredientId || null) : undefined,
         childModifierGroupId: childModifierGroupId !== undefined ? (childModifierGroupId || null) : undefined,
+        isLabel: isLabel !== undefined ? isLabel : undefined,
       },
       include: {
         ingredient: {
@@ -161,6 +166,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ingredientName: updated.ingredient?.name || null,
         childModifierGroupId: updated.childModifierGroupId,
         childModifierGroupName: updated.childModifierGroup?.name || null,
+        isLabel: updated.isLabel,
       },
     })
   } catch (error) {
@@ -194,6 +200,18 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       where: { id: modifierId },
       data: { deletedAt: new Date() },
     })
+
+    // Cascade soft-delete to child modifier group and its modifiers
+    if (modifier.childModifierGroupId) {
+      await db.modifier.updateMany({
+        where: { modifierGroupId: modifier.childModifierGroupId, deletedAt: null },
+        data: { deletedAt: new Date() },
+      })
+      await db.modifierGroup.update({
+        where: { id: modifier.childModifierGroupId },
+        data: { deletedAt: new Date() },
+      })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

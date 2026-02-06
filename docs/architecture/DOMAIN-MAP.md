@@ -39,6 +39,7 @@ This document maps every significant file/folder in the current codebase to its 
 | 12 | Guest | GU | `PM Mode: Guest` | Profiles, loyalty, reservations |
 | 13 | Events | EV | `PM Mode: Events` | Event creation, ticketing, check-in |
 | 14 | Financial | FN | `PM Mode: Financial` | Gift cards, house accounts, discounts |
+| 15 | Development-RnD | RD | `PM Mode: Development-RnD` | Prototypes, research, technical spikes |
 
 ---
 

@@ -1589,6 +1589,10 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | 9 | Hardware | `PM Mode: Hardware` | 🔄 Active |
 | 10 | Settings | `PM Mode: Settings` | 🔄 Active |
 | 11 | Entertainment | `PM Mode: Entertainment` | 🔄 Active |
+| 12 | Guest | `PM Mode: Guest` | 🔄 Active |
+| 13 | Events | `PM Mode: Events` | 🔄 Active |
+| 14 | Financial | `PM Mode: Financial` | 🔄 Active |
+| 15 | Development-RnD | `PM Mode: Development-RnD` | 🔄 Active |
 
 ---
 
@@ -1737,6 +1741,31 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 - Orders Domain: Entertainment items in orders, session controls
 - KDS Domain: Entertainment dashboard
 - Menu Domain: Category routing to builder
+
+---
+
+#### Domain 15: Development-RnD
+**Trigger:** `PM Mode: Development-RnD`
+**Documentation:** `/docs/domains/DEVELOPMENT-RND-DOMAIN.md`
+**Changelog:** `/docs/changelogs/DEVELOPMENT-RND-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Prototypes** | Experimental feature implementations | `/src/app/(admin)/rnd/`, `/src/components/rnd/` |
+| **Research** | Technical spikes, benchmarks, POCs | `/docs/rnd/research/` |
+| **Tooling** | Build tools, scripts, DX improvements | `/scripts/`, `/src/lib/dev-tools/` |
+| **Architecture** | Cross-domain refactors, pattern research | `/docs/rnd/architecture/` |
+| **Benchmarks** | Performance testing and comparison | `/docs/rnd/benchmarks/` |
+
+**Graduation Pipeline:**
+- Prototypes → Production Domain (when ready)
+- Research → Archived (when findings documented)
+- Abandoned → Documented (lessons learned)
+
+**Key Rules:**
+- RnD code must NOT ship to production (feature flags or `/rnd/` paths)
+- Production code must never import from `/rnd/` paths
+- Features graduate to production domains or get archived
 
 ---
 

@@ -60,6 +60,7 @@ function formatModifierGroup(group: {
         extraPrice: Number(m.extraPrice),
         isDefault: m.isDefault,
         sortOrder: m.sortOrder,
+        isLabel: m.isLabel ?? false,
         ingredientId: m.ingredientId,
         ingredientName: m.ingredient?.name || null,
         childModifierGroupId: m.childModifierGroupId,
@@ -167,6 +168,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       isRequired = false,
       templateId, // Optional: copy from template
       parentModifierId, // Optional: create as child group and link to this modifier
+      duplicateFromGroupId, // Optional: deep copy existing group
+      copyFromItemId, // Optional: source item ID for cross-item copy
     } = body
 
     const menuItem = await db.menuItem.findUnique({
@@ -196,6 +199,165 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       where: { menuItemId },
       _max: { sortOrder: true },
     })
+
+    // If duplicating from existing group
+    if (duplicateFromGroupId) {
+      // If copying from another item, use copyFromItemId; otherwise use current menuItemId
+      const sourceItemId = copyFromItemId || menuItemId
+
+      const sourceGroup = await db.modifierGroup.findFirst({
+        where: { id: duplicateFromGroupId, menuItemId: sourceItemId },
+        include: {
+          modifiers: {
+            where: { deletedAt: null },
+            orderBy: { sortOrder: 'asc' },
+            include: {
+              childModifierGroup: {
+                include: {
+                  modifiers: {
+                    where: { deletedAt: null },
+                    orderBy: { sortOrder: 'asc' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (!sourceGroup) {
+        return NextResponse.json({ error: 'Source group not found' }, { status: 404 })
+      }
+
+      // Deep copy: group + all modifiers + child groups recursively
+      const newGroup = await db.$transaction(async (tx) => {
+        // Phase 1: Create the parent group (without modifiers)
+        const created = await tx.modifierGroup.create({
+          data: {
+            locationId: menuItem.locationId,
+            menuItemId, // ALWAYS assign to the TARGET item
+            name: name || `${sourceGroup.name} (Copy)`,
+            minSelections: sourceGroup.minSelections,
+            maxSelections: sourceGroup.maxSelections,
+            isRequired: sourceGroup.isRequired,
+            allowStacking: sourceGroup.allowStacking,
+            tieredPricingConfig: sourceGroup.tieredPricingConfig ?? Prisma.JsonNull,
+            exclusionGroupKey: null, // Don't copy exclusion key — user sets fresh
+            sortOrder: (maxSort._max.sortOrder || 0) + 1,
+          },
+        })
+
+        // Phase 2: Create child groups for modifiers that need them
+        const childGroupMap = new Map<string, string>() // old modifier ID -> new child group ID
+        let childSortOffset = 0
+
+        for (const mod of sourceGroup.modifiers) {
+          if (mod.childModifierGroup) {
+            const childGroup = await tx.modifierGroup.create({
+              data: {
+                locationId: menuItem.locationId,
+                menuItemId, // Also owned by the target item
+                name: mod.childModifierGroup.name,
+                minSelections: mod.childModifierGroup.minSelections,
+                maxSelections: mod.childModifierGroup.maxSelections,
+                isRequired: mod.childModifierGroup.isRequired,
+                allowStacking: mod.childModifierGroup.allowStacking,
+                sortOrder: (maxSort._max.sortOrder || 0) + 2 + childSortOffset,
+              },
+            })
+            childGroupMap.set(mod.id, childGroup.id)
+            childSortOffset++
+
+            // Create modifiers for the child group
+            for (const cm of mod.childModifierGroup.modifiers) {
+              await tx.modifier.create({
+                data: {
+                  locationId: menuItem.locationId,
+                  modifierGroupId: childGroup.id,
+                  name: cm.name,
+                  price: cm.price,
+                  allowNo: cm.allowNo,
+                  allowLite: cm.allowLite,
+                  allowOnSide: cm.allowOnSide,
+                  allowExtra: cm.allowExtra,
+                  extraPrice: cm.extraPrice,
+                  isDefault: cm.isDefault,
+                  sortOrder: cm.sortOrder,
+                  ingredientId: cm.ingredientId,
+                  isLabel: cm.isLabel ?? false,
+                },
+              })
+            }
+          }
+        }
+
+        // Phase 3: Create all modifiers with their childModifierGroupId links
+        for (const mod of sourceGroup.modifiers) {
+          await tx.modifier.create({
+            data: {
+              locationId: menuItem.locationId,
+              modifierGroupId: created.id,
+              name: mod.name,
+              price: mod.price,
+              allowNo: mod.allowNo,
+              allowLite: mod.allowLite,
+              allowOnSide: mod.allowOnSide,
+              allowExtra: mod.allowExtra,
+              extraPrice: mod.extraPrice,
+              isDefault: mod.isDefault,
+              sortOrder: mod.sortOrder,
+              ingredientId: mod.ingredientId,
+              isLabel: mod.isLabel ?? false,
+              childModifierGroupId: childGroupMap.get(mod.id) || null,
+            },
+          })
+        }
+
+        // Fetch the created group with modifiers for response
+        const groupWithModifiers = await tx.modifierGroup.findUnique({
+          where: { id: created.id },
+          include: {
+            modifiers: {
+              where: { deletedAt: null },
+              orderBy: { sortOrder: 'asc' },
+            },
+          },
+        })
+
+        return groupWithModifiers!
+      })
+
+      // Return same format as existing POST response
+      return NextResponse.json({
+        data: {
+          id: newGroup.id,
+          name: newGroup.name,
+          displayName: newGroup.displayName,
+          minSelections: newGroup.minSelections,
+          maxSelections: newGroup.maxSelections,
+          isRequired: newGroup.isRequired,
+          allowStacking: newGroup.allowStacking,
+          tieredPricingConfig: newGroup.tieredPricingConfig,
+          exclusionGroupKey: newGroup.exclusionGroupKey,
+          sortOrder: newGroup.sortOrder,
+          modifiers: newGroup.modifiers.map(m => ({
+            id: m.id,
+            name: m.name,
+            price: Number(m.price),
+            allowNo: m.allowNo,
+            allowLite: m.allowLite,
+            allowOnSide: m.allowOnSide,
+            allowExtra: m.allowExtra,
+            extraPrice: Number(m.extraPrice),
+            isDefault: m.isDefault,
+            sortOrder: m.sortOrder,
+            ingredientId: m.ingredientId,
+            childModifierGroupId: m.childModifierGroupId,
+            isLabel: m.isLabel ?? false,
+          })),
+        },
+      })
+    }
 
     // If copying from template, get template data
     let templateModifiers: Array<{
@@ -306,11 +468,50 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           extraPrice: Number(m.extraPrice),
           isDefault: m.isDefault,
           sortOrder: m.sortOrder,
+          isLabel: m.isLabel ?? false,
         })),
       },
     })
   } catch (error) {
     console.error('Error creating modifier group:', error)
     return NextResponse.json({ error: 'Failed to create modifier group' }, { status: 500 })
+  }
+}
+
+// PATCH /api/menu/items/[id]/modifier-groups - Bulk update sort orders
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: menuItemId } = await params
+    const body = await request.json()
+    const { sortOrders } = body // Array of { id: string, sortOrder: number }
+
+    if (!Array.isArray(sortOrders)) {
+      return NextResponse.json({ error: 'sortOrders array required' }, { status: 400 })
+    }
+
+    // Verify all groups belong to this item
+    const groups = await db.modifierGroup.findMany({
+      where: { menuItemId, id: { in: sortOrders.map(s => s.id) } },
+      select: { id: true },
+    })
+
+    if (groups.length !== sortOrders.length) {
+      return NextResponse.json({ error: 'Some groups not found' }, { status: 404 })
+    }
+
+    // Bulk update in transaction
+    await db.$transaction(
+      sortOrders.map(({ id, sortOrder }) =>
+        db.modifierGroup.update({
+          where: { id },
+          data: { sortOrder },
+        })
+      )
+    )
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error updating modifier group sort orders:', error)
+    return NextResponse.json({ error: 'Failed to update sort orders' }, { status: 500 })
   }
 }

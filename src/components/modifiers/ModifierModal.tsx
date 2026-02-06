@@ -21,9 +21,10 @@ import {
 } from './useModifierSelections'
 import { SwapPicker } from './SwapPicker'
 import { IngredientsSection } from './IngredientsSection'
-import { HierarchyBreadcrumb } from './HierarchyBreadcrumb'
 import { ModifierGroupSection } from './ModifierGroupSection'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+
+type ViewMode = 'steps' | 'grid'
 
 interface ModifierModalProps {
   item: MenuItem
@@ -51,7 +52,6 @@ export function ModifierModal({
   onCancel,
   initialNotes,
 }: ModifierModalProps) {
-  // Extract all state and logic into custom hook
   const {
     selectedPourSize,
     setSelectedPourSize,
@@ -88,26 +88,11 @@ export function ModifierModal({
     getExcludedModifierIds,
   } = useModifierSelections(item, modifierGroups, editingItem, dualPricing, initialNotes)
 
-  // Navigation state for hierarchical drill-down
-  const [navStack, setNavStack] = useState<{ groupId: string; groupName: string }[]>([])
+  // View mode: stepped (default) or grid (all at once)
+  const [viewMode, setViewMode] = useState<ViewMode>('steps')
 
-  // Navigation handlers
-  const handleDrillDown = (childGroupId: string, childGroupName: string) => {
-    setNavStack(prev => [...prev, { groupId: childGroupId, groupName: childGroupName }])
-  }
-
-  const handleNavigateTo = (index: number) => {
-    if (index === -1) {
-      // Navigate to root (clear stack)
-      setNavStack([])
-    } else {
-      // Navigate to specific level (trim stack)
-      setNavStack(prev => prev.slice(0, index + 1))
-    }
-  }
-
-  // Determine which groups to show based on navigation
-  const currentGroupId = navStack.length > 0 ? navStack[navStack.length - 1].groupId : null
+  // Active group index for stepped view
+  const [activeGroupIndex, setActiveGroupIndex] = useState(0)
 
   // Build set of child group IDs (groups that are children of modifiers)
   const childGroupIds = new Set<string>()
@@ -119,9 +104,55 @@ export function ModifierModal({
     })
   })
 
-  const visibleGroups = currentGroupId
-    ? modifierGroups.filter(g => g.id === currentGroupId)
-    : modifierGroups.filter(g => !childGroupIds.has(g.id)) // Show only top-level groups at root
+  // Top-level groups only (not child groups)
+  const topLevelGroups = modifierGroups.filter(g => !childGroupIds.has(g.id))
+
+  // Auto-advance to next group when current is complete (stepped mode)
+  useEffect(() => {
+    if (viewMode !== 'steps') return
+    if (topLevelGroups.length <= 1) return
+    const currentGroup = topLevelGroups[activeGroupIndex]
+    if (!currentGroup) return
+
+    const groupSelections = selections[currentGroup.id] || []
+    const isComplete = currentGroup.isRequired
+      ? groupSelections.length >= currentGroup.minSelections
+      : false
+
+    if (isComplete && currentGroup.maxSelections === 1) {
+      const nextIndex = topLevelGroups.findIndex((g, i) => {
+        if (i <= activeGroupIndex) return false
+        if (!g.isRequired) return false
+        const sels = selections[g.id] || []
+        return sels.length < g.minSelections
+      })
+      if (nextIndex !== -1) {
+        setTimeout(() => setActiveGroupIndex(nextIndex), 300)
+      }
+    }
+  }, [selections, activeGroupIndex, topLevelGroups, viewMode])
+
+  // Count required groups that are incomplete
+  const requiredIncomplete = topLevelGroups.filter(g => {
+    if (!g.isRequired) return false
+    const sels = selections[g.id] || []
+    return sels.length < g.minSelections
+  }).length
+
+  // Helper: get child groups for a specific parent group's selections (for inline rendering)
+  const getChildGroupsForGroup = (groupId: string): { group: ModifierGroup; parentModifierName: string }[] => {
+    const result: { group: ModifierGroup; parentModifierName: string }[] = []
+    const groupSels = selections[groupId] || []
+    groupSels.forEach(sel => {
+      if (sel.childModifierGroupId && childGroups[sel.childModifierGroupId]) {
+        result.push({
+          group: childGroups[sel.childModifierGroupId],
+          parentModifierName: sel.name,
+        })
+      }
+    })
+    return result
+  }
 
   // Render pour size buttons for liquor items
   const renderPourSizeButtons = () => {
@@ -134,31 +165,28 @@ export function ModifierModal({
     if (enabledSizes.length === 0) return null
 
     return (
-      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg p-4 mb-4">
-        <div className="text-white text-sm font-medium mb-3">Pour Size</div>
+      <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-lg p-3 mb-3">
+        <div className="text-white text-xs font-medium mb-2">Pour Size</div>
         <div className="flex gap-2">
           {enabledSizes.map(([size, value]) => {
             const multiplier = getPourSizeMultiplier(value as PourSizeValue)
             const label = getPourSizeLabel(size, value as PourSizeValue)
-            const isSelected = selectedPourSize === size
+            const isSel = selectedPourSize === size
             const price = item.price * multiplier
 
             return (
               <button
                 key={size}
                 onClick={() => setSelectedPourSize(size)}
-                className={`flex-1 py-3 px-2 rounded-lg text-center transition-all ${
-                  isSelected
+                className={`flex-1 py-2 px-2 rounded-lg text-center transition-all ${
+                  isSel
                     ? 'bg-white text-purple-700 shadow-lg scale-105'
                     : 'bg-white/20 text-white hover:bg-white/30'
                 }`}
               >
-                <div className="text-lg font-bold">{label}</div>
-                <div className={`text-sm ${isSelected ? 'text-purple-600' : 'text-white/80'}`}>
+                <div className="text-sm font-bold">{label}</div>
+                <div className={`text-xs ${isSel ? 'text-purple-600' : 'text-white/80'}`}>
                   {formatCurrency(price)}
-                </div>
-                <div className={`text-xs ${isSelected ? 'text-purple-500' : 'text-white/60'}`}>
-                  {multiplier}×
                 </div>
               </button>
             )
@@ -168,21 +196,175 @@ export function ModifierModal({
     )
   }
 
+  // ── Render step-selector boxes ──
+  const renderStepBoxes = () => {
+    if (topLevelGroups.length === 0) return null
+
+    return (
+      <div className="mm-step-boxes">
+        {topLevelGroups.map((group, index) => {
+          const groupSelections = selections[group.id] || []
+          const isComplete = group.isRequired
+            ? groupSelections.length >= group.minSelections
+            : groupSelections.length > 0
+          const isCurrent = index === activeGroupIndex
+
+          let boxClass = 'mm-step-box'
+          if (isCurrent) boxClass += ' mm-step-box-active'
+          if (isComplete) {
+            boxClass += ' mm-step-box-complete'
+          } else if (group.isRequired) {
+            boxClass += ' mm-step-box-required'
+          }
+
+          return (
+            <button
+              key={group.id}
+              onClick={() => setActiveGroupIndex(index)}
+              className={boxClass}
+            >
+              <span className="mm-step-box-label">
+                {group.displayName || group.name}
+              </span>
+              {isComplete ? (
+                <span className="mm-step-box-badge bg-green-500/20 text-green-400">✓</span>
+              ) : group.isRequired ? (
+                <span className="mm-step-box-badge bg-red-500/20 text-red-400">REQ</span>
+              ) : groupSelections.length > 0 ? (
+                <span className="mm-step-box-badge bg-white/10 text-slate-300">{groupSelections.length}</span>
+              ) : null}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ── Render a single group with its inline child groups ──
+  const renderGroupWithChildren = (group: ModifierGroup) => {
+    const inlineChildren = getChildGroupsForGroup(group.id)
+
+    return (
+      <div key={group.id} className="mm-stepped-group">
+        <ModifierGroupSection
+          group={group}
+          selections={selections[group.id] || []}
+          onToggle={toggleModifier}
+          isSelected={isSelected}
+          getSelectionCount={getSelectionCount}
+          getSelectedPreModifier={getSelectedPreModifier}
+          formatModPrice={formatModPrice}
+          groupColor={getGroupColor(group)}
+          allowStacking={group.allowStacking}
+          isSpiritGroup={group.isSpiritGroup}
+          handleSpiritSelection={handleSpiritSelection}
+          getModifiersByTier={getModifiersByTier}
+          getTieredPrice={getTieredPrice}
+          getExcludedModifierIds={getExcludedModifierIds}
+        />
+
+        {/* Inline child groups — appear right below their parent */}
+        {inlineChildren.map(({ group: childGroup, parentModifierName }) => (
+          <div key={childGroup.id} className="mm-child-group-inline">
+            <div className="mm-child-group-label">
+              <span className="text-indigo-400">↳</span>
+              {parentModifierName} → {childGroup.displayName || childGroup.name}
+              {childGroup.isRequired && <span className="text-red-400 ml-1">*</span>}
+            </div>
+            <ModifierGroupSection
+              group={childGroup}
+              selections={selections[childGroup.id] || []}
+              onToggle={toggleModifier}
+              isSelected={isSelected}
+              getSelectionCount={getSelectionCount}
+              getSelectedPreModifier={getSelectedPreModifier}
+              formatModPrice={formatModPrice}
+              groupColor={getGroupColor(childGroup)}
+              allowStacking={childGroup.allowStacking}
+              isSpiritGroup={childGroup.isSpiritGroup}
+              handleSpiritSelection={handleSpiritSelection}
+              getModifiersByTier={getModifiersByTier}
+              getTieredPrice={getTieredPrice}
+              getExcludedModifierIds={getExcludedModifierIds}
+            />
+
+            {/* Recursively render grandchildren */}
+            {getChildGroupsForGroup(childGroup.id).map(({ group: grandChild, parentModifierName: grandParentName }) => (
+              <div key={grandChild.id} className="mm-child-group-inline">
+                <div className="mm-child-group-label">
+                  <span className="text-indigo-400">↳</span>
+                  {grandParentName} → {grandChild.displayName || grandChild.name}
+                </div>
+                <ModifierGroupSection
+                  group={grandChild}
+                  selections={selections[grandChild.id] || []}
+                  onToggle={toggleModifier}
+                  isSelected={isSelected}
+                  getSelectionCount={getSelectionCount}
+                  getSelectedPreModifier={getSelectedPreModifier}
+                  formatModPrice={formatModPrice}
+                  groupColor={getGroupColor(grandChild)}
+                  allowStacking={grandChild.allowStacking}
+                  isSpiritGroup={grandChild.isSpiritGroup}
+                  handleSpiritSelection={handleSpiritSelection}
+                  getModifiersByTier={getModifiersByTier}
+                  getTieredPrice={getTieredPrice}
+                  getExcludedModifierIds={getExcludedModifierIds}
+                />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 modifier-modal-container">
-      <div className="mm-glass-panel rounded-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+      <div className={`mm-glass-panel rounded-2xl w-full ${viewMode === 'grid' ? 'max-w-2xl' : 'max-w-lg'} h-[85vh] overflow-hidden flex flex-col`}>
         {/* Header */}
-        <div className="p-4 border-b border-white/10 bg-gradient-to-r from-indigo-600/30 to-purple-600/20">
-          <h2 className="text-lg font-bold text-white">{item.name}</h2>
-          <p className="text-slate-300 text-sm">
-            Base: {formatCurrency(item.price)}
-            {pourMultiplier !== 1 && (
-              <span className="ml-2 text-purple-300">
-                × {pourMultiplier} = {formatCurrency(item.price * pourMultiplier)}
+        <div className="p-3 border-b border-white/10 bg-gradient-to-r from-indigo-600/30 to-purple-600/20 flex items-center justify-between">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-white truncate">{item.name}</h2>
+            <p className="text-slate-300 text-sm">
+              Base: {formatCurrency(item.price)}
+              {pourMultiplier !== 1 && (
+                <span className="ml-2 text-purple-300">
+                  × {pourMultiplier} = {formatCurrency(item.price * pourMultiplier)}
+                </span>
+              )}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {requiredIncomplete > 0 && (
+              <span className="text-xs px-2 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30">
+                {requiredIncomplete} req
               </span>
             )}
-          </p>
+            {/* View toggle */}
+            {topLevelGroups.length > 1 && (
+              <div className="mm-view-toggle">
+                <button
+                  className={`mm-view-toggle-btn ${viewMode === 'steps' ? 'mm-view-toggle-btn-active' : ''}`}
+                  onClick={() => setViewMode('steps')}
+                  title="Step-by-step view"
+                >
+                  Steps
+                </button>
+                <button
+                  className={`mm-view-toggle-btn ${viewMode === 'grid' ? 'mm-view-toggle-btn-active' : ''}`}
+                  onClick={() => setViewMode('grid')}
+                  title="All groups at once"
+                >
+                  All
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Step Boxes — only in stepped view with multiple groups */}
+        {viewMode === 'steps' && topLevelGroups.length > 1 && renderStepBoxes()}
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-3" style={{ background: 'var(--mm-bg-primary)' }}>
@@ -190,10 +372,10 @@ export function ModifierModal({
             <div className="text-center py-8 text-slate-400">Loading...</div>
           ) : (
             <>
-              {/* Pour Size Buttons - Prominent at top for liquor items */}
+              {/* Pour Size Buttons */}
               {renderPourSizeButtons()}
 
-              {/* Ingredients Section - Collapsed by default */}
+              {/* Ingredients Section */}
               {ingredients.length > 0 && (
                 <IngredientsSection
                   ingredients={ingredients}
@@ -205,41 +387,79 @@ export function ModifierModal({
                 />
               )}
 
-              {/* Breadcrumb - show when navigated into child groups */}
-              {navStack.length > 0 && (
-                <HierarchyBreadcrumb
-                  itemName={item.name}
-                  navStack={navStack}
-                  onNavigateTo={handleNavigateTo}
-                />
+              {/* ── STEPPED VIEW ── */}
+              {viewMode === 'steps' && (
+                <>
+                  {modifierGroups.length === 0 ? (
+                    <div className="text-center py-4 text-slate-400 text-sm">No modifiers</div>
+                  ) : topLevelGroups.length === 0 ? (
+                    <div className="text-center py-4 text-slate-400 text-sm">No modifiers</div>
+                  ) : (
+                    renderGroupWithChildren(topLevelGroups[activeGroupIndex] || topLevelGroups[0])
+                  )}
+                </>
               )}
 
-              {/* Modifier Groups */}
-              {modifierGroups.length === 0 ? (
-                <div className="text-center py-4 text-slate-400 text-sm">No modifiers</div>
-              ) : (
-                <div>
-                  {visibleGroups.map(group => (
-                    <ModifierGroupSection
-                      key={group.id}
-                      group={group}
-                      selections={selections[group.id] || []}
-                      onToggle={toggleModifier}
-                      isSelected={isSelected}
-                      getSelectionCount={getSelectionCount}
-                      getSelectedPreModifier={getSelectedPreModifier}
-                      formatModPrice={formatModPrice}
-                      groupColor={getGroupColor(group)}
-                      allowStacking={group.allowStacking}
-                      onDrillDown={handleDrillDown}
-                      isSpiritGroup={group.isSpiritGroup}
-                      handleSpiritSelection={handleSpiritSelection}
-                      getModifiersByTier={getModifiersByTier}
-                      getTieredPrice={getTieredPrice}
-                      getExcludedModifierIds={getExcludedModifierIds}
-                    />
-                  ))}
-                </div>
+              {/* ── GRID VIEW ── */}
+              {viewMode === 'grid' && (
+                <>
+                  {modifierGroups.length === 0 ? (
+                    <div className="text-center py-4 text-slate-400 text-sm">No modifiers</div>
+                  ) : (
+                    <div className="mm-groups-grid">
+                      {topLevelGroups.map(group => (
+                        <ModifierGroupSection
+                          key={group.id}
+                          group={group}
+                          selections={selections[group.id] || []}
+                          onToggle={toggleModifier}
+                          isSelected={isSelected}
+                          getSelectionCount={getSelectionCount}
+                          getSelectedPreModifier={getSelectedPreModifier}
+                          formatModPrice={formatModPrice}
+                          groupColor={getGroupColor(group)}
+                          allowStacking={group.allowStacking}
+                          isSpiritGroup={group.isSpiritGroup}
+                          handleSpiritSelection={handleSpiritSelection}
+                          getModifiersByTier={getModifiersByTier}
+                          getTieredPrice={getTieredPrice}
+                          getExcludedModifierIds={getExcludedModifierIds}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Inline child groups below the grid in grid mode */}
+                  {activeChildGroups.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {activeChildGroups.map(({ group: childGroup, parentModifierName }) => (
+                        <div key={childGroup.id} className="mm-child-group-inline">
+                          <div className="mm-child-group-label">
+                            <span className="text-indigo-400">↳</span>
+                            {parentModifierName} → {childGroup.displayName || childGroup.name}
+                            {childGroup.isRequired && <span className="text-red-400 ml-1">*</span>}
+                          </div>
+                          <ModifierGroupSection
+                            group={childGroup}
+                            selections={selections[childGroup.id] || []}
+                            onToggle={toggleModifier}
+                            isSelected={isSelected}
+                            getSelectionCount={getSelectionCount}
+                            getSelectedPreModifier={getSelectedPreModifier}
+                            formatModPrice={formatModPrice}
+                            groupColor={getGroupColor(childGroup)}
+                            allowStacking={childGroup.allowStacking}
+                            isSpiritGroup={childGroup.isSpiritGroup}
+                            handleSpiritSelection={handleSpiritSelection}
+                            getModifiersByTier={getModifiersByTier}
+                            getTieredPrice={getTieredPrice}
+                            getExcludedModifierIds={getExcludedModifierIds}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Special Notes */}

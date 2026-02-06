@@ -138,11 +138,79 @@ Full plan at: `/Users/brianlewis/.claude/plans/hazy-twirling-hopper.md`
 
 ---
 
-### How to Resume Tomorrow
+## Session: Feb 5, 2026 (Evening) — QA + Bug Fixes + Commit
+
+### Completed
+- ✅ Committed W1-W6 as `8d8fcda` (12 files, +1335/-80)
+- ✅ Cleaned up 3 root-level .md summary files
+- ✅ **Database restored** from backup `pos-20260205-163038.db` — W1's `db:push` had wiped floor plan + orders. Re-added columns safely via `ALTER TABLE`
+- ✅ **QA passed** — Admin menu builder 3-panel layout working, ModifierFlowEditor loads correctly
+- ✅ Fixed 2 nested `<button>` hydration errors (page.tsx category edit icon, ItemEditor ingredients "+ Add")
+- ✅ Fixed ModifierFlowEditor reading `data.modifierGroups` instead of `data.data` from API
+- ✅ Deleted unused `ModifierGroupsEditor.tsx` (663 lines removed)
+- ✅ Committed fixes as `4c62837`
+
+### ⚠️ Lesson Learned: NEVER use `db:push` on a populated database
+W1's `db:push` destroyed the real floor plan and all 42 orders. Always use `ALTER TABLE` for additive-only changes, or test `db:push` on a copy first.
+
+---
+
+## Next Session TODO — Menu Domain
+
+### 1. Ingredient Visibility Toggle
+Ingredients need a "visible to customer" flag. Non-visible ingredients are tracked for inventory but don't appear in the POS modifier modal. Example: 6pc Wings includes "Chicken Wings, Raw" as an ingredient for inventory tracking, but customers can't modify it (no "No/Extra/On Side" options).
+- Add `showOnPOS` boolean (default true) to ingredient links
+- Admin UI: toggle per ingredient "Show to customer?"
+- POS: filter out non-visible ingredients from modifier modal
+
+### 2. Stacking Clarification + Tiered Pricing Modes
+Current "Stacking" means selecting the same modifier multiple times. Verify this is working correctly.
+- Review if tiered pricing needs additional mode options beyond flat_tiers and free_threshold
+- Consider: quantity-based pricing, volume discounts, etc.
+
+### 3. Free Threshold → Extra Pricing
+"First N selections free, then charge individual 'extra' price per modifier." This is the free_threshold mode — verify it correctly falls back to each modifier's individual price (not a flat overflow price) after the free count is exceeded.
+- Ensure per-modifier `extraPrice` is used after free threshold
+- Test on POS: e.g., "First 2 wing flavors free, 3rd flavor charges $0.50"
+
+### 4. Exclusion Group Key → Dropdown Selector
+Replace the text input with a dropdown that shows other modifier groups on the same item. Simplifies setup — admin picks from existing groups instead of typing a key string.
+- Example: Item has "Side Choice 1" and "Side Choice 2" groups. Setting exclusion on both means if they pick Asparagus in Side 1, it's greyed out in Side 2.
+- Dropdown populated from `allGroups` (already fetched in ModifierFlowEditor)
+
+### 5. Duplicate Modifier Group
+Add ability to duplicate a modifier group on an item. The duplicate must be renamed to ensure uniqueness.
+- "Duplicate Group" button on each group card in ItemEditor
+- Auto-name: "Wing Flavors (Copy)" — require rename before save
+- Copy all modifiers, settings, tiered pricing config
+
+### 6. Drag-and-Drop Modifier Group Reordering
+Allow reordering modifier groups via drag-and-drop in the admin ItemEditor. The front-end POS modal follows the same `sortOrder`.
+- Use a drag handle on each group card
+- Update `sortOrder` field on drop
+- Persist order via API
+- POS modifier modal respects `sortOrder`
+
+### 7. POS Modifier Modal — Consistent Window + Progress Indicators
+Redesign the POS modifier modal for a consistent single-size window. Show small indicator squares under the item name representing each modifier group. Required groups get a red border. Completed groups get a green fill.
+- Fixed modal size (no resizing between groups)
+- Group progress bar/dots at top of modal
+- Red border = required, unfilled
+- Green fill = completed
+- Current group highlighted
+
+### 8. POS Modifier Modal — UX Overhaul
+Major upgrade to the front-end modifier workflow. Current issues: window size changes between groups, too many flashes/transitions, jarring experience.
+- Smooth transitions between groups (slide or fade, not resize)
+- Stable layout — content area stays same size
+- Reduce visual noise / flashing
+- Consider tabbed or stepped wizard approach
+- Touch-friendly for tablets
+
+---
+
+### How to Resume
 1. Say: `PM Mode: Menu`
 2. Review this changelog
-3. **All workers complete** — Ready to commit
-4. Consider committing all W1-W6 changes together as one feature commit
-5. Clean up root-level .md files (MODIFIER-MODAL-DARK-THEME-CHANGES.md, etc.)
-6. Manual QA: test tiered pricing and exclusion on POS modifier modal
-7. Consider deleting `ModifierGroupsEditor.tsx` after confirming stability
+3. Prioritize items 1-8 above
+4. Items 7 and 8 are related (POS modifier modal redesign) — likely one combined effort

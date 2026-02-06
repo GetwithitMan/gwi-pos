@@ -102,6 +102,8 @@ export function ModifierFlowEditor({
 
   const saveChanges = async () => {
     if (!item?.id || !selectedGroupId) return
+    // Don't save if user is still creating a new key
+    if (exclusionKey === '__new__') return
 
     try {
       const response = await fetch(`/api/menu/items/${item.id}/modifier-groups/${selectedGroupId}`, {
@@ -226,6 +228,66 @@ export function ModifierFlowEditor({
     )
   }
 
+  const handleSettingChange = async (updates: Record<string, any>) => {
+    if (!item?.id || !selectedGroupId) return
+    try {
+      const response = await fetch(`/api/menu/items/${item.id}/modifier-groups/${selectedGroupId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      if (response.ok) {
+        // Reload group data
+        const loadGroupData = async () => {
+          setLoading(true)
+          try {
+            const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
+            if (response.ok) {
+              const data = await response.json()
+              const groups = data.data || data.modifierGroups || []
+              setAllGroups(groups)
+
+              const foundGroup = groups.find((g: ModifierGroup) => g.id === selectedGroupId)
+              if (foundGroup) {
+                setGroup(foundGroup)
+                setTieredPricing(foundGroup.tieredPricingConfig || {
+                  enabled: false,
+                  modes: {
+                    flat_tiers: false,
+                    free_threshold: false,
+                  },
+                })
+                setExclusionKey(foundGroup.exclusionGroupKey || '')
+              }
+            }
+          } catch (error) {
+            console.error('Failed to load group data:', error)
+          } finally {
+            setLoading(false)
+          }
+        }
+        await loadGroupData()
+        onGroupUpdated()
+      }
+    } catch (e) {
+      console.error('Failed to update group settings:', e)
+    }
+  }
+
+  const handleDeleteGroup = async () => {
+    if (!item?.id || !selectedGroupId || !confirm('Delete this modifier group?')) return
+    try {
+      const response = await fetch(`/api/menu/items/${item.id}/modifier-groups/${selectedGroupId}`, {
+        method: 'DELETE',
+      })
+      if (response.ok) {
+        onGroupUpdated()
+      }
+    } catch (e) {
+      console.error('Failed to delete group:', e)
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto bg-white">
       <div className="p-4 space-y-6">
@@ -249,6 +311,61 @@ export function ModifierFlowEditor({
             <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700">
               {group.modifiers.length} modifiers
             </span>
+          </div>
+        </div>
+
+        {/* Group Settings */}
+        <div className="border-b pb-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Group Settings</h3>
+          <div className="space-y-3">
+            {/* Min/Max Selections */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600 w-24">Selections:</span>
+              <input
+                type="number"
+                value={group.minSelections}
+                onChange={(e) => handleSettingChange({ minSelections: parseInt(e.target.value) || 0 })}
+                className="w-16 px-2 py-1.5 border rounded text-center text-sm"
+                min="0"
+              />
+              <span className="text-gray-400">to</span>
+              <input
+                type="number"
+                value={group.maxSelections}
+                onChange={(e) => handleSettingChange({ maxSelections: parseInt(e.target.value) || 1 })}
+                className="w-16 px-2 py-1.5 border rounded text-center text-sm"
+                min="1"
+              />
+            </div>
+            {/* Required Toggle */}
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={group.isRequired}
+                onChange={(e) => handleSettingChange({ isRequired: e.target.checked })}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm text-gray-700">Required</span>
+              <span className="text-xs text-gray-400">Customer must make a selection</span>
+            </label>
+            {/* Stacking Toggle */}
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={group.allowStacking ?? false}
+                onChange={(e) => handleSettingChange({ allowStacking: e.target.checked })}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm text-gray-700">Allow Stacking</span>
+              <span className="text-xs text-gray-400">Same item can be selected multiple times</span>
+            </label>
+            {/* Delete Group */}
+            <button
+              onClick={() => handleDeleteGroup()}
+              className="text-red-500 hover:text-red-700 text-sm px-3 py-1.5 border border-red-200 rounded hover:bg-red-50 w-full"
+            >
+              Delete Group
+            </button>
           </div>
         </div>
 
@@ -393,29 +510,78 @@ export function ModifierFlowEditor({
         {/* Section 3: Exclusion Rules */}
         <div className="space-y-3 border-t pt-4">
           <label className="block">
-            <span className="text-sm font-semibold text-gray-700">Exclusion Group Key</span>
-            <input
-              type="text"
-              value={exclusionKey}
-              onChange={(e) => setExclusionKey(e.target.value)}
-              onBlur={saveChanges}
-              placeholder="e.g., sauces, toppings"
-              className="mt-1 block w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Groups with the same key prevent duplicate modifier selections
+            <span className="text-sm font-semibold text-gray-700">Exclusion Group</span>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Prevent duplicate selections across groups. Modifiers selected in one group will be greyed out in related groups.
             </p>
+            <select
+              value={exclusionKey}
+              onChange={(e) => {
+                setExclusionKey(e.target.value)
+                // Auto-save on change
+                setTimeout(saveChanges, 100)
+              }}
+              className="mt-2 block w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">No exclusion group</option>
+              {/* Show existing exclusion keys from other groups */}
+              {(() => {
+                const existingKeys = new Set<string>()
+                allGroups.forEach(g => {
+                  if (g.exclusionGroupKey && g.id !== selectedGroupId) {
+                    existingKeys.add(g.exclusionGroupKey)
+                  }
+                })
+                // Also include current key if it's custom
+                if (exclusionKey && !existingKeys.has(exclusionKey)) {
+                  existingKeys.add(exclusionKey)
+                }
+                return Array.from(existingKeys).sort().map(key => (
+                  <option key={key} value={key}>{key}</option>
+                ))
+              })()}
+              <option value="__new__">+ Create new exclusion group...</option>
+            </select>
           </label>
 
+          {/* New exclusion key input (shown when "Create new" selected) */}
+          {exclusionKey === '__new__' && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g., sauces, toppings, sides"
+                className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
+                    setExclusionKey((e.target as HTMLInputElement).value.trim())
+                    setTimeout(saveChanges, 100)
+                  }
+                }}
+                onBlur={(e) => {
+                  const val = e.target.value.trim()
+                  if (val) {
+                    setExclusionKey(val)
+                    setTimeout(saveChanges, 100)
+                  } else {
+                    setExclusionKey('')
+                    setTimeout(saveChanges, 100)
+                  }
+                }}
+              />
+            </div>
+          )}
+
+          {/* Show related groups */}
           {relatedGroups.length > 0 && (
             <div className="p-3 bg-blue-50 rounded border border-blue-200">
               <p className="text-xs font-semibold text-blue-700 mb-2">
-                Related Groups (sharing key "{exclusionKey}"):
+                Related Groups (sharing key &ldquo;{exclusionKey}&rdquo;):
               </p>
               <ul className="space-y-1">
                 {relatedGroups.map(g => (
                   <li key={g.id} className="text-xs text-blue-600">
-                    • {g.displayName || g.name}
+                    &bull; {g.displayName || g.name}
                   </li>
                 ))}
               </ul>
