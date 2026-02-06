@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
 import { ItemTreeView } from '@/components/menu/ItemTreeView'
 import { ItemEditor } from '@/components/menu/ItemEditor'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
@@ -116,8 +117,10 @@ interface IngredientLibraryItem {
   name: string
   category: string | null          // legacy string field
   categoryName: string | null      // NEW: from categoryRelation.name
+  categoryId: string | null        // NEW: actual category relation ID
   parentIngredientId: string | null // NEW: to identify child items
   parentName: string | null        // NEW: parent ingredient's name for sub-headers
+  needsVerification: boolean       // NEW: verification flag
   allowNo: boolean
   allowLite: boolean
   allowOnSide: boolean
@@ -126,6 +129,17 @@ interface IngredientLibraryItem {
   allowSwap: boolean
   swapModifierGroupId: string | null
   swapUpcharge: number
+}
+
+interface IngredientCategory {
+  id: string
+  code: number
+  name: string
+  icon: string | null
+  color: string | null
+  sortOrder: number
+  isActive: boolean
+  ingredientCount: number
 }
 
 interface MenuItemIngredient {
@@ -201,6 +215,7 @@ export default function MenuManagementPage() {
   const [items, setItems] = useState<MenuItem[]>([])
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
   const [ingredientsLibrary, setIngredientsLibrary] = useState<IngredientLibraryItem[]>([])
+  const [ingredientCategories, setIngredientCategories] = useState<IngredientCategory[]>([])
   const [printers, setPrinters] = useState<Printer[]>([])
   const [kdsScreens, setKdsScreens] = useState<KDSScreen[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
@@ -226,7 +241,7 @@ export default function MenuManagementPage() {
       const timestamp = Date.now()
 
       const locationId = employee?.location?.id
-      const [menuResponse, modifiersResponse, ingredientsResponse, printersResponse, kdsResponse] = await Promise.all([
+      const [menuResponse, modifiersResponse, ingredientsResponse, ingredientCategoriesResponse, printersResponse, kdsResponse] = await Promise.all([
         fetch(`/api/menu?_t=${timestamp}`, {
           cache: 'no-store',
           headers: {
@@ -236,6 +251,7 @@ export default function MenuManagementPage() {
         }),
         fetch('/api/menu/modifiers'),
         locationId ? fetch(`/api/ingredients?locationId=${locationId}`) : Promise.resolve(null),
+        locationId ? fetch(`/api/ingredient-categories?locationId=${locationId}`) : Promise.resolve(null),
         locationId ? fetch(`/api/hardware/printers?locationId=${locationId}`) : Promise.resolve(null),
         locationId ? fetch(`/api/hardware/kds-screens?locationId=${locationId}`) : Promise.resolve(null)
       ])
@@ -261,9 +277,16 @@ export default function MenuManagementPage() {
         const ingredients = (ingData.data || []).map((ing: any) => ({
           ...ing,
           categoryName: ing.categoryRelation?.name || ing.category || null,
+          categoryId: ing.categoryId || null,
           parentName: ing.parentIngredient?.name || null,
+          needsVerification: ing.needsVerification || false,
         }))
         setIngredientsLibrary(ingredients)
+      }
+
+      if (ingredientCategoriesResponse?.ok) {
+        const catData = await ingredientCategoriesResponse.json()
+        setIngredientCategories(catData.data || [])
       }
 
       if (printersResponse?.ok) {
@@ -347,7 +370,7 @@ export default function MenuManagementPage() {
       if (response.ok) {
         // Show success toast
         const targetItem = items.find(i => i.id === targetItemId)
-        console.log(`✓ Copied "${groupName}" to "${targetItem?.name}"`)
+        toast.success(`Copied "${groupName}" to "${targetItem?.name}"`)
 
         // Refresh menu
         await loadMenu()
@@ -355,10 +378,12 @@ export default function MenuManagementPage() {
 
         // If the target item is currently selected, refresh will show the new group
       } else {
-        console.error('Failed to copy modifier group')
+        const errData = await response.json().catch(() => ({}))
+        toast.error(errData.error || 'Failed to copy modifier group')
       }
     } catch (error) {
       console.error('Error copying modifier group:', error)
+      toast.error('Failed to copy modifier group')
     }
   }
 
@@ -382,6 +407,7 @@ export default function MenuManagementPage() {
       }
     } catch (error) {
       console.error('Failed to save category:', error)
+      toast.error('Failed to save category')
     }
   }
 
@@ -428,6 +454,7 @@ export default function MenuManagementPage() {
       }
     } catch (error) {
       console.error('Failed to save item:', error)
+      toast.error('Failed to save item')
     }
   }
 
@@ -441,6 +468,7 @@ export default function MenuManagementPage() {
       }
     } catch (error) {
       console.error('Failed to delete category:', error)
+      toast.error('Failed to delete category')
     }
   }
 
@@ -451,6 +479,7 @@ export default function MenuManagementPage() {
       loadMenu()
     } catch (error) {
       console.error('Failed to delete item:', error)
+      toast.error('Failed to delete item')
     }
   }
 
@@ -464,6 +493,7 @@ export default function MenuManagementPage() {
       loadMenu()
     } catch (error) {
       console.error('Failed to toggle 86:', error)
+      toast.error('Failed to update 86 status')
     }
   }
 
@@ -730,6 +760,8 @@ export default function MenuManagementPage() {
             <ItemEditor
               item={selectedItemForEditor}
               ingredientsLibrary={ingredientsLibrary}
+              ingredientCategories={ingredientCategories}
+              locationId={employee?.location?.id || ''}
               refreshKey={refreshKey}
               onSelectGroup={setSelectedGroupId}
               onItemUpdated={() => {
@@ -1136,7 +1168,10 @@ function ItemModal({
             })))
           }
         })
-        .catch(console.error)
+        .catch((e) => {
+          console.error('Failed to load modifier groups:', e)
+          toast.error('Failed to load modifier groups')
+        })
         .finally(() => setIsLoadingModifiers(false))
     }
   }, [item?.id])
@@ -1159,7 +1194,10 @@ function ItemModal({
             })))
           }
         })
-        .catch(console.error)
+        .catch((e) => {
+          console.error('Failed to load ingredients:', e)
+          toast.error('Failed to load ingredients')
+        })
         .finally(() => setIsLoadingIngredients(false))
     }
   }, [item?.id])

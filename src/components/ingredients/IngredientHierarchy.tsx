@@ -31,6 +31,7 @@ interface IngredientHierarchyProps {
   onDelete: (ingredient: Ingredient) => void
   onAddPreparation: (parent: Ingredient) => void
   onToggleActive: (ingredient: Ingredient) => void
+  onVerify?: (ingredient: Ingredient) => void
 }
 
 export function IngredientHierarchy({
@@ -41,6 +42,7 @@ export function IngredientHierarchy({
   onDelete,
   onAddPreparation,
   onToggleActive,
+  onVerify,
 }: IngredientHierarchyProps) {
   // Sort ingredients alphabetically
   const sortedIngredients = useMemo(() =>
@@ -61,6 +63,7 @@ export function IngredientHierarchy({
           onDelete={onDelete}
           onAddPreparation={onAddPreparation}
           onToggleActive={onToggleActive}
+          onVerify={onVerify}
         />
       ))}
     </div>
@@ -76,6 +79,7 @@ interface HierarchyNodeProps {
   onDelete: (ingredient: Ingredient) => void
   onAddPreparation: (parent: Ingredient) => void
   onToggleActive: (ingredient: Ingredient) => void
+  onVerify?: (ingredient: Ingredient) => void
 }
 
 // Type for linked menu items

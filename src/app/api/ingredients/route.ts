@@ -222,6 +222,7 @@ export async function GET(request: NextRequest) {
       childCount: ing._count.childIngredients,
       createdAt: ing.createdAt,
       updatedAt: ing.updatedAt,
+      needsVerification: ing.needsVerification || false,
     }))
 
     // Optionally group by category
@@ -307,6 +308,8 @@ export async function POST(request: NextRequest) {
       outputUnit,
       // Quick 86
       showOnQuick86 = false,
+      // Verification
+      needsVerification = false,
     } = body
 
     if (!locationId || !name) {
@@ -407,6 +410,8 @@ export async function POST(request: NextRequest) {
         outputUnit: parentIngredientId ? outputUnit : null,
         // Quick 86
         showOnQuick86,
+        // Verification
+        needsVerification,
       },
       include: {
         categoryRelation: {
@@ -438,6 +443,7 @@ export async function POST(request: NextRequest) {
         extraMultiplier: Number(ingredient.extraMultiplier),
         swapUpcharge: Number(ingredient.swapUpcharge),
         yieldPercent: ingredient.yieldPercent ? Number(ingredient.yieldPercent) : null,
+        needsVerification: ingredient.needsVerification,
       },
     })
   } catch (error) {

@@ -172,6 +172,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       copyFromItemId, // Optional: source item ID for cross-item copy
     } = body
 
+    if (!name && !duplicateFromGroupId) {
+      return NextResponse.json({ error: 'Modifier group name is required' }, { status: 400 })
+    }
+
     const menuItem = await db.menuItem.findUnique({
       where: { id: menuItemId },
       select: { id: true, locationId: true },
@@ -318,8 +322,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           where: { id: created.id },
           include: {
             modifiers: {
-              where: { deletedAt: null },
+              where: { deletedAt: null, isActive: true },
               orderBy: { sortOrder: 'asc' },
+              include: {
+                ingredient: { select: { name: true } },
+                childModifierGroup: {
+                  include: {
+                    modifiers: {
+                      where: { deletedAt: null, isActive: true },
+                      orderBy: { sortOrder: 'asc' },
+                      include: {
+                        ingredient: { select: { name: true } },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         })
@@ -327,35 +345,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         return groupWithModifiers!
       })
 
+      // Helper function to format modifier group recursively
+      const formatGroup = (group: typeof newGroup): any => ({
+        id: group.id,
+        name: group.name,
+        displayName: group.displayName,
+        minSelections: group.minSelections,
+        maxSelections: group.maxSelections,
+        isRequired: group.isRequired,
+        allowStacking: group.allowStacking,
+        tieredPricingConfig: group.tieredPricingConfig,
+        exclusionGroupKey: group.exclusionGroupKey,
+        sortOrder: group.sortOrder,
+        modifiers: group.modifiers.map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          price: Number(m.price),
+          allowNo: m.allowNo,
+          allowLite: m.allowLite,
+          allowOnSide: m.allowOnSide,
+          allowExtra: m.allowExtra,
+          extraPrice: Number(m.extraPrice),
+          isDefault: m.isDefault,
+          sortOrder: m.sortOrder,
+          isLabel: m.isLabel ?? false,
+          ingredientId: m.ingredientId,
+          ingredientName: m.ingredient?.name || null,
+          childModifierGroupId: m.childModifierGroupId,
+          childModifierGroup: m.childModifierGroup ? formatGroup(m.childModifierGroup) : null,
+        })),
+      })
+
       // Return same format as existing POST response
       return NextResponse.json({
-        data: {
-          id: newGroup.id,
-          name: newGroup.name,
-          displayName: newGroup.displayName,
-          minSelections: newGroup.minSelections,
-          maxSelections: newGroup.maxSelections,
-          isRequired: newGroup.isRequired,
-          allowStacking: newGroup.allowStacking,
-          tieredPricingConfig: newGroup.tieredPricingConfig,
-          exclusionGroupKey: newGroup.exclusionGroupKey,
-          sortOrder: newGroup.sortOrder,
-          modifiers: newGroup.modifiers.map(m => ({
-            id: m.id,
-            name: m.name,
-            price: Number(m.price),
-            allowNo: m.allowNo,
-            allowLite: m.allowLite,
-            allowOnSide: m.allowOnSide,
-            allowExtra: m.allowExtra,
-            extraPrice: Number(m.extraPrice),
-            isDefault: m.isDefault,
-            sortOrder: m.sortOrder,
-            ingredientId: m.ingredientId,
-            childModifierGroupId: m.childModifierGroupId,
-            isLabel: m.isLabel ?? false,
-          })),
-        },
+        data: formatGroup(newGroup),
       })
     }
 
@@ -485,8 +508,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json()
     const { sortOrders } = body // Array of { id: string, sortOrder: number }
 
-    if (!Array.isArray(sortOrders)) {
-      return NextResponse.json({ error: 'sortOrders array required' }, { status: 400 })
+    if (!Array.isArray(sortOrders) || sortOrders.length === 0) {
+      return NextResponse.json({ error: 'sortOrders array is required' }, { status: 400 })
+    }
+
+    // Validate each entry
+    for (const entry of sortOrders) {
+      if (!entry.id || typeof entry.sortOrder !== 'number' || !Number.isFinite(entry.sortOrder)) {
+        return NextResponse.json({ error: 'Each sortOrder entry must have a valid id and numeric sortOrder' }, { status: 400 })
+      }
     }
 
     // Verify all groups belong to this item

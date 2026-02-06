@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
 
 interface Ingredient {
   id: string
@@ -22,8 +23,29 @@ interface IngredientLibraryItem {
   name: string
   category: string | null
   categoryName?: string | null      // NEW: from categoryRelation.name
+  categoryId?: string | null        // NEW: actual category relation ID
   parentIngredientId?: string | null // NEW: to identify child items
   parentName?: string | null        // NEW: parent ingredient's name for sub-headers
+  needsVerification?: boolean       // NEW: verification flag
+  allowNo: boolean
+  allowLite: boolean
+  allowOnSide: boolean
+  allowExtra: boolean
+  extraPrice: number
+  allowSwap: boolean
+  swapModifierGroupId: string | null
+  swapUpcharge: number
+}
+
+interface IngredientCategory {
+  id: string
+  code: number
+  name: string
+  icon: string | null
+  color: string | null
+  sortOrder: number
+  isActive: boolean
+  ingredientCount: number
 }
 
 interface Modifier {
@@ -72,6 +94,8 @@ interface MenuItem {
 interface ItemEditorProps {
   item: MenuItem | null
   ingredientsLibrary: IngredientLibraryItem[]
+  ingredientCategories?: IngredientCategory[]
+  locationId?: string
   onItemUpdated: () => void
   onToggle86?: (item: MenuItem) => void
   onDelete?: (itemId: string) => void
@@ -79,7 +103,7 @@ interface ItemEditorProps {
   onSelectGroup?: (groupId: string | null) => void
 }
 
-export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86, onDelete, refreshKey, onSelectGroup }: ItemEditorProps) {
+export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = [], locationId = '', onItemUpdated, onToggle86, onDelete, refreshKey, onSelectGroup }: ItemEditorProps) {
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
   const [loading, setLoading] = useState(false)
@@ -109,6 +133,16 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
   const [newModPrice, setNewModPrice] = useState('')
   const [linkingModifier, setLinkingModifier] = useState<{ groupId: string; modId: string } | null>(null)
   const [modIngredientSearch, setModIngredientSearch] = useState('')
+
+  // Hierarchical dropdown state
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
+  const [creatingInventoryInCategory, setCreatingInventoryInCategory] = useState<string | null>(null)
+  const [creatingPrepUnderParent, setCreatingPrepUnderParent] = useState<string | null>(null)
+  const [newInventoryName, setNewInventoryName] = useState('')
+  const [newPrepName, setNewPrepName] = useState('')
+  const [creatingIngredientLoading, setCreatingIngredientLoading] = useState(false)
+
   const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null)
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
@@ -142,6 +176,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       setModifierGroups(groupsData.data || [])
     } catch (e) {
       console.error('Failed to load data:', e)
+      toast.error('Failed to load modifier data')
     } finally {
       setLoading(false)
     }
@@ -172,6 +207,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to save:', e)
+      toast.error('Failed to save ingredients')
     } finally {
       setSaving(false)
     }
@@ -217,6 +253,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to create group:', e)
+      toast.error('Failed to create modifier group')
     } finally {
       setSaving(false)
     }
@@ -235,6 +272,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to update group:', e)
+      toast.error('Failed to update modifier group')
     } finally {
       setSaving(false)
     }
@@ -246,16 +284,19 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
   }
 
   // Helper to find a group by ID (recursive search through child groups)
-  const findGroupById = (id: string): ModifierGroup | undefined => {
-    for (const g of modifierGroups) {
+  const findGroupById = (id: string, groups?: ModifierGroup[], visited?: Set<string>): ModifierGroup | undefined => {
+    const searchGroups = groups || modifierGroups
+    const seen = visited || new Set<string>()
+
+    for (const g of searchGroups) {
+      if (seen.has(g.id)) continue  // Cycle detection
+      seen.add(g.id)
       if (g.id === id) return g
       for (const m of g.modifiers) {
-        if (m.childModifierGroup?.id === id) return m.childModifierGroup
-        // Recurse into child group modifiers
         if (m.childModifierGroup) {
-          for (const cm of m.childModifierGroup.modifiers) {
-            if (cm.childModifierGroup?.id === id) return cm.childModifierGroup
-          }
+          if (m.childModifierGroup.id === id) return m.childModifierGroup
+          const found = findGroupById(id, [m.childModifierGroup], seen)
+          if (found) return found
         }
       }
     }
@@ -263,14 +304,18 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
   }
 
   // Helper to find a modifier by ID (recursive search through child groups)
-  const findModifierById = (id: string): Modifier | undefined => {
-    for (const g of modifierGroups) {
+  const findModifierById = (id: string, groups?: ModifierGroup[], visited?: Set<string>): Modifier | undefined => {
+    const searchGroups = groups || modifierGroups
+    const seen = visited || new Set<string>()
+
+    for (const g of searchGroups) {
+      if (seen.has(g.id)) continue
+      seen.add(g.id)
       for (const m of g.modifiers) {
         if (m.id === id) return m
         if (m.childModifierGroup) {
-          for (const cm of m.childModifierGroup.modifiers) {
-            if (cm.id === id) return cm
-          }
+          const found = findModifierById(id, [m.childModifierGroup], seen)
+          if (found) return found
         }
       }
     }
@@ -299,6 +344,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to delete group:', e)
+      toast.error('Failed to delete modifier group')
     } finally {
       setSaving(false)
     }
@@ -317,6 +363,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to duplicate group:', e)
+      toast.error('Failed to duplicate modifier group')
     } finally {
       setSaving(false)
     }
@@ -362,6 +409,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to reorder groups:', e)
+      toast.error('Failed to reorder groups')
       await loadData() // Rollback on failure
     }
   }
@@ -411,6 +459,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to reorder modifiers:', e)
+      toast.error('Failed to reorder modifiers')
       await loadData() // rollback
     }
   }
@@ -419,10 +468,12 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
     if (!item?.id || !newModName.trim()) return
     setSaving(true)
     try {
+      const parsedPrice = parseFloat(newModPrice)
+      const price = Number.isFinite(parsedPrice) ? parsedPrice : 0
       await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}/modifiers`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newModName.trim(), price: parseFloat(newModPrice) || 0 }),
+        body: JSON.stringify({ name: newModName.trim(), price }),
       })
       setNewModName('')
       setNewModPrice('')
@@ -432,6 +483,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to add modifier:', e)
+      toast.error('Failed to add modifier')
     } finally {
       setSaving(false)
     }
@@ -450,6 +502,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to update modifier:', e)
+      toast.error('Failed to update modifier')
     } finally {
       setSaving(false)
     }
@@ -466,6 +519,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to delete modifier:', e)
+      toast.error('Failed to delete modifier')
     } finally {
       setSaving(false)
     }
@@ -475,8 +529,8 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
     setEditingModifierId(mod.id)
     setEditModValues({
       name: mod.name,
-      price: String(mod.price || 0),
-      extraPrice: String(mod.extraPrice || 0),
+      price: String(mod.price ?? 0),
+      extraPrice: String(mod.extraPrice ?? 0),
     })
   }
 
@@ -487,12 +541,14 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
     if (!currentMod) { setEditingModifierId(null); return }
 
     const newName = editModValues.name.trim()
-    const newPrice = parseFloat(editModValues.price) || 0
-    const newExtraPrice = parseFloat(editModValues.extraPrice) || 0
+    const parsedPrice = parseFloat(editModValues.price)
+    const newPrice = Number.isFinite(parsedPrice) ? parsedPrice : 0
+    const parsedExtra = parseFloat(editModValues.extraPrice)
+    const newExtraPrice = Number.isFinite(parsedExtra) ? parsedExtra : 0
 
     if (newName && newName !== currentMod.name) updates.name = newName
     if (newPrice !== currentMod.price) updates.price = newPrice
-    if (newExtraPrice !== (currentMod.extraPrice || 0)) updates.extraPrice = newExtraPrice
+    if (newExtraPrice !== (currentMod.extraPrice ?? 0)) updates.extraPrice = newExtraPrice
 
     if (Object.keys(updates).length > 0) {
       await updateModifier(groupId, modId, updates)
@@ -518,6 +574,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to create child group:', e)
+      toast.error('Failed to create child group')
     } finally {
       setSaving(false)
     }
@@ -565,6 +622,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
       onItemUpdated()
     } catch (e) {
       console.error('Failed to add choice:', e)
+      toast.error('Failed to add choice')
     } finally {
       setSaving(false)
     }
@@ -574,6 +632,108 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
     await updateModifier(groupId, modifierId, { ingredientId })
     setLinkingModifier(null)
     setModIngredientSearch('')
+  }
+
+  // Toggle category expansion
+  const toggleCategory = (categoryId: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev)
+      if (next.has(categoryId)) next.delete(categoryId)
+      else next.add(categoryId)
+      return next
+    })
+  }
+
+  // Toggle parent expansion
+  const toggleParent = (parentId: string) => {
+    setExpandedParents(prev => {
+      const next = new Set(prev)
+      if (next.has(parentId)) next.delete(parentId)
+      else next.add(parentId)
+      return next
+    })
+  }
+
+  // Create inventory item (parent)
+  const createInventoryItem = async (categoryId: string) => {
+    if (!newInventoryName.trim()) return
+    setCreatingIngredientLoading(true)
+
+    try {
+      const response = await fetch('/api/ingredients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          name: newInventoryName.trim(),
+          categoryId,
+          parentIngredientId: null,
+          needsVerification: true,
+          isBaseIngredient: true,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        toast.error(error.error || 'Failed to create ingredient')
+        return
+      }
+
+      const { data } = await response.json()
+      onItemUpdated()  // Refresh parent's ingredient library
+      setNewInventoryName('')
+      setCreatingInventoryInCategory(null)
+      toast.success(`Created "${data.name}" - pending verification`)
+    } catch (error) {
+      console.error('Error creating inventory item:', error)
+      toast.error('Failed to create ingredient')
+    } finally {
+      setCreatingIngredientLoading(false)
+    }
+  }
+
+  // Create prep item (child) with auto-link
+  const createPrepItem = async (parentId: string, categoryId: string) => {
+    if (!newPrepName.trim()) return
+    setCreatingIngredientLoading(true)
+
+    try {
+      const response = await fetch('/api/ingredients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          name: newPrepName.trim(),
+          categoryId,
+          parentIngredientId: parentId,
+          needsVerification: true,
+          isBaseIngredient: false,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        toast.error(error.error || 'Failed to create prep item')
+        return
+      }
+
+      const { data } = await response.json()
+      onItemUpdated()
+
+      // Auto-link to modifier
+      if (linkingModifier) {
+        await linkIngredient(linkingModifier.groupId, linkingModifier.modId, data.id)
+      }
+
+      setNewPrepName('')
+      setCreatingPrepUnderParent(null)
+      toast.success(`Created "${data.name}" and linked - pending verification`)
+    } catch (error) {
+      console.error('Error creating prep item:', error)
+      toast.error('Failed to create prep item')
+    } finally {
+      setCreatingIngredientLoading(false)
+    }
   }
 
   // Helper to render a choice row (navigation modifier with child group)
@@ -834,70 +994,214 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
           )}
         </div>
 
-        {/* Ingredient Search Dropdown */}
+        {/* Hierarchical Ingredient Dropdown */}
         {isLinking && (
           <div className="ml-4 p-2 bg-purple-50 border border-purple-200 rounded">
             <input
               type="text"
               value={modIngredientSearch}
               onChange={(e) => setModIngredientSearch(e.target.value)}
-              placeholder="Search ingredients..."
+              placeholder="Search prep items..."
               className="w-full px-2 py-1 text-xs border rounded mb-1"
               autoFocus
             />
-            <div className="max-h-48 overflow-y-auto space-y-0.5">
-              {filteredIngredients.length === 0 ? (
-                <div className="text-xs text-gray-400 text-center py-2">
-                  {modIngredientSearch ? 'No prep items match' : 'Type to search prep items'}
-                </div>
-              ) : (
-                (() => {
-                  // Group by category → parent → prep items
-                  const hierarchy: Record<string, Record<string, typeof filteredIngredients>> = {}
+            <div className="max-h-96 overflow-y-auto space-y-0.5">
+              {(() => {
+                const hierarchy = buildHierarchy()
+                const sortedCategories = Object.values(hierarchy).sort((a, b) =>
+                  a.category.sortOrder - b.category.sortOrder
+                )
 
-                  filteredIngredients.forEach(ing => {
-                    const cat = ing.categoryName || ing.category || 'Uncategorized'
-                    const parent = ing.parentName || '(Standalone)'
-                    if (!hierarchy[cat]) hierarchy[cat] = {}
-                    if (!hierarchy[cat][parent]) hierarchy[cat][parent] = []
-                    hierarchy[cat][parent].push(ing)
-                  })
-
-                  const sortedCategories = Object.keys(hierarchy).sort()
-
-                  return sortedCategories.map(category => (
-                    <div key={category}>
-                      {/* Category Header - NOT clickable */}
-                      <div className="text-[10px] font-bold text-purple-800 uppercase tracking-wider px-2 py-1.5 bg-purple-100 sticky top-0 border-b border-purple-200">
-                        {category}
-                      </div>
-                      {Object.keys(hierarchy[category]).sort().map(parentName => (
-                        <div key={parentName}>
-                          {/* Parent/Inventory Item Sub-Header - NOT clickable */}
-                          {parentName !== '(Standalone)' && (
-                            <div className="text-[10px] font-semibold text-gray-500 px-3 py-1 bg-gray-50 flex items-center gap-1">
-                              <span className="text-gray-400">🏷</span> {parentName}
-                            </div>
-                          )}
-                          {/* Prep Items - CLICKABLE */}
-                          {hierarchy[category][parentName]
-                            .sort((a, b) => a.name.localeCompare(b.name))
-                            .map(ing => (
-                              <button
-                                key={ing.id}
-                                onClick={() => linkIngredient(groupId, mod.id, ing.id)}
-                                className="w-full text-left px-4 py-1 text-xs hover:bg-purple-100 rounded flex justify-between items-center"
-                              >
-                                <span>{ing.name}</span>
-                              </button>
-                            ))
-                          }
-                        </div>
-                      ))}
+                if (sortedCategories.length === 0) {
+                  return (
+                    <div className="text-xs text-gray-400 text-center py-2">
+                      {modIngredientSearch ? 'No matching prep items' : 'No ingredient categories found'}
                     </div>
-                  ))
-                })()
-              )}
+                  )
+                }
+
+                return sortedCategories.map(({ category, parents }) => {
+                  const isExpanded = expandedCategories.has(category.id)
+                  const hasItems = Object.keys(parents).length > 0
+
+                  return (
+                    <div key={category.id}>
+                      {/* Category Header */}
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-purple-800 uppercase tracking-wider px-2 py-1.5 bg-purple-100 sticky top-0 border-b border-purple-200">
+                        <button
+                          onClick={() => toggleCategory(category.id)}
+                          className="hover:bg-purple-200 rounded px-1"
+                        >
+                          {isExpanded ? '▼' : '▶'}
+                        </button>
+                        <span className="flex-1">{category.name}</span>
+                        <button
+                          onClick={() => setCreatingInventoryInCategory(category.id)}
+                          className="ml-auto text-purple-600 hover:text-purple-800 hover:bg-purple-200 rounded px-1"
+                          title="Create new inventory item"
+                          disabled={creatingIngredientLoading}
+                        >
+                          {creatingIngredientLoading && creatingInventoryInCategory === category.id ? (
+                            <span className="animate-spin">⏳</span>
+                          ) : (
+                            '+'
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Inline Inventory Item Creation Form */}
+                      {creatingInventoryInCategory === category.id && (
+                        <div className="px-4 py-2 bg-purple-50 border-b border-purple-200">
+                          <input
+                            type="text"
+                            value={newInventoryName}
+                            onChange={(e) => setNewInventoryName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') createInventoryItem(category.id)
+                              if (e.key === 'Escape') {
+                                setCreatingInventoryInCategory(null)
+                                setNewInventoryName('')
+                              }
+                            }}
+                            placeholder="New inventory item name..."
+                            className="w-full px-2 py-1 text-xs border rounded mb-1"
+                            autoFocus
+                            disabled={creatingIngredientLoading}
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => createInventoryItem(category.id)}
+                              className="flex-1 px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+                              disabled={!newInventoryName.trim() || creatingIngredientLoading}
+                            >
+                              Create
+                            </button>
+                            <button
+                              onClick={() => {
+                                setCreatingInventoryInCategory(null)
+                                setNewInventoryName('')
+                              }}
+                              className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                              disabled={creatingIngredientLoading}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Category Contents */}
+                      {isExpanded && (
+                        <div>
+                          {Object.entries(parents)
+                            .sort(([, a], [, b]) => {
+                              const nameA = a.parent?.name || ''
+                              const nameB = b.parent?.name || ''
+                              return nameA.localeCompare(nameB)
+                            })
+                            .map(([parentId, { parent, prepItems }]) => {
+                              const isParentExpanded = expandedParents.has(parentId)
+
+                              return (
+                                <div key={parentId}>
+                                  {/* Parent/Inventory Item Sub-Header */}
+                                  <div className="flex items-center gap-1 text-[10px] font-semibold text-gray-500 px-3 py-1 bg-gray-50">
+                                    <button
+                                      onClick={() => toggleParent(parentId)}
+                                      className="hover:bg-gray-200 rounded px-1"
+                                    >
+                                      {isParentExpanded ? '▼' : '▶'}
+                                    </button>
+                                    <span className="text-gray-400">🏷</span>
+                                    <span className="flex-1">{parent?.name || 'Unknown'}</span>
+                                    <button
+                                      onClick={() => setCreatingPrepUnderParent(parentId)}
+                                      className="ml-auto text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded px-1"
+                                      title="Create new prep item"
+                                      disabled={creatingIngredientLoading}
+                                    >
+                                      {creatingIngredientLoading && creatingPrepUnderParent === parentId ? (
+                                        <span className="animate-spin">⏳</span>
+                                      ) : (
+                                        '+'
+                                      )}
+                                    </button>
+                                  </div>
+
+                                  {/* Inline Prep Item Creation Form */}
+                                  {creatingPrepUnderParent === parentId && (
+                                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
+                                      <input
+                                        type="text"
+                                        value={newPrepName}
+                                        onChange={(e) => setNewPrepName(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') createPrepItem(parentId, category.id)
+                                          if (e.key === 'Escape') {
+                                            setCreatingPrepUnderParent(null)
+                                            setNewPrepName('')
+                                          }
+                                        }}
+                                        placeholder="New prep item name..."
+                                        className="w-full px-2 py-1 text-xs border rounded mb-1"
+                                        autoFocus
+                                        disabled={creatingIngredientLoading}
+                                      />
+                                      <div className="flex gap-1">
+                                        <button
+                                          onClick={() => createPrepItem(parentId, category.id)}
+                                          className="flex-1 px-2 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+                                          disabled={!newPrepName.trim() || creatingIngredientLoading}
+                                        >
+                                          Create & Link
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            setCreatingPrepUnderParent(null)
+                                            setNewPrepName('')
+                                          }}
+                                          className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                                          disabled={creatingIngredientLoading}
+                                        >
+                                          Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Prep Items (Clickable) */}
+                                  {isParentExpanded && (
+                                    <div>
+                                      {prepItems
+                                        .sort((a, b) => a.name.localeCompare(b.name))
+                                        .map(prep => (
+                                          <button
+                                            key={prep.id}
+                                            onClick={() => {
+                                              if (linkingModifier) {
+                                                linkIngredient(linkingModifier.groupId, linkingModifier.modId, prep.id)
+                                              }
+                                            }}
+                                            className="w-full text-left px-4 py-1 text-xs hover:bg-purple-100 rounded flex justify-between items-center"
+                                          >
+                                            <span>{prep.name}</span>
+                                            {prep.needsVerification && (
+                                              <span className="text-[9px] text-red-600 font-semibold">⚠ Unverified</span>
+                                            )}
+                                          </button>
+                                        ))
+                                      }
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              })()}
             </div>
           </div>
         )}
@@ -910,9 +1214,26 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
 
   // Helper to render child modifier groups recursively
   const renderChildGroup = (childGroup: ModifierGroup, depth: number = 1) => {
+    // Safety: prevent infinite recursion
+    if (depth > 10) {
+      console.error('Max nesting depth exceeded for group:', childGroup.id)
+      return (
+        <div className="ml-4 p-2 text-xs text-red-500 bg-red-50 rounded">
+          ⚠ Maximum nesting depth reached
+        </div>
+      )
+    }
+
     const isExpanded = expandedGroups.has(childGroup.id)
     const isEmpty = childGroup.modifiers.length === 0
-    const indentClass = `ml-${depth * 4} pl-3 border-l-2 border-indigo-200`
+    const depthIndent: Record<number, string> = {
+      0: 'ml-0',
+      1: 'ml-4',
+      2: 'ml-8',
+      3: 'ml-12',
+      4: 'ml-16',
+    }
+    const indentClass = `${depthIndent[depth] ?? 'ml-16'} pl-3 border-l-2 border-indigo-200`
 
     return (
       <div key={childGroup.id} className={`mt-2 ${indentClass}`}>
@@ -1039,6 +1360,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
                         placeholder="$"
                         className="w-14 px-2 py-1 text-xs border rounded"
                         step="0.01"
+                        min="0"
                       />
                     )}
                     <Button
@@ -1081,6 +1403,97 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
     !ingredients.find(i => i.ingredientId === lib.id) &&
     lib.name.toLowerCase().includes(ingredientSearch.toLowerCase())
   )
+
+  // Build hierarchy for dropdown
+  const buildHierarchy = () => {
+    const hierarchy: Record<string, {
+      category: IngredientCategory
+      parents: Record<string, {
+        parent: IngredientLibraryItem | null
+        prepItems: IngredientLibraryItem[]
+      }>
+    }> = {}
+
+    // Filter prep items based on search
+    const filteredPrepItems = modIngredientSearch.trim()
+      ? ingredientsLibrary.filter(
+          ing =>
+            ing.parentIngredientId &&
+            ing.name.toLowerCase().includes(modIngredientSearch.toLowerCase())
+        )
+      : ingredientsLibrary.filter(ing => ing.parentIngredientId)
+
+    // Get relevant category IDs
+    const relevantCategoryIds = modIngredientSearch.trim()
+      ? new Set(filteredPrepItems.map(p => p.categoryId).filter(Boolean) as string[])
+      : new Set(ingredientCategories.map(c => c.id))
+
+    // Initialize categories
+    ingredientCategories
+      .filter(cat => cat.isActive && (relevantCategoryIds.size === 0 || relevantCategoryIds.has(cat.id)))
+      .forEach(cat => {
+        hierarchy[cat.id] = { category: cat, parents: {} }
+      })
+
+    // Group prep items by category and parent
+    filteredPrepItems.forEach(prep => {
+      const catId = prep.categoryId || 'uncategorized'
+
+      if (!hierarchy[catId]) {
+        hierarchy[catId] = {
+          category: {
+            id: 'uncategorized',
+            code: 0,
+            name: 'Uncategorized',
+            icon: null,
+            color: null,
+            sortOrder: 999,
+            isActive: true,
+            ingredientCount: 0,
+          },
+          parents: {},
+        }
+      }
+
+      const parentId = prep.parentIngredientId || 'standalone'
+
+      if (!hierarchy[catId].parents[parentId]) {
+        const parentIng = ingredientsLibrary.find(i => i.id === prep.parentIngredientId)
+        hierarchy[catId].parents[parentId] = {
+          parent: parentIng || null,
+          prepItems: [],
+        }
+      }
+
+      hierarchy[catId].parents[parentId].prepItems.push(prep)
+    })
+
+    return hierarchy
+  }
+
+  // Auto-expand on search
+  useEffect(() => {
+    if (modIngredientSearch.trim()) {
+      const hierarchy = buildHierarchy()
+      const categoriesToExpand = new Set<string>()
+      const parentsToExpand = new Set<string>()
+
+      Object.entries(hierarchy).forEach(([catId, catData]) => {
+        if (Object.keys(catData.parents).length > 0) {
+          categoriesToExpand.add(catId)
+          Object.keys(catData.parents).forEach(parentId => {
+            parentsToExpand.add(parentId)
+          })
+        }
+      })
+
+      setExpandedCategories(categoriesToExpand)
+      setExpandedParents(parentsToExpand)
+    } else {
+      setExpandedCategories(new Set())
+      setExpandedParents(new Set())
+    }
+  }, [modIngredientSearch])
 
   if (!item) {
     return (
@@ -1449,6 +1862,7 @@ export function ItemEditor({ item, ingredientsLibrary, onItemUpdated, onToggle86
                                       placeholder="$"
                                       className="w-14 px-2 py-1 text-xs border rounded"
                                       step="0.01"
+                                      min="0"
                                     />
                                   )}
                                   <Button

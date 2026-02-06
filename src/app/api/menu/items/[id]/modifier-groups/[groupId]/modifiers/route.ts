@@ -34,6 +34,17 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
     }
 
+    // Validate inputs
+    if (!name || (typeof name === 'string' && name.trim() === '')) {
+      return NextResponse.json({ error: 'Modifier name is required' }, { status: 400 })
+    }
+    if (price !== undefined && (typeof price !== 'number' || !Number.isFinite(price))) {
+      return NextResponse.json({ error: 'Price must be a valid number' }, { status: 400 })
+    }
+    if (extraPrice !== undefined && (typeof extraPrice !== 'number' || !Number.isFinite(extraPrice))) {
+      return NextResponse.json({ error: 'Extra price must be a valid number' }, { status: 400 })
+    }
+
     // Get max sort order
     const maxSort = await db.modifier.aggregate({
       where: { modifierGroupId: groupId },
@@ -123,6 +134,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (!modifier) {
       return NextResponse.json({ error: 'Modifier not found' }, { status: 404 })
+    }
+
+    // Validate inputs
+    if (price !== undefined && typeof price !== 'number') {
+      const parsed = Number(price)
+      if (!Number.isFinite(parsed)) {
+        return NextResponse.json({ error: 'Price must be a valid number' }, { status: 400 })
+      }
+    }
+    if (extraPrice !== undefined && typeof extraPrice !== 'number') {
+      const parsed = Number(extraPrice)
+      if (!Number.isFinite(parsed)) {
+        return NextResponse.json({ error: 'Extra price must be a valid number' }, { status: 400 })
+      }
     }
 
     const updated = await db.modifier.update({

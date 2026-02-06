@@ -101,6 +101,11 @@ export interface Ingredient {
   portionUnit?: string | null
   batchYield?: number | null
   batchYieldUnit?: string | null
+
+  // Verification (items created from menu builder)
+  needsVerification?: boolean
+  verifiedAt?: string | null
+  verifiedBy?: string | null
 }
 
 interface IngredientLibraryProps {
@@ -514,6 +519,32 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
     }
   }
 
+  const handleVerifyIngredient = async (ingredient: Ingredient) => {
+    try {
+      const response = await fetch(`/api/ingredients/${ingredient.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          needsVerification: false,
+          verifiedAt: new Date().toISOString(),
+          // TODO: Add verifiedBy with employee ID when available
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        toast.error(error.error || 'Failed to verify ingredient')
+        return
+      }
+
+      toast.success('Ingredient verified')
+      await loadIngredients()
+    } catch (error) {
+      console.error('Error verifying ingredient:', error)
+      toast.error('Failed to verify ingredient')
+    }
+  }
+
   const handleAddPreparation = (parent: Ingredient) => {
     setPreparationParent(parent)
     setShowPreparationModal(true)
@@ -756,6 +787,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
           onDelete={handleDeleteIngredient}
           onAddPreparation={handleAddPreparation}
           onToggleActive={handleToggleActive}
+          onVerify={handleVerifyIngredient}
           onEditCategory={(cat) => handleEditCategory(cat as IngredientCategory)}
         />
       ) : (
@@ -774,6 +806,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
               onEditIngredient={handleEditIngredient}
               onDeleteIngredient={handleDeleteIngredient}
               onToggleActive={handleToggleActive}
+              onVerify={handleVerifyIngredient}
             />
           ))}
         </div>

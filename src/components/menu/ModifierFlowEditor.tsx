@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { toast } from '@/stores/toast-store'
 
 interface TieredPricingConfig {
   enabled: boolean
@@ -61,6 +62,9 @@ export function ModifierFlowEditor({
   })
   const [exclusionKey, setExclusionKey] = useState('')
 
+  // Debounce ref for saveChanges
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
   // Load group data when selectedGroupId changes
   useEffect(() => {
     if (!item?.id || !selectedGroupId) {
@@ -92,6 +96,7 @@ export function ModifierFlowEditor({
         }
       } catch (error) {
         console.error('Failed to load group data:', error)
+        toast.error('Failed to load group settings')
       } finally {
         setLoading(false)
       }
@@ -100,7 +105,7 @@ export function ModifierFlowEditor({
     loadGroupData()
   }, [item?.id, selectedGroupId, refreshKey])
 
-  const saveChanges = async () => {
+  const saveChanges = useCallback(async () => {
     if (!item?.id || !selectedGroupId) return
     // Don't save if user is still creating a new key
     if (exclusionKey === '__new__') return
@@ -117,11 +122,29 @@ export function ModifierFlowEditor({
 
       if (response.ok) {
         onGroupUpdated()
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        toast.error(errorData.error || 'Failed to save settings')
       }
     } catch (error) {
       console.error('Failed to save group settings:', error)
+      toast.error('Failed to save group settings')
     }
-  }
+  }, [item?.id, selectedGroupId, exclusionKey, tieredPricing, onGroupUpdated])
+
+  const debouncedSave = useCallback(() => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => {
+      saveChanges()
+    }, 300)  // 300ms debounce
+  }, [saveChanges])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    }
+  }, [])
 
   const handleTieredPricingToggle = (enabled: boolean) => {
     const newConfig = { ...tieredPricing, enabled }
@@ -262,6 +285,7 @@ export function ModifierFlowEditor({
             }
           } catch (error) {
             console.error('Failed to load group data:', error)
+            toast.error('Failed to refresh group data')
           } finally {
             setLoading(false)
           }
@@ -271,6 +295,7 @@ export function ModifierFlowEditor({
       }
     } catch (e) {
       console.error('Failed to update group settings:', e)
+      toast.error('Failed to update group settings')
     }
   }
 
@@ -285,6 +310,7 @@ export function ModifierFlowEditor({
       }
     } catch (e) {
       console.error('Failed to delete group:', e)
+      toast.error('Failed to delete modifier group')
     }
   }
 
@@ -324,17 +350,25 @@ export function ModifierFlowEditor({
               <input
                 type="number"
                 value={group.minSelections}
-                onChange={(e) => handleSettingChange({ minSelections: parseInt(e.target.value) || 0 })}
-                className="w-16 px-2 py-1.5 border rounded text-center text-sm"
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10)
+                  handleSettingChange({ minSelections: Number.isFinite(val) ? val : 0 })
+                }}
+                className="w-16 px-2 py-1.5 border rounded text-center text-sm disabled:opacity-50"
                 min="0"
+                disabled={exclusionKey === '__new__'}
               />
               <span className="text-gray-400">to</span>
               <input
                 type="number"
                 value={group.maxSelections}
-                onChange={(e) => handleSettingChange({ maxSelections: parseInt(e.target.value) || 1 })}
-                className="w-16 px-2 py-1.5 border rounded text-center text-sm"
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10)
+                  handleSettingChange({ maxSelections: Number.isFinite(val) ? Math.max(val, 1) : 1 })
+                }}
+                className="w-16 px-2 py-1.5 border rounded text-center text-sm disabled:opacity-50"
                 min="1"
+                disabled={exclusionKey === '__new__'}
               />
             </div>
             {/* Required Toggle */}
@@ -381,9 +415,9 @@ export function ModifierFlowEditor({
                   handleTieredPricingToggle(e.target.checked)
                   if (e.target.checked) {
                     // Auto-save on toggle
-                    setTimeout(saveChanges, 100)
+                    debouncedSave()
                   } else {
-                    saveChanges()
+                    debouncedSave()
                   }
                 }}
                 className="sr-only peer"
@@ -391,6 +425,10 @@ export function ModifierFlowEditor({
               <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
             </label>
           </div>
+
+          {exclusionKey === '__new__' && (
+            <p className="text-xs text-amber-600 mt-1">⚠ Finish entering exclusion key before changing other settings</p>
+          )}
 
           {tieredPricing.enabled && (
             <div className="space-y-4 pl-4 border-l-2 border-gray-200">
@@ -402,9 +440,10 @@ export function ModifierFlowEditor({
                     checked={tieredPricing.modes.flat_tiers}
                     onChange={(e) => {
                       handleModeToggle('flat_tiers', e.target.checked)
-                      setTimeout(saveChanges, 100)
+                      debouncedSave()
                     }}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    disabled={exclusionKey === '__new__'}
+                    className="w-4 h-4 text-blue-600 rounded disabled:opacity-50"
                   />
                   <span className="text-gray-700">Flat Tiers — Fixed price per tier</span>
                 </label>
@@ -414,9 +453,10 @@ export function ModifierFlowEditor({
                     checked={tieredPricing.modes.free_threshold}
                     onChange={(e) => {
                       handleModeToggle('free_threshold', e.target.checked)
-                      setTimeout(saveChanges, 100)
+                      debouncedSave()
                     }}
-                    className="w-4 h-4 text-blue-600 rounded"
+                    disabled={exclusionKey === '__new__'}
+                    className="w-4 h-4 text-blue-600 rounded disabled:opacity-50"
                   />
                   <span className="text-gray-700">Free Threshold — First N selections free</span>
                 </label>
@@ -433,7 +473,10 @@ export function ModifierFlowEditor({
                         type="number"
                         min="1"
                         value={tier.upTo}
-                        onChange={(e) => handleTierChange(index, 'upTo', parseInt(e.target.value) || 1)}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10)
+                          handleTierChange(index, 'upTo', Number.isFinite(val) ? Math.max(val, 1) : 1)
+                        }}
                         onBlur={saveChanges}
                         className="w-16 px-2 py-1 text-xs border border-gray-300 rounded"
                       />
@@ -444,7 +487,10 @@ export function ModifierFlowEditor({
                         min="0"
                         step="0.01"
                         value={tier.price}
-                        onChange={(e) => handleTierChange(index, 'price', parseFloat(e.target.value) || 0)}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value)
+                          handleTierChange(index, 'price', Number.isFinite(val) ? val : 0)
+                        }}
                         onBlur={saveChanges}
                         className="w-20 px-2 py-1 text-xs border border-gray-300 rounded"
                       />
@@ -452,7 +498,7 @@ export function ModifierFlowEditor({
                       <button
                         onClick={() => {
                           handleRemoveTier(index)
-                          setTimeout(saveChanges, 100)
+                          debouncedSave()
                         }}
                         className="ml-auto text-red-600 hover:text-red-700 text-xs"
                       >
@@ -463,7 +509,7 @@ export function ModifierFlowEditor({
                   <button
                     onClick={() => {
                       handleAddTier()
-                      setTimeout(saveChanges, 100)
+                      debouncedSave()
                     }}
                     className="text-xs text-blue-600 hover:text-blue-700 font-medium"
                   >
@@ -477,7 +523,10 @@ export function ModifierFlowEditor({
                       min="0"
                       step="0.01"
                       value={tieredPricing.flat_tiers?.overflowPrice || 0}
-                      onChange={(e) => handleOverflowPriceChange(parseFloat(e.target.value) || 0)}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        handleOverflowPriceChange(Number.isFinite(val) ? val : 0)
+                      }}
                       onBlur={saveChanges}
                       className="w-20 px-2 py-1 text-xs border border-gray-300 rounded"
                     />
@@ -495,7 +544,10 @@ export function ModifierFlowEditor({
                       type="number"
                       min="0"
                       value={tieredPricing.free_threshold?.freeCount || 0}
-                      onChange={(e) => handleFreeCountChange(parseInt(e.target.value) || 0)}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10)
+                        handleFreeCountChange(Number.isFinite(val) ? Math.max(val, 0) : 0)
+                      }}
                       onBlur={saveChanges}
                       className="w-16 px-2 py-1 text-xs border border-gray-300 rounded"
                     />
@@ -519,7 +571,7 @@ export function ModifierFlowEditor({
               onChange={(e) => {
                 setExclusionKey(e.target.value)
                 // Auto-save on change
-                setTimeout(saveChanges, 100)
+                debouncedSave()
               }}
               className="mt-2 block w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
@@ -555,17 +607,17 @@ export function ModifierFlowEditor({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.target as HTMLInputElement).value.trim()) {
                     setExclusionKey((e.target as HTMLInputElement).value.trim())
-                    setTimeout(saveChanges, 100)
+                    debouncedSave()
                   }
                 }}
                 onBlur={(e) => {
                   const val = e.target.value.trim()
                   if (val) {
                     setExclusionKey(val)
-                    setTimeout(saveChanges, 100)
+                    debouncedSave()
                   } else {
                     setExclusionKey('')
-                    setTimeout(saveChanges, 100)
+                    debouncedSave()
                   }
                 }}
               />

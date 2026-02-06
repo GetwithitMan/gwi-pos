@@ -13,6 +13,17 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const body = await request.json()
     const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey } = body
 
+    // Validate inputs
+    if (name !== undefined && typeof name === 'string' && name.trim() === '') {
+      return NextResponse.json({ error: 'Group name cannot be empty' }, { status: 400 })
+    }
+    if (minSelections !== undefined && (typeof minSelections !== 'number' || !Number.isFinite(minSelections) || minSelections < 0)) {
+      return NextResponse.json({ error: 'minSelections must be a non-negative number' }, { status: 400 })
+    }
+    if (maxSelections !== undefined && (typeof maxSelections !== 'number' || !Number.isFinite(maxSelections) || maxSelections < 1)) {
+      return NextResponse.json({ error: 'maxSelections must be at least 1' }, { status: 400 })
+    }
+
     // Verify group belongs to this item
     const group = await db.modifierGroup.findFirst({
       where: { id: groupId, menuItemId },
@@ -38,6 +49,20 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         modifiers: {
           where: { deletedAt: null, isActive: true },
           orderBy: { sortOrder: 'asc' },
+          include: {
+            ingredient: { select: { name: true } },
+            childModifierGroup: {
+              include: {
+                modifiers: {
+                  where: { deletedAt: null, isActive: true },
+                  orderBy: { sortOrder: 'asc' },
+                  include: {
+                    ingredient: { select: { name: true } },
+                  },
+                },
+              },
+            },
+          },
         },
       },
     })
@@ -53,7 +78,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         sortOrder: updated.sortOrder,
         tieredPricingConfig: updated.tieredPricingConfig,
         exclusionGroupKey: updated.exclusionGroupKey,
-        modifiers: updated.modifiers.map(m => ({
+        modifiers: updated.modifiers.map((m: any) => ({
           id: m.id,
           name: m.name,
           price: Number(m.price),
@@ -64,6 +89,37 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           extraPrice: Number(m.extraPrice),
           isDefault: m.isDefault,
           sortOrder: m.sortOrder,
+          isLabel: m.isLabel,
+          ingredientId: m.ingredientId,
+          ingredientName: m.ingredient?.name || null,
+          childModifierGroupId: m.childModifierGroupId,
+          childModifierGroup: m.childModifierGroup ? {
+            id: m.childModifierGroup.id,
+            name: m.childModifierGroup.name,
+            minSelections: m.childModifierGroup.minSelections,
+            maxSelections: m.childModifierGroup.maxSelections,
+            isRequired: m.childModifierGroup.isRequired,
+            allowStacking: m.childModifierGroup.allowStacking,
+            sortOrder: m.childModifierGroup.sortOrder,
+            tieredPricingConfig: m.childModifierGroup.tieredPricingConfig,
+            exclusionGroupKey: m.childModifierGroup.exclusionGroupKey,
+            modifiers: m.childModifierGroup.modifiers.map((cm: any) => ({
+              id: cm.id,
+              name: cm.name,
+              price: Number(cm.price),
+              allowNo: cm.allowNo,
+              allowLite: cm.allowLite,
+              allowOnSide: cm.allowOnSide,
+              allowExtra: cm.allowExtra,
+              extraPrice: Number(cm.extraPrice),
+              isDefault: cm.isDefault,
+              sortOrder: cm.sortOrder,
+              isLabel: cm.isLabel,
+              ingredientId: cm.ingredientId,
+              ingredientName: cm.ingredient?.name || null,
+              childModifierGroupId: cm.childModifierGroupId,
+            })),
+          } : null,
         })),
       },
     })

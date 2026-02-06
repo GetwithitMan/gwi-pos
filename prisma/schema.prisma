@@ -3980,6 +3980,12 @@ model Ingredient {
   last86dBy          String?                     // Employee ID who marked it
   showOnQuick86      Boolean   @default(false)   // Show in Quick 86 custom list at top
 
+  // ========== VERIFICATION (Items created from menu builder) ==========
+  // Items created from menu builder need confirmation from inventory team
+  needsVerification  Boolean   @default(false)   // Created from menu builder, needs review
+  verifiedAt         DateTime?                   // When verified by inventory team
+  verifiedBy         String?                     // Employee ID who verified
+
   // Daily Prep Count relations (for prep-style ingredients)
   trayConfigs              PrepTrayConfig[]             @relation("IngredientTrayConfigs")
   dailyCountItems          DailyPrepCountItem[]         @relation("IngredientDailyCountItems")

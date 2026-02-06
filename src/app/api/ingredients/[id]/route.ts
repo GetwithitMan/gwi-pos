@@ -85,6 +85,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         varianceHandling: ingredient.varianceHandling,
         varianceThreshold: ingredient.varianceThreshold ? Number(ingredient.varianceThreshold) : 10,
         countPrecision: ingredient.countPrecision || 'whole',
+        needsVerification: ingredient.needsVerification,
+        verifiedAt: ingredient.verifiedAt,
+        verifiedBy: ingredient.verifiedBy,
         inventoryItem: ingredient.inventoryItem ? {
           ...ingredient.inventoryItem,
           costPerUnit: ingredient.inventoryItem.costPerUnit ? Number(ingredient.inventoryItem.costPerUnit) : null,
@@ -177,6 +180,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       varianceThreshold,
       // Quick 86
       showOnQuick86,
+      // Verification
+      needsVerification,
+      verifiedAt,
+      verifiedBy,
     } = body
 
     // Check ingredient exists
@@ -278,6 +285,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (varianceThreshold !== undefined) updateData.varianceThreshold = varianceThreshold
     // Quick 86
     if (showOnQuick86 !== undefined) updateData.showOnQuick86 = showOnQuick86
+    // Verification
+    if (needsVerification !== undefined) updateData.needsVerification = needsVerification
+    if (verifiedAt !== undefined) updateData.verifiedAt = verifiedAt
+    if (verifiedBy !== undefined) updateData.verifiedBy = verifiedBy
 
     const ingredient = await db.ingredient.update({
       where: { id },
@@ -324,6 +335,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         varianceHandling: ingredient.varianceHandling,
         varianceThreshold: ingredient.varianceThreshold ? Number(ingredient.varianceThreshold) : 10,
         countPrecision: ingredient.countPrecision || 'whole',
+        needsVerification: ingredient.needsVerification,
+        verifiedAt: ingredient.verifiedAt,
+        verifiedBy: ingredient.verifiedBy,
       },
     })
   } catch (error) {
