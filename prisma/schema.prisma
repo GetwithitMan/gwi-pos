@@ -833,6 +833,16 @@ model ModifierGroup {
   isRequired    Boolean @default(false)
   allowStacking Boolean @default(false) // Allow selecting the same modifier multiple times
 
+  // Tiered pricing: define pricing tiers based on selection count
+  // mode: "flat_tiers" = all selections use tier price, "free_threshold" = first N free then use modifier's own price
+  // Example flat_tiers: { "mode": "flat_tiers", "tiers": [{ "upTo": 3, "price": 0 }, { "upTo": 4, "price": 0.75 }, { "upTo": null, "price": 1.50 }] }
+  // Example free_threshold: { "mode": "free_threshold", "tiers": [{ "upTo": 3, "price": 0 }] }
+  tieredPricingConfig Json?
+
+  // Exclusion: groups with the same key on the same item prevent duplicate modifier selections
+  // Example: Side Choice 1 and Side Choice 2 both have exclusionGroupKey: "side-choices"
+  exclusionGroupKey String?
+
   // Online Ordering Override
   hasOnlineOverride Boolean @default(false) // Enable separate modifier management for online orders
 

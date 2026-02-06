@@ -93,6 +93,64 @@ export const PRE_MODIFIER_CONFIG: Record<string, { label: string; cssClass: stri
   side: { label: 'Side', cssClass: 'mm-premod-side', activeClass: 'mm-premod-side active' },
 }
 
+// Tiered pricing helper: Calculate dynamic price based on selection position
+function getTieredPrice(
+  group: ModifierGroup,
+  modifier: Modifier,
+  selectionIndex: number  // 0-based: which selection is this? (0 = first, 1 = second, etc.)
+): number {
+  const config = group.tieredPricingConfig
+  if (!config?.enabled) return modifier.price  // No tiered pricing, use normal price
+
+  // Free threshold mode: first N selections are free
+  if (config.modes.free_threshold && config.free_threshold) {
+    if (selectionIndex < config.free_threshold.freeCount) {
+      return 0  // This selection is free
+    }
+    // Beyond free count, use modifier's individual price
+    // Fall through to check flat_tiers too if both are enabled
+    if (!config.modes.flat_tiers) return modifier.price
+  }
+
+  // Flat tiers mode: fixed price per tier
+  if (config.modes.flat_tiers && config.flat_tiers) {
+    const { tiers, overflowPrice } = config.flat_tiers
+    let remaining = selectionIndex
+    for (const tier of tiers) {
+      if (remaining < tier.upTo) {
+        return tier.price
+      }
+      remaining -= tier.upTo
+    }
+    return overflowPrice  // Beyond all tiers
+  }
+
+  return modifier.price  // Fallback
+}
+
+// Exclusion helper: Returns IDs of modifiers already selected in other groups with the same exclusion key
+function getExcludedModifierIds(
+  currentGroupId: string,
+  exclusionGroupKey: string | null | undefined,
+  allGroups: ModifierGroup[],
+  selections: Record<string, SelectedModifier[]>
+): Set<string> {
+  const excluded = new Set<string>()
+  if (!exclusionGroupKey) return excluded
+
+  // Find other groups with the same exclusion key
+  for (const group of allGroups) {
+    if (group.id === currentGroupId) continue
+    if (group.exclusionGroupKey !== exclusionGroupKey) continue
+
+    // All modifiers selected in those groups are excluded from this group
+    const groupSelections = selections[group.id] || []
+    groupSelections.forEach(sel => excluded.add(sel.id))
+  }
+
+  return excluded
+}
+
 export function useModifierSelections(
   item: MenuItem,
   modifierGroups: ModifierGroup[],
@@ -165,9 +223,10 @@ export function useModifierSelections(
     : 1.0
 
   // Helper to format modifier price
-  const formatModPrice = (storedPrice: number) => {
-    if (storedPrice === 0) return ''
-    const adjustedPrice = item.applyPourToModifiers ? storedPrice * pourMultiplier : storedPrice
+  const formatModPrice = (storedPrice: number, overridePrice?: number) => {
+    const price = overridePrice !== undefined ? overridePrice : storedPrice
+    if (price === 0) return ''
+    const adjustedPrice = item.applyPourToModifiers ? price * pourMultiplier : price
     if (!dualPricing.enabled) {
       return `+${formatCurrency(adjustedPrice)}`
     }
@@ -512,10 +571,21 @@ export function useModifierSelections(
 
   // Calculate total with pour multiplier
   const basePrice = item.price * pourMultiplier
-  const modifierTotal = getAllSelectedModifiers().reduce((sum, mod) => {
-    const modPrice = item.applyPourToModifiers ? mod.price * pourMultiplier : mod.price
-    return sum + modPrice
-  }, 0)
+  const modifierTotal = (() => {
+    let total = 0
+    for (const [groupId, groupSels] of Object.entries(selections)) {
+      const group = modifierGroups.find(g => g.id === groupId)
+        || Object.values(childGroups).find(g => g.id === groupId)
+      groupSels.forEach((sel, index) => {
+        const tieredPrice = group?.tieredPricingConfig?.enabled
+          ? getTieredPrice(group, { price: sel.price } as Modifier, index)
+          : sel.price
+        const adjustedPrice = item.applyPourToModifiers ? tieredPrice * pourMultiplier : tieredPrice
+        total += adjustedPrice
+      })
+    }
+    return total
+  })()
   const totalPrice = basePrice + modifierTotal + ingredientModTotal
 
   const activeChildGroups = getActiveChildGroups()
@@ -602,5 +672,11 @@ export function useModifierSelections(
     // Utilities
     formatModPrice,
     getGroupColor,
+    // Tiered pricing
+    getTieredPrice: (group: ModifierGroup, modifier: Modifier, selectionIndex: number) =>
+      getTieredPrice(group, modifier, selectionIndex),
+    // Exclusions
+    getExcludedModifierIds: (currentGroupId: string, exclusionGroupKey: string | null | undefined) =>
+      getExcludedModifierIds(currentGroupId, exclusionGroupKey, modifierGroups, selections),
   }
 }

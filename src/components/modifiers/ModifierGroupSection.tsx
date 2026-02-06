@@ -14,13 +14,15 @@ interface ModifierGroupSectionProps {
   isSelected: (groupId: string, modifierId: string) => boolean
   getSelectionCount: (groupId: string, modifierId: string) => number
   getSelectedPreModifier: (groupId: string, modifierId: string) => string | undefined
-  formatModPrice: (price: number) => string
+  formatModPrice: (price: number, overridePrice?: number) => string
   groupColor: string
   allowStacking?: boolean
   onDrillDown?: (childGroupId: string, childGroupName: string) => void
   isSpiritGroup?: boolean
   handleSpiritSelection?: (group: ModifierGroup, modifier: Modifier, tier: SpiritTier) => void
   getModifiersByTier?: (modifiers: Modifier[]) => Record<SpiritTier, Modifier[]>
+  getTieredPrice?: (group: ModifierGroup, modifier: Modifier, selectionIndex: number) => number
+  getExcludedModifierIds?: (currentGroupId: string, exclusionGroupKey: string | null | undefined) => Set<string>
 }
 
 export function ModifierGroupSection({
@@ -37,6 +39,8 @@ export function ModifierGroupSection({
   isSpiritGroup,
   handleSpiritSelection,
   getModifiersByTier,
+  getTieredPrice,
+  getExcludedModifierIds,
 }: ModifierGroupSectionProps) {
   const [isExpanded, setIsExpanded] = useState(false)
   const selectedCount = selections.length
@@ -130,6 +134,11 @@ export function ModifierGroupSection({
   }
 
   // Regular modifier group rendering
+  // Compute excluded modifiers (cross-group duplicate prevention)
+  const excludedIds = getExcludedModifierIds
+    ? getExcludedModifierIds(group.id, group.exclusionGroupKey)
+    : new Set<string>()
+
   return (
     <div className="mb-3">
       {/* Group header - clickable to expand */}
@@ -178,6 +187,12 @@ export function ModifierGroupSection({
           const preModifiers = (modifier.allowedPreModifiers as string[]) || []
           const hasChildGroup = !!modifier.childModifierGroupId
           const is86d = modifier.is86d || false
+          const isExcluded = excludedIds.has(modifier.id)
+
+          // Calculate dynamic price for tiered pricing
+          const displayPrice = getTieredPrice && group.tieredPricingConfig?.enabled
+            ? getTieredPrice(group, modifier, selections.length)  // Next selection index
+            : modifier.price
 
           // Determine button style based on selection count for stacking
           const isStacked = selectionCount > 1
@@ -185,6 +200,10 @@ export function ModifierGroupSection({
             if (is86d) {
               // 86'd items are always dimmed
               return { className: 'mm-btn opacity-40 cursor-not-allowed grayscale', style: undefined }
+            }
+            if (isExcluded) {
+              // Excluded items are grayed out (lighter than 86'd)
+              return { className: 'mm-btn opacity-30 cursor-not-allowed', style: undefined }
             }
             if (!selected) {
               return { className: 'mm-btn bg-white/7 text-slate-300 hover:bg-white/12', style: undefined }
@@ -216,6 +235,10 @@ export function ModifierGroupSection({
                     toast.warning(`${modifier.name} is 86'd (out of stock)`)
                     return
                   }
+                  if (isExcluded) {
+                    toast.warning(`${modifier.name} is already selected in another group`)
+                    return
+                  }
                   onToggle(group, modifier, undefined)
                   // Auto-drill down if modifier has child group and becomes selected
                   if (hasChildGroup && !selected && onDrillDown) {
@@ -227,17 +250,23 @@ export function ModifierGroupSection({
                 }}
                 className={`relative px-3 py-3 text-sm rounded-lg transition-all min-h-[48px] flex items-center justify-between ${buttonStyle.className}`}
                 style={buttonStyle.style}
-                title={`${modifier.name}${modifier.price > 0 ? ` (+${formatCurrency(modifier.price)})` : ''}${allowStacking ? ' (click again to add more)' : ''}${is86d ? ' (86\'d - out of stock)' : ''}`}
+                title={`${modifier.name}${displayPrice > 0 ? ` (+${formatCurrency(displayPrice)})` : ''}${allowStacking ? ' (click again to add more)' : ''}${is86d ? ' (86\'d - out of stock)' : ''}${isExcluded ? ' (already selected elsewhere)' : ''}`}
               >
                 <span className="flex-1 text-left">
                   <span className={is86d ? 'line-through' : ''}>
                     {modifier.name}
                   </span>
-                  {modifier.price > 0 && (
+                  {/* Price display with tiered pricing support */}
+                  {displayPrice === 0 && group.tieredPricingConfig?.enabled && modifier.price > 0 ? (
+                    <span className="ml-1 block text-xs text-green-400 font-semibold">FREE</span>
+                  ) : displayPrice > 0 ? (
                     <span className={`ml-1 block text-xs ${selected && !selectedPreMod ? 'text-white/80' : 'text-emerald-400'}`}>
-                      {formatModPrice(modifier.price)}
+                      {formatModPrice(modifier.price, displayPrice)}
+                      {displayPrice !== modifier.price && modifier.price > 0 && (
+                        <span className="line-through opacity-50 ml-1">{formatModPrice(modifier.price)}</span>
+                      )}
                     </span>
-                  )}
+                  ) : null}
                 </span>
 
                 {/* 86'd badge */}

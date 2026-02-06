@@ -76,6 +76,20 @@ export interface ModifierGroup {
   maxSelections: number
   isRequired: boolean
   allowStacking?: boolean  // Allow selecting the same modifier multiple times (e.g., 2x Fries for 2 side choices)
+  // Tiered pricing configuration
+  tieredPricingConfig?: {
+    enabled: boolean
+    modes: { flat_tiers: boolean; free_threshold: boolean }
+    flat_tiers?: {
+      tiers: Array<{ upTo: number; price: number }>
+      overflowPrice: number
+    }
+    free_threshold?: {
+      freeCount: number
+    }
+  } | null
+  // Exclusion group key for cross-group duplicate prevention
+  exclusionGroupKey?: string | null
   modifiers: Modifier[]
   // Modifier types for filtering/coloring
   modifierTypes?: string[]  // e.g., ['liquor'], ['food', 'combo'], etc.

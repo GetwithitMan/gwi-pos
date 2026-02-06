@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 
 interface RouteParams {
@@ -10,7 +11,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
-    const { name, minSelections, maxSelections, isRequired, sortOrder } = body
+    const { name, minSelections, maxSelections, isRequired, sortOrder, allowStacking, tieredPricingConfig, exclusionGroupKey } = body
 
     // Verify group belongs to this item
     const group = await db.modifierGroup.findFirst({
@@ -29,6 +30,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         maxSelections: maxSelections !== undefined ? maxSelections : undefined,
         isRequired: isRequired !== undefined ? isRequired : undefined,
         sortOrder: sortOrder !== undefined ? sortOrder : undefined,
+        allowStacking: allowStacking !== undefined ? allowStacking : undefined,
+        tieredPricingConfig: tieredPricingConfig !== undefined ? (tieredPricingConfig ?? Prisma.JsonNull) : undefined,
+        exclusionGroupKey: exclusionGroupKey !== undefined ? (exclusionGroupKey || null) : undefined,
       },
       include: {
         modifiers: {
@@ -45,7 +49,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         minSelections: updated.minSelections,
         maxSelections: updated.maxSelections,
         isRequired: updated.isRequired,
+        allowStacking: updated.allowStacking,
         sortOrder: updated.sortOrder,
+        tieredPricingConfig: updated.tieredPricingConfig,
+        exclusionGroupKey: updated.exclusionGroupKey,
         modifiers: updated.modifiers.map(m => ({
           id: m.id,
           name: m.name,

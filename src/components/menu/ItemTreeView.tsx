@@ -44,11 +44,12 @@ interface ItemTreeViewProps {
   item: MenuItem | null
   onSelectNode?: (nodeType: string, nodeId: string) => void
   selectedNode?: { type: string; id: string } | null
+  refreshKey?: number  // triggers data re-fetch when incremented
 }
 
 type ExpandedState = Record<string, boolean>
 
-export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewProps) {
+export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: ItemTreeViewProps) {
   const [itemOwnedGroups, setItemOwnedGroups] = useState<ModifierGroup[]>([])
   const [sharedGroups, setSharedGroups] = useState<ModifierGroup[]>([])
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
@@ -81,7 +82,7 @@ export function ItemTreeView({ item, onSelectNode, selectedNode }: ItemTreeViewP
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [item?.id])
+  }, [item?.id, refreshKey])
 
   const toggle = (key: string) => {
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }))

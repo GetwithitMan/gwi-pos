@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { ItemTreeView } from '@/components/menu/ItemTreeView'
 import { ItemEditor } from '@/components/menu/ItemEditor'
-import { ModifierGroupsEditor } from '@/components/menu/ModifierGroupsEditor'
+import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
@@ -208,6 +208,8 @@ export default function MenuManagementPage() {
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null)
   const [selectedItemForEditor, setSelectedItemForEditor] = useState<MenuItem | null>(null)
   const [selectedTreeNode, setSelectedTreeNode] = useState<{ type: string; id: string } | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
 
   // Refs for scroll containers
   const categoriesScrollRef = useRef<HTMLDivElement>(null)
@@ -218,7 +220,6 @@ export default function MenuManagementPage() {
     try {
       // Add cache-busting for fresh entertainment status
       const timestamp = Date.now()
-      console.log('[Menu] Loading menu data...', timestamp)
 
       const locationId = employee?.location?.id
       const [menuResponse, modifiersResponse, ingredientsResponse, printersResponse, kdsResponse] = await Promise.all([
@@ -237,14 +238,6 @@ export default function MenuManagementPage() {
 
       if (menuResponse.ok) {
         const data = await menuResponse.json()
-        // Log entertainment item statuses for debugging
-        const entertainmentItems = data.items.filter((i: MenuItem) => i.itemType === 'timed_rental')
-        if (entertainmentItems.length > 0) {
-          console.log('[Menu] Entertainment items:', entertainmentItems.map((i: MenuItem) => ({
-            name: i.name,
-            status: i.entertainmentStatus
-          })))
-        }
         // Filter out liquor and drinks categories - they belong in Liquor Builder
         const foodCategories = data.categories.filter((c: Category) =>
           c.categoryType !== 'liquor' && c.categoryType !== 'drinks'
@@ -280,46 +273,44 @@ export default function MenuManagementPage() {
     }
   }, [employee?.location?.id])
 
+  // Create ref to avoid stale closures
+  const loadMenuRef = useRef(loadMenu)
+  loadMenuRef.current = loadMenu
+
   // Initial load
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login?redirect=/menu')
       return
     }
-    loadMenu()
-  }, [isAuthenticated, router, loadMenu])
+    loadMenuRef.current()
+  }, [isAuthenticated, router])
 
   // Refresh menu when switching categories (especially for entertainment status updates)
   useEffect(() => {
-    if (selectedCategory && !isLoading) {
-      console.log('[Menu] Category changed, refreshing')
-      loadMenu()
+    if (selectedCategory) {
+      loadMenuRef.current()
     }
-  }, [selectedCategory, isLoading, loadMenu])
+  }, [selectedCategory])
 
   // Auto-refresh when viewing entertainment category (for real-time status updates)
   const selectedCategoryType = categories.find(c => c.id === selectedCategory)?.categoryType
   useEffect(() => {
     if (selectedCategoryType !== 'entertainment') return
 
-    console.log('[Menu] Entertainment category selected, starting auto-refresh')
-
     // Poll every 3 seconds for entertainment status changes
     const interval = setInterval(() => {
-      console.log('[Menu] Auto-refresh triggered')
-      loadMenu()
+      loadMenuRef.current()
     }, 3000)
 
     // Also refresh on visibility/focus changes
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('[Menu] Page visible, refreshing')
-        loadMenu()
+        loadMenuRef.current()
       }
     }
     const handleFocus = () => {
-      console.log('[Menu] Window focused, refreshing')
-      loadMenu()
+      loadMenuRef.current()
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
@@ -330,7 +321,7 @@ export default function MenuManagementPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [selectedCategoryType, loadMenu])
+  }, [selectedCategoryType])
 
   const handleSaveCategory = async (categoryData: Partial<Category>) => {
     try {
@@ -487,6 +478,7 @@ export default function MenuManagementPage() {
                   onClick={() => {
                     setSelectedCategory(category.id)
                     setSelectedItemForEditor(null)
+                    setSelectedGroupId(null)
                   }}
                   className={`shrink-0 px-3 py-1.5 rounded-lg border-2 transition-all flex items-center gap-1.5 text-sm ${
                     isSelected
@@ -581,6 +573,7 @@ export default function MenuManagementPage() {
                         router.push(`/timed-rentals?item=${item.id}`)
                       } else {
                         setSelectedItemForEditor(item)
+                        setSelectedGroupId(null)
                       }
                     }}
                     className={`shrink-0 px-3 py-1.5 rounded-lg border-2 transition-all text-left min-w-[120px] ${
@@ -632,6 +625,7 @@ export default function MenuManagementPage() {
         }`}>
           <ItemTreeView
             item={selectedItemForEditor}
+            refreshKey={refreshKey}
             selectedNode={selectedTreeNode}
             onSelectNode={(type, id) => setSelectedTreeNode({ type, id })}
           />
@@ -663,33 +657,33 @@ export default function MenuManagementPage() {
             <ItemEditor
               item={selectedItemForEditor}
               ingredientsLibrary={ingredientsLibrary}
+              refreshKey={refreshKey}
+              onSelectGroup={setSelectedGroupId}
               onItemUpdated={() => {
                 loadMenu()
-                const currentItem = selectedItemForEditor
-                setSelectedItemForEditor(null)
-                setTimeout(() => setSelectedItemForEditor(currentItem), 100)
+                setRefreshKey(prev => prev + 1)
               }}
               onToggle86={handleToggleItem86}
               onDelete={(itemId) => {
                 handleDeleteItem(itemId)
                 setSelectedItemForEditor(null)
+                setSelectedGroupId(null)
               }}
             />
           )}
         </div>
 
-        {/* RIGHT: Modifier Groups Builder (where you build and manage) */}
+        {/* RIGHT: Modifier Flow Editor */}
         <div className={`shrink-0 transition-all duration-300 overflow-hidden border-l ${
           selectedItemForEditor ? 'w-96' : 'w-0'
         }`}>
-          <ModifierGroupsEditor
+          <ModifierFlowEditor
             item={selectedItemForEditor}
-            ingredientsLibrary={ingredientsLibrary}
-            onUpdated={() => {
+            selectedGroupId={selectedGroupId}
+            refreshKey={refreshKey}
+            onGroupUpdated={() => {
               loadMenu()
-              const currentItem = selectedItemForEditor
-              setSelectedItemForEditor(null)
-              setTimeout(() => setSelectedItemForEditor(currentItem), 100)
+              setRefreshKey(prev => prev + 1)
             }}
           />
         </div>

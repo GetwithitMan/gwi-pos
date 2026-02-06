@@ -32,6 +32,8 @@ function formatModifierGroup(group: {
   isRequired: boolean
   allowStacking: boolean
   sortOrder: number
+  tieredPricingConfig: any
+  exclusionGroupKey: string | null
   modifiers: ModifierWithChild[]
 }, allGroups: Map<string, typeof group>): object {
   return {
@@ -42,6 +44,8 @@ function formatModifierGroup(group: {
     maxSelections: group.maxSelections,
     isRequired: group.isRequired,
     allowStacking: group.allowStacking,
+    tieredPricingConfig: group.tieredPricingConfig,
+    exclusionGroupKey: group.exclusionGroupKey,
     sortOrder: group.sortOrder,
     modifiers: group.modifiers.map(m => {
       const childGroup = m.childModifierGroupId ? allGroups.get(m.childModifierGroupId) : null
@@ -287,6 +291,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         minSelections: group.minSelections,
         maxSelections: group.maxSelections,
         isRequired: group.isRequired,
+        allowStacking: group.allowStacking,
+        tieredPricingConfig: group.tieredPricingConfig,
+        exclusionGroupKey: group.exclusionGroupKey,
         sortOrder: group.sortOrder,
         modifiers: group.modifiers.map(m => ({
           id: m.id,

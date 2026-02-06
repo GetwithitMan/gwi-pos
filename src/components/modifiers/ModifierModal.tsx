@@ -84,6 +84,8 @@ export function ModifierModal({
     activeChildGroups,
     formatModPrice,
     getGroupColor,
+    getTieredPrice,
+    getExcludedModifierIds,
   } = useModifierSelections(item, modifierGroups, editingItem, dualPricing, initialNotes)
 
   // Navigation state for hierarchical drill-down
@@ -233,6 +235,8 @@ export function ModifierModal({
                       isSpiritGroup={group.isSpiritGroup}
                       handleSpiritSelection={handleSpiritSelection}
                       getModifiersByTier={getModifiersByTier}
+                      getTieredPrice={getTieredPrice}
+                      getExcludedModifierIds={getExcludedModifierIds}
                     />
                   ))}
                 </div>
