@@ -5,10 +5,24 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
+import { PendingTabAnimation } from './PendingTabAnimation'
+import { MultiCardBadges } from './MultiCardBadges'
+
+interface TabCard {
+  id: string
+  cardType: string
+  cardLast4: string
+  cardholderName: string | null
+  isDefault: boolean
+  status: string
+  authAmount: number
+}
 
 interface Tab {
   id: string
   tabName: string
+  tabNickname?: string | null
+  tabStatus?: string | null  // pending_auth | open | no_card | closed
   orderNumber: number
   status: string
   employee: {
@@ -25,6 +39,7 @@ interface Tab {
     amount: number | null
     expiresAt: string
   } | null
+  cards?: TabCard[]
   openedAt: string
   paidAmount: number
 }
@@ -34,9 +49,10 @@ interface TabsPanelProps {
   onSelectTab: (tabId: string) => void
   onNewTab: () => void
   refreshTrigger?: number
+  pendingTabAnimation?: 'shimmer' | 'pulse' | 'spinner'
 }
 
-export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger }: TabsPanelProps) {
+export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, pendingTabAnimation = 'shimmer' }: TabsPanelProps) {
   const [tabs, setTabs] = useState<Tab[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'mine'>('all')
@@ -64,9 +80,29 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger }:
     ? tabs.filter(t => t.employee.id === employeeId)
     : tabs
 
+  // Sort: pending_auth tabs float to top
+  const sortedTabs = [...filteredTabs].sort((a, b) => {
+    const aPending = a.tabStatus === 'pending_auth' ? 0 : 1
+    const bPending = b.tabStatus === 'pending_auth' ? 0 : 1
+    if (aPending !== bPending) return aPending - bPending
+    return new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()
+  })
+
   const formatTime = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+
+  const getDisplayName = (tab: Tab): string => {
+    if (tab.tabNickname) return tab.tabNickname
+    if (tab.tabName) return tab.tabName
+    return `Tab #${tab.orderNumber}`
+  }
+
+  const getTabAnimationStatus = (tab: Tab): 'pending_auth' | 'approved' | 'declined' => {
+    if (tab.tabStatus === 'pending_auth') return 'pending_auth'
+    if (tab.tabStatus === 'no_card') return 'declined'
+    return 'approved'
   }
 
   return (
@@ -103,54 +139,96 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger }:
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {isLoading ? (
           <div className="text-center text-gray-500 py-4">Loading tabs...</div>
-        ) : filteredTabs.length === 0 ? (
+        ) : sortedTabs.length === 0 ? (
           <div className="text-center text-gray-500 py-8">
             <p>No open tabs</p>
             <p className="text-sm mt-1">Click + New Tab to start one</p>
           </div>
         ) : (
-          filteredTabs.map(tab => (
-            <Card
-              key={tab.id}
-              className="p-3 cursor-pointer hover:bg-gray-50 transition-colors"
-              onClick={() => onSelectTab(tab.id)}
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <h4 className="font-medium flex items-center gap-2">
-                    <span>🍺</span>
-                    {tab.tabName}
-                  </h4>
-                  <p className="text-xs text-gray-500">
-                    {tab.employee.name} • {formatTime(tab.openedAt)}
-                  </p>
-                </div>
-                <span className="font-bold text-lg">
-                  {formatCurrency(tab.total)}
-                </span>
-              </div>
+          sortedTabs.map(tab => {
+            const isPending = tab.tabStatus === 'pending_auth'
+            const hasNoCard = tab.tabStatus === 'no_card'
 
-              {/* Pre-auth info */}
-              {tab.hasPreAuth && tab.preAuth && (
-                <div className="flex items-center gap-1 text-xs text-blue-600 mb-2">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-                  </svg>
-                  {formatCardDisplay(tab.preAuth.cardBrand, tab.preAuth.last4)}
-                </div>
-              )}
-
-              {/* Item count */}
-              <div className="flex items-center justify-between text-sm text-gray-500">
-                <span>{tab.itemCount} item{tab.itemCount !== 1 ? 's' : ''}</span>
-                {tab.paidAmount > 0 && (
-                  <span className="text-green-600">
-                    Paid: {formatCurrency(tab.paidAmount)}
+            return (
+              <Card
+                key={tab.id}
+                className={`p-3 cursor-pointer transition-colors relative overflow-hidden
+                  ${isPending ? 'border-blue-200 bg-blue-50/30' : ''}
+                  ${hasNoCard ? 'border-red-200 bg-red-50/30' : ''}
+                  ${!isPending && !hasNoCard ? 'hover:bg-gray-50' : ''}
+                `}
+                onClick={() => onSelectTab(tab.id)}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="font-medium flex items-center gap-2">
+                      <span>🍺</span>
+                      <span className="truncate">{getDisplayName(tab)}</span>
+                    </h4>
+                    {/* Show cardholder name as subtitle if nickname is set */}
+                    {tab.tabNickname && tab.tabName && (
+                      <p className="text-xs text-gray-400 ml-7">{tab.tabName}</p>
+                    )}
+                    <p className="text-xs text-gray-500 ml-7">
+                      {tab.employee.name} • {formatTime(tab.openedAt)}
+                    </p>
+                  </div>
+                  <span className="font-bold text-lg">
+                    {formatCurrency(tab.total)}
                   </span>
+                </div>
+
+                {/* Pending/Declined animation */}
+                {(isPending || hasNoCard) && (
+                  <div className="mb-2 ml-7">
+                    <PendingTabAnimation
+                      variant={pendingTabAnimation}
+                      status={getTabAnimationStatus(tab)}
+                      cardType={tab.preAuth?.cardBrand}
+                      cardLast4={tab.preAuth?.last4}
+                    />
+                  </div>
                 )}
-              </div>
-            </Card>
-          ))
+
+                {/* No-card warning badge */}
+                {hasNoCard && (
+                  <div className="mb-2 ml-7">
+                    <span className="inline-flex items-center gap-1 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                      No card on file
+                    </span>
+                  </div>
+                )}
+
+                {/* Multi-card badges */}
+                {tab.cards && tab.cards.length > 0 ? (
+                  <div className="mb-2 ml-7">
+                    <MultiCardBadges cards={tab.cards} compact />
+                  </div>
+                ) : tab.hasPreAuth && tab.preAuth && !isPending && (
+                  <div className="flex items-center gap-1 text-xs text-blue-600 mb-2 ml-7">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                    </svg>
+                    {formatCardDisplay(tab.preAuth.cardBrand, tab.preAuth.last4)}
+                  </div>
+                )}
+
+                {/* Item count */}
+                <div className="flex items-center justify-between text-sm text-gray-500 ml-7">
+                  <span>{tab.itemCount} item{tab.itemCount !== 1 ? 's' : ''}</span>
+                  {tab.paidAmount > 0 && (
+                    <span className="text-green-600">
+                      Paid: {formatCurrency(tab.paidAmount)}
+                    </span>
+                  )}
+                </div>
+              </Card>
+            )
+          })
         )}
       </div>
     </div>

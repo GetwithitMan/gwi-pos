@@ -161,6 +161,9 @@ model Location {
   printJobs      PrintJob[]
   paymentReaders PaymentReader[]
 
+  // Order Cards (multi-card tabs)
+  orderCards OrderCard[]
+
   // Sync Audit
   syncAuditEntries SyncAuditEntry[]
 
@@ -1439,7 +1442,9 @@ model Order {
   seatVersion     Int      @default(0)  // Monotonic counter for concurrency control
   seatTimestamps  Json?                 // When each seat was added: { "1": "2026-02-01T10:00:00Z", ... }
 
-  tabName      String? // For bar tabs
+  tabName      String? // For bar tabs (auto-filled from cardholder name on chip)
+  tabNickname  String? // Editable display name (e.g., "John S - Beard")
+  tabStatus    String? // pending_auth | open | no_card | closed (null = not a tab)
 
   // Custom fields collected for this order type (e.g., phone, pickupTime, vehicleColor)
   customFields Json?
@@ -1480,6 +1485,8 @@ model Order {
   preAuthLast4     String? // Last 4 digits of held card
   preAuthCardBrand String? // Visa, Mastercard, etc.
   preAuthExpiresAt DateTime? // When the hold expires
+  preAuthRecordNo  String? // Datacap RecordNo token for capture/increment
+  preAuthReaderId  String? // Which reader did the pre-auth
 
   // Coursing (T013)
   currentCourse Int    @default(1) // Currently active course
@@ -1502,6 +1509,7 @@ model Order {
   payments  Payment[]
   discounts OrderDiscount[]
   voidLogs  VoidLog[]
+  cards     OrderCard[]
   syncAuditEntries SyncAuditEntry[]
   remoteVoidApprovals RemoteVoidApproval[]
 
@@ -1672,9 +1680,11 @@ model Payment {
   transactionId String?
 
   // Datacap Direct integration
-  paymentReaderId  String? // Which reader processed this payment
-  datacapRefNumber String? // Datacap reference for voids/refunds
-  entryMethod      String? // "Chip" | "Tap" | "Swipe" | "Manual"
+  paymentReaderId   String? // Which reader processed this payment
+  datacapRefNumber  String? // Datacap reference for voids/refunds
+  datacapRecordNo   String? // RecordNo token — needed for voids, adjustments, captures
+  datacapSequenceNo String? // SequenceNo for audit trail
+  entryMethod       String? // "Chip" | "Tap" | "Swipe" | "Manual"
 
   // Partial Approvals & Signature (Chargeback Defense)
   amountRequested  Decimal? // Original amount requested
@@ -4531,8 +4541,13 @@ model PaymentReader {
   port         Int    @default(8080) // Datacap default port
 
   // Datacap Configuration
-  merchantId String? // Datacap merchant ID if different per reader
-  terminalId String? // Datacap terminal ID (their concept, not ours)
+  merchantId        String? // Datacap merchant ID if different per reader
+  terminalId        String? // Datacap terminal ID (their concept, not ours)
+  lastSequenceNo    String  @default("0010010010") // Track Datacap SequenceNo per device
+  deviceType        String  @default("PAX")        // PAX | INGENICO — determines port/protocol
+  communicationMode String  @default("local")      // local | cloud | local_with_cloud_fallback | simulated
+  cloudUsername     String?                         // Basic Auth username (cloud mode)
+  cloudPassword     String?                         // Basic Auth password (cloud mode, encrypted)
 
   // Verification Settings
   verificationType String @default("SERIAL_HANDSHAKE") // "SERIAL_HANDSHAKE" | "IP_ONLY"
@@ -5462,4 +5477,48 @@ model DailyPrepCountTransaction {
   @@index([dailyCountId])
   @@index([type])
   @@index([createdAt])
+}
+
+// ============================================
+// ORDER CARDS — Multi-Card Tab Support (Datacap)
+// ============================================
+
+model OrderCard {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Reader that processed this card
+  readerId String
+
+  // Datacap tokens
+  recordNo String  // Datacap RecordNo token — needed for capture/increment/void
+
+  // Card info (from chip/tap data)
+  cardType       String  // VISA, MASTERCARD, AMEX, DISCOVER, etc.
+  cardLast4      String  // Last 4 digits
+  cardholderName String? // Name from chip data (auto-fills tab name)
+
+  // Authorization tracking
+  authAmount     Decimal // Current total authorized amount
+  isDefault      Boolean @default(false) // Default payment card for this tab
+
+  // Status: authorized | declined | captured | voided
+  status         String  @default("authorized")
+
+  // Capture details (at tab close)
+  capturedAmount Decimal?
+  capturedAt     DateTime?
+  tipAmount      Decimal?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([orderId])
+  @@index([locationId])
+  @@index([status])
 }

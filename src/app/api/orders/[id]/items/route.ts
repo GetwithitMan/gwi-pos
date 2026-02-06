@@ -305,6 +305,17 @@ export async function POST(
       return { updatedOrder, createdItems }
     })
 
+    // Fire-and-forget: check if bar tab needs auto-increment
+    if (result.updatedOrder.orderType === 'bar_tab' && result.updatedOrder.preAuthRecordNo) {
+      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/orders/${id}/auto-increment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: result.updatedOrder.employeeId }),
+      }).catch(err => {
+        console.warn('[Auto-Increment] Background check failed:', err)
+      })
+    }
+
     // Format response
     return NextResponse.json({
       id: result.updatedOrder.id,

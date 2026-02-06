@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getDatacapClient } from '@/lib/datacap/helpers'
 
 // POST - Ping payment reader to check connectivity
+// Uses EMVPadReset via DatacapClient — fast (2-3s) and confirms device is alive
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -11,6 +13,7 @@ export async function POST(
 
     const reader = await db.paymentReader.findFirst({
       where: { id, deletedAt: null },
+      include: { location: { select: { id: true } } },
     })
 
     if (!reader) {
@@ -20,20 +23,11 @@ export async function POST(
     const startTime = Date.now()
 
     try {
-      // Attempt to connect to the reader's device info endpoint
-      // Datacap Direct readers typically respond to /v1/device/info
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
-
-      const response = await fetch(`http://${reader.ipAddress}:${reader.port}/v1/device/info`, {
-        method: 'GET',
-        signal: controller.signal,
-      })
-
-      clearTimeout(timeoutId)
+      const client = await getDatacapClient(reader.locationId)
+      const response = await client.padReset(id)
 
       const responseTime = Date.now() - startTime
-      const isOnline = response.ok
+      const isOnline = response.cmdStatus === 'Success'
 
       // Update reader status
       await db.paymentReader.update({
@@ -46,22 +40,11 @@ export async function POST(
         },
       })
 
-      if (isOnline) {
-        const deviceInfo = await response.json().catch(() => null)
-        return NextResponse.json({
-          success: true,
-          isOnline: true,
-          responseTimeMs: responseTime,
-          deviceInfo,
-        })
-      } else {
-        return NextResponse.json({
-          success: false,
-          isOnline: false,
-          error: `Reader responded with status ${response.status}`,
-          responseTimeMs: responseTime,
-        })
-      }
+      return NextResponse.json({
+        success: isOnline,
+        isOnline,
+        responseTimeMs: responseTime,
+      })
     } catch (fetchError) {
       const responseTime = Date.now() - startTime
       const errorMessage = fetchError instanceof Error ? fetchError.message : 'Connection failed'

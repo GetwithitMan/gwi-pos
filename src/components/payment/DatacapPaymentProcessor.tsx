@@ -19,6 +19,8 @@ interface DatacapPaymentProcessorProps {
   }
   terminalId: string
   employeeId: string
+  locationId: string
+  tipMode?: 'suggestive' | 'prompt' | 'included' | 'none'
   onSuccess: (result: DatacapResult & { tipAmount: number }) => void
   onPartialApproval?: (result: DatacapResult & { tipAmount: number; remainingBalance: number }) => void
   onCancel: () => void
@@ -31,6 +33,8 @@ export function DatacapPaymentProcessor({
   tipSettings,
   terminalId,
   employeeId,
+  locationId,
+  tipMode: externalTipMode,
   onSuccess,
   onPartialApproval,
   onCancel,
@@ -58,6 +62,7 @@ export function DatacapPaymentProcessor({
   } = useDatacap({
     terminalId,
     employeeId,
+    locationId,
     onSuccess: (result) => {
       // Check for partial approval
       if (result.isPartialApproval) {
@@ -94,11 +99,11 @@ export function DatacapPaymentProcessor({
   }
 
   const handleStartPayment = async () => {
-    const result = await processPayment({
+    await processPayment({
       orderId,
       amount: totalToCharge,
       tipAmount,
-      tranType: 'Sale',
+      tipMode: externalTipMode || 'none',
     })
 
     // Success is handled via onSuccess callback

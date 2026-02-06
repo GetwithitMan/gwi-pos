@@ -76,6 +76,19 @@ export interface PaymentSettings {
   datacapMerchantId?: string
   readerTimeoutSeconds: number     // Timeout for reader response (default: 30)
   autoSwapOnFailure: boolean       // Automatically offer reader swap when offline (default: true)
+
+  // Bar Tab Pre-Auth (auto-increment)
+  incrementThresholdPercent: number  // Fire IncrementalAuth when tab reaches this % of auth (default: 80)
+  incrementAmount: number            // Fixed increment amount in dollars (default: 25)
+  autoIncrementEnabled: boolean      // Enable background auto-increment (default: true)
+  maxTabAlertAmount: number          // Alert manager when tab exceeds this amount (default: 500)
+
+  // Quick Pay / Tip Configuration
+  quickPayEnabled: boolean                   // Enable Quick Pay single-transaction mode (default: true)
+  tipDollarAmountThreshold: number           // Under this amount, show dollar tips (default: 15)
+  tipDollarSuggestions: number[]             // Dollar suggestions for under-threshold (default: [1, 2, 3])
+  tipPercentSuggestions: number[]            // Percent suggestions for over-threshold (default: [18, 20, 25])
+  requireCustomForZeroTip: boolean           // Must tap Custom to skip tip (default: true)
 }
 
 export interface LoyaltySettings {
@@ -313,6 +326,17 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     testMode: true,
     readerTimeoutSeconds: 30,
     autoSwapOnFailure: true,
+    // Bar Tab Pre-Auth
+    incrementThresholdPercent: 80,
+    incrementAmount: 25,
+    autoIncrementEnabled: true,
+    maxTabAlertAmount: 500,
+    // Quick Pay / Tips
+    quickPayEnabled: true,
+    tipDollarAmountThreshold: 15,
+    tipDollarSuggestions: [1, 2, 3],
+    tipPercentSuggestions: [18, 20, 25],
+    requireCustomForZeroTip: true,
   },
   loyalty: {
     enabled: false,
