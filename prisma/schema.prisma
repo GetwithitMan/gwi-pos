@@ -4004,8 +4004,10 @@ model Ingredient {
   // Stock adjustment history
   stockAdjustments IngredientStockAdjustment[]
 
-  @@unique([locationId, name])
+  // Note: No @@unique on name — soft deletes conflict with DB-level unique constraints.
+  // Uniqueness enforced at API level (checks deletedAt: null) to allow re-creation after soft delete.
   @@index([locationId])
+  @@index([locationId, name])
   @@index([categoryId])
   @@index([parentIngredientId])
 }

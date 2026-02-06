@@ -810,10 +810,10 @@ function LiquorBuilderContent() {
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => router.push('/modifiers')}
+                        onClick={() => router.push('/menu')}
                         className="w-full"
                       >
-                        Manage in Modifiers Admin →
+                        Manage in Menu Builder →
                       </Button>
                     </div>
                   </div>
@@ -838,9 +838,9 @@ function LiquorBuilderContent() {
                           </div>
                           <Button
                             size="sm"
-                            onClick={() => router.push(`/modifiers?group=${selectedModifierGroup.id}`)}
+                            onClick={() => router.push('/menu')}
                           >
-                            Edit in Admin
+                            Edit in Menu Builder
                           </Button>
                         </div>
 

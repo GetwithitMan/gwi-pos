@@ -12,6 +12,7 @@ import { ItemEditor } from '@/components/menu/ItemEditor'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
+import { io, Socket } from 'socket.io-client'
 
 // Category types for reporting and item builder selection
 const CATEGORY_TYPES = [
@@ -241,7 +242,7 @@ export default function MenuManagementPage() {
       const timestamp = Date.now()
 
       const locationId = employee?.location?.id
-      const [menuResponse, modifiersResponse, ingredientsResponse, ingredientCategoriesResponse, printersResponse, kdsResponse] = await Promise.all([
+      const [menuResponse, ingredientsResponse, ingredientCategoriesResponse, printersResponse, kdsResponse] = await Promise.all([
         fetch(`/api/menu?_t=${timestamp}`, {
           cache: 'no-store',
           headers: {
@@ -249,7 +250,6 @@ export default function MenuManagementPage() {
             'Pragma': 'no-cache',
           }
         }),
-        fetch('/api/menu/modifiers'),
         locationId ? fetch(`/api/ingredients?locationId=${locationId}`) : Promise.resolve(null),
         locationId ? fetch(`/api/ingredient-categories?locationId=${locationId}`) : Promise.resolve(null),
         locationId ? fetch(`/api/hardware/printers?locationId=${locationId}`) : Promise.resolve(null),
@@ -267,10 +267,9 @@ export default function MenuManagementPage() {
         setItems([...data.items])
       }
 
-      if (modifiersResponse.ok) {
-        const modData = await modifiersResponse.json()
-        setModifierGroups(modData.modifierGroups)
-      }
+      // Shared modifier groups are deprecated — modifiers are now item-owned
+      // ItemModal will see an empty list; modifier management is in ItemEditor
+      setModifierGroups([])
 
       if (ingredientsResponse?.ok) {
         const ingData = await ingredientsResponse.json()
@@ -354,6 +353,27 @@ export default function MenuManagementPage() {
       window.removeEventListener('focus', handleFocus)
     }
   }, [selectedCategoryType])
+
+  // Socket.io for real-time ingredient library updates
+  useEffect(() => {
+    const socket: Socket = io()
+
+    socket.on('ingredient:library-update', (data: { ingredient: IngredientLibraryItem }) => {
+      setIngredientsLibrary(prev => {
+        // Check if ingredient already exists (prevent duplicates)
+        const exists = prev.some(ing => ing.id === data.ingredient.id)
+        if (exists) return prev
+
+        // Add new ingredient to library
+        return [...prev, data.ingredient]
+      })
+    })
+
+    return () => {
+      socket.off('ingredient:library-update')
+      socket.disconnect()
+    }
+  }, [])
 
   // Handler for cross-item modifier group copy
   const handleCopyModifierGroup = async (groupId: string, sourceItemId: string, targetItemId: string, groupName: string) => {
@@ -496,6 +516,27 @@ export default function MenuManagementPage() {
       toast.error('Failed to update 86 status')
     }
   }
+
+  const handleIngredientCreated = useCallback((ingredient: IngredientLibraryItem) => {
+    // Optimistic local update
+    setIngredientsLibrary(prev => {
+      const exists = prev.some(ing => ing.id === ingredient.id)
+      if (exists) return prev
+      return [...prev, ingredient]
+    })
+
+    // Dispatch socket event to other terminals
+    fetch('/api/broadcast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event: 'ingredient:library-update',
+        data: { ingredient },
+      }),
+    }).catch(err => {
+      console.error('Failed to broadcast ingredient update:', err)
+    })
+  }, [])
 
   const filteredItems = items.filter(item => item.categoryId === selectedCategory)
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
@@ -768,6 +809,7 @@ export default function MenuManagementPage() {
                 loadMenu()
                 setRefreshKey(prev => prev + 1)
               }}
+              onIngredientCreated={handleIngredientCreated}
               onToggle86={handleToggleItem86}
               onDelete={(itemId) => {
                 handleDeleteItem(itemId)

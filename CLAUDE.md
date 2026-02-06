@@ -927,6 +927,157 @@ model DeviceSession {
 
 ## Recent Changes
 
+### Modifier Cascade Delete & Orphan Cleanup (Skill 210 - Feb 2026)
+Safe recursive deletion of modifier groups with preview and automatic orphan cleanup.
+
+**Features:**
+- `?preview=true` mode shows what will be deleted before committing
+- `collectDescendants()` recursively walks child modifier groups
+- Automatic orphan cleanup: stale `childModifierGroupId` references auto-cleared on GET
+- Soft deletes throughout (sets `deletedAt`, never hard deletes)
+
+**Key Files:**
+- `src/app/api/menu/items/[id]/modifier-groups/[groupId]/route.ts` - DELETE with cascade + preview
+- `src/app/api/menu/items/[id]/modifier-groups/route.ts` - GET with orphan detection
+
+**Skill Doc:** `docs/skills/210-MODIFIER-CASCADE-DELETE.md`
+
+### Hierarchical Ingredient Picker (Skill 211 - Feb 2026)
+Unified hierarchical picker for both ingredient assignment and modifier ingredient linking.
+
+**Architecture:**
+- Shared `buildHierarchy(searchTerm)` function generates Category → Parent → Prep Item tree
+- Green picker: Item ingredient assignment (top of ItemEditor)
+- Purple picker: Modifier ingredient linking (inline in modifier rows)
+- Both pickers support inline creation of inventory items and prep items
+
+**Features:**
+- Expand/collapse categories and parent ingredients
+- Search filters hierarchy while keeping structure
+- "+" buttons on categories and parents for inline creation
+- Auto-link to modifier after creating prep item (purple picker)
+- Auto-add to ingredients after creating prep item (green picker)
+
+**Key Files:**
+- `src/components/menu/ItemEditor.tsx` - Both pickers, `buildHierarchy()` function
+
+**Skill Doc:** `docs/skills/211-HIERARCHICAL-INGREDIENT-PICKER.md`
+
+### Per-Modifier Print Routing (Skill 212 - Feb 2026)
+Admin UI and API for routing individual modifiers to specific printers.
+
+**Schema Fields (already existed in Prisma, now wired):**
+```prisma
+model Modifier {
+  printerRouting  String   @default("follow")  // "follow" | "also" | "only"
+  printerIds      Json?                         // Array of printer IDs
+}
+```
+
+**Routing Modes:**
+| Mode | Behavior |
+|------|----------|
+| `follow` | Modifier prints wherever parent item prints (default) |
+| `also` | Prints to item's printer(s) AND modifier's own printers |
+| `only` | Prints ONLY to modifier's own printers (not item's) |
+
+**What's Done (Menu Domain):**
+- Admin UI: printer button on each modifier row in ItemEditor
+- API: GET/POST/PUT return and accept `printerRouting` + `printerIds`
+
+**What's Pending (Hardware Domain - Skill 103 Phase 3):**
+- Print dispatch integration — resolving modifier routing at ticket generation time
+- Context line on modifier-only tickets ("FOR: {item name}")
+
+**Key Files:**
+- `src/components/menu/ItemEditor.tsx` - Printer routing UI
+- `src/app/api/menu/items/[id]/modifier-groups/[groupId]/modifiers/route.ts` - API support
+
+**Cross-Domain:** See `docs/changelogs/HARDWARE-CHANGELOG.md` for Hardware team notes
+**Skill Doc:** `docs/skills/212-PER-MODIFIER-PRINT-ROUTING.md`
+
+### Real-Time Ingredient Library (Skill 213 - Feb 2026)
+Socket.io cross-terminal sync and optimistic local updates for ingredient creation.
+
+**Problem:** Creating ingredients inline in ItemEditor required page refresh; other terminals never saw changes.
+
+**Solution:**
+- Optimistic local update: `setIngredientsLibrary(prev => [...prev, newIngredient])` for instant UI
+- Socket dispatch: `dispatchIngredientLibraryUpdate()` broadcasts to location room
+- Menu page listener: `socket.on('ingredient:updated')` triggers `loadMenu()` on other terminals
+
+**Key Files:**
+- `src/components/menu/ItemEditor.tsx` - `onIngredientCreated` callback
+- `src/app/(admin)/menu/page.tsx` - Socket listener, `handleIngredientCreated`
+- `src/lib/socket-dispatch.ts` - `dispatchIngredientLibraryUpdate()`
+- `src/app/api/internal/socket/broadcast/route.ts` - `INGREDIENT_LIBRARY_UPDATE` type
+- `src/app/api/ingredients/route.ts` - Fire-and-forget dispatch on POST
+
+**Skill Doc:** `docs/skills/213-REALTIME-INGREDIENT-LIBRARY.md`
+
+### Ingredient Verification Visibility (Skill 214 - Feb 2026)
+Full verification visibility across ItemEditor — unverified badges, category warnings, recursive reverse linking.
+
+**Features:**
+- Ingredient rows show "Unverified" badge when `needsVerification: true`
+- Category headers show count of unverified items within
+- `ingredientToModifiers` useMemo recurses into child modifier groups for complete reverse linking
+
+**API Change:**
+- `GET /api/menu/items/[id]/ingredients` now returns `needsVerification` field
+
+**Key Files:**
+- `src/components/menu/ItemEditor.tsx` - Badge display, category warnings, recursive useMemo
+- `src/app/api/menu/items/[id]/ingredients/route.ts` - Returns `needsVerification`
+
+**Skill Doc:** `docs/skills/214-INGREDIENT-VERIFICATION-VISIBILITY.md`
+
+### Unified Modifier Inventory Deduction (Skill 215 - Feb 2026)
+Extended the inventory deduction engine so modifiers linked via Menu Builder (`Modifier.ingredientId`) now trigger inventory deductions at payment time. Previously, only legacy `ModifierInventoryLink` records were checked, causing silent inventory gaps.
+
+**Two-Path Fallback:**
+- **Path A (Primary):** `ModifierInventoryLink` — legacy manual links. Takes precedence with `continue`.
+- **Path B (Fallback):** `Modifier.ingredientId → Ingredient.inventoryItemId → InventoryItem` — Menu Builder links.
+
+**Functions Updated (9 changes across 3 functions + PMIX):**
+- `deductInventoryForOrder()` — include tree, "NO" detection, modifier loop
+- `deductInventoryForVoidedItem()` — include tree, "NO" detection, modifier loop
+- `calculateTheoreticalUsage()` — include tree, "NO" detection, modifier loop
+- PMIX report (`/api/reports/pmix/route.ts`) — include tree, cost calculation
+
+**Edge Cases:**
+- Both paths exist → Path A wins (checked first, `continue` skips Path B)
+- Prep-only ingredients (no `inventoryItemId`) → silently skipped
+- `standardQuantity` null → defaults to 1
+- Pre-modifier multipliers (NO=0, LITE=0.5, EXTRA=2.0) → apply to both paths
+
+**Key Files:**
+- `src/lib/inventory-calculations.ts` - Core deduction engine with fallback
+- `src/app/api/reports/pmix/route.ts` - Food cost calculation with fallback
+
+**Skill Doc:** `docs/skills/215-UNIFIED-MODIFIER-INVENTORY-DEDUCTION.md`
+
+### Ingredient-Modifier Connection Visibility (Skill 216 - Feb 2026)
+Bidirectional visibility between ingredients and the modifiers that reference them via `Modifier.ingredientId`.
+
+**Features:**
+- "Connected" badge (purple) on ingredients linked to modifiers
+- Expandable details panel showing modifier name, group name, and menu items
+- Dual-path menu item resolution (item-owned groups + legacy junction table)
+- `linkedModifierCount` exposed in list API for badge display
+
+**API Changes:**
+- `GET /api/ingredients/[id]` — Added `linkedModifiers` include with dual-path menu item dedup via Map
+- `GET /api/ingredients` — Added `_count.linkedModifiers` for badge counts
+
+**Key Files:**
+- `src/app/api/ingredients/[id]/route.ts` - Dual-path linkedModifiers query
+- `src/app/api/ingredients/route.ts` - `_count.linkedModifiers` for badge count
+- `src/components/ingredients/IngredientHierarchy.tsx` - Connected badge, linked panel
+- `src/components/ingredients/IngredientLibrary.tsx` - `linkedModifierCount` in interface
+
+**Skill Doc:** `docs/skills/216-INGREDIENT-MODIFIER-CONNECTION-VISIBILITY.md`
+
 ### Quick Stock Adjustment with Cost Tracking (Skill 127 - Feb 2026)
 Manager-facing page for rapid inventory adjustments with full audit trail.
 
@@ -1175,7 +1326,7 @@ MenuItem
 - Recursive rendering in ModifiersPanel with indentation
 - Pre-modifier toggles: No, Lite, Extra on each modifier
 - Ingredient linking for inventory tracking
-- Legacy group cleanup section (for old shared groups)
+- Legacy shared groups fully removed (Skill 210 cleanup completed)
 
 **API Changes:**
 - `GET /api/menu/items/[id]/modifier-groups` - Returns nested child groups recursively
@@ -1356,7 +1507,22 @@ Entertainment menu items can now be placed directly on the floor plan builder:
 
 ## Upcoming Work (TODO)
 
-### Priority 1: Bar Tabs Screen
+> **See also:** `/docs/PM-TASK-BOARD.md` for the cross-domain task board with granular tasks assigned to specific PMs.
+
+### Priority 1: POS Front-End Ordering UI Lift
+The POS ordering experience needs a comprehensive UI overhaul. **Assigned to: PM: Menu**
+- [ ] ModifierModal flow redesign — better navigation through modifier groups, stacking, child groups
+- [ ] Item selection UX — category/item grid layout, touch target sizing, visual hierarchy
+- [ ] Order summary panel polish — item display, modifier depth formatting, quantity controls
+- [ ] Glassmorphism consistency — ensure dark glass theme is uniform across all POS order screens
+- [ ] Pre-modifier (No/Lite/Extra) interaction — clear visual feedback, easy toggle
+- [ ] Spirit tier quick-select polish — Call/Prem/Top buttons on cocktails
+- [ ] Pour size selector polish — Shot/Dbl/Tall/Shrt on liquor items
+- [ ] Combo step flow UX — step progress, back navigation, clear completion state
+- [ ] Mobile/tablet responsive touch targets — ensure all buttons are touch-friendly on iPad
+- [ ] Animation/transition cleanup — smooth, consistent, no jank
+
+### Priority 2: Bar Tabs Screen
 The tabs panel needs work for bartender workflow:
 - [ ] Improve tab list UI in OpenOrdersPanel
 - [ ] Quick tab creation from floor plan
@@ -1364,7 +1530,7 @@ The tabs panel needs work for bartender workflow:
 - [ ] Tab transfer between employees
 - [ ] Tab merge functionality
 
-### Priority 2: Closed Orders Management
+### Priority 3: Closed Orders Management
 Need ability to view and manage closed/paid orders:
 - [ ] Closed orders list view with search/filter
 - [ ] View closed order details
@@ -1373,13 +1539,13 @@ Need ability to view and manage closed/paid orders:
 - [ ] Reprint receipts
 - [ ] Reopen closed orders (with reason)
 
-### Priority 3: Kitchen/Print Integration
+### Priority 4: Kitchen/Print Integration
 - [ ] Actually send tickets to printers (currently just TODO in send route)
 - [x] Kitchen display updates via WebSocket (Socket.io implemented - see `src/lib/socket-server.ts`)
 - [ ] Print route configuration
 - [ ] PrintTemplateFactory for template-based ticket generation
 
-### Priority 4: Tip Guide Basis Configuration
+### Priority 5: Tip Guide Basis Configuration
 Servers are tipped less when discounts/promos/gift cards are applied because tip suggestions are based on net total.
 - [ ] Add `tipGuideSettings` to Location (basis: net_total | pre_discount | gross_subtotal | custom)
 - [ ] Create tip calculation function that respects settings
@@ -1388,7 +1554,7 @@ Servers are tipped less when discounts/promos/gift cards are applied because tip
 - [ ] Show explanation text: "(on $X pre-discount)"
 - **Spec:** `docs/features/tip-guide-basis.md`
 
-### Priority 5: Inventory System Refinements
+### Priority 6: Inventory System Refinements
 - [ ] **Unify Liquor + Food Inventory Engines**: Currently `processLiquorInventory()` (for BottleProduct/RecipeIngredient)
       runs separately from `deductInventoryForOrder()` (for MenuItemRecipe/ModifierInventoryLink).
       Migrate liquor cocktail recipes into the unified MenuItemRecipe structure so one order = one deduction pass.
@@ -1397,7 +1563,7 @@ Servers are tipped less when discounts/promos/gift cards are applied because tip
 - [ ] Low stock alerts and reorder point notifications
 - [ ] Vendor purchase order integration
 
-### Priority 6: Tag-Based Routing Completion
+### Priority 7: Tag-Based Routing Completion
 - [x] Station model with tag-based pub/sub routing
 - [x] OrderRouter with primaryItems/referenceItems separation
 - [x] Socket.io real-time KDS updates
@@ -1405,7 +1571,7 @@ Servers are tipped less when discounts/promos/gift cards are applied because tip
 - [ ] PitBossDashboard for entertainment expo
 - [ ] Migration script testing (`scripts/migrate-routing.ts`)
 
-### Priority 7: Ingredient System Enhancements
+### Priority 8: Ingredient System Enhancements
 - [x] **Checkbox Selection in Hierarchy View**: Added checkbox multi-select to hierarchy view
   - [x] Checkboxes on each ingredient row (base + child prep items)
   - [x] Category-level "Select All" with indeterminate state
@@ -1422,7 +1588,7 @@ Servers are tipped less when discounts/promos/gift cards are applied because tip
       - Swap group configuration
       (Some of this may already exist in ModifierGroup/Modifier models)
 
-### Priority 8: Table Capacity/Seats Sync (Database Integrity)
+### Priority 9: Table Capacity/Seats Sync (Database Integrity)
 The `Table.capacity` column can drift from actual `Seat` count if updated via direct DB edit or third-party API.
 This caused the "8 seats for two 4-tops" bug and can recur without proper safeguards.
 
@@ -1475,6 +1641,187 @@ toast.error('Connection lost', 8000)
 - Click to dismiss early
 - Stacks multiple toasts vertically
 - Color-coded by type (green/red/yellow/blue)
+
+## Pre-Launch Test Checklist
+
+> **MANDATORY:** This checklist must be maintained and reviewed during every PM EOD session.
+> New tests are added as features are built. Nothing ships until all tests pass.
+> Mark tests with date completed when verified on live POS.
+
+### How to Use This Checklist
+1. PM adds new test items as features are completed during sessions
+2. During EOD, PM reviews this list and adds any tests from the day's work
+3. Before go-live, every item must have a completion date
+4. Tests marked ❌ are known failures — must be resolved before launch
+
+---
+
+### 1. Order Flow & Payment
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 1.1 | Create dine-in order, add items, send to kitchen | Open table → add items → Send → verify KDS shows ticket | ⬜ |
+| 1.2 | Create bar tab order | Bar Tab → enter name → add items → Send | ⬜ |
+| 1.3 | Create takeout order | Takeout → add items → verify payment required before send | ⬜ |
+| 1.4 | Pay with cash (exact) | Add items → Pay → Cash → enter exact amount → verify receipt | ⬜ |
+| 1.5 | Pay with cash (change due) | Pay with more than total → verify change displayed | ⬜ |
+| 1.6 | Pay with card | Add items → Pay → Card → verify payment completes | ⬜ |
+| 1.7 | Split payment (even split) | Pay → Split → Even → 2 ways → verify both payments | ⬜ |
+| 1.8 | Split payment (by item) | Pay → Split → By Item → assign items → verify amounts | ⬜ |
+| 1.9 | Apply discount (%) | Add items → Discount → percentage → verify total adjusts | ⬜ |
+| 1.10 | Apply discount ($) | Add items → Discount → dollar amount → verify total | ⬜ |
+| 1.11 | Void item (manager approval) | Add item → void → enter reason → manager PIN → verify removed | ⬜ |
+| 1.12 | Comp item (manager approval) | Add item → comp → reason → manager PIN → verify $0 | ⬜ |
+| 1.13 | Remote void approval via SMS | Void → Request Remote → select manager → verify SMS + code | ⬜ |
+| 1.14 | Add tip on payment | Pay → add tip amount → verify tip recorded | ⬜ |
+| 1.15 | Receipt displays correctly | Pay → view receipt → verify items, totals, tip, tax | ⬜ |
+| 1.16 | Order auto-clears after payment | Pay → close receipt → verify floor plan returns to clean state | ⬜ |
+
+### 2. Modifiers & Menu Builder
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 2.1 | Add modifier to item | Select item → modifier modal → select modifier → verify on order | ⬜ |
+| 2.2 | Pre-modifiers (No/Lite/Extra) | Select modifier → tap No/Lite/Extra → verify prefix on order | ⬜ |
+| 2.3 | Stacked modifiers (2x) | Enable stacking → tap same modifier twice → verify 2x badge | ⬜ |
+| 2.4 | Child modifier groups (nested) | Select modifier with child group → navigate to child → select → verify depth display | ⬜ |
+| 2.5 | Modifier with ingredient link | In Menu Builder: link modifier to ingredient → verify connection badge in /ingredients | ⬜ |
+| 2.6 | Spirit tier upgrades (quick select) | On cocktail: tap Call/Prem/Top → verify spirit upgrade applied | ⬜ |
+| 2.7 | Pour size selection | On liquor item: tap Shot/Dbl/Tall → verify price multiplier | ⬜ |
+| 2.8 | Combo step flow | Select combo → step through components → verify all selections | ⬜ |
+| 2.9 | Modifier cascade delete | Menu Builder → delete group with children → verify preview → confirm → all deleted | ⬜ |
+| 2.10 | Online modifier override | Set modifier group showOnline=false → verify hidden on online channel query | ⬜ |
+
+### 3. Inventory Deduction (CRITICAL)
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 3.1 | Base recipe deduction on payment | Order item with recipe → pay → check InventoryItem.currentStock decreased | ⬜ |
+| 3.2 | Modifier deduction via ModifierInventoryLink (Path A) | Order + modifier with inventoryLink → pay → verify stock decreased | ⬜ |
+| 3.3 | Modifier deduction via ingredientId fallback (Path B) | Order + modifier with ingredientId (e.g. Ranch) → pay → verify stock decreased by standardQuantity | ⬜ |
+| 3.4 | "Extra" modifier = 2x deduction | Order + "Extra Ranch" → pay → verify 2× standardQuantity deducted (3.0 oz) | ⬜ |
+| 3.5 | "No" modifier = 0x deduction + base skip | Order item with base Ranch + "No Ranch" → pay → verify Ranch NOT deducted | ⬜ |
+| 3.6 | "Lite" modifier = 0.5x deduction | Order + "Lite" modifier → pay → verify half-quantity deducted | ⬜ |
+| 3.7 | Path A takes precedence over Path B | Modifier has BOTH inventoryLink AND ingredientId → verify only inventoryLink quantity used | ⬜ |
+| 3.8 | Void item deduction (waste) | Send item → void (kitchen error) → verify waste transaction created | ⬜ |
+| 3.9 | Void item NO deduction (not made) | Void before send → verify NO waste transaction | ⬜ |
+| 3.10 | InventoryItemTransaction created | After payment → check DB for transaction with type='sale', correct qty | ⬜ |
+| 3.11 | Theoretical usage calculation | Run AvT report → verify modifier ingredient path included | ⬜ |
+| 3.12 | PMIX food cost includes modifier ingredients | Run PMIX → verify modifier cost from ingredient path shows in food cost % | ⬜ |
+| 3.13 | Prep stock deduction at send-to-kitchen | Send order with prep items → verify prepStock decreased | ⬜ |
+| 3.14 | Multiple items × modifier qty | Order 3× burger each with Ranch → pay → verify 3 × 1.5 oz = 4.5 oz deducted | ⬜ |
+
+### 4. Ingredient Library & Hierarchy
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 4.1 | Hierarchy view displays correctly | /ingredients → verify category → base → prep tree | ⬜ |
+| 4.2 | "Connected" badge on linked ingredients | Ingredient with linkedModifierCount > 0 → verify purple badge | ⬜ |
+| 4.3 | Expand linked modifiers panel | Click 🔗 on connected ingredient → verify modifiers + menu items shown | ⬜ |
+| 4.4 | Checkbox selection in hierarchy | Select ingredients → verify count → bulk action | ⬜ |
+| 4.5 | Category "Select All" with indeterminate | Select some in category → verify indeterminate checkbox on category | ⬜ |
+| 4.6 | Create new base ingredient | + New → fill fields → save → verify appears in hierarchy | ⬜ |
+| 4.7 | Create prep item under base | Base → Add Preparation → fill input/output → save → verify nested | ⬜ |
+| 4.8 | Edit ingredient cost | Edit base → change cost → save → verify cost API returns updated | ⬜ |
+| 4.9 | Soft delete ingredient | Delete → verify disappears from list → verify deletedAt set (not hard deleted) | ⬜ |
+| 4.10 | Restore deleted ingredient | Deleted panel → restore → verify returns to correct category | ⬜ |
+| 4.11 | "Unverified" badge on new ingredients | Create via Menu Builder → verify red Unverified badge in /ingredients | ⬜ |
+| 4.12 | Verify ingredient clears badge | Click verify button → confirm → verify badge removed | ⬜ |
+| 4.13 | Quick stock adjust | /inventory/quick-adjust → adjust stock → type VERIFY → enter PIN → verify saved | ⬜ |
+| 4.14 | Recipe cost aggregation | Base ingredient with recipe → expand → verify total cost shown | ⬜ |
+| 4.15 | Debounced search | Type in search → verify no flicker → results appear after 300ms pause | ⬜ |
+
+### 5. Floor Plan & Tables
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 5.1 | Floor plan loads with tables | Navigate to /orders → verify floor plan renders with tables | ⬜ |
+| 5.2 | Tap table to start order | Tap available table → verify order panel opens | ⬜ |
+| 5.3 | Table status colors | Available=green, occupied=blue, reserved=purple, dirty=yellow | ⬜ |
+| 5.4 | Virtual combine tables | Long-press two tables → combine → verify seats renumber | ⬜ |
+| 5.5 | Split combined tables | Combined table → split → verify tables separate | ⬜ |
+| 5.6 | Table resize and rotation | Floor Plan Editor → drag handles → verify resize + rotation | ⬜ |
+| 5.7 | Entertainment items on floor plan | Add entertainment → place on floor plan → verify status glow | ⬜ |
+| 5.8 | Seat count correct after combine | Combine 4-top + 5-top → verify 9 seats shown (not stale) | ⬜ |
+
+### 6. KDS & Kitchen
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 6.1 | KDS receives orders | Send order → verify ticket appears on /kds | ⬜ |
+| 6.2 | Bump item on KDS | Tap item on KDS → verify bumped/marked done | ⬜ |
+| 6.3 | KDS device pairing | Generate code → enter on device → verify paired + cookie set | ⬜ |
+| 6.4 | Modifier depth display | Order with nested modifiers → verify KDS shows "- Mod" / "-- Child" | ⬜ |
+| 6.5 | Course firing | Multi-course order → fire courses in sequence → verify KDS updates | ⬜ |
+| 6.6 | Entertainment KDS dashboard | /kds/entertainment → verify active sessions + timers | ⬜ |
+
+### 7. Tipping & Tip Shares
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 7.1 | Tip-out rules applied at shift close | Server closes shift → verify auto tip-out to busser | ⬜ |
+| 7.2 | Tip share report shows correct amounts | /reports/tip-shares → verify amounts match rules | ⬜ |
+| 7.3 | Mark tip shares as paid | Tip share report → mark paid → verify status updates | ⬜ |
+| 7.4 | Daily store report includes tips | /reports/daily → verify tip section present | ⬜ |
+
+### 8. Employee & Auth
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 8.1 | PIN login works | /login → enter PIN → verify correct employee logged in | ⬜ |
+| 8.2 | Permission enforcement | Server tries manager action → verify denied | ⬜ |
+| 8.3 | Clock in/out | Clock in → verify time recorded → clock out → verify shift | ⬜ |
+| 8.4 | Break tracking | Start break → end break → verify duration recorded | ⬜ |
+| 8.5 | Shift close with cash count | Close shift → enter cash count → verify variance calculated | ⬜ |
+
+### 9. Reports
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 9.1 | Daily store report generates | /reports/daily → select date → verify all sections populate | ⬜ |
+| 9.2 | Sales by category report | /reports → sales → verify category breakdown | ⬜ |
+| 9.3 | PMIX report with food cost | /reports/pmix → verify food cost % includes modifier ingredient costs | ⬜ |
+| 9.4 | Void report accuracy | Void items → run void report → verify all voids shown | ⬜ |
+| 9.5 | Employee shift report | /reports/shift → verify hours, tips earned vs received | ⬜ |
+
+### 10. Entertainment & Timed Rentals
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 10.1 | Start timed session | Select entertainment item → send → verify timer starts | ⬜ |
+| 10.2 | Extend session | Active session → extend → verify new expiry | ⬜ |
+| 10.3 | Stop and bill | Stop session → verify final billing calculated | ⬜ |
+| 10.4 | Block time mode | Set block time 60min → start → verify countdown | ⬜ |
+| 10.5 | Per-minute billing | Set per-minute → start → stop after 15min → verify charge | ⬜ |
+
+### 11. Printing & Hardware
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 11.1 | Receipt prints correctly | Pay order → print receipt → verify formatting | ⬜ |
+| 11.2 | Kitchen ticket routes correctly | Send order → verify ticket goes to correct printer/KDS | ⬜ |
+| 11.3 | Print route priority | Item printer > category printer > default → verify routing | ⬜ |
+| 11.4 | Per-modifier print routing | Modifier with custom routing → verify follows setting | ⬜ |
+| 11.5 | Backup printer failover | Primary offline → verify ticket goes to backup | ⬜ |
+
+### 12. UI & Personalization
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 12.1 | Glassmorphism renders | Verify frosted glass panels throughout POS | ⬜ |
+| 12.2 | Bar/Food mode theme switch | Switch between bar and food → verify blue/orange themes | ⬜ |
+| 12.3 | Category color customization | Gear → Reorder Categories → paint icon → set color → verify | ⬜ |
+| 12.4 | Menu item style customization | Gear → Customize Item Colors → set glow/border → verify | ⬜ |
+| 12.5 | Reset all customizations | Gear → Reset All → verify defaults restored | ⬜ |
+| 12.6 | Toast notifications display | Perform action → verify toast appears bottom-right | ⬜ |
+
+---
+
+### Test Status Legend
+- ⬜ = Not tested yet
+- ✅ YYYY-MM-DD = Passed (with date)
+- ❌ YYYY-MM-DD = Failed (with date — must resolve before launch)
+- 🔄 = In progress / partially tested
 
 ## Troubleshooting
 
@@ -1792,8 +2139,12 @@ When starting a new day:
 1. **Say:** `PM Mode: [Domain]`
 2. **Claude responds with:**
    - Confirmation of PM mode
+   - **Reads the PM Task Board** at `/docs/PM-TASK-BOARD.md` — check for tasks assigned to THIS domain
    - **Reads domain changelog** at `/docs/changelogs/[DOMAIN]-CHANGELOG.md`
+   - **Reads the Pre-Launch Test Checklist** in CLAUDE.md — check for failures or untested items in this domain
    - Shows: Last session summary, pending workers, known issues
+   - Shows: **Cross-domain tasks assigned to this PM** (from task board)
+   - Shows: **Failing or untested tests** in this domain's categories
    - "What tasks are we working on today?"
 3. **You list tasks** (or say "continue from yesterday")
 4. **Claude reads relevant files** (to get accurate line numbers)
@@ -1801,9 +2152,11 @@ When starting a new day:
 6. **You send prompts to workers**
 7. **Workers return results → paste back to PM for review**
 
-**Morning Startup Files to Check:**
+**Morning Startup Files to Check (MANDATORY — ALL of these):**
+- `/docs/PM-TASK-BOARD.md` - **Cross-domain task board** (check for tasks assigned to your domain)
 - `/docs/changelogs/[DOMAIN]-CHANGELOG.md` - Session history
 - `/docs/skills/SKILLS-INDEX.md` - Skill status
+- `CLAUDE.md` "Pre-Launch Test Checklist" section - Test status for your domain
 - Domain-specific skill docs in `/docs/skills/`
 
 ---
@@ -1836,6 +2189,23 @@ When you trigger EOD, Claude will:
    - "How to Resume" section in changelog
    - Key context for next session
 
+5. **🧪 Update Pre-Launch Test Checklist (MANDATORY)**
+   - Review features completed today
+   - Add NEW test items for any new functionality
+   - Flag any tests that can now be verified
+   - Note any tests that are currently FAILING
+   - Update the "Pre-Launch Test Checklist" section in CLAUDE.md
+   - This is NON-NEGOTIABLE — every EOD must include test updates
+
+6. **📋 Update Cross-Domain Task Board (MANDATORY)**
+   - Open `/docs/PM-TASK-BOARD.md`
+   - **Add tasks** discovered during this session that belong to OTHER domains
+   - **Pick up tasks** assigned to YOUR domain → move to "In Progress"
+   - **Complete tasks** you finished today → move to "Completed" with date
+   - **Assign correctly**: Use the Domain PM Registry table to route tasks to the right PM
+   - Tasks stay on the board until the assigned PM picks them up
+   - This is NON-NEGOTIABLE — every EOD must update the task board
+
 **EOD Output Format:**
 ```
 ## EOD Summary for [Domain] - [Date]
@@ -1854,14 +2224,28 @@ When you trigger EOD, Claude will:
 ### New Skills Documented
 - Skill XXX: Name
 
+### Tests Added/Updated
+- Added: Test X.XX - [description]
+- Ready to verify: Test X.XX - [description]
+- FAILING: Test X.XX - [description + reason]
+
+### Cross-Domain Tasks Added/Updated
+- NEW → PM: [Domain]: T-XXX - [description]
+- PICKED UP: T-XXX - [description]
+- COMPLETED: T-XXX - [description]
+
 ### Files Updated
 - /docs/changelogs/[DOMAIN]-CHANGELOG.md
 - /docs/skills/XXX-SKILL-NAME.md
+- /docs/PM-TASK-BOARD.md
+- CLAUDE.md (test checklist)
 
 ### Resume Tomorrow
 1. Say: `PM Mode: [Domain]`
-2. Review changelog
-3. Send pending worker prompts
+2. Review PM Task Board for assigned tasks
+3. Review changelog
+4. Review test checklist for failures
+5. Send pending worker prompts
 ```
 
 ---

@@ -51,7 +51,6 @@ type ExpandedState = Record<string, boolean>
 
 export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: ItemTreeViewProps) {
   const [itemOwnedGroups, setItemOwnedGroups] = useState<ModifierGroup[]>([])
-  const [sharedGroups, setSharedGroups] = useState<ModifierGroup[]>([])
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState<ExpandedState>({
@@ -64,7 +63,6 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
   useEffect(() => {
     if (!item?.id) {
       setItemOwnedGroups([])
-      setSharedGroups([])
       setIngredients([])
       return
     }
@@ -72,12 +70,10 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
     setLoading(true)
     Promise.all([
       fetch(`/api/menu/items/${item.id}/modifier-groups`).then(r => r.json()),
-      fetch(`/api/menu/items/${item.id}/modifiers`).then(r => r.json()),
       fetch(`/api/menu/items/${item.id}/ingredients`).then(r => r.json()),
     ])
-      .then(([ownedData, sharedData, ingData]) => {
+      .then(([ownedData, ingData]) => {
         setItemOwnedGroups(ownedData.data || [])
-        setSharedGroups(sharedData.modifierGroups || [])
         setIngredients(ingData.data || [])
       })
       .catch(console.error)
@@ -301,62 +297,45 @@ export function ItemTreeView({ item, onSelectNode, selectedNode, refreshKey }: I
                 nodeId="itemModifiers"
                 icon={<span>⚙️</span>}
                 badge={
-                  <span className="text-xs text-gray-400">
-                    {itemOwnedGroups.length > 0
-                      ? `${itemOwnedGroups.length} group${itemOwnedGroups.length !== 1 ? 's' : ''} · ${itemOwnedGroups.reduce((sum, g) => sum + g.modifiers.length, 0)} option${itemOwnedGroups.reduce((sum, g) => sum + g.modifiers.length, 0) !== 1 ? 's' : ''}`
-                      : '0'}
-                  </span>
+                  (() => {
+                    // Build set of child group IDs to get accurate top-level count
+                    const childGroupIdSet = new Set<string>()
+                    itemOwnedGroups.forEach(g => {
+                      g.modifiers?.forEach(m => {
+                        if (m.childModifierGroupId) childGroupIdSet.add(m.childModifierGroupId)
+                      })
+                    })
+                    const topLevelGroups = itemOwnedGroups.filter(g => !childGroupIdSet.has(g.id))
+                    const totalOptions = itemOwnedGroups.reduce((sum, g) => sum + g.modifiers.length, 0)
+
+                    return (
+                      <span className="text-xs text-gray-400">
+                        {topLevelGroups.length > 0
+                          ? `${topLevelGroups.length} group${topLevelGroups.length !== 1 ? 's' : ''} · ${totalOptions} option${totalOptions !== 1 ? 's' : ''}`
+                          : '0'}
+                      </span>
+                    )
+                  })()
                 }
               >
                 {itemOwnedGroups.length === 0 ? (
                   <div className="py-1 px-4 text-xs text-gray-400 italic">None</div>
                 ) : (
-                  itemOwnedGroups.map(group => renderModifierGroup(group, 1))
+                  (() => {
+                    // Build set of child group IDs to exclude from top level
+                    const childGroupIdSet = new Set<string>()
+                    itemOwnedGroups.forEach(g => {
+                      g.modifiers?.forEach(m => {
+                        if (m.childModifierGroupId) childGroupIdSet.add(m.childModifierGroupId)
+                      })
+                    })
+                    const topLevelGroups = itemOwnedGroups.filter(g => !childGroupIdSet.has(g.id))
+
+                    // Render only top-level groups (child groups still appear nested under their parent modifiers)
+                    return topLevelGroups.map(group => renderModifierGroup(group, 1))
+                  })()
                 )}
               </TreeNode>
-
-              {/* Shared Modifier Groups Branch */}
-              {sharedGroups.length > 0 && (
-                <TreeNode
-                  label="Shared Modifiers"
-                  nodeKey="sharedModifiers"
-                  nodeType="sharedModifiersSection"
-                  nodeId="sharedModifiers"
-                  icon={<span>🔗</span>}
-                  badge={
-                    <span className="text-xs text-gray-400">{sharedGroups.length}</span>
-                  }
-                >
-                  {sharedGroups.map(group => (
-                    <TreeNode
-                      key={group.id}
-                      label={group.displayName || group.name}
-                      nodeKey={`shared-${group.id}`}
-                      nodeType="sharedModifierGroup"
-                      nodeId={group.id}
-                      depth={1}
-                      badge={
-                        <span className="text-xs text-gray-400">{group.modifiers.length}</span>
-                      }
-                    >
-                      {group.modifiers.map(mod => (
-                        <TreeNode
-                          key={mod.id}
-                          label={mod.name}
-                          nodeKey={`shared-${group.id}-mod-${mod.id}`}
-                          isLeaf
-                          depth={2}
-                          badge={
-                            mod.price > 0 ? (
-                              <span className="text-xs text-green-600">+{formatCurrency(mod.price)}</span>
-                            ) : null
-                          }
-                        />
-                      ))}
-                    </TreeNode>
-                  ))}
-                </TreeNode>
-              )}
 
               {/* Print Routing Branch */}
               <TreeNode

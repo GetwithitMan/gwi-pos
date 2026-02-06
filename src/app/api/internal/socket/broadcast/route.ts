@@ -26,7 +26,7 @@ import type { RoutingResult } from '@/types/routing'
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || 'dev-internal-secret'
 
 interface BroadcastRequest {
-  type: 'NEW_ORDER' | 'ITEM_STATUS' | 'ORDER_BUMPED' | 'ENTERTAINMENT_UPDATE' | 'LOCATION_ALERT' | 'VOID_APPROVAL' | 'FLOOR_PLAN_UPDATE' | 'MENU_UPDATE'
+  type: 'NEW_ORDER' | 'ITEM_STATUS' | 'ORDER_BUMPED' | 'ENTERTAINMENT_UPDATE' | 'LOCATION_ALERT' | 'VOID_APPROVAL' | 'FLOOR_PLAN_UPDATE' | 'MENU_UPDATE' | 'INGREDIENT_LIBRARY_UPDATE'
   locationId: string
   routingResult?: RoutingResult
   payload?: unknown
@@ -199,6 +199,15 @@ export async function POST(request: NextRequest) {
       case 'MENU_UPDATE': {
         // Notify all terminals to refresh menu data (liquor builder, POS)
         await emitToLocation(locationId, 'menu:updated', payload || { locationId })
+        break
+      }
+
+      case 'INGREDIENT_LIBRARY_UPDATE': {
+        // Notify all menu builder terminals to add new ingredient to local library
+        if (!payload) {
+          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+        }
+        await emitToLocation(locationId, 'ingredient:library-update', payload)
         break
       }
 

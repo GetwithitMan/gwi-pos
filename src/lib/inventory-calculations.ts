@@ -505,6 +505,26 @@ export async function calculateTheoreticalUsage(
                       },
                     },
                   },
+                  // Fallback: Modifier.ingredientId → Ingredient → InventoryItem
+                  ingredient: {
+                    select: {
+                      id: true,
+                      inventoryItemId: true,
+                      standardQuantity: true,
+                      standardUnit: true,
+                      inventoryItem: {
+                        select: {
+                          id: true,
+                          name: true,
+                          category: true,
+                          department: true,
+                          storageUnit: true,
+                          costPerUnit: true,
+                          yieldCostPerUnit: true,
+                        },
+                      },
+                    },
+                  },
                 },
               },
             },
@@ -552,10 +572,17 @@ export async function calculateTheoreticalUsage(
       // This allows us to skip base recipe ingredients that were explicitly removed
       const removedIngredientIds = new Set<string>()
       for (const mod of orderItem.modifiers) {
-        // Check if this modifier has a "NO" instruction (preModifier)
-        const preModifier = mod.preModifier
-        if (isRemovalInstruction(preModifier) && mod.modifier?.inventoryLink?.inventoryItemId) {
-          removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
+        if (isRemovalInstruction(mod.preModifier)) {
+          // Check inventoryLink path (primary)
+          if (mod.modifier?.inventoryLink?.inventoryItemId) {
+            removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
+          }
+          // Check ingredient path (fallback)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          else if ((mod.modifier as any)?.ingredient?.inventoryItem?.id) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            removedIngredientIds.add((mod.modifier as any).ingredient.inventoryItem.id)
+          }
         }
       }
 
@@ -619,20 +646,20 @@ export async function calculateTheoreticalUsage(
       for (const mod of orderItem.modifiers) {
         const modQty = (mod.quantity || 1) * itemQty
 
+        // Get the multiplier based on the instruction (preModifier: "lite", "extra", etc.)
+        const preModifier = mod.preModifier
+        const multiplier = getModifierMultiplier(preModifier, multiplierSettings || undefined)
+
+        // If multiplier is 0 (e.g., "NO"), skip this modifier entirely
+        if (multiplier === 0) continue
+
+        // Path A: ModifierInventoryLink (takes precedence)
         if (mod.modifier?.inventoryLink?.inventoryItem) {
           const link = mod.modifier.inventoryLink
           const linkItem = link.inventoryItem as InventoryItemData
 
-          // Get the multiplier based on the instruction (preModifier: "lite", "extra", etc.)
-          const preModifier = mod.preModifier
-          const multiplier = getModifierMultiplier(preModifier, multiplierSettings || undefined)
-
-          // If multiplier is 0 (e.g., "NO"), skip this modifier entirely
-          if (multiplier === 0) continue
-
           let linkQty = toNumber(link.usageQuantity) * modQty * multiplier
 
-          // Apply unit conversion if needed
           if (link.usageUnit && linkItem.storageUnit) {
             const converted = convertUnits(linkQty, link.usageUnit, linkItem.storageUnit)
             if (converted !== null) {
@@ -641,6 +668,24 @@ export async function calculateTheoreticalUsage(
           }
 
           addUsage(linkItem, linkQty)
+          continue  // inventoryLink found — skip fallback
+        }
+
+        // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ingredient = (mod.modifier as any)?.ingredient
+        if (ingredient?.inventoryItem) {
+          const stdQty = toNumber(ingredient.standardQuantity) || 1
+          let ingQty = stdQty * modQty * multiplier
+
+          if (ingredient.standardUnit && ingredient.inventoryItem.storageUnit) {
+            const converted = convertUnits(ingQty, ingredient.standardUnit, ingredient.inventoryItem.storageUnit)
+            if (converted !== null) {
+              ingQty = converted
+            }
+          }
+
+          addUsage(ingredient.inventoryItem as InventoryItemData, ingQty)
         }
       }
     }
@@ -909,6 +954,27 @@ const ORDER_INVENTORY_INCLUDE = {
                   },
                 },
               },
+              // Fallback: Modifier.ingredientId → Ingredient → InventoryItem
+              ingredient: {
+                select: {
+                  id: true,
+                  inventoryItemId: true,
+                  standardQuantity: true,
+                  standardUnit: true,
+                  inventoryItem: {
+                    select: {
+                      id: true,
+                      name: true,
+                      category: true,
+                      department: true,
+                      storageUnit: true,
+                      costPerUnit: true,
+                      yieldCostPerUnit: true,
+                      currentStock: true,
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -996,8 +1062,17 @@ export async function deductInventoryForOrder(
       // Build a set of inventory item IDs that have "NO" modifiers on this order item
       const removedIngredientIds = new Set<string>()
       for (const mod of orderItem.modifiers) {
-        if (isRemovalInstruction(mod.preModifier) && mod.modifier?.inventoryLink?.inventoryItemId) {
-          removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
+        if (isRemovalInstruction(mod.preModifier)) {
+          // Check inventoryLink path (primary)
+          if (mod.modifier?.inventoryLink?.inventoryItemId) {
+            removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
+          }
+          // Check ingredient path (fallback)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          else if ((mod.modifier as any)?.ingredient?.inventoryItem?.id) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            removedIngredientIds.add((mod.modifier as any).ingredient.inventoryItem.id)
+          }
         }
       }
 
@@ -1061,10 +1136,6 @@ export async function deductInventoryForOrder(
       for (const mod of orderItem.modifiers) {
         const modQty = (mod.quantity || 1) * itemQty
 
-        const link = mod.modifier?.inventoryLink
-        const linkItem = link?.inventoryItem
-        if (!link || !linkItem) continue
-
         // Get the multiplier based on the instruction
         const preModifier = mod.preModifier
         const multiplier = getModifierMultiplier(preModifier, multiplierSettings || undefined)
@@ -1072,17 +1143,41 @@ export async function deductInventoryForOrder(
         // If multiplier is 0 (e.g., "NO"), skip this modifier entirely
         if (multiplier === 0) continue
 
-        let linkQty = toNumber(link.usageQuantity) * modQty * multiplier
+        // Path A: ModifierInventoryLink (takes precedence)
+        const link = mod.modifier?.inventoryLink
+        const linkItem = link?.inventoryItem
+        if (link && linkItem) {
+          let linkQty = toNumber(link.usageQuantity) * modQty * multiplier
 
-        // Apply unit conversion if needed
-        if (link.usageUnit && linkItem.storageUnit) {
-          const converted = convertUnits(linkQty, link.usageUnit, linkItem.storageUnit)
-          if (converted !== null) {
-            linkQty = converted
+          // Apply unit conversion if needed
+          if (link.usageUnit && linkItem.storageUnit) {
+            const converted = convertUnits(linkQty, link.usageUnit, linkItem.storageUnit)
+            if (converted !== null) {
+              linkQty = converted
+            }
           }
+
+          addUsage(linkItem, linkQty)
+          continue  // inventoryLink found — skip fallback
         }
 
-        addUsage(linkItem, linkQty)
+        // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ingredient = (mod.modifier as any)?.ingredient
+        if (ingredient?.inventoryItem) {
+          const stdQty = toNumber(ingredient.standardQuantity) || 1
+          let ingQty = stdQty * modQty * multiplier
+
+          // Apply unit conversion if needed
+          if (ingredient.standardUnit && ingredient.inventoryItem.storageUnit) {
+            const converted = convertUnits(ingQty, ingredient.standardUnit, ingredient.inventoryItem.storageUnit)
+            if (converted !== null) {
+              ingQty = converted
+            }
+          }
+
+          addUsage(ingredient.inventoryItem, ingQty)
+        }
       }
     }
 
@@ -1258,6 +1353,27 @@ export async function deductInventoryForVoidedItem(
                     },
                   },
                 },
+                // Fallback: Modifier.ingredientId → Ingredient → InventoryItem
+                ingredient: {
+                  select: {
+                    id: true,
+                    inventoryItemId: true,
+                    standardQuantity: true,
+                    standardUnit: true,
+                    inventoryItem: {
+                      select: {
+                        id: true,
+                        name: true,
+                        category: true,
+                        department: true,
+                        storageUnit: true,
+                        costPerUnit: true,
+                        yieldCostPerUnit: true,
+                        currentStock: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -1316,9 +1432,17 @@ export async function deductInventoryForVoidedItem(
     // Build removed ingredient set from "NO" modifiers
     const removedIngredientIds = new Set<string>()
     for (const mod of orderItem.modifiers) {
-      const preModifier = mod.preModifier
-      if (isRemovalInstruction(preModifier) && mod.modifier?.inventoryLink?.inventoryItemId) {
-        removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
+      if (isRemovalInstruction(mod.preModifier)) {
+        // Check inventoryLink path (primary)
+        if (mod.modifier?.inventoryLink?.inventoryItemId) {
+          removedIngredientIds.add(mod.modifier.inventoryLink.inventoryItemId)
+        }
+        // Check ingredient path (fallback)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        else if ((mod.modifier as any)?.ingredient?.inventoryItem?.id) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          removedIngredientIds.add((mod.modifier as any).ingredient.inventoryItem.id)
+        }
       }
     }
 
@@ -1352,25 +1476,44 @@ export async function deductInventoryForVoidedItem(
     for (const mod of orderItem.modifiers) {
       const modQty = (mod.quantity || 1) * itemQty
 
-      const link = mod.modifier?.inventoryLink
-      const linkItem = link?.inventoryItem
-      if (!link || !linkItem) continue
-
       const preModifier = mod.preModifier
       const multiplier = getModifierMultiplier(preModifier, multiplierSettings || undefined)
 
       if (multiplier === 0) continue
 
-      let linkQty = toNumber(link.usageQuantity) * modQty * multiplier
+      // Path A: ModifierInventoryLink (takes precedence)
+      const link = mod.modifier?.inventoryLink
+      const linkItem = link?.inventoryItem
+      if (link && linkItem) {
+        let linkQty = toNumber(link.usageQuantity) * modQty * multiplier
 
-      if (link.usageUnit && linkItem.storageUnit) {
-        const converted = convertUnits(linkQty, link.usageUnit, linkItem.storageUnit)
-        if (converted !== null) {
-          linkQty = converted
+        if (link.usageUnit && linkItem.storageUnit) {
+          const converted = convertUnits(linkQty, link.usageUnit, linkItem.storageUnit)
+          if (converted !== null) {
+            linkQty = converted
+          }
         }
+
+        addUsage(linkItem, linkQty)
+        continue  // inventoryLink found — skip fallback
       }
 
-      addUsage(linkItem, linkQty)
+      // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ingredient = (mod.modifier as any)?.ingredient
+      if (ingredient?.inventoryItem) {
+        const stdQty = toNumber(ingredient.standardQuantity) || 1
+        let ingQty = stdQty * modQty * multiplier
+
+        if (ingredient.standardUnit && ingredient.inventoryItem.storageUnit) {
+          const converted = convertUnits(ingQty, ingredient.standardUnit, ingredient.inventoryItem.storageUnit)
+          if (converted !== null) {
+            ingQty = converted
+          }
+        }
+
+        addUsage(ingredient.inventoryItem, ingQty)
+      }
     }
 
     // Perform deductions

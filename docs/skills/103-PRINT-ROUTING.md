@@ -257,11 +257,16 @@ Items print to ALL specified printers (e.g., grill station AND expo).
 - [ ] Implement full CRUD in API routes
 - [ ] Add route resolution endpoint
 
-### Phase 3: Integration (TODO)
+### Phase 3: Integration (TODO) — UPDATED Feb 6, 2026
 - [ ] Update kitchen print to check PrintRoutes first
+- [ ] **NEW: Check Modifier.printerRouting for per-modifier routing (Skill 212)**
+  - `"follow"` → modifier prints with item (default, no action)
+  - `"also"` → send to item's printer(s) AND modifier.printerIds
+  - `"only"` → send ONLY to modifier.printerIds
 - [ ] Apply RouteSpecificSettings to ticket builder
 - [ ] Add print job logging
 - [ ] Implement failover logic
+- [ ] **NEW: Context line on modifier-only tickets ("FOR: {item name}")**
 
 ### Phase 4: Polish (TODO)
 - [ ] Live preview in editor
@@ -279,6 +284,7 @@ Items print to ALL specified printers (e.g., grill station AND expo).
 | 67 | Prep Stations - KDS routing (complementary) |
 | 102 | KDS Device Security - Device authentication |
 | 08 | Receipt Printing - Print formatting |
+| 212 | Per-Modifier Print Routing - Modifier-level routing config (admin UI + API done) |
 
 ---
 

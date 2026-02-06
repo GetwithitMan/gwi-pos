@@ -429,10 +429,10 @@ export default function RoutingPage() {
             <p className="text-sm text-gray-700">
               <strong>Modifier Routing:</strong> Configure modifier printer routing in the{' '}
               <button
-                onClick={() => router.push('/modifiers')}
+                onClick={() => router.push('/menu')}
                 className="underline font-medium text-blue-600"
               >
-                Modifiers
+                Menu Builder
               </button>{' '}
               page. Options: Follow main item, Also send to printer, or Send only to printer.
             </p>

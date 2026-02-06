@@ -89,7 +89,6 @@ export const settingsSubNav: SubNavItem[] = [
 
 export const menuSubNav: SubNavItem[] = [
   { label: 'Menu Items', href: '/menu' },
-  { label: 'Modifiers', href: '/modifiers' },
   { label: 'Ingredients', href: '/ingredients' },
   { label: 'Combos', href: '/combos' },
   { label: 'Discounts', href: '/discounts' },

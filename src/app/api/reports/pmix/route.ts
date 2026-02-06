@@ -111,6 +111,20 @@ export async function GET(request: NextRequest) {
                     },
                   },
                 },
+                // Fallback: Modifier.ingredientId → Ingredient → InventoryItem
+                ingredient: {
+                  select: {
+                    id: true,
+                    standardQuantity: true,
+                    inventoryItem: {
+                      select: {
+                        id: true,
+                        costPerUnit: true,
+                        yieldCostPerUnit: true,
+                      },
+                    },
+                  },
+                },
               },
             },
           },
@@ -242,10 +256,23 @@ export async function GET(request: NextRequest) {
       // Modifier ingredients
       for (const mod of orderItem.modifiers) {
         const modQty = (mod.quantity || 1) * orderItem.quantity
+
+        // Path A: ModifierInventoryLink (takes precedence)
         if (mod.modifier?.inventoryLink?.inventoryItem) {
           const linkQty = toNumber(mod.modifier.inventoryLink.usageQuantity) * modQty
           const cost = getEffectiveCost(mod.modifier.inventoryLink.inventoryItem)
           itemFoodCost += linkQty * cost
+          continue  // inventoryLink found — skip fallback
+        }
+
+        // Path B: Modifier.ingredientId → Ingredient → InventoryItem (fallback)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ingredient = (mod.modifier as any)?.ingredient
+        if (ingredient?.inventoryItem) {
+          const stdQty = toNumber(ingredient.standardQuantity) || 1
+          const ingQty = stdQty * modQty
+          const cost = getEffectiveCost(ingredient.inventoryItem)
+          itemFoodCost += ingQty * cost
         }
       }
 

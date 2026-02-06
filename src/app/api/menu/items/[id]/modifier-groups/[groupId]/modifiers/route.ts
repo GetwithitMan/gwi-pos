@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { Prisma } from '@prisma/client'
 
 interface RouteParams {
   params: Promise<{ id: string; groupId: string }>
@@ -22,6 +23,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       ingredientId,
       childModifierGroupId,
       isLabel = false,
+      printerRouting = 'follow',
+      printerIds,
     } = body
 
     // Verify group belongs to this item
@@ -66,6 +69,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         ingredientId: ingredientId || null,
         childModifierGroupId: childModifierGroupId || null,
         isLabel,
+        printerRouting,
+        printerIds: printerIds ? printerIds : Prisma.JsonNull,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
       },
       include: {
@@ -95,6 +100,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         childModifierGroupId: modifier.childModifierGroupId,
         childModifierGroupName: modifier.childModifierGroup?.name || null,
         isLabel: modifier.isLabel,
+        printerRouting: modifier.printerRouting,
+        printerIds: modifier.printerIds,
       },
     })
   } catch (error) {
@@ -121,6 +128,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       ingredientId,
       childModifierGroupId,
       isLabel,
+      printerRouting,
+      printerIds,
     } = body
 
     if (!modifierId) {
@@ -150,6 +159,31 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // Enforce maxSelections when setting isDefault: true
+    // If this would exceed the group's max, clear excess defaults first
+    if (isDefault === true) {
+      const group = await db.modifierGroup.findUnique({
+        where: { id: groupId },
+        select: { maxSelections: true },
+      })
+      if (group && group.maxSelections > 0) {
+        const currentDefaults = await db.modifier.findMany({
+          where: { modifierGroupId: groupId, isDefault: true, deletedAt: null, id: { not: modifierId } },
+          orderBy: { sortOrder: 'asc' },
+          select: { id: true },
+        })
+        // If adding this one would exceed max, clear oldest defaults to make room
+        if (currentDefaults.length >= group.maxSelections) {
+          const excessCount = currentDefaults.length - group.maxSelections + 1
+          const idsToUndefault = currentDefaults.slice(0, excessCount).map(d => d.id)
+          await db.modifier.updateMany({
+            where: { id: { in: idsToUndefault } },
+            data: { isDefault: false },
+          })
+        }
+      }
+    }
+
     const updated = await db.modifier.update({
       where: { id: modifierId },
       data: {
@@ -164,6 +198,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ingredientId: ingredientId !== undefined ? (ingredientId || null) : undefined,
         childModifierGroupId: childModifierGroupId !== undefined ? (childModifierGroupId || null) : undefined,
         isLabel: isLabel !== undefined ? isLabel : undefined,
+        printerRouting: printerRouting !== undefined ? printerRouting : undefined,
+        printerIds: printerIds !== undefined ? (printerIds ?? Prisma.JsonNull) : undefined,
       },
       include: {
         ingredient: {
@@ -192,6 +228,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         childModifierGroupId: updated.childModifierGroupId,
         childModifierGroupName: updated.childModifierGroup?.name || null,
         isLabel: updated.isLabel,
+        printerRouting: updated.printerRouting,
+        printerIds: updated.printerIds,
       },
     })
   } catch (error) {

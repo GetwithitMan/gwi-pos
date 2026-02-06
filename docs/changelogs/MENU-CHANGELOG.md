@@ -307,8 +307,297 @@ Major upgrade to the front-end modifier workflow. Current issues: window size ch
 
 ---
 
+## Session: Feb 6, 2026 (Afternoon) — Deep Item Builder + Ingredient Linking + Print Routing
+
+### Context
+Continued from morning session. Focused on making the Item Builder a complete, self-contained tool where every ingredient and modifier is properly linked for cost reporting, PM mix, and inventory tracking. Also introduced per-modifier print routing configuration.
+
+### PM Mode Workers Created (8 total)
+
+#### W1: Clean Up Legacy Shared Modifiers ✅ SENT
+**Status:** COMPLETED by worker
+**Files Modified:**
+- `src/app/api/menu/items/[id]/modifier-groups/route.ts` — GET returns ONLY item-owned groups (removed MenuItemModifierGroup junction queries, ~30 lines removed)
+- `src/app/api/menu/items/[id]/modifier-groups/route.ts` — PATCH validates only owned groups
+- `src/components/menu/ItemTreeView.tsx` — Removed "Shared Modifiers" tree section, removed `sharedGroups` state, removed fetch to `/modifiers` endpoint
+**Impact:** Left sidebar no longer shows legacy "Add Toppings" / "Choose Your Side". Only item-owned groups appear.
+
+#### W2: Per-Modifier Print Routing UI ✅ SENT
+**Status:** COMPLETED by worker
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Added 🖨️ button on each modifier row with dropdown (follow/also/only), printer checkbox list
+- `src/app/api/menu/items/[id]/modifier-groups/[groupId]/modifiers/route.ts` — POST/PUT accept and return `printerRouting` + `printerIds`
+- `src/app/api/menu/items/[id]/modifier-groups/route.ts` — GET returns `printerRouting` + `printerIds` in modifier objects
+- `src/app/api/menu/items/[id]/modifier-groups/[groupId]/route.ts` — PUT response includes `printerRouting` + `printerIds`
+**Impact:** Each modifier can now decide: follow item's printer (default), also print to additional printers, or only print to specific printers. Schema fields `Modifier.printerRouting` and `Modifier.printerIds` were already in Prisma — this wired them to UI and API.
+
+#### W3: Hierarchical Ingredient Picker for Item Ingredients ✅ SENT
+**Status:** COMPLETED by worker
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Replaced flat ingredient picker with hierarchical dropdown matching modifier linking UI (categories → parents → prep items, expand/collapse, inline creation)
+- `buildHierarchy()` refactored to accept `searchTerm` parameter (reusable for both pickers)
+**Impact:** Both the green ingredient picker and purple modifier linking dropdown now share the same hierarchical UX.
+
+#### W4: Filter Child Groups from ItemTreeView ✅ SENT
+**Status:** COMPLETED by worker
+**Files Modified:**
+- `src/components/menu/ItemTreeView.tsx` — Added `childGroupIdSet` filter before rendering, only top-level groups appear in left sidebar
+**Impact:** Fixed "4x Dressings" bug where child modifier groups appeared at the top level alongside parent groups.
+
+#### W5: Ingredient ↔ Modifier Bidirectional Link Indicators ✅ SENT
+**Status:** COMPLETED by worker
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Added `ingredientToModifiers` useMemo cross-reference, ingredient rows show `🔗 modifier names`, unlinked modifiers show "unlinked" hint
+**Impact:** Ingredients show which modifiers reference them, modifiers without links get visual nudge.
+
+#### W6: Fix Ingredient Linking — Stale Badge + Persistent Expand State ✅ SENT
+**Status:** COMPLETED by worker
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Reset `expandedCategories` and `expandedParents` in `linkIngredient()` (after link made), in 🔗 close handler (when toggling off), and verified optimistic update merges `ingredientName` correctly via spread operator
+**Impact:** Fixed "Beef Patty → shows Casa Fries" bug. All three close paths (link, toggle off, open new) now reset expand state. No stale hierarchy between linking sessions.
+
+#### W7: Real-Time Ingredient Library Updates (Socket + Optimistic) ✅ SENT
+**Status:** COMPLETED by worker
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Added `onIngredientCreated` prop, called in `createInventoryItem()` and `createPrepItem()` after API success
+- `src/app/(admin)/menu/page.tsx` — `handleIngredientCreated` callback with optimistic `setIngredientsLibrary`, socket listener for `ingredient:library-update` event
+- `src/lib/socket-dispatch.ts` — New `dispatchIngredientLibraryUpdate()` function (fire-and-forget pattern)
+- `src/app/api/internal/socket/broadcast/route.ts` — New `INGREDIENT_LIBRARY_UPDATE` event type, emits `ingredient:library-update`
+- `src/app/api/ingredients/route.ts` — Dispatch on POST success
+**Impact:** Creating ingredients inline instantly updates the hierarchy for the creator (optimistic). Socket event syncs across terminals without page refresh.
+
+#### W8: Unverified Badges + Category Warnings + Recursive Reverse Linking ✅ SENT
+**Status:** COMPLETED by worker
+**Files Modified:**
+- `src/components/menu/ItemEditor.tsx` — Added `needsVerification` to Ingredient interface, red "⚠ Unverified" badge on ingredient rows, ⚠ count badge on category headers in both pickers (green + purple), recursive `processModifiers()` helper for `ingredientToModifiers` useMemo
+- `src/app/api/menu/items/[id]/ingredients/route.ts` — Returns `needsVerification: mi.ingredient.needsVerification || false` in GET response
+**Impact:** Full verification visibility across the item builder. Category headers warn about unverified items. Reverse ingredient-to-modifier linking works at all nesting depths including child groups.
+
+---
+
+### Other Completed Work (This Session)
+
+#### Cascade Delete with Preview
+- DELETE API supports `?preview=true` returning counts before deletion
+- Double confirmation in ItemEditor (`deleteGroup` function)
+- `collectDescendants` recursive function collects all nested groups + modifiers
+
+#### Orphaned childModifierGroupId Auto-Cleanup
+- `formatModifierGroup` in GET API detects orphaned references (pointing to deleted groups)
+- Returns `null` for missing child groups instead of stale IDs
+- Auto-cleans database in background (fire-and-forget `db.modifier.updateMany`)
+- Fixed: 🍂 icons, hidden +▶ buttons, blocked drop targets
+
+#### Fluid Group Nesting (Drag Groups In/Out)
+- `nestGroupInGroup()` function — auto-creates modifier, reparents dragged group
+- Drop zones in both top-level and child group expanded sections
+- `handleGroupDropOnModifier` supports swap/replace when modifier already has child
+- `isGroupDropTarget` allows drops on any modifier
+
+#### Duplicate Group Stays Within Parent
+- `duplicateGroup` detects if source was a child group
+- Auto-creates modifier in same parent to hold the duplicate
+
+#### Collapsed Child Group Chips
+- Child groups render as compact `○ GroupName (count)` chips when collapsed
+- Clicking chip expands, clicking header collapses
+- Color cycling preserved
+
+---
+
+### Files Modified (This Session — 17 files uncommitted)
+
+| File | Workers | Changes |
+|------|---------|---------|
+| `src/app/api/menu/items/[id]/modifier-groups/route.ts` | W1, W2 | Remove shared group queries, add printerRouting to GET |
+| `src/app/api/menu/items/[id]/modifier-groups/[groupId]/route.ts` | W2 | Cascade delete with preview, printerRouting in PUT response |
+| `src/app/api/menu/items/[id]/modifier-groups/[groupId]/modifiers/route.ts` | W2 | POST/PUT accept printerRouting + printerIds |
+| `src/app/api/menu/items/[id]/ingredients/route.ts` | W8 | Returns `needsVerification` field |
+| `src/components/menu/ItemEditor.tsx` | W1-W8 | Major — cascade delete, orphan fix, nesting, hierarchical picker, print routing, bidirectional linking, stale state fix, unverified badges, recursive reverse linking |
+| `src/components/menu/ItemTreeView.tsx` | W1, W4 | Remove shared modifiers section, filter child groups |
+| `src/components/menu/ModifierFlowEditor.tsx` | - | Tiered pricing auto-close fix (from previous session carry-over) |
+| `src/components/floor-plan/FloorPlanHome.tsx` | - | Auto-add defaults (from previous session carry-over) |
+| `src/components/ingredients/IngredientHierarchy.tsx` | - | Checkbox selection (from previous session carry-over) |
+| `src/app/(admin)/menu/page.tsx` | W7 | Socket listener for ingredient updates, `handleIngredientCreated` callback |
+| `src/lib/socket-dispatch.ts` | W7 | New `dispatchIngredientLibraryUpdate()` function |
+| `src/app/api/internal/socket/broadcast/route.ts` | W7 | New `INGREDIENT_LIBRARY_UPDATE` event type |
+| `src/app/api/ingredients/route.ts` | W7 | Fire-and-forget socket dispatch on POST |
+
+---
+
+### New Skills Documented (This Session)
+- **Skill 210:** Modifier Cascade Delete & Orphan Cleanup
+- **Skill 211:** Hierarchical Ingredient Picker (Unified)
+- **Skill 212:** Per-Modifier Print Routing
+- **Skill 213:** Real-Time Ingredient Library (Socket + Optimistic)
+- **Skill 214:** Ingredient Verification Visibility
+
+### Architectural Decisions Made
+1. **Item-owned groups ONLY in left sidebar** — Shared groups (via junction table) fully hidden, table retained in schema for data preservation
+2. **Per-modifier print routing over per-group** — Finer control: individual modifiers can route to different printers (e.g., "Extra Bacon" → kitchen, "Add Shot" → bar)
+3. **Optimistic + Socket for ingredient creation** — Instant local feedback + cross-terminal sync via existing socket infrastructure
+4. **Bidirectional linking display** — Ingredients show which modifiers reference them AND modifiers show which ingredient they link to
+5. **Recursive ingredientToModifiers** — Cross-reference must recurse into child groups, not just top-level
+
+### Known Issues
+1. ~~Workers W7 and W8 still in progress~~ — ✅ COMPLETED
+2. ~~expandedCategories/expandedParents shared state~~ — ✅ FIXED by W6 (reset on all close paths)
+3. **No E2E testing for print routing** — UI is configuration-only; actual print dispatching deferred to Hardware domain
+4. **Ingredient linking still showing wrong names in some cases** — W6 fixed the expand state bug, but user reports "Beef Patty → Casa Fries" persists. May be stale `ingredientsLibrary` data or a timing issue with optimistic updates. Needs further investigation if reproducing.
+5. **Inventory ↔ Menu sync is #1 priority** — Per user direction, ensuring every item sold records correct ingredient usage for reporting/PM mix is the most important next task.
+
+---
+
+### All Pending Workers: NONE
+All 8 workers (W1-W8) have been completed. ✅
+
+---
+
+### Cross-Domain Notes for Hardware Team
+
+**⚠️ IMPORTANT: Per-Modifier Print Routing was added this session.**
+
+The `Modifier` model now has active UI for:
+- `printerRouting`: `"follow"` (default), `"also"`, `"only"`
+- `printerIds`: JSON array of printer IDs
+
+When building the print dispatch system (Hardware domain, Skill 103 Phase 3):
+1. After resolving item-level routing, check each modifier's `printerRouting`
+2. If `"follow"` → modifier prints wherever the item prints (no action needed)
+3. If `"also"` → modifier prints to item's printer(s) AND `printerIds`
+4. If `"only"` → modifier prints ONLY to `printerIds` (not item's printer)
+5. This enables: "Extra Bacon" → Kitchen Printer, "Add Espresso Shot" → Bar Printer
+
+The admin UI at `/settings/hardware/routing` (Skill 103) should also surface these modifier-level overrides in its route resolution display.
+
+---
+
+## Next Session TODO — Menu Domain
+
+### ⭐ Priority 1: Inventory ↔ Menu Sync (BIGGEST TODO)
+Per user direction — this is the most important thing to get right:
+- Test ingredient linking end-to-end: link ingredient → sell item → verify deduction
+- Ensure every item sold records correct ingredient usage for reporting/PM mix
+- Cost tracking: ingredient costs flow through to menu item costing
+- Investigate if "Beef Patty → Casa Fries" linking bug persists after W6 fix
+- Unify liquor + food inventory deduction engines
+
+### Priority 2: POS Ordering Flow UI
+Front-end visual issues with taking orders:
+- Review ModifierModal flow for customer-facing scenarios
+- Test Add Item vs Add Choice (plan exists: `~/.claude/plans/playful-wobbling-gadget.md`)
+- Verify modifier stacking, child group navigation, default selections
+- Review FloorPlanHome inline ordering end-to-end
+
+### Priority 3: (CARRYOVER) Ingredient Visibility Toggle
+- Add `showOnPOS` boolean to ingredient links
+- Admin UI: toggle per ingredient "Show to customer?"
+- POS: filter non-visible from modifier modal
+
+### Priority 4: Stacking Clarification + Tiered Pricing Modes
+- Review if tiered pricing needs additional modes
+- Consider: quantity-based pricing, volume discounts
+- Verify per-modifier `extraPrice` used after free threshold
+
+### Priority 5: Admin UX Polish
+- Exclusion Group Key → Dropdown Selector (replace text input)
+- Drag-and-Drop Modifier Group Reordering (admin)
+
+---
+
 ### How to Resume
 1. Say: `PM Mode: Menu`
-2. Review this changelog
-3. Prioritize items 1-8 above
-4. Items 7 and 8 are related (POS modifier modal redesign) — likely one combined effort
+2. **Review `/docs/PM-TASK-BOARD.md`** — check for tasks assigned to PM: Menu
+3. Review this changelog
+4. Review Pre-Launch Test Checklist in CLAUDE.md (Section 2: Modifiers & Menu Builder)
+5. All W1-W8 workers are COMPLETE ✅
+6. Focus on Priority 1: POS Front-End Ordering UI Lift (T-016)
+
+---
+
+## Session: Feb 6, 2026 (Late) — PM Infrastructure + Cross-Domain Task Assignment
+
+### Context
+This session was primarily run under PM: Inventory (Skill 215: Unified Modifier Inventory Deduction). PM: Menu is receiving EOD updates because cross-domain infrastructure was built and tasks were assigned.
+
+### No Code Workers This Session
+No Menu-domain code was written. This was an infrastructure and documentation session.
+
+### What Happened (Relevant to Menu Domain)
+
+1. **PM Cross-Domain Task Board created** (`/docs/PM-TASK-BOARD.md`)
+   - Central task board all PMs must check on startup and update at EOD
+   - Tasks assigned to PM: Menu listed below
+
+2. **Pre-Launch Test Checklist created** (CLAUDE.md)
+   - 96 tests across 12 categories
+   - Section 2 "Modifiers & Menu Builder" has 10 tests for Menu domain
+   - All tests currently ⬜ (untested)
+
+3. **CLAUDE.md Upcoming Work reprioritized**
+   - NEW Priority 1: **POS Front-End Ordering UI Lift** (assigned PM: Menu)
+   - Previous priorities bumped down by 1
+
+4. **Skills renumbered**
+   - Old Skill 210 "Unified Modifier Inventory Deduction" → renamed to **Skill 215** (210 was already taken by Modifier Cascade Delete)
+   - New Skill 216: Ingredient-Modifier Connection Visibility
+
+### Tasks Assigned to PM: Menu (from Task Board)
+
+| ID | Task | Priority | Created By | Notes |
+|----|------|----------|------------|-------|
+| T-005 | Modifier recipe support — multi-ingredient recipes for modifiers | P3 | PM: Inventory | R365 "concatenation" model. Big feature. |
+| T-013 | Add customization to Item Builder Modifiers — No/Lite/Extra/On Side toggles, extra price, multipliers, swap config | P2 | PM: Inventory | Some may already exist in ModifierGroup/Modifier models |
+| T-016 | **POS front-end ordering UI lift** — ModifierModal flow, item selection UX, order panel polish, glassmorphism consistency | **P1** | PM: Inventory | Desperately needs UI attention |
+
+### Known Issues (Carryover)
+1. **"Beef Patty → Casa Fries" linking bug** — May persist after W6 fix. Needs reproduction testing.
+2. **No E2E testing for print routing** — UI config only; dispatch deferred to Hardware domain
+3. **No E2E testing for tiered pricing/exclusion** — Needs manual QA on POS modifier modal
+
+### Next Session TODO — Menu Domain (UPDATED)
+
+### ⭐ Priority 1: POS Front-End Ordering UI Lift (T-016)
+This is now the #1 priority per user direction. The ordering experience desperately needs a UI overhaul:
+- [ ] ModifierModal flow redesign — better group navigation, stacking, child groups
+- [ ] Item selection UX — category/item grid, touch targets, visual hierarchy
+- [ ] Order summary panel polish — item display, modifier depth, quantity controls
+- [ ] Glassmorphism consistency across all POS order screens
+- [ ] Pre-modifier (No/Lite/Extra) interaction clarity
+- [ ] Spirit tier quick-select polish (Call/Prem/Top)
+- [ ] Pour size selector polish (Shot/Dbl/Tall/Shrt)
+- [ ] Combo step flow UX
+- [ ] Mobile/tablet responsive touch targets
+- [ ] Animation/transition cleanup
+
+### Priority 2: Modifier Customization in Item Builder (T-013)
+- [ ] Allow No/Lite/Extra/On Side toggles per modifier in group editor
+- [ ] Extra price upcharge per modifier
+- [ ] Lite/Extra multipliers for inventory
+- [ ] Swap group configuration
+
+### Priority 3: Inventory ↔ Menu Sync Verification
+- [ ] Test ingredient linking end-to-end
+- [ ] Investigate "Beef Patty → Casa Fries" bug if still reproducing
+- [ ] Verify modifier ingredient deduction via Skill 215
+
+### Priority 4: (CARRYOVER) Ingredient Visibility Toggle
+- [ ] `showOnPOS` boolean
+- [ ] Admin toggle
+- [ ] POS filter
+
+### Priority 5: Admin UX Polish (CARRYOVER)
+- [ ] Exclusion Group Key → Dropdown Selector
+- [ ] Drag-and-Drop Modifier Group Reordering
+
+### Priority 6: Modifier Recipe Support (T-005)
+- [ ] Multi-ingredient recipes for modifiers (big feature, P3)
+
+---
+
+### How to Resume
+1. Say: `PM Mode: Menu`
+2. **Review `/docs/PM-TASK-BOARD.md`** — check for tasks assigned to PM: Menu
+3. Review this changelog
+4. Review Pre-Launch Test Checklist in CLAUDE.md (Section 2)
+5. Pick up T-016 (POS UI lift) as first priority

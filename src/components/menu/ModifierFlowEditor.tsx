@@ -103,7 +103,10 @@ export function ModifierFlowEditor({
     }
 
     loadGroupData()
-  }, [item?.id, selectedGroupId, refreshKey])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id, selectedGroupId])
+  // Note: refreshKey intentionally excluded — external refreshes (from ItemEditor saves)
+  // should NOT wipe this panel's state mid-edit. Panel reloads on group selection change only.
 
   const saveChanges = useCallback(async () => {
     if (!item?.id || !selectedGroupId) return
@@ -120,17 +123,17 @@ export function ModifierFlowEditor({
         }),
       })
 
-      if (response.ok) {
-        onGroupUpdated()
-      } else {
+      if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         toast.error(errorData.error || 'Failed to save settings')
       }
+      // No onGroupUpdated() — tiered pricing/exclusion saves are local to this panel,
+      // calling onGroupUpdated triggers refreshKey++ which re-fetches and resets all state mid-edit
     } catch (error) {
       console.error('Failed to save group settings:', error)
       toast.error('Failed to save group settings')
     }
-  }, [item?.id, selectedGroupId, exclusionKey, tieredPricing, onGroupUpdated])
+  }, [item?.id, selectedGroupId, exclusionKey, tieredPricing])
 
   const debouncedSave = useCallback(() => {
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
@@ -253,46 +256,18 @@ export function ModifierFlowEditor({
 
   const handleSettingChange = async (updates: Record<string, any>) => {
     if (!item?.id || !selectedGroupId) return
+    // Optimistic: update local group state immediately
+    setGroup(prev => prev ? { ...prev, ...updates } : prev)
     try {
       const response = await fetch(`/api/menu/items/${item.id}/modifier-groups/${selectedGroupId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
-      if (response.ok) {
-        // Reload group data
-        const loadGroupData = async () => {
-          setLoading(true)
-          try {
-            const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
-            if (response.ok) {
-              const data = await response.json()
-              const groups = data.data || data.modifierGroups || []
-              setAllGroups(groups)
-
-              const foundGroup = groups.find((g: ModifierGroup) => g.id === selectedGroupId)
-              if (foundGroup) {
-                setGroup(foundGroup)
-                setTieredPricing(foundGroup.tieredPricingConfig || {
-                  enabled: false,
-                  modes: {
-                    flat_tiers: false,
-                    free_threshold: false,
-                  },
-                })
-                setExclusionKey(foundGroup.exclusionGroupKey || '')
-              }
-            }
-          } catch (error) {
-            console.error('Failed to load group data:', error)
-            toast.error('Failed to refresh group data')
-          } finally {
-            setLoading(false)
-          }
-        }
-        await loadGroupData()
-        onGroupUpdated()
+      if (!response.ok) {
+        toast.error('Failed to update group settings')
       }
+      // No full reload or onGroupUpdated — optimistic state is sufficient
     } catch (e) {
       console.error('Failed to update group settings:', e)
       toast.error('Failed to update group settings')

@@ -106,6 +106,9 @@ export interface Ingredient {
   needsVerification?: boolean
   verifiedAt?: string | null
   verifiedBy?: string | null
+
+  // Linked modifier count (from Modifier.ingredientId)
+  linkedModifierCount?: number
 }
 
 interface IngredientLibraryProps {

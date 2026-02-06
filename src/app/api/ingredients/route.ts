@@ -93,6 +93,13 @@ export async function GET(request: NextRequest) {
               prepItem: {
                 select: { id: true, name: true, outputUnit: true },
               },
+              // Count of linked modifiers (for showing connection badge)
+              _count: {
+                select: {
+                  linkedModifiers: { where: { deletedAt: null } },
+                  menuItemIngredients: true,
+                },
+              },
               // Recursively include grandchildren (one level deep for now)
               childIngredients: {
                 where: { deletedAt: null },
@@ -120,6 +127,7 @@ export async function GET(request: NextRequest) {
                   criticalStockThreshold: true,
                   onlineStockThreshold: true,
                   parentIngredientId: true,
+                  needsVerification: true,
                 },
               },
             },
@@ -174,6 +182,9 @@ export async function GET(request: NextRequest) {
         standardQuantity: parent.standardQuantity ? Number(parent.standardQuantity) : null,
         standardUnit: parent.standardUnit,
       } : null,
+      needsVerification: child.needsVerification || false,
+      linkedModifierCount: child._count?.linkedModifiers || 0,
+      usedByCount: child._count?.menuItemIngredients || 0,
       childIngredients: child.childIngredients?.map((c: any) => formatChildIngredient(c, child)) || [],
     })
 
@@ -319,15 +330,33 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Check for duplicate name
+    // Check for duplicate name — but allow a prep item to share a name with its parent inventory item
+    // e.g. INV "Ketchup" can have a PREP child also named "Ketchup"
     const existing = await db.ingredient.findFirst({
       where: { locationId, name, deletedAt: null },
+      select: { id: true, name: true, parentIngredientId: true, categoryId: true },
     })
     if (existing) {
-      return NextResponse.json(
-        { error: 'An ingredient with this name already exists' },
-        { status: 409 }
-      )
+      // Allow if: we're creating a prep item (has parentIngredientId) AND the existing item is the parent INV item
+      const isCreatingPrepUnderParent = parentIngredientId && existing.id === parentIngredientId && !existing.parentIngredientId
+      // Also allow if: we're creating a prep item AND the existing one is an INV item (not the same parent, but different type)
+      const isCreatingPrepAndExistingIsInv = parentIngredientId && !existing.parentIngredientId
+
+      if (!isCreatingPrepUnderParent && !isCreatingPrepAndExistingIsInv) {
+        return NextResponse.json(
+          {
+            error: 'An ingredient with this name already exists',
+            existing: {
+              id: existing.id,
+              name: existing.name,
+              parentIngredientId: existing.parentIngredientId,
+              categoryId: existing.categoryId,
+            },
+          },
+          { status: 409 }
+        )
+      }
+      // else: allow creation — a prep item can share a name with an inventory item
     }
 
     // Validate categoryId if provided
@@ -448,6 +477,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Error creating ingredient:', error)
-    return NextResponse.json({ error: 'Failed to create ingredient' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({ error: 'Failed to create ingredient', detail: message }, { status: 500 })
   }
 }

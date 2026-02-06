@@ -23,7 +23,6 @@ export default function LinksPage() {
           {/* MENU & FOOD */}
           <Section title="🍕 MENU">
             <LinkItem href="/menu" label="Menu Items" />
-            <LinkItem href="/modifiers" label="Modifiers" />
             <LinkItem href="/combos" label="Combos" />
             <LinkItem href="/pizza" label="Pizza" />
             <LinkItem href="/ingredients" label="Ingredients" />

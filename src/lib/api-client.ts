@@ -396,27 +396,6 @@ export const api = {
         }),
     },
 
-    // Modifier Groups
-    modifiers: {
-      list: () => fetchApi<unknown[]>('/api/menu/modifiers'),
-
-      get: (id: string) => fetchApi<unknown>(`/api/menu/modifiers/${id}`),
-
-      create: (data: unknown) =>
-        fetchApi<unknown>('/api/menu/modifiers', {
-          method: 'POST',
-          body: JSON.stringify(data),
-        }),
-
-      update: (id: string, data: unknown) =>
-        fetchApi<unknown>(`/api/menu/modifiers/${id}`, {
-          method: 'PUT',
-          body: JSON.stringify(data),
-        }),
-
-      delete: (id: string) =>
-        fetchApi<void>(`/api/menu/modifiers/${id}`, { method: 'DELETE' }),
-    },
   },
 
   // ==========================================

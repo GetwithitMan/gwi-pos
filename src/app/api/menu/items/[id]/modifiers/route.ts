@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
-// GET modifier groups linked to a menu item
+// GET modifier groups for a menu item — reads from item-owned groups (ModifierGroup.menuItemId)
+// This is the endpoint the POS ordering flow uses to load modifier groups for selection.
 // Optional query params:
 //   - channel: 'online' | 'pos' - filter modifiers by channel visibility
 export async function GET(
@@ -9,75 +10,86 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
+    const { id: menuItemId } = await params
     const { searchParams } = new URL(request.url)
-    const channel = searchParams.get('channel') // 'online', 'pos', or null (admin - show all)
+    const channel = searchParams.get('channel')
 
-    const links = await db.menuItemModifierGroup.findMany({
-      where: { menuItemId: id },
+    // Fetch item-owned modifier groups (where menuItemId is set on the group itself)
+    // Only top-level groups (no parentModifierId on any modifier pointing to them from another group)
+    const allGroups = await db.modifierGroup.findMany({
+      where: {
+        menuItemId,
+        deletedAt: null,
+      },
       include: {
-        modifierGroup: {
+        modifiers: {
+          where: { deletedAt: null, isActive: true },
+          orderBy: { sortOrder: 'asc' },
           include: {
-            modifiers: {
-              where: { isActive: true },
-              orderBy: { sortOrder: 'asc' },
-              include: {
-                linkedBottleProduct: {
-                  select: {
-                    id: true,
-                    name: true,
-                    pourCost: true,
-                  },
-                },
+            linkedBottleProduct: {
+              select: {
+                id: true,
+                name: true,
+                pourCost: true,
               },
             },
-            spiritConfig: {
-              include: {
-                spiritCategory: {
-                  select: { id: true, name: true, displayName: true }
-                }
-              }
-            }
-          }
-        }
+          },
+        },
+        spiritConfig: {
+          include: {
+            spiritCategory: {
+              select: { id: true, name: true, displayName: true },
+            },
+          },
+        },
       },
-      orderBy: { sortOrder: 'asc' }
+      orderBy: { sortOrder: 'asc' },
     })
 
-    // For online channel, filter out groups that are not enabled for online at the item level
-    let filteredLinks = links
-    if (channel === 'online') {
-      filteredLinks = links.filter(link => link.showOnline)
-    }
+    // Build a map for child group lookups
+    const groupMap = new Map(allGroups.map(g => [g.id, g]))
 
+    // Identify child groups (groups referenced by a modifier's childModifierGroupId)
+    const childGroupIds = new Set<string>()
+    allGroups.forEach(g => {
+      g.modifiers.forEach(m => {
+        if (m.childModifierGroupId) childGroupIds.add(m.childModifierGroupId)
+      })
+    })
+
+    // Only return top-level groups (not child groups — those are nested inside their parent modifier)
+    const topLevelGroups = allGroups.filter(g => !childGroupIds.has(g.id))
+
+    // Format response in the shape the POS ModifierModal expects
     return NextResponse.json({
-      modifierGroups: filteredLinks.map(link => {
-        // Filter modifiers based on channel if specified
-        let filteredModifiers = link.modifierGroup.modifiers
+      modifierGroups: topLevelGroups.map(group => {
+        let filteredModifiers = group.modifiers
         if (channel === 'online') {
-          filteredModifiers = link.modifierGroup.modifiers.filter(mod => mod.showOnline)
+          filteredModifiers = group.modifiers.filter(mod => mod.showOnline)
         } else if (channel === 'pos') {
-          filteredModifiers = link.modifierGroup.modifiers.filter(mod => mod.showOnPOS)
+          filteredModifiers = group.modifiers.filter(mod => mod.showOnPOS)
         }
 
         return {
-          id: link.modifierGroup.id,
-          name: link.modifierGroup.name,
-          displayName: link.modifierGroup.displayName,
-          minSelections: link.modifierGroup.minSelections,
-          maxSelections: link.modifierGroup.maxSelections,
-          isRequired: link.modifierGroup.isRequired,
-          allowStacking: link.modifierGroup.allowStacking,
-          hasOnlineOverride: link.modifierGroup.hasOnlineOverride,
-          isSpiritGroup: link.modifierGroup.isSpiritGroup,
-          modifierTypes: (link.modifierGroup.modifierTypes as string[]) || ['universal'],
-          showOnline: link.showOnline, // Item-level online visibility
-          spiritConfig: link.modifierGroup.spiritConfig ? {
-            spiritCategoryId: link.modifierGroup.spiritConfig.spiritCategoryId,
-            spiritCategoryName: link.modifierGroup.spiritConfig.spiritCategory.displayName || link.modifierGroup.spiritConfig.spiritCategory.name,
-            upsellEnabled: link.modifierGroup.spiritConfig.upsellEnabled,
-            upsellPromptText: link.modifierGroup.spiritConfig.upsellPromptText,
-            defaultTier: link.modifierGroup.spiritConfig.defaultTier,
+          id: group.id,
+          name: group.name,
+          displayName: group.displayName,
+          minSelections: group.minSelections,
+          maxSelections: group.maxSelections,
+          isRequired: group.isRequired,
+          allowStacking: group.allowStacking,
+          hasOnlineOverride: group.hasOnlineOverride,
+          isSpiritGroup: group.isSpiritGroup,
+          modifierTypes: (group.modifierTypes as string[]) || ['universal'],
+          tieredPricingConfig: group.tieredPricingConfig,
+          exclusionGroupKey: group.exclusionGroupKey,
+          showOnline: true,
+          spiritConfig: group.spiritConfig ? {
+            spiritCategoryId: group.spiritConfig.spiritCategoryId,
+            spiritCategoryName: group.spiritConfig.spiritCategory.displayName || group.spiritConfig.spiritCategory.name,
+            upsellEnabled: group.spiritConfig.upsellEnabled,
+            upsellPromptText: group.spiritConfig.upsellPromptText,
+            defaultTier: group.spiritConfig.defaultTier,
           } : null,
           modifiers: filteredModifiers.map(mod => ({
             id: mod.id,
@@ -86,12 +98,18 @@ export async function GET(
             price: Number(mod.price),
             upsellPrice: mod.upsellPrice ? Number(mod.upsellPrice) : null,
             allowedPreModifiers: mod.allowedPreModifiers as string[] | null,
+            allowNo: mod.allowNo,
+            allowLite: mod.allowLite,
+            allowOnSide: mod.allowOnSide,
+            allowExtra: mod.allowExtra,
             extraPrice: mod.extraPrice ? Number(mod.extraPrice) : null,
             extraUpsellPrice: mod.extraUpsellPrice ? Number(mod.extraUpsellPrice) : null,
             isDefault: mod.isDefault,
+            isLabel: mod.isLabel ?? false,
             showOnPOS: mod.showOnPOS,
             showOnline: mod.showOnline,
             childModifierGroupId: mod.childModifierGroupId,
+            ingredientId: mod.ingredientId,
             // Spirit fields
             spiritTier: mod.spiritTier,
             linkedBottleProductId: mod.linkedBottleProductId,
@@ -100,9 +118,10 @@ export async function GET(
               name: mod.linkedBottleProduct.name,
               pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
             } : null,
-          }))
+            is86d: false, // Field is on Ingredient, not Modifier — POS expects it so default to false
+          })),
         }
-      })
+      }),
     })
   } catch (error) {
     console.error('Failed to fetch item modifiers:', error)
@@ -113,78 +132,12 @@ export async function GET(
   }
 }
 
-// POST link modifier groups to menu item
-// Accepts either:
-//   { modifierGroupIds: string[] } - legacy format, all showOnline=true
-//   { modifierGroups: { id: string, showOnline?: boolean }[] } - new format with per-group online visibility
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id: menuItemId } = await params
-    const body = await request.json()
-    const { modifierGroupIds, modifierGroups } = body
-
-    // Support both old format (modifierGroupIds) and new format (modifierGroups with showOnline)
-    let groupsToLink: { id: string; showOnline: boolean }[] = []
-
-    if (modifierGroups && Array.isArray(modifierGroups)) {
-      // New format: { id, showOnline }
-      groupsToLink = modifierGroups.map((g: { id: string; showOnline?: boolean }) => ({
-        id: g.id,
-        showOnline: g.showOnline ?? true
-      }))
-    } else if (Array.isArray(modifierGroupIds)) {
-      // Legacy format: just IDs, all showOnline=true
-      groupsToLink = modifierGroupIds.map((id: string) => ({ id, showOnline: true }))
-    } else {
-      return NextResponse.json(
-        { error: 'modifierGroupIds or modifierGroups must be an array' },
-        { status: 400 }
-      )
-    }
-
-    // Get menu item to get locationId
-    const menuItem = await db.menuItem.findUnique({
-      where: { id: menuItemId },
-      select: { locationId: true },
-    })
-
-    if (!menuItem) {
-      return NextResponse.json(
-        { error: 'Menu item not found' },
-        { status: 404 }
-      )
-    }
-
-    // Use transaction to ensure atomic update (prevents partial state if one operation fails)
-    await db.$transaction(async (tx) => {
-      // Remove existing links
-      await tx.menuItemModifierGroup.deleteMany({
-        where: { menuItemId }
-      })
-
-      // Create new links
-      if (groupsToLink.length > 0) {
-        await tx.menuItemModifierGroup.createMany({
-          data: groupsToLink.map((group, index: number) => ({
-            locationId: menuItem.locationId,
-            menuItemId,
-            modifierGroupId: group.id,
-            sortOrder: index,
-            showOnline: group.showOnline,
-          }))
-        })
-      }
-    })
-
-    return NextResponse.json({ success: true })
-  } catch (error) {
-    console.error('Failed to link modifiers to item:', error)
-    return NextResponse.json(
-      { error: 'Failed to link modifiers to item' },
-      { status: 500 }
-    )
-  }
+// POST is no longer needed — modifier groups are item-owned, managed via
+// /api/menu/items/[id]/modifier-groups (the ItemEditor API)
+// Keeping a stub that returns a clear error if anything still calls it.
+export async function POST(request: NextRequest) {
+  return NextResponse.json(
+    { error: 'Shared modifier linking is deprecated. Use /api/menu/items/[id]/modifier-groups to manage item-owned modifier groups.' },
+    { status: 410 }
+  )
 }

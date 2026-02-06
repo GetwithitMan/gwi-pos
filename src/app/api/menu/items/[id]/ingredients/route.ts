@@ -21,7 +21,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
 
     const ingredients = await db.menuItemIngredient.findMany({
-      where: { menuItemId },
+      where: { menuItemId, deletedAt: null },
       include: {
         ingredient: {
           include: {
@@ -46,8 +46,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: { sortOrder: 'asc' },
     })
 
+    // Filter out any links where the ingredient itself was soft-deleted
+    const activeIngredients = ingredients.filter(mi => mi.ingredient && !mi.ingredient.deletedAt)
+
     return NextResponse.json({
-      data: ingredients.map(mi => ({
+      data: activeIngredients.map(mi => ({
         id: mi.id,
         ingredientId: mi.ingredientId,
         name: mi.ingredient.name,
@@ -62,6 +65,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         extraPrice: Number(mi.extraPrice ?? mi.ingredient.extraPrice),
         allowSwap: mi.ingredient.allowSwap,
         swapUpcharge: Number(mi.ingredient.swapUpcharge),
+        needsVerification: mi.ingredient.needsVerification || false,
         // Swap options (ingredients that can be swapped for this one)
         swapGroup: mi.ingredient.swapGroup ? {
           id: mi.ingredient.swapGroup.id,
@@ -108,7 +112,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Verify all ingredient IDs exist
     const ingredientIds = ingredients.map(i => i.ingredientId)
     const existingIngredients = await db.ingredient.findMany({
-      where: { id: { in: ingredientIds }, locationId: menuItem.locationId },
+      where: { id: { in: ingredientIds }, locationId: menuItem.locationId, deletedAt: null },
       select: { id: true },
     })
     const existingIds = new Set(existingIngredients.map(i => i.id))
@@ -120,14 +124,15 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       )
     }
 
-    // Delete existing and create new in a transaction
+    // Replace all existing links in a transaction
+    // Hard delete is correct here — this is a full replace operation, not a sync delete.
+    // Soft delete would violate the @@unique([menuItemId, ingredientId]) constraint
+    // when re-creating the same links with updated toggle values.
     await db.$transaction(async (tx) => {
-      // Delete existing links
       await tx.menuItemIngredient.deleteMany({
         where: { menuItemId },
       })
 
-      // Create new links
       if (ingredients.length > 0) {
         await tx.menuItemIngredient.createMany({
           data: ingredients.map((ing, index) => ({
@@ -139,7 +144,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             sortOrder: ing.sortOrder ?? index,
             quantity: ing.quantity ?? null,
             unit: ing.unit ?? null,
-            // Pre-modifier overrides (null = use ingredient defaults)
             allowNo: ing.allowNo ?? null,
             allowLite: ing.allowLite ?? null,
             allowExtra: ing.allowExtra ?? null,
@@ -152,12 +156,24 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     // Fetch and return updated ingredients
     const updated = await db.menuItemIngredient.findMany({
-      where: { menuItemId },
+      where: { menuItemId, deletedAt: null },
       include: {
         ingredient: {
           include: {
             swapGroup: {
-              select: { id: true, name: true },
+              select: {
+                id: true,
+                name: true,
+                ingredients: {
+                  where: { isActive: true, deletedAt: null },
+                  select: {
+                    id: true,
+                    name: true,
+                    extraPrice: true,
+                  },
+                  orderBy: { sortOrder: 'asc' },
+                },
+              },
             },
           },
         },
@@ -165,17 +181,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       orderBy: { sortOrder: 'asc' },
     })
 
+    // Filter out links where ingredient was soft-deleted
+    const activeUpdated = updated.filter(mi => mi.ingredient && !mi.ingredient.deletedAt)
+
     return NextResponse.json({
-      data: updated.map(mi => ({
+      data: activeUpdated.map(mi => ({
         id: mi.id,
         ingredientId: mi.ingredientId,
         name: mi.ingredient.name,
         category: mi.ingredient.category,
         isIncluded: mi.isIncluded,
-        isBase: mi.isBase,
         sortOrder: mi.sortOrder,
+        allowNo: mi.allowNo ?? mi.ingredient.allowNo,
+        allowLite: mi.allowLite ?? mi.ingredient.allowLite,
+        allowOnSide: mi.allowOnSide ?? mi.ingredient.allowOnSide,
+        allowExtra: mi.allowExtra ?? mi.ingredient.allowExtra,
         extraPrice: Number(mi.extraPrice ?? mi.ingredient.extraPrice),
+        allowSwap: mi.ingredient.allowSwap,
         swapUpcharge: Number(mi.ingredient.swapUpcharge),
+        needsVerification: mi.ingredient.needsVerification || false,
+        swapGroup: mi.ingredient.swapGroup ? {
+          id: mi.ingredient.swapGroup.id,
+          name: mi.ingredient.swapGroup.name,
+          ingredients: mi.ingredient.swapGroup.ingredients.map(ing => ({
+            id: ing.id,
+            name: ing.name,
+            extraPrice: Number(ing.extraPrice),
+          })),
+        } : null,
+        hasExtraPriceOverride: mi.extraPrice !== null,
       })),
     })
   } catch (error) {

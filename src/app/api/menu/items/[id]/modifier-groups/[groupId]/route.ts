@@ -93,6 +93,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           ingredientId: m.ingredientId,
           ingredientName: m.ingredient?.name || null,
           childModifierGroupId: m.childModifierGroupId,
+          printerRouting: m.printerRouting,
+          printerIds: m.printerIds,
           childModifierGroup: m.childModifierGroup ? {
             id: m.childModifierGroup.id,
             name: m.childModifierGroup.name,
@@ -118,6 +120,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
               ingredientId: cm.ingredientId,
               ingredientName: cm.ingredient?.name || null,
               childModifierGroupId: cm.childModifierGroupId,
+              printerRouting: cm.printerRouting,
+              printerIds: cm.printerIds,
             })),
           } : null,
         })),
@@ -129,10 +133,33 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/menu/items/[id]/modifier-groups/[groupId] - Delete modifier group
+// Recursively collect all group IDs and modifier IDs under a group (for cascade delete)
+async function collectDescendants(groupId: string, groupIds: Set<string>, modifierIds: Set<string>, visited = new Set<string>()) {
+  if (visited.has(groupId)) return
+  visited.add(groupId)
+  groupIds.add(groupId)
+
+  // Get all modifiers in this group
+  const modifiers = await db.modifier.findMany({
+    where: { modifierGroupId: groupId, deletedAt: null },
+    select: { id: true, childModifierGroupId: true },
+  })
+
+  for (const mod of modifiers) {
+    modifierIds.add(mod.id)
+    // If this modifier has a child group, recurse into it
+    if (mod.childModifierGroupId) {
+      await collectDescendants(mod.childModifierGroupId, groupIds, modifierIds, visited)
+    }
+  }
+}
+
+// DELETE /api/menu/items/[id]/modifier-groups/[groupId] - Delete modifier group (cascade)
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId, groupId } = await params
+    const { searchParams } = new URL(request.url)
+    const preview = searchParams.get('preview') === 'true'
 
     // Verify group belongs to this item
     const group = await db.modifierGroup.findFirst({
@@ -143,15 +170,40 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Modifier group not found' }, { status: 404 })
     }
 
-    // Soft delete the group and its modifiers
+    // Recursively collect all descendant groups and modifiers
+    const groupIds = new Set<string>()
+    const modifierIds = new Set<string>()
+    await collectDescendants(groupId, groupIds, modifierIds)
+
+    // Preview mode: just return the counts
+    if (preview) {
+      return NextResponse.json({
+        data: {
+          groupCount: groupIds.size,
+          modifierCount: modifierIds.size,
+          groupName: group.name,
+        },
+      })
+    }
+
+    // Also unlink any parent modifier that points to this group
+    // (so the parent modifier doesn't reference a deleted child group)
+    const now = new Date()
     await db.$transaction([
+      // Unlink parent modifiers pointing to this group
       db.modifier.updateMany({
-        where: { modifierGroupId: groupId },
-        data: { deletedAt: new Date() },
+        where: { childModifierGroupId: groupId, deletedAt: null },
+        data: { childModifierGroupId: null },
       }),
-      db.modifierGroup.update({
-        where: { id: groupId },
-        data: { deletedAt: new Date() },
+      // Soft delete all modifiers in all descendant groups
+      db.modifier.updateMany({
+        where: { id: { in: Array.from(modifierIds) } },
+        data: { deletedAt: now },
+      }),
+      // Soft delete all descendant groups
+      db.modifierGroup.updateMany({
+        where: { id: { in: Array.from(groupIds) } },
+        data: { deletedAt: now },
       }),
     ])
 

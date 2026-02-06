@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
@@ -9,6 +9,7 @@ interface Ingredient {
   id: string
   ingredientId: string
   name: string
+  category?: string | null     // Ingredient category code from API
   isIncluded: boolean
   allowNo: boolean
   allowLite: boolean
@@ -16,6 +17,7 @@ interface Ingredient {
   allowOnSide: boolean
   allowSwap: boolean
   extraPrice: number
+  needsVerification?: boolean  // ← Verification status
 }
 
 interface IngredientLibraryItem {
@@ -64,6 +66,8 @@ interface Modifier {
   childModifierGroupId?: string | null
   childModifierGroup?: ModifierGroup | null
   isLabel?: boolean
+  printerRouting?: string  // "follow" | "also" | "only"
+  printerIds?: string[]    // Printer IDs for "also" or "only" mode
 }
 
 interface ModifierGroup {
@@ -97,13 +101,14 @@ interface ItemEditorProps {
   ingredientCategories?: IngredientCategory[]
   locationId?: string
   onItemUpdated: () => void
+  onIngredientCreated?: (ingredient: IngredientLibraryItem) => void
   onToggle86?: (item: MenuItem) => void
   onDelete?: (itemId: string) => void
   refreshKey?: number
   onSelectGroup?: (groupId: string | null) => void
 }
 
-export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = [], locationId = '', onItemUpdated, onToggle86, onDelete, refreshKey, onSelectGroup }: ItemEditorProps) {
+export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = [], locationId = '', onItemUpdated, onIngredientCreated, onToggle86, onDelete, refreshKey, onSelectGroup }: ItemEditorProps) {
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
   const [loading, setLoading] = useState(false)
@@ -114,6 +119,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
   // Forms
   const [showIngredientPicker, setShowIngredientPicker] = useState(false)
+  const [relinkingIngredientId, setRelinkingIngredientId] = useState<string | null>(null)
   const [ingredientSearch, setIngredientSearch] = useState('')
 
   // Modifier group editing state
@@ -145,6 +151,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
   const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null)
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
+  const [dragOverDropZone, setDragOverDropZone] = useState<string | null>(null) // 'top-level' or modifier ID for nesting
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [addingType, setAddingType] = useState<'item' | 'choice' | null>(null)
@@ -153,6 +160,38 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   const [draggedModifierId, setDraggedModifierId] = useState<string | null>(null)
   const [dragOverModifierId, setDragOverModifierId] = useState<string | null>(null)
 
+  // Printer routing state
+  const [printers, setPrinters] = useState<Array<{ id: string; name: string }>>([])
+  const [printerRoutingModifier, setPrinterRoutingModifier] = useState<{ groupId: string; modId: string } | null>(null)
+
+  // Compute ingredient-to-modifier mapping for bidirectional link indicators
+  const ingredientToModifiers = useMemo(() => {
+    const map = new Map<string, { modName: string; groupName: string }[]>()
+
+    // Recursive function to process modifiers, including child groups
+    const processModifiers = (mods: Modifier[], groupName: string) => {
+      mods.forEach(mod => {
+        if (mod.ingredientId) {
+          const existing = map.get(mod.ingredientId) || []
+          existing.push({ modName: mod.name, groupName })
+          map.set(mod.ingredientId, existing)
+        }
+        // Recurse into child modifier groups
+        if (mod.childModifierGroup) {
+          processModifiers(
+            mod.childModifierGroup.modifiers,
+            mod.childModifierGroup.name
+          )
+        }
+      })
+    }
+
+    modifierGroups.forEach(group => {
+      processModifiers(group.modifiers, group.name)
+    })
+    return map
+  }, [modifierGroups])
+
   // Load data when item changes or refreshKey updates
   useEffect(() => {
     if (!item?.id) {
@@ -160,12 +199,43 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       setModifierGroups([])
       return
     }
-    loadData()
+    loadData(true) // Show spinner only on initial/item-change load
   }, [item?.id, refreshKey])
 
-  const loadData = async () => {
+  // Load printers for print routing
+  useEffect(() => {
+    const fetchPrinters = async () => {
+      try {
+        const res = await fetch('/api/hardware/printers')
+        if (res.ok) {
+          const data = await res.json()
+          setPrinters((data.printers || []).map((p: any) => ({ id: p.id, name: p.name })))
+        }
+      } catch (e) {
+        console.error('Failed to load printers:', e)
+      }
+    }
+    fetchPrinters()
+  }, [])
+
+  // Close printer routing dropdown when clicking outside
+  useEffect(() => {
+    if (!printerRoutingModifier) return
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      // Don't close if clicking inside the dropdown or on the button
+      if (target.closest('.printer-routing-dropdown') || target.closest('.printer-routing-button')) {
+        return
+      }
+      setPrinterRoutingModifier(null)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [printerRoutingModifier])
+
+  const loadData = async (showSpinner = false) => {
     if (!item?.id) return
-    setLoading(true)
+    if (showSpinner) setLoading(true)
     try {
       const [ingRes, groupsRes] = await Promise.all([
         fetch(`/api/menu/items/${item.id}/ingredients`),
@@ -178,7 +248,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       console.error('Failed to load data:', e)
       toast.error('Failed to load modifier data')
     } finally {
-      setLoading(false)
+      if (showSpinner) setLoading(false)
     }
   }
 
@@ -187,7 +257,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     if (!item?.id) return
     setSaving(true)
     try {
-      await fetch(`/api/menu/items/${item.id}/ingredients`, {
+      const res = await fetch(`/api/menu/items/${item.id}/ingredients`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -198,13 +268,18 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             allowLite: i.allowLite,
             allowExtra: i.allowExtra,
             allowOnSide: i.allowOnSide,
-            allowSwap: i.allowSwap,
             extraPrice: i.extraPrice,
           }))
         }),
       })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('Save ingredients failed:', res.status, err)
+        toast.error(err.error || `Save failed (${res.status})`)
+        return
+      }
       await loadData()
-      onItemUpdated()
+      // No onItemUpdated() — ingredient toggles are local-only, no tree change
     } catch (e) {
       console.error('Failed to save:', e)
       toast.error('Failed to save ingredients')
@@ -217,8 +292,16 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     const lib = ingredientsLibrary.find(i => i.id === ingredientId)
     if (!lib) return
     const newIngredients = [...ingredients, {
-      id: '', ingredientId, name: lib.name, isIncluded: true,
-      allowNo: true, allowLite: true, allowExtra: true, allowOnSide: true, allowSwap: true, extraPrice: 0,
+      id: '',
+      ingredientId,
+      name: lib.name,
+      isIncluded: true,
+      allowNo: true,
+      allowLite: true,
+      allowExtra: true,
+      allowOnSide: true,
+      allowSwap: true,
+      extraPrice: 0,
     }]
     saveIngredients(newIngredients)
     setShowIngredientPicker(false)
@@ -227,6 +310,20 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
   const removeIngredient = (ingredientId: string) => {
     saveIngredients(ingredients.filter(i => i.ingredientId !== ingredientId))
+  }
+
+  // Swap an ingredient link — replace one ingredientId with another
+  const swapIngredientLink = async (oldIngredientId: string, newIngredientId: string) => {
+    const lib = ingredientsLibrary.find(i => i.id === newIngredientId)
+    if (!lib) return
+    setRelinkingIngredientId(null)
+    setIngredientSearch('')
+    await saveIngredients(ingredients.map(i =>
+      i.ingredientId === oldIngredientId
+        ? { ...i, ingredientId: newIngredientId, name: lib.name }
+        : i
+    ))
+    toast.success(`Linked to ${lib.name}`)
   }
 
   const toggleIngredientOption = (ingredientId: string, option: 'allowNo' | 'allowLite' | 'allowExtra' | 'allowOnSide' | 'allowSwap') => {
@@ -250,7 +347,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       setNewGroupName('')
       setShowNewGroupForm(false)
       await loadData()
-      onItemUpdated()
+      // No onItemUpdated() — creating a modifier group is local to this item, no tree change
     } catch (e) {
       console.error('Failed to create group:', e)
       toast.error('Failed to create modifier group')
@@ -261,20 +358,38 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
   const updateGroup = async (groupId: string, updates: Partial<ModifierGroup>) => {
     if (!item?.id) return
-    setSaving(true)
+    // Optimistic: update local state immediately, no flash
+    setModifierGroups(prev => {
+      const updateInGroups = (groups: ModifierGroup[]): ModifierGroup[] =>
+        groups.map(g => {
+          const updated = g.id === groupId ? { ...g, ...updates } : g
+          return {
+            ...updated,
+            modifiers: updated.modifiers.map(m => {
+              if (m.childModifierGroup) {
+                return { ...m, childModifierGroup: updateInGroups([m.childModifierGroup])[0] }
+              }
+              return m
+            }),
+          }
+        })
+      return updateInGroups(prev)
+    })
     try {
-      await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}`, {
+      const res = await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       })
-      await loadData()
-      onItemUpdated()
+      if (!res.ok) {
+        await loadData() // Revert on error
+        toast.error('Failed to update modifier group')
+      }
+      // No onItemUpdated() — rename/toggle/settings are local-only, no full menu refetch needed
     } catch (e) {
       console.error('Failed to update group:', e)
+      await loadData() // Revert on error
       toast.error('Failed to update modifier group')
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -336,31 +451,103 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   }
 
   const deleteGroup = async (groupId: string) => {
-    if (!item?.id || !confirm('Delete this modifier group?')) return
+    if (!item?.id) return
+    // Step 1: Preview — get cascade counts
+    try {
+      const previewRes = await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}?preview=true`, { method: 'DELETE' })
+      const previewData = await previewRes.json()
+      const { groupCount, modifierCount, groupName } = previewData.data || {}
+
+      // Step 2: First confirmation
+      const childGroupCount = (groupCount || 1) - 1 // exclude the group itself
+      let msg = `Delete "${groupName || 'this group'}"?`
+      if (childGroupCount > 0 || modifierCount > 0) {
+        msg += `\n\nThis will also delete:`
+        if (modifierCount > 0) msg += `\n  • ${modifierCount} modifier${modifierCount > 1 ? 's' : ''}`
+        if (childGroupCount > 0) msg += `\n  • ${childGroupCount} child group${childGroupCount > 1 ? 's' : ''}`
+      }
+      if (!confirm(msg)) return
+
+      // Step 3: Second confirmation for groups with children
+      if (childGroupCount > 0) {
+        if (!confirm('⚠️ Are you SURE? All nested groups and modifiers will be permanently deleted.')) return
+      }
+    } catch (e) {
+      // If preview fails, fall back to simple confirm
+      if (!confirm('Delete this modifier group and all its contents?')) return
+    }
+
+    // Step 4: Execute delete
     setSaving(true)
     try {
       await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}`, { method: 'DELETE' })
-      await loadData()
-      onItemUpdated()
+      // Optimistic: remove from local state
+      setModifierGroups(prev => prev.filter(g => g.id !== groupId))
+      toast.success('Modifier group deleted')
+      await loadData(false)
     } catch (e) {
       console.error('Failed to delete group:', e)
       toast.error('Failed to delete modifier group')
+      await loadData(false)
     } finally {
       setSaving(false)
     }
   }
 
-  const duplicateGroup = async (groupId: string) => {
+  const duplicateGroup = async (groupId: string, targetParentGroupId?: string) => {
     if (!item?.id) return
     setSaving(true)
     try {
-      await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
+      // Step 1: Create the duplicate (always creates at top-level)
+      const res = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ duplicateFromGroupId: groupId }),
       })
+      const resData = await res.json()
+      const newGroupId = resData.data?.id
+
+      // Step 2: If the source was a child group, re-nest the duplicate in the same parent group
+      // OR if a specific target parent group was provided, nest it there
+      if (newGroupId) {
+        // Find the parent modifier that links to the source group (if it's a child)
+        let parentGroupId = targetParentGroupId
+        if (!parentGroupId) {
+          for (const g of modifierGroups) {
+            for (const m of g.modifiers) {
+              if (m.childModifierGroupId === groupId) {
+                parentGroupId = g.id
+                break
+              }
+            }
+            if (parentGroupId) break
+          }
+        }
+
+        if (parentGroupId) {
+          // Create a modifier in the parent group to hold the duplicate
+          const sourceGroup = modifierGroups.find(g => g.id === groupId)
+          const modRes = await fetch(`/api/menu/items/${item.id}/modifier-groups/${parentGroupId}/modifiers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: sourceGroup?.name ? `${sourceGroup.name} (Copy)` : 'Copy', price: 0 }),
+          })
+          const modData = await modRes.json()
+          const newModId = modData.data?.id
+
+          if (newModId) {
+            // Reparent the duplicate group to be a child of the new modifier
+            await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ groupId: newGroupId, targetParentModifierId: newModId }),
+            })
+          }
+        }
+      }
+
+      toast.success('Group duplicated')
       await loadData()
-      onItemUpdated()
     } catch (e) {
       console.error('Failed to duplicate group:', e)
       toast.error('Failed to duplicate modifier group')
@@ -399,14 +586,21 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
     // Persist only top-level sort orders
     try {
-      await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
+      const resp = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sortOrders: reordered.map((g, i) => ({ id: g.id, sortOrder: i })),
         }),
       })
-      onItemUpdated()
+      if (!resp.ok) {
+        const err = await resp.json()
+        console.error('Failed to reorder groups:', err)
+        toast.error(err.error || 'Failed to reorder groups')
+        await loadData() // Rollback
+        return
+      }
+      // No onItemUpdated() — reorder is optimistic, already updated local state
     } catch (e) {
       console.error('Failed to reorder groups:', e)
       toast.error('Failed to reorder groups')
@@ -456,11 +650,170 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           body: JSON.stringify({ modifierId: m.id, sortOrder: idx }),
         })
       ))
-      onItemUpdated()
+      // No onItemUpdated() — reorder is optimistic, already updated local state
     } catch (e) {
       console.error('Failed to reorder modifiers:', e)
       toast.error('Failed to reorder modifiers')
       await loadData() // rollback
+    }
+  }
+
+  // Helper to check if a group is a descendant of another (cycle prevention for drag-drop)
+  const isDescendantOf = (ancestorGroupId: string, targetGroupId: string, visited = new Set<string>()): boolean => {
+    if (ancestorGroupId === targetGroupId) return true
+    if (visited.has(ancestorGroupId)) return false
+    visited.add(ancestorGroupId)
+
+    const group = findGroupById(ancestorGroupId)
+    if (!group) return false
+
+    for (const mod of group.modifiers) {
+      if (mod.childModifierGroup) {
+        if (mod.childModifierGroup.id === targetGroupId) return true
+        if (isDescendantOf(mod.childModifierGroup.id, targetGroupId, visited)) return true
+      }
+    }
+    return false
+  }
+
+  // Reparent a group: move it to top-level or make it a child of a modifier
+  const reparentGroup = async (groupId: string, targetParentModifierId: string | null) => {
+    if (!item?.id) return
+    setSaving(true)
+    try {
+      const resp = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId, targetParentModifierId }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json()
+        toast.error(err.error || 'Failed to move group')
+        return
+      }
+      toast.success('Group moved successfully')
+      await loadData()
+      // No onItemUpdated() — reparenting a modifier group is local to this item, no tree change
+    } catch (e) {
+      console.error('Failed to reparent group:', e)
+      toast.error('Failed to move group')
+      await loadData()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Handle drop of a group onto a top-level reorder target OR onto a modifier (nesting)
+  const handleGroupDrop = async (e: React.DragEvent, targetGroupId: string) => {
+    e.preventDefault()
+    if (!draggedGroupId || draggedGroupId === targetGroupId) {
+      setDraggedGroupId(null)
+      setDragOverGroupId(null)
+      setDragOverDropZone(null)
+      return
+    }
+
+    // Check if the dragged group is currently a child group
+    const childGroupIdSet = new Set<string>()
+    modifierGroups.forEach(g => {
+      g.modifiers.forEach(m => {
+        if (m.childModifierGroupId) childGroupIdSet.add(m.childModifierGroupId)
+      })
+    })
+    const draggedIsChild = childGroupIdSet.has(draggedGroupId)
+    const targetIsChild = childGroupIdSet.has(targetGroupId)
+
+    if (draggedIsChild && !targetIsChild) {
+      // Child being dropped on a top-level group → promote to top-level then reorder
+      await reparentGroup(draggedGroupId, null)
+      // After reparent, reorder will happen naturally from the new loadData
+    } else if (!draggedIsChild && !targetIsChild) {
+      // Both top-level → simple reorder
+      await reorderGroups(draggedGroupId, targetGroupId)
+    } else {
+      // Both are children or dragging top-level onto child → just reorder
+      await reorderGroups(draggedGroupId, targetGroupId)
+    }
+
+    setDraggedGroupId(null)
+    setDragOverGroupId(null)
+    setDragOverDropZone(null)
+  }
+
+  // Handle dropping a group onto a modifier to make it a child
+  const handleGroupDropOnModifier = async (e: React.DragEvent, targetModifierId: string, targetGroupId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!draggedGroupId) return
+
+    // Prevent cycle: can't drop a group onto a modifier that's inside it
+    if (isDescendantOf(draggedGroupId, targetGroupId)) {
+      toast.error('Cannot nest a group inside its own descendant')
+      setDraggedGroupId(null)
+      setDragOverGroupId(null)
+      setDragOverDropZone(null)
+      return
+    }
+
+    // Check if target modifier already has a child group — offer to replace
+    const targetMod = findModifierById(targetModifierId)
+    if (targetMod?.childModifierGroupId) {
+      const existingChild = findGroupById(targetMod.childModifierGroupId)
+      const existingName = existingChild?.name || 'existing child group'
+      if (!confirm(`"${targetMod.name}" already has a child group "${existingName}". Replace it?`)) {
+        setDraggedGroupId(null)
+        setDragOverGroupId(null)
+        setDragOverDropZone(null)
+        return
+      }
+      // Unlink the existing child group (promote it to top-level)
+      await reparentGroup(targetMod.childModifierGroupId, null)
+    }
+
+    await reparentGroup(draggedGroupId, targetModifierId)
+    setDraggedGroupId(null)
+    setDragOverGroupId(null)
+    setDragOverDropZone(null)
+  }
+
+  // Nest a group inside another group: auto-create a modifier in targetGroupId, then reparent draggedGroupId to it
+  const nestGroupInGroup = async (draggedId: string, targetGroupId: string) => {
+    if (!item?.id) return
+    // Find the dragged group name for the auto-created modifier
+    const draggedGroup = modifierGroups.find(g => g.id === draggedId)
+    const modName = draggedGroup?.name || 'Sub-Group'
+
+    setSaving(true)
+    try {
+      // Step 1: Create a modifier in the target group
+      const modRes = await fetch(`/api/menu/items/${item.id}/modifier-groups/${targetGroupId}/modifiers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: modName, price: 0 }),
+      })
+      const modData = await modRes.json()
+      const newModId = modData.data?.id
+      if (!newModId) throw new Error('Failed to create modifier for nesting')
+
+      // Step 2: Reparent the dragged group to be a child of the new modifier
+      const resp = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: draggedId, targetParentModifierId: newModId }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json()
+        toast.error(err.error || 'Failed to nest group')
+        return
+      }
+      toast.success('Group nested successfully')
+      await loadData()
+    } catch (e) {
+      console.error('Failed to nest group:', e)
+      toast.error('Failed to nest group')
+      await loadData()
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -480,7 +833,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       setAddingModifierTo(null)
       setAddingType(null)
       await loadData()
-      onItemUpdated()
+      // No onItemUpdated() — adding a modifier within a group is local-only
     } catch (e) {
       console.error('Failed to add modifier:', e)
       toast.error('Failed to add modifier')
@@ -489,23 +842,79 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     }
   }
 
+  // Helper: recursively update a modifier in local state (handles child groups)
+  const updateModifierInGroups = (groups: ModifierGroup[], targetGroupId: string, modId: string, updates: Partial<Modifier>): ModifierGroup[] => {
+    return groups.map(g => {
+      const updatedModifiers = g.modifiers.map(m => {
+        // Update the target modifier
+        const updatedMod = (g.id === targetGroupId && m.id === modId)
+          ? { ...m, ...updates }
+          : m
+        // Recurse into child groups
+        if (updatedMod.childModifierGroup) {
+          return {
+            ...updatedMod,
+            childModifierGroup: updateModifierInGroups([updatedMod.childModifierGroup], targetGroupId, modId, updates)[0]
+          }
+        }
+        return updatedMod
+      })
+      return { ...g, modifiers: updatedModifiers }
+    })
+  }
+
   const updateModifier = async (groupId: string, modifierId: string, updates: Partial<Modifier>) => {
     if (!item?.id) return
-    setSaving(true)
+
+    // Optimistic local update — no flash, instant feedback
+    setModifierGroups(prev => updateModifierInGroups(prev, groupId, modifierId, updates))
+
     try {
-      await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}/modifiers`, {
+      const res = await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}/modifiers`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modifierId, ...updates }),
       })
-      await loadData()
-      onItemUpdated()
+      if (!res.ok) {
+        // Revert on failure
+        await loadData()
+        toast.error('Failed to update modifier')
+      }
     } catch (e) {
       console.error('Failed to update modifier:', e)
+      await loadData() // Revert on error
       toast.error('Failed to update modifier')
-    } finally {
-      setSaving(false)
     }
+  }
+
+  // Toggle isDefault with group rule enforcement (respects maxSelections)
+  const toggleDefault = async (groupId: string, modifierId: string, currentlyDefault: boolean) => {
+    if (!item?.id) return
+    const group = findGroupById(groupId)
+    if (!group) return
+
+    if (!currentlyDefault && group.maxSelections > 0) {
+      // Turning ON — check if we'd exceed maxSelections
+      const currentDefaults = group.modifiers.filter(m => m.isDefault && m.id !== modifierId)
+      if (currentDefaults.length >= group.maxSelections) {
+        // Optimistically clear excess defaults locally (API does same server-side)
+        const excessCount = currentDefaults.length - group.maxSelections + 1
+        const idsToUndefault = currentDefaults.slice(0, excessCount).map(d => d.id)
+        setModifierGroups(prev => {
+          let updated = prev
+          for (const clearId of idsToUndefault) {
+            updated = updateModifierInGroups(updated, groupId, clearId, { isDefault: false })
+          }
+          return updated
+        })
+        toast.info(`Max ${group.maxSelections} default${group.maxSelections > 1 ? 's' : ''} — replacing previous`)
+      }
+    }
+
+    // This will also optimistically update the target modifier
+    await updateModifier(groupId, modifierId, { isDefault: !currentlyDefault })
+    // After API responds, do a background refresh to get canonical server state
+    loadData()
   }
 
   const deleteModifier = async (groupId: string, modifierId: string) => {
@@ -516,7 +925,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
         method: 'DELETE',
       })
       await loadData()
-      onItemUpdated()
+      // No onItemUpdated() — removing a modifier within a group is local-only
     } catch (e) {
       console.error('Failed to delete modifier:', e)
       toast.error('Failed to delete modifier')
@@ -571,7 +980,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
         }),
       })
       await loadData()
-      onItemUpdated()
+      // No onItemUpdated() — creating a child group is local to this item, no tree change
     } catch (e) {
       console.error('Failed to create child group:', e)
       toast.error('Failed to create child group')
@@ -619,7 +1028,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       setAddingModifierTo(null)
       setAddingType(null)
       await loadData()
-      onItemUpdated()
+      // No onItemUpdated() — adding a choice is local to this item, no tree change
     } catch (e) {
       console.error('Failed to add choice:', e)
       toast.error('Failed to add choice')
@@ -629,9 +1038,18 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   }
 
   const linkIngredient = async (groupId: string, modifierId: string, ingredientId: string | null) => {
-    await updateModifier(groupId, modifierId, { ingredientId })
+    // Include ingredientName in optimistic update so badge renders immediately
+    const ingredientName = ingredientId
+      ? ingredientsLibrary.find(i => i.id === ingredientId)?.name || null
+      : null
+    await updateModifier(groupId, modifierId, { ingredientId, ingredientName } as Partial<Modifier>)
+    // Refresh data to update the 🔗 badge immediately
+    await loadData()
+    // Reset ALL linking state to prevent stale data on next open
     setLinkingModifier(null)
     setModIngredientSearch('')
+    setExpandedCategories(new Set())
+    setExpandedParents(new Set())
   }
 
   // Toggle category expansion
@@ -674,16 +1092,54 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        toast.error(error.error || 'Failed to create ingredient')
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+
+        // 409 = duplicate name — auto-expand the existing item so user can add a prep item under it
+        if (response.status === 409 && errorData.existing) {
+          const existingId = errorData.existing.id
+          const existingCatId = errorData.existing.categoryId || categoryId
+          setNewInventoryName('')
+          setCreatingInventoryInCategory(null)
+
+          // Expand the category and the existing inventory item, then open prep creation
+          setExpandedCategories(prev => {
+            const next = new Set(prev)
+            next.add(existingCatId)
+            return next
+          })
+          setExpandedParents(prev => {
+            const next = new Set(prev)
+            next.add(existingId)
+            return next
+          })
+          setCreatingPrepUnderParent(existingId)
+          toast.info(`"${errorData.existing.name}" already exists — add a prep item below`)
+          return
+        }
+
+        toast.error(errorData.error || 'Failed to create ingredient')
         return
       }
 
       const { data } = await response.json()
+      onIngredientCreated?.(data)  // Optimistic local update + socket event
       onItemUpdated()  // Refresh parent's ingredient library
       setNewInventoryName('')
       setCreatingInventoryInCategory(null)
-      toast.success(`Created "${data.name}" - pending verification`)
+
+      // Auto-expand the new inventory item and prompt to add a prep item
+      setExpandedCategories(prev => {
+        const next = new Set(prev)
+        next.add(categoryId)
+        return next
+      })
+      setExpandedParents(prev => {
+        const next = new Set(prev)
+        next.add(data.id)
+        return next
+      })
+      setCreatingPrepUnderParent(data.id)
+      toast.success(`Created "${data.name}" — now add a prep item below`)
     } catch (error) {
       console.error('Error creating inventory item:', error)
       toast.error('Failed to create ingredient')
@@ -712,22 +1168,90 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        toast.error(error.error || 'Failed to create prep item')
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+
+        // 409 = duplicate name — if it's a prep item, offer to use the existing one
+        if (response.status === 409 && errorData.existing) {
+          const existingItem = errorData.existing
+          const isPrepItem = !!existingItem.parentIngredientId
+
+          if (isPrepItem) {
+            // It's an existing prep item — ask if they want to use it
+            const useExisting = confirm(
+              `"${existingItem.name}" already exists as a prep item. Use the existing one instead?`
+            )
+            if (useExisting) {
+              // Auto-link or auto-add the existing prep item
+              if (linkingModifier) {
+                await linkIngredient(linkingModifier.groupId, linkingModifier.modId, existingItem.id)
+                toast.success(`Linked existing "${existingItem.name}"`)
+              } else if (showIngredientPicker) {
+                const alreadyAdded = ingredients.some(i => i.ingredientId === existingItem.id)
+                if (alreadyAdded) {
+                  toast.info(`"${existingItem.name}" is already added to this item`)
+                } else {
+                  const newIngredients = [...ingredients, {
+                    id: '', ingredientId: existingItem.id, name: existingItem.name,
+                    isIncluded: true, allowNo: true, allowLite: true, allowExtra: true,
+                    allowOnSide: true, allowSwap: true, extraPrice: 0,
+                  }]
+                  saveIngredients(newIngredients)
+                  setShowIngredientPicker(false)
+                  setIngredientSearch('')
+                  toast.success(`Added existing "${existingItem.name}"`)
+                }
+              }
+              setNewPrepName('')
+              setCreatingPrepUnderParent(null)
+              return
+            }
+            // User said no — keep the form open so they can change the name
+            toast.info('Change the name to create a new prep item')
+            return
+          } else {
+            // It's an inventory item with the same name — tell user to pick a different name
+            toast.error(`"${existingItem.name}" exists as an inventory item. Use a different name for the prep item.`)
+            return
+          }
+        }
+
+        toast.error(errorData.error || 'Failed to create prep item')
         return
       }
 
       const { data } = await response.json()
+      onIngredientCreated?.(data)  // Optimistic local update + socket event
       onItemUpdated()
 
-      // Auto-link to modifier
+      // Auto-link to modifier OR auto-add to ingredients
       if (linkingModifier) {
         await linkIngredient(linkingModifier.groupId, linkingModifier.modId, data.id)
+        toast.success(`Created "${data.name}" and linked - pending verification`)
+      } else if (showIngredientPicker) {
+        // Auto-add to ingredients when called from ingredient picker
+        // Don't rely on ingredientsLibrary being updated, use the data we got from API
+        const newIngredients = [...ingredients, {
+          id: '',
+          ingredientId: data.id,
+          name: data.name,
+          isIncluded: true,
+          allowNo: true,
+          allowLite: true,
+          allowExtra: true,
+          allowOnSide: true,
+          allowSwap: true,
+          extraPrice: 0,
+        }]
+        saveIngredients(newIngredients)
+        setShowIngredientPicker(false)
+        setIngredientSearch('')
+        toast.success(`Created "${data.name}" and added - pending verification`)
+      } else {
+        toast.success(`Created "${data.name}" - pending verification`)
       }
 
       setNewPrepName('')
       setCreatingPrepUnderParent(null)
-      toast.success(`Created "${data.name}" and linked - pending verification`)
     } catch (error) {
       console.error('Error creating prep item:', error)
       toast.error('Failed to create prep item')
@@ -737,7 +1261,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   }
 
   // Helper to render a choice row (navigation modifier with child group)
-  const renderChoiceRow = (groupId: string, mod: Modifier, depth: number = 0) => {
+  const renderChoiceRow = (groupId: string, mod: Modifier, depth: number = 0, siblingIndex: number = 0) => {
     const childGroup = mod.childModifierGroup
     const itemCount = childGroup?.modifiers?.length || 0
 
@@ -755,6 +1279,10 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
         onDragOver={(e) => {
           e.preventDefault()
           e.stopPropagation()
+          if (draggedGroupId) {
+            // Group being dragged — choice already has a child, can't nest another
+            return
+          }
           setDragOverModifierId(mod.id)
         }}
         onDragLeave={() => setDragOverModifierId(null)}
@@ -806,16 +1334,16 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             ×
           </button>
         </div>
-        {childGroup && renderChildGroup(childGroup, depth + 1)}
+        {childGroup && renderChildGroup(childGroup, depth + 1, siblingIndex)}
       </div>
     )
   }
 
   // Helper to render a modifier row with all controls
-  const renderModifierRow = (groupId: string, mod: Modifier, depth: number = 0) => {
+  const renderModifierRow = (groupId: string, mod: Modifier, depth: number = 0, rowIndex: number = 0) => {
     // If this is a choice (label with child group), render it differently
     if (mod.isLabel && mod.childModifierGroupId) {
-      return renderChoiceRow(groupId, mod, depth)
+      return renderChoiceRow(groupId, mod, depth, rowIndex)
     }
 
     const isLinking = linkingModifier?.groupId === groupId && linkingModifier?.modId === mod.id
@@ -824,10 +1352,15 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       ing.name.toLowerCase().includes(modIngredientSearch.toLowerCase())
     )
 
+    // When a group is being dragged, this modifier becomes a potential nest target
+    // Allow dropping groups on any modifier (swap if already has child)
+    const isGroupDropTarget = !!draggedGroupId
+    const isGroupDragOverThis = dragOverDropZone === mod.id && draggedGroupId
+
     return (
       <div
         key={mod.id}
-        className={`space-y-1 ${draggedModifierId === mod.id ? 'opacity-50' : ''} ${dragOverModifierId === mod.id && draggedModifierId !== mod.id ? 'ring-2 ring-indigo-300 rounded' : ''}`}
+        className={`space-y-1 ${draggedModifierId === mod.id ? 'opacity-50' : ''} ${dragOverModifierId === mod.id && draggedModifierId !== mod.id ? 'ring-2 ring-indigo-300 rounded' : ''} ${isGroupDragOverThis ? 'ring-2 ring-green-400 rounded bg-green-50' : ''}`}
         draggable
         onDragStart={(e) => {
           e.stopPropagation()
@@ -838,50 +1371,103 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
         onDragOver={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          setDragOverModifierId(mod.id)
+          if (draggedGroupId) {
+            // Group is being dragged — this modifier is a nest target
+            if (isGroupDropTarget) setDragOverDropZone(mod.id)
+          } else {
+            setDragOverModifierId(mod.id)
+          }
         }}
-        onDragLeave={() => setDragOverModifierId(null)}
+        onDragLeave={() => { setDragOverModifierId(null); setDragOverDropZone(null) }}
         onDrop={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          if (draggedModifierId) reorderModifiers(groupId, draggedModifierId, mod.id)
+          if (draggedGroupId && isGroupDropTarget) {
+            // A group was dropped on this modifier → nest the group
+            handleGroupDropOnModifier(e, mod.id, groupId)
+          } else if (draggedModifierId) {
+            reorderModifiers(groupId, draggedModifierId, mod.id)
+          }
           setDraggedModifierId(null)
           setDragOverModifierId(null)
+          setDragOverDropZone(null)
         }}
         onDragEnd={() => {
           setDraggedModifierId(null)
           setDragOverModifierId(null)
+          setDragOverDropZone(null)
         }}
       >
-        <div className="flex items-center gap-2 px-2 py-1.5 bg-white border rounded text-sm">
-          <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs" title="Drag to reorder">⠿</span>
+        <div className={`flex items-center gap-1.5 px-2 py-1.5 border rounded text-sm ${isGroupDragOverThis ? 'bg-green-50 border-green-300' : rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+          <span className="cursor-grab text-gray-300 hover:text-gray-500 text-xs shrink-0" title="Drag to reorder">⠿</span>
+
+          {/* LEFT SIDE: Name + Upcharge price only */}
           {editingModifierId === mod.id ? (
-            <input
-              type="text"
-              value={editModValues.name}
-              onChange={(e) => setEditModValues(prev => ({ ...prev, name: e.target.value }))}
-              onBlur={() => commitEditModifier(groupId, mod.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitEditModifier(groupId, mod.id)
-                if (e.key === 'Escape') setEditingModifierId(null)
-              }}
-              className="flex-1 px-1 py-0.5 text-sm border rounded bg-white min-w-0"
-              autoFocus
-              onClick={(e) => e.stopPropagation()}
-            />
+            <div className="flex items-center gap-1 flex-1 min-w-0" ref={(el) => {
+              // Store ref so blur can check if focus moved within this container
+              if (el) (el as any)._editContainer = true
+            }}>
+              <input
+                type="text"
+                value={editModValues.name}
+                onChange={(e) => setEditModValues(prev => ({ ...prev, name: e.target.value }))}
+                onBlur={(e) => {
+                  // Don't close if clicking the sibling price input
+                  const related = e.relatedTarget as HTMLElement | null
+                  if (related && e.currentTarget.parentElement?.contains(related)) return
+                  setTimeout(() => commitEditModifier(groupId, mod.id), 100)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitEditModifier(groupId, mod.id)
+                  if (e.key === 'Escape') setEditingModifierId(null)
+                }}
+                className="flex-1 px-1 py-0.5 text-sm border rounded bg-white min-w-0"
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+              />
+              <div className="flex items-center gap-0.5 shrink-0">
+                <span className="text-[9px] text-gray-500">$</span>
+                <input
+                  type="number"
+                  value={editModValues.price}
+                  onChange={(e) => setEditModValues(prev => ({ ...prev, price: e.target.value }))}
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={(e) => {
+                    const related = e.relatedTarget as HTMLElement | null
+                    if (related && e.currentTarget.parentElement?.parentElement?.contains(related)) return
+                    setTimeout(() => commitEditModifier(groupId, mod.id), 100)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitEditModifier(groupId, mod.id)
+                    if (e.key === 'Escape') setEditingModifierId(null)
+                  }}
+                  className="w-16 px-1 py-0.5 text-xs border rounded text-center"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+            </div>
           ) : (
             <span
-              className="flex-1 truncate cursor-pointer hover:text-indigo-600"
-              onDoubleClick={() => startEditModifier(mod)}
-              title="Double-click to edit"
+              className="flex-1 truncate cursor-pointer hover:text-indigo-600 flex items-center gap-1.5 min-w-0 group/name"
+              onClick={() => startEditModifier(mod)}
+              title="Click to edit name & price"
             >
-              {mod.name}
+              <span className="truncate">{mod.name}</span>
+              {mod.price > 0 && (
+                <span className="text-xs text-green-600 font-semibold shrink-0">+{formatCurrency(mod.price)}</span>
+              )}
+              {mod.isDefault && (
+                <span className="text-[8px] px-1 py-0.5 bg-amber-100 text-amber-700 rounded font-semibold shrink-0">DEFAULT</span>
+              )}
+              <span className="text-gray-300 group-hover/name:text-indigo-400 text-[10px] shrink-0 transition-colors">✏️</span>
             </span>
           )}
 
+          {/* RIGHT SIDE: All controls */}
           {/* Ingredient Link Badge */}
           {mod.ingredientId && mod.ingredientName && (
-            <span className="text-[9px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded flex items-center gap-1">
+            <span className="text-[9px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded flex items-center gap-1 shrink-0">
               🔗 {mod.ingredientName}
               <button
                 onClick={() => linkIngredient(groupId, mod.id, null)}
@@ -892,92 +1478,216 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             </span>
           )}
 
+          {/* Unlinked hint - only for non-label modifiers */}
+          {!mod.ingredientId && !mod.isLabel && (
+            <span className="text-[8px] text-gray-300 italic shrink-0">unlinked</span>
+          )}
+
           {/* Link Ingredient Button */}
           <button
-            onClick={() => setLinkingModifier(isLinking ? null : { groupId, modId: mod.id })}
-            className={`w-5 h-5 rounded text-xs ${isLinking ? 'bg-purple-500 text-white' : 'bg-purple-100 text-purple-600 hover:bg-purple-200'}`}
+            onClick={() => {
+              if (isLinking) {
+                // Closing current modifier's dropdown — reset everything
+                setLinkingModifier(null)
+                setModIngredientSearch('')
+                setExpandedCategories(new Set())
+                setExpandedParents(new Set())
+              } else {
+                // Opening dropdown for a new modifier — reset and open
+                setExpandedCategories(new Set())
+                setExpandedParents(new Set())
+                setModIngredientSearch('')
+                setLinkingModifier({ groupId, modId: mod.id })
+              }
+            }}
+            className={`w-5 h-5 rounded text-xs shrink-0 ${isLinking ? 'bg-purple-500 text-white' : 'bg-purple-100 text-purple-600 hover:bg-purple-200'}`}
             title="Link Ingredient"
           >
             🔗
           </button>
 
-          {/* Pre-modifier toggles */}
-          <div className="flex gap-0.5">
-            <button
-              onClick={() => updateModifier(groupId, mod.id, { allowNo: !mod.allowNo })}
-              className={`w-5 h-5 rounded text-[9px] font-bold ${mod.allowNo ? 'bg-red-500 text-white' : 'bg-red-100 text-red-400'}`}
-            >
-              N
-            </button>
-            <button
-              onClick={() => updateModifier(groupId, mod.id, { allowLite: !mod.allowLite })}
-              className={`w-5 h-5 rounded text-[9px] font-bold ${mod.allowLite ? 'bg-yellow-500 text-white' : 'bg-yellow-100 text-yellow-400'}`}
-            >
-              L
-            </button>
-            <button
-              onClick={() => updateModifier(groupId, mod.id, { allowOnSide: !mod.allowOnSide })}
-              className={`w-5 h-5 rounded text-[9px] font-bold ${mod.allowOnSide ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-400'}`}
-            >
-              S
-            </button>
-            <button
-              onClick={() => updateModifier(groupId, mod.id, { allowExtra: !mod.allowExtra })}
-              className={`w-5 h-5 rounded text-[9px] font-bold ${mod.allowExtra ? 'bg-green-500 text-white' : 'bg-green-100 text-green-400'}`}
-            >
-              E
-            </button>
+          {/* Default Selection Toggle */}
+          <button
+            onClick={() => toggleDefault(groupId, mod.id, !!mod.isDefault)}
+            className={`w-5 h-5 rounded text-[9px] font-bold shrink-0 ${mod.isDefault ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-amber-100 hover:text-amber-500'}`}
+            title={mod.isDefault ? 'Default: ON' : 'Default: OFF'}
+          >
+            ★
+          </button>
+
+          {/* Pre-modifier toggles — each in own bordered box, faded color when off */}
+          <div className="flex gap-1 shrink-0">
+            <span className={`flex items-center h-6 rounded border px-0.5 ${mod.allowNo ? 'border-red-300 bg-red-50' : 'border-red-200 bg-red-50/40'}`}>
+              <button
+                onClick={() => updateModifier(groupId, mod.id, { allowNo: !mod.allowNo })}
+                className={`h-5 rounded text-[9px] font-bold px-1.5 ${mod.allowNo ? 'bg-red-500 text-white' : 'bg-red-100 text-red-300'}`}
+              >
+                No
+              </button>
+            </span>
+            <span className={`flex items-center h-6 rounded border px-0.5 ${mod.allowLite ? 'border-yellow-300 bg-yellow-50' : 'border-yellow-200 bg-yellow-50/40'}`}>
+              <button
+                onClick={() => updateModifier(groupId, mod.id, { allowLite: !mod.allowLite })}
+                className={`h-5 rounded text-[9px] font-bold px-1.5 ${mod.allowLite ? 'bg-yellow-500 text-white' : 'bg-yellow-100 text-yellow-300'}`}
+              >
+                Lite
+              </button>
+            </span>
+            <span className={`flex items-center h-6 rounded border px-0.5 ${mod.allowOnSide ? 'border-blue-300 bg-blue-50' : 'border-blue-200 bg-blue-50/40'}`}>
+              <button
+                onClick={() => updateModifier(groupId, mod.id, { allowOnSide: !mod.allowOnSide })}
+                className={`h-5 rounded text-[9px] font-bold px-1.5 ${mod.allowOnSide ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-300'}`}
+              >
+                Side
+              </button>
+            </span>
+            <span className={`flex items-center gap-0.5 h-6 rounded border px-0.5 ${mod.allowExtra ? 'border-green-300 bg-green-50' : 'border-green-200 bg-green-50/40'}`}>
+              <button
+                onClick={() => {
+                  const turningOn = !mod.allowExtra
+                  const updates: Partial<Modifier> = { allowExtra: turningOn }
+                  if (turningOn && mod.price > 0 && !(mod.extraPrice && mod.extraPrice > 0)) {
+                    updates.extraPrice = mod.price
+                  }
+                  updateModifier(groupId, mod.id, updates)
+                }}
+                className={`h-5 rounded text-[9px] font-bold px-1.5 ${mod.allowExtra ? 'bg-green-500 text-white' : 'bg-green-100 text-green-300'}`}
+              >
+                Extra
+              </button>
+              <span className={`text-[9px] font-bold ${mod.allowExtra ? 'text-green-600' : 'text-green-300'}`}>$</span>
+              {mod.allowExtra ? (
+                <input
+                  type="number"
+                  defaultValue={mod.extraPrice ?? 0}
+                  key={`extra-${mod.id}-${mod.extraPrice ?? 0}`}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onBlur={(e) => {
+                    const parsed = parseFloat(e.target.value)
+                    const val = Number.isFinite(parsed) ? parsed : 0
+                    if (val !== (mod.extraPrice ?? 0)) {
+                      updateModifier(groupId, mod.id, { extraPrice: val })
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    e.stopPropagation()
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  }}
+                  className="w-14 h-5 px-1 text-[10px] font-semibold rounded text-center bg-white border border-green-300 text-green-700 focus:border-green-500 focus:ring-1 focus:ring-green-300 focus:outline-none"
+                  step="0.01"
+                  min="0"
+                />
+              ) : (
+                <span className="w-14 h-5 flex items-center justify-center text-[10px] text-green-300 font-semibold">
+                  {(mod.extraPrice ?? 0).toFixed(2)}
+                </span>
+              )}
+            </span>
           </div>
 
-          {editingModifierId === mod.id ? (
-            <div className="flex items-center gap-0.5">
-              <span className="text-[9px] text-gray-500">$</span>
-              <input
-                type="number"
-                value={editModValues.price}
-                onChange={(e) => setEditModValues(prev => ({ ...prev, price: e.target.value }))}
-                onBlur={() => commitEditModifier(groupId, mod.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitEditModifier(groupId, mod.id)
-                  if (e.key === 'Escape') setEditingModifierId(null)
-                }}
-                className="w-14 px-1 py-0.5 text-xs border rounded text-center"
-                step="0.01"
-                min="0"
-              />
-            </div>
-          ) : (
-            <span
-              className="text-xs text-green-600 cursor-pointer hover:underline"
-              onDoubleClick={() => startEditModifier(mod)}
-              title="Double-click to edit price"
+          {/* Printer Routing Button */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setPrinterRoutingModifier(
+                printerRoutingModifier?.modId === mod.id ? null : { groupId, modId: mod.id }
+              )}
+              className={`printer-routing-button w-5 h-5 rounded text-xs shrink-0 ${
+                mod.printerRouting === 'only' ? 'bg-orange-500 text-white' :
+                mod.printerRouting === 'also' ? 'bg-blue-500 text-white' :
+                'bg-gray-100 text-gray-400 hover:bg-gray-200'
+              }`}
+              title={
+                mod.printerRouting === 'only' ? 'Prints ONLY to specific printers' :
+                mod.printerRouting === 'also' ? 'ALSO prints to additional printers' :
+                'Follows item\'s printer routing'
+              }
             >
-              {mod.price > 0 ? `+${formatCurrency(mod.price)}` : '$0'}
-            </span>
-          )}
+              🖨️
+            </button>
 
-          {editingModifierId === mod.id && mod.allowExtra && (
-            <div className="flex items-center gap-0.5">
-              <span className="text-[9px] text-gray-500">E$</span>
-              <input
-                type="number"
-                value={editModValues.extraPrice}
-                onChange={(e) => setEditModValues(prev => ({ ...prev, extraPrice: e.target.value }))}
-                onBlur={() => commitEditModifier(groupId, mod.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') commitEditModifier(groupId, mod.id)
-                  if (e.key === 'Escape') setEditingModifierId(null)
-                }}
-                className="w-14 px-1 py-0.5 text-xs border rounded text-center"
-                step="0.01"
-                min="0"
-              />
-            </div>
-          )}
+            {/* Printer Routing Dropdown */}
+            {printerRoutingModifier?.modId === mod.id && (
+              <div className="printer-routing-dropdown absolute right-0 top-full mt-1 bg-white border rounded shadow-lg p-2 w-56 z-50">
+                <div className="text-xs font-semibold mb-2">Print Routing</div>
+
+                {/* Routing Mode Selection */}
+                <div className="space-y-1 mb-2">
+                  <button
+                    onClick={() => updateModifier(groupId, mod.id, { printerRouting: 'follow', printerIds: [] })}
+                    className={`w-full text-left px-2 py-1 text-xs rounded ${
+                      (mod.printerRouting || 'follow') === 'follow' ? 'bg-gray-200 font-semibold' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    Follow Item (Default)
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (mod.printerRouting !== 'also') {
+                        updateModifier(groupId, mod.id, { printerRouting: 'also', printerIds: [] })
+                      }
+                    }}
+                    className={`w-full text-left px-2 py-1 text-xs rounded ${
+                      mod.printerRouting === 'also' ? 'bg-blue-100 text-blue-700 font-semibold' : 'hover:bg-blue-50'
+                    }`}
+                  >
+                    Also Print To...
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (mod.printerRouting !== 'only') {
+                        updateModifier(groupId, mod.id, { printerRouting: 'only', printerIds: [] })
+                      }
+                    }}
+                    className={`w-full text-left px-2 py-1 text-xs rounded ${
+                      mod.printerRouting === 'only' ? 'bg-orange-100 text-orange-700 font-semibold' : 'hover:bg-orange-50'
+                    }`}
+                  >
+                    Only Print To...
+                  </button>
+                </div>
+
+                {/* Printer Selection (only show for "also" or "only") */}
+                {(mod.printerRouting === 'also' || mod.printerRouting === 'only') && (
+                  <div className="border-t pt-2">
+                    <div className="text-[10px] text-gray-500 mb-1">Select Printers:</div>
+                    {printers.length === 0 ? (
+                      <div className="text-xs text-gray-400 py-2 text-center">
+                        No printers configured
+                      </div>
+                    ) : (
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {printers.map(printer => {
+                          const isSelected = (mod.printerIds || []).includes(printer.id)
+                          return (
+                            <label key={printer.id} className="flex items-center gap-2 text-xs cursor-pointer hover:bg-gray-50 rounded px-1 py-0.5">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  const currentIds = mod.printerIds || []
+                                  const newIds = e.target.checked
+                                    ? [...currentIds, printer.id]
+                                    : currentIds.filter(id => id !== printer.id)
+                                  updateModifier(groupId, mod.id, { printerIds: newIds })
+                                }}
+                                className="w-3 h-3"
+                              />
+                              <span>{printer.name}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <button
             onClick={() => deleteModifier(groupId, mod.id)}
-            className="text-red-400 hover:text-red-600 text-xs"
+            className="text-red-400 hover:text-red-600 text-xs shrink-0"
           >
             ×
           </button>
@@ -1007,7 +1717,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             />
             <div className="max-h-96 overflow-y-auto space-y-0.5">
               {(() => {
-                const hierarchy = buildHierarchy()
+                const hierarchy = buildHierarchy(modIngredientSearch)
                 const sortedCategories = Object.values(hierarchy).sort((a, b) =>
                   a.category.sortOrder - b.category.sortOrder
                 )
@@ -1015,29 +1725,44 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 if (sortedCategories.length === 0) {
                   return (
                     <div className="text-xs text-gray-400 text-center py-2">
-                      {modIngredientSearch ? 'No matching prep items' : 'No ingredient categories found'}
+                      {modIngredientSearch ? 'No matching ingredients' : 'No ingredient categories found'}
                     </div>
                   )
                 }
 
-                return sortedCategories.map(({ category, parents }) => {
+                return sortedCategories.map(({ category, baseIngredients, parents }) => {
                   const isExpanded = expandedCategories.has(category.id)
-                  const hasItems = Object.keys(parents).length > 0
+                  const hasItems = baseIngredients.length > 0 || Object.keys(parents).length > 0
 
                   return (
                     <div key={category.id}>
                       {/* Category Header */}
-                      <div className="flex items-center gap-1 text-[10px] font-bold text-purple-800 uppercase tracking-wider px-2 py-1.5 bg-purple-100 sticky top-0 border-b border-purple-200">
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 uppercase tracking-wider px-2 py-1.5 bg-gray-100 sticky top-0 border-b border-gray-200">
                         <button
                           onClick={() => toggleCategory(category.id)}
-                          className="hover:bg-purple-200 rounded px-1"
+                          className="hover:bg-gray-200 rounded px-1"
                         >
                           {isExpanded ? '▼' : '▶'}
                         </button>
                         <span className="flex-1">{category.name}</span>
+
+                        {/* Unverified count badge */}
+                        {(() => {
+                          const baseUnverified = baseIngredients.filter(b => b.needsVerification).length
+                          const prepUnverified = Object.values(parents)
+                            .flatMap(p => p.prepItems)
+                            .filter(prep => prep.needsVerification).length
+                          const unverifiedCount = baseUnverified + prepUnverified
+                          return unverifiedCount > 0 ? (
+                            <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium">
+                              ⚠ {unverifiedCount}
+                            </span>
+                          ) : null
+                        })()}
+
                         <button
                           onClick={() => setCreatingInventoryInCategory(category.id)}
-                          className="ml-auto text-purple-600 hover:text-purple-800 hover:bg-purple-200 rounded px-1"
+                          className="ml-auto text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded px-1"
                           title="Create new inventory item"
                           disabled={creatingIngredientLoading}
                         >
@@ -1051,7 +1776,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
                       {/* Inline Inventory Item Creation Form */}
                       {creatingInventoryInCategory === category.id && (
-                        <div className="px-4 py-2 bg-purple-50 border-b border-purple-200">
+                        <div className="px-4 py-2 bg-blue-50 border-b border-blue-200">
                           <input
                             type="text"
                             value={newInventoryName}
@@ -1071,7 +1796,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                           <div className="flex gap-1">
                             <button
                               onClick={() => createInventoryItem(category.id)}
-                              className="flex-1 px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+                              className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                               disabled={!newInventoryName.trim() || creatingIngredientLoading}
                             >
                               Create
@@ -1091,113 +1816,131 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                       )}
 
                       {/* Category Contents */}
-                      {isExpanded && (
-                        <div>
-                          {Object.entries(parents)
-                            .sort(([, a], [, b]) => {
-                              const nameA = a.parent?.name || ''
-                              const nameB = b.parent?.name || ''
-                              return nameA.localeCompare(nameB)
-                            })
-                            .map(([parentId, { parent, prepItems }]) => {
-                              const isParentExpanded = expandedParents.has(parentId)
+                      {isExpanded && (() => {
+                        // Build unified list for modifier ingredient picker too
+                        const modInvItems = baseIngredients
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map(base => ({
+                            item: base,
+                            children: (parents[base.id]?.prepItems || [])
+                              .sort((a, b) => a.name.localeCompare(b.name)),
+                          }))
+                        const modBaseIds = new Set(baseIngredients.map(b => b.id))
+                        const modOrphanParents = Object.entries(parents)
+                          .filter(([pid]) => !modBaseIds.has(pid))
+                          .map(([pid, { parent: p, prepItems }]) => ({
+                            item: p, parentId: pid,
+                            children: prepItems.sort((a, b) => a.name.localeCompare(b.name)),
+                          }))
+                          .filter(g => g.children.length > 0)
+                          .sort((a, b) => (a.item?.name || '').localeCompare(b.item?.name || ''))
 
+                        return (
+                          <div>
+                            {/* Inventory items (BLUE) — expand only, only prep items are linkable */}
+                            {modInvItems.map(({ item: base, children: modChildren }) => {
+                              const hasKids = modChildren.length > 0
+                              const isBaseExp = expandedParents.has(base.id)
                               return (
-                                <div key={parentId}>
-                                  {/* Parent/Inventory Item Sub-Header */}
-                                  <div className="flex items-center gap-1 text-[10px] font-semibold text-gray-500 px-3 py-1 bg-gray-50">
-                                    <button
-                                      onClick={() => toggleParent(parentId)}
-                                      className="hover:bg-gray-200 rounded px-1"
-                                    >
-                                      {isParentExpanded ? '▼' : '▶'}
-                                    </button>
-                                    <span className="text-gray-400">🏷</span>
-                                    <span className="flex-1">{parent?.name || 'Unknown'}</span>
-                                    <button
-                                      onClick={() => setCreatingPrepUnderParent(parentId)}
-                                      className="ml-auto text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded px-1"
-                                      title="Create new prep item"
-                                      disabled={creatingIngredientLoading}
-                                    >
-                                      {creatingIngredientLoading && creatingPrepUnderParent === parentId ? (
-                                        <span className="animate-spin">⏳</span>
-                                      ) : (
-                                        '+'
-                                      )}
-                                    </button>
+                                <div key={base.id}>
+                                  <div
+                                    className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
+                                    onClick={() => toggleParent(base.id)}
+                                  >
+                                    <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
+                                      {isBaseExp ? '▼' : '▶'}
+                                    </span>
+                                    <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
+                                    <span className="flex-1 text-xs font-medium truncate text-gray-900">{base.name}</span>
+                                    {base.needsVerification && <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>}
+                                    {hasKids ? (
+                                      <span className="text-[9px] text-blue-400 shrink-0">{modChildren.length} prep</span>
+                                    ) : (
+                                      <span className="text-[9px] text-gray-400 italic shrink-0">+ add prep</span>
+                                    )}
                                   </div>
-
-                                  {/* Inline Prep Item Creation Form */}
-                                  {creatingPrepUnderParent === parentId && (
-                                    <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-                                      <input
-                                        type="text"
-                                        value={newPrepName}
-                                        onChange={(e) => setNewPrepName(e.target.value)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') createPrepItem(parentId, category.id)
-                                          if (e.key === 'Escape') {
-                                            setCreatingPrepUnderParent(null)
-                                            setNewPrepName('')
-                                          }
-                                        }}
-                                        placeholder="New prep item name..."
-                                        className="w-full px-2 py-1 text-xs border rounded mb-1"
-                                        autoFocus
-                                        disabled={creatingIngredientLoading}
-                                      />
-                                      <div className="flex gap-1">
-                                        <button
-                                          onClick={() => createPrepItem(parentId, category.id)}
-                                          className="flex-1 px-2 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-700 disabled:opacity-50"
-                                          disabled={!newPrepName.trim() || creatingIngredientLoading}
-                                        >
-                                          Create & Link
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setCreatingPrepUnderParent(null)
-                                            setNewPrepName('')
-                                          }}
-                                          className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                                          disabled={creatingIngredientLoading}
-                                        >
-                                          Cancel
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Prep Items (Clickable) */}
-                                  {isParentExpanded && (
-                                    <div>
-                                      {prepItems
-                                        .sort((a, b) => a.name.localeCompare(b.name))
-                                        .map(prep => (
+                                  {isBaseExp && (
+                                    <div className="ml-5 border-l-2 border-green-300">
+                                      {modChildren.map(prep => (
+                                        <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
+                                          <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
+                                          <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
+                                          <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
+                                          {prep.needsVerification && <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>}
                                           <button
-                                            key={prep.id}
-                                            onClick={() => {
-                                              if (linkingModifier) {
-                                                linkIngredient(linkingModifier.groupId, linkingModifier.modId, prep.id)
-                                              }
-                                            }}
-                                            className="w-full text-left px-4 py-1 text-xs hover:bg-purple-100 rounded flex justify-between items-center"
+                                            onClick={() => { if (linkingModifier) linkIngredient(linkingModifier.groupId, linkingModifier.modId, prep.id) }}
+                                            className="px-2.5 py-0.5 text-[9px] font-bold bg-purple-600 text-white rounded hover:bg-purple-700 active:bg-purple-800 shrink-0"
                                           >
-                                            <span>{prep.name}</span>
-                                            {prep.needsVerification && (
-                                              <span className="text-[9px] text-red-600 font-semibold">⚠ Unverified</span>
-                                            )}
+                                            Link
                                           </button>
-                                        ))
-                                      }
+                                        </div>
+                                      ))}
+                                      {creatingPrepUnderParent === base.id ? (
+                                        <div className="px-3 py-2 bg-green-50 border-b border-green-200">
+                                          <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(base.id, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
+                                          <div className="flex gap-1">
+                                            <button onClick={() => createPrepItem(base.id, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create & Link</button>
+                                            <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <button onClick={() => setCreatingPrepUnderParent(base.id)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
+                                      )}
                                     </div>
                                   )}
                                 </div>
                               )
                             })}
-                        </div>
-                      )}
+                            {/* Orphan parents (BLUE header + GREEN children) */}
+                            {modOrphanParents.map(({ item: p, parentId: pid, children: opChildren }) => {
+                              const isOpExp = expandedParents.has(pid)
+                              return (
+                                <div key={pid}>
+                                  <div
+                                    className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
+                                    onClick={() => toggleParent(pid)}
+                                  >
+                                    <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">{isOpExp ? '▼' : '▶'}</span>
+                                    <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
+                                    <span className="flex-1 text-xs font-medium truncate text-gray-900">{p?.name || 'Unknown'}</span>
+                                    <span className="text-[9px] text-blue-400 shrink-0">{opChildren.length} prep</span>
+                                  </div>
+                                  {isOpExp && (
+                                    <div className="ml-5 border-l-2 border-green-300">
+                                      {opChildren.map(prep => (
+                                        <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
+                                          <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
+                                          <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
+                                          <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
+                                          {prep.needsVerification && <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>}
+                                          <button
+                                            onClick={() => { if (linkingModifier) linkIngredient(linkingModifier.groupId, linkingModifier.modId, prep.id) }}
+                                            className="px-2.5 py-0.5 text-[9px] font-bold bg-purple-600 text-white rounded hover:bg-purple-700 active:bg-purple-800 shrink-0"
+                                          >
+                                            Link
+                                          </button>
+                                        </div>
+                                      ))}
+                                      {/* Create prep item inline for orphan parent in modifier linking */}
+                                      {creatingPrepUnderParent === pid ? (
+                                        <div className="px-3 py-2 bg-green-50 border-b border-green-200">
+                                          <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(pid, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
+                                          <div className="flex gap-1">
+                                            <button onClick={() => createPrepItem(pid, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create & Link</button>
+                                            <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <button onClick={() => setCreatingPrepUnderParent(pid)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })
@@ -1206,14 +1949,48 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           </div>
         )}
 
-        {/* Render Child Group Recursively */}
-        {mod.childModifierGroup && renderChildGroup(mod.childModifierGroup, depth + 1)}
+        {/* Render Child Group: collapsed chip or full expanded view */}
+        {mod.childModifierGroup && (() => {
+          const cg = mod.childModifierGroup
+          const cgExpanded = expandedGroups.has(cg.id)
+          if (cgExpanded) {
+            return renderChildGroup(cg, depth + 1, rowIndex)
+          }
+          // Collapsed: compact inline chip
+          const colorIndex = (depth + rowIndex) % childGroupColors.length
+          const colors = childGroupColors[colorIndex]
+          return (
+            <div
+              key={`chip-${cg.id}`}
+              className={`ml-6 mt-0.5 mb-0.5 flex items-center gap-1.5 cursor-pointer group/chip`}
+              onClick={() => { toggleExpanded(cg.id); onSelectGroup?.(cg.id) }}
+              title={`${cg.name} — ${cg.modifiers.length} modifier${cg.modifiers.length !== 1 ? 's' : ''} (click to expand)`}
+            >
+              <div className={`h-1.5 w-1.5 rounded-full ${colors.bg} border ${colors.border} shrink-0`} />
+              <span className={`text-[10px] ${colors.border.replace('border-', 'text-')} group-hover/chip:underline truncate`}>
+                {cg.name}
+              </span>
+              <span className="text-[9px] text-gray-400">
+                ({cg.modifiers.length})
+              </span>
+            </div>
+          )
+        })()}
       </div>
     )
   }
 
   // Helper to render child modifier groups recursively
-  const renderChildGroup = (childGroup: ModifierGroup, depth: number = 1) => {
+  // Color palette for child group headers — cycles through distinct colors per depth
+  const childGroupColors = [
+    { bg: 'bg-violet-100', border: 'border-violet-300', borderB: 'border-violet-200', hover: 'hover:bg-violet-200/70', wrapper: 'border-violet-300', leftBorder: 'border-l-violet-300' },
+    { bg: 'bg-teal-100', border: 'border-teal-300', borderB: 'border-teal-200', hover: 'hover:bg-teal-200/70', wrapper: 'border-teal-300', leftBorder: 'border-l-teal-300' },
+    { bg: 'bg-rose-100', border: 'border-rose-300', borderB: 'border-rose-200', hover: 'hover:bg-rose-200/70', wrapper: 'border-rose-300', leftBorder: 'border-l-rose-300' },
+    { bg: 'bg-amber-100', border: 'border-amber-300', borderB: 'border-amber-200', hover: 'hover:bg-amber-200/70', wrapper: 'border-amber-300', leftBorder: 'border-l-amber-300' },
+    { bg: 'bg-sky-100', border: 'border-sky-300', borderB: 'border-sky-200', hover: 'hover:bg-sky-200/70', wrapper: 'border-sky-300', leftBorder: 'border-l-sky-300' },
+  ]
+
+  const renderChildGroup = (childGroup: ModifierGroup, depth: number = 1, siblingIndex: number = 0) => {
     // Safety: prevent infinite recursion
     if (depth > 10) {
       console.error('Max nesting depth exceeded for group:', childGroup.id)
@@ -1226,6 +2003,8 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
     const isExpanded = expandedGroups.has(childGroup.id)
     const isEmpty = childGroup.modifiers.length === 0
+    const colorIndex = (depth - 1 + siblingIndex) % childGroupColors.length
+    const colors = childGroupColors[colorIndex]
     const depthIndent: Record<number, string> = {
       0: 'ml-0',
       1: 'ml-4',
@@ -1233,27 +2012,53 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       3: 'ml-12',
       4: 'ml-16',
     }
-    const indentClass = `${depthIndent[depth] ?? 'ml-16'} pl-3 border-l-2 border-indigo-200`
+    const indentClass = `${depthIndent[depth] ?? 'ml-16'} pl-3 border-l-2 ${colors.leftBorder}`
 
     return (
-      <div key={childGroup.id} className={`mt-2 ${indentClass}`}>
-        <div className="text-xs text-gray-500 mb-1">After selecting parent modifier:</div>
-        <div className={`border rounded-lg overflow-hidden ${childGroup.isRequired ? 'border-l-4 border-red-400' : ''} ${isEmpty ? 'border-dashed' : ''}`}>
-          {/* Child Group Header */}
-          {/* Child Group Header */}
-          <div className="px-3 py-2 bg-gray-50 flex items-center gap-2">
-            {/* Expand/collapse toggle */}
-            <button
-              onClick={() => {
-                toggleExpanded(childGroup.id)
-                onSelectGroup?.(isExpanded ? null : childGroup.id)
-              }}
-              className="flex-shrink-0"
-            >
-              <span className={`text-xs transition-transform ${isExpanded ? 'rotate-90' : ''} ${childGroup.isRequired && isEmpty ? 'text-red-500' : isEmpty ? 'text-gray-300' : 'text-green-500'}`}>
-                ▶
-              </span>
-            </button>
+      <div
+        key={childGroup.id}
+        className={`mt-2 ${indentClass} ${draggedGroupId === childGroup.id ? 'opacity-50' : ''}`}
+        draggable
+        onDragStart={(e) => {
+          e.stopPropagation()
+          setDraggedGroupId(childGroup.id)
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('application/x-modifier-group', JSON.stringify({
+            groupId: childGroup.id,
+            sourceItemId: item?.id,
+            groupName: childGroup.name,
+            isChild: true,
+          }))
+        }}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setDragOverGroupId(childGroup.id)
+        }}
+        onDragLeave={() => setDragOverGroupId(null)}
+        onDrop={(e) => handleGroupDrop(e, childGroup.id)}
+        onDragEnd={() => {
+          setDraggedGroupId(null)
+          setDragOverGroupId(null)
+          setDragOverDropZone(null)
+        }}
+      >
+        {/* Removed "After selecting parent modifier:" label to save space */}
+        <div className={`border-2 ${colors.wrapper} rounded-lg overflow-hidden shadow-sm ${childGroup.isRequired ? 'border-l-4 border-l-red-400' : ''} ${isEmpty ? 'border-dashed' : ''} ${dragOverGroupId === childGroup.id && draggedGroupId !== childGroup.id ? 'ring-2 ring-indigo-400' : ''}`}>
+          {/* Child Group Header — entire bar is clickable to expand/collapse */}
+          <div
+            className={`px-3 py-2 ${colors.bg} border-b ${colors.borderB} flex items-center gap-2 cursor-pointer ${colors.hover} transition-colors`}
+            onClick={() => {
+              toggleExpanded(childGroup.id)
+              onSelectGroup?.(isExpanded ? null : childGroup.id)
+            }}
+          >
+            {/* Drag handle */}
+            <span className="cursor-grab text-gray-400 hover:text-gray-600 mr-1 text-xs" title="Drag to move group" onClick={(e) => e.stopPropagation()}>⠿</span>
+            {/* Expand/collapse arrow */}
+            <span className={`text-xs transition-transform flex-shrink-0 ${isExpanded ? 'rotate-90' : ''} ${childGroup.isRequired && isEmpty ? 'text-red-500' : isEmpty ? 'text-gray-300' : 'text-green-500'}`}>
+              ▶
+            </span>
 
             {/* Name - double-click to rename */}
             {renamingGroupId === childGroup.id ? (
@@ -1272,8 +2077,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               />
             ) : (
               <span
-                className="flex-1 font-medium text-sm truncate cursor-pointer hover:text-indigo-600"
-                onClick={(e) => e.stopPropagation()}
+                className="flex-1 font-medium text-sm truncate"
                 onDoubleClick={(e) => { e.stopPropagation(); startRename(childGroup.id, childGroup.name) }}
                 title="Double-click to rename"
               >
@@ -1281,7 +2085,23 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               </span>
             )}
 
+            {/* Settings badges — always visible in header */}
+            <span className="ml-auto text-[9px] text-gray-400 flex items-center gap-1 shrink-0">
+              <span className="px-1 py-0.5 bg-gray-100 rounded">{childGroup.minSelections}-{childGroup.maxSelections}</span>
+              {childGroup.isRequired && <span className="px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium">Req</span>}
+              {childGroup.allowStacking && <span className="px-1 py-0.5 bg-yellow-100 text-yellow-700 rounded">Stack</span>}
+            </span>
             <span className="text-xs text-gray-400">{childGroup.modifiers.length}</span>
+
+            {/* Promote to top-level button */}
+            <button
+              onClick={(e) => { e.stopPropagation(); reparentGroup(childGroup.id, null) }}
+              className="text-gray-400 hover:text-green-600 text-xs px-0.5"
+              title="Promote to top-level group"
+              disabled={saving}
+            >
+              ⬆
+            </button>
 
             {/* Action buttons */}
             <button
@@ -1313,16 +2133,6 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           {/* Child Group Expanded Content */}
           {isExpanded && (
             <div className="border-t" draggable={false} onDragStart={(e) => e.stopPropagation()}>
-              {/* Compact settings summary - edit in right panel */}
-              <div className="px-3 py-1.5 bg-gray-50/50 border-b text-xs text-gray-400 flex items-center justify-between">
-                <span>
-                  {childGroup.minSelections}-{childGroup.maxSelections} selections
-                  {childGroup.isRequired && <span className="ml-1 text-red-500 font-medium">· Required</span>}
-                  {childGroup.allowStacking && <span className="ml-1 text-yellow-600">· Stacking</span>}
-                </span>
-                <span className="text-gray-300">Edit in panel →</span>
-              </div>
-
               {/* Child Modifiers */}
               <div className="p-2 space-y-1">
                 {isEmpty && (
@@ -1330,7 +2140,28 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                     Add modifiers to get started
                   </div>
                 )}
-                {childGroup.modifiers.map(mod => renderModifierRow(childGroup.id, mod, depth))}
+                {childGroup.modifiers.map((mod, idx) => renderModifierRow(childGroup.id, mod, depth, idx))}
+
+                {/* Drop zone: nest a group inside this child group */}
+                {draggedGroupId && draggedGroupId !== childGroup.id && !isDescendantOf(draggedGroupId, childGroup.id) && (
+                  <div
+                    className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === `nest-${childGroup.id}` ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-400'}`}
+                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverDropZone(`nest-${childGroup.id}`) }}
+                    onDragLeave={() => setDragOverDropZone(null)}
+                    onDrop={async (e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      if (draggedGroupId) {
+                        await nestGroupInGroup(draggedGroupId, childGroup.id)
+                      }
+                      setDraggedGroupId(null)
+                      setDragOverGroupId(null)
+                      setDragOverDropZone(null)
+                    }}
+                  >
+                    ⬇ Drop here to nest inside {childGroup.name}
+                  </div>
+                )}
 
                 {/* Add Modifier to Child Group */}
                 {addingModifierTo === childGroup.id ? (
@@ -1405,38 +2236,65 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   )
 
   // Build hierarchy for dropdown
-  const buildHierarchy = () => {
+  const buildHierarchy = (searchTerm: string = '') => {
     const hierarchy: Record<string, {
       category: IngredientCategory
+      baseIngredients: IngredientLibraryItem[]
       parents: Record<string, {
         parent: IngredientLibraryItem | null
         prepItems: IngredientLibraryItem[]
       }>
     }> = {}
 
-    // Filter prep items based on search
-    const filteredPrepItems = modIngredientSearch.trim()
-      ? ingredientsLibrary.filter(
-          ing =>
-            ing.parentIngredientId &&
-            ing.name.toLowerCase().includes(modIngredientSearch.toLowerCase())
+    // Filter ALL ingredients based on search (both base and prep)
+    const filteredIngredients = searchTerm.trim()
+      ? ingredientsLibrary.filter(ing =>
+          ing.name.toLowerCase().includes(searchTerm.toLowerCase())
         )
-      : ingredientsLibrary.filter(ing => ing.parentIngredientId)
+      : ingredientsLibrary
 
-    // Get relevant category IDs
-    const relevantCategoryIds = modIngredientSearch.trim()
-      ? new Set(filteredPrepItems.map(p => p.categoryId).filter(Boolean) as string[])
+    // Separate base ingredients from prep items
+    const baseIngredients = filteredIngredients.filter(ing => !ing.parentIngredientId)
+    const prepItems = filteredIngredients.filter(ing => ing.parentIngredientId)
+
+    // Get relevant category IDs from ALL matching ingredients
+    const relevantCategoryIds = searchTerm.trim()
+      ? new Set([...baseIngredients, ...prepItems].map(p => p.categoryId).filter(Boolean) as string[])
       : new Set(ingredientCategories.map(c => c.id))
 
     // Initialize categories
     ingredientCategories
       .filter(cat => cat.isActive && (relevantCategoryIds.size === 0 || relevantCategoryIds.has(cat.id)))
       .forEach(cat => {
-        hierarchy[cat.id] = { category: cat, parents: {} }
+        hierarchy[cat.id] = { category: cat, baseIngredients: [], parents: {} }
       })
 
+    // Add base ingredients to their categories
+    baseIngredients.forEach(base => {
+      const catId = base.categoryId || 'uncategorized'
+
+      if (!hierarchy[catId]) {
+        hierarchy[catId] = {
+          category: {
+            id: 'uncategorized',
+            code: 0,
+            name: 'Uncategorized',
+            icon: null,
+            color: null,
+            sortOrder: 999,
+            isActive: true,
+            ingredientCount: 0,
+          },
+          baseIngredients: [],
+          parents: {},
+        }
+      }
+
+      hierarchy[catId].baseIngredients.push(base)
+    })
+
     // Group prep items by category and parent
-    filteredPrepItems.forEach(prep => {
+    prepItems.forEach(prep => {
       const catId = prep.categoryId || 'uncategorized'
 
       if (!hierarchy[catId]) {
@@ -1451,6 +2309,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             isActive: true,
             ingredientCount: 0,
           },
+          baseIngredients: [],
           parents: {},
         }
       }
@@ -1471,15 +2330,16 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     return hierarchy
   }
 
-  // Auto-expand on search
+  // Auto-expand on search (modifier linking)
   useEffect(() => {
     if (modIngredientSearch.trim()) {
-      const hierarchy = buildHierarchy()
+      const hierarchy = buildHierarchy(modIngredientSearch)
       const categoriesToExpand = new Set<string>()
       const parentsToExpand = new Set<string>()
 
       Object.entries(hierarchy).forEach(([catId, catData]) => {
-        if (Object.keys(catData.parents).length > 0) {
+        // Expand category if it has base ingredients OR prep items
+        if (catData.baseIngredients.length > 0 || Object.keys(catData.parents).length > 0) {
           categoriesToExpand.add(catId)
           Object.keys(catData.parents).forEach(parentId => {
             parentsToExpand.add(parentId)
@@ -1495,6 +2355,32 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     }
   }, [modIngredientSearch])
 
+  // Auto-expand on search (ingredient picker)
+  useEffect(() => {
+    if (ingredientSearch.trim()) {
+      const hierarchy = buildHierarchy(ingredientSearch)
+      const categoriesToExpand = new Set<string>()
+      const parentsToExpand = new Set<string>()
+
+      Object.entries(hierarchy).forEach(([catId, catData]) => {
+        // Expand category if it has base ingredients OR prep items
+        if (catData.baseIngredients.length > 0 || Object.keys(catData.parents).length > 0) {
+          categoriesToExpand.add(catId)
+          Object.keys(catData.parents).forEach(parentId => {
+            parentsToExpand.add(parentId)
+          })
+        }
+      })
+
+      setExpandedCategories(categoriesToExpand)
+      setExpandedParents(parentsToExpand)
+    } else if (!modIngredientSearch.trim()) {
+      // Only clear if modifier search is also empty
+      setExpandedCategories(new Set())
+      setExpandedParents(new Set())
+    }
+  }, [ingredientSearch, modIngredientSearch])
+
   if (!item) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 p-4 bg-gray-50">
@@ -1508,11 +2394,36 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       {/* Item Header */}
       <div className="p-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-xl font-bold">{item.name}</h2>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold truncate">{item.name}</h2>
+              {/* Default Selections — on same line as item name, never shifts layout */}
+              {!loading && (() => {
+                const seen = new Set<string>()
+                const allDefaults: { id: string; name: string; price: number }[] = []
+                const collectDefaults = (groups: ModifierGroup[]) => {
+                  for (const g of groups) {
+                    for (const m of g.modifiers) {
+                      if (m.isDefault && !seen.has(m.id)) {
+                        seen.add(m.id)
+                        allDefaults.push({ id: m.id, name: m.name, price: m.price })
+                      }
+                      if (m.childModifierGroup) collectDefaults([m.childModifierGroup])
+                    }
+                  }
+                }
+                collectDefaults(modifierGroups)
+                if (allDefaults.length === 0) return null
+                return (
+                  <span className="ml-auto text-[11px] font-semibold text-red-300 truncate shrink-0 pl-3">
+                    ★ {allDefaults.map(d => d.name).join(', ')}
+                  </span>
+                )
+              })()}
+            </div>
             <p className="text-2xl font-bold mt-1">{formatCurrency(item.price)}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             {onToggle86 && (
               <button
                 onClick={() => onToggle86(item)}
@@ -1551,12 +2462,6 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                   <span className={`text-green-600 transition-transform ${ingredientsExpanded ? 'rotate-90' : ''}`}>▶</span>
                   <span className="font-semibold text-green-900">🥗 Ingredients</span>
                   <span className="text-sm text-green-600">({ingredients.length})</span>
-                  {(() => {
-                    const customizableCount = ingredients.filter(i => i.allowNo || i.allowLite || i.allowExtra || i.allowOnSide || i.allowSwap).length
-                    return customizableCount > 0 ? (
-                      <span className="text-xs text-green-500">· {customizableCount} customizable</span>
-                    ) : null
-                  })()}
                 </div>
                 <span
                   role="button"
@@ -1571,97 +2476,646 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
               {ingredientsExpanded && (
                 <div className="p-3 space-y-2">
-                  {/* Ingredient Picker */}
+                  {/* Hierarchical Ingredient Picker */}
                   {showIngredientPicker && (
-                    <div className="p-2 border rounded bg-green-50/50 mb-2">
+                    <div className="p-2 border rounded bg-white mb-2">
                       <input
                         type="text"
                         value={ingredientSearch}
                         onChange={(e) => setIngredientSearch(e.target.value)}
                         placeholder="Search ingredients..."
-                        className="w-full px-2 py-1 text-sm border rounded mb-2"
+                        className="w-full px-2 py-1 text-xs border rounded mb-1"
                         autoFocus
                       />
-                      <div className="max-h-48 overflow-y-auto space-y-2">
+                      <div className="max-h-96 overflow-y-auto space-y-0.5">
                         {(() => {
-                          const limited = filteredLibrary.slice(0, 12)
-                          const grouped = limited.reduce((acc, lib) => {
-                            const cat = lib.categoryName || lib.category || 'Other'
-                            if (!acc[cat]) acc[cat] = []
-                            acc[cat].push(lib)
-                            return acc
-                          }, {} as Record<string, typeof limited>)
-                          return Object.entries(grouped).map(([category, items]) => (
-                            <div key={category}>
-                              <div className="text-xs font-semibold text-green-700 px-2 py-1">{category}</div>
-                              {items.map(lib => (
-                                <button
-                                  key={lib.id}
-                                  onClick={() => addIngredient(lib.id)}
-                                  className="w-full text-left px-2 py-1 text-sm hover:bg-green-100 rounded"
-                                >
-                                  {lib.name}
-                                </button>
-                              ))}
-                            </div>
-                          ))
+                          const hierarchy = buildHierarchy(ingredientSearch)
+                          const sortedCategories = Object.values(hierarchy).sort((a, b) =>
+                            a.category.sortOrder - b.category.sortOrder
+                          )
+
+                          // Filter out already-added ingredients
+                          const alreadyAddedIds = new Set(ingredients.map(i => i.ingredientId))
+
+                          if (sortedCategories.length === 0) {
+                            return (
+                              <div className="text-xs text-gray-400 text-center py-2">
+                                {ingredientSearch ? 'No matching ingredients' : 'No ingredient categories found'}
+                              </div>
+                            )
+                          }
+
+                          return sortedCategories.map(({ category, baseIngredients, parents }) => {
+                            const isExpanded = expandedCategories.has(category.id)
+
+                            // Build unified list: each inventory item + its prep children
+                            const inventoryItems = baseIngredients
+                              .sort((a, b) => a.name.localeCompare(b.name))
+                              .map(base => ({
+                                item: base,
+                                children: (parents[base.id]?.prepItems || [])
+                                  .filter(pr => !alreadyAddedIds.has(pr.id))
+                                  .sort((a, b) => a.name.localeCompare(b.name)),
+                              }))
+
+                            // Orphan parents not in base list
+                            const baseIds = new Set(baseIngredients.map(b => b.id))
+                            const orphanParents = Object.entries(parents)
+                              .filter(([pid]) => !baseIds.has(pid))
+                              .map(([pid, { parent: p, prepItems }]) => ({
+                                item: p,
+                                parentId: pid,
+                                children: prepItems
+                                  .filter(pr => !alreadyAddedIds.has(pr.id))
+                                  .sort((a, b) => a.name.localeCompare(b.name)),
+                              }))
+                              .filter(g => g.children.length > 0)
+                              .sort((a, b) => (a.item?.name || '').localeCompare(b.item?.name || ''))
+
+                            const totalAvailable = inventoryItems.filter(iv => !alreadyAddedIds.has(iv.item.id)).length
+                              + inventoryItems.reduce((sum, iv) => sum + iv.children.length, 0)
+                              + orphanParents.reduce((sum, op) => sum + op.children.length, 0)
+
+                            return (
+                              <div key={category.id}>
+                                {/* Category Header */}
+                                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 uppercase tracking-wider px-2 py-1.5 bg-gray-100 sticky top-0 border-b border-gray-200">
+                                  <button
+                                    onClick={() => toggleCategory(category.id)}
+                                    className="hover:bg-gray-200 rounded px-1"
+                                  >
+                                    {isExpanded ? '▼' : '▶'}
+                                  </button>
+                                  <span className="flex-1">{category.name}</span>
+                                  <span className="text-[9px] text-gray-400 font-normal">{totalAvailable}</span>
+
+                                  {/* Unverified count badge */}
+                                  {(() => {
+                                    const baseUnverified = baseIngredients.filter(b => b.needsVerification).length
+                                    const prepUnverified = Object.values(parents)
+                                      .flatMap(p => p.prepItems)
+                                      .filter(prep => prep.needsVerification).length
+                                    const unverifiedCount = baseUnverified + prepUnverified
+                                    return unverifiedCount > 0 ? (
+                                      <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium">
+                                        ⚠ {unverifiedCount}
+                                      </span>
+                                    ) : null
+                                  })()}
+
+                                  <button
+                                    onClick={() => setCreatingInventoryInCategory(category.id)}
+                                    className="ml-auto text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded px-1"
+                                    title="Create new inventory item"
+                                    disabled={creatingIngredientLoading}
+                                  >
+                                    {creatingIngredientLoading && creatingInventoryInCategory === category.id ? (
+                                      <span className="animate-spin">⏳</span>
+                                    ) : (
+                                      '+'
+                                    )}
+                                  </button>
+                                </div>
+
+                                {/* Inline Inventory Item Creation Form */}
+                                {creatingInventoryInCategory === category.id && (
+                                  <div className="px-4 py-2 bg-blue-50 border-b border-blue-200">
+                                    <input
+                                      type="text"
+                                      value={newInventoryName}
+                                      onChange={(e) => setNewInventoryName(e.target.value)}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') createInventoryItem(category.id)
+                                        if (e.key === 'Escape') {
+                                          setCreatingInventoryInCategory(null)
+                                          setNewInventoryName('')
+                                        }
+                                      }}
+                                      placeholder="New inventory item name..."
+                                      className="w-full px-2 py-1 text-xs border rounded mb-1"
+                                      autoFocus
+                                      disabled={creatingIngredientLoading}
+                                    />
+                                    <div className="flex gap-1">
+                                      <button
+                                        onClick={() => createInventoryItem(category.id)}
+                                        className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                        disabled={!newInventoryName.trim() || creatingIngredientLoading}
+                                      >
+                                        Create
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setCreatingInventoryInCategory(null)
+                                          setNewInventoryName('')
+                                        }}
+                                        className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                                        disabled={creatingIngredientLoading}
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Category Contents */}
+                                {isExpanded && (
+                                  <div>
+                                    {/* Inventory items (BLUE) — expand only, only prep items are addable */}
+                                    {inventoryItems.map(({ item: base, children }) => {
+                                      const hasChildren = children.length > 0
+                                      const isBaseExpanded = expandedParents.has(base.id)
+                                      return (
+                                        <div key={base.id}>
+                                          <div
+                                            className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
+                                            onClick={() => toggleParent(base.id)}
+                                          >
+                                            <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
+                                              {isBaseExpanded ? '▼' : '▶'}
+                                            </span>
+                                            <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
+                                            <span className="flex-1 text-xs font-medium truncate text-gray-900">{base.name}</span>
+                                            {base.needsVerification && (
+                                              <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
+                                            )}
+                                            {hasChildren ? (
+                                              <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
+                                            ) : (
+                                              <span className="text-[9px] text-gray-400 italic shrink-0">+ add prep</span>
+                                            )}
+                                          </div>
+                                          {/* Prep items (GREEN) under this inventory item — always expandable so user can create prep items */}
+                                          {isBaseExpanded && (
+                                            <div className="ml-5 border-l-2 border-green-300">
+                                              {children.map(prep => (
+                                                <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
+                                                  <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
+                                                  <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
+                                                  <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
+                                                  {prep.needsVerification && (
+                                                    <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
+                                                  )}
+                                                  <button
+                                                    onClick={() => addIngredient(prep.id)}
+                                                    className="px-2.5 py-0.5 text-[9px] font-bold bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 shrink-0"
+                                                  >
+                                                    + Add
+                                                  </button>
+                                                </div>
+                                              ))}
+
+                                              {/* Create prep item inline */}
+                                              {creatingPrepUnderParent === base.id ? (
+                                                <div className="px-3 py-2 bg-green-50 border-b border-green-200">
+                                                  <input
+                                                    type="text"
+                                                    value={newPrepName}
+                                                    onChange={(e) => setNewPrepName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') createPrepItem(base.id, category.id)
+                                                      if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') }
+                                                    }}
+                                                    placeholder="New prep item name..."
+                                                    className="w-full px-2 py-1 text-xs border rounded mb-1"
+                                                    autoFocus
+                                                    disabled={creatingIngredientLoading}
+                                                  />
+                                                  <div className="flex gap-1">
+                                                    <button onClick={() => createPrepItem(base.id, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create & Add</button>
+                                                    <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <button
+                                                  onClick={() => setCreatingPrepUnderParent(base.id)}
+                                                  className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100"
+                                                  disabled={creatingIngredientLoading}
+                                                >
+                                                  + New prep item
+                                                </button>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                    {/* Orphan parent groups (BLUE header with GREEN children) */}
+                                    {orphanParents.map(({ item: p, parentId: pid, children }) => {
+                                      const isOpExpanded = expandedParents.has(pid)
+                                      return (
+                                        <div key={pid}>
+                                          <div
+                                            className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
+                                            onClick={() => toggleParent(pid)}
+                                          >
+                                            <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
+                                              {isOpExpanded ? '▼' : '▶'}
+                                            </span>
+                                            <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
+                                            <span className="flex-1 text-xs font-medium truncate text-gray-900">{p?.name || 'Unknown'}</span>
+                                            <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
+                                          </div>
+                                          {isOpExpanded && (
+                                            <div className="ml-5 border-l-2 border-green-300">
+                                              {children.map(prep => (
+                                                <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
+                                                  <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
+                                                  <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
+                                                  <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
+                                                  {prep.needsVerification && (
+                                                    <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
+                                                  )}
+                                                  <button
+                                                    onClick={() => addIngredient(prep.id)}
+                                                    className="px-2.5 py-0.5 text-[9px] font-bold bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 shrink-0"
+                                                  >
+                                                    + Add
+                                                  </button>
+                                                </div>
+                                              ))}
+                                              {/* Create prep item inline for orphan parent */}
+                                              {creatingPrepUnderParent === pid ? (
+                                                <div className="px-3 py-2 bg-green-50 border-b border-green-200">
+                                                  <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(pid, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
+                                                  <div className="flex gap-1">
+                                                    <button onClick={() => createPrepItem(pid, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create & Add</button>
+                                                    <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
+                                                  </div>
+                                                </div>
+                                              ) : (
+                                                <button onClick={() => setCreatingPrepUnderParent(pid)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })
                         })()}
                       </div>
                     </div>
                   )}
 
                   {ingredients.length === 0 ? (
-                    <p className="text-gray-400 text-sm text-center py-2">No ingredients</p>
+                    <p className="text-gray-400 text-sm text-center py-2">No ingredients linked</p>
                   ) : (
-                    ingredients.map(ing => (
-                      <div key={ing.ingredientId} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded border">
-                        <span className="flex-1 text-sm truncate">{ing.name}</span>
-                        <div className="flex gap-0.5 items-center">
-                          <button
-                            onClick={() => toggleIngredientOption(ing.ingredientId, 'allowNo')}
-                            className={`w-5 h-5 rounded text-[9px] font-bold ${ing.allowNo ? 'bg-red-500 text-white' : 'bg-red-100 text-red-400'}`}
-                          >
-                            N
-                          </button>
-                          <button
-                            onClick={() => toggleIngredientOption(ing.ingredientId, 'allowLite')}
-                            className={`w-5 h-5 rounded text-[9px] font-bold ${ing.allowLite ? 'bg-yellow-500 text-white' : 'bg-yellow-100 text-yellow-400'}`}
-                          >
-                            L
-                          </button>
-                          <button
-                            onClick={() => toggleIngredientOption(ing.ingredientId, 'allowOnSide')}
-                            className={`w-5 h-5 rounded text-[9px] font-bold ${ing.allowOnSide ? 'bg-blue-500 text-white' : 'bg-blue-100 text-blue-400'}`}
-                          >
-                            S
-                          </button>
-                          <button
-                            onClick={() => toggleIngredientOption(ing.ingredientId, 'allowExtra')}
-                            className={`w-5 h-5 rounded text-[9px] font-bold ${ing.allowExtra ? 'bg-green-500 text-white' : 'bg-green-100 text-green-400'}`}
-                          >
-                            E
-                          </button>
-                          {ing.allowExtra && (
-                            <input
-                              type="number"
-                              value={ing.extraPrice || ''}
-                              onChange={(e) => updateExtraPrice(ing.ingredientId, parseFloat(e.target.value) || 0)}
-                              placeholder="$"
-                              className="w-12 px-1 text-xs border rounded"
-                              step="0.01"
-                              min="0"
-                            />
+                    ingredients.map(ing => {
+                      const linkedModifiers = ingredientToModifiers.get(ing.ingredientId) || []
+                      const libItem = ingredientsLibrary.find(l => l.id === ing.ingredientId)
+                      const isUnverified = ing.needsVerification || libItem?.needsVerification
+                      const isRelinking = relinkingIngredientId === ing.ingredientId
+                      const isPrepItem = !!libItem?.parentIngredientId
+                      const parentName = libItem?.parentName
+                      const parentId = libItem?.parentIngredientId
+                      const categoryName = libItem?.categoryName || ing.category
+                      return (
+                        <div key={ing.ingredientId} className={`rounded border overflow-hidden ${isPrepItem ? 'border-green-200' : 'border-blue-200'}`}>
+                          {/* Hierarchy breadcrumb — stepped display */}
+                          <div className="px-2 pt-1.5 pb-1 bg-white">
+                            <div className="flex items-center gap-0 text-[9px] leading-tight">
+                              {/* Level 1: Category */}
+                              {categoryName && (
+                                <>
+                                  <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded font-semibold">{categoryName}</span>
+                                  <span className="text-gray-300 mx-0.5">›</span>
+                                </>
+                              )}
+                              {/* Level 2: Inventory item (parent) — clickable link */}
+                              {isPrepItem && parentName ? (
+                                <>
+                                  <a
+                                    href="/ingredients"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-semibold hover:bg-blue-200 hover:underline transition-colors cursor-pointer"
+                                    title={`Open ${parentName} in Inventory`}
+                                  >
+                                    {parentName}
+                                    <span className="text-[7px] text-blue-400">↗</span>
+                                  </a>
+                                  <span className="text-gray-300 mx-0.5">›</span>
+                                </>
+                              ) : !isPrepItem && (
+                                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded font-semibold">{ing.name}</span>
+                              )}
+                              {/* Level 3: Prep item (this item) */}
+                              {isPrepItem && (
+                                <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-semibold">{ing.name}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Main row: Type badge + Name + actions */}
+                          <div className={`flex items-center gap-1.5 px-2 py-1.5 ${isPrepItem ? 'bg-green-50' : 'bg-blue-50'}`}>
+                            {/* Type badge */}
+                            <span className={`text-[8px] px-1.5 py-0.5 rounded font-bold shrink-0 ${isPrepItem ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}>
+                              {isPrepItem ? 'PREP' : 'INV'}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-sm font-medium truncate">{ing.name}</span>
+                                {isUnverified && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-semibold shrink-0">
+                                    ⚠ Unverified
+                                  </span>
+                                )}
+                              </div>
+                              {/* Modifier links */}
+                              {linkedModifiers.length > 0 && (
+                                <div className="text-[9px] text-purple-500 mt-0.5">🔗 {linkedModifiers.map(lm => lm.modName).join(', ')}</div>
+                              )}
+                            </div>
+                            {/* Relink button */}
+                            <button
+                              onClick={() => {
+                                if (isRelinking) {
+                                  setRelinkingIngredientId(null)
+                                  setIngredientSearch('')
+                                } else {
+                                  setRelinkingIngredientId(ing.ingredientId)
+                                  setIngredientSearch('')
+                                }
+                              }}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 ${isRelinking ? 'bg-orange-500 text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+                              title={isRelinking ? 'Close picker' : 'Change linked ingredient'}
+                            >
+                              {isRelinking ? '✕ Close' : '🔗 Relink'}
+                            </button>
+                            {/* Unlink button — removes this ingredient from the item (with confirmation) */}
+                            <button
+                              onClick={() => {
+                                if (confirm(`Unlink "${ing.name}" from this item?`)) {
+                                  removeIngredient(ing.ingredientId)
+                                  toast.success(`Unlinked ${ing.name}`)
+                                }
+                              }}
+                              className="px-1.5 py-0.5 rounded text-[9px] font-bold shrink-0 bg-red-100 text-red-600 hover:bg-red-200 active:bg-red-300"
+                              title="Unlink this ingredient from the item"
+                            >
+                              Unlink
+                            </button>
+                          </div>
+
+                          {/* Inline relink picker — swap this ingredient for a different one */}
+                          {isRelinking && (
+                            <div className="p-2 border-2 border-blue-400 rounded bg-white">
+                              <div className="flex items-center gap-1.5 mb-1.5">
+                                <span className="text-[10px] font-bold text-blue-700 uppercase">Relink to:</span>
+                                <span className="text-[10px] text-gray-400 flex-1">expand → tap Link</span>
+                                <button
+                                  onClick={() => { setRelinkingIngredientId(null); setIngredientSearch('') }}
+                                  className="text-xs text-gray-400 hover:text-red-500 px-1"
+                                >✕</button>
+                              </div>
+                              <input
+                                type="text"
+                                value={ingredientSearch}
+                                onChange={(e) => setIngredientSearch(e.target.value)}
+                                placeholder="Search ingredients..."
+                                className="w-full px-2 py-1 text-xs border rounded mb-1.5"
+                                autoFocus
+                              />
+                              <div className="max-h-64 overflow-y-auto space-y-0.5">
+                                {(() => {
+                                  const hierarchy = buildHierarchy(ingredientSearch)
+                                  const sortedCats = Object.values(hierarchy).sort((a, b) =>
+                                    a.category.sortOrder - b.category.sortOrder
+                                  )
+                                  const alreadyAddedIds = new Set(ingredients.map(i => i.ingredientId))
+                                  const excludeId = ing.ingredientId
+
+                                  if (sortedCats.length === 0) {
+                                    return (
+                                      <div className="text-xs text-gray-400 text-center py-2">
+                                        {ingredientSearch ? 'No matching ingredients' : 'No categories'}
+                                      </div>
+                                    )
+                                  }
+
+                                  return sortedCats.map(({ category, baseIngredients: catBase, parents }) => {
+                                    const catExpanded = expandedCategories.has(category.id)
+
+                                    // Build unified list: each inventory item + its prep children
+                                    // An inventory item can be in baseIngredients AND be a parent key
+                                    const inventoryItems = catBase
+                                      .filter(b => b.id !== excludeId)
+                                      .sort((a, b) => a.name.localeCompare(b.name))
+                                      .map(base => ({
+                                        item: base,
+                                        children: (parents[base.id]?.prepItems || [])
+                                          .filter(pr => pr.id !== excludeId && !alreadyAddedIds.has(pr.id))
+                                          .sort((a, b) => a.name.localeCompare(b.name)),
+                                      }))
+
+                                    // Also include parent groups whose parent isn't in baseIngredients
+                                    // (orphaned prep items — their parent might be in a different category or filtered out)
+                                    const baseIds = new Set(catBase.map(b => b.id))
+                                    const orphanParents = Object.entries(parents)
+                                      .filter(([pid]) => !baseIds.has(pid))
+                                      .map(([pid, { parent: p, prepItems }]) => ({
+                                        item: p,
+                                        parentId: pid,
+                                        children: prepItems
+                                          .filter(pr => pr.id !== excludeId && !alreadyAddedIds.has(pr.id))
+                                          .sort((a, b) => a.name.localeCompare(b.name)),
+                                      }))
+                                      .filter(g => g.children.length > 0)
+                                      .sort((a, b) => (a.item?.name || '').localeCompare(b.item?.name || ''))
+
+                                    // Count available items
+                                    const totalAvailable = inventoryItems.filter(iv => !alreadyAddedIds.has(iv.item.id)).length
+                                      + inventoryItems.reduce((sum, iv) => sum + iv.children.length, 0)
+                                      + orphanParents.reduce((sum, op) => sum + op.children.length, 0)
+
+                                    if (totalAvailable === 0 && inventoryItems.length === 0 && orphanParents.length === 0) return null
+
+                                    return (
+                                      <div key={category.id}>
+                                        {/* Category header — collapsed by default */}
+                                        <button
+                                          onClick={() => toggleCategory(category.id)}
+                                          className="w-full flex items-center gap-1 text-[10px] font-bold text-gray-700 uppercase tracking-wider px-2 py-1.5 bg-gray-100 sticky top-0 border-b border-gray-200"
+                                        >
+                                          <span>{catExpanded ? '▼' : '▶'}</span>
+                                          <span className="flex-1 text-left">{category.name}</span>
+                                          <span className="text-[9px] text-gray-400 font-normal">{totalAvailable}</span>
+                                        </button>
+                                        {catExpanded && (
+                                          <div>
+                                            {/* Inventory items (BLUE) — expand only, not directly linkable */}
+                                            {inventoryItems.map(({ item: base, children }) => {
+                                              const hasChildren = children.length > 0
+                                              const isBaseExpanded = expandedParents.has(base.id)
+                                              return (
+                                                <div key={base.id}>
+                                                  <div
+                                                    className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
+                                                    onClick={() => toggleParent(base.id)}
+                                                  >
+                                                    <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
+                                                      {isBaseExpanded ? '▼' : '▶'}
+                                                    </span>
+                                                    <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
+                                                    <span className="flex-1 text-xs font-medium truncate text-gray-900">{base.name}</span>
+                                                    {hasChildren ? (
+                                                      <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
+                                                    ) : (
+                                                      <span className="text-[9px] text-gray-400 italic shrink-0">+ add prep</span>
+                                                    )}
+                                                  </div>
+                                                  {/* Prep items (GREEN) under this inventory item — always expandable */}
+                                                  {isBaseExpanded && (
+                                                    <div className="ml-5 border-l-2 border-green-300">
+                                                      {children.map(prep => (
+                                                        <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
+                                                          <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
+                                                          <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
+                                                          <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
+                                                          <button
+                                                            onClick={() => swapIngredientLink(ing.ingredientId, prep.id)}
+                                                            className="px-2.5 py-0.5 text-[9px] font-bold bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 shrink-0"
+                                                          >
+                                                            Link
+                                                          </button>
+                                                        </div>
+                                                      ))}
+                                                      {/* Create prep item inline for relink */}
+                                                      {creatingPrepUnderParent === base.id ? (
+                                                        <div className="px-3 py-2 bg-green-50 border-b border-green-200">
+                                                          <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(base.id, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
+                                                          <div className="flex gap-1">
+                                                            <button onClick={() => createPrepItem(base.id, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create</button>
+                                                            <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
+                                                          </div>
+                                                        </div>
+                                                      ) : (
+                                                        <button onClick={() => setCreatingPrepUnderParent(base.id)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )
+                                            })}
+                                            {/* Orphan parent groups — inventory items not in this category's base list (BLUE) */}
+                                            {orphanParents.map(({ item: p, parentId: pid, children }) => {
+                                              const isOpExpanded = expandedParents.has(pid)
+                                              return (
+                                                <div key={pid}>
+                                                  <div
+                                                    className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
+                                                    onClick={() => toggleParent(pid)}
+                                                  >
+                                                    <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
+                                                      {isOpExpanded ? '▼' : '▶'}
+                                                    </span>
+                                                    <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
+                                                    <span className="flex-1 text-xs font-medium truncate text-gray-900">{p?.name || 'Unknown'}</span>
+                                                    <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
+                                                  </div>
+                                                  {isOpExpanded && (
+                                                    <div className="ml-5 border-l-2 border-green-300">
+                                                      {children.map(prep => (
+                                                        <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
+                                                          <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
+                                                          <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
+                                                          <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
+                                                          <button
+                                                            onClick={() => swapIngredientLink(ing.ingredientId, prep.id)}
+                                                            className="px-2.5 py-0.5 text-[9px] font-bold bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 shrink-0"
+                                                          >
+                                                            Link
+                                                          </button>
+                                                        </div>
+                                                      ))}
+                                                      {/* Create prep item inline for orphan parent in relink */}
+                                                      {creatingPrepUnderParent === pid ? (
+                                                        <div className="px-3 py-2 bg-green-50 border-b border-green-200">
+                                                          <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(pid, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
+                                                          <div className="flex gap-1">
+                                                            <button onClick={() => createPrepItem(pid, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create</button>
+                                                            <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
+                                                          </div>
+                                                        </div>
+                                                      ) : (
+                                                        <button onClick={() => setCreatingPrepUnderParent(pid)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )
+                                            })}
+                                          </div>
+                                        )}
+                                      </div>
+                                    )
+                                  })
+                                })()}
+                              </div>
+                            </div>
                           )}
-                          <button
-                            onClick={() => toggleIngredientOption(ing.ingredientId, 'allowSwap')}
-                            className={`w-5 h-5 rounded text-[9px] font-bold ${ing.allowSwap ? 'bg-purple-500 text-white' : 'bg-purple-100 text-purple-400'}`}
-                          >
-                            Sw
-                          </button>
+
+                          {/* Row 2: Pre-modifier toggles + extra price */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <button
+                              onClick={() => toggleIngredientOption(ing.ingredientId, 'allowNo')}
+                              className={`px-2 py-0.5 rounded text-[9px] font-bold border ${ing.allowNo ? 'bg-red-500 text-white border-red-500' : 'bg-red-50 text-red-300 border-red-200'}`}
+                              title="Allow NO"
+                            >
+                              No
+                            </button>
+                            <button
+                              onClick={() => toggleIngredientOption(ing.ingredientId, 'allowLite')}
+                              className={`px-2 py-0.5 rounded text-[9px] font-bold border ${ing.allowLite ? 'bg-yellow-500 text-white border-yellow-500' : 'bg-yellow-50 text-yellow-300 border-yellow-200'}`}
+                              title="Allow LITE"
+                            >
+                              Lite
+                            </button>
+                            <button
+                              onClick={() => toggleIngredientOption(ing.ingredientId, 'allowOnSide')}
+                              className={`px-2 py-0.5 rounded text-[9px] font-bold border ${ing.allowOnSide ? 'bg-blue-500 text-white border-blue-500' : 'bg-blue-50 text-blue-300 border-blue-200'}`}
+                              title="Allow ON SIDE"
+                            >
+                              Side
+                            </button>
+                            <button
+                              onClick={() => toggleIngredientOption(ing.ingredientId, 'allowExtra')}
+                              className={`px-2 py-0.5 rounded text-[9px] font-bold border ${ing.allowExtra ? 'bg-green-500 text-white border-green-500' : 'bg-green-50 text-green-300 border-green-200'}`}
+                              title="Allow EXTRA"
+                            >
+                              Extra
+                            </button>
+                            {ing.allowExtra && (
+                              <span className="flex items-center gap-0.5">
+                                <span className="text-[9px] font-bold text-green-600">$</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.25"
+                                  defaultValue={ing.extraPrice}
+                                  onBlur={(e) => {
+                                    const val = parseFloat(e.target.value) || 0
+                                    if (val !== ing.extraPrice) updateExtraPrice(ing.ingredientId, val)
+                                  }}
+                                  className="w-14 px-1 py-0 text-[10px] border rounded text-center"
+                                />
+                              </span>
+                            )}
+                            <button
+                              onClick={() => toggleIngredientOption(ing.ingredientId, 'allowSwap')}
+                              className={`px-2 py-0.5 rounded text-[9px] font-bold border ${ing.allowSwap ? 'bg-purple-500 text-white border-purple-500' : 'bg-purple-50 text-purple-300 border-purple-200'}`}
+                              title="Allow SWAP"
+                            >
+                              Swap
+                            </button>
+                          </div>
                         </div>
-                        <button onClick={() => removeIngredient(ing.ingredientId)} className="text-red-400 hover:text-red-600">×</button>
-                      </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
               )}
@@ -1710,6 +3164,35 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
               {/* Groups List — filter out child groups (they render nested under parent modifier) */}
               <div className="p-3 space-y-2">
+                {/* Drop zone to promote a child group to top-level */}
+                {draggedGroupId && (() => {
+                  const childGroupIdSet = new Set<string>()
+                  modifierGroups.forEach(g => {
+                    g.modifiers.forEach(m => {
+                      if (m.childModifierGroupId) childGroupIdSet.add(m.childModifierGroupId)
+                    })
+                  })
+                  const isChild = childGroupIdSet.has(draggedGroupId)
+                  if (!isChild) return null
+                  return (
+                    <div
+                      className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === 'top-level' ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 text-gray-400'}`}
+                      onDragOver={(e) => { e.preventDefault(); setDragOverDropZone('top-level') }}
+                      onDragLeave={() => setDragOverDropZone(null)}
+                      onDrop={async (e) => {
+                        e.preventDefault()
+                        if (draggedGroupId) {
+                          await reparentGroup(draggedGroupId, null)
+                        }
+                        setDraggedGroupId(null)
+                        setDragOverGroupId(null)
+                        setDragOverDropZone(null)
+                      }}
+                    >
+                      ⬆ Drop here to promote to top-level
+                    </div>
+                  )
+                })()}
                 {(() => {
                   // Build set of child group IDs so we can exclude them from the top-level list
                   const childGroupIdSet = new Set<string>()
@@ -1731,7 +3214,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                     return (
                       <div
                         key={group.id}
-                        className={`border rounded-lg overflow-hidden ${group.isRequired ? 'border-l-4 border-red-400' : ''} ${draggedGroupId === group.id ? 'opacity-50' : ''} ${dragOverGroupId === group.id && draggedGroupId !== group.id ? 'ring-2 ring-indigo-400' : ''}`}
+                        className={`border-2 border-indigo-300 rounded-lg overflow-hidden shadow-sm ${group.isRequired ? 'border-l-4 border-l-red-400' : ''} ${draggedGroupId === group.id ? 'opacity-50' : ''} ${dragOverGroupId === group.id && draggedGroupId !== group.id ? 'ring-2 ring-indigo-400' : ''}`}
                         draggable
                         onDragStart={(e) => {
                           setDraggedGroupId(group.id)
@@ -1748,20 +3231,16 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                           setDragOverGroupId(group.id)
                         }}
                         onDragLeave={() => setDragOverGroupId(null)}
-                        onDrop={(e) => {
-                          e.preventDefault()
-                          if (draggedGroupId) reorderGroups(draggedGroupId, group.id)
-                          setDraggedGroupId(null)
-                          setDragOverGroupId(null)
-                        }}
+                        onDrop={(e) => handleGroupDrop(e, group.id)}
                         onDragEnd={() => {
                           setDraggedGroupId(null)
                           setDragOverGroupId(null)
+                          setDragOverDropZone(null)
                         }}
                       >
                         {/* Group Header - click to expand */}
                         <div
-                          className="px-3 py-2 bg-gray-50 flex items-center gap-2 cursor-pointer"
+                          className="px-3 py-2 bg-indigo-100 border-b border-indigo-200 flex items-center gap-2 cursor-pointer hover:bg-indigo-150 transition-colors"
                           onClick={() => {
                             toggleExpanded(group.id)
                             onSelectGroup?.(isExpanded ? null : group.id)
@@ -1792,6 +3271,17 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                               {group.name}
                             </span>
                           )}
+                          {/* Settings badges — always visible in header */}
+                          <span className="ml-auto text-[9px] text-gray-400 flex items-center gap-1 shrink-0">
+                            <span className="px-1 py-0.5 bg-gray-100 rounded">{group.minSelections}-{group.maxSelections}</span>
+                            {group.isRequired && <span className="px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium">Req</span>}
+                            {group.allowStacking && <span className="px-1 py-0.5 bg-yellow-100 text-yellow-700 rounded">Stack</span>}
+                            {(() => {
+                              const defaults = group.modifiers.filter(m => m.isDefault)
+                              if (defaults.length === 0) return null
+                              return <span className="px-1 py-0.5 bg-amber-100 text-amber-700 rounded">★{defaults.length}</span>
+                            })()}
+                          </span>
                           {childModCount > 0 && <span className="text-[9px] px-1 bg-indigo-100 text-indigo-600 rounded">{childModCount}▶</span>}
                           <span className="text-xs text-gray-400">{group.modifiers.length}</span>
                           <button
@@ -1812,18 +3302,9 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                           </button>
                         </div>
 
-                        {/* Expanded: Settings + Modifiers */}
+                        {/* Expanded: Modifiers */}
                         {isExpanded && (
                           <div className="border-t" draggable={false} onDragStart={(e) => e.stopPropagation()}>
-                            {/* Compact settings summary - edit in right panel */}
-                            <div className="px-3 py-1.5 bg-gray-50/50 border-b text-xs text-gray-400 flex items-center justify-between">
-                              <span>
-                                {group.minSelections}-{group.maxSelections} selections
-                                {group.isRequired && <span className="ml-1 text-red-500 font-medium">· Required</span>}
-                                {group.allowStacking && <span className="ml-1 text-yellow-600">· Stacking</span>}
-                              </span>
-                              <span className="text-gray-300">Edit in panel →</span>
-                            </div>
 
                             {/* Modifier rows */}
                             <div className="p-2 space-y-1">
@@ -1832,7 +3313,28 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                                   Add modifiers to get started
                                 </div>
                               )}
-                              {group.modifiers.map(mod => renderModifierRow(group.id, mod))}
+                              {group.modifiers.map((mod, idx) => renderModifierRow(group.id, mod, 0, idx))}
+
+                              {/* Drop zone: nest a group inside this group */}
+                              {draggedGroupId && draggedGroupId !== group.id && !isDescendantOf(draggedGroupId, group.id) && (
+                                <div
+                                  className={`py-2 px-3 text-xs text-center rounded border-2 border-dashed transition-colors ${dragOverDropZone === `nest-${group.id}` ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-gray-300 text-gray-400'}`}
+                                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverDropZone(`nest-${group.id}`) }}
+                                  onDragLeave={() => setDragOverDropZone(null)}
+                                  onDrop={async (e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    if (draggedGroupId) {
+                                      await nestGroupInGroup(draggedGroupId, group.id)
+                                    }
+                                    setDraggedGroupId(null)
+                                    setDragOverGroupId(null)
+                                    setDragOverDropZone(null)
+                                  }}
+                                >
+                                  ⬇ Drop here to nest inside {group.name}
+                                </div>
+                              )}
 
                               {/* Add modifier form */}
                               {addingModifierTo === group.id ? (

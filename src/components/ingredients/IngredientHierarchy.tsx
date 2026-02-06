@@ -23,6 +23,18 @@ function collectAllIds(ingredients: HierarchyIngredient[]): string[] {
   return ids
 }
 
+// Helper to count unverified items (including children) in a list of ingredients
+function countUnverified(ingredients: HierarchyIngredient[]): number {
+  let count = 0
+  for (const ing of ingredients) {
+    if (ing.needsVerification) count++
+    if (ing.childIngredients) {
+      count += countUnverified(ing.childIngredients)
+    }
+  }
+  return count
+}
+
 interface IngredientHierarchyProps {
   ingredients: HierarchyIngredient[]
   selectedIds: Set<string>
@@ -92,6 +104,17 @@ interface LinkedMenuItem {
   quantity?: number
 }
 
+// Type for linked modifiers (modifiers that reference this ingredient)
+interface LinkedModifier {
+  id: string
+  name: string
+  modifierGroup: {
+    id: string
+    name: string
+  }
+  menuItems: Array<{ id: string; name: string }>
+}
+
 // Type for recipe components
 interface RecipeComponent {
   id: string
@@ -121,12 +144,14 @@ function HierarchyNode({
   onDelete,
   onAddPreparation,
   onToggleActive,
+  onVerify,
 }: HierarchyNodeProps) {
   // Default to collapsed for cleaner view
   const [isExpanded, setIsExpanded] = useState(false)
-  // For prep items: show linked menu items
+  // For prep items: show linked menu items + linked modifiers
   const [showLinkedItems, setShowLinkedItems] = useState(false)
   const [linkedItems, setLinkedItems] = useState<LinkedMenuItem[]>([])
+  const [linkedModifiers, setLinkedModifiers] = useState<LinkedModifier[]>([])
   // For inventory items: show recipe components
   const [showRecipe, setShowRecipe] = useState(false)
   const [recipeComponents, setRecipeComponents] = useState<RecipeComponent[]>([])
@@ -163,6 +188,9 @@ function HierarchyNode({
 
       if (cached?.menuItemIngredients) {
         setLinkedItems(cached.menuItemIngredients)
+      }
+      if (cached?.linkedModifiers) {
+        setLinkedModifiers(cached.linkedModifiers)
       }
     }
   }
@@ -357,6 +385,13 @@ function HierarchyNode({
                 </span>
               )}
 
+              {/* Connected badge - shows when linked to modifiers or menu items */}
+              {depth > 0 && ((ingredient as any).linkedModifierCount > 0 || (ingredient.usedByCount || 0) > 0) && (
+                <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 border border-purple-300 rounded text-[10px] font-medium">
+                  🔗 Connected
+                </span>
+              )}
+
               {/* Portion info inline */}
               {ingredient.standardQuantity && ingredient.standardUnit && (
                 <span className="text-[10px] text-gray-400">
@@ -439,28 +474,78 @@ function HierarchyNode({
           </div>
         </div>
 
-        {/* Linked Menu Items Section (for prep items) */}
+        {/* Linked Menu Items & Modifiers Section (for prep items) */}
         {depth > 0 && showLinkedItems && (
           <div className="px-3 py-2 bg-indigo-50 border-t border-indigo-200">
-            <div className="text-xs font-medium text-indigo-800 mb-1">
-              Menu Items Using This Ingredient:
-            </div>
             {linkedItemsCache.loading[`linked-items-${ingredient.id}`] ? (
               <div className="text-xs text-indigo-600">Loading...</div>
-            ) : linkedItems.length === 0 ? (
-              <div className="text-xs text-indigo-500 italic">No menu items linked yet</div>
             ) : (
-              <div className="flex flex-wrap gap-1">
-                {linkedItems.map(link => (
-                  <span
-                    key={link.id}
-                    className="px-2 py-0.5 bg-white border border-indigo-200 rounded text-xs text-indigo-700"
-                  >
-                    {link.menuItem.name}
-                    {link.quantity && <span className="text-indigo-400 ml-1">×{link.quantity}</span>}
-                  </span>
-                ))}
-              </div>
+              <>
+                {/* Linked Modifiers with Menu Items */}
+                {linkedModifiers.length > 0 && (
+                  <div className="mb-2">
+                    <div className="text-xs font-medium text-purple-800 mb-1">
+                      🔗 Connected via Modifiers:
+                    </div>
+                    {linkedModifiers.map(mod => {
+                      // Collect all unique menu items that use this modifier
+                      const menuItemNames = mod.menuItems || []
+                      return (
+                        <div key={mod.id} className="mb-1.5">
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className="px-2 py-0.5 bg-purple-100 border border-purple-300 rounded text-xs text-purple-700 font-medium">
+                              {mod.name}
+                              <span className="text-purple-400 ml-1">({mod.modifierGroup.name})</span>
+                            </span>
+                            {menuItemNames.length > 0 && (
+                              <>
+                                <span className="text-gray-400 text-xs">→</span>
+                                {menuItemNames.map(mi => (
+                                  <span
+                                    key={mi.id}
+                                    className="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700"
+                                  >
+                                    {mi.name}
+                                  </span>
+                                ))}
+                                <span className="text-[10px] text-gray-400">
+                                  ×{menuItemNames.length} {menuItemNames.length === 1 ? 'item' : 'items'}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* Direct Menu Item Links (via MenuItemIngredient) */}
+                {(linkedItems.length > 0 || linkedModifiers.length === 0) && (
+                  <>
+                    <div className="text-xs font-medium text-indigo-800 mb-1">
+                      {linkedModifiers.length > 0 ? 'Direct Ingredient Links:' : 'Menu Items Using This Ingredient:'}
+                    </div>
+                    {linkedItems.length === 0 ? (
+                      <div className="text-xs text-indigo-500 italic">
+                        {linkedModifiers.length > 0 ? 'None (connected via modifiers above)' : 'No menu items linked yet'}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1">
+                        {linkedItems.map(link => (
+                          <span
+                            key={link.id}
+                            className="px-2 py-0.5 bg-white border border-indigo-200 rounded text-xs text-indigo-700"
+                          >
+                            {link.menuItem.name}
+                            {link.quantity && <span className="text-indigo-400 ml-1">×{link.quantity}</span>}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </div>
         )}
@@ -732,18 +817,21 @@ function CategoryHierarchySection({
   // Count total ingredients including children
   const totalCount = allIdsInCategory.length
 
+  // Count unverified items in this category
+  const unverifiedCount = useMemo(() => countUnverified(ingredients), [ingredients])
+
   const handleSelectAllInCategory = (e: React.MouseEvent) => {
     e.stopPropagation()
     onSelectAllInCategory(category.id, allIdsInCategory)
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+    <div className={`bg-white rounded-lg shadow-sm overflow-hidden ${unverifiedCount > 0 ? 'border-2 border-red-300 ring-1 ring-red-200' : 'border'}`}>
       {/* Category Header - Compact */}
       <div
-        className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors"
+        className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-colors ${unverifiedCount > 0 ? 'hover:bg-red-50 bg-red-50/30' : 'hover:bg-gray-50'}`}
         onClick={() => setIsExpanded(!isExpanded)}
-        style={{ borderLeft: `3px solid ${category.color || '#6b7280'}` }}
+        style={{ borderLeft: `3px solid ${unverifiedCount > 0 ? '#ef4444' : (category.color || '#6b7280')}` }}
       >
         <div className="flex items-center gap-2">
           {/* Select All in Category Checkbox */}
@@ -769,6 +857,11 @@ function CategoryHierarchySection({
             <span className="text-xs text-gray-400">
               {ingredients.length} inv / {totalCount - ingredients.length} prep
             </span>
+            {unverifiedCount > 0 && (
+              <span className="px-1.5 py-0.5 bg-red-500 text-white rounded-full text-[10px] font-bold animate-pulse">
+                ⚠ {unverifiedCount} unverified
+              </span>
+            )}
             {selectedInCategory > 0 && (
               <span className="text-xs text-blue-600">
                 ({selectedInCategory} sel)

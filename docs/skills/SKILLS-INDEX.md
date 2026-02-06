@@ -127,6 +127,8 @@
 | 145 | Ingredient Verification | DONE | 125, 204 | needsVerification flag for items created from Menu Builder, red highlight in inventory, verify button |
 | 204 | Ingredient Library Refactor | DONE | 125, 126, 127 | Major refactor: 61% code reduction, race protection, bulk API, debounced search, toast notifications, accessibility |
 | 205 | Component Improvements | DONE | 204 | Shared cost hook, recipe cost aggregation (N→1), hierarchy caching (5min TTL), error rollback, accessibility |
+| 215 | Unified Modifier Inventory Deduction | DONE | 125, 143 | Fallback path: Modifier.ingredientId → Ingredient → InventoryItem for deduction when no ModifierInventoryLink exists; updates deductInventoryForOrder, deductInventoryForVoidedItem, calculateTheoreticalUsage, PMIX |
+| 216 | Ingredient-Modifier Connection Visibility | DONE | 143, 204, 211, 214 | Bidirectional visibility: Connected badge, dual-path menu item resolution (item-owned + junction), expandable linked modifiers panel, linkedModifierCount |
 
 ### Reporting
 | Skill | Name | Status | Dependencies | Notes |
@@ -187,6 +189,11 @@
 | 144 | Production Hardening Pass | DONE | 142, 143 | Cycle-safe recursion, toast errors (26 blocks), debounced save, price validation, static Tailwind, API validation |
 | 208 | POS Modifier Modal Redesign | DONE | 04, 100 | Dark glassmorphism theme, fixed-size modal, group progress dots, smooth transitions |
 | 209 | Combo Step Flow | DONE | 41, 208 | Step-by-step wizard for combo meal configuration in POS |
+| 210 | Modifier Cascade Delete & Orphan Cleanup | DONE | 143 | Cascade delete with preview, orphan auto-cleanup, fluid group nesting, collapsed child chips |
+| 211 | Hierarchical Ingredient Picker | DONE | 126, 143 | Unified picker for ingredients + modifier linking, category→parent→prep hierarchy, inline creation |
+| 212 | Per-Modifier Print Routing | DONE | 103, 143 | Admin UI for modifier-level print routing (follow/also/only), printer selection per modifier |
+| 213 | Real-Time Ingredient Library | DONE | 211, 127 | Optimistic local update + socket dispatch for cross-terminal ingredient sync |
+| 214 | Ingredient Verification Visibility | DONE | 145, 211 | Unverified badges on ingredient rows, category header warnings, recursive reverse linking |
 
 ### Admin & Navigation
 | Skill | Name | Status | Dependencies | Notes |
@@ -216,7 +223,7 @@
 | Bar Features | 2 | 1 | 0 | 3 | 83% |
 | Kitchen Display | 4 | 1 | 2 | 7 | 71% |
 | Pricing & Discounts | 5 | 0 | 0 | 5 | 100% |
-| Inventory & Menu | 21 | 0 | 0 | 21 | 100% |
+| Inventory & Menu | 23 | 0 | 0 | 23 | 100% |
 | Menu Builder | 6 | 0 | 0 | 6 | 100% |
 | Reporting | 13 | 0 | 0 | 13 | 100% |
 | Employee Features | 3 | 1 | 0 | 4 | 88% |
@@ -227,7 +234,7 @@
 | Additional (80-105) | 20 | 1 | 0 | 21 | 98% |
 | Canvas/Events (106-123) | 9 | 0 | 5 | 14 | 64% |
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
-| **TOTAL** | **114** | **5** | **12** | **131** | **92%** |
+| **TOTAL** | **116** | **5** | **12** | **133** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -348,7 +355,27 @@ Skills that can be developed simultaneously:
 
 ---
 
-## Recently Completed (2026-02-06)
+## Recently Completed (2026-02-06 PM)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 210 | Modifier Cascade Delete & Orphan Cleanup | Cascade delete with preview mode (?preview=true returns counts), collectDescendants recursive function, double confirmation dialog, orphaned childModifierGroupId auto-cleanup in GET API, fluid group nesting (nestGroupInGroup, swap/replace), collapsed child group chips |
+| 211 | Hierarchical Ingredient Picker | Unified picker for both green ingredients section and purple modifier linking. buildHierarchy(searchTerm) shared function, category→parent→prep tree, expand/collapse, inline creation (inventory items + prep items), auto-add/auto-link on create |
+| 212 | Per-Modifier Print Routing | 🖨️ button on each modifier row, follow/also/only routing modes, printer checkbox selection, API accepts+returns printerRouting+printerIds, wired dormant Prisma fields to active UI. Print dispatch integration deferred to Hardware domain (Skill 103 Phase 3) |
+| 213 | Real-Time Ingredient Library | DONE — Optimistic local update via onIngredientCreated callback, socket dispatch (dispatchIngredientLibraryUpdate), INGREDIENT_LIBRARY_UPDATE broadcast event, menu page socket listener |
+| 214 | Ingredient Verification Visibility | DONE — ⚠ Unverified badges on ingredient rows, category header warning counts, recursive ingredientToModifiers for child groups, needsVerification in item ingredients API |
+
+## Recently Completed (2026-02-06 PM)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 210 | Modifier Cascade Delete & Orphan Cleanup | Cascade delete with preview, orphan auto-cleanup, fluid nesting, collapsed child chips |
+| 211 | Hierarchical Ingredient Picker | Unified picker for ingredients + modifier linking, inline creation, stale expand state fix |
+| 212 | Per-Modifier Print Routing | Admin UI (follow/also/only), printer selection, API wiring. Print dispatch deferred to Hardware |
+| 213 | Real-Time Ingredient Library | Optimistic update + socket dispatch for ingredient creation, cross-terminal sync |
+| 214 | Ingredient Verification Visibility | Unverified badges, category warnings, recursive reverse linking |
+
+## Recently Completed (2026-02-06 AM)
 
 | Skill | Name | What Was Built |
 |-------|------|----------------|
@@ -620,6 +647,11 @@ These skills emerged during development and are now part of the system:
 | 205 | Ingredient Component Improvements | DONE | 204 | useIngredientCost hook, recipe-cost aggregation, useHierarchyCache, error rollback, 85% network reduction |
 | 208 | POS Modifier Modal Redesign | DONE | 04, 100 | Dark glassmorphism, fixed-size modal, group progress dots, smooth transitions |
 | 209 | Combo Step Flow | DONE | 41, 208 | Step-by-step wizard for combo meal configuration in POS |
+| 210 | Modifier Cascade Delete & Orphan Cleanup | DONE | 143 | Cascade delete w/ preview, orphan auto-fix, fluid nesting, collapsed child chips |
+| 211 | Hierarchical Ingredient Picker | DONE | 126, 143 | Unified picker (ingredients + modifier linking), category→parent→prep tree, inline creation |
+| 212 | Per-Modifier Print Routing | DONE | 103, 143 | 🖨️ button per modifier, follow/also/only modes, printer selection, API done, dispatch pending |
+| 213 | Real-Time Ingredient Library | DONE | 211, 127 | Optimistic update + socket dispatch for ingredient creation sync |
+| 214 | Ingredient Verification Visibility | DONE | 145, 211 | ⚠ badges, category warnings, recursive reverse ingredient↔modifier linking |
 
 ### Routing & Kitchen Display (200-Series)
 | Skill | Name | Status | Dependencies | Notes |
@@ -630,21 +662,31 @@ These skills emerged during development and are now part of the system:
 
 ---
 
-## Next Session Priority (2026-02-06+)
+## Next Session Priority (2026-02-07+)
 
-### Priority 1: Menu Builder — Ingredient Link Dropdown (Skill 143 Enhancement)
-- Dropdown shows ALL ingredient categories (even empty ones)
-- Only prep items (children) are selectable, not parent ingredients
-- [+] button to create new inventory items + prep items inline
-- New items created with `needsVerification: true` (Skill 145)
+### Priority 1: Inventory ↔ Menu Sync (BIGGEST TODO)
+Complete the full inventory-to-menu integration:
+- Fix ingredient linking stale state bug (Worker W6 prompt ready)
+- Verify Workers W7 + W8 output (real-time ingredient library + verification badges)
+- Test bidirectional ingredient↔modifier linking at all nesting depths
+- Ensure every item sold records correct ingredient usage for reporting/PM mix
+- Cost tracking: ingredient costs flow through to menu item costing
+- Unify liquor + food inventory deduction engines (see CLAUDE.md Priority 5)
 
-### Priority 2: Bar Tabs UI (Skill 20 Enhancement)
+### Priority 2: POS Ordering Flow UI
+Front-end visual issues with taking orders:
+- Review ModifierModal flow for customer-facing scenarios
+- Test Add Item vs Add Choice (plan exists: `~/.claude/plans/playful-wobbling-gadget.md`)
+- Verify modifier stacking, child group navigation, default selections
+- Review FloorPlanHome inline ordering end-to-end
+
+### Priority 3: Bar Tabs UI (Skill 20 Enhancement)
 - Improve OpenOrdersPanel tab list UI for bartenders
 - Quick tab creation from floor plan (Bar Tab button)
 - Pre-auth card capture flow
 - Tab transfer/merge within FloorPlanHome
 
-### Priority 3: Closed Order Management (Skill 114)
+### Priority 4: Closed Order Management (Skill 114)
 - Closed orders list view with search/filter by date, server, table
 - View full order details for closed orders
 - Void payments (manager PIN required)
@@ -652,10 +694,11 @@ These skills emerged during development and are now part of the system:
 - Reprint receipts for closed orders
 - Reopen closed orders with reason tracking
 
-### Priority 4: Kitchen Print Integration
+### Priority 5: Kitchen Print Integration
 - Connect /api/orders/[id]/send to actual print API
 - Route tickets to correct printers based on print routes
 - Handle printer offline gracefully
+- Integrate per-modifier print routing (Skill 212 + Skill 103 Phase 3)
 
 ---
 

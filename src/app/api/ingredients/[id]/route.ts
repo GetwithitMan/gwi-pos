@@ -39,6 +39,35 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             },
           },
         },
+        // Modifiers that link to this ingredient (via Modifier.ingredientId)
+        linkedModifiers: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            name: true,
+            modifierGroup: {
+              select: {
+                id: true,
+                name: true,
+                // Item-owned groups: direct menuItemId relation
+                menuItemId: true,
+                menuItem: {
+                  select: { id: true, name: true },
+                },
+                // Legacy shared groups: junction table relation
+                menuItems: {
+                  where: { deletedAt: null },
+                  select: {
+                    id: true,
+                    menuItem: {
+                      select: { id: true, name: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         // Hierarchy relations
         parentIngredient: {
           select: { id: true, name: true, standardQuantity: true, standardUnit: true },
@@ -108,6 +137,42 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           quantity: mi.quantity ? Number(mi.quantity) : null,
           extraPrice: mi.extraPrice ? Number(mi.extraPrice) : null,
         })),
+        linkedModifiers: (ingredient.linkedModifiers || []).map(mod => {
+          // Collect menu items from both sources:
+          // 1. Item-owned groups: direct menuItem relation (via menuItemId)
+          // 2. Legacy shared groups: junction table (MenuItemModifierGroup)
+          const menuItemsMap = new Map<string, { id: string; name: string }>()
+
+          // Source 1: Item-owned group (menuItemId → MenuItem)
+          if (mod.modifierGroup.menuItem) {
+            menuItemsMap.set(mod.modifierGroup.menuItem.id, {
+              id: mod.modifierGroup.menuItem.id,
+              name: mod.modifierGroup.menuItem.name,
+            })
+          }
+
+          // Source 2: Legacy junction table (MenuItemModifierGroup)
+          if (mod.modifierGroup.menuItems) {
+            for (const mimg of mod.modifierGroup.menuItems as any[]) {
+              if (mimg.menuItem && !menuItemsMap.has(mimg.menuItem.id)) {
+                menuItemsMap.set(mimg.menuItem.id, {
+                  id: mimg.menuItem.id,
+                  name: mimg.menuItem.name,
+                })
+              }
+            }
+          }
+
+          return {
+            id: mod.id,
+            name: mod.name,
+            modifierGroup: {
+              id: mod.modifierGroup.id,
+              name: mod.modifierGroup.name,
+            },
+            menuItems: Array.from(menuItemsMap.values()),
+          }
+        }),
         childIngredients: ingredient.childIngredients.map(child => ({
           ...child,
           yieldPercent: child.yieldPercent ? Number(child.yieldPercent) : null,
@@ -403,19 +468,26 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ data: { message: 'Ingredient permanently deleted' } })
     }
 
-    // Regular soft delete - don't allow if already deleted
-    if (existing.deletedAt) {
-      return NextResponse.json({ error: 'Ingredient already deleted' }, { status: 404 })
-    }
+    // DEV MODE: Hard delete everything to avoid soft-delete ghost data issues
+    // TODO: Re-enable soft deletes for production (cloud sync needs them)
 
     // Check if ingredient has child preparations
     if (existing._count.childIngredients > 0) {
       if (cascadeChildren) {
-        // Delete all children first
-        await db.ingredient.updateMany({
-          where: { parentIngredientId: id, deletedAt: null },
-          data: { deletedAt: new Date(), isActive: false },
+        // Hard delete all children first — remove their menu item links too
+        const children = await db.ingredient.findMany({
+          where: { parentIngredientId: id },
+          select: { id: true },
         })
+        const childIds = children.map(c => c.id)
+        if (childIds.length > 0) {
+          await db.menuItemIngredient.deleteMany({
+            where: { ingredientId: { in: childIds } },
+          })
+          await db.ingredient.deleteMany({
+            where: { parentIngredientId: id },
+          })
+        }
       } else {
         return NextResponse.json(
           { error: `Cannot delete: ingredient has ${existing._count.childIngredients} child preparation(s). Use ?cascadeChildren=true to delete all.` },
@@ -424,22 +496,14 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Check if ingredient is used by any menu items
-    if (existing._count.menuItemIngredients > 0) {
-      // Soft delete and deactivate
-      await db.ingredient.update({
-        where: { id },
-        data: { isActive: false, deletedAt: new Date() },
-      })
-      return NextResponse.json({
-        data: { message: `Ingredient deactivated (used by ${existing._count.menuItemIngredients} menu items)` },
-      })
-    }
+    // Remove menu item links
+    await db.menuItemIngredient.deleteMany({
+      where: { ingredientId: id },
+    })
 
-    // Soft delete
-    await db.ingredient.update({
+    // Hard delete the ingredient
+    await db.ingredient.delete({
       where: { id },
-      data: { deletedAt: new Date() },
     })
     return NextResponse.json({ data: { message: 'Ingredient deleted' } })
   } catch (error) {

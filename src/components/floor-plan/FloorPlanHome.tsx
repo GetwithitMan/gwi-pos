@@ -1576,7 +1576,7 @@ export function FloorPlanHome({
   }, [])
 
   // Handle menu item tap - add to order
-  const handleMenuItemTap = useCallback((item: MenuItem) => {
+  const handleMenuItemTap = useCallback(async (item: MenuItem) => {
     if (!showOrderPanel) {
       // No order panel open, open it first
       setShowOrderPanel(true)
@@ -1654,8 +1654,55 @@ export function FloorPlanHome({
       return
     }
 
-    // If item has modifiers and callback provided, open modifier modal
+    // If item has modifiers, check if defaults can auto-fill all required groups
     if (item.hasModifiers && onOpenModifiers) {
+      // Try to auto-add with defaults (no modal needed if defaults satisfy requirements)
+      try {
+        const res = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
+        if (res.ok) {
+          const { data: groups } = await res.json()
+          if (groups && groups.length > 0) {
+            // Collect all default modifiers and check if required groups are satisfied
+            const defaultMods: { id: string; name: string; price: number }[] = []
+            let allRequiredSatisfied = true
+
+            for (const group of groups) {
+              const defaults = (group.modifiers || []).filter((m: any) => m.isDefault)
+              defaults.forEach((m: any) => {
+                defaultMods.push({ id: m.id, name: m.name, price: Number(m.price || 0) })
+              })
+              // Check if required group has enough defaults
+              if (group.isRequired && group.minSelections > 0 && defaults.length < group.minSelections) {
+                allRequiredSatisfied = false
+              }
+            }
+
+            // If defaults satisfy all requirements, add directly — skip modal
+            if (allRequiredSatisfied && defaultMods.length > 0) {
+              const modPrice = defaultMods.reduce((sum, m) => sum + m.price, 0)
+              const newItem: InlineOrderItem = {
+                id: `temp-${crypto.randomUUID()}`,
+                menuItemId: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: 1,
+                modifiers: defaultMods,
+                seatNumber: activeSeatNumber || undefined,
+                sourceTableId: activeSourceTableId || undefined,
+                sentToKitchen: false,
+              }
+              setInlineOrderItems(prev => [...prev, newItem])
+              if (navigator.vibrate) navigator.vibrate(10)
+              return
+            }
+          }
+        }
+      } catch (e) {
+        // If fetch fails, fall through to open modal
+        console.error('Failed to check defaults:', e)
+      }
+
+      // Defaults don't cover requirements — open modifier modal as usual
       onOpenModifiers(item, (modifiers) => {
         const newItem: InlineOrderItem = {
           id: `temp-${crypto.randomUUID()}`,
@@ -1664,7 +1711,7 @@ export function FloorPlanHome({
           price: item.price,
           quantity: 1,
           modifiers,
-          seatNumber: activeSeatNumber || undefined, // Assign active seat
+          seatNumber: activeSeatNumber || undefined,
           sourceTableId: activeSourceTableId || undefined,
           sentToKitchen: false,
         }

@@ -332,3 +332,32 @@ export async function dispatchMenuUpdate(
 
   return promise
 }
+
+/**
+ * Dispatch ingredient library update event (Worker 7)
+ *
+ * Called when a new ingredient (inventory or prep item) is created inline.
+ * Provides real-time updates to all menu builder terminals.
+ */
+export async function dispatchIngredientLibraryUpdate(
+  locationId: string,
+  payload: {
+    ingredient: {
+      id: string
+      name: string
+      categoryId: string
+      parentIngredientId: string | null
+      isBaseIngredient: boolean
+    }
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('INGREDIENT_LIBRARY_UPDATE', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}

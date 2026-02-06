@@ -23,6 +23,7 @@ type ModifierWithChild = Prisma.ModifierGetPayload<{
 }>
 
 // Helper function to recursively format modifier groups
+// orphanedModifierIds collects modifier IDs whose childModifierGroupId points to a missing group
 function formatModifierGroup(group: {
   id: string
   name: string
@@ -35,7 +36,7 @@ function formatModifierGroup(group: {
   tieredPricingConfig: any
   exclusionGroupKey: string | null
   modifiers: ModifierWithChild[]
-}, allGroups: Map<string, typeof group>): object {
+}, allGroups: Map<string, typeof group>, orphanedModifierIds?: string[]): object {
   return {
     id: group.id,
     name: group.name,
@@ -49,6 +50,11 @@ function formatModifierGroup(group: {
     sortOrder: group.sortOrder,
     modifiers: group.modifiers.map(m => {
       const childGroup = m.childModifierGroupId ? allGroups.get(m.childModifierGroupId) : null
+      // If childModifierGroupId is set but the group is missing/deleted, treat as orphan
+      const isOrphaned = !!m.childModifierGroupId && !childGroup
+      if (isOrphaned && orphanedModifierIds) {
+        orphanedModifierIds.push(m.id)
+      }
       return {
         id: m.id,
         name: m.name,
@@ -63,8 +69,11 @@ function formatModifierGroup(group: {
         isLabel: m.isLabel ?? false,
         ingredientId: m.ingredientId,
         ingredientName: m.ingredient?.name || null,
-        childModifierGroupId: m.childModifierGroupId,
-        childModifierGroup: childGroup ? formatModifierGroup(childGroup, allGroups) : null,
+        // Clear orphaned references — return null if child group doesn't exist
+        childModifierGroupId: isOrphaned ? null : m.childModifierGroupId,
+        childModifierGroup: childGroup ? formatModifierGroup(childGroup, allGroups, orphanedModifierIds) : null,
+        printerRouting: m.printerRouting,
+        printerIds: m.printerIds,
       }
     }),
   }
@@ -107,8 +116,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       },
     }
 
-    // 1. Get item-OWNED modifier groups (new pattern — menuItemId set on group)
-    const ownedGroups = await db.modifierGroup.findMany({
+    // Get item-OWNED modifier groups only (menuItemId set on group)
+    // Legacy shared groups via MenuItemModifierGroup junction table are no longer returned
+    const allGroups = await db.modifierGroup.findMany({
       where: {
         menuItemId,
         deletedAt: null,
@@ -117,37 +127,26 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    // 2. Get SHARED modifier groups via junction table (legacy pattern)
-    const sharedLinks = await db.menuItemModifierGroup.findMany({
-      where: {
-        menuItemId,
-        deletedAt: null,
-        modifierGroup: { deletedAt: null },
-      },
-      include: {
-        modifierGroup: {
-          include: { modifiers: modifierInclude },
-        },
-      },
-      orderBy: { sortOrder: 'asc' },
-    })
-
-    // 3. Merge both sources — owned groups first, then shared (no duplicates)
-    const ownedIds = new Set(ownedGroups.map(g => g.id))
-    const sharedGroups = sharedLinks
-      .map(link => link.modifierGroup)
-      .filter(g => !ownedIds.has(g.id))
-
-    const allGroups = [...ownedGroups, ...sharedGroups]
-
     // Build a map of all groups for recursive lookup
     const groupMap = new Map<string, typeof allGroups[0]>()
     allGroups.forEach(g => groupMap.set(g.id, g))
 
+    // Format all groups, collecting any orphaned modifier IDs for cleanup
+    const orphanedModifierIds: string[] = []
+    const formattedGroups = allGroups.map(g => formatModifierGroup(g, groupMap, orphanedModifierIds))
+
+    // Auto-fix orphaned childModifierGroupId references in the background
+    if (orphanedModifierIds.length > 0) {
+      db.modifier.updateMany({
+        where: { id: { in: orphanedModifierIds } },
+        data: { childModifierGroupId: null },
+      }).catch(err => console.error('Failed to clean up orphaned childModifierGroupId refs:', err))
+    }
+
     // Return ALL groups - child groups remain in the list for editing
     // The childModifierGroup reference is just a link, not a move
     return NextResponse.json({
-      data: allGroups.map(g => formatModifierGroup(g, groupMap)),
+      data: formattedGroups,
     })
   } catch (error) {
     console.error('Error fetching item modifier groups:', error)
@@ -519,14 +518,16 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Verify all groups belong to this item
-    const groups = await db.modifierGroup.findMany({
-      where: { menuItemId, id: { in: sortOrders.map(s => s.id) } },
+    const groupIds = sortOrders.map(s => s.id)
+
+    // Verify all groups belong to this item (owned groups only)
+    const ownedGroups = await db.modifierGroup.findMany({
+      where: { menuItemId, id: { in: groupIds }, deletedAt: null },
       select: { id: true },
     })
 
-    if (groups.length !== sortOrders.length) {
-      return NextResponse.json({ error: 'Some groups not found' }, { status: 404 })
+    if (ownedGroups.length !== sortOrders.length) {
+      return NextResponse.json({ error: 'Some groups not found for this item' }, { status: 404 })
     }
 
     // Bulk update in transaction
@@ -544,4 +545,105 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     console.error('Error updating modifier group sort orders:', error)
     return NextResponse.json({ error: 'Failed to update sort orders' }, { status: 500 })
   }
+}
+
+// POST /api/menu/items/[id]/modifier-groups/reparent - Move a group to a different hierarchy level
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  try {
+    const { id: menuItemId } = await params
+    const body = await request.json()
+    const { groupId, targetParentModifierId } = body
+    // targetParentModifierId: null = promote to top-level, string = demote to child of this modifier
+
+    if (!groupId) {
+      return NextResponse.json({ error: 'groupId is required' }, { status: 400 })
+    }
+
+    // Verify the group belongs to this item
+    const group = await db.modifierGroup.findFirst({
+      where: { id: groupId, menuItemId },
+    })
+
+    if (!group) {
+      return NextResponse.json({ error: 'Group not found for this item' }, { status: 404 })
+    }
+
+    // Find the current parent modifier (if any) that links to this group
+    const currentParentModifier = await db.modifier.findFirst({
+      where: {
+        childModifierGroupId: groupId,
+        deletedAt: null,
+      },
+      select: { id: true, modifierGroupId: true },
+    })
+
+    await db.$transaction(async (tx) => {
+      // Step 1: Unlink from current parent (if it has one)
+      if (currentParentModifier) {
+        await tx.modifier.update({
+          where: { id: currentParentModifier.id },
+          data: { childModifierGroupId: null },
+        })
+      }
+
+      // Step 2: Link to new parent (if demoting to child)
+      if (targetParentModifierId) {
+        // Verify target modifier belongs to a group owned by this item
+        const targetMod = await tx.modifier.findFirst({
+          where: {
+            id: targetParentModifierId,
+            modifierGroup: { menuItemId },
+            deletedAt: null,
+          },
+        })
+
+        if (!targetMod) {
+          throw new Error('Target modifier not found for this item')
+        }
+
+        // Prevent cycles: the target modifier cannot be inside the group we're moving
+        // (i.e., don't let a group become a child of its own descendant)
+        const isDescendant = await checkIsDescendant(tx, groupId, targetMod.modifierGroupId)
+        if (isDescendant) {
+          throw new Error('Cannot move a group into its own descendant (would create cycle)')
+        }
+
+        await tx.modifier.update({
+          where: { id: targetParentModifierId },
+          data: { childModifierGroupId: groupId },
+        })
+      }
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Error reparenting modifier group:', error)
+    const message = error?.message || 'Failed to reparent modifier group'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+// Helper: Check if potentialDescendantGroupId is a descendant of ancestorGroupId
+async function checkIsDescendant(tx: any, ancestorGroupId: string, potentialDescendantGroupId: string, visited = new Set<string>()): Promise<boolean> {
+  if (ancestorGroupId === potentialDescendantGroupId) return true
+  if (visited.has(ancestorGroupId)) return false
+  visited.add(ancestorGroupId)
+
+  // Get all modifiers in the ancestor group that have child groups
+  const modifiers = await tx.modifier.findMany({
+    where: {
+      modifierGroupId: ancestorGroupId,
+      childModifierGroupId: { not: null },
+      deletedAt: null,
+    },
+    select: { childModifierGroupId: true },
+  })
+
+  for (const mod of modifiers) {
+    if (mod.childModifierGroupId === potentialDescendantGroupId) return true
+    const found = await checkIsDescendant(tx, mod.childModifierGroupId!, potentialDescendantGroupId, visited)
+    if (found) return true
+  }
+
+  return false
 }
