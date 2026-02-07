@@ -193,6 +193,8 @@ export async function POST(
             virtualGroupPrimary: false,
             virtualGroupColor: null,
             virtualGroupCreatedAt: null,
+            virtualGroupOffsetX: 0,
+            virtualGroupOffsetY: 0,
             // Update status based on whether table still has an order
             status: splitOrder && table.id !== primaryTable.id
               ? itemsByTable?.get(table.id)?.length ? 'occupied' : 'available'

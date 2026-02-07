@@ -4544,8 +4544,14 @@ export function FloorPlanHome({
                     </button>
                   </div>
 
-                  {/* Virtual Group: Show seats grouped by table */}
-                  {activeTable.virtualGroupId ? (
+                  {/* Long-hold virtual group (static, no offsets): Show seats grouped by table */}
+                  {/* Drag-combined virtual group (has offsets) + single/physical: Show flat 1..N */}
+                  {activeTable.virtualGroupId && (() => {
+                    // Check if ANY non-primary table has offsets — if so, it's a drag-combined group
+                    const groupTables = getVirtualGroupTables(activeTable)
+                    const hasDragOffsets = groupTables.some(t => !t.virtualGroupPrimary && (t.virtualGroupOffsetX || t.virtualGroupOffsetY))
+                    return !hasDragOffsets // true = long-hold (static), false = drag-combined
+                  })() ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {getVirtualGroupTables(activeTable).map((groupTable) => (
                         <div key={groupTable.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -4634,7 +4640,7 @@ export function FloorPlanHome({
                       ))}
                     </div>
                   ) : (
-                    /* Single table or physical combine: Show flat seat list */
+                    /* Drag-combined virtual group, single table, or physical combine: Flat seat list 1..N */
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                       {Array.from({ length: getTotalSeats(activeTable) }, (_, i) => i + 1).map(seatNum => (
                         <button

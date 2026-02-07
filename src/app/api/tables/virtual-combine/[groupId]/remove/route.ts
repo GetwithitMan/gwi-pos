@@ -96,8 +96,28 @@ export async function POST(
               virtualGroupPrimary: false,
               virtualGroupColor: null,
               virtualGroupCreatedAt: null,
+              virtualGroupOffsetX: 0,
+              virtualGroupOffsetY: 0,
             },
           })
+        }
+
+        // Restore seat labels to plain numbers
+        const allSeats = await tx.seat.findMany({
+          where: {
+            tableId: { in: allGroupTables.map(t => t.id) },
+            isActive: true,
+            deletedAt: null,
+          },
+          select: { id: true, seatNumber: true, label: true },
+        })
+        for (const seat of allSeats) {
+          if (seat.label.includes('-')) {
+            await tx.seat.update({
+              where: { id: seat.id },
+              data: { label: String(seat.seatNumber) },
+            })
+          }
         }
 
         // Create audit log
@@ -231,12 +251,28 @@ export async function POST(
           virtualGroupPrimary: false,
           virtualGroupColor: null,
           virtualGroupCreatedAt: null,
+          virtualGroupOffsetX: 0,
+          virtualGroupOffsetY: 0,
           status: createNewOrder ? 'occupied' : 'available',
         },
         include: {
           section: { select: { id: true, name: true, color: true } },
         },
       })
+
+      // Restore seat labels to plain numbers for the removed table
+      const removedSeats = await tx.seat.findMany({
+        where: { tableId, isActive: true, deletedAt: null },
+        select: { id: true, seatNumber: true, label: true },
+      })
+      for (const seat of removedSeats) {
+        if (seat.label.includes('-')) {
+          await tx.seat.update({
+            where: { id: seat.id },
+            data: { label: String(seat.seatNumber) },
+          })
+        }
+      }
 
       // Create audit log
       await tx.auditLog.create({
