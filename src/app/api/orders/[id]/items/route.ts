@@ -1,23 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-
-// Helper to calculate commission for an item
-function calculateItemCommission(
-  itemTotal: number,
-  quantity: number,
-  commissionType: string | null,
-  commissionValue: number | null
-): number {
-  if (!commissionType || commissionValue === null || commissionValue === undefined) {
-    return 0
-  }
-  if (commissionType === 'percent') {
-    return Math.round((itemTotal * commissionValue / 100) * 100) / 100
-  } else if (commissionType === 'fixed') {
-    return Math.round((commissionValue * quantity) * 100) / 100
-  }
-  return 0
-}
+import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
+import { calculateItemTotal, calculateItemCommission, calculateOrderTotals } from '@/lib/order-calculations'
+import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
+import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
@@ -98,10 +84,7 @@ export async function POST(
     const { items } = body as { items: NewItem[] }
 
     if (!items || items.length === 0) {
-      return NextResponse.json(
-        { error: 'No items provided' },
-        { status: 400 }
-      )
+      return apiError.badRequest('No items provided', ERROR_CODES.ORDER_EMPTY)
     }
 
     // Debug: Log the incoming items
@@ -145,16 +128,11 @@ export async function POST(
       let newItemsCommission = 0
 
       for (const item of items) {
-        // Calculate item total
-        const itemBaseTotal = item.price * item.quantity
-        const modifiersTotal = item.modifiers.reduce((sum, mod) => sum + mod.price, 0) * item.quantity
-        const ingredientModTotal = (item.ingredientModifications || []).reduce(
-          (sum, ing) => sum + (ing.priceAdjustment || 0), 0
-        ) * item.quantity
-        const fullItemTotal = itemBaseTotal + modifiersTotal + ingredientModTotal
+        // Calculate item total using centralized function
+        const fullItemTotal = calculateItemTotal(item)
         newItemsSubtotal += fullItemTotal
 
-        // Calculate commission
+        // Calculate commission using centralized function
         const menuItem = menuItemMap.get(item.menuItemId)
         const itemCommission = calculateItemCommission(
           fullItemTotal,
@@ -267,17 +245,15 @@ export async function POST(
         },
       })
 
-      const newSubtotal = allItems.reduce((sum, item) => sum + Number(item.itemTotal), 0)
-      const newCommissionTotal = allItems.reduce((sum, item) => sum + Number(item.commissionAmount || 0), 0)
+      // Use centralized calculation function (single source of truth)
+      const totals = calculateOrderTotals(
+        allItems,
+        existingOrder.location.settings,
+        Number(existingOrder.discountTotal) || 0,
+        Number(existingOrder.tipTotal) || 0
+      )
 
-      // Get tax rate from location settings
-      const settings = existingOrder.location.settings as { tax?: { defaultRate?: number } } | null
-      const taxRate = (settings?.tax?.defaultRate || 8) / 100
-
-      const newTaxTotal = Math.round(newSubtotal * taxRate * 100) / 100
-      const tipTotal = Number(existingOrder.tipTotal) || 0
-      const discountTotal = Number(existingOrder.discountTotal) || 0
-      const newTotal = Math.round((newSubtotal + newTaxTotal - discountTotal + tipTotal) * 100) / 100
+      const { subtotal: newSubtotal, taxTotal: newTaxTotal, total: newTotal, commissionTotal: newCommissionTotal } = totals
 
       // Update order totals
       const updatedOrder = await tx.order.update({
@@ -316,55 +292,36 @@ export async function POST(
       })
     }
 
-    // Format response
-    return NextResponse.json({
-      id: result.updatedOrder.id,
-      orderNumber: result.updatedOrder.orderNumber,
-      orderType: result.updatedOrder.orderType,
-      status: result.updatedOrder.status,
-      tabName: result.updatedOrder.tabName,
-      guestCount: result.updatedOrder.guestCount,
-      employee: {
-        id: result.updatedOrder.employee.id,
-        name: result.updatedOrder.employee.displayName ||
-              `${result.updatedOrder.employee.firstName} ${result.updatedOrder.employee.lastName}`,
-      },
-      items: result.updatedOrder.items.map(item => ({
-        id: item.id,
-        menuItemId: item.menuItemId,
-        name: item.name,
-        price: Number(item.price),
-        quantity: item.quantity,
-        itemTotal: Number(item.itemTotal),
-        specialNotes: item.specialNotes,
-        blockTimeMinutes: item.blockTimeMinutes,
-        blockTimeStartedAt: item.blockTimeStartedAt?.toISOString() || null,
-        blockTimeExpiresAt: item.blockTimeExpiresAt?.toISOString() || null,
-        modifiers: item.modifiers.map(mod => ({
-          id: mod.id,
-          modifierId: mod.modifierId,
-          name: mod.name,
-          price: Number(mod.price),
-          preModifier: mod.preModifier,
-          depth: mod.depth || 0,
-          spiritTier: mod.spiritTier,
-          linkedBottleProductId: mod.linkedBottleProductId,
-        })),
-        ingredientModifications: item.ingredientModifications.map(ing => ({
-          id: ing.id,
-          ingredientId: ing.ingredientId,
-          ingredientName: ing.ingredientName,
-          modificationType: ing.modificationType,
-          priceAdjustment: Number(ing.priceAdjustment),
-          swappedToModifierId: ing.swappedToModifierId,
-          swappedToModifierName: ing.swappedToModifierName,
-        })),
-      })),
+    // Format response with complete modifier data
+    // Build correlation map for newly created items
+    const correlationMap = new Map<string, string>()
+    result.createdItems.forEach(item => {
+      const corr = (item as any).correlationId
+      if (corr) {
+        correlationMap.set(item.id, corr)
+      }
+    })
+
+    const response = {
+      ...mapOrderForResponse(result.updatedOrder),
+      // Map items with correlationId for newly created items
+      items: result.updatedOrder.items.map(item =>
+        mapOrderItemForResponse(item, correlationMap.get(item.id))
+      ),
+    }
+
+    // FIX-011: Dispatch real-time totals update (fire-and-forget)
+    dispatchOrderTotalsUpdate(result.updatedOrder.locationId, result.updatedOrder.id, {
       subtotal: Number(result.updatedOrder.subtotal),
-      discountTotal: Number(result.updatedOrder.discountTotal),
       taxTotal: Number(result.updatedOrder.taxTotal),
       tipTotal: Number(result.updatedOrder.tipTotal),
+      discountTotal: Number(result.updatedOrder.discountTotal),
       total: Number(result.updatedOrder.total),
+      commissionTotal: Number(result.updatedOrder.commissionTotal || 0),
+    }, { async: true }).catch(console.error)
+
+    return NextResponse.json({
+      ...response,
       addedItems: result.createdItems.map(item => ({
         id: item.id,
         name: item.name,
@@ -376,12 +333,16 @@ export async function POST(
     if (error instanceof Error) {
       console.error('Error stack:', error.stack)
     }
-    const message = error instanceof Error ? error.message : 'Failed to add items to order'
-    const status = message === 'Order not found' ? 404 :
-                   message === 'Cannot modify a closed order' ? 400 : 500
-    return NextResponse.json(
-      { error: message },
-      { status }
-    )
+    const message = getErrorMessage(error)
+
+    // Map known errors to appropriate responses
+    if (message === 'Order not found') {
+      return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+    }
+    if (message === 'Cannot modify a closed order') {
+      return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
+    }
+
+    return apiError.internalError('Failed to add items to order', ERROR_CODES.INTERNAL_ERROR)
   }
 }

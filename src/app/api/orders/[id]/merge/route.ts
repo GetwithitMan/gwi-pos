@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationSettings } from '@/lib/location-cache'
 
 // POST - Merge another order into this one
 export async function POST(
@@ -110,19 +111,13 @@ export async function POST(
     })
     const discountTotal = allDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
 
-    // Get tax rate from location settings
-    const location = await db.location.findUnique({
-      where: { id: targetOrder.locationId },
-      select: { settings: true },
-    })
-
-    const taxRate = (location?.settings as Record<string, unknown>)?.tax
-      ? ((location?.settings as Record<string, unknown>)?.tax as Record<string, unknown>)?.defaultRate as number || 8.0
-      : 8.0
+    // Get tax rate from location settings (cached - FIX-009)
+    const locationSettings = await getLocationSettings(targetOrder.locationId)
+    const taxRate = (locationSettings?.tax?.defaultRate || 8) / 100
 
     const taxableAmount = subtotal - discountTotal
-    const taxTotal = taxableAmount * (taxRate / 100)
-    const total = taxableAmount + taxTotal
+    const taxTotal = Math.round(taxableAmount * taxRate * 100) / 100
+    const total = Math.round((taxableAmount + taxTotal) * 100) / 100
 
     // Update target order totals and guest count
     const newGuestCount = (targetOrder.guestCount || 1) + (sourceOrder.guestCount || 1)

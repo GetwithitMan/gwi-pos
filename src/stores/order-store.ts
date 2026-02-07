@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { IngredientModification } from '@/types/orders'
 import type { UiModifier } from '@/types/orders'
 
 interface OrderItemModifier extends UiModifier {
@@ -173,15 +174,12 @@ interface LoadedOrderData {
       preModifier?: string | null
       depth?: number
     }[]
-    ingredientModifications?: {
+    ingredientModifications?: (IngredientModification & {
       id: string
-      ingredientId: string
       ingredientName: string
-      modificationType: string
-      priceAdjustment: number
       swappedToModifierId?: string | null
       swappedToModifierName?: string | null
-    }[]
+    })[]
     // Pizza configuration
     pizzaConfig?: PizzaOrderConfigStore
   }[]
@@ -319,7 +317,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       ingredientModifications: item.ingredientModifications?.map(ing => ({
         ingredientId: ing.ingredientId,
         name: ing.ingredientName,
-        modificationType: ing.modificationType as 'no' | 'lite' | 'on_side' | 'extra' | 'swap',
+        modificationType: ing.modificationType,
         priceAdjustment: ing.priceAdjustment,
         swappedTo: ing.swappedToModifierId ? {
           modifierId: ing.swappedToModifierId,

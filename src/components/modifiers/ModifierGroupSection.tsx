@@ -180,8 +180,16 @@ export function ModifierGroupSection({
           const selected = isSelected(group.id, modifier.id)
           const selectionCount = getSelectionCount(group.id, modifier.id)
           const selectedPreMod = getSelectedPreModifier(group.id, modifier.id)
-          const hasPreModifiers = modifier.allowedPreModifiers && (modifier.allowedPreModifiers as string[]).length > 0
-          const preModifiers = (modifier.allowedPreModifiers as string[]) || []
+          const preModifiersFromJson = modifier.allowedPreModifiers as string[] | null
+          const preModifiers = (preModifiersFromJson && preModifiersFromJson.length > 0)
+            ? preModifiersFromJson
+            : [
+                ...(modifier.allowNo ? ['no'] : []),
+                ...(modifier.allowLite ? ['lite'] : []),
+                ...(modifier.allowExtra ? ['extra'] : []),
+                ...(modifier.allowOnSide ? ['side'] : []),
+              ]
+          const hasPreModifiers = preModifiers.length > 0
           const hasChildGroup = !!modifier.childModifierGroupId
           const is86d = modifier.is86d || false
           const isExcluded = excludedIds.has(modifier.id)

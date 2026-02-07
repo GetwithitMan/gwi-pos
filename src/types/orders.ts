@@ -26,7 +26,8 @@ export interface UiModifier {
  * An inline order item representation with complete modifier data
  */
 export interface InlineOrderItem {
-  id: string
+  id: string                    // DB id once saved, temp UUID before
+  correlationId?: string        // Stable ID for matching before save (client-side tracking)
   menuItemId: string
   name: string
   price: number
@@ -42,4 +43,16 @@ export interface InlineOrderItem {
   firedAt?: Date | null
   isHeld?: boolean
   blockTimeMinutes?: number
+}
+
+/** Ingredient modification types — single source of truth */
+export type IngredientModificationType = 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
+
+/** Ingredient modification on an order item */
+export interface IngredientModification {
+  ingredientId: string
+  name: string
+  modificationType: IngredientModificationType
+  priceAdjustment: number
+  swappedTo?: { modifierId: string; name: string; price: number }
 }

@@ -81,23 +81,18 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
   // Load layout settings
   const loadLayout = useCallback(async () => {
     if (!employeeId) {
-      console.log('[POS Layout] Load skipped - no employeeId')
       setIsLoading(false)
       return
     }
 
     try {
-      console.log('[POS Layout] Loading layout for employee:', employeeId)
       const response = await fetch(`/api/employees/${employeeId}/layout`)
       if (response.ok) {
         const data = await response.json()
-        console.log('[POS Layout] Loaded layout:', data)
         setLayout({ ...DEFAULT_LAYOUT_SETTINGS, ...data.layout })
-      } else {
-        console.error('[POS Layout] Load failed with status:', response.status)
       }
-    } catch (error) {
-      console.error('[POS Layout] Load error:', error)
+    } catch {
+      // Network error — non-critical, defaults will be used
     } finally {
       setIsLoading(false)
     }
@@ -106,13 +101,11 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
   // Save layout settings - uses ref to get latest layout
   const saveLayout = useCallback(async (): Promise<boolean> => {
     if (!employeeId || !canCustomize) {
-      console.log('[POS Layout] Save skipped - no employeeId or no permission', { employeeId, canCustomize })
       return false
     }
 
     const currentLayout = layoutRef.current
     try {
-      console.log('[POS Layout] Saving layout...', { employeeId, layout: currentLayout })
       const response = await fetch(`/api/employees/${employeeId}/layout`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -120,16 +113,11 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
       })
 
       if (response.ok) {
-        const data = await response.json()
-        console.log('[POS Layout] Save successful', data)
         setHasUnsavedChanges(false)
         return true
-      } else {
-        const errorData = await response.json().catch(() => ({}))
-        console.error('[POS Layout] Save failed with status', response.status, errorData)
       }
-    } catch (error) {
-      console.error('[POS Layout] Save error:', error)
+    } catch {
+      // Save failed — non-critical, will retry on next change
     }
     return false
   }, [employeeId, canCustomize]) // Removed layout from deps - using ref instead
@@ -140,20 +128,14 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
       return
     }
     if (!canCustomize) {
-      console.log('[POS Layout] Auto-save skipped - canCustomize is false')
       return
     }
 
-    console.log('[POS Layout] Auto-save scheduled in 1 second...')
     const timer = setTimeout(() => {
-      console.log('[POS Layout] Auto-save executing now...')
       saveLayout()
     }, 1000) // Debounce 1 second
 
-    return () => {
-      console.log('[POS Layout] Auto-save timer cleared')
-      clearTimeout(timer)
-    }
+    return () => { clearTimeout(timer) }
   }, [hasUnsavedChanges, saveLayout, canCustomize])
 
   // Load on mount

@@ -80,6 +80,16 @@ function formatModifierGroup(group: {
 }
 
 // GET /api/menu/items/[id]/modifier-groups - Get item-owned modifier groups with nested children
+//
+// ⚠️ ADMIN BUILDER ENDPOINT - Use this for menu editing (returns ALL groups, no channel filtering)
+// For POS/online ordering flow, use /api/menu/items/[id]/modifiers with ?channel param instead.
+//
+// This endpoint:
+// - Returns ALL modifier groups for editing (no channel filtering)
+// - Includes recursive child group loading
+// - Auto-cleans orphaned childModifierGroupId references
+// - Used by ItemEditor and ModifierFlowEditor
+//
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
@@ -624,9 +634,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // Helper: Check if potentialDescendantGroupId is a descendant of ancestorGroupId
-async function checkIsDescendant(tx: any, ancestorGroupId: string, potentialDescendantGroupId: string, visited = new Set<string>()): Promise<boolean> {
+async function checkIsDescendant(tx: Prisma.TransactionClient, ancestorGroupId: string, potentialDescendantGroupId: string, visited = new Set<string>()): Promise<boolean> {
   if (ancestorGroupId === potentialDescendantGroupId) return true
   if (visited.has(ancestorGroupId)) return false
+  // Safety guard against pathological cycles or corrupted data
+  if (visited.size > 50) {
+    console.error(`Cycle detection depth exceeded for ancestorGroupId: ${ancestorGroupId}`)
+    return false
+  }
   visited.add(ancestorGroupId)
 
   // Get all modifiers in the ancestor group that have child groups

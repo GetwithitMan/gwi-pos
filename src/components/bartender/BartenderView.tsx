@@ -14,6 +14,7 @@ import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { useQuickPick } from '@/hooks/useQuickPick'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
+import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 
 // ============================================================================
 // TYPES
@@ -141,7 +142,9 @@ interface BartenderViewProps {
   onOpenPayment?: (orderId: string) => void
   onOpenModifiers?: (
     item: MenuItem,
-    onComplete: (modifiers: { id: string; name: string; price: number }[]) => void
+    onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void,
+    existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[],
+    existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
   ) => void
   onSwitchToFloorPlan?: () => void
   // Settings
@@ -366,6 +369,9 @@ export function BartenderView({
     locationId,
   })
 
+  // OrderPanel items from shared hook
+  const orderPanelItems = useOrderPanelItems(menuItems)
+
   // DEPRECATED: orderItems now reads from Zustand store via useActiveOrder hook
   const orderItems: OrderItem[] = useMemo(() => {
     const storeItems = useOrderStore.getState().currentOrder?.items || []
@@ -476,6 +482,7 @@ export function BartenderView({
       courseStatus: item.courseStatus, resendCount: item.resendCount,
       blockTimeMinutes: item.blockTimeMinutes, blockTimeStartedAt: item.blockTimeStartedAt,
       blockTimeExpiresAt: item.blockTimeExpiresAt,
+      ingredientModifications: item.ingredientModifications,
     }))
 
     const newItems = typeof action === 'function' ? action(prevAsOrderItems) : action
@@ -514,6 +521,7 @@ export function BartenderView({
           blockTimeMinutes: newItem.blockTimeMinutes,
           blockTimeStartedAt: newItem.blockTimeStartedAt,
           blockTimeExpiresAt: newItem.blockTimeExpiresAt,
+          ingredientModifications: newItem.ingredientModifications,
         })
         const storeNow = useOrderStore.getState().currentOrder?.items || []
         const justAdded = storeNow[storeNow.length - 1]
@@ -534,6 +542,7 @@ export function BartenderView({
           blockTimeMinutes: newItem.blockTimeMinutes,
           blockTimeStartedAt: newItem.blockTimeStartedAt,
           blockTimeExpiresAt: newItem.blockTimeExpiresAt,
+          ingredientModifications: newItem.ingredientModifications,
         })
       }
     }
@@ -2802,36 +2811,7 @@ export function BartenderView({
             orderType="bar_tab"
             tabName={selectedTab?.tabName || selectedTab?.customerName || undefined}
             locationId={locationId}
-            items={orderItems.map(item => ({
-              id: item.id,
-              name: item.name,
-              quantity: item.quantity,
-              price: item.price,
-              modifiers: item.modifiers?.map(m => ({
-                name: m.name,
-                price: m.price,
-              })),
-              specialNotes: item.specialNotes,
-              kitchenStatus: (item.kitchenStatus || (item.sentToKitchen ? 'sent' : 'pending')) as OrderPanelItemData['kitchenStatus'],
-              isHeld: item.isHeld,
-              isCompleted: item.isCompleted,
-              isTimedRental: item.isTimedRental,
-              menuItemId: item.menuItemId,
-              seatNumber: item.seatNumber ?? undefined,
-              courseNumber: item.courseNumber ?? undefined,
-              courseStatus: item.courseStatus ?? undefined,
-              sentToKitchen: item.sentToKitchen,
-              resendCount: item.resendCount,
-              completedAt: item.completedAt ?? undefined,
-              createdAt: item.createdAt,
-              blockTimeMinutes: item.blockTimeMinutes ?? undefined,
-              blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
-              blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
-              // Per-item delay
-              delayMinutes: item.delayMinutes,
-              delayStartedAt: item.delayStartedAt,
-              delayFiredAt: item.delayFiredAt,
-            }))}
+            items={orderPanelItems}
             subtotal={orderTotals.subtotal}
             tax={orderTotals.tax}
             discounts={orderTotals.discounts}

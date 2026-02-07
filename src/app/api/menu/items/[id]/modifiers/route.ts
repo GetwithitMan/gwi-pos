@@ -2,7 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 // GET modifier groups for a menu item — reads from item-owned groups (ModifierGroup.menuItemId)
-// This is the endpoint the POS ordering flow uses to load modifier groups for selection.
+//
+// ⚠️ ORDERING FLOW ENDPOINT - Use this for POS/online ordering (respects channel filtering)
+// For admin menu builder, use /api/menu/items/[id]/modifier-groups instead.
+//
+// This endpoint:
+// - Returns only top-level groups (child groups are nested under their parent modifier)
+// - Filters modifiers by channel visibility (showOnPOS / showOnline)
+// - Used by ModifierModal during order creation
+//
 // Optional query params:
 //   - channel: 'online' | 'pos' - filter modifiers by channel visibility
 export async function GET(
@@ -136,6 +144,7 @@ export async function GET(
 // /api/menu/items/[id]/modifier-groups (the ItemEditor API)
 // Keeping a stub that returns a clear error if anything still calls it.
 export async function POST(request: NextRequest) {
+  console.warn('Deprecated endpoint called: POST /api/menu/items/[id]/modifiers - should use /api/menu/items/[id]/modifier-groups')
   return NextResponse.json(
     { error: 'Shared modifier linking is deprecated. Use /api/menu/items/[id]/modifier-groups to manage item-owned modifier groups.' },
     { status: 410 }

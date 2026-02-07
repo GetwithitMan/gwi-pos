@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
+import type { IngredientModificationType } from '@/types/orders'
 import {
   buildDocument,
   buildDocumentNoCut,
@@ -265,7 +266,7 @@ function buildKitchenTicket(
     }>
     ingredientModifications: Array<{
       ingredientName: string
-      modificationType: string
+      modificationType: IngredientModificationType
     }>
     pizzaData: {
       sizeId: string

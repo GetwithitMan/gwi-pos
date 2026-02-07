@@ -462,3 +462,50 @@ export async function dispatchEntertainmentStatusChanged(
 
   return promise
 }
+
+/**
+ * Dispatch order totals update (FIX-011)
+ *
+ * Called when order totals change (items added, tip updated, discount applied).
+ * Updates all connected clients with new order totals in real-time.
+ *
+ * @param locationId - Location ID for room scoping
+ * @param orderId - Order ID that was updated
+ * @param totals - Updated order totals
+ * @param options - Dispatch options (async, debug)
+ *
+ * Example:
+ *   await dispatchOrderTotalsUpdate(locationId, orderId, {
+ *     subtotal: 50.00,
+ *     taxTotal: 4.00,
+ *     tipTotal: 8.00,
+ *     discountTotal: 0,
+ *     total: 62.00,
+ *   }, { async: true })
+ */
+export async function dispatchOrderTotalsUpdate(
+  locationId: string,
+  orderId: string,
+  totals: {
+    subtotal: number
+    taxTotal: number
+    tipTotal: number
+    discountTotal: number
+    total: number
+    commissionTotal?: number
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('ORDER_TOTALS_UPDATE', locationId, {
+    orderId,
+    totals,
+    timestamp: new Date().toISOString(),
+  }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}

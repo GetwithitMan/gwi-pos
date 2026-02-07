@@ -3,24 +3,11 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 import { errorCapture } from '@/lib/error-capture'
-
-// Helper to calculate commission for an item
-function calculateItemCommission(
-  itemTotal: number,
-  quantity: number,
-  commissionType: string | null,
-  commissionValue: number | null
-): number {
-  if (!commissionType || commissionValue === null || commissionValue === undefined) {
-    return 0
-  }
-  if (commissionType === 'percent') {
-    return Math.round((itemTotal * commissionValue / 100) * 100) / 100
-  } else if (commissionType === 'fixed') {
-    return Math.round((commissionValue * quantity) * 100) / 100
-  }
-  return 0
-}
+import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
+import { calculateItemTotal, calculateItemCommission, calculateOrderTotals } from '@/lib/order-calculations'
+import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
+import { getLocationSettings } from '@/lib/location-cache'
+import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 
 // POST - Create a new order
 export async function POST(request: NextRequest) {
@@ -30,10 +17,7 @@ export async function POST(request: NextRequest) {
     // Validate request body
     const validation = validateRequest(createOrderSchema, body)
     if (!validation.success) {
-      return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      )
+      return apiError.badRequest(validation.error, ERROR_CODES.VALIDATION_ERROR)
     }
 
     const { employeeId, locationId, orderType, orderTypeId, tableId, tabName, guestCount, items, notes, customFields } = validation.data
@@ -77,12 +61,11 @@ export async function POST(request: NextRequest) {
     }
 
     const orderItems = items.map(item => {
-      const itemTotal = item.price * item.quantity
-      const modifiersTotal = item.modifiers.reduce((sum, mod) => sum + mod.price, 0) * item.quantity
-      const fullItemTotal = itemTotal + modifiersTotal
+      // Calculate item total using centralized function
+      const fullItemTotal = calculateItemTotal(item)
       subtotal += fullItemTotal
 
-      // Calculate commission for this item
+      // Calculate commission using centralized function
       const menuItem = menuItemMap.get(item.menuItemId)
       const itemCommission = calculateItemCommission(
         fullItemTotal,
@@ -168,15 +151,12 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // Get tax rate from location settings (default 8%)
-    const location = await db.location.findUnique({
-      where: { id: locationId },
-    })
-    const settings = location?.settings as { tax?: { defaultRate?: number } } | null
-    const taxRate = (settings?.tax?.defaultRate || 8) / 100
+    // Get location settings for tax calculation (cached - FIX-009)
+    const locationSettings = await getLocationSettings(locationId)
 
-    const taxTotal = Math.round(subtotal * taxRate * 100) / 100
-    const total = Math.round((subtotal + taxTotal) * 100) / 100
+    // Use centralized calculation function (single source of truth)
+    const totals = calculateOrderTotals(items, locationSettings, 0, 0)
+    const { taxTotal, total } = totals
 
     // Create the order
     // Initialize seat management (Skill 121)
@@ -237,40 +217,25 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
-      id: order.id,
-      orderNumber: order.orderNumber,
-      orderType: order.orderType,
-      status: order.status,
-      tableId: order.tableId,
-      tableName: order.table?.name || null,
-      tabName: order.tabName,
-      guestCount: order.guestCount,
-      employee: {
-        id: order.employee.id,
-        name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
-      },
-      items: order.items.map((item, index) => ({
-        id: item.id,
-        name: item.name,
-        price: Number(item.price),
-        quantity: item.quantity,
-        itemTotal: Number(item.itemTotal),
-        correlationId: items[index]?.correlationId, // Echo back client-provided correlation ID
-        modifiers: item.modifiers.map(mod => ({
-          id: mod.id,
-          name: mod.name,
-          price: Number(mod.price),
-          preModifier: mod.preModifier,
-        })),
-      })),
-      subtotal: Number(order.subtotal),
-      discountTotal: Number(order.discountTotal),
-      taxTotal: Number(order.taxTotal),
-      tipTotal: Number(order.tipTotal),
-      total: Number(order.total),
-      createdAt: order.createdAt.toISOString(),
-    })
+    // Use mapper for complete response with correlationId support
+    const response = {
+      ...mapOrderForResponse(order),
+      items: order.items.map((item: any, index: number) =>
+        mapOrderItemForResponse(item, items[index]?.correlationId)
+      ),
+    }
+
+    // FIX-011: Dispatch real-time totals update (fire-and-forget)
+    dispatchOrderTotalsUpdate(locationId, order.id, {
+      subtotal,
+      taxTotal,
+      tipTotal: 0,
+      discountTotal: 0,
+      total,
+      commissionTotal,
+    }, { async: true }).catch(console.error)
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error('Failed to create order:', error)
 
@@ -289,10 +254,7 @@ export async function POST(request: NextRequest) {
       // Silently fail error logging
     })
 
-    return NextResponse.json(
-      { error: 'Failed to create order' },
-      { status: 500 }
-    )
+    return apiError.internalError('Failed to create order', ERROR_CODES.INTERNAL_ERROR)
   }
 }
 
@@ -348,25 +310,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       orders: orders.map(order => ({
-        id: order.id,
-        orderNumber: order.orderNumber,
-        orderType: order.orderType,
-        status: order.status,
-        tableId: order.tableId,
-        tableName: order.table?.name || null,
-        tabName: order.tabName,
-        guestCount: order.guestCount,
-        employee: {
-          id: order.employee.id,
-          name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
-        },
+        ...mapOrderForResponse(order),
+        // Add summary fields for list view
         itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
-        subtotal: Number(order.subtotal),
-        total: Number(order.total),
         paidAmount: order.payments
           .filter(p => p.status === 'completed')
           .reduce((sum, p) => sum + Number(p.totalAmount), 0),
-        createdAt: order.createdAt.toISOString(),
       })),
     })
   } catch (error) {

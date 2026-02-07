@@ -70,7 +70,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         childModifierGroupId: childModifierGroupId || null,
         isLabel,
         printerRouting,
-        printerIds: printerIds ? printerIds : Prisma.JsonNull,
+        printerIds: printerIds ? printerIds : Prisma.DbNull,
         sortOrder: (maxSort._max.sortOrder || 0) + 1,
       },
       include: {
@@ -199,7 +199,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         childModifierGroupId: childModifierGroupId !== undefined ? (childModifierGroupId || null) : undefined,
         isLabel: isLabel !== undefined ? isLabel : undefined,
         printerRouting: printerRouting !== undefined ? printerRouting : undefined,
-        printerIds: printerIds !== undefined ? (printerIds ?? Prisma.JsonNull) : undefined,
+        printerIds: printerIds !== undefined ? (printerIds ? printerIds : Prisma.DbNull) : undefined,
       },
       include: {
         ingredient: {

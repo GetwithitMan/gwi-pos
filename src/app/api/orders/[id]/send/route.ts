@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
+import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export async function POST(
@@ -56,57 +57,56 @@ export async function POST(
     const now = new Date()
     const updatedItemIds: string[] = []
 
-    // Update pending items to 'sent' status
+    // FIX-010: Batch updates to avoid N+1 query problem
+    // Separate regular items from entertainment items for efficient batch processing
+    const regularItemIds: string[] = []
+    const entertainmentUpdates: Array<{
+      itemId: string
+      menuItemId: string
+      sessionEnd: Date
+    }> = []
+
+    // Collect items and prepare batch updates
     for (const item of itemsToProcess) {
       // Skip held items
       if (item.isHeld) continue
 
-      const updateData: {
-        kitchenStatus: string
-        firedAt: Date
-        blockTimeStartedAt?: Date
-        blockTimeExpiresAt?: Date
-      } = {
-        kitchenStatus: 'sent',
-        firedAt: now, // Use firedAt to track when item was sent to kitchen
-      }
+      // Track for routing
+      updatedItemIds.push(item.id)
 
-      // For timed rental items, start the timer
+      // Check if entertainment item with timer
       if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
-        updateData.blockTimeStartedAt = now
-        updateData.blockTimeExpiresAt = new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000)
-
-        // Update the menu item status to in_use
-        await db.menuItem.update({
-          where: { id: item.menuItem.id },
-          data: {
-            entertainmentStatus: 'in_use',
-            currentOrderId: order.id,
-            currentOrderItemId: item.id,
-          }
+        const sessionEnd = new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000)
+        entertainmentUpdates.push({
+          itemId: item.id,
+          menuItemId: item.menuItem.id,
+          sessionEnd,
         })
-
-        // Also update linked FloorPlanElement (if exists)
-        await db.floorPlanElement.updateMany({
-          where: {
-            linkedMenuItemId: item.menuItem.id,
-            deletedAt: null,
-          },
-          data: {
-            status: 'in_use',
-            currentOrderId: order.id,
-            sessionStartedAt: now,
-            sessionExpiresAt: updateData.blockTimeExpiresAt,
-          },
-        })
+      } else {
+        regularItemIds.push(item.id)
       }
+    }
 
+    // Batch update regular items (single query)
+    if (regularItemIds.length > 0) {
+      await batchUpdateOrderItemStatus(regularItemIds, 'sent', now)
+    }
+
+    // Batch update entertainment items with sessions
+    for (const { itemId, menuItemId, sessionEnd } of entertainmentUpdates) {
+      // Update order item
       await db.orderItem.update({
-        where: { id: item.id },
-        data: updateData,
+        where: { id: itemId },
+        data: {
+          kitchenStatus: 'sent',
+          firedAt: now,
+          blockTimeStartedAt: now,
+          blockTimeExpiresAt: sessionEnd,
+        },
       })
 
-      updatedItemIds.push(item.id)
+      // Update menu item + floor plan element in single transaction (FIX-010)
+      await startEntertainmentSession(menuItemId, order.id, itemId, now, sessionEnd)
     }
 
     // Route order to stations using tag-based routing engine

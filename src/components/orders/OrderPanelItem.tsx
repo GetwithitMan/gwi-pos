@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { EntertainmentSessionControls } from './EntertainmentSessionControls'
-import type { UiModifier } from '@/types/orders'
+import type { UiModifier, IngredientModification } from '@/types/orders'
 
 export interface OrderPanelItemData {
   id: string
@@ -31,6 +31,8 @@ export interface OrderPanelItemData {
   delayMinutes?: number | null
   delayStartedAt?: string | null
   delayFiredAt?: string | null
+  // Ingredient modifications (No, Lite, Extra, On Side, Swap)
+  ingredientModifications?: IngredientModification[]
 }
 
 interface OrderPanelItemProps {
@@ -446,36 +448,63 @@ export function OrderPanelItem({
             )}
           </div>
 
-          {/* Modifiers — indented by depth (0=top, 1=child, 2=grandchild) */}
+          {/* Ingredient modifications — base item customizations (No, Lite, Extra, On Side, Swap) */}
+          {item.ingredientModifications && item.ingredientModifications.length > 0 && (
+            <div className="mt-1">
+              {item.ingredientModifications.map((mod, idx) => {
+                const typeClass = mod.modificationType === 'no' ? 'text-red-400'
+                  : mod.modificationType === 'extra' ? 'text-amber-400'
+                  : mod.modificationType === 'lite' ? 'text-blue-400'
+                  : mod.modificationType === 'on_side' ? 'text-indigo-400'
+                  : 'text-purple-400' // swap
+                const typeLabel = mod.modificationType === 'on_side' ? 'SIDE' : mod.modificationType.toUpperCase()
+                return (
+                  <div
+                    key={idx}
+                    className="text-xs text-slate-400 flex justify-between pl-2 leading-relaxed"
+                  >
+                    <span>
+                      <span className={`${typeClass} font-semibold text-[10px] mr-1`}>{typeLabel}</span>
+                      {mod.modificationType === 'no' ? <span className="line-through">{mod.name}</span> : mod.name}
+                      {mod.swappedTo && <span className="text-purple-400"> → {mod.swappedTo.name}</span>}
+                    </span>
+                    {mod.priceAdjustment > 0 && (
+                      <span className="text-slate-500 text-[11px]">+${mod.priceAdjustment.toFixed(2)}</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Modifiers — indented by depth with connector arrows */}
           {item.modifiers && item.modifiers.length > 0 && (
-            <div style={{ marginTop: '4px' }}>
+            <div className="mt-1">
               {item.modifiers.map((mod, idx) => {
                 const depth = mod.depth || 0
-                // Indent increases with depth: 8px base + 10px per level
-                const indent = 8 + depth * 10
-                // Prefix: depth 0 = •, depth 1 = ‒ (dash), depth 2+ = ∘ (small circle)
-                const prefix = depth === 0 ? '•' : depth === 1 ? '–' : '∘'
-                // Slightly dimmer color for deeper nesting
-                const textColor = depth === 0 ? '#94a3b8' : depth === 1 ? '#7d8da0' : '#64748b'
-                const fontSize = depth === 0 ? '12px' : '11px'
+                const indent = 8 + depth * 20
 
                 return (
                   <div
                     key={idx}
-                    style={{
-                      fontSize,
-                      color: textColor,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      paddingLeft: `${indent}px`,
-                      lineHeight: 1.5,
-                    }}
+                    className={`flex justify-between leading-relaxed ${
+                      depth === 0 ? 'text-xs text-slate-400' : 'text-[11px] text-slate-500'
+                    }`}
+                    style={{ paddingLeft: `${indent}px` }}
                   >
                     <span>
-                      {prefix} {mod.preModifier ? <span style={{ color: mod.preModifier === 'no' ? '#f87171' : mod.preModifier === 'extra' ? '#fbbf24' : '#60a5fa', fontWeight: 600, textTransform: 'uppercase', fontSize: '10px' }}>{mod.preModifier} </span> : null}{mod.name}
+                      {depth === 0 ? '• ' : '↳ '}
+                      {mod.preModifier ? (
+                        <span className={`font-semibold uppercase text-[10px] mr-1 ${
+                          mod.preModifier === 'no' ? 'text-red-400'
+                            : mod.preModifier === 'extra' ? 'text-amber-400'
+                            : 'text-blue-400'
+                        }`}>{mod.preModifier}{' '}</span>
+                      ) : null}
+                      {mod.name}
                     </span>
                     {mod.price > 0 && (
-                      <span style={{ color: '#64748b', fontSize: '11px' }}>+${mod.price.toFixed(2)}</span>
+                      <span className="text-slate-500 text-[11px]">+${mod.price.toFixed(2)}</span>
                     )}
                   </div>
                 )

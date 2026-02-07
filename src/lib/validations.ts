@@ -43,11 +43,12 @@ const orderItemModifierSchema = z.object({
   modifierId: z.string(),
   name: z.string(),
   price: nonNegativeNumber,
-  preModifier: z.string().optional(),
+  preModifier: z.string().nullable().optional(),
   depth: z.number().int().nonnegative().optional(), // Modifier hierarchy depth: 0=top, 1=child, 2=grandchild
   // Liquor Builder spirit selection fields
-  spiritTier: z.string().optional(),
-  linkedBottleProductId: z.string().optional(),
+  spiritTier: z.string().nullable().optional(),
+  linkedBottleProductId: z.string().nullable().optional(),
+  parentModifierId: z.string().nullable().optional(),
 })
 
 // Ingredient modification schema (No, Lite, On Side, Extra, Swap)

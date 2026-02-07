@@ -5,6 +5,8 @@
  * Items publish to routeTags, Stations subscribe to tags
  */
 
+import type { IngredientModificationType } from '@/types/orders'
+
 // Template types for different ticket formats
 export type TemplateType =
   | 'STANDARD_KITCHEN'
@@ -52,7 +54,7 @@ export interface RoutedItem {
   }>
   ingredientModifications: Array<{
     ingredientName: string
-    modificationType: string
+    modificationType: IngredientModificationType
     swappedToModifierName?: string | null
   }>
   pizzaData: PizzaItemData | null

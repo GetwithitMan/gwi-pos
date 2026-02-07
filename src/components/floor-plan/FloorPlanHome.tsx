@@ -38,9 +38,11 @@ import { toast } from '@/stores/toast-store'
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
+import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 import { useEvents } from '@/lib/events'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
+import { calculateOrderSubtotal } from '@/lib/order-calculations'
 import './styles/floor-plan.css'
 
 interface Category {
@@ -110,6 +112,14 @@ interface InlineOrderItem {
   delayMinutes?: number | null
   delayStartedAt?: string | null
   delayFiredAt?: string | null
+  // Ingredient modifications
+  ingredientModifications?: {
+    ingredientId: string
+    name: string
+    modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
+    priceAdjustment: number
+    swappedTo?: { modifierId: string; name: string; price: number }
+  }[]
 }
 
 interface OpenOrder {
@@ -143,7 +153,7 @@ interface FloorPlanHomeProps {
   isManager?: boolean
   // Payment and modifier callbacks
   onOpenPayment?: (orderId: string) => void
-  onOpenModifiers?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]) => void, existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]) => void
+  onOpenModifiers?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void, existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[], existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void
   // Open Orders panel
   onOpenOrdersPanel?: () => void
   // Tabs page (for bartenders)
@@ -227,6 +237,9 @@ export function FloorPlanHome({
     employeeId,
   })
 
+  // OrderPanel items from shared hook
+  const orderPanelItems = useOrderPanelItems(menuItems)
+
   // DEPRECATED: inlineOrderItems now reads from Zustand store via useActiveOrder hook
   // This alias exists for backward compatibility while we migrate all call sites
   const inlineOrderItems: InlineOrderItem[] = useMemo(() => {
@@ -264,6 +277,7 @@ export function FloorPlanHome({
       delayMinutes: item.delayMinutes,
       delayStartedAt: item.delayStartedAt,
       delayFiredAt: item.delayFiredAt,
+      ingredientModifications: item.ingredientModifications,
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
@@ -431,6 +445,7 @@ export function FloorPlanHome({
       blockTimeMinutes: item.blockTimeMinutes ?? undefined, blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
       blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined, completedAt: item.completedAt,
       resendCount: item.resendCount,
+      ingredientModifications: item.ingredientModifications,
     }))
 
     const newItems = typeof action === 'function' ? action(prevAsInline) : action
@@ -484,6 +499,7 @@ export function FloorPlanHome({
           blockTimeExpiresAt: newItem.blockTimeExpiresAt,
           completedAt: newItem.completedAt,
           resendCount: newItem.resendCount,
+          ingredientModifications: newItem.ingredientModifications,
         })
         // Override the auto-generated ID with the intended one
         const storeNow = useOrderStore.getState().currentOrder?.items || []
@@ -519,6 +535,7 @@ export function FloorPlanHome({
           blockTimeExpiresAt: newItem.blockTimeExpiresAt,
           completedAt: newItem.completedAt,
           resendCount: newItem.resendCount,
+          ingredientModifications: newItem.ingredientModifications,
         })
       }
     }
@@ -984,8 +1001,8 @@ export function FloorPlanHome({
             setPreferredRoomOrder(data.preferences.preferredRoomOrder)
           }
         }
-      } catch (error) {
-        console.error('Failed to load room preferences:', error)
+      } catch {
+        // Network error — room preferences will use defaults
       }
     }
     loadPreferences()
@@ -1350,6 +1367,7 @@ export function FloorPlanHome({
         resendCount: i.resendCount,
         completedAt: i.completedAt,
         createdAt: i.createdAt,
+        ingredientModifications: i.ingredientModifications,
       })),
     }))
   }, [activeTableId, inlineOrderItems, groupedOrderItems])
@@ -2123,7 +2141,7 @@ export function FloorPlanHome({
       }
 
       // Defaults don't cover requirements — open modifier modal as usual
-      onOpenModifiers(item, (modifiers) => {
+      onOpenModifiers(item, (modifiers, ingredientMods) => {
         const newItem: InlineOrderItem = {
           id: `temp-${crypto.randomUUID()}`,
           menuItemId: item.id,
@@ -2131,6 +2149,7 @@ export function FloorPlanHome({
           price: item.price,
           quantity: 1,
           modifiers,
+          ingredientModifications: ingredientMods as InlineOrderItem['ingredientModifications'],
           seatNumber: activeSeatNumber || undefined,
           sourceTableId: activeSourceTableId || undefined,
           sentToKitchen: false,
@@ -2268,17 +2287,18 @@ export function FloorPlanHome({
 
     // Open modifier modal in "edit" mode with current modifiers
     if (onOpenModifiers) {
-      onOpenModifiers(menuItem, (newModifiers) => {
-        // Update the item's modifiers
+      onOpenModifiers(menuItem, (newModifiers, ingredientMods) => {
+        // Update the item's modifiers and ingredient modifications
         setInlineOrderItems(prev => prev.map(i =>
           i.id === item.id
             ? {
                 ...i,
                 modifiers: newModifiers,
+                ingredientModifications: ingredientMods as InlineOrderItem['ingredientModifications'],
               }
             : i
         ))
-      }, item.modifiers) // Pass existing modifiers for pre-selection
+      }, item.modifiers, item.ingredientModifications as { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) // Pass existing modifiers + ingredient mods for pre-selection
     }
   }, [menuItems, onOpenModifiers])
 
@@ -2385,15 +2405,15 @@ export function FloorPlanHome({
     if (!menuItem) return
 
     if (onOpenModifiers) {
-      onOpenModifiers(menuItem, (newModifiers) => {
+      onOpenModifiers(menuItem, (newModifiers, ingredientMods) => {
         setInlineOrderItems(prev =>
           prev.map(i =>
             i.id === item.id
-              ? { ...i, modifiers: newModifiers }
+              ? { ...i, modifiers: newModifiers, ingredientModifications: ingredientMods as InlineOrderItem['ingredientModifications'] }
               : i
           )
         )
-      }, item.modifiers)
+      }, item.modifiers, item.ingredientModifications as { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[])
     }
   }, [menuItems, onOpenModifiers])
 
@@ -2440,9 +2460,19 @@ export function FloorPlanHome({
     setEditingModifiersItemId(item.id)
 
     if (onOpenModifiers) {
-      onOpenModifiers(menuItem, (newModifiers) => {
+      onOpenModifiers(menuItem, (newModifiers, ingredientMods) => {
         handleSaveModifierChanges(item.id, newModifiers)
-      }, item.modifiers)
+        // Also update ingredient modifications locally for sent items
+        if (ingredientMods) {
+          setInlineOrderItems(prev =>
+            prev.map(i =>
+              i.id === item.id
+                ? { ...i, ingredientModifications: ingredientMods as InlineOrderItem['ingredientModifications'] }
+                : i
+            )
+          )
+        }
+      }, item.modifiers, item.ingredientModifications as { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[])
     }
   }, [menuItems, onOpenModifiers, handleSaveModifierChanges])
 
@@ -2676,12 +2706,8 @@ export function FloorPlanHome({
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('cash')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
 
-  // Calculate order subtotal
-  const orderSubtotal = inlineOrderItems.reduce((sum, item) => {
-    const itemTotal = item.price * item.quantity
-    const modifiersTotal = (item.modifiers || []).reduce((mSum, m) => mSum + m.price, 0) * item.quantity
-    return sum + itemTotal + modifiersTotal
-  }, 0)
+  // Calculate order subtotal using centralized function (single source of truth)
+  const orderSubtotal = calculateOrderSubtotal(inlineOrderItems)
 
   // Pricing (replaces hardcoded TAX_RATE and CASH_DISCOUNT_RATE)
   const pricing = usePricing({
@@ -4902,43 +4928,7 @@ export function FloorPlanHome({
                 orderNumber={activeOrderNumber ? Number(activeOrderNumber) : undefined}
                 orderType={activeOrderType || undefined}
                 locationId={locationId}
-                items={inlineOrderItems.map(i => ({
-                  id: i.id,
-                  name: i.name,
-                  quantity: i.quantity,
-                  price: i.price,
-                  modifiers: i.modifiers?.map(m => ({
-                    id: (m.id || m.modifierId) ?? '',
-                    modifierId: m.modifierId,
-                    name: m.name,
-                    price: Number(m.price),
-                    depth: m.depth ?? 0,
-                    preModifier: m.preModifier ?? null,
-                    spiritTier: m.spiritTier ?? null,
-                    linkedBottleProductId: m.linkedBottleProductId ?? null,
-                    parentModifierId: m.parentModifierId ?? null,
-                  })),
-                  specialNotes: i.specialNotes,
-                  kitchenStatus: i.kitchenStatus as OrderPanelItemData['kitchenStatus'],
-                  isHeld: i.isHeld,
-                  isCompleted: i.isCompleted,
-                  isTimedRental: i.isTimedRental,
-                  menuItemId: i.menuItemId,
-                  blockTimeMinutes: i.blockTimeMinutes,
-                  blockTimeStartedAt: i.blockTimeStartedAt,
-                  blockTimeExpiresAt: i.blockTimeExpiresAt,
-                  seatNumber: i.seatNumber,
-                  courseNumber: i.courseNumber,
-                  courseStatus: i.courseStatus,
-                  sentToKitchen: i.sentToKitchen,
-                  resendCount: i.resendCount,
-                  completedAt: i.completedAt,
-                  createdAt: i.createdAt,
-                  // Per-item delay
-                  delayMinutes: i.delayMinutes,
-                  delayStartedAt: i.delayStartedAt,
-                  delayFiredAt: i.delayFiredAt,
-                }))}
+                items={orderPanelItems}
                 seatGroups={seatGroupsForPanel}
                 subtotal={orderSubtotal}
                 tax={tax}

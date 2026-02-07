@@ -149,9 +149,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
   const refreshReaderConfig = useCallback(async () => {
     try {
       const response = await fetch(`/api/hardware/terminals/${terminalId}`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch terminal config')
-      }
+      if (!response.ok) return
 
       const data = await response.json()
       const terminal = data.terminal
@@ -188,8 +186,8 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
       }
 
       setReaderFailoverTimeout(terminal.readerFailoverTimeout || 10000)
-    } catch (err) {
-      console.error('[useDatacap] Failed to refresh reader config:', err)
+    } catch {
+      // Network error — reader config will load on next attempt
     }
   }, [terminalId])
 

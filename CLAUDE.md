@@ -627,8 +627,17 @@ gwi-pos/
 - `/api/menu/items/[id]` - Update/delete items
 - `/api/menu/modifiers` - CRUD for modifier groups
 - `/api/menu/modifiers/[id]` - Single modifier group operations
-- `/api/orders/[id]/items` - POST to atomically append items (prevents race conditions)
+
+**Order API (FIX-005 - Enforced Separation):**
+- `/api/orders` - POST to create new order
+- `/api/orders/[id]` - GET order details
+- `/api/orders/[id]` - **PUT for METADATA only** (tableId, orderType, customer, notes) - **REJECTS items array**
+- `/api/orders/[id]/items` - **POST to append/update items atomically** (prevents race conditions)
+- `/api/orders/[id]/items/[itemId]` - PUT to update single item field (quantity, notes, hold, etc.)
 - `/api/orders/[id]/send` - POST to send order to kitchen
+
+**CRITICAL:** Never send `items` array in PUT to `/api/orders/[id]`. Use POST to `/api/orders/[id]/items` instead.
+**See:** `/docs/api/ORDER-API-CONTRACT.md` for complete API usage documentation.
 
 ### Response Format
 ```typescript
@@ -926,6 +935,40 @@ model DeviceSession {
 **Full details:** See `/docs/GWI-ARCHITECTURE.md`
 
 ## Recent Changes
+
+### FIX-005: Eliminate PUT vs POST Append Confusion (Feb 7, 2026)
+**CRITICAL FIX - FINAL PHASE 1 FIX**
+
+Fixed race conditions in order item updates by enforcing clear API boundaries.
+
+**Problem:** Mixed PUT/POST usage caused lost items when multiple terminals updated same order simultaneously.
+
+**Solution:**
+- `PUT /api/orders/[id]` now **rejects** requests with items array (400 error)
+- `POST /api/orders/[id]/items` is the **only** way to add/update items
+- Clear separation: PUT = metadata only, POST = items only
+
+**Files Modified:**
+- `/src/app/api/orders/[id]/route.ts` - Restricted PUT to metadata-only
+- `/src/lib/api/order-api.ts` - NEW: Helper functions (updateOrderMetadata, appendOrderItems)
+- `/src/app/(pos)/orders/page.tsx` - Migrated to POST append pattern
+- `/docs/api/ORDER-API-CONTRACT.md` - NEW: Complete API documentation
+- `FIX-005-SUMMARY.md` - Implementation summary
+
+**Breaking Change:**
+Any code sending `items` in PUT requests will receive 400 error with migration instructions.
+
+**Migration Example:**
+```typescript
+// OLD (Race condition risk):
+PUT /api/orders/[id] with { items: [...] }
+
+// NEW (Safe):
+PUT /api/orders/[id] with { tableId: "..." }  // Metadata only
+POST /api/orders/[id]/items with { items: [...] }  // Items append
+```
+
+**See:** `FIX-005-SUMMARY.md` and `/docs/api/ORDER-API-CONTRACT.md`
 
 ### Legacy ItemModal Cleanup & Menu Socket Infrastructure (Skill 217 - Feb 7, 2026)
 Major cleanup of legacy code and infrastructure setup for real-time menu updates.
@@ -2012,6 +2055,41 @@ toast.error('Connection lost', 8000)
 | 19.5 | Mobile tab detail | Tap tab → verify items, cards, totals, bottle service indicator | ⬜ |
 | 19.6 | Mobile quick actions | Close Tab / Transfer / Alert Manager → verify confirmation + action | ⬜ |
 | 19.7 | Mobile polls for updates | Wait 10s → verify tab list refreshes automatically | ⬜ |
+
+### 20. Phase 2 & 3 Systematic Fixes (Orders Domain)
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 20.1 | Centralized calculations consistency | Create order with items/modifiers → verify subtotal/tax/total match across client/server | ⬜ |
+| 20.2 | Item total calculation with modifiers | Add item with 3 modifiers → verify itemTotal = (price + modifiers) × quantity | ⬜ |
+| 20.3 | Order subtotal aggregation | Order with 5 items → verify subtotal = sum of all itemTotals | ⬜ |
+| 20.4 | Tax calculation with rate | Order $50 subtotal at 8% tax → verify taxTotal = $4.00 | ⬜ |
+| 20.5 | Tip recalculation preserves other totals | Add $10 tip → verify only total changes, subtotal/tax unchanged | ⬜ |
+| 20.6 | Commission calculation | Order item with 10% commission at $20 → verify commissionTotal = $2.00 | ⬜ |
+| 20.7 | Standardized error: ORDER_NOT_FOUND | Call GET /api/orders/invalid-id → verify 404 with code "ORDER_NOT_FOUND" | ⬜ |
+| 20.8 | Standardized error: ORDER_CLOSED | Try to modify closed order → verify 409 with code "ORDER_CLOSED" | ⬜ |
+| 20.9 | Standardized error: ORDER_EMPTY | POST /api/orders/[id]/items with empty array → verify 400 with code "ORDER_EMPTY" | ⬜ |
+| 20.10 | Error response includes timestamp | Any error response → verify has "timestamp" field with ISO 8601 format | ⬜ |
+| 20.11 | Error response machine-readable | Parse error.code field programmatically → verify matches ERROR_CODES constant | ⬜ |
+| 20.12 | Location settings cache hit | Create 10 orders rapidly → verify only 1 DB query for location settings | ⬜ |
+| 20.13 | Location settings cache TTL | Wait 5 minutes after cache hit → next order triggers fresh DB query | ⬜ |
+| 20.14 | Location settings cache invalidation | Call invalidateLocationSettings(locationId) → next order fetches fresh | ⬜ |
+| 20.15 | Location settings cache reduces API time | Measure order creation time with/without cache → verify 5-15ms improvement | ⬜ |
+| 20.16 | Batch update reduces queries (send) | Send 10-item order → verify 1-2 queries (not 10+) using DB query logging | ⬜ |
+| 20.17 | Batch update for regular items | Send 7 regular items → verify single orderItem.updateMany() call | ⬜ |
+| 20.18 | Batch update for entertainment items | Send 3 entertainment items → verify 3 atomic transactions (not 9 queries) | ⬜ |
+| 20.19 | Batch held item marking | Mark 5 items held → verify single updateMany() call | ⬜ |
+| 20.20 | Batch bump items | Bump 8 items on KDS → verify single updateMany() call | ⬜ |
+| 20.21 | Socket.io ORDER_TOTALS_UPDATE on create | Create order → verify ORDER_TOTALS_UPDATE event dispatched | ⬜ |
+| 20.22 | Socket.io ORDER_TOTALS_UPDATE on add items | Add items to order → verify ORDER_TOTALS_UPDATE event dispatched | ⬜ |
+| 20.23 | Socket.io ORDER_TOTALS_UPDATE on tip change | Update tip amount → verify ORDER_TOTALS_UPDATE event dispatched | ⬜ |
+| 20.24 | Socket event includes correct payload | Capture event → verify has orderId, totals object, timestamp | ⬜ |
+| 20.25 | Socket event filtered by location | Terminal in Location A doesn't receive Location B events | ⬜ |
+| 20.26 | Socket dispatch fire-and-forget | Socket server down → verify API still returns 200, no blocking | ⬜ |
+| 20.27 | Socket dispatch async doesn't delay response | Measure API response time with socket dispatch → verify < 5ms overhead | ⬜ |
+| 20.28 | Multi-terminal real-time update | Terminal A updates order → Terminal B receives update within 100ms | ⬜ |
+| 20.29 | Rapid updates all propagate | Add 5 items in 500ms → verify all 5 ORDER_TOTALS_UPDATE events fire | ⬜ |
+| 20.30 | Large order totals update | 50-item order total updated → verify correct totals in socket event | ⬜ |
 
 ---
 

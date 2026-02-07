@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
 import { toast } from '@/stores/toast-store'
@@ -184,6 +184,17 @@ export function useModifierSelections(
   const [specialNotes, setSpecialNotes] = useState(initialNotes || '')
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
 
+  // Restore ingredient modifications immediately on edit (before API fetch)
+  useEffect(() => {
+    const initialMods: Record<string, IngredientModification> = {}
+    if (editingItem?.ingredientModifications) {
+      editingItem.ingredientModifications.forEach(mod => {
+        initialMods[mod.ingredientId] = mod
+      })
+    }
+    setIngredientMods(initialMods)
+  }, [editingItem])
+
   // Load ingredients for this menu item
   useEffect(() => {
     if (!item.id) return
@@ -194,20 +205,11 @@ export function useModifierSelections(
       .then(data => {
         if (data.data) {
           setIngredients(data.data)
-          // Initialize ingredient modifications (only for included ingredients)
-          const initialMods: Record<string, IngredientModification> = {}
-          if (editingItem?.ingredientModifications) {
-            // Restore existing modifications when editing
-            editingItem.ingredientModifications.forEach(mod => {
-              initialMods[mod.ingredientId] = mod
-            })
-          }
-          setIngredientMods(initialMods)
         }
       })
       .catch(console.error)
       .finally(() => setLoadingIngredients(false))
-  }, [item.id, editingItem?.ingredientModifications])
+  }, [item.id])
 
   // Get color for a modifier group based on its types
   const getGroupColor = (group: ModifierGroup): string => {
@@ -370,16 +372,38 @@ export function useModifierSelections(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialized])
 
-  const getGroupDepth = (groupId: string): number => {
-    if (modifierGroups.some(g => g.id === groupId)) return 0
-    for (const [parentGroupId, sels] of Object.entries(selections)) {
-      for (const sel of sels) {
-        if (sel.childModifierGroupId === groupId) {
-          return getGroupDepth(parentGroupId) + 1
+  // Build child→parent group mapping: childGroupId → parentGroupId
+  // This lets us walk up the chain to compute depth for any group
+  const childToParentGroupId = useMemo(() => {
+    const map: Record<string, string> = {}
+    // Walk all modifierGroups (flat array from API includes both top-level and child groups)
+    modifierGroups.forEach(g => {
+      g.modifiers?.forEach(m => {
+        if (m.childModifierGroupId) {
+          map[m.childModifierGroupId] = g.id
         }
-      }
+      })
+    })
+    // Also map dynamically-loaded child groups
+    Object.values(childGroups).forEach(g => {
+      g.modifiers?.forEach(m => {
+        if (m.childModifierGroupId) {
+          map[m.childModifierGroupId] = g.id
+        }
+      })
+    })
+    return map
+  }, [modifierGroups, childGroups])
+
+  const getGroupDepth = (groupId: string): number => {
+    let depth = 0
+    let currentId: string | undefined = groupId
+    // Walk up the parent chain
+    while (currentId && childToParentGroupId[currentId]) {
+      depth += 1
+      currentId = childToParentGroupId[currentId]
     }
-    return 0
+    return depth
   }
 
   const getParentModifierId = (groupId: string): string | undefined => {
@@ -448,10 +472,14 @@ export function useModifierSelections(
           // No preModifier - behavior depends on stacking setting
           if (group.allowStacking && current.length < group.maxSelections) {
             // Stacking enabled and room for more - add another instance
+            // Use extraPrice for stacked instances (adding multiples = ordering extras)
+            const stackedPrice = modifier.extraPrice && modifier.extraPrice > 0
+              ? modifier.extraPrice
+              : modifier.price
             const newMod: SelectedModifier = {
               id: modifier.id,
               name: modifier.name,
-              price: modifier.price,
+              price: stackedPrice,
               preModifier: undefined,
               childModifierGroupId: modifier.childModifierGroupId,
               depth: getGroupDepth(group.id),
