@@ -1828,6 +1828,21 @@ toast.error('Connection lost', 8000)
 | 12.10 | OrderPanel dark header on /bar | /bar → verify OrderPanel renders its own dark header (no external light header) | ⬜ |
 | 12.11 | FloorPlanHome hides OrderPanel header | Tap table → verify OrderPanel header is hidden (FloorPlanHome has its own) | ⬜ |
 | 12.12 | Send + Pay buttons on all screens | Verify Send (green) and Pay (indigo) buttons appear on /orders, /bar, and FloorPlanHome | ⬜ |
+| 12.13 | Note modal replaces window.prompt | Tap Note icon on pending item → verify dark glassmorphism modal appears (not browser prompt) | ⬜ |
+| 12.14 | Quick Pick strip appears when enabled | Gear → enable Quick Pick Numbers → verify 1-9 strip appears in gutter between menu and order panel | ⬜ |
+| 12.15 | Quick Pick quantity change | Add item → tap "3" in quick pick → verify item quantity changes to 3 | ⬜ |
+| 12.16 | Quick Pick multi-digit entry | Add item → tap "1" then "2" quickly → verify quantity changes to 12 | ⬜ |
+| 12.17 | Quick Pick multi-select mode | Tap SEL in gutter → select multiple items → tap number → verify all selected items change qty | ⬜ |
+| 12.18 | Quick Pick Hold button | Select item → tap HLD in gutter → verify item shows HELD badge | ⬜ |
+| 12.19 | Quick Pick delay presets | Select item → tap "5m" in gutter → verify blue delay badge appears on item | ⬜ |
+| 12.20 | Per-item delay countdown | Set 5m delay → Send order → verify countdown timer renders on item → verify auto-fires at 0 | ⬜ |
+| 12.21 | Per-item delay Fire Now | Set delay → Send → tap "Fire" on countdown → verify item immediately fires to kitchen | ⬜ |
+| 12.22 | Hold and Delay mutually exclusive | Hold item → set delay → verify hold clears. Set delay → hold → verify delay clears | ⬜ |
+| 12.23 | Modifier depth indentation | Add item with child modifiers (House Salad → Ranch) → verify Ranch indented with – prefix | ⬜ |
+| 12.24 | Pre-modifier color labels | Add item → set modifier to "Extra" → verify amber EXTRA label in order panel | ⬜ |
+| 12.25 | Coursing toggle via table options | Tap table name → enable coursing → verify items group by course in OrderPanel | ⬜ |
+| 12.26 | Open orders delay/hold/course badges | Create order with delayed/held items → open Orders panel → verify status badges shown | ⬜ |
+| 12.27 | Delete button under price | Add pending item → verify trash icon appears under price amount (not in separate row) | ⬜ |
 
 ### 13. Datacap Payment Processing
 

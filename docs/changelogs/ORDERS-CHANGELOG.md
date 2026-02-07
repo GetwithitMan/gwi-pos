@@ -757,6 +757,130 @@ No more duplicate layouts to get out of sync.
 
 ---
 
+## Session: February 7, 2026 (OrderPanel Enhancements)
+
+### Overview
+
+Major enhancement session adding 6 new files and modifying 9 existing files. Three feature phases completed plus critical modifier depth pipeline fix.
+
+### Phase 1: Note Edit Modal (COMPLETE)
+
+**Problem:** `window.prompt()` for kitchen notes — terrible UX on iPad/touch.
+
+**Solution:** New `NoteEditModal.tsx` component — dark glassmorphism modal with textarea, auto-focus, keyboard shortcuts (Enter=save, Esc=cancel).
+
+**Files:**
+- NEW: `src/components/orders/NoteEditModal.tsx` (~80 lines)
+- Modified: `src/hooks/useActiveOrder.ts` — exposes `noteEditTarget`, `openNoteEditor()`, `closeNoteEditor()`, `saveNote()`
+- Modified: `src/components/floor-plan/FloorPlanHome.tsx` — wired NoteEditModal
+- Modified: `src/components/bartender/BartenderView.tsx` — wired NoteEditModal
+
+### Phase 2: Quick Pick Numbers (COMPLETE)
+
+**Concept:** Vertical gutter strip between menu grid and order panel for fast bartender/server workflow.
+
+**Features:**
+- Number buttons (1-9) for instant quantity setting
+- Multi-digit entry (tap 1→0 = 10 within 800ms buffer)
+- Multi-select mode for batch operations
+- HLD (hold) button
+- Delay presets (5m, 10m, 15m, 20m) with course buttons (C1-C5)
+- Per-employee toggle in settings (`quickPickEnabled`)
+- Auto-select newest pending item
+
+**Files:**
+- NEW: `src/hooks/useQuickPick.ts` (~60 lines)
+- NEW: `src/components/orders/QuickPickStrip.tsx` (~290 lines)
+- Modified: `src/lib/settings.ts` — added `quickPickEnabled`, `coursingCourseCount`, `coursingDefaultDelay`
+- Modified: `src/components/orders/OrderPanel.tsx` — selection props, multi-select support
+- Modified: `src/components/orders/OrderPanelItem.tsx` — selection highlight (purple border)
+
+### Phase 3: Coursing & Per-Item Delays (COMPLETE)
+
+**Sub-phases:**
+
+**3A: Table Options Popover**
+- NEW: `src/components/orders/TableOptionsPopover.tsx` — tap table name to toggle coursing, set guest count
+
+**3B: Coursing Store/Hook**
+- Modified: `src/stores/order-store.ts` — `setCoursingEnabled`, `setCourseDelay`, `fireCourse`, per-item delay actions
+- Modified: `src/hooks/useActiveOrder.ts` — coursing + delay state exposure
+
+**3C: Course Grouping + Delay Controls**
+- NEW: `src/components/orders/CourseDelayControls.tsx` — between-course delay controls with countdown timers
+- NEW: `src/components/orders/OrderDelayBanner.tsx` — order-level delay status banner
+
+**3D: Send Logic with Per-Item Delays**
+- NEW: `src/app/api/orders/[id]/fire-course/route.ts` — fire specific courses
+- Modified: `src/app/api/orders/[id]/send/route.ts` — supports `itemIds` parameter for selective item sending
+- Modified: `src/hooks/useActiveOrder.ts` — `handleSendToKitchen` splits immediate vs delayed items
+- Hold and Delay are mutually exclusive — setting one clears the other
+
+### OrderPanelItem Layout Streamlining (COMPLETE)
+
+**Changes:**
+- Removed redundant controls: qty ±, course row, expanded section (QuickPickStrip handles these)
+- Removed Hold button from item (only on gutter)
+- Note button moved inline with item name row (icon-only, 16x16)
+- Delete button moved under price amount (vertical column layout)
+- Edit button removed (tap item to edit mods)
+
+### Modifier Depth Indentation (COMPLETE — CRITICAL FIX)
+
+**Problem:** Child modifiers (e.g., Ranch under House Salad) displayed flat with no hierarchy indication.
+
+**Root Cause:** Modifier `depth` and `preModifier` were being stripped at **7 different points** in the data pipeline — most critically at `FloorPlanHome.tsx` line 4831 where items are passed to `<OrderPanel>`.
+
+**Fix:** All 7 stripping points fixed across 4 files:
+1. `FloorPlanHome.tsx` — `<OrderPanel items={}>` prop (THE main bug), comp/void modal, split check modal
+2. `BartenderView.tsx` — prevAsOrderItems mapping, store.addItem/updateItem (was hardcoding `depth: 0`)
+3. `orders/page.tsx` — comp/void modal, split check modal, type annotation
+
+**Visual Result:**
+- Depth 0: `•` prefix, 8px indent, `#94a3b8`, 12px font
+- Depth 1: `–` prefix, 18px indent, `#7d8da0`, 11px font
+- Depth 2+: `∘` prefix, 28px indent, `#64748b`, 11px font
+- Pre-modifiers: NO (red `#f87171`), EXTRA (amber `#fbbf24`), LITE (blue `#60a5fa`)
+
+### Open Orders Panel Enhancements
+
+- Modified: `src/components/orders/OpenOrdersPanel.tsx` — added status badges for Delayed, Held, Coursing orders
+- Modified: `src/app/api/orders/open/route.ts` — returns `hasHeldItems`, `hasDelayedItems`, `hasCoursingEnabled`, `courseMode`
+
+### All Files Changed
+
+| File | Type | Phase |
+|------|------|-------|
+| `src/components/orders/NoteEditModal.tsx` | NEW | 1 |
+| `src/hooks/useQuickPick.ts` | NEW | 2 |
+| `src/components/orders/QuickPickStrip.tsx` | NEW | 2 |
+| `src/components/orders/TableOptionsPopover.tsx` | NEW | 3A |
+| `src/components/orders/CourseDelayControls.tsx` | NEW | 3C |
+| `src/components/orders/OrderDelayBanner.tsx` | NEW | 3C |
+| `src/app/api/orders/[id]/fire-course/route.ts` | NEW | 3D |
+| `src/hooks/useActiveOrder.ts` | Modified | 1, 3B, 3D |
+| `src/stores/order-store.ts` | Modified | 3B |
+| `src/components/orders/OrderPanel.tsx` | Modified | 2, 3C |
+| `src/components/orders/OrderPanelItem.tsx` | Modified | 2, UI |
+| `src/components/floor-plan/FloorPlanHome.tsx` | Modified | 1, 2, 3A, depth fix |
+| `src/components/bartender/BartenderView.tsx` | Modified | 1, 2, depth fix |
+| `src/app/(pos)/orders/page.tsx` | Modified | 2, depth fix |
+| `src/lib/settings.ts` | Modified | 2 |
+| `src/app/api/orders/[id]/send/route.ts` | Modified | 3D |
+| `src/app/api/orders/open/route.ts` | Modified | badges |
+| `src/components/orders/OpenOrdersPanel.tsx` | Modified | badges |
+| `src/components/floor-plan/TableNode.tsx` | Modified | 3A |
+| `docs/changelogs/ERROR-REPORTING-CHANGELOG.md` | Modified | docs |
+
+**Git:** Commit `f7e479a` — pushed to `main`
+
+### Known Issues
+
+1. **`usePOSLayout.loadLayout` Failed to fetch** — Timing issue on page load, pre-existing. Layout API call fires before server ready or employee ID available.
+2. **Pre-existing TypeScript errors** in datacap/payment domain files (unrelated to this session's work)
+
+---
+
 ## Next Steps
 
 ### Priority 1: Bar Tabs Screen

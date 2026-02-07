@@ -67,6 +67,10 @@
 | 13 | Hold & Fire | DONE | 07 | Kitchen timing, hold/fire actions |
 | 14 | Order Splitting | DONE | 30 | Split evenly, by item, custom amount |
 | 15 | Order Merging | DONE | 02 | Merge orders, move items, recalc totals |
+| 230 | Quick Pick Numbers | DONE | 76, 99 | Gutter strip (1-9) for instant qty, multi-digit entry, multi-select, hold/delay/course buttons, per-employee setting |
+| 231 | Per-Item Delays | DONE | 13, 230 | Per-item delay presets (5/10/15/20m), countdown timers, auto-fire, hold/delay mutual exclusivity, fire-course API |
+| 232 | Note Edit Modal | DONE | - | Dark glassmorphism modal replacing window.prompt() for kitchen notes, touch-friendly |
+| 233 | Modifier Depth Indentation | DONE | 123 | Depth-based rendering (•/–/∘ prefixes), pre-modifier color labels (NO/EXTRA/LITE), pipeline fix across 7 stripping points |
 
 ### Table Management
 | Skill | Name | Status | Dependencies | Notes |
