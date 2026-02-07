@@ -234,7 +234,8 @@
 | Additional (80-105) | 20 | 1 | 0 | 21 | 98% |
 | Canvas/Events (106-123) | 9 | 0 | 5 | 14 | 64% |
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
-| **TOTAL** | **116** | **5** | **12** | **133** | **92%** |
+| Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
+| **TOTAL** | **120** | **5** | **12** | **137** | **91%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -354,6 +355,16 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-06 Payments Session)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 120 | Datacap Direct Integration (Full Rewrite) | Complete XML-over-HTTP protocol: 8 lib files (types, constants, xml-builder, xml-parser, client, sequence, simulator, discovery), 12 API routes, useDatacap hook rewrite, bar tabs (card-first, multi-card OrderCard model, auto-increment), Quick Pay with configurable tip thresholds, walkout recovery (WalkoutRetry model), digital receipts (DigitalReceipt model), chargebacks (ChargebackCase model), card recognition (CardProfile model). 79 files, +8,541 lines across 3 commits. |
+| 217 | Bottle Service Tiers | BottleServiceTier model, deposit-based pre-auth, tiered packages (Bronze/Silver/Gold), spend progress tracking, re-auth alerts, auto-gratuity. API: tiers CRUD + open/status/re-auth. Components: BottleServiceTabFlow + BottleServiceBanner. |
+| 218 | Customer-Facing Display (CFD) | /cfd route with state machine (idle/order/payment/tip/signature/processing/approved/declined). 5 components: CFDIdleScreen, CFDOrderDisplay, CFDTipScreen, CFDSignatureScreen, CFDApprovedScreen. Socket event types defined. |
+| 219 | Pay-at-Table | /pay-at-table route with split check (2-6 ways). Components: TablePayment, SplitSelector, TipScreen. Processes via /api/datacap/sale. |
+| 220 | Bartender Mobile | /mobile/tabs list + /mobile/tabs/[id] detail. Components: MobileTabCard, MobileTabActions. 10s polling, pending tab sorting, bottle service indicators. Socket event stubs ready for wiring. |
 
 ## Recently Completed (2026-02-06 PM)
 
@@ -617,7 +628,7 @@ These skills emerged during development and are now part of the system:
 | 117 | Virtual Table Combine | DONE | 106, 107, 16 | Long-press to link tables, pulsing glow, T-S notation, manager dashboard, EOD cleanup |
 | 118 | Spirit Tier Admin | DONE | 04 | Admin UI for spirit groups, tier assignment per modifier, isSpiritGroup/spiritTier API |
 | 119 | BartenderView Personalization | DONE | 118 | Quick spirit/pour buttons, item effects, fonts, animations, per-employee settings |
-| 120 | Datacap Direct Integration | DONE | 30 | Semi-integrated local card readers, PaymentReader model, failover swap, admin UI |
+| 120 | Datacap Direct Integration | DONE | 30 | Full XML-over-HTTP protocol (TStream/RStream), 12 API routes, bar tabs (card-first flow, multi-card, auto-increment), bottle service tiers, Quick Pay, walkout recovery, digital receipts, chargebacks, card recognition, CFD, Pay-at-Table, Bartender Mobile |
 | 121 | Atomic Seat Management | DONE | 11 | Mid-meal seat add/remove, positional shifting, per-seat balances, seatVersion concurrency |
 | 122 | Remote Void Approval | DONE | 34 | SMS-based manager approval for voids when off-site, Twilio integration, mobile approval page |
 | 123 | Entertainment Floor Plan | DONE | 81, 106 | Place entertainment menu items on floor plan, FloorPlanElement model, visual-only rotation, 12 SVG types |
@@ -652,6 +663,12 @@ These skills emerged during development and are now part of the system:
 | 212 | Per-Modifier Print Routing | DONE | 103, 143 | 🖨️ button per modifier, follow/also/only modes, printer selection, API done, dispatch pending |
 | 213 | Real-Time Ingredient Library | DONE | 211, 127 | Optimistic update + socket dispatch for ingredient creation sync |
 | 214 | Ingredient Verification Visibility | DONE | 145, 211 | ⚠ badges, category warnings, recursive reverse ingredient↔modifier linking |
+| 215 | Unified Modifier Inventory Deduction | DONE | 125, 143 | Fallback path: Modifier.ingredientId → Ingredient → InventoryItem for deduction |
+| 216 | Ingredient-Modifier Connection Visibility | DONE | 143, 204, 211, 214 | Connected badge, dual-path menu item resolution, expandable linked modifiers |
+| 217 | Bottle Service Tiers | DONE | 120 | BottleServiceTier model, deposit pre-auth, tiered packages, spend progress, re-auth alerts, auto-gratuity |
+| 218 | Customer-Facing Display (CFD) | DONE | 120 | /cfd route, state machine (8 states), 5 components, Socket.io event types defined (not yet wired) |
+| 219 | Pay-at-Table | DONE | 120 | /pay-at-table route, split check (2-6 ways), 3 components, processes via Datacap sale |
+| 220 | Bartender Mobile | DONE | 120 | /mobile/tabs list + detail, 2 components, 10s polling, Socket.io event stubs (not yet wired) |
 
 ### Routing & Kitchen Display (200-Series)
 | Skill | Name | Status | Dependencies | Notes |

@@ -46,6 +46,14 @@
 | T-014 | Bulk "Move to Category" action for selected ingredients in hierarchy view | PM: Inventory | PM: Inventory | 2026-02-06 | P3 | Checkbox selection works, bulk action not yet wired |
 | T-017 | Inventory ↔ Menu sync verification — test ingredient linking end-to-end, investigate "Beef Patty → Casa Fries" bug | PM: Menu | PM: Inventory | 2026-02-06 | P2 | Carryover from Menu changelog. May be stale ingredientsLibrary data. |
 | T-016 | POS front-end ordering UI lift — ModifierModal flow, item selection UX, order panel polish, overall visual/interaction overhaul for the customer-facing ordering experience | PM: Menu | PM: Inventory | 2026-02-06 | P1 | Desperately needs UI attention. Covers: modifier selection flow, stacking/child navigation, category/item layout, order summary panel, glassmorphism consistency |
+| T-018 | Wire Socket.io events to CFD page — connect POS terminal events (cfd:show-order, cfd:payment-started, etc.) to /cfd page state machine. Currently scaffolded but not connected. | PM: KDS | PM: Payments | 2026-02-06 | P2 | CFD page at /cfd has state machine ready. Needs Socket.io room join + event listeners wired to POS payment flow. Touches: src/app/(cfd)/cfd/page.tsx, socket-dispatch.ts |
+| T-019 | Wire Socket.io events to Bartender Mobile — connect tab:close-request, tab:closed, tab:status-update events between /mobile/tabs and POS terminal. Currently logging intent only. | PM: KDS | PM: Payments | 2026-02-06 | P2 | MobileTabActions.tsx has switch/case stubs. Needs real socket emit + terminal-side listener. Touches: src/components/mobile/MobileTabActions.tsx, socket-dispatch.ts |
+| T-020 | Wire Socket.io events to Pay-at-Table — connect pay:request/result events between /pay-at-table and POS terminal for real-time payment sync. | PM: KDS | PM: Payments | 2026-02-06 | P2 | Pay-at-table page processes locally. Needs socket events for POS terminal awareness. |
+| T-021 | Batch close admin UI — add "Close Batch" button in settings/payments with BatchSummary preview and confirmation dialog. Calls /api/datacap/batch. | PM: Settings | PM: Payments | 2026-02-06 | P2 | API route exists. Needs settings page UI section. |
+| T-022 | Tip adjustment report — list today's sales with RecordNo tokens, allow manager to adjust tips via AdjustByRecordNo. Could be a new report or section in existing reports. | PM: Reports | PM: Payments | 2026-02-06 | P2 | Datacap /api/datacap/adjust route exists. Needs report UI with editable tip column. |
+| T-023 | Reader health dashboard — show avgResponseTime, successRate trending per PaymentReader. Update metrics after each transaction. | PM: Hardware | PM: Payments | 2026-02-06 | P3 | PaymentReader model exists. Needs metrics fields + UI in settings/hardware. |
+| T-024 | CFD terminal pairing — admin pairs CFD device to specific POS terminal. Similar to KDS pairing flow. | PM: Hardware | PM: Payments | 2026-02-06 | P3 | Needed before CFD Socket.io events work in multi-terminal setups. |
+| T-025 | Mobile device authentication — PIN-based session for bartender phone access. Uses planned RegisteredDevice/DeviceSession models from CLAUDE.md. | PM: Employees | PM: Payments | 2026-02-06 | P3 | /mobile/tabs currently uses ?employeeId query param. Needs proper auth. |
 
 ## In Progress
 
@@ -73,7 +81,7 @@ Reference for which PM owns which files. Use this to assign tasks correctly.
 | PM: Floor Plan | `/api/tables/`, `/api/seats/`, `/api/floor-plan-elements/`, `/src/components/floor-plan/`, `/src/domains/floor-plan/` | Tables, seats, sections, virtual groups, canvas |
 | PM: Reports | `/api/reports/`, `/src/app/(admin)/reports/` | Daily, shift, sales, PMIX, tips, voids, variance |
 | PM: KDS | `/api/kds/`, `/src/app/(kds)/`, `/api/hardware/kds-screens/` | KDS display, stations, device pairing, tickets |
-| PM: Payments | `/api/payments/`, `/src/components/payments/` | Processing, tips, receipts |
+| PM: Payments | `/api/payments/`, `/api/datacap/`, `/api/bottle-service/`, `/api/orders/[id]/bottle-service/`, `/src/components/payments/`, `/src/components/tabs/`, `/src/components/mobile/`, `/src/components/cfd/`, `/src/lib/datacap/`, `/src/hooks/useDatacap.ts`, `/src/app/(cfd)/`, `/src/app/(mobile)/`, `/src/app/(pos)/pay-at-table/` | Datacap integration, bar tabs, bottle service, CFD, Pay-at-Table, Bartender Mobile |
 | PM: Hardware | `/api/hardware/`, `/src/lib/escpos/`, `/api/print/` | Printers, print routes, ESC/POS, cash drawer |
 | PM: Entertainment | `/api/entertainment/`, `/src/components/entertainment/`, `/src/app/(kds)/entertainment/` | Timed rentals, sessions, waitlist, KDS dashboard |
 | PM: Employees | `/api/employees/`, `/api/roles/`, `/api/time-clock/` | Employee CRUD, roles, permissions, clock in/out |

@@ -1815,6 +1815,90 @@ toast.error('Connection lost', 8000)
 | 12.5 | Reset all customizations | Gear → Reset All → verify defaults restored | ⬜ |
 | 12.6 | Toast notifications display | Perform action → verify toast appears bottom-right | ⬜ |
 
+### 13. Datacap Payment Processing
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 13.1 | EMVSale processes correctly | Ring up item → Pay → Card → verify Datacap XML sent, response parsed, payment recorded | ⬜ |
+| 13.2 | EMVPreAuth opens bar tab | New Tab → card tap → verify CollectCardData + PreAuth fire, RecordNo stored | ⬜ |
+| 13.3 | PreAuthCapture closes tab | Close tab → verify capture uses RecordNo, final amount correct | ⬜ |
+| 13.4 | AdjustByRecordNo adds tip | Close with receipt tip → enter tip later → verify adjust works | ⬜ |
+| 13.5 | VoidSaleByRecordNo voids | Void payment → verify void uses RecordNo, hold released | ⬜ |
+| 13.6 | EMVReturn processes refund | Return with card present → verify refund processes | ⬜ |
+| 13.7 | ReturnByRecordNo (card not present) | Return without card → verify RecordNo-based refund | ⬜ |
+| 13.8 | EMVPadReset fires after every transaction | Any monetary transaction → verify PadReset auto-fires | ⬜ |
+| 13.9 | SequenceNo tracks per reader | Multiple transactions → verify SequenceNo increments correctly per reader | ⬜ |
+| 13.10 | Reader ping uses real protocol | Settings → Hardware → Ping reader → verify EMVPadReset used | ⬜ |
+| 13.11 | Simulated mode still works | Set processor=datacap_simulated → full flow → verify no hardware needed | ⬜ |
+| 13.12 | Cloud fallback when local fails | Unplug reader → verify cloud mode attempted if configured | ⬜ |
+
+### 14. Bar Tab Flows
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 14.1 | Card-first tab open | New Tab → card tap → verify cardholder name auto-fills tab | ⬜ |
+| 14.2 | Pending tab shimmer animation | Open tab → verify shimmer while authorizing → green check on approval | ⬜ |
+| 14.3 | Decline shows red X | Use test decline card → verify red X animation + toast alert | ⬜ |
+| 14.4 | Parallel ordering during auth | Open tab (processing) → switch to another customer → ring up → verify both work | ⬜ |
+| 14.5 | Auto-increment at 80% threshold | Open $1 tab → add $25 drinks → verify IncrementalAuth fires at $0.80 | ⬜ |
+| 14.6 | Multi-card tab | Add second card to tab → verify both cards show as badges | ⬜ |
+| 14.7 | Close tab with device tip | Close tab → verify tip buttons on reader → capture includes tip | ⬜ |
+| 14.8 | Close tab with receipt tip | Close tab (PrintBlankLine) → enter tip → verify AdjustByRecordNo | ⬜ |
+| 14.9 | Tab void releases holds | Void unclosed tab → verify all OrderCard records voided | ⬜ |
+
+### 15. Quick Pay & Tip Modes
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 15.1 | Quick Pay single-tap flow | Ring up drink → Quick Pay → card tap → tip → done (no tab) | ⬜ |
+| 15.2 | Under-threshold shows dollar tips | Set threshold=$15 → order $8 drink → verify $1/$2/$3 buttons | ⬜ |
+| 15.3 | Over-threshold shows percent tips | Order $20+ → verify 18%/20%/25% buttons | ⬜ |
+| 15.4 | Custom tip requires entry for $0 | Tap Custom → verify must enter amount (even $0) to skip | ⬜ |
+| 15.5 | Signature capture works | Transaction over signature threshold → verify canvas renders, base64 captured | ⬜ |
+
+### 16. Bottle Service
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 16.1 | Tier CRUD works | Settings → create Bronze/Silver/Gold tiers → verify saved | ⬜ |
+| 16.2 | Open bottle service tab | Select tier → card tap → verify deposit pre-auth fires | ⬜ |
+| 16.3 | Spend progress banner | Add drinks → verify progress bar updates, % shown | ⬜ |
+| 16.4 | Re-auth alert at deposit threshold | Spend reaches deposit → verify alert shown, "Extend" button works | ⬜ |
+| 16.5 | Auto-gratuity applied | Close bottle tab → verify auto-grat % added if configured | ⬜ |
+| 16.6 | Bottle tabs show gold banner | Open bottle tab → verify gold/amber styling distinct from regular tabs | ⬜ |
+
+### 17. Walkout Recovery & Card Recognition
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 17.1 | Mark tab as walkout | Manager marks tab → verify moves to walkout section | ⬜ |
+| 17.2 | Auto-retry schedule fires | Walkout tab exists → verify retry attempts logged per schedule | ⬜ |
+| 17.3 | Card recognition on repeat visit | Use same test card twice → verify visit count badge + toast | ⬜ |
+| 17.4 | Digital receipt stored | Complete payment → verify DigitalReceipt record created with receipt data | ⬜ |
+
+### 18. Customer-Facing Display (CFD)
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 18.1 | CFD idle screen renders | Open /cfd → verify clock + welcome text + branding | ⬜ |
+| 18.2 | CFD shows live order | Ring up items on POS → verify /cfd shows items in real-time | ⬜ |
+| 18.3 | CFD tip prompt works | Initiate payment → verify tip buttons appear on CFD | ⬜ |
+| 18.4 | CFD signature capture | Signature requested → verify canvas on CFD → sign → base64 sent | ⬜ |
+| 18.5 | CFD approved/declined screens | Complete payment → verify Thank You or Declined screen | ⬜ |
+| 18.6 | CFD auto-returns to idle | After approved/declined → verify returns to idle after 10s | ⬜ |
+
+### 19. Pay-at-Table & Bartender Mobile
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 19.1 | Pay-at-table loads order | Open /pay-at-table?orderId=X → verify order summary shows | ⬜ |
+| 19.2 | Split check works | Select split → choose ways → verify per-person amount correct | ⬜ |
+| 19.3 | Pay-at-table tip screen | Select tip → verify amount added → payment processes | ⬜ |
+| 19.4 | Mobile tab list loads | Open /mobile/tabs → verify open tabs listed with totals | ⬜ |
+| 19.5 | Mobile tab detail | Tap tab → verify items, cards, totals, bottle service indicator | ⬜ |
+| 19.6 | Mobile quick actions | Close Tab / Transfer / Alert Manager → verify confirmation + action | ⬜ |
+| 19.7 | Mobile polls for updates | Wait 10s → verify tab list refreshes automatically | ⬜ |
+
 ---
 
 ### Test Status Legend
