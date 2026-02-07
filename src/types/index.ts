@@ -123,6 +123,7 @@ export interface SelectedModifier {
 
 /**
  * An item on an order with its modifiers
+ * @deprecated Use InlineOrderItem from @/types/orders instead
  */
 export interface OrderItem {
   id: string
@@ -130,7 +131,7 @@ export interface OrderItem {
   name: string
   quantity: number
   price: number
-  modifiers: { id: string; name: string; price: number; preModifier?: string }[]
+  modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]
   specialNotes?: string
   status?: 'pending' | 'sent' | 'preparing' | 'ready' | 'served' | 'voided' | 'comped'
   voidReason?: string

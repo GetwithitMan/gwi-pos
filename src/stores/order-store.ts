@@ -1,12 +1,8 @@
 import { create } from 'zustand'
+import type { UiModifier } from '@/types/orders'
 
-interface OrderItemModifier {
-  id: string
-  name: string
-  price: number
-  preModifier?: string
-  depth: number  // 0 = top-level, 1 = child, 2 = grandchild, etc.
-  parentModifierId?: string  // ID of parent modifier if this is a child
+interface OrderItemModifier extends UiModifier {
+  // Additional fields specific to order store
   commissionAmount?: number  // Commission earned on this modifier
 }
 

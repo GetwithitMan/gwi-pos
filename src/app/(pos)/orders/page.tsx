@@ -437,7 +437,17 @@ export default function OrdersPage() {
         name: item.name,
         quantity: item.quantity,
         price: item.price,
-        modifiers: item.modifiers?.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
+        modifiers: item.modifiers?.map(m => ({
+          id: m.id || m.modifierId,
+          modifierId: m.modifierId,
+          name: m.name,
+          price: Number(m.price),
+          depth: m.depth ?? 0,
+          preModifier: m.preModifier ?? null,
+          spiritTier: m.spiritTier ?? null,
+          linkedBottleProductId: m.linkedBottleProductId ?? null,
+          parentModifierId: m.parentModifierId ?? null,
+        })) || [],
         specialNotes: item.specialNotes,
         kitchenStatus,
         isHeld: item.isHeld,
@@ -702,32 +712,42 @@ export default function OrdersPage() {
       return
     }
 
+    let cancelled = false
+
     const loadQuickBarItems = async () => {
       try {
         const itemPromises = quickBar.map(async (itemId) => {
-          const res = await fetch(`/api/menu/items/${itemId}`)
-          if (res.ok) {
-            const data = await res.json()
-            const customStyle = menuItemColors[itemId]
-            return {
-              id: data.item.id,
-              name: data.item.name,
-              price: Number(data.item.price),
-              bgColor: customStyle?.bgColor || null,
-              textColor: customStyle?.textColor || null,
+          try {
+            const res = await fetch(`/api/menu/items/${itemId}`)
+            if (!cancelled && res.ok) {
+              const data = await res.json()
+              const customStyle = menuItemColors[itemId]
+              return {
+                id: data.item.id,
+                name: data.item.name,
+                price: Number(data.item.price),
+                bgColor: customStyle?.bgColor || null,
+                textColor: customStyle?.textColor || null,
+              }
             }
+          } catch {
+            // Individual item fetch failed — skip it
           }
           return null
         })
 
         const items = await Promise.all(itemPromises)
-        setQuickBarItems(items.filter(Boolean) as typeof quickBarItems)
-      } catch (error) {
-        console.error('[Orders] Quick bar items load error:', error)
+        if (!cancelled) {
+          setQuickBarItems(items.filter(Boolean) as typeof quickBarItems)
+        }
+      } catch {
+        // Quick bar load failed — non-critical, ignore
       }
     }
 
     loadQuickBarItems()
+
+    return () => { cancelled = true }
   }, [quickBar, menuItemColors])
 
   const handleLogout = () => {
@@ -757,11 +777,15 @@ export default function OrdersPage() {
               price: item.price,
               quantity: item.quantity,
               modifiers: item.modifiers.map(mod => ({
-                modifierId: mod.id,
+                id: (mod.id || mod.modifierId) ?? '',
+                modifierId: mod.modifierId,
                 name: mod.name,
-                price: mod.price,
-                preModifier: mod.preModifier,
-                depth: mod.depth || 0,
+                price: Number(mod.price),
+                depth: mod.depth ?? 0,
+                preModifier: mod.preModifier ?? null,
+                spiritTier: mod.spiritTier ?? null,
+                linkedBottleProductId: mod.linkedBottleProductId ?? null,
+                parentModifierId: mod.parentModifierId ?? null,
               })),
               ingredientModifications: item.ingredientModifications?.map(ing => ({
                 ingredientId: ing.ingredientId,
@@ -802,11 +826,15 @@ export default function OrdersPage() {
             price: item.price,
             quantity: item.quantity,
             modifiers: item.modifiers.map(mod => ({
-              modifierId: mod.id,
+              id: (mod.id || mod.modifierId) ?? '',
+              modifierId: mod.modifierId,
               name: mod.name,
-              price: mod.price,
-              preModifier: mod.preModifier,
-              depth: mod.depth || 0,
+              price: Number(mod.price),
+              depth: mod.depth ?? 0,
+              preModifier: mod.preModifier ?? null,
+              spiritTier: mod.spiritTier ?? null,
+              linkedBottleProductId: mod.linkedBottleProductId ?? null,
+              parentModifierId: mod.parentModifierId ?? null,
             })),
             ingredientModifications: item.ingredientModifications?.map(ing => ({
               ingredientId: ing.ingredientId,
@@ -1273,11 +1301,15 @@ export default function OrdersPage() {
           seatNumber: item.seatNumber,
           sentToKitchen: item.sentToKitchen || false,
           modifiers: (item.modifiers || []).map(mod => ({
-            id: mod.id,
+            id: (mod.id || mod.modifierId) ?? '',
             modifierId: mod.modifierId,
             name: mod.name,
             price: Number(mod.price),
-            preModifier: mod.preModifier,
+            depth: mod.depth ?? 0,
+            preModifier: mod.preModifier ?? null,
+            spiritTier: mod.spiritTier ?? null,
+            linkedBottleProductId: mod.linkedBottleProductId ?? null,
+            parentModifierId: mod.parentModifierId ?? null,
           })),
         })),
         subtotal: Number(orderData.subtotal) || 0,
@@ -1436,7 +1468,17 @@ export default function OrdersPage() {
       setOrderToPayId(orderId)
       setCompVoidItem({
         ...item,
-        modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
+        modifiers: item.modifiers.map(m => ({
+          id: m.id || m.modifierId,
+          modifierId: m.modifierId,
+          name: m.name,
+          price: Number(m.price),
+          depth: m.depth ?? 0,
+          preModifier: m.preModifier ?? null,
+          spiritTier: m.spiritTier ?? null,
+          linkedBottleProductId: m.linkedBottleProductId ?? null,
+          parentModifierId: m.parentModifierId ?? null,
+        })),
       })
       setShowCompVoidModal(true)
     }
@@ -1807,11 +1849,15 @@ export default function OrdersPage() {
     if (inlineModifierCallbackRef.current) {
       const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
       const simplifiedModifiers = modifiers.map(mod => ({
-        id: mod.id,
+        id: mod.id ?? '',
+        modifierId: mod.id,
         name: mod.name,
         price: applyToMods && pourMultiplier ? mod.price * pourMultiplier : mod.price,
-        depth: mod.depth,
-        preModifier: mod.preModifier,
+        depth: mod.depth ?? 0,
+        preModifier: mod.preModifier ?? null,
+        spiritTier: mod.spiritTier ?? null,
+        linkedBottleProductId: mod.linkedBottleProductId ?? null,
+        parentModifierId: mod.parentModifierId ?? null,
       }))
       inlineModifierCallbackRef.current(simplifiedModifiers)
       inlineModifierCallbackRef.current = null
@@ -1840,12 +1886,15 @@ export default function OrdersPage() {
       quantity: 1,
       specialNotes,
       modifiers: modifiers.map(mod => ({
-        id: mod.id,
+        id: mod.id ?? '',
+        modifierId: mod.id,
         name: mod.name,
         price: applyToMods ? mod.price * pourMultiplier : mod.price,
-        preModifier: mod.preModifier,
-        depth: mod.depth,
-        parentModifierId: mod.parentModifierId,
+        depth: mod.depth ?? 0,
+        preModifier: mod.preModifier ?? null,
+        spiritTier: mod.spiritTier ?? null,
+        linkedBottleProductId: mod.linkedBottleProductId ?? null,
+        parentModifierId: mod.parentModifierId ?? null,
       })),
       ingredientModifications: ingredientModifications?.map(mod => ({
         ingredientId: mod.ingredientId,
@@ -2512,12 +2561,15 @@ export default function OrdersPage() {
       price: basePrice + ingredientTotal,
       specialNotes,
       modifiers: modifiers.map(mod => ({
-        id: mod.id,
+        id: mod.id ?? '',
+        modifierId: mod.id,
         name: mod.name,
         price: applyToMods ? mod.price * pourMultiplier : mod.price,
-        preModifier: mod.preModifier,
-        depth: mod.depth,
-        parentModifierId: mod.parentModifierId,
+        depth: mod.depth ?? 0,
+        preModifier: mod.preModifier ?? null,
+        spiritTier: mod.spiritTier ?? null,
+        linkedBottleProductId: mod.linkedBottleProductId ?? null,
+        parentModifierId: mod.parentModifierId ?? null,
       })),
       ingredientModifications: ingredientModifications?.map(mod => ({
         ingredientId: mod.ingredientId,
@@ -4535,8 +4587,15 @@ export default function OrdersPage() {
             price: item.price,
             quantity: item.quantity,
             modifiers: item.modifiers.map(mod => ({
+              id: (mod.id || mod.modifierId) ?? '',
+              modifierId: mod.modifierId,
               name: mod.name,
-              price: mod.price,
+              price: Number(mod.price),
+              depth: mod.depth ?? 0,
+              preModifier: mod.preModifier ?? null,
+              spiritTier: mod.spiritTier ?? null,
+              linkedBottleProductId: mod.linkedBottleProductId ?? null,
+              parentModifierId: mod.parentModifierId ?? null,
             })),
           }))}
           orderDiscount={appliedDiscounts.reduce((sum, d) => sum + d.amount, 0)}

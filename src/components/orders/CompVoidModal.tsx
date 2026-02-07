@@ -4,13 +4,14 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { RemoteVoidApprovalModal } from './RemoteVoidApprovalModal'
+import type { UiModifier } from '@/types/orders'
 
 interface OrderItem {
   id: string
   name: string
   quantity: number
   price: number
-  modifiers: { name: string; price: number }[]
+  modifiers: UiModifier[]  // ✅ Use canonical type
   status?: string
   voidReason?: string
 }

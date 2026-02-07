@@ -237,7 +237,17 @@ export function FloorPlanHome({
       name: item.name,
       price: item.price,
       quantity: item.quantity,
-      modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
+      modifiers: item.modifiers?.map(m => ({
+        id: (m.id || m.modifierId) ?? '',
+        modifierId: m.modifierId,
+        name: m.name,
+        price: Number(m.price),
+        depth: m.depth ?? 0,
+        preModifier: m.preModifier ?? null,
+        spiritTier: m.spiritTier ?? null,
+        linkedBottleProductId: m.linkedBottleProductId ?? null,
+        parentModifierId: m.parentModifierId ?? null,
+      })),
       specialNotes: item.specialNotes,
       seatNumber: item.seatNumber,
       sourceTableId: item.sourceTableId,
@@ -404,7 +414,17 @@ export function FloorPlanHome({
     // Resolve new items from action (direct array or callback)
     const prevAsInline: InlineOrderItem[] = currentItems.map(item => ({
       id: item.id, menuItemId: item.menuItemId, name: item.name, price: item.price,
-      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
+      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({
+        id: (m.id || m.modifierId) ?? '',
+        modifierId: m.modifierId,
+        name: m.name,
+        price: Number(m.price),
+        depth: m.depth ?? 0,
+        preModifier: m.preModifier ?? null,
+        spiritTier: m.spiritTier ?? null,
+        linkedBottleProductId: m.linkedBottleProductId ?? null,
+        parentModifierId: m.parentModifierId ?? null,
+      })),
       specialNotes: item.specialNotes, seatNumber: item.seatNumber, sourceTableId: item.sourceTableId,
       courseNumber: item.courseNumber, courseStatus: item.courseStatus, isHeld: item.isHeld,
       sentToKitchen: item.sentToKitchen, isCompleted: item.isCompleted,
@@ -440,7 +460,17 @@ export function FloorPlanHome({
           name: newItem.name,
           price: newItem.price,
           quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth || 0, preModifier: m.preModifier })),
+          modifiers: (newItem.modifiers || []).map(m => ({
+            id: (m.id || m.modifierId) ?? '',
+            modifierId: m.modifierId,
+            name: m.name,
+            price: Number(m.price),
+            depth: m.depth ?? 0,
+            preModifier: m.preModifier ?? null,
+            spiritTier: m.spiritTier ?? null,
+            linkedBottleProductId: m.linkedBottleProductId ?? null,
+            parentModifierId: m.parentModifierId ?? null,
+          })),
           specialNotes: newItem.specialNotes,
           seatNumber: newItem.seatNumber,
           sourceTableId: newItem.sourceTableId,
@@ -465,7 +495,17 @@ export function FloorPlanHome({
         // Existing item — update if changed
         store.updateItem(newItem.id, {
           quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth || 0, preModifier: m.preModifier })),
+          modifiers: (newItem.modifiers || []).map(m => ({
+            id: (m.id || m.modifierId) ?? '',
+            modifierId: m.modifierId,
+            name: m.name,
+            price: Number(m.price),
+            depth: m.depth ?? 0,
+            preModifier: m.preModifier ?? null,
+            spiritTier: m.spiritTier ?? null,
+            linkedBottleProductId: m.linkedBottleProductId ?? null,
+            parentModifierId: m.parentModifierId ?? null,
+          })),
           specialNotes: newItem.specialNotes,
           seatNumber: newItem.seatNumber,
           sourceTableId: newItem.sourceTableId,
@@ -1283,7 +1323,17 @@ export function FloorPlanHome({
         name: i.name,
         quantity: i.quantity,
         price: i.price,
-        modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price, depth: (m as any).depth, preModifier: (m as any).preModifier })),
+        modifiers: i.modifiers?.map(m => ({
+          id: (m.id || m.modifierId) ?? '',
+          modifierId: m.modifierId,
+          name: m.name,
+          price: Number(m.price),
+          depth: m.depth ?? 0,
+          preModifier: m.preModifier ?? null,
+          spiritTier: m.spiritTier ?? null,
+          linkedBottleProductId: m.linkedBottleProductId ?? null,
+          parentModifierId: m.parentModifierId ?? null,
+        })),
         specialNotes: i.specialNotes,
         kitchenStatus: i.kitchenStatus as OrderPanelItemData['kitchenStatus'],
         isHeld: i.isHeld,
@@ -1320,33 +1370,42 @@ export function FloorPlanHome({
       return
     }
 
+    let cancelled = false
+
     const loadQuickBarItems = async () => {
       try {
-        // Fetch item details for each quick bar item
         const itemPromises = quickBar.map(async (itemId) => {
-          const res = await fetch(`/api/menu/items/${itemId}`)
-          if (res.ok) {
-            const data = await res.json()
-            const customStyle = menuItemColors[itemId]
-            return {
-              id: data.item.id,
-              name: data.item.name,
-              price: Number(data.item.price),
-              bgColor: customStyle?.bgColor || null,
-              textColor: customStyle?.textColor || null,
+          try {
+            const res = await fetch(`/api/menu/items/${itemId}`)
+            if (!cancelled && res.ok) {
+              const data = await res.json()
+              const customStyle = menuItemColors[itemId]
+              return {
+                id: data.item.id,
+                name: data.item.name,
+                price: Number(data.item.price),
+                bgColor: customStyle?.bgColor || null,
+                textColor: customStyle?.textColor || null,
+              }
             }
+          } catch {
+            // Individual item fetch failed — skip it
           }
           return null
         })
 
         const items = await Promise.all(itemPromises)
-        setQuickBarItems(items.filter(Boolean) as typeof quickBarItems)
-      } catch (error) {
-        console.error('[FloorPlanHome] Quick bar items load error:', error)
+        if (!cancelled) {
+          setQuickBarItems(items.filter(Boolean) as typeof quickBarItems)
+        }
+      } catch {
+        // Quick bar load failed — non-critical, ignore
       }
     }
 
     loadQuickBarItems()
+
+    return () => { cancelled = true }
   }, [quickBar, menuItemColors])
 
   // Load data on mount
@@ -1432,12 +1491,16 @@ export function FloorPlanHome({
           name: item.name || 'Unknown',
           price: Number(item.price) || 0,
           quantity: item.quantity,
-          modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; depth?: number; preModifier?: string }) => ({
-            id: m.id,
+          modifiers: (item.modifiers || []).map((m: { id: string; modifierId?: string; name: string; price: number; depth?: number; preModifier?: string; spiritTier?: string; linkedBottleProductId?: string; parentModifierId?: string }) => ({
+            id: (m.id || m.modifierId) ?? '',
+            modifierId: m.modifierId,
             name: m.name || '',
             price: Number(m.price) || 0,
-            depth: m.depth || 0,
-            preModifier: m.preModifier,
+            depth: m.depth ?? 0,
+            preModifier: m.preModifier ?? null,
+            spiritTier: m.spiritTier ?? null,
+            linkedBottleProductId: m.linkedBottleProductId ?? null,
+            parentModifierId: m.parentModifierId ?? null,
           })),
           specialNotes: item.specialNotes,
           seatNumber: item.seatNumber,
@@ -1628,8 +1691,8 @@ export function FloorPlanHome({
         const data = await res.json()
         setMenuItems(data.items || [])
       }
-    } catch (error) {
-      console.error('[FloorPlanHome] Menu items load error:', error)
+    } catch {
+      // Network error — non-critical, menu items just won't load
     } finally {
       setLoadingMenuItems(false)
     }
@@ -1878,10 +1941,16 @@ export function FloorPlanHome({
             name: item.name || 'Unknown',
             price: Number(item.price) || 0,
             quantity: item.quantity,
-            modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number }) => ({
-              id: m.id,
+            modifiers: (item.modifiers || []).map((m: { id: string; modifierId?: string; name: string; price: number; depth?: number; preModifier?: string; spiritTier?: string; linkedBottleProductId?: string; parentModifierId?: string }) => ({
+              id: (m.id || m.modifierId) ?? '',
+              modifierId: m.modifierId,
               name: m.name || '',
               price: Number(m.price) || 0,
+              depth: m.depth ?? 0,
+              preModifier: m.preModifier ?? null,
+              spiritTier: m.spiritTier ?? null,
+              linkedBottleProductId: m.linkedBottleProductId ?? null,
+              parentModifierId: m.parentModifierId ?? null,
             })),
             specialNotes: item.specialNotes,
             seatNumber: item.seatNumber,
@@ -2429,7 +2498,17 @@ export function FloorPlanHome({
       name: item.name,
       price: item.price,
       quantity: item.quantity,
-      modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
+      modifiers: (item.modifiers || []).map(m => ({
+        id: (m.id || m.modifierId) ?? '',
+        modifierId: m.modifierId,
+        name: m.name,
+        price: Number(m.price),
+        depth: m.depth ?? 0,
+        preModifier: m.preModifier ?? null,
+        spiritTier: m.spiritTier ?? null,
+        linkedBottleProductId: m.linkedBottleProductId ?? null,
+        parentModifierId: m.parentModifierId ?? null,
+      })),
       status: item.status,
     })
   }, [])
@@ -4828,7 +4907,17 @@ export function FloorPlanHome({
                   name: i.name,
                   quantity: i.quantity,
                   price: i.price,
-                  modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
+                  modifiers: i.modifiers?.map(m => ({
+                    id: (m.id || m.modifierId) ?? '',
+                    modifierId: m.modifierId,
+                    name: m.name,
+                    price: Number(m.price),
+                    depth: m.depth ?? 0,
+                    preModifier: m.preModifier ?? null,
+                    spiritTier: m.spiritTier ?? null,
+                    linkedBottleProductId: m.linkedBottleProductId ?? null,
+                    parentModifierId: m.parentModifierId ?? null,
+                  })),
                   specialNotes: i.specialNotes,
                   kitchenStatus: i.kitchenStatus as OrderPanelItemData['kitchenStatus'],
                   isHeld: i.isHeld,
@@ -5193,9 +5282,15 @@ export function FloorPlanHome({
                     price: Number(item.price),
                     quantity: item.quantity,
                     modifiers: item.modifiers?.map((mod: any) => ({
-                      id: mod.modifierId,
+                      id: (mod.id || mod.modifierId) ?? '',
+                      modifierId: mod.modifierId,
                       name: mod.name,
                       price: Number(mod.price),
+                      depth: mod.depth ?? 0,
+                      preModifier: mod.preModifier ?? null,
+                      spiritTier: mod.spiritTier ?? null,
+                      linkedBottleProductId: mod.linkedBottleProductId ?? null,
+                      parentModifierId: mod.parentModifierId ?? null,
                     })) || [],
                     seatNumber: item.seatNumber,
                     courseNumber: item.courseNumber,
@@ -5230,7 +5325,17 @@ export function FloorPlanHome({
             name: item.name,
             price: item.price,
             quantity: item.quantity,
-            modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
+            modifiers: (item.modifiers || []).map(m => ({
+        id: (m.id || m.modifierId) ?? '',
+        modifierId: m.modifierId,
+        name: m.name,
+        price: Number(m.price),
+        depth: m.depth ?? 0,
+        preModifier: m.preModifier ?? null,
+        spiritTier: m.spiritTier ?? null,
+        linkedBottleProductId: m.linkedBottleProductId ?? null,
+        parentModifierId: m.parentModifierId ?? null,
+      })),
           }))}
           orderDiscount={0}
           taxRate={pricing.taxRate}
@@ -5249,9 +5354,15 @@ export function FloorPlanHome({
                     price: Number(item.price),
                     quantity: item.quantity,
                     modifiers: item.modifiers?.map((mod: any) => ({
-                      id: mod.modifierId,
+                      id: (mod.id || mod.modifierId) ?? '',
+                      modifierId: mod.modifierId,
                       name: mod.name,
                       price: Number(mod.price),
+                      depth: mod.depth ?? 0,
+                      preModifier: mod.preModifier ?? null,
+                      spiritTier: mod.spiritTier ?? null,
+                      linkedBottleProductId: mod.linkedBottleProductId ?? null,
+                      parentModifierId: mod.parentModifierId ?? null,
                     })) || [],
                     seatNumber: item.seatNumber,
                     courseNumber: item.courseNumber,

@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { EntertainmentSessionControls } from './EntertainmentSessionControls'
+import type { UiModifier } from '@/types/orders'
 
 export interface OrderPanelItemData {
   id: string
   name: string
   quantity: number
   price: number
-  modifiers?: { name: string; price: number; depth?: number; preModifier?: string }[]
+  modifiers?: UiModifier[]  // ✅ Use canonical type
   specialNotes?: string
   kitchenStatus?: 'pending' | 'sent' | 'cooking' | 'ready' | 'served'
   isHeld?: boolean
