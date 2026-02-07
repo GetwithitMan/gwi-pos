@@ -32,6 +32,7 @@ import { logger } from '@/lib/logger'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
 import { useOrderStore } from '@/stores/order-store'
+import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
 import { useEvents } from '@/lib/events'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
@@ -206,11 +207,153 @@ export function FloorPlanHome({
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null)
   const [activeOrderNumber, setActiveOrderNumber] = useState<string | null>(null)
   const [activeOrderType, setActiveOrderType] = useState<string | null>(null)
-  const [inlineOrderItems, setInlineOrderItems] = useState<InlineOrderItem[]>([])
   const [showOrderPanel, setShowOrderPanel] = useState(false)
   const [isSendingOrder, setIsSendingOrder] = useState(false)
   const [pendingPayAfterSave, setPendingPayAfterSave] = useState(false)
   const [guestCount, setGuestCount] = useState(defaultGuestCount)
+
+  // === Shared order hook (single source of truth for order items) ===
+  const activeOrder = useActiveOrder({
+    locationId,
+    employeeId,
+  })
+
+  // DEPRECATED: inlineOrderItems now reads from Zustand store via useActiveOrder hook
+  // This alias exists for backward compatibility while we migrate all call sites
+  const inlineOrderItems: InlineOrderItem[] = useMemo(() => {
+    const storeItems = useOrderStore.getState().currentOrder?.items || []
+    return storeItems.map(item => ({
+      id: item.id,
+      menuItemId: item.menuItemId,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price })),
+      specialNotes: item.specialNotes,
+      seatNumber: item.seatNumber,
+      sourceTableId: item.sourceTableId,
+      courseNumber: item.courseNumber,
+      courseStatus: item.courseStatus,
+      isHeld: item.isHeld,
+      sentToKitchen: item.sentToKitchen,
+      isCompleted: item.isCompleted,
+      blockTimeMinutes: item.blockTimeMinutes ?? undefined,
+      blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
+      blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
+      completedAt: item.completedAt,
+      resendCount: item.resendCount,
+    }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
+
+  // COMPATIBILITY SHIM: setInlineOrderItems bridges old patterns to the Zustand store
+  // This allows all 31 existing call sites to keep working while store is source of truth
+  // Refs for shim closure (avoids stale state in useCallback)
+  const activeOrderTypeRef = useRef(activeOrderType)
+  activeOrderTypeRef.current = activeOrderType
+  const activeTableIdRef = useRef(activeTableId)
+  activeTableIdRef.current = activeTableId
+  const guestCountRef = useRef(guestCount)
+  guestCountRef.current = guestCount
+
+  const setInlineOrderItems = useCallback((
+    action: InlineOrderItem[] | ((prev: InlineOrderItem[]) => InlineOrderItem[])
+  ) => {
+    const store = useOrderStore.getState()
+
+    // Ensure order exists in store before mutating items
+    if (!store.currentOrder) {
+      store.startOrder(activeOrderTypeRef.current || 'dine_in', {
+        locationId,
+        tableId: activeTableIdRef.current || undefined,
+        guestCount: guestCountRef.current || 1,
+      })
+    }
+
+    const currentItems = store.currentOrder?.items || []
+
+    // Resolve new items from action (direct array or callback)
+    const prevAsInline: InlineOrderItem[] = currentItems.map(item => ({
+      id: item.id, menuItemId: item.menuItemId, name: item.name, price: item.price,
+      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price })),
+      specialNotes: item.specialNotes, seatNumber: item.seatNumber, sourceTableId: item.sourceTableId,
+      courseNumber: item.courseNumber, courseStatus: item.courseStatus, isHeld: item.isHeld,
+      sentToKitchen: item.sentToKitchen, isCompleted: item.isCompleted,
+      blockTimeMinutes: item.blockTimeMinutes ?? undefined, blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
+      blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined, completedAt: item.completedAt,
+      resendCount: item.resendCount,
+    }))
+
+    const newItems = typeof action === 'function' ? action(prevAsInline) : action
+
+    if (newItems.length === 0) {
+      // Clear all items — just remove them from the store
+      for (const item of [...currentItems]) {
+        store.removeItem(item.id)
+      }
+      return
+    }
+
+    // Diff: remove items that are no longer present
+    for (const existing of currentItems) {
+      if (!newItems.find(n => n.id === existing.id)) {
+        store.removeItem(existing.id)
+      }
+    }
+
+    // Diff: add new items and update changed items
+    for (const newItem of newItems) {
+      const existing = currentItems.find(e => e.id === newItem.id)
+      if (!existing) {
+        // New item — add to store
+        store.addItem({
+          menuItemId: newItem.menuItemId,
+          name: newItem.name,
+          price: newItem.price,
+          quantity: newItem.quantity,
+          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: 0 })),
+          specialNotes: newItem.specialNotes,
+          seatNumber: newItem.seatNumber,
+          sourceTableId: newItem.sourceTableId,
+          courseNumber: newItem.courseNumber,
+          courseStatus: newItem.courseStatus,
+          isHeld: newItem.isHeld,
+          sentToKitchen: newItem.sentToKitchen,
+          isCompleted: newItem.isCompleted,
+          blockTimeMinutes: newItem.blockTimeMinutes,
+          blockTimeStartedAt: newItem.blockTimeStartedAt,
+          blockTimeExpiresAt: newItem.blockTimeExpiresAt,
+          completedAt: newItem.completedAt,
+          resendCount: newItem.resendCount,
+        })
+        // Override the auto-generated ID with the intended one
+        const storeNow = useOrderStore.getState().currentOrder?.items || []
+        const justAdded = storeNow[storeNow.length - 1]
+        if (justAdded && justAdded.id !== newItem.id) {
+          store.updateItemId(justAdded.id, newItem.id)
+        }
+      } else {
+        // Existing item — update if changed
+        store.updateItem(newItem.id, {
+          quantity: newItem.quantity,
+          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: 0 })),
+          specialNotes: newItem.specialNotes,
+          seatNumber: newItem.seatNumber,
+          sourceTableId: newItem.sourceTableId,
+          courseNumber: newItem.courseNumber,
+          courseStatus: newItem.courseStatus,
+          isHeld: newItem.isHeld,
+          sentToKitchen: newItem.sentToKitchen,
+          isCompleted: newItem.isCompleted,
+          blockTimeMinutes: newItem.blockTimeMinutes,
+          blockTimeStartedAt: newItem.blockTimeStartedAt,
+          blockTimeExpiresAt: newItem.blockTimeExpiresAt,
+          completedAt: newItem.completedAt,
+          resendCount: newItem.resendCount,
+        })
+      }
+    }
+  }, [locationId])
 
   // Notes editing state
   const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
@@ -332,117 +475,15 @@ export function FloorPlanHome({
     isStatic?: boolean // True for long-hold groups (tables keep their own seats)
   }
 
-  // Helper to sync order data to Zustand store for cross-route persistence
-  const syncOrderToStore = useCallback((data: any) => {
-    useOrderStore.getState().loadOrder({
-      id: data.id,
-      orderNumber: data.orderNumber,
-      orderType: data.orderType || 'dine_in',
-      tableId: data.tableId || undefined,
-      tableName: data.tableName || undefined,
-      tabName: data.tabName || undefined,
-      guestCount: data.guestCount || 1,
-      status: data.status,
-      items: (data.items || []).map((item: any) => ({
-        id: item.id,
-        menuItemId: item.menuItemId,
-        name: item.name,
-        price: Number(item.unitPrice || item.price),
-        quantity: item.quantity,
-        itemTotal: Number(item.itemTotal || (item.unitPrice || item.price) * item.quantity),
-        specialNotes: item.specialNotes || null,
-        seatNumber: item.seatNumber || null,
-        courseNumber: item.courseNumber || null,
-        courseStatus: item.courseStatus || null,
-        isHeld: item.isHeld || false,
-        holdUntil: item.holdUntil || null,
-        firedAt: item.firedAt || null,
-        isCompleted: item.isCompleted || false,
-        completedAt: item.completedAt || null,
-        resendCount: item.resendCount || 0,
-        blockTimeMinutes: item.blockTimeMinutes || null,
-        blockTimeStartedAt: item.blockTimeStartedAt || null,
-        blockTimeExpiresAt: item.blockTimeExpiresAt || null,
-        modifiers: (item.modifiers || []).map((mod: any) => ({
-          id: mod.id,
-          modifierId: mod.modifierId || mod.id,
-          name: mod.name,
-          price: Number(mod.price),
-          preModifier: mod.preModifier || null,
-          depth: mod.depth || 0,
-        })),
-      })),
-      subtotal: Number(data.subtotal || 0),
-      discountTotal: Number(data.discountTotal || 0),
-      taxTotal: Number(data.taxTotal || data.tax || 0),
-      tipTotal: Number(data.tipTotal || 0),
-      total: Number(data.total || 0),
-      notes: data.notes || undefined,
-    })
-  }, [])
+  // No sync functions needed — Zustand store IS the source of truth
+  // syncOrderToStore and syncLocalItemsToStore have been removed
 
-  // Sync local (unsaved) items to Zustand store before view switches
-  // This ensures items persist when switching from FloorPlanHome to BartenderView
-  const syncLocalItemsToStore = useCallback(() => {
-    if (inlineOrderItems.length === 0) return
-
-    const subtotal = inlineOrderItems.reduce((sum, item) => {
-      const itemTotal = item.price * item.quantity
-      const modTotal = (item.modifiers || []).reduce((ms, m) => ms + m.price, 0) * item.quantity
-      return sum + itemTotal + modTotal
-    }, 0)
-
-    useOrderStore.getState().loadOrder({
-      id: activeOrderId || `local-${Date.now()}`,
-      orderNumber: activeOrderNumber ? Number(activeOrderNumber) : 0,
-      orderType: activeOrderType || 'bar_tab',
-      tableId: activeTableId || undefined,
-      guestCount: guestCount || 1,
-      status: 'open',
-      items: inlineOrderItems.map(item => ({
-        id: item.id,
-        menuItemId: item.menuItemId,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        itemTotal: item.price * item.quantity + (item.modifiers || []).reduce((s, m) => s + m.price, 0) * item.quantity,
-        specialNotes: item.specialNotes || null,
-        seatNumber: item.seatNumber || null,
-        courseNumber: item.courseNumber || null,
-        courseStatus: item.courseStatus || null,
-        isHeld: item.isHeld || false,
-        holdUntil: null,
-        firedAt: null,
-        isCompleted: item.isCompleted || false,
-        completedAt: item.completedAt || null,
-        resendCount: item.resendCount || 0,
-        blockTimeMinutes: item.blockTimeMinutes || null,
-        blockTimeStartedAt: item.blockTimeStartedAt || null,
-        blockTimeExpiresAt: item.blockTimeExpiresAt || null,
-        modifiers: (item.modifiers || []).map(mod => ({
-          id: mod.id,
-          modifierId: mod.id,
-          name: mod.name,
-          price: mod.price,
-          preModifier: null,
-          depth: 0,
-        })),
-      })),
-      subtotal,
-      discountTotal: 0,
-      taxTotal: 0,
-      tipTotal: 0,
-      total: subtotal,
-    })
-  }, [inlineOrderItems, activeOrderId, activeOrderNumber, activeOrderType, activeTableId, guestCount])
-
-  // Wrap Bar Mode switch to sync items first
+  // Switch to Bar Mode — items already live in Zustand store, no sync needed
   const handleSwitchToBartenderView = useCallback(() => {
     if (onSwitchToBartenderView) {
-      syncLocalItemsToStore()
       onSwitchToBartenderView()
     }
-  }, [onSwitchToBartenderView, syncLocalItemsToStore])
+  }, [onSwitchToBartenderView])
 
   // Helper function to calculate snap position for a secondary table relative to a primary table
   // Used when tables don't have stored visual offsets
@@ -1285,8 +1326,7 @@ export function FloorPlanHome({
         }))
         setInlineOrderItems(items)
 
-        // Sync to Zustand store for cross-route persistence
-        syncOrderToStore(data)
+        // Store is already updated via setInlineOrderItems shim — no separate sync needed
 
         // Notify parent that order is loaded
         onOrderLoaded?.()
@@ -1730,8 +1770,7 @@ export function FloorPlanHome({
           }))
           setInlineOrderItems(items)
 
-          // Sync to Zustand store for cross-route persistence
-          syncOrderToStore(data)
+          // Store is already updated via setInlineOrderItems shim — no separate sync needed
         }
       } catch (error) {
         console.error('[FloorPlanHome] Failed to load order:', error)
@@ -2257,271 +2296,75 @@ export function FloorPlanHome({
     })
   }, [])
 
-  // Send order to kitchen
+  // Send order to kitchen — delegates to useActiveOrder hook
   const handleSendToKitchen = useCallback(async () => {
-    // FIX 2: Race condition prevention - immediate gate catches double-taps
+    // Race condition prevention
     if (isProcessingSendRef.current || inlineOrderItems.length === 0) return
 
     // Filter out held items and already-sent items
     const unsavedItems = inlineOrderItems.filter(item => !item.sentToKitchen && !item.isHeld)
     if (unsavedItems.length === 0) return
 
-    isProcessingSendRef.current = true  // Set BEFORE any async work
+    isProcessingSendRef.current = true
     setIsSendingOrder(true)
 
     try {
-      let orderId = activeOrderId
+      // Hook handles: ensureOrderInDB → POST /send → mark items sent → reload
+      await activeOrder.handleSendToKitchen(employeeId)
 
-      // FIX 1: Use correlationId pattern to properly match items back
-      // The temp item.id serves as a unique correlationId for each item
-      const itemsPayload = unsavedItems.map(item => ({
-        menuItemId: item.menuItemId,
-        correlationId: item.id, // Use temp ID as unique anchor for matching
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        modifiers: item.modifiers?.map(m => ({
-          modifierId: m.id,
-          name: m.name,
-          price: m.price,
-        })) || [],
-        seatNumber: item.seatNumber,
-        courseNumber: item.courseNumber,
-        specialNotes: item.specialNotes,
-        blockTimeMinutes: item.blockTimeMinutes, // For timed rental items
-      }))
-
-      if (!orderId) {
-        // Create new order
-        const createRes = await fetch('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            locationId,
-            employeeId,
-            tableId: activeTableId || undefined,
-            orderType: activeOrderType || 'dine_in',
-            items: itemsPayload,
-          }),
-        })
-
-        if (createRes.ok) {
-          const data = await createRes.json()
-          orderId = data.id
-          setActiveOrderId(orderId)
-          setActiveOrderNumber(String(data.orderNumber))
-
-          // Clear extra virtual seats for this table since they're now part of the order
-          if (activeTableId) {
-            setExtraSeats(prev => {
-              const next = new Map(prev)
-              next.delete(activeTableId)
-              return next
-            })
-          }
-
-          // Match using correlationId - prevents ghost ID issues with identical items
-          if (data.items && data.items.length > 0) {
-            const serverItems = data.items as { id: string; correlationId?: string; menuItemId: string; name: string }[]
-            setInlineOrderItems(prev => prev.map(localItem => {
-              // First try matching by correlationId (reliable)
-              const matchByCorrelation = serverItems.find(s => s.correlationId === localItem.id)
-              if (matchByCorrelation) {
-                return { ...localItem, id: matchByCorrelation.id }
-              }
-              // Fallback for older API: match by temp prefix + menuItemId + name
-              if (localItem.id.startsWith('temp-')) {
-                const matchByLegacy = serverItems.find(
-                  s => s.menuItemId === localItem.menuItemId && s.name === localItem.name
-                )
-                if (matchByLegacy) {
-                  return { ...localItem, id: matchByLegacy.id }
-                }
-              }
-              return localItem
-            }))
-          }
-        } else {
-          const errorData = await createRes.json().catch(() => ({}))
-          console.error('[FloorPlanHome] Create order failed:', errorData)
-          toast.error('Failed to create order. Please try again.')
-          throw new Error('Failed to create order')
-        }
-      } else {
-        // Add items to existing order - use POST to append atomically
-        const appendRes = await fetch(`/api/orders/${orderId}/items`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: itemsPayload }),
-        })
-
-        const appendData = await appendRes.json().catch(() => ({}))
-
-        if (!appendRes.ok) {
-          console.error('[FloorPlanHome] Append items failed:', appendData)
-          toast.error('Failed to add items to order. Please try again.')
-          throw new Error('Failed to add items to order')
-        }
-
-        // Match using correlationId - prevents ghost ID issues with identical items
-        if (appendData?.addedItems && appendData.addedItems.length > 0) {
-          const addedItems = appendData.addedItems as { id: string; correlationId?: string; name: string }[]
-          setInlineOrderItems(prev => prev.map(localItem => {
-            // First try matching by correlationId (reliable)
-            const matchByCorrelation = addedItems.find(s => s.correlationId === localItem.id)
-            if (matchByCorrelation) {
-              return { ...localItem, id: matchByCorrelation.id }
-            }
-            // Fallback for older API: match by temp prefix + name
-            if (localItem.id.startsWith('temp-')) {
-              const matchByLegacy = addedItems.find(s => s.name === localItem.name)
-              if (matchByLegacy) {
-                return { ...localItem, id: matchByLegacy.id }
-              }
-            }
-            return localItem
-          }))
+      // Sync activeOrderId/Number from store (hook updated it)
+      const store = useOrderStore.getState()
+      if (store.currentOrder?.id) {
+        setActiveOrderId(store.currentOrder.id)
+        if (store.currentOrder.orderNumber) {
+          setActiveOrderNumber(String(store.currentOrder.orderNumber))
         }
       }
 
-      // Send to kitchen
-      if (orderId) {
-        const sendRes = await fetch(`/api/orders/${orderId}/send`, { method: 'POST' })
-        if (!sendRes.ok) {
-          const errorData = await sendRes.json().catch(() => ({}))
-          console.error('[FloorPlanHome] Send to kitchen failed:', errorData)
-          // Don't throw - order is saved, just printing/kitchen send failed
-          toast.warning('Order saved but failed to send to kitchen. Check printer connection.')
-        } else {
-          toast.success('Order sent to kitchen')
-        }
+      // Clear extra virtual seats for this table since they're now part of the order
+      if (activeTableId) {
+        setExtraSeats(prev => {
+          const next = new Map(prev)
+          next.delete(activeTableId)
+          return next
+        })
       }
-
-      // Mark non-held items as sent
-      setInlineOrderItems(prev =>
-        prev.map(item =>
-          item.isHeld ? item : { ...item, sentToKitchen: true }
-        )
-      )
 
       // Refresh floor plan data (without showing loading indicator)
-      // This updates the table to show it has an active order
       await loadFloorPlanData(false)
       loadOpenOrdersCount()
-
-      // Sync saved order to store for cross-route persistence
-      if (orderId) {
-        try {
-          const orderRes = await fetch(`/api/orders/${orderId}`)
-          if (orderRes.ok) {
-            const orderData = await orderRes.json()
-            syncOrderToStore(orderData)
-          }
-        } catch (err) {
-          console.error('[FloorPlanHome] Failed to sync order to store:', err)
-        }
-      }
-
-      // Panel stays open after send — order items already marked as sent above
-
     } catch (error) {
       console.error('[FloorPlanHome] Failed to send order:', error)
-      toast.error('Failed to send order. Please try again.')
     } finally {
       isProcessingSendRef.current = false
       setIsSendingOrder(false)
     }
-  }, [activeTableId, activeOrderId, activeOrderType, inlineOrderItems, locationId, employeeId])
+  }, [inlineOrderItems, activeOrder.handleSendToKitchen, employeeId, activeTableId])
 
   // Save order to DB without sending to kitchen (for Pay before Send flow)
   const handleSaveOrderForPayment = useCallback(async () => {
     if (inlineOrderItems.length === 0) return
 
-    const unsavedItems = inlineOrderItems.filter(item => !item.sentToKitchen)
-    if (unsavedItems.length === 0 && activeOrderId) {
-      // All items already saved, just open payment
+    // If all items already saved, just open payment
+    if (!activeOrder.hasUnsavedItems && activeOrderId) {
       setPendingPayAfterSave(true)
       return
     }
 
     setIsSendingOrder(true)
     try {
-      let orderId = activeOrderId
-      const itemsPayload = unsavedItems.map(item => ({
-        menuItemId: item.menuItemId,
-        correlationId: item.id,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        modifiers: item.modifiers?.map(m => ({
-          modifierId: m.id,
-          name: m.name,
-          price: m.price,
-        })) || [],
-        seatNumber: item.seatNumber,
-        courseNumber: item.courseNumber,
-        specialNotes: item.specialNotes,
-        blockTimeMinutes: item.blockTimeMinutes,
-      }))
+      // Hook handles: create/append order in DB, map IDs
+      const orderId = await activeOrder.ensureOrderInDB(employeeId)
+      if (!orderId) return
 
-      if (!orderId) {
-        // Create new order (without sending to kitchen)
-        const createRes = await fetch('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            locationId,
-            employeeId,
-            tableId: activeTableId || undefined,
-            orderType: activeOrderType || 'dine_in',
-            items: itemsPayload,
-          }),
-        })
-
-        if (createRes.ok) {
-          const data = await createRes.json()
-          orderId = data.id
-          setActiveOrderId(orderId)
-          setActiveOrderNumber(String(data.orderNumber))
-
-          // Match correlationIds
-          if (data.items && data.items.length > 0) {
-            const serverItems = data.items as { id: string; correlationId?: string; menuItemId: string; name: string }[]
-            setInlineOrderItems(prev => prev.map(localItem => {
-              const match = serverItems.find(s => s.correlationId === localItem.id)
-              if (match) return { ...localItem, id: match.id }
-              return localItem
-            }))
-          }
-        } else {
-          toast.error('Failed to create order')
-          return
-        }
-      } else if (unsavedItems.length > 0) {
-        // Append items to existing order
-        const appendRes = await fetch(`/api/orders/${orderId}/items`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: itemsPayload }),
-        })
-
-        if (!appendRes.ok) {
-          toast.error('Failed to save items')
-          return
-        }
-
-        const appendData = await appendRes.json().catch(() => ({}))
-        if (appendData?.addedItems) {
-          const addedItems = appendData.addedItems as { id: string; correlationId?: string; name: string }[]
-          setInlineOrderItems(prev => prev.map(localItem => {
-            const match = addedItems.find(s => s.correlationId === localItem.id)
-            if (match) return { ...localItem, id: match.id }
-            return localItem
-          }))
-        }
+      // Sync local state with store's order ID
+      setActiveOrderId(orderId)
+      const store = useOrderStore.getState()
+      if (store.currentOrder?.orderNumber) {
+        setActiveOrderNumber(String(store.currentOrder.orderNumber))
       }
 
-      // Flag that payment should open after orderId is set
+      // Flag that payment should open
       setPendingPayAfterSave(true)
     } catch (error) {
       console.error('[FloorPlanHome] Failed to save order for payment:', error)
@@ -2529,7 +2372,7 @@ export function FloorPlanHome({
     } finally {
       setIsSendingOrder(false)
     }
-  }, [activeTableId, activeOrderId, activeOrderType, inlineOrderItems, locationId, employeeId])
+  }, [inlineOrderItems, activeOrder.hasUnsavedItems, activeOrder.ensureOrderInDB, activeOrderId, employeeId])
 
   // Open payment
   const handleOpenPayment = useCallback(() => {

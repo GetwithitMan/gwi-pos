@@ -18,9 +18,10 @@ export const db = globalForPrisma.prisma ?? createPrismaClient()
 // Enable WAL mode and busy timeout for SQLite concurrency
 // WAL allows concurrent reads while writing, preventing "database is locked" errors
 // busy_timeout makes SQLite wait instead of immediately failing on lock contention
+// NOTE: PRAGMA journal_mode returns a result, so we must use $queryRawUnsafe (not $executeRawUnsafe)
 if (!globalForPrisma.walEnabled) {
-  db.$executeRawUnsafe('PRAGMA journal_mode=WAL;')
-    .then(() => db.$executeRawUnsafe('PRAGMA busy_timeout=5000;'))
+  db.$queryRawUnsafe('PRAGMA journal_mode=WAL;')
+    .then(() => db.$queryRawUnsafe('PRAGMA busy_timeout=5000;'))
     .then(() => {
       globalForPrisma.walEnabled = true
       console.log('[db] SQLite WAL mode and busy_timeout enabled')

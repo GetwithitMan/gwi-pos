@@ -47,6 +47,33 @@ export async function GET(request: NextRequest) {
           name: tab.employee.displayName || `${tab.employee.firstName} ${tab.employee.lastName}`,
         },
         itemCount: tab.items.reduce((sum, item) => sum + item.quantity, 0),
+        items: tab.items
+          .filter(item => !item.deletedAt)
+          .map(item => ({
+            id: item.id,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            price: Number(item.price),
+            quantity: item.quantity,
+            sentToKitchen: item.kitchenStatus !== 'pending',
+            specialNotes: item.specialNotes,
+            isHeld: item.isHeld,
+            isCompleted: item.isCompleted,
+            seatNumber: item.seatNumber,
+            courseNumber: item.courseNumber,
+            courseStatus: item.courseStatus,
+            resendCount: item.resendCount,
+            createdAt: item.createdAt?.toISOString(),
+            modifiers: item.modifiers
+              .filter((m: { deletedAt: Date | null }) => !m.deletedAt)
+              .map((m: { id: string; name: string; price: unknown; preModifier: string | null; depth: number | null }) => ({
+                id: m.id,
+                name: m.name,
+                price: Number(m.price),
+                preModifier: m.preModifier,
+                depth: m.depth || 0,
+              })),
+          })),
         subtotal: Number(tab.subtotal),
         taxTotal: Number(tab.taxTotal),
         total: Number(tab.total),

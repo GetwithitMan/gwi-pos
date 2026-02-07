@@ -8,6 +8,8 @@ import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { usePricing } from '@/hooks/usePricing'
 import { getDualPrices } from '@/lib/pricing'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
+import { useOrderStore } from '@/stores/order-store'
+import { useActiveOrder } from '@/hooks/useActiveOrder'
 
 // ============================================================================
 // TYPES
@@ -36,8 +38,16 @@ interface TabItem {
   name: string
   price: number
   quantity: number
-  modifiers?: { id: string; name: string; price: number }[]
+  modifiers?: { id: string; name: string; price: number; preModifier?: string; depth?: number }[]
   sentToKitchen?: boolean
+  specialNotes?: string
+  isHeld?: boolean
+  isCompleted?: boolean
+  seatNumber?: number | null
+  courseNumber?: number | null
+  courseStatus?: string | null
+  resendCount?: number
+  createdAt?: string
 }
 
 interface Category {
@@ -333,8 +343,120 @@ export function BartenderView({
   const [draggedItemId, setDraggedItemId] = useState<string | null>(null)
   const [editingItemId, setEditingItemId] = useState<string | null>(null) // Item being customized
 
-  // Current order items (for new tab or selected tab)
-  const [orderItems, setOrderItems] = useState<OrderItem[]>([])
+  // === Shared order hook (single source of truth for order items) ===
+  const activeOrder = useActiveOrder({
+    locationId,
+    employeeId,
+  })
+
+  // DEPRECATED: orderItems now reads from Zustand store via useActiveOrder hook
+  const orderItems: OrderItem[] = useMemo(() => {
+    const storeItems = useOrderStore.getState().currentOrder?.items || []
+    return storeItems.map(item => ({
+      id: item.id,
+      menuItemId: item.menuItemId,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price })),
+      specialNotes: item.specialNotes,
+      sentToKitchen: item.sentToKitchen,
+      isHeld: item.isHeld,
+      isCompleted: item.isCompleted,
+      seatNumber: item.seatNumber,
+      courseNumber: item.courseNumber,
+      courseStatus: item.courseStatus,
+      resendCount: item.resendCount,
+      blockTimeMinutes: item.blockTimeMinutes,
+      blockTimeStartedAt: item.blockTimeStartedAt,
+      blockTimeExpiresAt: item.blockTimeExpiresAt,
+    }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrder.items])
+
+  // COMPATIBILITY SHIM: bridges old setOrderItems patterns to the Zustand store
+  const setOrderItems = useCallback((
+    action: OrderItem[] | ((prev: OrderItem[]) => OrderItem[])
+  ) => {
+    const store = useOrderStore.getState()
+
+    // Ensure order exists in store
+    if (!store.currentOrder) {
+      store.startOrder('bar_tab', { locationId, guestCount: 1 })
+    }
+
+    const currentItems = store.currentOrder?.items || []
+    const prevAsOrderItems: OrderItem[] = currentItems.map(item => ({
+      id: item.id, menuItemId: item.menuItemId, name: item.name, price: item.price,
+      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price })),
+      specialNotes: item.specialNotes, sentToKitchen: item.sentToKitchen, isHeld: item.isHeld,
+      isCompleted: item.isCompleted, seatNumber: item.seatNumber, courseNumber: item.courseNumber,
+      courseStatus: item.courseStatus, resendCount: item.resendCount,
+      blockTimeMinutes: item.blockTimeMinutes, blockTimeStartedAt: item.blockTimeStartedAt,
+      blockTimeExpiresAt: item.blockTimeExpiresAt,
+    }))
+
+    const newItems = typeof action === 'function' ? action(prevAsOrderItems) : action
+
+    if (newItems.length === 0) {
+      for (const item of [...currentItems]) {
+        store.removeItem(item.id)
+      }
+      return
+    }
+
+    // Diff: remove missing items
+    for (const existing of currentItems) {
+      if (!newItems.find(n => n.id === existing.id)) {
+        store.removeItem(existing.id)
+      }
+    }
+
+    // Diff: add/update items
+    for (const newItem of newItems) {
+      const existing = currentItems.find(e => e.id === newItem.id)
+      if (!existing) {
+        store.addItem({
+          menuItemId: newItem.menuItemId,
+          name: newItem.name,
+          price: newItem.price,
+          quantity: newItem.quantity,
+          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: 0 })),
+          specialNotes: newItem.specialNotes,
+          sentToKitchen: newItem.sentToKitchen,
+          isHeld: newItem.isHeld,
+          isCompleted: newItem.isCompleted,
+          seatNumber: newItem.seatNumber ?? undefined,
+          courseNumber: newItem.courseNumber ?? undefined,
+          resendCount: newItem.resendCount,
+          blockTimeMinutes: newItem.blockTimeMinutes,
+          blockTimeStartedAt: newItem.blockTimeStartedAt,
+          blockTimeExpiresAt: newItem.blockTimeExpiresAt,
+        })
+        const storeNow = useOrderStore.getState().currentOrder?.items || []
+        const justAdded = storeNow[storeNow.length - 1]
+        if (justAdded && justAdded.id !== newItem.id) {
+          store.updateItemId(justAdded.id, newItem.id)
+        }
+      } else {
+        store.updateItem(newItem.id, {
+          quantity: newItem.quantity,
+          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: 0 })),
+          specialNotes: newItem.specialNotes,
+          sentToKitchen: newItem.sentToKitchen,
+          isHeld: newItem.isHeld,
+          isCompleted: newItem.isCompleted,
+          seatNumber: newItem.seatNumber ?? undefined,
+          courseNumber: newItem.courseNumber ?? undefined,
+          resendCount: newItem.resendCount,
+          blockTimeMinutes: newItem.blockTimeMinutes,
+          blockTimeStartedAt: newItem.blockTimeStartedAt,
+          blockTimeExpiresAt: newItem.blockTimeExpiresAt,
+        })
+      }
+    }
+  }, [locationId])
+
   const [isSending, setIsSending] = useState(false)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
@@ -543,20 +665,8 @@ export function BartenderView({
       if (res.ok) {
         const data = await res.json()
         console.log('[BartenderView] Raw tabs from API:', data.tabs?.slice(0, 2)) // Debug: show first 2 tabs
-        const mappedTabs: Tab[] = (data.tabs || []).map((t: {
-          id: string
-          orderNumber: number
-          tabName: string | null
-          status: string
-          employee: { id: string; name: string }
-          itemCount: number
-          total: number
-          hasPreAuth: boolean
-          preAuth?: { cardBrand: string; last4: string }
-          openedAt: string
-          stationId?: string
-          stationName?: string
-        }) => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mappedTabs: Tab[] = (data.tabs || []).map((t: any) => ({
           id: t.id,
           orderNumber: t.orderNumber,
           tabName: t.tabName, // null if no custom name - will show employeeName instead
@@ -570,7 +680,29 @@ export function BartenderView({
           employeeName: t.employee.name,
           stationId: t.stationId || null,
           stationName: t.stationName || null,
-          items: [],
+          items: (t.items || []).map((item: any) => ({
+            id: item.id,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            sentToKitchen: item.sentToKitchen ?? true,
+            specialNotes: item.specialNotes || undefined,
+            isHeld: item.isHeld || false,
+            isCompleted: item.isCompleted || false,
+            seatNumber: item.seatNumber ?? null,
+            courseNumber: item.courseNumber ?? null,
+            courseStatus: item.courseStatus ?? null,
+            resendCount: item.resendCount || 0,
+            createdAt: item.createdAt || undefined,
+            modifiers: (item.modifiers || []).map((m: any) => ({
+              id: m.id,
+              name: m.name,
+              price: m.price,
+              preModifier: m.preModifier,
+              depth: m.depth || 0,
+            })),
+          })),
         }))
         setTabs(mappedTabs)
       }
@@ -615,6 +747,17 @@ export function BartenderView({
     loadTabs()
     loadCategories()
   }, [loadTabs, loadCategories])
+
+  // Items from FloorPlanHome are automatically available via Zustand store
+  // No mount-time sync needed — the store IS the source of truth
+  // If the store has an order with a real ID, auto-select the matching tab
+  useEffect(() => {
+    const storeOrder = useOrderStore.getState().currentOrder
+    if (storeOrder?.id && !storeOrder.id.startsWith('local-') && storeOrder.items.length > 0) {
+      setSelectedTabId(storeOrder.id)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run on mount
 
   // Load favorites from localStorage
   useEffect(() => {
@@ -892,7 +1035,7 @@ export function BartenderView({
   // Track which tab ID we last loaded items for (to prevent re-polling from overwriting local changes)
   const loadedTabIdRef = useRef<string | null>(null)
 
-  // Load tab items when selecting a DIFFERENT tab
+  // Load tab items into Zustand store when selecting a DIFFERENT tab
   useEffect(() => {
     if (selectedTab) {
       // FIX: Only reload items if we're switching to a DIFFERENT tab
@@ -903,30 +1046,55 @@ export function BartenderView({
       }
 
       loadedTabIdRef.current = selectedTab.id
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const items: OrderItem[] = selectedTab.items.map((item: any) => ({
-        id: item.id,
-        menuItemId: item.menuItemId,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        modifiers: item.modifiers,
-        sentToKitchen: item.sentToKitchen ?? true,
-        specialNotes: item.specialNotes || undefined,
-        isHeld: item.isHeld || false,
-        isCompleted: item.isCompleted || false,
-        seatNumber: item.seatNumber ?? null,
-        courseNumber: item.courseNumber ?? null,
-        courseStatus: item.courseStatus ?? null,
-        resendCount: item.resendCount || 0,
-        createdAt: item.createdAt || undefined,
-      }))
-      setOrderItems(items)
+
+      // Load full order metadata + items into store via loadOrder
+      const store = useOrderStore.getState()
+      store.loadOrder({
+        id: selectedTab.id,
+        orderNumber: selectedTab.orderNumber,
+        orderType: 'bar_tab',
+        tabName: selectedTab.tabName || undefined,
+        guestCount: 1,
+        status: 'open',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        items: selectedTab.items.map((item: any) => ({
+          id: item.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          itemTotal: item.price * item.quantity,
+          specialNotes: item.specialNotes || null,
+          seatNumber: item.seatNumber ?? null,
+          courseNumber: item.courseNumber ?? null,
+          courseStatus: item.courseStatus || null,
+          isHeld: item.isHeld || false,
+          isCompleted: item.isCompleted || false,
+          completedAt: null,
+          resendCount: item.resendCount || 0,
+          blockTimeMinutes: item.blockTimeMinutes || null,
+          blockTimeStartedAt: item.blockTimeStartedAt || null,
+          blockTimeExpiresAt: item.blockTimeExpiresAt || null,
+          modifiers: (item.modifiers || []).map((mod: any) => ({
+            id: mod.id || mod.modifierId,
+            modifierId: mod.id || mod.modifierId,
+            name: mod.name,
+            price: mod.price,
+            preModifier: mod.preModifier || null,
+            depth: mod.depth || 0,
+          })),
+        })),
+        subtotal: selectedTab.total || 0,
+        discountTotal: 0,
+        taxTotal: 0,
+        tipTotal: 0,
+        total: selectedTab.total || 0,
+      })
     } else {
       // Only clear if we had a tab selected before
       if (loadedTabIdRef.current !== null) {
         loadedTabIdRef.current = null
-        setOrderItems([])
+        useOrderStore.getState().clearOrder()
       }
     }
   }, [selectedTab])
@@ -934,6 +1102,13 @@ export function BartenderView({
   // ---------------------------------------------------------------------------
   // HANDLERS
   // ---------------------------------------------------------------------------
+
+  // Switch to floor plan — no sync needed, store IS the source of truth
+  const handleSwitchToFloorPlan = useCallback(() => {
+    if (onSwitchToFloorPlan) {
+      onSwitchToFloorPlan()
+    }
+  }, [onSwitchToFloorPlan])
 
   const handleSelectTab = useCallback((tabId: string) => {
     setSelectedTabId(tabId)
@@ -1285,9 +1460,9 @@ export function BartenderView({
 
       toast.success('Order sent')
 
-      // After send: Clear everything and deselect tab so next items start fresh
+      // After send: Clear store and deselect tab so next items start fresh
       // This is the expected bar flow: Send → ready for next customer
-      setOrderItems([])
+      useOrderStore.getState().clearOrder()
       setSelectedTabId(null)
       loadedTabIdRef.current = null  // Reset so we can load a new tab
 
@@ -1443,7 +1618,7 @@ export function BartenderView({
           <div className="flex items-center gap-2">
             {onSwitchToFloorPlan && (
               <button
-                onClick={onSwitchToFloorPlan}
+                onClick={handleSwitchToFloorPlan}
                 className="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
               >
                 Floor Plan
@@ -2559,7 +2734,7 @@ export function BartenderView({
             taxRate={pricing.taxRate}
             terminalId="terminal-1"
             employeeId={employeeId}
-            className="w-72 flex-shrink-0"
+            className="w-[360px] flex-shrink-0"
           />
         )}
       </div>

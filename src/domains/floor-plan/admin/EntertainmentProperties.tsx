@@ -49,7 +49,7 @@ export function EntertainmentProperties({ element, onUpdate, onDelete }: Enterta
         <div className="p-3 bg-slate-800/50 rounded-lg space-y-1">
           <div className="text-xs text-slate-400">Linked Menu Item</div>
           <div className="text-white font-medium">{element.linkedMenuItem.name}</div>
-          <div className="text-green-400">${element.linkedMenuItem.price?.toFixed(2)}</div>
+          <div className="text-green-400">${Number(element.linkedMenuItem.price ?? 0).toFixed(2)}</div>
           {element.linkedMenuItem.blockTimeMinutes && (
             <div className="text-slate-300 text-sm">{element.linkedMenuItem.blockTimeMinutes} min block</div>
           )}

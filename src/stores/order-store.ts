@@ -92,6 +92,8 @@ interface OrderItem {
   blockTimeMinutes?: number | null
   blockTimeStartedAt?: string | null
   blockTimeExpiresAt?: string | null
+  // Virtual group seat tracking
+  sourceTableId?: string  // Which table this item was ordered from (for virtual groups)
   // Pizza builder configuration
   pizzaConfig?: PizzaOrderConfigStore
 }
@@ -101,6 +103,7 @@ interface Order {
   orderNumber?: number  // For display purposes
   orderType: 'dine_in' | 'takeout' | 'delivery' | 'bar_tab' | string  // Allow custom order types
   orderTypeId?: string  // Reference to OrderType record
+  locationId?: string  // Required for API calls
   tableId?: string
   tableName?: string
   tabName?: string
@@ -147,6 +150,8 @@ interface LoadedOrderData {
     blockTimeMinutes?: number | null
     blockTimeStartedAt?: string | null
     blockTimeExpiresAt?: string | null
+    // Virtual group tracking
+    sourceTableId?: string | null
     modifiers: {
       id: string
       modifierId: string
@@ -180,8 +185,8 @@ interface OrderState {
   orderHistory: Order[]
 
   // Actions
-  startOrder: (orderType: Order['orderType'], options?: { tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
-  updateOrderType: (orderType: Order['orderType'], options?: { tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
+  startOrder: (orderType: Order['orderType'], options?: { locationId?: string; tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
+  updateOrderType: (orderType: Order['orderType'], options?: { locationId?: string; tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
   loadOrder: (orderData: LoadedOrderData) => void
   addItem: (item: Omit<OrderItem, 'id'>) => void
   updateItem: (itemId: string, updates: Partial<OrderItem>) => void
@@ -194,6 +199,9 @@ interface OrderState {
   calculateTotals: () => void
   clearOrder: () => void
   saveOrder: () => void
+  // New methods for shared order domain
+  updateOrderId: (id: string, orderNumber?: number) => void
+  updateItemId: (tempId: string, realId: string) => void
 }
 
 const TAX_RATE = 0.08 // 8% - should come from location settings
@@ -211,6 +219,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       currentOrder: {
         orderType,
         orderTypeId: options.orderTypeId,
+        locationId: options.locationId,
         tableId: options.tableId,
         tableName: options.tableName,
         tabName: options.tabName,
@@ -265,6 +274,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       holdUntil: item.holdUntil || undefined,
       firedAt: item.firedAt || undefined,
       sentToKitchen: true, // Items from database have already been sent
+      sourceTableId: item.sourceTableId || undefined,
       isCompleted: item.isCompleted || false,
       completedAt: item.completedAt || undefined,
       resendCount: item.resendCount || 0,
@@ -471,6 +481,35 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({
       orderHistory: [...orderHistory, currentOrder],
       currentOrder: null,
+    })
+  },
+
+  // Update order's DB ID without resetting items (after creating in DB)
+  updateOrderId: (id, orderNumber) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+
+    set({
+      currentOrder: {
+        ...currentOrder,
+        id,
+        ...(orderNumber !== undefined ? { orderNumber } : {}),
+      },
+    })
+  },
+
+  // Replace a temp item ID with a real DB ID (after saving to DB)
+  updateItemId: (tempId, realId) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+
+    set({
+      currentOrder: {
+        ...currentOrder,
+        items: currentOrder.items.map(item =>
+          item.id === tempId ? { ...item, id: realId } : item
+        ),
+      },
     })
   },
 }))

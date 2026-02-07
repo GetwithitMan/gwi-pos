@@ -1,0 +1,749 @@
+import { useCallback, useMemo, useState } from 'react'
+import { useOrderStore } from '@/stores/order-store'
+import { toast } from '@/stores/toast-store'
+import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
+
+interface UseActiveOrderOptions {
+  locationId?: string
+  employeeId?: string
+  onEditModifiers?: (itemId: string) => void
+  onCompVoid?: (itemId: string) => void
+  onSplit?: (itemId: string) => void
+  onOrderSent?: (orderId: string) => void
+  onOrderCleared?: () => void
+}
+
+interface AddItemInput {
+  menuItemId: string
+  name: string
+  price: number
+  quantity: number
+  modifiers: Array<{
+    id: string
+    name: string
+    price: number
+    preModifier?: string
+    depth?: number
+    commissionAmount?: number
+    parentModifierId?: string
+  }>
+  ingredientModifications?: Array<{
+    ingredientId: string
+    name: string
+    modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'
+    priceAdjustment: number
+    swappedTo?: { modifierId: string; name: string; price: number }
+  }>
+  specialNotes?: string
+  seatNumber?: number
+  courseNumber?: number
+  sourceTableId?: string
+  commissionAmount?: number
+  blockTimeMinutes?: number | null
+  pizzaConfig?: any
+}
+
+interface StartOrderOptions {
+  locationId?: string
+  tableId?: string
+  tableName?: string
+  tabName?: string
+  guestCount?: number
+  orderTypeId?: string
+  customFields?: Record<string, string>
+}
+
+interface UseActiveOrderReturn {
+  // === Order Identity ===
+  orderId: string | null
+  orderNumber: number | string | null
+  orderType: string | null
+  tabName: string | null
+  tableId: string | null
+  locationId: string | null
+
+  // === Items ===
+  items: OrderPanelItemData[]
+
+  // === Totals ===
+  subtotal: number
+  tax: number
+  discounts: number
+  total: number
+  guestCount: number
+
+  // === UI State ===
+  expandedItemId: string | null
+  isSending: boolean
+  hasUnsavedItems: boolean
+  hasOrder: boolean
+
+  // === Order Lifecycle ===
+  startOrder: (orderType: string, options?: StartOrderOptions) => void
+  addItem: (item: AddItemInput) => void
+  loadOrder: (orderId: string) => Promise<void>
+  clearOrder: () => void
+  ensureOrderInDB: (employeeId?: string) => Promise<string | null>
+
+  // === Item Handlers ===
+  handleRemoveItem: (itemId: string) => Promise<void>
+  handleQuantityChange: (itemId: string, delta: number) => Promise<void>
+  handleHoldToggle: (itemId: string) => Promise<void>
+  handleNoteEdit: (itemId: string, currentNote?: string) => Promise<void>
+  handleCourseChange: (itemId: string, course: number | null) => Promise<void>
+  handleSeatChange: (itemId: string, seat: number | null) => Promise<void>
+  handleEditModifiers: (itemId: string) => void
+  handleCompVoid: (itemId: string) => void
+  handleResend: (itemId: string) => Promise<void>
+  handleSplit: (itemId: string) => void
+  handleToggleExpand: (itemId: string) => void
+
+  // === Send to Kitchen ===
+  handleSendToKitchen: (employeeId?: string) => Promise<void>
+}
+
+export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOrderReturn {
+  const currentOrder = useOrderStore(state => state.currentOrder)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+  const [isSending, setIsSending] = useState(false)
+
+  // Convert store items to OrderPanelItemData format
+  const items: OrderPanelItemData[] = useMemo(() => {
+    if (!currentOrder?.items) return []
+    return currentOrder.items.map(item => ({
+      id: item.id,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.price,
+      modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price })),
+      specialNotes: item.specialNotes,
+      kitchenStatus: item.isCompleted ? 'ready' as const
+        : item.sentToKitchen ? 'sent' as const
+        : 'pending' as const,
+      isHeld: item.isHeld,
+      isCompleted: item.isCompleted,
+      isTimedRental: !!item.blockTimeMinutes || !!item.blockTimeStartedAt,
+      menuItemId: item.menuItemId,
+      blockTimeMinutes: item.blockTimeMinutes ?? undefined,
+      blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
+      blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
+      seatNumber: item.seatNumber,
+      courseNumber: item.courseNumber,
+      courseStatus: item.courseStatus,
+      sentToKitchen: item.sentToKitchen,
+      resendCount: item.resendCount,
+      completedAt: item.completedAt,
+      createdAt: undefined,
+    }))
+  }, [currentOrder?.items])
+
+  // Load order from API
+  const loadOrder = useCallback(async (orderId: string) => {
+    try {
+      const res = await fetch(`/api/orders/${orderId}`)
+      if (!res.ok) {
+        toast.error('Failed to load order')
+        return
+      }
+
+      const order = await res.json()
+
+      // Pass API response directly to store — store.loadOrder() handles mapping
+      useOrderStore.getState().loadOrder({
+        id: order.id,
+        orderNumber: order.orderNumber,
+        orderType: order.orderType || 'bar_tab',
+        tableId: order.tableId || undefined,
+        tableName: order.tableName || undefined,
+        tabName: order.tabName || undefined,
+        guestCount: order.guestCount || 1,
+        status: order.status,
+        items: (order.items || []).map((item: any) => ({
+          id: item.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          price: Number(item.unitPrice),
+          quantity: item.quantity,
+          itemTotal: Number(item.itemTotal || item.unitPrice * item.quantity),
+          specialNotes: item.specialNotes || null,
+          seatNumber: item.seatNumber || null,
+          courseNumber: item.courseNumber || null,
+          courseStatus: item.courseStatus || null,
+          isHeld: item.isHeld || false,
+          holdUntil: item.holdUntil || null,
+          firedAt: item.firedAt || null,
+          isCompleted: item.isCompleted || false,
+          completedAt: item.completedAt || null,
+          resendCount: item.resendCount || 0,
+          blockTimeMinutes: item.blockTimeMinutes || null,
+          blockTimeStartedAt: item.blockTimeStartedAt || null,
+          blockTimeExpiresAt: item.blockTimeExpiresAt || null,
+          modifiers: (item.modifiers || []).map((mod: any) => ({
+            id: mod.id,
+            modifierId: mod.modifierId || mod.id,
+            name: mod.name,
+            price: Number(mod.price),
+            preModifier: mod.preModifier || null,
+            depth: mod.depth || 0,
+          })),
+        })),
+        subtotal: Number(order.subtotal || 0),
+        discountTotal: Number(order.discountTotal || 0),
+        taxTotal: Number(order.taxTotal || order.tax || 0),
+        tipTotal: Number(order.tipTotal || 0),
+        total: Number(order.total || 0),
+        notes: order.notes || undefined,
+      })
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to load order:', error)
+      toast.error('Failed to load order')
+    }
+  }, [])
+
+  // Clear order
+  const clearOrder = useCallback(() => {
+    useOrderStore.getState().clearOrder()
+    setExpandedItemId(null)
+    options.onOrderCleared?.()
+  }, [options])
+
+  // Start a new order (dine_in, bar_tab, takeout, etc.)
+  const startOrder = useCallback((orderType: string, opts: StartOrderOptions = {}) => {
+    useOrderStore.getState().startOrder(orderType, {
+      locationId: opts.locationId || options.locationId,
+      tableId: opts.tableId,
+      tableName: opts.tableName,
+      tabName: opts.tabName,
+      guestCount: opts.guestCount,
+      orderTypeId: opts.orderTypeId,
+      customFields: opts.customFields,
+    })
+  }, [options.locationId])
+
+  // Add an item to the current order (local only — not saved to DB until send/pay)
+  const addItem = useCallback((item: AddItemInput) => {
+    const store = useOrderStore.getState()
+    if (!store.currentOrder) {
+      console.warn('[useActiveOrder] addItem called but no currentOrder — call startOrder first')
+      return
+    }
+    store.addItem({
+      menuItemId: item.menuItemId,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      modifiers: item.modifiers.map(m => ({
+        id: m.id,
+        name: m.name,
+        price: m.price,
+        preModifier: m.preModifier,
+        depth: m.depth || 0,
+        commissionAmount: m.commissionAmount,
+        parentModifierId: m.parentModifierId,
+      })),
+      ingredientModifications: item.ingredientModifications,
+      specialNotes: item.specialNotes,
+      seatNumber: item.seatNumber,
+      courseNumber: item.courseNumber,
+      sourceTableId: item.sourceTableId,
+      commissionAmount: item.commissionAmount,
+      blockTimeMinutes: item.blockTimeMinutes,
+      sentToKitchen: false,
+      pizzaConfig: item.pizzaConfig,
+    })
+  }, [])
+
+  // Computed: any items with temp IDs (not yet in DB)
+  const hasUnsavedItems = useMemo(() => {
+    if (!currentOrder?.items) return false
+    return currentOrder.items.some(item => item.id.startsWith('item_'))
+  }, [currentOrder?.items])
+
+  // Computed: has any order at all
+  const hasOrder = !!currentOrder
+
+  /**
+   * Ensure the current order exists in the database.
+   * - If no DB order: POST /api/orders with all items → map returned IDs
+   * - If DB order exists but has unsaved items: POST /api/orders/{id}/items → map IDs
+   * - Returns the real orderId, or null on failure
+   */
+  const ensureOrderInDB = useCallback(async (employeeId?: string): Promise<string | null> => {
+    const store = useOrderStore.getState()
+    const order = store.currentOrder
+    if (!order) return null
+
+    const resolvedEmployeeId = employeeId || options.employeeId
+    const resolvedLocationId = order.locationId || options.locationId
+
+    // Check if order already has a DB ID (not a temp ID)
+    const hasDbId = order.id && !order.id.startsWith('item_') && !order.id.startsWith('local-')
+
+    if (!hasDbId) {
+      // === CREATE ORDER IN DB ===
+      if (!resolvedEmployeeId || !resolvedLocationId) {
+        console.error('[useActiveOrder] ensureOrderInDB: missing employeeId or locationId')
+        toast.error('Missing employee or location')
+        return null
+      }
+
+      try {
+        const res = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeId: resolvedEmployeeId,
+            locationId: resolvedLocationId,
+            orderType: order.orderType,
+            orderTypeId: order.orderTypeId,
+            tableId: order.tableId || null,
+            tabName: order.tabName || null,
+            guestCount: order.guestCount,
+            notes: order.notes || null,
+            customFields: order.customFields,
+            items: order.items.map(item => ({
+              menuItemId: item.menuItemId,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+              correlationId: item.id, // Use temp ID as correlation to map back
+              modifiers: item.modifiers.map(m => ({
+                modifierId: m.id,
+                name: m.name,
+                price: m.price,
+                preModifier: m.preModifier,
+                depth: m.depth || 0,
+              })),
+              ingredientModifications: item.ingredientModifications?.map(ing => ({
+                ingredientId: ing.ingredientId,
+                name: ing.name,
+                modificationType: ing.modificationType,
+                priceAdjustment: ing.priceAdjustment,
+                swappedTo: ing.swappedTo,
+              })),
+              specialNotes: item.specialNotes || null,
+              seatNumber: item.seatNumber || null,
+              courseNumber: item.courseNumber || null,
+              blockTimeMinutes: item.blockTimeMinutes || null,
+              pizzaConfig: item.pizzaConfig,
+            })),
+          }),
+        })
+
+        if (!res.ok) {
+          const error = await res.json()
+          toast.error(error.error || 'Failed to create order')
+          return null
+        }
+
+        const created = await res.json()
+
+        // Update order ID in store
+        store.updateOrderId(created.id, created.orderNumber)
+
+        // Map temp item IDs → real DB IDs using correlationId
+        if (created.items) {
+          for (const dbItem of created.items) {
+            if (dbItem.correlationId) {
+              store.updateItemId(dbItem.correlationId, dbItem.id)
+            }
+          }
+        }
+
+        return created.id
+      } catch (error) {
+        console.error('[useActiveOrder] ensureOrderInDB create failed:', error)
+        toast.error('Failed to save order')
+        return null
+      }
+    } else {
+      // === ORDER EXISTS — CHECK FOR UNSAVED ITEMS ===
+      const unsavedItems = order.items.filter(item => item.id.startsWith('item_'))
+
+      if (unsavedItems.length === 0) {
+        // All items already in DB
+        return order.id!
+      }
+
+      // Append unsaved items via atomic POST /api/orders/{id}/items
+      try {
+        const res = await fetch(`/api/orders/${order.id}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: unsavedItems.map(item => ({
+              menuItemId: item.menuItemId,
+              name: item.name,
+              price: item.price,
+              quantity: item.quantity,
+              correlationId: item.id,
+              modifiers: item.modifiers.map(m => ({
+                modifierId: m.id,
+                name: m.name,
+                price: m.price,
+                preModifier: m.preModifier,
+                depth: m.depth || 0,
+              })),
+              ingredientModifications: item.ingredientModifications?.map(ing => ({
+                ingredientId: ing.ingredientId,
+                name: ing.name,
+                modificationType: ing.modificationType,
+                priceAdjustment: ing.priceAdjustment,
+                swappedTo: ing.swappedTo,
+              })),
+              specialNotes: item.specialNotes || null,
+              blockTimeMinutes: item.blockTimeMinutes || null,
+              pizzaConfig: item.pizzaConfig,
+            })),
+          }),
+        })
+
+        if (!res.ok) {
+          const error = await res.json()
+          toast.error(error.error || 'Failed to add items')
+          return null
+        }
+
+        const result = await res.json()
+
+        // Map temp item IDs → real DB IDs
+        if (result.addedItems) {
+          for (const added of result.addedItems) {
+            if (added.correlationId) {
+              store.updateItemId(added.correlationId, added.id)
+            }
+          }
+        }
+
+        return order.id!
+      } catch (error) {
+        console.error('[useActiveOrder] ensureOrderInDB append failed:', error)
+        toast.error('Failed to save items')
+        return null
+      }
+    }
+  }, [options.employeeId, options.locationId])
+
+  // Remove item
+  const handleRemoveItem = useCallback(async (itemId: string) => {
+    const orderId = currentOrder?.id
+
+    try {
+      // If order is saved, delete from API
+      if (orderId) {
+        const res = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
+          method: 'DELETE',
+        })
+        if (!res.ok) {
+          toast.error('Failed to remove item')
+          return
+        }
+      }
+
+      // Update store
+      useOrderStore.getState().removeItem(itemId)
+      toast.success('Item removed')
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to remove item:', error)
+      toast.error('Failed to remove item')
+    }
+  }, [currentOrder?.id])
+
+  // Change quantity
+  const handleQuantityChange = useCallback(async (itemId: string, delta: number) => {
+    const item = items.find(i => i.id === itemId)
+    if (!item) return
+
+    const newQty = Math.max(1, item.quantity + delta)
+    const orderId = currentOrder?.id
+
+    try {
+      // If order is saved, update via API
+      if (orderId) {
+        const res = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quantity: newQty }),
+        })
+        if (!res.ok) {
+          toast.error('Failed to update quantity')
+          return
+        }
+      }
+
+      // Update store
+      useOrderStore.getState().updateQuantity(itemId, newQty)
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to update quantity:', error)
+      toast.error('Failed to update quantity')
+    }
+  }, [items, currentOrder?.id])
+
+  // Toggle hold
+  const handleHoldToggle = useCallback(async (itemId: string) => {
+    const item = items.find(i => i.id === itemId)
+    if (!item) return
+
+    const newHeldState = !item.isHeld
+    const orderId = currentOrder?.id
+
+    try {
+      // If order is saved, update via API
+      if (orderId) {
+        const res = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isHeld: newHeldState }),
+        })
+        if (!res.ok) {
+          toast.error('Failed to toggle hold')
+          return
+        }
+      }
+
+      // Update store
+      useOrderStore.getState().updateItem(itemId, { isHeld: newHeldState })
+      toast.success(newHeldState ? 'Item held' : 'Hold removed')
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to toggle hold:', error)
+      toast.error('Failed to toggle hold')
+    }
+  }, [items, currentOrder?.id])
+
+  // Edit note
+  const handleNoteEdit = useCallback(async (itemId: string, currentNote?: string) => {
+    const note = window.prompt('Kitchen note:', currentNote || '')
+    if (note === null) return // Cancelled
+
+    const orderId = currentOrder?.id
+
+    try {
+      // If order is saved, update via API
+      if (orderId) {
+        const res = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ specialNotes: note || null }),
+        })
+        if (!res.ok) {
+          toast.error('Failed to update note')
+          return
+        }
+      }
+
+      // Update store
+      useOrderStore.getState().updateItem(itemId, { specialNotes: note || undefined })
+      toast.success('Note updated')
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to update note:', error)
+      toast.error('Failed to update note')
+    }
+  }, [currentOrder?.id])
+
+  // Change course
+  const handleCourseChange = useCallback(async (itemId: string, course: number | null) => {
+    const orderId = currentOrder?.id
+
+    try {
+      // If order is saved, update via API
+      if (orderId) {
+        const res = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ courseNumber: course }),
+        })
+        if (!res.ok) {
+          toast.error('Failed to update course')
+          return
+        }
+      }
+
+      // Update store
+      useOrderStore.getState().updateItem(itemId, { courseNumber: course ?? undefined })
+      toast.success('Course updated')
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to update course:', error)
+      toast.error('Failed to update course')
+    }
+  }, [currentOrder?.id])
+
+  // Change seat
+  const handleSeatChange = useCallback(async (itemId: string, seat: number | null) => {
+    const orderId = currentOrder?.id
+
+    try {
+      // If order is saved, update via API
+      if (orderId) {
+        const res = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ seatNumber: seat }),
+        })
+        if (!res.ok) {
+          toast.error('Failed to update seat')
+          return
+        }
+      }
+
+      // Update store
+      useOrderStore.getState().updateItem(itemId, { seatNumber: seat ?? undefined })
+      toast.success('Seat updated')
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to update seat:', error)
+      toast.error('Failed to update seat')
+    }
+  }, [currentOrder?.id])
+
+  // Edit modifiers (delegate to page)
+  const handleEditModifiers = useCallback((itemId: string) => {
+    options.onEditModifiers?.(itemId)
+  }, [options])
+
+  // Comp/Void (delegate to page)
+  const handleCompVoid = useCallback((itemId: string) => {
+    options.onCompVoid?.(itemId)
+  }, [options])
+
+  // Resend item
+  const handleResend = useCallback(async (itemId: string) => {
+    const orderId = currentOrder?.id
+    if (!orderId) return
+
+    try {
+      const res = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resendToKitchen: true }),
+      })
+      if (!res.ok) {
+        toast.error('Failed to resend item')
+        return
+      }
+
+      toast.success('Item resent to kitchen')
+      // Reload order to get updated state
+      await loadOrder(orderId)
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to resend item:', error)
+      toast.error('Failed to resend item')
+    }
+  }, [currentOrder?.id, loadOrder])
+
+  // Split item (delegate to page)
+  const handleSplit = useCallback((itemId: string) => {
+    options.onSplit?.(itemId)
+  }, [options])
+
+  // Toggle expand
+  const handleToggleExpand = useCallback((itemId: string) => {
+    setExpandedItemId(prev => prev === itemId ? null : itemId)
+  }, [])
+
+  // Send to kitchen — ensures order is in DB first, then sends
+  const handleSendToKitchen = useCallback(async (employeeId?: string) => {
+    if (!currentOrder) {
+      toast.error('No active order to send')
+      return
+    }
+
+    // Must have at least one item
+    if (currentOrder.items.length === 0) {
+      toast.error('Add items before sending')
+      return
+    }
+
+    setIsSending(true)
+
+    try {
+      // Step 1: Ensure order exists in DB (creates if needed, appends unsaved items)
+      const resolvedOrderId = await ensureOrderInDB(employeeId)
+      if (!resolvedOrderId) {
+        // ensureOrderInDB already showed error toast
+        return
+      }
+
+      // Step 2: Send to kitchen
+      const res = await fetch(`/api/orders/${resolvedOrderId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: employeeId || options.employeeId }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        toast.error(error.error || 'Failed to send order')
+        return
+      }
+
+      // Step 3: Mark all items as sent in store
+      const store = useOrderStore.getState()
+      if (store.currentOrder) {
+        for (const item of store.currentOrder.items) {
+          if (!item.sentToKitchen) {
+            store.updateItem(item.id, { sentToKitchen: true })
+          }
+        }
+      }
+
+      toast.success('Order sent to kitchen')
+      options.onOrderSent?.(resolvedOrderId)
+
+      // Step 4: Reload from API for fresh server state
+      await loadOrder(resolvedOrderId)
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to send order:', error)
+      toast.error('Failed to send order')
+    } finally {
+      setIsSending(false)
+    }
+  }, [currentOrder, options, loadOrder, ensureOrderInDB])
+
+  return {
+    // Order identity
+    orderId: currentOrder?.id || null,
+    orderNumber: currentOrder?.orderNumber || null,
+    orderType: currentOrder?.orderType || null,
+    tabName: currentOrder?.tabName || null,
+    tableId: currentOrder?.tableId || null,
+    locationId: currentOrder?.locationId || options.locationId || null,
+
+    // Items
+    items,
+
+    // Totals
+    subtotal: currentOrder?.subtotal || 0,
+    tax: currentOrder?.taxTotal || 0,
+    discounts: currentOrder?.discountTotal || 0,
+    total: currentOrder?.total || 0,
+    guestCount: currentOrder?.guestCount || 1,
+
+    // UI state
+    expandedItemId,
+    isSending,
+    hasUnsavedItems,
+    hasOrder,
+
+    // Lifecycle
+    startOrder,
+    addItem,
+    loadOrder,
+    clearOrder,
+    ensureOrderInDB,
+
+    // Item handlers
+    handleRemoveItem,
+    handleQuantityChange,
+    handleHoldToggle,
+    handleNoteEdit,
+    handleCourseChange,
+    handleSeatChange,
+    handleEditModifiers,
+    handleCompVoid,
+    handleResend,
+    handleSplit,
+    handleToggleExpand,
+
+    // Send to kitchen
+    handleSendToKitchen,
+  }
+}
