@@ -8,8 +8,12 @@ import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { usePricing } from '@/hooks/usePricing'
 import { getDualPrices } from '@/lib/pricing'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
+import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
+import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
+import { useQuickPick } from '@/hooks/useQuickPick'
+import { usePOSLayout } from '@/hooks/usePOSLayout'
 
 // ============================================================================
 // TYPES
@@ -106,7 +110,7 @@ interface OrderItem {
   name: string
   price: number
   quantity: number
-  modifiers?: { id: string; name: string; price: number }[]
+  modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]
   sentToKitchen?: boolean
   specialNotes?: string
   isHeld?: boolean
@@ -122,6 +126,10 @@ interface OrderItem {
   blockTimeExpiresAt?: string | null
   kitchenStatus?: string
   createdAt?: string
+  // Per-item delay
+  delayMinutes?: number | null
+  delayStartedAt?: string | null
+  delayFiredAt?: string | null
 }
 
 
@@ -349,6 +357,15 @@ export function BartenderView({
     employeeId,
   })
 
+  // POS Layout personalization (for quickPickEnabled setting)
+  const {
+    layout: posLayout,
+    updateSetting: updatePOSSetting,
+  } = usePOSLayout({
+    employeeId,
+    locationId,
+  })
+
   // DEPRECATED: orderItems now reads from Zustand store via useActiveOrder hook
   const orderItems: OrderItem[] = useMemo(() => {
     const storeItems = useOrderStore.getState().currentOrder?.items || []
@@ -358,7 +375,7 @@ export function BartenderView({
       name: item.name,
       price: item.price,
       quantity: item.quantity,
-      modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price })),
+      modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
       specialNotes: item.specialNotes,
       sentToKitchen: item.sentToKitchen,
       isHeld: item.isHeld,
@@ -370,9 +387,74 @@ export function BartenderView({
       blockTimeMinutes: item.blockTimeMinutes,
       blockTimeStartedAt: item.blockTimeStartedAt,
       blockTimeExpiresAt: item.blockTimeExpiresAt,
+      delayMinutes: item.delayMinutes,
+      delayStartedAt: item.delayStartedAt,
+      delayFiredAt: item.delayFiredAt,
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items])
+
+  // Quick Pick: selection state for fast quantity setting
+  const quickPickItems = useMemo<OrderPanelItemData[]>(() =>
+    orderItems.map(i => ({
+      id: i.id,
+      name: i.name,
+      quantity: i.quantity,
+      price: i.price,
+      sentToKitchen: i.sentToKitchen,
+      kitchenStatus: i.sentToKitchen ? 'sent' as const : 'pending' as const,
+    })),
+    [orderItems]
+  )
+  const {
+    selectedItemId: quickPickSelectedId,
+    selectedItemIds: quickPickSelectedIds,
+    selectItem: selectQuickPickItem,
+    setSelectedItemId: setQuickPickSelectedId,
+    clearSelection: clearQuickPick,
+    multiSelectMode: quickPickMultiSelect,
+    toggleMultiSelect: toggleQuickPickMultiSelect,
+    selectAllPending: selectAllPendingQuickPick,
+  } = useQuickPick(quickPickItems)
+
+  // Multi-digit entry: tapping 1 then 0 quickly = 10
+  const barDigitBufferRef = useRef<string>('')
+  const barDigitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleQuickPickNumber = useCallback((num: number) => {
+    if (!quickPickSelectedId) return
+    const item = orderItems.find(i => i.id === quickPickSelectedId)
+    if (!item || item.sentToKitchen) return
+
+    if (barDigitTimerRef.current) clearTimeout(barDigitTimerRef.current)
+    barDigitBufferRef.current += String(num)
+    const pendingQty = parseInt(barDigitBufferRef.current, 10)
+
+    if (pendingQty === 0) {
+      barDigitBufferRef.current = ''
+      activeOrder.handleRemoveItem(quickPickSelectedId)
+      return
+    }
+
+    const delta = pendingQty - item.quantity
+    if (delta !== 0) activeOrder.handleQuantityChange(quickPickSelectedId, delta)
+
+    barDigitTimerRef.current = setTimeout(() => {
+      barDigitBufferRef.current = ''
+    }, 600)
+  }, [quickPickSelectedId, orderItems, activeOrder])
+
+  // Gutter: Hold toggle for selected item
+  const handleBarGutterHold = useCallback(() => {
+    if (!quickPickSelectedId) return
+    activeOrder.handleHoldToggle(quickPickSelectedId)
+  }, [quickPickSelectedId, activeOrder])
+
+  // Clear digit buffer on selection change
+  useEffect(() => {
+    barDigitBufferRef.current = ''
+    if (barDigitTimerRef.current) clearTimeout(barDigitTimerRef.current)
+  }, [quickPickSelectedId])
 
   // COMPATIBILITY SHIM: bridges old setOrderItems patterns to the Zustand store
   const setOrderItems = useCallback((
@@ -388,7 +470,7 @@ export function BartenderView({
     const currentItems = store.currentOrder?.items || []
     const prevAsOrderItems: OrderItem[] = currentItems.map(item => ({
       id: item.id, menuItemId: item.menuItemId, name: item.name, price: item.price,
-      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price })),
+      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
       specialNotes: item.specialNotes, sentToKitchen: item.sentToKitchen, isHeld: item.isHeld,
       isCompleted: item.isCompleted, seatNumber: item.seatNumber, courseNumber: item.courseNumber,
       courseStatus: item.courseStatus, resendCount: item.resendCount,
@@ -421,7 +503,7 @@ export function BartenderView({
           name: newItem.name,
           price: newItem.price,
           quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: 0 })),
+          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth || 0, preModifier: m.preModifier })),
           specialNotes: newItem.specialNotes,
           sentToKitchen: newItem.sentToKitchen,
           isHeld: newItem.isHeld,
@@ -441,7 +523,7 @@ export function BartenderView({
       } else {
         store.updateItem(newItem.id, {
           quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: 0 })),
+          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth || 0, preModifier: m.preModifier })),
           specialNotes: newItem.specialNotes,
           sentToKitchen: newItem.sentToKitchen,
           isHeld: newItem.isHeld,
@@ -1225,13 +1307,21 @@ export function BartenderView({
   }, [])
 
   const handleOpenNotesEditor = useCallback((itemId: string, currentNote?: string) => {
-    const note = prompt('Item note:', currentNote || '')
-    if (note !== null) {
+    activeOrder.openNoteEditor(itemId, currentNote)
+  }, [activeOrder.openNoteEditor])
+
+  const handleSaveNoteFromModal = useCallback(async (note: string) => {
+    if (activeOrder.noteEditTarget?.itemId) {
+      await activeOrder.saveNote(activeOrder.noteEditTarget.itemId, note)
+      // Also update the compatibility shim
       setOrderItems(prev => prev.map(item =>
-        item.id === itemId ? { ...item, specialNotes: note || undefined } : item
+        item.id === activeOrder.noteEditTarget?.itemId
+          ? { ...item, specialNotes: note || undefined }
+          : item
       ))
     }
-  }, [])
+    activeOrder.closeNoteEditor()
+  }, [activeOrder.noteEditTarget, activeOrder.saveNote, activeOrder.closeNoteEditor])
 
   const handleUpdateCourse = useCallback((itemId: string, course: number | null) => {
     setOrderItems(prev => prev.map(item =>
@@ -2670,7 +2760,41 @@ export function BartenderView({
           </div>
         )}
 
-        {/* ====== RIGHT: ORDER PANEL (hidden when tabs expanded) ====== */}
+        {/* ====== RIGHT: QUICK PICK + ORDER PANEL (hidden when tabs expanded) ====== */}
+        {!isTabPanelExpanded && posLayout.quickPickEnabled && (
+          <QuickPickStrip
+            selectedItemId={quickPickSelectedId}
+            selectedItemQty={quickPickSelectedId ? orderItems.find(i => i.id === quickPickSelectedId)?.quantity : undefined}
+            selectedCount={quickPickSelectedIds.size}
+            onNumberTap={handleQuickPickNumber}
+            multiSelectMode={quickPickMultiSelect}
+            onToggleMultiSelect={toggleQuickPickMultiSelect}
+            onHoldToggle={handleBarGutterHold}
+            isHeld={quickPickSelectedId ? orderItems.find(i => i.id === quickPickSelectedId)?.isHeld : false}
+            onSetDelay={(minutes) => {
+              const selectedIds = Array.from(quickPickSelectedIds)
+              if (selectedIds.length > 0) {
+                const store = useOrderStore.getState()
+                const allHaveThisDelay = selectedIds.every(id => {
+                  const item = store.currentOrder?.items.find(i => i.id === id)
+                  return item?.delayMinutes === minutes
+                })
+                store.setItemDelay(selectedIds, allHaveThisDelay ? null : minutes)
+              } else {
+                const store = useOrderStore.getState()
+                const current = store.currentOrder?.pendingDelay
+                store.setPendingDelay(current === minutes ? null : minutes)
+              }
+            }}
+            activeDelay={(() => {
+              const selectedIds = Array.from(quickPickSelectedIds)
+              if (selectedIds.length === 0) return useOrderStore.getState().currentOrder?.pendingDelay ?? null
+              const store = useOrderStore.getState()
+              const firstItem = store.currentOrder?.items.find(i => i.id === selectedIds[0])
+              return firstItem?.delayMinutes ?? null
+            })()}
+          />
+        )}
         {!isTabPanelExpanded && (
           <OrderPanel
             orderId={selectedTabId}
@@ -2703,6 +2827,10 @@ export function BartenderView({
               blockTimeMinutes: item.blockTimeMinutes ?? undefined,
               blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
               blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
+              // Per-item delay
+              delayMinutes: item.delayMinutes,
+              delayStartedAt: item.delayStartedAt,
+              delayFiredAt: item.delayFiredAt,
             }))}
             subtotal={orderTotals.subtotal}
             tax={orderTotals.tax}
@@ -2735,6 +2863,57 @@ export function BartenderView({
             terminalId="terminal-1"
             employeeId={employeeId}
             className="w-[360px] flex-shrink-0"
+            selectedItemId={posLayout.quickPickEnabled ? quickPickSelectedId : undefined}
+            selectedItemIds={posLayout.quickPickEnabled ? quickPickSelectedIds : undefined}
+            onItemSelect={posLayout.quickPickEnabled ? selectQuickPickItem : undefined}
+            multiSelectMode={quickPickMultiSelect}
+            onToggleMultiSelect={toggleQuickPickMultiSelect}
+            onSelectAllPending={selectAllPendingQuickPick}
+            pendingDelay={useOrderStore.getState().currentOrder?.pendingDelay ?? undefined}
+            delayStartedAt={useOrderStore.getState().currentOrder?.delayStartedAt ?? undefined}
+            delayFiredAt={useOrderStore.getState().currentOrder?.delayFiredAt ?? undefined}
+            onFireDelayed={async () => {
+              const store = useOrderStore.getState()
+              const orderId = store.currentOrder?.id
+              if (!orderId) return
+              try {
+                const res = await fetch(`/api/orders/${orderId}/send`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ employeeId }),
+                })
+                if (res.ok) {
+                  store.markDelayFired()
+                  if (store.currentOrder) {
+                    for (const item of store.currentOrder.items) {
+                      if (!item.sentToKitchen) store.updateItem(item.id, { sentToKitchen: true })
+                    }
+                  }
+                }
+              } catch (err) {
+                console.error('[BartenderView] Failed to fire delayed:', err)
+              }
+            }}
+            onCancelDelay={() => useOrderStore.getState().setPendingDelay(null)}
+            onFireItem={async (itemId) => {
+              const store = useOrderStore.getState()
+              const orderId = store.currentOrder?.id
+              if (!orderId) return
+              try {
+                const res = await fetch(`/api/orders/${orderId}/send`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ employeeId, itemIds: [itemId] }),
+                })
+                if (res.ok) {
+                  store.markItemDelayFired(itemId)
+                  store.updateItem(itemId, { sentToKitchen: true })
+                }
+              } catch (err) {
+                console.error('[BartenderView] Failed to fire delayed item:', err)
+              }
+            }}
+            onCancelItemDelay={(itemId) => useOrderStore.getState().setItemDelay([itemId], null)}
           />
         )}
       </div>
@@ -2857,6 +3036,15 @@ export function BartenderView({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Notes Editor Modal — shared component */}
+      <NoteEditModal
+        isOpen={!!activeOrder.noteEditTarget}
+        onClose={activeOrder.closeNoteEditor}
+        onSave={handleSaveNoteFromModal}
+        currentNote={activeOrder.noteEditTarget?.currentNote}
+        itemName={activeOrder.noteEditTarget?.itemName}
+      />
     </div>
   )
 }

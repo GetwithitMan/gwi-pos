@@ -184,6 +184,10 @@ export async function GET(request: NextRequest) {
         // Entertainment session info
         entertainment: entertainmentByOrder[order.id] || [],
         hasActiveEntertainment: (entertainmentByOrder[order.id]?.length || 0) > 0,
+        // Order status flags for badges
+        hasHeldItems: order.items.some((item: { isHeld?: boolean }) => item.isHeld),
+        courseMode: (order as Record<string, unknown>).courseMode || null,
+        hasCoursingEnabled: (order as Record<string, unknown>).courseMode !== 'off' && !!(order as Record<string, unknown>).courseMode,
         items: order.items.map(item => ({
           id: item.id,
           menuItemId: item.menuItemId,

@@ -28,6 +28,10 @@ import { StockBadge } from '@/components/menu/StockBadge'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
 import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
+import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
+import { TableOptionsPopover } from '@/components/orders/TableOptionsPopover'
+import { NoteEditModal } from '@/components/orders/NoteEditModal'
+import { useQuickPick } from '@/hooks/useQuickPick'
 import { logger } from '@/lib/logger'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
@@ -81,7 +85,7 @@ interface InlineOrderItem {
   name: string
   price: number
   quantity: number
-  modifiers?: { id: string; name: string; price: number }[]
+  modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]
   specialNotes?: string
   seatNumber?: number
   sourceTableId?: string // For virtual groups - tracks which table this item was ordered from
@@ -102,6 +106,10 @@ interface InlineOrderItem {
   resendCount?: number
   resendNote?: string
   createdAt?: string
+  // Per-item delay
+  delayMinutes?: number | null
+  delayStartedAt?: string | null
+  delayFiredAt?: string | null
 }
 
 interface OpenOrder {
@@ -135,7 +143,7 @@ interface FloorPlanHomeProps {
   isManager?: boolean
   // Payment and modifier callbacks
   onOpenPayment?: (orderId: string) => void
-  onOpenModifiers?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number }[]) => void, existingModifiers?: { id: string; name: string; price: number }[]) => void
+  onOpenModifiers?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]) => void, existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]) => void
   // Open Orders panel
   onOpenOrdersPanel?: () => void
   // Tabs page (for bartenders)
@@ -201,6 +209,7 @@ export function FloorPlanHome({
 
   // Settings dropdown
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false)
+  const [showTableOptions, setShowTableOptions] = useState(false)
 
   // Active order state (for selected table or quick order)
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
@@ -228,7 +237,7 @@ export function FloorPlanHome({
       name: item.name,
       price: item.price,
       quantity: item.quantity,
-      modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price })),
+      modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
       specialNotes: item.specialNotes,
       seatNumber: item.seatNumber,
       sourceTableId: item.sourceTableId,
@@ -242,9 +251,129 @@ export function FloorPlanHome({
       blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
       completedAt: item.completedAt,
       resendCount: item.resendCount,
+      delayMinutes: item.delayMinutes,
+      delayStartedAt: item.delayStartedAt,
+      delayFiredAt: item.delayFiredAt,
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
+
+  // Quick Pick: selection state for fast quantity setting
+  const quickPickItems = useMemo<OrderPanelItemData[]>(() =>
+    inlineOrderItems.map(i => ({
+      id: i.id,
+      name: i.name,
+      quantity: i.quantity,
+      price: i.price,
+      sentToKitchen: i.sentToKitchen,
+      kitchenStatus: i.sentToKitchen ? 'sent' as const : 'pending' as const,
+      delayMinutes: i.delayMinutes,
+      delayStartedAt: i.delayStartedAt,
+      delayFiredAt: i.delayFiredAt,
+    })),
+    [inlineOrderItems]
+  )
+  const {
+    selectedItemId: quickPickSelectedId,
+    selectedItemIds: quickPickSelectedIds,
+    selectItem: selectQuickPickItem,
+    setSelectedItemId: setQuickPickSelectedId,
+    clearSelection: clearQuickPick,
+    multiSelectMode: quickPickMultiSelect,
+    toggleMultiSelect: toggleQuickPickMultiSelect,
+    selectAllPending: selectAllPendingQuickPick,
+  } = useQuickPick(quickPickItems)
+
+  // Multi-digit entry: tapping 1 then 0 quickly = 10, 2 then 1 = 21, etc.
+  const digitBufferRef = useRef<string>('')
+  const digitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleQuickPickNumber = useCallback((num: number) => {
+    if (!quickPickSelectedId) return
+    const item = inlineOrderItems.find(i => i.id === quickPickSelectedId)
+    if (!item || item.sentToKitchen) return
+
+    // Clear any pending commit timer
+    if (digitTimerRef.current) clearTimeout(digitTimerRef.current)
+
+    // Append digit to buffer
+    digitBufferRef.current += String(num)
+    const pendingQty = parseInt(digitBufferRef.current, 10)
+
+    // Apply immediately (so user sees feedback)
+    if (pendingQty === 0) {
+      // If buffer is just "0", remove item
+      digitBufferRef.current = ''
+      activeOrder.handleRemoveItem(quickPickSelectedId)
+      return
+    }
+
+    const delta = pendingQty - item.quantity
+    if (delta !== 0) activeOrder.handleQuantityChange(quickPickSelectedId, delta)
+
+    // Set timer — if no more digits within 600ms, commit and clear buffer
+    digitTimerRef.current = setTimeout(() => {
+      digitBufferRef.current = ''
+    }, 600)
+  }, [quickPickSelectedId, inlineOrderItems, activeOrder])
+
+  // Clear digit buffer when selection changes
+  useEffect(() => {
+    digitBufferRef.current = ''
+    if (digitTimerRef.current) clearTimeout(digitTimerRef.current)
+  }, [quickPickSelectedId])
+
+  // Gutter: Hold toggle for selected item
+  const handleGutterHold = useCallback(() => {
+    if (!quickPickSelectedId) return
+    activeOrder.handleHoldToggle(quickPickSelectedId)
+  }, [quickPickSelectedId, activeOrder])
+
+  // Gutter: Course assign for selected item
+  const handleGutterCourseAssign = useCallback((courseNumber: number) => {
+    if (!quickPickSelectedId) return
+    activeOrder.handleCourseChange(quickPickSelectedId, courseNumber)
+  }, [quickPickSelectedId, activeOrder])
+
+  // Gutter: Set delay (5m / 10m buttons)
+  // Sets order-level delay (always available) AND course delays when coursing is on
+  const handleGutterSetDelay = useCallback((minutes: number) => {
+    // Per-item delay: apply to selected items
+    const selectedIds = Array.from(quickPickSelectedIds)
+    if (selectedIds.length > 0) {
+      // Check if all selected items already have this delay — if so, toggle off
+      const allHaveThisDelay = selectedIds.every(id => {
+        const item = inlineOrderItems.find(i => i.id === id)
+        return item?.delayMinutes === minutes
+      })
+      activeOrder.setItemDelay(selectedIds, allHaveThisDelay ? null : minutes)
+    } else {
+      // No items selected — set order-level delay as fallback
+      const currentDelay = activeOrder.pendingDelay
+      if (currentDelay === minutes) {
+        activeOrder.setPendingDelay(null)
+      } else {
+        activeOrder.setPendingDelay(minutes)
+      }
+    }
+
+    // Also set course delays when coursing is enabled
+    if (activeOrder.coursingEnabled) {
+      const delays = activeOrder.courseDelays || {}
+      const pendingCourses = new Set<number>()
+      for (const item of inlineOrderItems) {
+        if (!item.sentToKitchen && item.courseNumber && item.courseNumber > 1) {
+          pendingCourses.add(item.courseNumber)
+        }
+      }
+      for (const cn of pendingCourses) {
+        if (!delays[cn]?.firedAt) {
+          const currentDelay = activeOrder.pendingDelay
+          activeOrder.setCourseDelay(cn, currentDelay === minutes ? 0 : minutes)
+        }
+      }
+    }
+  }, [activeOrder, inlineOrderItems, quickPickSelectedIds])
 
   // COMPATIBILITY SHIM: setInlineOrderItems bridges old patterns to the Zustand store
   // This allows all 31 existing call sites to keep working while store is source of truth
@@ -275,7 +404,7 @@ export function FloorPlanHome({
     // Resolve new items from action (direct array or callback)
     const prevAsInline: InlineOrderItem[] = currentItems.map(item => ({
       id: item.id, menuItemId: item.menuItemId, name: item.name, price: item.price,
-      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price })),
+      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
       specialNotes: item.specialNotes, seatNumber: item.seatNumber, sourceTableId: item.sourceTableId,
       courseNumber: item.courseNumber, courseStatus: item.courseStatus, isHeld: item.isHeld,
       sentToKitchen: item.sentToKitchen, isCompleted: item.isCompleted,
@@ -311,7 +440,7 @@ export function FloorPlanHome({
           name: newItem.name,
           price: newItem.price,
           quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: 0 })),
+          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth || 0, preModifier: m.preModifier })),
           specialNotes: newItem.specialNotes,
           seatNumber: newItem.seatNumber,
           sourceTableId: newItem.sourceTableId,
@@ -336,7 +465,7 @@ export function FloorPlanHome({
         // Existing item — update if changed
         store.updateItem(newItem.id, {
           quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: 0 })),
+          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth || 0, preModifier: m.preModifier })),
           specialNotes: newItem.specialNotes,
           seatNumber: newItem.seatNumber,
           sourceTableId: newItem.sourceTableId,
@@ -355,9 +484,7 @@ export function FloorPlanHome({
     }
   }, [locationId])
 
-  // Notes editing state
-  const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
-  const [editingNotesText, setEditingNotesText] = useState('')
+  // Notes editing — delegated to useActiveOrder hook (NoteEditModal)
 
   // Modifiers editing state
   const [editingModifiersItemId, setEditingModifiersItemId] = useState<string | null>(null)
@@ -756,6 +883,8 @@ export function FloorPlanHome({
     canCustomize,
     resetAllCategoryColors,
     resetAllMenuItemStyles,
+    layout,
+    updateSetting,
   } = usePOSLayout({
     employeeId,
     locationId,
@@ -1154,7 +1283,7 @@ export function FloorPlanHome({
         name: i.name,
         quantity: i.quantity,
         price: i.price,
-        modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price })),
+        modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price, depth: (m as any).depth, preModifier: (m as any).preModifier })),
         specialNotes: i.specialNotes,
         kitchenStatus: i.kitchenStatus as OrderPanelItemData['kitchenStatus'],
         isHeld: i.isHeld,
@@ -1297,16 +1426,18 @@ export function FloorPlanHome({
         setShowOrderPanel(true)
 
         // Load items
-        const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
+        const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
           id: item.id,
           menuItemId: item.menuItemId,
           name: item.name || 'Unknown',
           price: Number(item.price) || 0,
           quantity: item.quantity,
-          modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number }) => ({
+          modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; depth?: number; preModifier?: string }) => ({
             id: m.id,
             name: m.name || '',
             price: Number(m.price) || 0,
+            depth: m.depth || 0,
+            preModifier: m.preModifier,
           })),
           specialNotes: item.specialNotes,
           seatNumber: item.seatNumber,
@@ -1883,13 +2014,13 @@ export function FloorPlanHome({
           const { data: groups } = await res.json()
           if (groups && groups.length > 0) {
             // Collect all default modifiers and check if required groups are satisfied
-            const defaultMods: { id: string; name: string; price: number }[] = []
+            const defaultMods: { id: string; name: string; price: number; depth: number; preModifier?: string }[] = []
             let allRequiredSatisfied = true
 
             for (const group of groups) {
               const defaults = (group.modifiers || []).filter((m: any) => m.isDefault)
               defaults.forEach((m: any) => {
-                defaultMods.push({ id: m.id, name: m.name, price: Number(m.price || 0) })
+                defaultMods.push({ id: m.id, name: m.name, price: Number(m.price || 0), depth: 0 })
               })
               // Check if required group has enough defaults
               if (group.isRequired && group.minSelections > 0 && defaults.length < group.minSelections) {
@@ -2037,17 +2168,23 @@ export function FloorPlanHome({
   // Toggle hold on item
   const handleToggleHold = useCallback((itemId: string) => {
     setInlineOrderItems(prev =>
-      prev.map(item =>
-        item.id === itemId ? { ...item, isHeld: !item.isHeld } : item
-      )
+      prev.map(item => {
+        if (item.id !== itemId) return item
+        const newHeld = !item.isHeld
+        return {
+          ...item,
+          isHeld: newHeld,
+          // Hold and delay are mutually exclusive
+          ...(newHeld ? { delayMinutes: undefined, delayStartedAt: undefined, delayFiredAt: undefined } : {}),
+        }
+      })
     )
   }, [])
 
-  // Open notes editor
+  // Open notes editor — delegates to useActiveOrder's NoteEditModal state
   const handleOpenNotesEditor = useCallback((itemId: string, currentNotes?: string) => {
-    setEditingNotesItemId(itemId)
-    setEditingNotesText(currentNotes || '')
-  }, [])
+    activeOrder.openNoteEditor(itemId, currentNotes)
+  }, [activeOrder.openNoteEditor])
 
   // Handle tapping an existing order item to edit modifiers
   const handleOrderItemTap = useCallback((item: InlineOrderItem) => {
@@ -2076,20 +2213,21 @@ export function FloorPlanHome({
     }
   }, [menuItems, onOpenModifiers])
 
-  // Save notes
-  const handleSaveNotes = useCallback(() => {
-    if (editingNotesItemId) {
+  // Save notes — delegates to useActiveOrder's saveNote (handles API + store update)
+  const handleSaveNotes = useCallback(async (note: string) => {
+    if (activeOrder.noteEditTarget?.itemId) {
+      await activeOrder.saveNote(activeOrder.noteEditTarget.itemId, note)
+      // Also update the compatibility shim
       setInlineOrderItems(prev =>
         prev.map(item =>
-          item.id === editingNotesItemId
-            ? { ...item, specialNotes: editingNotesText.trim() || undefined }
+          item.id === activeOrder.noteEditTarget?.itemId
+            ? { ...item, specialNotes: note || undefined }
             : item
         )
       )
     }
-    setEditingNotesItemId(null)
-    setEditingNotesText('')
-  }, [editingNotesItemId, editingNotesText])
+    activeOrder.closeNoteEditor()
+  }, [activeOrder.noteEditTarget, activeOrder.saveNote, activeOrder.closeNoteEditor])
 
   // Update seat number
   const handleUpdateSeat = useCallback((itemId: string, seatNumber: number | null) => {
@@ -2291,7 +2429,7 @@ export function FloorPlanHome({
       name: item.name,
       price: item.price,
       quantity: item.quantity,
-      modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price })),
+      modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
       status: item.status,
     })
   }, [])
@@ -2412,8 +2550,7 @@ export function FloorPlanHome({
     setActiveOrderNumber(null)
     setActiveOrderType(null)
     setExpandedItemId(null)
-    setEditingNotesItemId(null)
-    setEditingNotesText('')
+    activeOrder.closeNoteEditor()
     setGuestCount(defaultGuestCount)
     setActiveSeatNumber(null)
     setActiveSourceTableId(null)
@@ -2513,8 +2650,7 @@ export function FloorPlanHome({
     setActiveOrderNumber(null)
     setActiveOrderType(null)
     setExpandedItemId(null)
-    setEditingNotesItemId(null)
-    setEditingNotesText('')
+    activeOrder.closeNoteEditor()
     setGuestCount(defaultGuestCount)
     setActiveSeatNumber(null)
     setActiveSourceTableId(null)
@@ -3222,6 +3358,34 @@ export function FloorPlanHome({
                   >
                     {canCustomize && (
                       <>
+                        {/* Quick Pick Numbers Toggle */}
+                        <button
+                          onClick={() => {
+                            updateSetting('quickPickEnabled', !layout.quickPickEnabled)
+                            setShowSettingsDropdown(false)
+                          }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            width: '100%',
+                            padding: '10px 16px',
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#e2e8f0',
+                            fontSize: '13px',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <svg width="16" height="16" fill="none" stroke={layout.quickPickEnabled ? '#a855f7' : '#94a3b8'} viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                          </svg>
+                          {layout.quickPickEnabled ? '✓ Quick Pick Numbers' : 'Quick Pick Numbers'}
+                        </button>
+
                         {/* Show/Hide Quick Bar Toggle */}
                         <button
                           onClick={() => {
@@ -3789,6 +3953,12 @@ export function FloorPlanHome({
                             )
                           })()}
                           virtualGroupColor={table.virtualGroupColor || undefined}
+                          orderStatusBadges={table.currentOrder && table.id === activeTableId ? {
+                            hasDelay: !!(activeOrder.pendingDelay && activeOrder.pendingDelay > 0),
+                            hasHeld: inlineOrderItems.some(i => !i.sentToKitchen && i.isHeld),
+                            hasCourses: activeOrder.coursingEnabled,
+                            delayMinutes: activeOrder.pendingDelay ?? undefined,
+                          } : undefined}
                           onTap={() => handleTableTap(table)}
                           onDragStart={() => startDrag(table.id)}
                           onDragEnd={endDrag}
@@ -4251,6 +4421,32 @@ export function FloorPlanHome({
           </div>{/* end floor-plan-main */}
         </div>{/* end Left Column */}
 
+        {/* Quick Pick Gutter — between menu and order panel */}
+        {layout.quickPickEnabled && (
+          <QuickPickStrip
+            selectedItemId={quickPickSelectedId}
+            selectedItemQty={quickPickSelectedId ? inlineOrderItems.find(i => i.id === quickPickSelectedId)?.quantity : undefined}
+            selectedCount={quickPickSelectedIds.size}
+            onNumberTap={handleQuickPickNumber}
+            multiSelectMode={quickPickMultiSelect}
+            onToggleMultiSelect={toggleQuickPickMultiSelect}
+            coursingEnabled={activeOrder.coursingEnabled}
+            courseCount={layout.coursingCourseCount || 5}
+            activeCourseNumber={quickPickSelectedId ? inlineOrderItems.find(i => i.id === quickPickSelectedId)?.courseNumber ?? null : null}
+            onCourseAssign={handleGutterCourseAssign}
+            onHoldToggle={handleGutterHold}
+            isHeld={quickPickSelectedId ? inlineOrderItems.find(i => i.id === quickPickSelectedId)?.isHeld : false}
+            onSetDelay={handleGutterSetDelay}
+            activeDelay={(() => {
+              // Show active delay based on selected items' per-item delay
+              const selectedIds = Array.from(quickPickSelectedIds)
+              if (selectedIds.length === 0) return activeOrder.pendingDelay ?? null
+              const firstItem = inlineOrderItems.find(i => i.id === selectedIds[0])
+              return firstItem?.delayMinutes ?? null
+            })()}
+          />
+        )}
+
         {/* Right Panel - Order Panel (always visible, full height from below header) */}
         <div
           style={{
@@ -4275,8 +4471,20 @@ export function FloorPlanHome({
                   flexShrink: 0,
                 }}
               >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
+                <div style={{ flex: 1, minWidth: 0, position: 'relative' }}>
+                  <h3
+                    onClick={() => activeTable && setShowTableOptions(!showTableOptions)}
+                    style={{
+                      fontSize: '16px',
+                      fontWeight: 600,
+                      color: '#f1f5f9',
+                      margin: 0,
+                      cursor: activeTable ? 'pointer' : 'default',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
                     {activeTable
                       ? activeTable.virtualGroupId
                         ? 'Virtual Group'
@@ -4287,7 +4495,22 @@ export function FloorPlanHome({
                       : activeOrderType === 'takeout' ? 'Takeout'
                       : activeOrderType === 'delivery' ? 'Delivery'
                       : 'New Order'}
+                    {activeTable && (
+                      <svg width="12" height="12" fill="none" stroke="#64748b" viewBox="0 0 24 24" style={{ flexShrink: 0 }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
                   </h3>
+                  {/* Table Options Popover */}
+                  <TableOptionsPopover
+                    isOpen={showTableOptions}
+                    onClose={() => setShowTableOptions(false)}
+                    tableName={activeTable?.name || 'Table'}
+                    coursingEnabled={activeOrder.coursingEnabled}
+                    onCoursingToggle={activeOrder.setCoursingEnabled}
+                    guestCount={guestCount}
+                    onGuestCountChange={setGuestCount}
+                  />
                   {/* Virtual group: Show table list with primary indicator + Ungroup button */}
                   {activeTable?.virtualGroupId && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
@@ -4338,6 +4561,49 @@ export function FloorPlanHome({
                     )}
                   </div>
                 </div>
+
+                {/* Fire Next Course button — shown when coursing is enabled and there are unfired courses */}
+                {activeOrder.coursingEnabled && (() => {
+                  // Find the next unfired course
+                  const delays = activeOrder.courseDelays || {}
+                  const pendingCourses: number[] = []
+                  for (const item of inlineOrderItems) {
+                    if (!item.sentToKitchen && item.courseNumber && item.courseNumber > 1) {
+                      if (!pendingCourses.includes(item.courseNumber)) {
+                        pendingCourses.push(item.courseNumber)
+                      }
+                    }
+                  }
+                  pendingCourses.sort((a, b) => a - b)
+                  const nextCourse = pendingCourses.find(cn => !delays[cn]?.firedAt)
+                  if (!nextCourse) return null
+
+                  const delay = delays[nextCourse]
+                  const isTimerRunning = delay?.startedAt && !delay?.firedAt
+
+                  return (
+                    <button
+                      onClick={() => activeOrder.handleFireCourse(nextCourse)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(239, 68, 68, 0.4)',
+                        background: isTimerRunning
+                          ? 'rgba(251, 191, 36, 0.15)'
+                          : 'rgba(239, 68, 68, 0.15)',
+                        color: isTimerRunning ? '#fbbf24' : '#f87171',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap' as const,
+                        flexShrink: 0,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      🔥 Fire C{nextCourse}
+                    </button>
+                  )
+                })()}
               </div>
 
               {/* Seat Selection Buttons (for table orders with seats) - Fixed, doesn't scroll */}
@@ -4562,7 +4828,7 @@ export function FloorPlanHome({
                   name: i.name,
                   quantity: i.quantity,
                   price: i.price,
-                  modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price })),
+                  modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
                   specialNotes: i.specialNotes,
                   kitchenStatus: i.kitchenStatus as OrderPanelItemData['kitchenStatus'],
                   isHeld: i.isHeld,
@@ -4579,6 +4845,10 @@ export function FloorPlanHome({
                   resendCount: i.resendCount,
                   completedAt: i.completedAt,
                   createdAt: i.createdAt,
+                  // Per-item delay
+                  delayMinutes: i.delayMinutes,
+                  delayStartedAt: i.delayStartedAt,
+                  delayFiredAt: i.delayFiredAt,
                 }))}
                 seatGroups={seatGroupsForPanel}
                 subtotal={orderSubtotal}
@@ -4629,6 +4899,23 @@ export function FloorPlanHome({
                 onAutoShowPaymentHandled={() => setPendingPayAfterSave(false)}
                 hideHeader={true}
                 className="flex-1"
+                selectedItemId={layout.quickPickEnabled ? quickPickSelectedId : undefined}
+                selectedItemIds={layout.quickPickEnabled ? quickPickSelectedIds : undefined}
+                onItemSelect={layout.quickPickEnabled ? selectQuickPickItem : undefined}
+                multiSelectMode={quickPickMultiSelect}
+                onToggleMultiSelect={toggleQuickPickMultiSelect}
+                onSelectAllPending={selectAllPendingQuickPick}
+                coursingEnabled={activeOrder.coursingEnabled}
+                courseDelays={activeOrder.courseDelays}
+                onSetCourseDelay={activeOrder.setCourseDelay}
+                onFireCourse={activeOrder.handleFireCourse}
+                pendingDelay={activeOrder.pendingDelay}
+                delayStartedAt={activeOrder.delayStartedAt}
+                delayFiredAt={activeOrder.delayFiredAt}
+                onFireDelayed={activeOrder.handleFireDelayed}
+                onCancelDelay={() => activeOrder.setPendingDelay(null)}
+                onFireItem={activeOrder.handleFireItem}
+                onCancelItemDelay={(itemId) => activeOrder.setItemDelay([itemId], null)}
               />
         </div>
       </div>
@@ -4720,114 +5007,14 @@ export function FloorPlanHome({
         />
       )}
 
-      {/* Notes Editor Modal */}
-      <AnimatePresence>
-        {editingNotesItemId && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0, 0, 0, 0.6)',
-              backdropFilter: 'blur(4px)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 1000,
-            }}
-            onClick={() => setEditingNotesItemId(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                background: 'rgba(15, 23, 42, 0.98)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '16px',
-                padding: '24px',
-                width: '100%',
-                maxWidth: '400px',
-                margin: '20px',
-                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
-              }}
-            >
-              <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#f1f5f9', marginBottom: '16px' }}>
-                Kitchen Note
-              </h3>
-              <p style={{ fontSize: '12px', color: '#64748b', marginBottom: '12px' }}>
-                This note will be sent to the kitchen with the order.
-              </p>
-              <textarea
-                value={editingNotesText}
-                onChange={(e) => setEditingNotesText(e.target.value)}
-                placeholder="e.g., No onions, extra pickles, allergic to nuts..."
-                autoFocus
-                style={{
-                  width: '100%',
-                  minHeight: '100px',
-                  padding: '12px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '10px',
-                  color: '#e2e8f0',
-                  fontSize: '14px',
-                  resize: 'vertical',
-                  outline: 'none',
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                    handleSaveNotes()
-                  }
-                  if (e.key === 'Escape') {
-                    setEditingNotesItemId(null)
-                  }
-                }}
-              />
-              <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
-                <button
-                  onClick={() => setEditingNotesItemId(null)}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '10px',
-                    color: '#94a3b8',
-                    fontSize: '14px',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveNotes}
-                  style={{
-                    flex: 1,
-                    padding: '12px',
-                    background: '#f59e0b',
-                    border: 'none',
-                    borderRadius: '10px',
-                    color: '#fff',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Save Note
-                </button>
-              </div>
-              <p style={{ fontSize: '11px', color: '#475569', marginTop: '12px', textAlign: 'center' }}>
-                Press ⌘+Enter to save • Esc to cancel
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Notes Editor Modal — shared component */}
+      <NoteEditModal
+        isOpen={!!activeOrder.noteEditTarget}
+        onClose={activeOrder.closeNoteEditor}
+        onSave={handleSaveNotes}
+        currentNote={activeOrder.noteEditTarget?.currentNote}
+        itemName={activeOrder.noteEditTarget?.itemName}
+      />
 
       {/* Menu Item Context Menu (right-click) */}
       {contextMenu && (
@@ -5043,7 +5230,7 @@ export function FloorPlanHome({
             name: item.name,
             price: item.price,
             quantity: item.quantity,
-            modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price })),
+            modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
           }))}
           orderDiscount={0}
           taxRate={pricing.taxRate}

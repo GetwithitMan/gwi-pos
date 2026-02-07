@@ -12,6 +12,17 @@ export async function POST(
   try {
     const { id } = await params
 
+    // Parse optional itemIds from body for selective firing (per-item delays)
+    let filterItemIds: string[] | null = null
+    try {
+      const body = await request.json()
+      if (body.itemIds && Array.isArray(body.itemIds) && body.itemIds.length > 0) {
+        filterItemIds = body.itemIds
+      }
+    } catch {
+      // No body or invalid JSON — send all pending items
+    }
+
     // Get the order with items
     const order = await db.order.findFirst({
       where: { id, deletedAt: null },
@@ -34,13 +45,19 @@ export async function POST(
       )
     }
 
-    console.log('[API /orders/[id]/send] Order found with', order.items.length, 'pending items')
+    // When itemIds filter is provided, only process those specific items
+    const itemsToProcess = filterItemIds
+      ? order.items.filter(item => filterItemIds!.includes(item.id))
+      : order.items
+
+    console.log('[API /orders/[id]/send] Order found with', order.items.length, 'pending items,',
+      filterItemIds ? `filtering to ${itemsToProcess.length} specific items` : 'sending all')
 
     const now = new Date()
     const updatedItemIds: string[] = []
 
-    // Update all pending items to 'sent' status
-    for (const item of order.items) {
+    // Update pending items to 'sent' status
+    for (const item of itemsToProcess) {
       // Skip held items
       if (item.isHeld) continue
 
@@ -107,7 +124,7 @@ export async function POST(
     })
 
     // For entertainment items, dispatch session updates
-    for (const item of order.items) {
+    for (const item of itemsToProcess) {
       if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
         dispatchEntertainmentUpdate(order.locationId, {
           sessionId: item.id,

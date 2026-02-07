@@ -249,6 +249,13 @@ export interface POSLayoutSettings {
   showFavoritesBar: boolean             // Show/hide favorites bar
   compactCategoryBar: boolean           // Single row with overflow vs wrap
   autoCollapseCategories: boolean       // Collapse "other" categories into dropdown
+
+  // Quick Pick Numbers — per-employee toggle
+  quickPickEnabled: boolean             // Show number strip (1-9) for fast quantity setting
+
+  // Coursing — per-employee settings
+  coursingCourseCount: number           // How many course buttons to show (default: 5)
+  coursingDefaultDelay: number          // Default delay minutes for new courses (0 = fire immediately)
 }
 
 // Default layout settings
@@ -277,6 +284,11 @@ export const DEFAULT_LAYOUT_SETTINGS: POSLayoutSettings = {
   showFavoritesBar: true,
   compactCategoryBar: true,
   autoCollapseCategories: true,
+
+  quickPickEnabled: false,
+
+  coursingCourseCount: 5,
+  coursingDefaultDelay: 0,
 }
 
 export interface LocationSettings {

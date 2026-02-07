@@ -88,6 +88,10 @@ interface OrderItem {
   isCompleted?: boolean  // KDS completion status (kitchen marked done)
   completedAt?: string  // When kitchen marked it done
   resendCount?: number  // How many times resent to kitchen
+  // Per-item delay (5m, 10m, etc.)
+  delayMinutes?: number | null      // Delay preset in minutes
+  delayStartedAt?: string | null    // ISO timestamp when delay timer started (on Send)
+  delayFiredAt?: string | null      // ISO timestamp when item was fired to kitchen
   // Entertainment/timed rental fields
   blockTimeMinutes?: number | null
   blockTimeStartedAt?: string | null
@@ -96,6 +100,12 @@ interface OrderItem {
   sourceTableId?: string  // Which table this item was ordered from (for virtual groups)
   // Pizza builder configuration
   pizzaConfig?: PizzaOrderConfigStore
+}
+
+export interface CourseDelay {
+  delayMinutes: number
+  startedAt?: string  // ISO timestamp when delay timer started
+  firedAt?: string    // ISO timestamp when course was fired
 }
 
 interface Order {
@@ -118,6 +128,13 @@ interface Order {
   primaryPaymentMethod?: 'cash' | 'card'
   commissionTotal: number  // Total commission for the order
   customFields?: Record<string, string>  // Custom fields for configurable order types
+  // Coursing
+  coursingEnabled?: boolean  // Whether coursing is active for this order
+  courseDelays?: Record<number, CourseDelay>  // Per-course delay settings
+  // Order-level delay (non-coursing mode: delays ALL pending items after Send)
+  pendingDelay?: number | null       // Preset delay minutes (5, 10, etc.) — set by gutter 5m/10m
+  delayStartedAt?: string | null     // ISO timestamp when delay timer started (on Send)
+  delayFiredAt?: string | null       // ISO timestamp when delayed items were fired
 }
 
 interface LoadedOrderData {
@@ -202,6 +219,19 @@ interface OrderState {
   // New methods for shared order domain
   updateOrderId: (id: string, orderNumber?: number) => void
   updateItemId: (tempId: string, realId: string) => void
+  // Coursing
+  setCoursingEnabled: (enabled: boolean) => void
+  setCourseDelay: (courseNumber: number, delayMinutes: number) => void
+  fireCourse: (courseNumber: number) => void
+  clearCourseDelay: (courseNumber: number) => void
+  // Order-level delay
+  setPendingDelay: (minutes: number | null) => void
+  startDelayTimer: () => void
+  markDelayFired: () => void
+  // Per-item delay
+  setItemDelay: (itemIds: string[], minutes: number | null) => void
+  startItemDelayTimers: (itemIds: string[]) => void
+  markItemDelayFired: (itemId: string) => void
 }
 
 const TAX_RATE = 0.08 // 8% - should come from location settings
@@ -508,6 +538,160 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         ...currentOrder,
         items: currentOrder.items.map(item =>
           item.id === tempId ? { ...item, id: realId } : item
+        ),
+      },
+    })
+  },
+
+  // Coursing
+  setCoursingEnabled: (enabled) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    set({
+      currentOrder: {
+        ...currentOrder,
+        coursingEnabled: enabled,
+        // When disabling, clear course delays
+        courseDelays: enabled ? currentOrder.courseDelays : {},
+      },
+    })
+  },
+
+  setCourseDelay: (courseNumber, delayMinutes) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    set({
+      currentOrder: {
+        ...currentOrder,
+        courseDelays: {
+          ...(currentOrder.courseDelays || {}),
+          [courseNumber]: { delayMinutes },
+        },
+      },
+    })
+  },
+
+  fireCourse: (courseNumber) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    const existing = currentOrder.courseDelays?.[courseNumber]
+    set({
+      currentOrder: {
+        ...currentOrder,
+        courseDelays: {
+          ...(currentOrder.courseDelays || {}),
+          [courseNumber]: {
+            delayMinutes: existing?.delayMinutes || 0,
+            startedAt: existing?.startedAt,
+            firedAt: new Date().toISOString(),
+          },
+        },
+      },
+    })
+  },
+
+  clearCourseDelay: (courseNumber) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    const delays = { ...(currentOrder.courseDelays || {}) }
+    delete delays[courseNumber]
+    set({
+      currentOrder: {
+        ...currentOrder,
+        courseDelays: delays,
+      },
+    })
+  },
+
+  // Order-level delay (non-coursing / always-available delay)
+  setPendingDelay: (minutes) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    set({
+      currentOrder: {
+        ...currentOrder,
+        pendingDelay: minutes,
+        // If setting to null or changing, reset timer state
+        delayStartedAt: null,
+        delayFiredAt: null,
+      },
+    })
+  },
+
+  startDelayTimer: () => {
+    const { currentOrder } = get()
+    if (!currentOrder || !currentOrder.pendingDelay) return
+    set({
+      currentOrder: {
+        ...currentOrder,
+        delayStartedAt: new Date().toISOString(),
+      },
+    })
+  },
+
+  markDelayFired: () => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    set({
+      currentOrder: {
+        ...currentOrder,
+        delayFiredAt: new Date().toISOString(),
+      },
+    })
+  },
+
+  // Per-item delay: set delay on specific items (or clear with null)
+  // Hold and delay are mutually exclusive — setting delay clears hold
+  setItemDelay: (itemIds, minutes) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    set({
+      currentOrder: {
+        ...currentOrder,
+        items: currentOrder.items.map(item =>
+          itemIds.includes(item.id)
+            ? {
+                ...item,
+                delayMinutes: minutes,
+                delayStartedAt: null,
+                delayFiredAt: null,
+                // Clear hold when setting a delay (mutually exclusive)
+                ...(minutes && minutes > 0 ? { isHeld: false } : {}),
+              }
+            : item
+        ),
+      },
+    })
+  },
+
+  // Per-item delay: start timers on specific items (called on Send)
+  startItemDelayTimers: (itemIds) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    const now = new Date().toISOString()
+    set({
+      currentOrder: {
+        ...currentOrder,
+        items: currentOrder.items.map(item =>
+          itemIds.includes(item.id) && item.delayMinutes && item.delayMinutes > 0
+            ? { ...item, delayStartedAt: now }
+            : item
+        ),
+      },
+    })
+  },
+
+  // Per-item delay: mark a single item as fired (timer expired or manual fire)
+  markItemDelayFired: (itemId) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+    set({
+      currentOrder: {
+        ...currentOrder,
+        items: currentOrder.items.map(item =>
+          item.id === itemId
+            ? { ...item, delayFiredAt: new Date().toISOString() }
+            : item
         ),
       },
     })

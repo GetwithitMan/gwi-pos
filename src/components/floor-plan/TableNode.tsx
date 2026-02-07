@@ -22,6 +22,13 @@ interface TableNodeProps {
   isVirtualCombineSelected?: boolean  // Whether this table is selected for virtual combine
   isVirtualCombineUnavailable?: boolean  // Whether this table cannot be selected (already in another group)
   virtualGroupColor?: string  // Color for virtual group pulsing glow
+  // Order status badges
+  orderStatusBadges?: {
+    hasDelay?: boolean     // ⏱ items delayed
+    hasHeld?: boolean      // ⏸ items held
+    hasCourses?: boolean   // 🔢 coursing enabled
+    delayMinutes?: number  // e.g., 5 or 10
+  }
   onTap: () => void
   onDragStart: () => void
   onDragEnd: () => void
@@ -85,6 +92,7 @@ export const TableNode = memo(function TableNode({
   isVirtualCombineSelected = false,
   isVirtualCombineUnavailable = false,
   virtualGroupColor,
+  orderStatusBadges,
   onTap,
   onDragStart,
   onDragEnd,
@@ -394,6 +402,56 @@ export const TableNode = memo(function TableNode({
               <div className="table-node-total" style={{ fontSize: `${infoFontSize + 2}px` }}>
                 ${table.currentOrder.total.toFixed(2)}
               </div>
+              {/* Order status badges (delay, held, coursed) */}
+              {orderStatusBadges && (orderStatusBadges.hasDelay || orderStatusBadges.hasHeld || orderStatusBadges.hasCourses) && (
+                <div style={{
+                  display: 'flex',
+                  gap: '3px',
+                  marginTop: '2px',
+                  justifyContent: 'center',
+                  flexWrap: 'wrap',
+                }}>
+                  {orderStatusBadges.hasDelay && (
+                    <span style={{
+                      fontSize: '8px',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      background: 'rgba(251, 191, 36, 0.3)',
+                      color: '#fbbf24',
+                      fontWeight: 700,
+                      lineHeight: 1.3,
+                    }}>
+                      ⏱{orderStatusBadges.delayMinutes ? `${orderStatusBadges.delayMinutes}m` : ''}
+                    </span>
+                  )}
+                  {orderStatusBadges.hasHeld && (
+                    <span style={{
+                      fontSize: '8px',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      background: 'rgba(239, 68, 68, 0.3)',
+                      color: '#f87171',
+                      fontWeight: 700,
+                      lineHeight: 1.3,
+                    }}>
+                      ⏸HLD
+                    </span>
+                  )}
+                  {orderStatusBadges.hasCourses && (
+                    <span style={{
+                      fontSize: '8px',
+                      padding: '1px 4px',
+                      borderRadius: '3px',
+                      background: 'rgba(59, 130, 246, 0.3)',
+                      color: '#60a5fa',
+                      fontWeight: 700,
+                      lineHeight: 1.3,
+                    }}>
+                      CRS
+                    </span>
+                  )}
+                </div>
+              )}
             </>
           ) : (
             <div className="table-node-info" style={{ fontSize: `${infoFontSize}px` }}>

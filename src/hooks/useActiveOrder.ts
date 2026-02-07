@@ -85,11 +85,17 @@ interface UseActiveOrderReturn {
   clearOrder: () => void
   ensureOrderInDB: (employeeId?: string) => Promise<string | null>
 
+  // === Note Editing (for NoteEditModal) ===
+  noteEditTarget: { itemId: string; currentNote?: string; itemName?: string } | null
+  openNoteEditor: (itemId: string, currentNote?: string) => void
+  closeNoteEditor: () => void
+  saveNote: (itemId: string, note: string) => Promise<void>
+
   // === Item Handlers ===
   handleRemoveItem: (itemId: string) => Promise<void>
   handleQuantityChange: (itemId: string, delta: number) => Promise<void>
   handleHoldToggle: (itemId: string) => Promise<void>
-  handleNoteEdit: (itemId: string, currentNote?: string) => Promise<void>
+  handleNoteEdit: (itemId: string, currentNote?: string) => void
   handleCourseChange: (itemId: string, course: number | null) => Promise<void>
   handleSeatChange: (itemId: string, seat: number | null) => Promise<void>
   handleEditModifiers: (itemId: string) => void
@@ -100,6 +106,25 @@ interface UseActiveOrderReturn {
 
   // === Send to Kitchen ===
   handleSendToKitchen: (employeeId?: string) => Promise<void>
+
+  // === Coursing ===
+  coursingEnabled: boolean
+  courseDelays: Record<number, { delayMinutes: number; startedAt?: string; firedAt?: string }>
+  setCoursingEnabled: (enabled: boolean) => void
+  setCourseDelay: (courseNumber: number, delayMinutes: number) => void
+  fireCourse: (courseNumber: number) => void
+  handleFireCourse: (courseNumber: number) => Promise<void>
+
+  // === Order-level Delay ===
+  pendingDelay: number | null
+  delayStartedAt: string | null
+  delayFiredAt: string | null
+  setPendingDelay: (minutes: number | null) => void
+  handleFireDelayed: () => Promise<void>
+
+  // === Per-Item Delay ===
+  setItemDelay: (itemIds: string[], minutes: number | null) => void
+  handleFireItem: (itemId: string) => Promise<void>
 }
 
 export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOrderReturn {
@@ -115,7 +140,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       name: item.name,
       quantity: item.quantity,
       price: item.price,
-      modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price })),
+      modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
       specialNotes: item.specialNotes,
       kitchenStatus: item.isCompleted ? 'ready' as const
         : item.sentToKitchen ? 'sent' as const
@@ -134,6 +159,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       resendCount: item.resendCount,
       completedAt: item.completedAt,
       createdAt: undefined,
+      // Per-item delay
+      delayMinutes: item.delayMinutes,
+      delayStartedAt: item.delayStartedAt,
+      delayFiredAt: item.delayFiredAt,
     }))
   }, [currentOrder?.items])
 
@@ -501,8 +530,15 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         }
       }
 
-      // Update store
-      useOrderStore.getState().updateItem(itemId, { isHeld: newHeldState })
+      // Update store — hold and delay are mutually exclusive
+      const updates: Record<string, any> = { isHeld: newHeldState }
+      if (newHeldState) {
+        // Setting hold ON → clear any per-item delay
+        updates.delayMinutes = null
+        updates.delayStartedAt = null
+        updates.delayFiredAt = null
+      }
+      useOrderStore.getState().updateItem(itemId, updates)
       toast.success(newHeldState ? 'Item held' : 'Hold removed')
     } catch (error) {
       console.error('[useActiveOrder] Failed to toggle hold:', error)
@@ -510,11 +546,19 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     }
   }, [items, currentOrder?.id])
 
-  // Edit note
-  const handleNoteEdit = useCallback(async (itemId: string, currentNote?: string) => {
-    const note = window.prompt('Kitchen note:', currentNote || '')
-    if (note === null) return // Cancelled
+  // Note editing — expose state for NoteEditModal (replaces window.prompt)
+  const [noteEditTarget, setNoteEditTarget] = useState<{ itemId: string; currentNote?: string; itemName?: string } | null>(null)
 
+  const openNoteEditor = useCallback((itemId: string, currentNote?: string) => {
+    const item = items.find(i => i.id === itemId)
+    setNoteEditTarget({ itemId, currentNote, itemName: item?.name })
+  }, [items])
+
+  const closeNoteEditor = useCallback(() => {
+    setNoteEditTarget(null)
+  }, [])
+
+  const saveNote = useCallback(async (itemId: string, note: string) => {
     const orderId = currentOrder?.id
 
     try {
@@ -535,10 +579,15 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       useOrderStore.getState().updateItem(itemId, { specialNotes: note || undefined })
       toast.success('Note updated')
     } catch (error) {
-      console.error('[useActiveOrder] Failed to update note:', error)
+      console.error('[useActiveOrder] Failed to save note:', error)
       toast.error('Failed to update note')
     }
   }, [currentOrder?.id])
+
+  // Legacy handler — opens modal via state (used by onItemNoteEdit callback)
+  const handleNoteEdit = useCallback((itemId: string, currentNote?: string) => {
+    openNoteEditor(itemId, currentNote)
+  }, [openNoteEditor])
 
   // Change course
   const handleCourseChange = useCallback(async (itemId: string, course: number | null) => {
@@ -640,6 +689,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
   }, [])
 
   // Send to kitchen — ensures order is in DB first, then sends
+  // When coursing is enabled:
+  //   - Course 1 + unassigned items fire immediately via /send
+  //   - Course 2+ with delays: record startedAt in store (client timer starts)
+  //   - Course 2+ without delays: also fire immediately
   const handleSendToKitchen = useCallback(async (employeeId?: string) => {
     if (!currentOrder) {
       toast.error('No active order to send')
@@ -662,21 +715,266 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         return
       }
 
-      // Step 2: Send to kitchen
-      const res = await fetch(`/api/orders/${resolvedOrderId}/send`, {
+      // Step 2: If coursing is enabled, handle course-based firing
+      if (currentOrder.coursingEnabled) {
+        // Determine which courses have delays set
+        const courseDelays = currentOrder.courseDelays || {}
+        const pendingItems = currentOrder.items.filter(i => !i.sentToKitchen)
+
+        // Group pending items by course number
+        const courseGroups = new Map<number, typeof pendingItems>()
+        for (const item of pendingItems) {
+          const cn = item.courseNumber ?? 1  // unassigned items = course 1
+          if (!courseGroups.has(cn)) courseGroups.set(cn, [])
+          courseGroups.get(cn)!.push(item)
+        }
+
+        // Sort courses
+        const sortedCourses = Array.from(courseGroups.keys()).sort((a, b) => a - b)
+
+        // Course 1 always fires immediately via /send (handles routing + socket)
+        // The /send route sends ALL pending items — but for coursing we need selective firing.
+        // Fire course 1 + any courses without delays via the standard /send route
+        // Then set timers for delayed courses
+
+        // Determine which courses fire now vs. later
+        const coursesToFireNow: number[] = []
+        const coursesToDelay: number[] = []
+
+        for (const cn of sortedCourses) {
+          const delay = courseDelays[cn]
+          if (cn === 1 || !delay || delay.delayMinutes === 0) {
+            // Course 1 always fires now; no delay = fire now
+            coursesToFireNow.push(cn)
+          } else if (delay.delayMinutes === -1) {
+            // -1 = "Hold" — don't fire, don't start timer
+            // User must manually fire via "Fire Now"
+          } else {
+            // Has a positive delay — start timer
+            coursesToDelay.push(cn)
+          }
+        }
+
+        // Fire immediate courses via /send (which sends all pending non-held items)
+        // We need to temporarily hold delayed course items so /send skips them
+        // Instead, use fire-course API for precise control
+
+        // Fire each immediate course
+        let totalSent = 0
+        for (const cn of coursesToFireNow) {
+          try {
+            const res = await fetch(`/api/orders/${resolvedOrderId}/fire-course`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                courseNumber: cn,
+                employeeId: employeeId || options.employeeId,
+              }),
+            })
+            if (res.ok) {
+              const result = await res.json()
+              totalSent += result.sentItemCount || 0
+            }
+          } catch (err) {
+            console.error(`[useActiveOrder] Failed to fire course ${cn}:`, err)
+          }
+        }
+
+        // Start delay timers for delayed courses by setting startedAt = now
+        const store = useOrderStore.getState()
+        if (store.currentOrder && coursesToDelay.length > 0) {
+          const now = new Date().toISOString()
+          const updatedDelays = { ...(store.currentOrder.courseDelays || {}) }
+          for (const cn of coursesToDelay) {
+            const delay = courseDelays[cn]
+            if (delay) {
+              updatedDelays[cn] = {
+                delayMinutes: delay.delayMinutes,
+                startedAt: now,  // CourseDelayControls will see this and start countdown
+              }
+            }
+          }
+          // Directly update courseDelays on currentOrder via setState
+          useOrderStore.setState({
+            currentOrder: { ...store.currentOrder!, courseDelays: updatedDelays }
+          })
+        }
+
+        // Mark sent items in store (get fresh state after any courseDelays update)
+        const freshStore = useOrderStore.getState()
+        if (freshStore.currentOrder) {
+          for (const cn of coursesToFireNow) {
+            for (const item of freshStore.currentOrder.items) {
+              const itemCourse = item.courseNumber ?? 1
+              if (itemCourse === cn && !item.sentToKitchen) {
+                freshStore.updateItem(item.id, { sentToKitchen: true, courseStatus: 'fired' })
+              }
+            }
+          }
+        }
+
+        if (totalSent > 0) {
+          toast.success(`Course${coursesToFireNow.length > 1 ? 's' : ''} ${coursesToFireNow.join(', ')} sent to kitchen`)
+        }
+        if (coursesToDelay.length > 0) {
+          toast.info(`Course${coursesToDelay.length > 1 ? 's' : ''} ${coursesToDelay.join(', ')} on timer`)
+        }
+
+        options.onOrderSent?.(resolvedOrderId)
+
+        // Reload from API for fresh server state
+        await loadOrder(resolvedOrderId)
+      } else if (currentOrder.pendingDelay && currentOrder.pendingDelay > 0 && !currentOrder.delayStartedAt) {
+        // Order-level delay: Save items to DB but DON'T fire to kitchen yet.
+        // Start the delay timer — items will fire when timer expires or user taps "Fire Now"
+        const store = useOrderStore.getState()
+        store.startDelayTimer()
+        toast.info(`Order delayed — fires in ${currentOrder.pendingDelay}m`)
+        options.onOrderSent?.(resolvedOrderId)
+      } else {
+        // Standard send — check for per-item delays
+        const store = useOrderStore.getState()
+        const freshOrder = store.currentOrder
+        if (!freshOrder) return
+
+        const pendingItems = freshOrder.items.filter(i => !i.sentToKitchen)
+        const delayedItems = pendingItems.filter(i => i.delayMinutes && i.delayMinutes > 0 && !i.delayStartedAt)
+        const immediateItems = pendingItems.filter(i => !i.delayMinutes || i.delayMinutes <= 0)
+
+        // Fire immediate items via /send
+        if (immediateItems.length > 0) {
+          const res = await fetch(`/api/orders/${resolvedOrderId}/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employeeId: employeeId || options.employeeId,
+              // Only send specific item IDs when we have a mix of delayed and immediate
+              ...(delayedItems.length > 0 ? { itemIds: immediateItems.map(i => i.id) } : {}),
+            }),
+          })
+
+          if (!res.ok) {
+            const error = await res.json()
+            toast.error(error.error || 'Failed to send order')
+            return
+          }
+
+          // Mark immediate items as sent in store
+          const storeAfterSend = useOrderStore.getState()
+          if (storeAfterSend.currentOrder) {
+            for (const item of immediateItems) {
+              storeAfterSend.updateItem(item.id, { sentToKitchen: true })
+            }
+          }
+        }
+
+        // Start delay timers on delayed items
+        if (delayedItems.length > 0) {
+          store.startItemDelayTimers(delayedItems.map(i => i.id))
+          const delayDesc = delayedItems.map(i => `${i.name} (${i.delayMinutes}m)`).join(', ')
+          toast.info(`Delayed: ${delayDesc}`)
+        }
+
+        // Clear order-level delay state after successful send
+        const storeAfter = useOrderStore.getState()
+        if (storeAfter.currentOrder?.pendingDelay) {
+          storeAfter.markDelayFired()
+        }
+
+        if (immediateItems.length > 0) {
+          toast.success(`${immediateItems.length} item${immediateItems.length !== 1 ? 's' : ''} sent to kitchen`)
+        }
+        options.onOrderSent?.(resolvedOrderId)
+
+        // Reload from API for fresh server state (only if we sent something)
+        if (immediateItems.length > 0) {
+          await loadOrder(resolvedOrderId)
+        }
+      }
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to send order:', error)
+      toast.error('Failed to send order')
+    } finally {
+      setIsSending(false)
+    }
+  }, [currentOrder, options, loadOrder, ensureOrderInDB])
+
+  // Fire a specific course to kitchen (called by CourseDelayControls timer or "Fire Now")
+  const handleFireCourse = useCallback(async (courseNumber: number) => {
+    const orderId = currentOrder?.id
+    if (!orderId) {
+      toast.error('No active order')
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/orders/${orderId}/fire-course`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId: employeeId || options.employeeId }),
+        body: JSON.stringify({
+          courseNumber,
+          employeeId: options.employeeId,
+        }),
       })
 
       if (!res.ok) {
         const error = await res.json()
-        toast.error(error.error || 'Failed to send order')
+        toast.error(error.error || `Failed to fire course ${courseNumber}`)
         return
       }
 
-      // Step 3: Mark all items as sent in store
+      const result = await res.json()
+
+      // Mark course as fired in store
       const store = useOrderStore.getState()
+      store.fireCourse(courseNumber)
+
+      // Mark those items as sent in store
+      if (store.currentOrder) {
+        for (const item of store.currentOrder.items) {
+          if (item.courseNumber === courseNumber && !item.sentToKitchen) {
+            store.updateItem(item.id, { sentToKitchen: true, courseStatus: 'fired' })
+          }
+        }
+      }
+
+      toast.success(`Course ${courseNumber} fired (${result.sentItemCount} items)`)
+
+      // Reload from API for fresh state
+      await loadOrder(orderId)
+    } catch (error) {
+      console.error(`[useActiveOrder] Failed to fire course ${courseNumber}:`, error)
+      toast.error(`Failed to fire course ${courseNumber}`)
+    }
+  }, [currentOrder?.id, options.employeeId, loadOrder])
+
+  // Fire delayed items (order-level delay expired or manual "Fire Now")
+  const handleFireDelayed = useCallback(async () => {
+    const orderId = currentOrder?.id
+    if (!orderId) {
+      toast.error('No active order')
+      return
+    }
+
+    try {
+      // Send all remaining pending items via the standard send route
+      const res = await fetch(`/api/orders/${orderId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: options.employeeId }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        toast.error(error.error || 'Failed to fire delayed items')
+        return
+      }
+
+      // Mark delay as fired in store
+      const store = useOrderStore.getState()
+      store.markDelayFired()
+
+      // Mark items as sent
       if (store.currentOrder) {
         for (const item of store.currentOrder.items) {
           if (!item.sentToKitchen) {
@@ -685,18 +983,60 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         }
       }
 
-      toast.success('Order sent to kitchen')
-      options.onOrderSent?.(resolvedOrderId)
+      toast.success('Delayed items fired to kitchen')
 
-      // Step 4: Reload from API for fresh server state
-      await loadOrder(resolvedOrderId)
+      // Reload from API
+      await loadOrder(orderId)
     } catch (error) {
-      console.error('[useActiveOrder] Failed to send order:', error)
-      toast.error('Failed to send order')
-    } finally {
-      setIsSending(false)
+      console.error('[useActiveOrder] Failed to fire delayed items:', error)
+      toast.error('Failed to fire delayed items')
     }
-  }, [currentOrder, options, loadOrder, ensureOrderInDB])
+  }, [currentOrder?.id, options.employeeId, loadOrder])
+
+  // Set per-item delay on specific items
+  const setItemDelay = useCallback((itemIds: string[], minutes: number | null) => {
+    useOrderStore.getState().setItemDelay(itemIds, minutes)
+  }, [])
+
+  // Fire a single delayed item to kitchen (timer expired or manual "Fire Now")
+  const handleFireItem = useCallback(async (itemId: string) => {
+    const orderId = currentOrder?.id
+    if (!orderId) {
+      toast.error('No active order')
+      return
+    }
+
+    try {
+      // Send this specific item via /send with itemIds filter
+      const res = await fetch(`/api/orders/${orderId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: options.employeeId,
+          itemIds: [itemId],
+        }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json()
+        toast.error(error.error || 'Failed to fire delayed item')
+        return
+      }
+
+      // Mark item as delay-fired and sent in store
+      const store = useOrderStore.getState()
+      store.markItemDelayFired(itemId)
+      store.updateItem(itemId, { sentToKitchen: true })
+
+      toast.success('Delayed item fired to kitchen')
+
+      // Reload from API
+      await loadOrder(orderId)
+    } catch (error) {
+      console.error('[useActiveOrder] Failed to fire delayed item:', error)
+      toast.error('Failed to fire delayed item')
+    }
+  }, [currentOrder?.id, options.employeeId, loadOrder])
 
   return {
     // Order identity
@@ -730,6 +1070,12 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     clearOrder,
     ensureOrderInDB,
 
+    // Note editing (for NoteEditModal)
+    noteEditTarget,
+    openNoteEditor,
+    closeNoteEditor,
+    saveNote,
+
     // Item handlers
     handleRemoveItem,
     handleQuantityChange,
@@ -745,5 +1091,24 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
     // Send to kitchen
     handleSendToKitchen,
+
+    // Coursing
+    coursingEnabled: currentOrder?.coursingEnabled || false,
+    courseDelays: currentOrder?.courseDelays || {},
+    setCoursingEnabled: useOrderStore.getState().setCoursingEnabled,
+    setCourseDelay: useOrderStore.getState().setCourseDelay,
+    fireCourse: useOrderStore.getState().fireCourse,
+    handleFireCourse,
+
+    // Order-level delay
+    pendingDelay: currentOrder?.pendingDelay ?? null,
+    delayStartedAt: currentOrder?.delayStartedAt ?? null,
+    delayFiredAt: currentOrder?.delayFiredAt ?? null,
+    setPendingDelay: useOrderStore.getState().setPendingDelay,
+    handleFireDelayed,
+
+    // Per-item delay
+    setItemDelay,
+    handleFireItem,
   }
 }

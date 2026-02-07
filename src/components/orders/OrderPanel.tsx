@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
+import { OrderDelayBanner } from './OrderDelayBanner'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
 export type { OrderPanelItemData }
@@ -72,6 +73,27 @@ export interface OrderPanelProps {
   employeeId?: string
   onPaymentSuccess?: (result: DatacapResult & { tipAmount: number }) => void
   onPaymentCancel?: () => void
+  // Quick Pick selection (supports multi-select)
+  selectedItemId?: string | null
+  selectedItemIds?: Set<string>
+  onItemSelect?: (itemId: string) => void
+  multiSelectMode?: boolean
+  onToggleMultiSelect?: () => void
+  onSelectAllPending?: () => void
+  // Coursing
+  coursingEnabled?: boolean
+  courseDelays?: Record<number, { delayMinutes: number; startedAt?: string; firedAt?: string }>
+  onSetCourseDelay?: (courseNumber: number, minutes: number) => void
+  onFireCourse?: (courseNumber: number) => void
+  // Order-level delay
+  pendingDelay?: number | null
+  delayStartedAt?: string | null
+  delayFiredAt?: string | null
+  onFireDelayed?: () => void
+  onCancelDelay?: () => void
+  // Per-item delay
+  onFireItem?: (itemId: string) => void
+  onCancelItemDelay?: (itemId: string) => void
 }
 
 export function OrderPanel({
@@ -132,6 +154,27 @@ export function OrderPanel({
   employeeId,
   onPaymentSuccess,
   onPaymentCancel,
+  // Quick Pick selection (multi-select)
+  selectedItemId,
+  selectedItemIds,
+  onItemSelect,
+  multiSelectMode,
+  onToggleMultiSelect,
+  onSelectAllPending,
+  // Coursing
+  coursingEnabled,
+  courseDelays,
+  onSetCourseDelay,
+  onFireCourse,
+  // Order-level delay
+  pendingDelay,
+  delayStartedAt,
+  delayFiredAt,
+  onFireDelayed,
+  onCancelDelay,
+  // Per-item delay
+  onFireItem,
+  onCancelItemDelay,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -221,6 +264,10 @@ export function OrderPanel({
       maxCourses={maxCourses}
       onSeatChange={onItemSeatChange}
       isNewest={newestItemId === item.id}
+      isSelected={selectedItemIds ? selectedItemIds.has(item.id) : selectedItemId === item.id}
+      onSelect={onItemSelect}
+      onFireItem={onFireItem}
+      onCancelItemDelay={onCancelItemDelay}
     />
   )
 
@@ -230,33 +277,151 @@ export function OrderPanel({
 
     return (
       <div>
-        {/* Section header with sort toggle */}
+        {/* Section header with sort toggle + multi-select controls */}
         <div style={{
           fontSize: '11px', fontWeight: 700, color: '#94a3b8',
           textTransform: 'uppercase' as const, letterSpacing: '0.05em',
           marginBottom: '12px', paddingBottom: '8px',
           borderBottom: '2px solid rgba(148, 163, 184, 0.3)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: '6px',
         }}>
-          <span>PENDING ITEMS ({pendingItems.length})</span>
-          <button
-            onClick={() => setSortDirection(d => d === 'newest-bottom' ? 'newest-top' : 'newest-bottom')}
-            title={sortDirection === 'newest-bottom' ? 'Newest at bottom — click for top' : 'Newest at top — click for bottom'}
-            style={{
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: '4px', color: '#94a3b8', cursor: 'pointer',
-              padding: '2px 6px', fontSize: '13px', lineHeight: 1,
-              display: 'flex', alignItems: 'center', gap: '3px',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            {sortDirection === 'newest-bottom' ? '\u2193' : '\u2191'}
-            <span style={{ fontSize: '9px', letterSpacing: '0.03em' }}>NEW</span>
-          </button>
+          <span>PENDING ({pendingItems.length})</span>
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            {/* Sort toggle */}
+            <button
+              onClick={() => setSortDirection(d => d === 'newest-bottom' ? 'newest-top' : 'newest-bottom')}
+              title={sortDirection === 'newest-bottom' ? 'Newest at bottom — click for top' : 'Newest at top — click for bottom'}
+              style={{
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '4px', color: '#94a3b8', cursor: 'pointer',
+                padding: '2px 6px', fontSize: '13px', lineHeight: 1,
+                display: 'flex', alignItems: 'center', gap: '3px',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {sortDirection === 'newest-bottom' ? '\u2193' : '\u2191'}
+              <span style={{ fontSize: '9px', letterSpacing: '0.03em' }}>NEW</span>
+            </button>
+          </div>
         </div>
 
-        {seatGroups && seatGroups.length > 1 ? (
+        {/* Order-level delay banner */}
+        {pendingDelay && pendingDelay > 0 && onFireDelayed && (
+          <OrderDelayBanner
+            delayMinutes={pendingDelay}
+            startedAt={delayStartedAt ?? null}
+            firedAt={delayFiredAt ?? null}
+            onAutoFire={onFireDelayed}
+            onFireNow={onFireDelayed}
+            onCancelDelay={onCancelDelay || (() => {})}
+          />
+        )}
+
+        {coursingEnabled ? (
+          // Course-grouped rendering
+          (() => {
+            // Group pending items by course number
+            const courseGroups = new Map<number, OrderPanelItemData[]>()
+            const unassigned: OrderPanelItemData[] = []
+            sorted.forEach(item => {
+              if (item.courseNumber) {
+                const existing = courseGroups.get(item.courseNumber) || []
+                existing.push(item)
+                courseGroups.set(item.courseNumber, existing)
+              } else {
+                unassigned.push(item)
+              }
+            })
+            const courseNumbers = Array.from(courseGroups.keys()).sort((a, b) => a - b)
+
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+                {courseNumbers.map(courseNum => {
+                  const courseItems = courseGroups.get(courseNum)!
+                  const delay = courseDelays?.[courseNum]
+                  return (
+                    <div key={`course-${courseNum}`}>
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: '8px',
+                        marginBottom: '8px', paddingBottom: '6px',
+                        borderBottom: '1px solid rgba(59, 130, 246, 0.15)',
+                      }}>
+                        <span style={{
+                          fontSize: '11px', fontWeight: 700,
+                          color: '#60a5fa',
+                          padding: '2px 8px',
+                          background: 'rgba(59, 130, 246, 0.15)',
+                          borderRadius: '4px',
+                        }}>
+                          COURSE {courseNum}
+                        </span>
+                        <span style={{ fontSize: '11px', color: '#64748b' }}>
+                          {courseItems.length} item{courseItems.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {courseItems.map(renderItem)}
+                      </div>
+                      {/* Course delay status (fire controls are in the gutter strip) */}
+                      {courseNum > 1 && delay?.firedAt && (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: '6px',
+                          padding: '4px 10px', marginTop: '4px',
+                          background: 'rgba(34, 197, 94, 0.1)', borderRadius: '6px',
+                        }}>
+                          <svg width="12" height="12" fill="none" stroke="#22c55e" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span style={{ fontSize: '10px', color: '#4ade80', fontWeight: 600 }}>Fired</span>
+                        </div>
+                      )}
+                      {courseNum > 1 && delay?.startedAt && !delay?.firedAt && (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: '6px',
+                          padding: '4px 10px', marginTop: '4px',
+                          background: 'rgba(251, 191, 36, 0.1)', borderRadius: '6px',
+                        }}>
+                          <svg width="12" height="12" fill="none" stroke="#fbbf24" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span style={{ fontSize: '10px', color: '#fbbf24', fontWeight: 600 }}>Timer running</span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                {/* Unassigned items */}
+                {unassigned.length > 0 && (
+                  <div>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      marginBottom: '8px', paddingBottom: '6px',
+                      borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                    }}>
+                      <span style={{
+                        fontSize: '11px', fontWeight: 600,
+                        color: '#94a3b8',
+                        padding: '2px 8px',
+                        background: 'rgba(255, 255, 255, 0.05)',
+                        borderRadius: '4px',
+                      }}>
+                        NO COURSE
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>
+                        {unassigned.length} item{unassigned.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {unassigned.map(renderItem)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()
+        ) : seatGroups && seatGroups.length > 1 ? (
           // Seat-grouped rendering
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
             {seatGroups.filter(group =>

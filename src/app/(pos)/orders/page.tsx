@@ -69,6 +69,8 @@ import { BartenderView } from '@/components/bartender'
 import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
+import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
+import { useQuickPick } from '@/hooks/useQuickPick'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import { toast } from '@/stores/toast-store'
@@ -136,7 +138,7 @@ export default function OrdersPage() {
   } | null>(null)
 
   // T023: Inline ordering modifier callback ref
-  const inlineModifierCallbackRef = useRef<((modifiers: { id: string; name: string; price: number }[]) => void) | null>(null)
+  const inlineModifierCallbackRef = useRef<((modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]) => void) | null>(null)
   // T023: Inline ordering timed rental callback ref
   const inlineTimedRentalCallbackRef = useRef<((price: number, blockMinutes: number) => void) | null>(null)
   // T023: Inline ordering pizza builder callback ref
@@ -183,6 +185,7 @@ export default function OrdersPage() {
     addToQuickBar,
     removeFromQuickBar,
     isInQuickBar,
+    updateSetting: updateLayoutSetting,
   } = usePOSLayout({
     employeeId: employee?.id,
     locationId: employee?.location?.id,
@@ -434,7 +437,7 @@ export default function OrdersPage() {
         name: item.name,
         quantity: item.quantity,
         price: item.price,
-        modifiers: item.modifiers?.map(m => ({ name: m.name, price: m.price })),
+        modifiers: item.modifiers?.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
         specialNotes: item.specialNotes,
         kitchenStatus,
         isHeld: item.isHeld,
@@ -443,9 +446,59 @@ export default function OrdersPage() {
         blockTimeMinutes: item.blockTimeMinutes ?? undefined,
         blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
         blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
+        // Per-item delay
+        delayMinutes: item.delayMinutes,
+        delayStartedAt: item.delayStartedAt,
+        delayFiredAt: item.delayFiredAt,
+        sentToKitchen: item.sentToKitchen,
       }
     })
   }, [currentOrder?.items, menuItems])
+
+  // Quick Pick: selection state for fast quantity setting
+  const {
+    selectedItemId: quickPickSelectedId,
+    selectedItemIds: quickPickSelectedIds,
+    selectItem: selectQuickPickItem,
+    setSelectedItemId: setQuickPickSelectedId,
+    clearSelection: clearQuickPick,
+    multiSelectMode: quickPickMultiSelect,
+    toggleMultiSelect: toggleQuickPickMultiSelect,
+    selectAllPending: selectAllPendingQuickPick,
+  } = useQuickPick(orderPanelItems)
+
+  // Multi-digit entry: tapping 1 then 0 quickly = 10
+  const ordersDigitBufferRef = useRef<string>('')
+  const ordersDigitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleQuickPickNumber = useCallback((num: number) => {
+    if (!quickPickSelectedId) return
+    const item = currentOrder?.items.find(i => i.id === quickPickSelectedId)
+    if (!item || item.sentToKitchen) return
+
+    if (ordersDigitTimerRef.current) clearTimeout(ordersDigitTimerRef.current)
+    ordersDigitBufferRef.current += String(num)
+    const pendingQty = parseInt(ordersDigitBufferRef.current, 10)
+
+    if (pendingQty === 0) {
+      ordersDigitBufferRef.current = ''
+      removeItem(quickPickSelectedId)
+      return
+    }
+
+    const delta = pendingQty - item.quantity
+    if (delta !== 0) updateQuantity(quickPickSelectedId, delta)
+
+    ordersDigitTimerRef.current = setTimeout(() => {
+      ordersDigitBufferRef.current = ''
+    }, 600)
+  }, [quickPickSelectedId, currentOrder?.items, updateQuantity, removeItem])
+
+  // Clear digit buffer on selection change
+  useEffect(() => {
+    ordersDigitBufferRef.current = ''
+    if (ordersDigitTimerRef.current) clearTimeout(ordersDigitTimerRef.current)
+  }, [quickPickSelectedId])
 
   // OrderPanel calculations (from usePricing hook)
   const subtotal = pricing.subtotal
@@ -1361,7 +1414,7 @@ export default function OrdersPage() {
     name: string
     quantity: number
     price: number
-    modifiers: { id: string; name: string; price: number }[]
+    modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]
     status?: string
     voidReason?: string
   }) => {
@@ -1383,7 +1436,7 @@ export default function OrdersPage() {
       setOrderToPayId(orderId)
       setCompVoidItem({
         ...item,
-        modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price })),
+        modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
       })
       setShowCompVoidModal(true)
     }
@@ -1755,10 +1808,10 @@ export default function OrdersPage() {
       const applyToMods = selectedItem.applyPourToModifiers && pourMultiplier
       const simplifiedModifiers = modifiers.map(mod => ({
         id: mod.id,
-        name: mod.preModifier
-          ? `${mod.preModifier.charAt(0).toUpperCase() + mod.preModifier.slice(1)} ${mod.name}`
-          : mod.name,
+        name: mod.name,
         price: applyToMods && pourMultiplier ? mod.price * pourMultiplier : mod.price,
+        depth: mod.depth,
+        preModifier: mod.preModifier,
       }))
       inlineModifierCallbackRef.current(simplifiedModifiers)
       inlineModifierCallbackRef.current = null
@@ -1788,9 +1841,7 @@ export default function OrdersPage() {
       specialNotes,
       modifiers: modifiers.map(mod => ({
         id: mod.id,
-        name: mod.preModifier
-          ? `${mod.preModifier.charAt(0).toUpperCase() + mod.preModifier.slice(1)} ${mod.name}`
-          : mod.name,
+        name: mod.name,
         price: applyToMods ? mod.price * pourMultiplier : mod.price,
         preModifier: mod.preModifier,
         depth: mod.depth,
@@ -2462,9 +2513,7 @@ export default function OrdersPage() {
       specialNotes,
       modifiers: modifiers.map(mod => ({
         id: mod.id,
-        name: mod.preModifier
-          ? `${mod.preModifier.charAt(0).toUpperCase() + mod.preModifier.slice(1)} ${mod.name}`
-          : mod.name,
+        name: mod.name,
         price: applyToMods ? mod.price * pourMultiplier : mod.price,
         preModifier: mod.preModifier,
         depth: mod.depth,
@@ -3157,6 +3206,19 @@ export default function OrdersPage() {
                       <div className="border-t border-gray-200 my-2" />
                       <button
                         type="button"
+                        className={`w-full px-4 py-2.5 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium ${layout.quickPickEnabled ? 'bg-purple-50 text-purple-600' : ''}`}
+                        onClick={() => {
+                          updateLayoutSetting('quickPickEnabled', !layout.quickPickEnabled)
+                          setShowSettingsDropdown(false)
+                        }}
+                      >
+                        <svg className={`w-5 h-5 ${layout.quickPickEnabled ? 'text-purple-500' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                        </svg>
+                        {layout.quickPickEnabled ? '✓ Quick Pick Numbers' : 'Quick Pick Numbers'}
+                      </button>
+                      <button
+                        type="button"
                         className={`w-full px-4 py-2.5 text-left hover:bg-gray-100 flex items-center gap-3 text-sm font-medium ${isEditingFavorites ? 'bg-blue-50 text-blue-600' : ''}`}
                         onClick={() => {
                           setIsEditingFavorites(!isEditingFavorites)
@@ -3769,6 +3831,43 @@ export default function OrdersPage() {
           )}
         </div>
 
+        {/* Quick Pick Gutter — between menu and order panel */}
+        {layout.quickPickEnabled && (
+          <QuickPickStrip
+            selectedItemId={quickPickSelectedId}
+            selectedItemQty={quickPickSelectedId ? orderPanelItems.find(i => i.id === quickPickSelectedId)?.quantity : undefined}
+            selectedCount={quickPickSelectedIds.size}
+            onNumberTap={handleQuickPickNumber}
+            multiSelectMode={quickPickMultiSelect}
+            onToggleMultiSelect={toggleQuickPickMultiSelect}
+            onHoldToggle={quickPickSelectedId ? () => {
+              const item = currentOrder?.items.find(i => i.id === quickPickSelectedId)
+              if (item) updateItem(quickPickSelectedId, { isHeld: !item.isHeld })
+            } : undefined}
+            isHeld={quickPickSelectedId ? currentOrder?.items.find(i => i.id === quickPickSelectedId)?.isHeld : false}
+            onSetDelay={(minutes) => {
+              const selectedIds = Array.from(quickPickSelectedIds)
+              if (selectedIds.length > 0) {
+                const store = useOrderStore.getState()
+                const allHaveThisDelay = selectedIds.every(id => {
+                  const item = store.currentOrder?.items.find(i => i.id === id)
+                  return item?.delayMinutes === minutes
+                })
+                store.setItemDelay(selectedIds, allHaveThisDelay ? null : minutes)
+              } else {
+                const current = currentOrder?.pendingDelay
+                useOrderStore.getState().setPendingDelay(current === minutes ? null : minutes)
+              }
+            }}
+            activeDelay={(() => {
+              const selectedIds = Array.from(quickPickSelectedIds)
+              if (selectedIds.length === 0) return currentOrder?.pendingDelay ?? null
+              const firstItem = currentOrder?.items.find(i => i.id === selectedIds[0])
+              return firstItem?.delayMinutes ?? null
+            })()}
+          />
+        )}
+
         <OrderPanel
           orderId={savedOrderId || currentOrder?.id}
           orderNumber={currentOrder?.orderNumber}
@@ -3813,6 +3912,57 @@ export default function OrdersPage() {
           terminalId="terminal-1"
           employeeId={employee?.id}
           onPaymentSuccess={handlePaymentSuccess}
+          selectedItemId={layout.quickPickEnabled ? quickPickSelectedId : undefined}
+          selectedItemIds={layout.quickPickEnabled ? quickPickSelectedIds : undefined}
+          onItemSelect={layout.quickPickEnabled ? selectQuickPickItem : undefined}
+          multiSelectMode={quickPickMultiSelect}
+          onToggleMultiSelect={toggleQuickPickMultiSelect}
+          onSelectAllPending={selectAllPendingQuickPick}
+          pendingDelay={currentOrder?.pendingDelay ?? undefined}
+          delayStartedAt={currentOrder?.delayStartedAt ?? undefined}
+          delayFiredAt={currentOrder?.delayFiredAt ?? undefined}
+          onFireDelayed={async () => {
+            const store = useOrderStore.getState()
+            const orderId = store.currentOrder?.id || savedOrderId
+            if (!orderId) return
+            try {
+              const res = await fetch(`/api/orders/${orderId}/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ employeeId: employee?.id }),
+              })
+              if (res.ok) {
+                store.markDelayFired()
+                if (store.currentOrder) {
+                  for (const item of store.currentOrder.items) {
+                    if (!item.sentToKitchen) store.updateItem(item.id, { sentToKitchen: true })
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('[OrdersPage] Failed to fire delayed:', err)
+            }
+          }}
+          onCancelDelay={() => useOrderStore.getState().setPendingDelay(null)}
+          onFireItem={async (itemId) => {
+            const store = useOrderStore.getState()
+            const orderId = store.currentOrder?.id || savedOrderId
+            if (!orderId) return
+            try {
+              const res = await fetch(`/api/orders/${orderId}/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ employeeId: employee?.id, itemIds: [itemId] }),
+              })
+              if (res.ok) {
+                store.markItemDelayFired(itemId)
+                store.updateItem(itemId, { sentToKitchen: true })
+              }
+            } catch (err) {
+              console.error('[OrdersPage] Failed to fire delayed item:', err)
+            }
+          }}
+          onCancelItemDelay={(itemId) => useOrderStore.getState().setItemDelay([itemId], null)}
         />
       </div>
 
@@ -4241,7 +4391,7 @@ export default function OrdersPage() {
             price: item.price,
             itemTotal: (item.price + item.modifiers.reduce((sum, m) => sum + m.price, 0)) * item.quantity,
             seatNumber: item.seatNumber,
-            modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price })),
+            modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
           }))}
           onSplitComplete={handleSplitComplete}
           onNavigateToSplit={handleNavigateToSplit}

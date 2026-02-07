@@ -80,6 +80,11 @@ interface OpenOrder {
   // Entertainment session info
   entertainment?: { menuItemId: string; menuItemName: string; status: string; orderItemId: string | null }[]
   hasActiveEntertainment?: boolean
+  // Order status flags (for delay/hold/course badges)
+  hasHeldItems?: boolean
+  hasCoursingEnabled?: boolean
+  hasDelayedItems?: boolean
+  courseMode?: string | null
 }
 
 interface OpenOrdersPanelProps {
@@ -482,6 +487,22 @@ export function OpenOrdersPanel({ locationId, employeeId, onSelectOrder, onViewO
                   {order.guestCount > 1 && (
                     <span className="text-xs text-gray-500 font-medium">
                       👥 {order.guestCount}
+                    </span>
+                  )}
+                  {/* Delay/Hold/Course status badges */}
+                  {order.hasDelayedItems && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700">
+                      ⏱ Delayed
+                    </span>
+                  )}
+                  {order.hasHeldItems && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">
+                      ⏸ Held
+                    </span>
+                  )}
+                  {(order.hasCoursingEnabled || (order.courseMode && order.courseMode !== 'off')) && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">
+                      CRS
                     </span>
                   )}
                 </div>
