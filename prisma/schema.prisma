@@ -164,6 +164,12 @@ model Location {
   // Order Cards (multi-card tabs)
   orderCards OrderCard[]
 
+  // Datacap Advanced Features (Sprint 3)
+  digitalReceipts  DigitalReceipt[]
+  chargebackCases  ChargebackCase[]
+  cardProfiles     CardProfile[]
+  walkoutRetries   WalkoutRetry[]
+
   // Sync Audit
   syncAuditEntries SyncAuditEntry[]
 
@@ -1487,6 +1493,11 @@ model Order {
   preAuthExpiresAt DateTime? // When the hold expires
   preAuthRecordNo  String? // Datacap RecordNo token for capture/increment
   preAuthReaderId  String? // Which reader did the pre-auth
+
+  // Walkout Recovery (Phase 6)
+  isWalkout       Boolean   @default(false)
+  walkoutAt       DateTime?
+  walkoutMarkedBy String?   // Employee who marked as walkout
 
   // Coursing (T013)
   currentCourse Int    @default(1) // Currently active course
@@ -5521,4 +5532,156 @@ model OrderCard {
   @@index([orderId])
   @@index([locationId])
   @@index([status])
+}
+
+// ============================================
+// DIGITAL RECEIPTS — Chargeback Defense (Phase 7)
+// ============================================
+
+model DigitalReceipt {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  orderId    String   @unique
+  paymentId  String
+
+  // Full receipt content (items, amounts, taxes, discounts, etc.)
+  receiptData     Json
+
+  // Signature for chargeback defense
+  signatureData   String?  // Base64 PNG from reader or POS screen
+  signatureSource String?  // "reader" | "pos_screen"
+
+  // Archive lifecycle
+  archivedAt      DateTime?  // When moved to cloud archive
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([locationId, createdAt])
+  @@index([paymentId])
+}
+
+// ============================================
+// CHARGEBACK CASES — Dispute Tracking (Phase 7)
+// ============================================
+
+model ChargebackCase {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Auto-matched order/payment (if found)
+  orderId    String?
+  paymentId  String?
+
+  // Card info for matching
+  cardLast4  String
+  cardBrand  String?
+  amount     Decimal
+
+  // Chargeback details
+  chargebackDate   DateTime
+  reason           String?
+  reasonCode       String?   // Processor reason code (e.g., "10.4" for fraud)
+  responseDeadline DateTime?
+
+  // Status: open | responded | won | lost
+  status String @default("open")
+  notes  String?
+
+  // Response tracking
+  respondedAt    DateTime?
+  respondedBy    String?   // Employee who responded
+  responseNotes  String?
+  resolvedAt     DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([cardLast4])
+  @@index([status])
+  @@index([chargebackDate])
+}
+
+// ============================================
+// CARD PROFILES — Repeat Customer Recognition (Phase 8)
+// ============================================
+
+model CardProfile {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Hashed card identity (privacy-safe — cannot reverse to card number)
+  cardholderIdHash String    // SHA-256 of Datacap CardholderID
+
+  // Card info
+  cardType       String     // VISA, MASTERCARD, etc.
+  cardLast4      String
+  cardholderName String?    // From chip data
+
+  // Visit tracking
+  visitCount     Int       @default(0)
+  firstSeenAt    DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  totalSpend     Decimal   @default(0)
+
+  // Link to Customer record (future: merge via phone number)
+  customerId     String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, cardholderIdHash])
+  @@index([locationId, cardLast4])
+  @@index([locationId])
+}
+
+// ============================================
+// WALKOUT RETRY — Declined Tab Recovery (Phase 6)
+// ============================================
+
+model WalkoutRetry {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  orderId    String
+  orderCardId String   // Which OrderCard to retry capture against
+
+  // Amount to capture
+  amount     Decimal
+
+  // Retry schedule
+  nextRetryAt    DateTime
+  retryCount     Int       @default(0)
+  maxRetries     Int       @default(10)  // Calculated from settings
+
+  // Status: pending | collected | exhausted | written_off
+  status     String  @default("pending")
+
+  // Result tracking
+  lastRetryAt    DateTime?
+  lastRetryError String?
+  collectedAt    DateTime?
+  writtenOffAt   DateTime?
+  writtenOffBy   String?   // Employee who wrote off
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([status])
+  @@index([nextRetryAt])
 }

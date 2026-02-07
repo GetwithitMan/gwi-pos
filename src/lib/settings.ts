@@ -89,6 +89,20 @@ export interface PaymentSettings {
   tipDollarSuggestions: number[]             // Dollar suggestions for under-threshold (default: [1, 2, 3])
   tipPercentSuggestions: number[]            // Percent suggestions for over-threshold (default: [18, 20, 25])
   requireCustomForZeroTip: boolean           // Must tap Custom to skip tip (default: true)
+
+  // Walkout Recovery (Phase 6)
+  walkoutRetryEnabled: boolean               // Enable auto-retry for walkout tabs (default: true)
+  walkoutRetryFrequencyDays: number          // Days between retry attempts (default: 3)
+  walkoutMaxRetryDays: number                // Stop retrying after this many days (default: 30)
+  walkoutAutoDetectMinutes: number           // Auto-detect walkout if tab idle for N minutes (default: 120)
+
+  // Card Recognition (Phase 8)
+  cardRecognitionEnabled: boolean            // Enable repeat customer tracking by card (default: true)
+  cardRecognitionToastEnabled: boolean       // Show welcome-back toast to bartender (default: true)
+
+  // Digital Receipts (Phase 7)
+  digitalReceiptRetentionDays: number        // Local retention before cloud archive (default: 90)
+  requireSignatureAbove: number              // Require signature for amounts above this (default: 25)
 }
 
 export interface LoyaltySettings {
@@ -337,6 +351,17 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     tipDollarSuggestions: [1, 2, 3],
     tipPercentSuggestions: [18, 20, 25],
     requireCustomForZeroTip: true,
+    // Walkout Recovery
+    walkoutRetryEnabled: true,
+    walkoutRetryFrequencyDays: 3,
+    walkoutMaxRetryDays: 30,
+    walkoutAutoDetectMinutes: 120,
+    // Card Recognition
+    cardRecognitionEnabled: true,
+    cardRecognitionToastEnabled: true,
+    // Digital Receipts
+    digitalReceiptRetentionDays: 90,
+    requireSignatureAbove: 25,
   },
   loyalty: {
     enabled: false,
