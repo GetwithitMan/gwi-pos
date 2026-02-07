@@ -11,6 +11,7 @@ import { parseSettings } from '@/lib/settings'
 import { processLiquorInventory } from '@/lib/liquor-inventory'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { tableEvents } from '@/lib/realtime/table-events'
+import { errorCapture } from '@/lib/error-capture'
 
 interface PaymentInput {
   method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'loyalty_points'
@@ -757,6 +758,19 @@ export async function POST(
     })
   } catch (error) {
     console.error('Failed to process payment:', error)
+
+    // Capture CRITICAL payment error
+    errorCapture.critical('PAYMENT', 'Payment processing failed', {
+      category: 'payment-processing-error',
+      action: `Processing payment for Order ${orderId}`,
+      orderId,
+      error: error instanceof Error ? error : undefined,
+      path: `/api/orders/${orderId}/pay`,
+      requestBody: body,
+    }).catch(() => {
+      // Silently fail error logging - don't block the error response
+    })
+
     return NextResponse.json(
       { error: 'Failed to process payment' },
       { status: 500 }

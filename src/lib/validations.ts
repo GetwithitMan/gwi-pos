@@ -114,12 +114,12 @@ const orderItemSchema = z.object({
   correlationId: z.string().optional(), // Client-provided ID for matching response items
   modifiers: z.array(orderItemModifierSchema).default([]),
   ingredientModifications: z.array(ingredientModificationSchema).optional(),
-  specialNotes: z.string().max(500).optional(),
-  seatNumber: z.number().int().positive().optional(),
-  courseNumber: z.number().int().positive().optional(),
+  specialNotes: z.string().max(500).nullish(),
+  seatNumber: z.number().int().positive().nullish(),
+  courseNumber: z.number().int().positive().nullish(),
   pizzaConfig: pizzaConfigSchema,
   // Timed rental / entertainment fields
-  blockTimeMinutes: z.number().int().positive().optional(),
+  blockTimeMinutes: z.number().int().positive().nullish(),
 })
 
 export const createOrderSchema = z.object({
@@ -127,11 +127,11 @@ export const createOrderSchema = z.object({
   locationId: idSchema,
   orderType: z.string(), // Allow custom order type slugs (not just enum)
   orderTypeId: idSchema.optional(), // Reference to OrderType record
-  tableId: idSchema.optional(),
-  tabName: z.string().max(50).optional(),
+  tableId: idSchema.nullish(),
+  tabName: z.string().max(50).nullish(),
   guestCount: z.number().int().positive().default(1),
   items: z.array(orderItemSchema).min(1, 'Order must have at least one item'),
-  notes: z.string().max(500).optional(),
+  notes: z.string().max(500).nullish(),
   customFields: z.record(z.string(), z.string()).optional(), // Custom fields for configurable order types
 })
 

@@ -282,3 +282,43 @@ export function parseSMSReply(body: string): 'approve' | 'reject' | 'unknown' {
 
   return 'unknown'
 }
+
+// ============================================
+// Generic SMS Functions (for Error Alerts)
+// ============================================
+
+interface SendSMSParams {
+  to: string
+  body: string
+}
+
+/**
+ * Send a generic SMS message
+ * Used for error alerts and other notifications
+ */
+export async function sendSMS(params: SendSMSParams): Promise<SMSResult> {
+  const { to, body } = params
+
+  if (!isTwilioConfigured()) {
+    console.warn('[Twilio] Not configured, skipping SMS')
+    return { success: false, error: 'Twilio not configured' }
+  }
+
+  try {
+    const client = getClient()
+    const result = await client.messages.create({
+      body,
+      from: TWILIO_FROM_NUMBER,
+      to: formatPhoneE164(to),
+    })
+
+    console.log(`[Twilio] SMS sent: ${result.sid}`)
+    return { success: true, messageSid: result.sid }
+  } catch (error) {
+    console.error('[Twilio] Failed to send SMS:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    }
+  }
+}

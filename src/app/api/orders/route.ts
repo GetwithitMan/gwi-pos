@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
+import { errorCapture } from '@/lib/error-capture'
 
 // Helper to calculate commission for an item
 function calculateItemCommission(
@@ -272,6 +273,22 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Failed to create order:', error)
+
+    // Capture CRITICAL order creation error
+    const body = await request.clone().json().catch(() => ({}))
+    errorCapture.critical('ORDER', 'Order creation failed', {
+      category: 'order-creation-error',
+      action: 'Creating new order',
+      error: error instanceof Error ? error : undefined,
+      path: '/api/orders',
+      requestBody: body,
+      locationId: body?.locationId,
+      employeeId: body?.employeeId,
+      tableId: body?.tableId,
+    }).catch(() => {
+      // Silently fail error logging
+    })
+
     return NextResponse.json(
       { error: 'Failed to create order' },
       { status: 500 }
@@ -354,6 +371,24 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Failed to fetch orders:', error)
+
+    // Capture HIGH severity error for order fetching
+    const searchParams = request.nextUrl.searchParams
+    errorCapture.high('API', 'Failed to fetch orders', {
+      category: 'order-fetch-error',
+      action: 'Fetching orders list',
+      error: error instanceof Error ? error : undefined,
+      path: '/api/orders',
+      queryParams: {
+        locationId: searchParams.get('locationId') || '',
+        status: searchParams.get('status') || '',
+        employeeId: searchParams.get('employeeId') || '',
+      },
+      locationId: searchParams.get('locationId') || undefined,
+    }).catch(() => {
+      // Silently fail error logging
+    })
+
     return NextResponse.json(
       { error: 'Failed to fetch orders' },
       { status: 500 }
