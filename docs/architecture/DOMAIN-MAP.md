@@ -1,11 +1,11 @@
 # GWI POS Domain Map
 ## Mapping Existing Files to Target Domains
 
-**Version:** 1.0
-**Date:** 2026-02-04
-**Status:** DRAFT
+**Version:** 1.1
+**Date:** 2026-02-07
+**Status:** ACTIVE
 
-This document maps every significant file/folder in the current codebase to its target domain in the 10-domain architecture.
+This document maps every significant file/folder in the current codebase to its target domain architecture (16 domains).
 
 ---
 
@@ -40,6 +40,7 @@ This document maps every significant file/folder in the current codebase to its 
 | 13 | Events | EV | `PM Mode: Events` | Event creation, ticketing, check-in |
 | 14 | Financial | FN | `PM Mode: Financial` | Gift cards, house accounts, discounts |
 | 15 | Development-RnD | RD | `PM Mode: Development-RnD` | Prototypes, research, technical spikes |
+| 16 | Error Reporting | ER | `PM Mode: Error Reporting` | Error tracking, monitoring, alerts |
 
 ---
 

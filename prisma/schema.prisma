@@ -204,6 +204,11 @@ model Location {
   // Bottle Service (Phase 10)
   bottleServiceTiers BottleServiceTier[]
 
+  // Error Reporting (Domain 16)
+  errorLogs       ErrorLog[]
+  performanceLogs PerformanceLog[]
+  healthChecks    HealthCheck[]
+
   @@index([organizationId])
 }
 
@@ -402,6 +407,9 @@ model Employee {
 
   // Stock adjustment relations
   ingredientStockAdjustments IngredientStockAdjustment[]
+
+  // Error Reporting (Domain 16)
+  errorLogs ErrorLog[]
 
   @@unique([locationId, pin])
   @@index([locationId])
@@ -5725,4 +5733,132 @@ model BottleServiceTier {
 
   @@index([locationId])
   @@index([locationId, isActive])
+}
+
+// ============================================
+// ERROR REPORTING DOMAIN (Domain 16)
+// ============================================
+// Mission: Catch and diagnose issues before merchants know there's a problem
+// Focus: Orders and payments (critical path), plus full system observability
+// Architecture: Hybrid storage (critical → DB, detailed → logs), pivot-ready for external tools
+
+model ErrorLog {
+  id String @id @default(cuid())
+
+  // Classification
+  severity  String // CRITICAL, HIGH, MEDIUM, LOW
+  errorType String // PAYMENT, ORDER, API, FRONTEND, DATABASE, NETWORK, BUSINESS_LOGIC, PERFORMANCE
+  category  String // For grouping similar errors (e.g., "payment-timeout", "order-creation-failed")
+
+  // Error Details
+  message    String
+  stackTrace String? // Full stack trace for debugging
+  errorCode  String? // Custom error codes (e.g., "PAY_001", "ORD_403")
+
+  // Context (THE KEY TO QUICK DIAGNOSIS)
+  locationId String
+  location   Location  @relation(fields: [locationId], references: [id])
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id])
+  path       String // URL path or API route (e.g., "/api/orders/123/pay")
+  action     String // Human-readable action (e.g., "Processing payment for Order #1234")
+  component  String? // React component name if frontend error
+
+  // Business Context (CRITICAL PATH)
+  orderId    String? // Link to order if order-related
+  tableId    String? // Link to table if applicable
+  paymentId  String? // Link to payment if payment-related
+  customerId String? // Link to customer if applicable
+
+  // Technical Context
+  userAgent    String? // Browser user agent
+  browserInfo  String? // Parsed browser info (JSON)
+  requestBody  String? // Sanitized request body (NO sensitive data)
+  responseBody String? // API response if applicable
+  queryParams  String? // URL query parameters
+
+  // Performance
+  responseTime Int? // Milliseconds (for API calls, DB queries, etc.)
+
+  // Resolution Tracking
+  status          String    @default("NEW") // NEW, INVESTIGATING, RESOLVED, IGNORED
+  groupId         String? // Link to group similar errors together
+  occurrenceCount Int       @default(1) // How many times this exact error occurred
+  firstOccurred   DateTime  @default(now()) // First time this error happened
+  lastOccurred    DateTime  @default(now()) // Most recent occurrence
+  resolvedAt      DateTime? // When was this marked resolved
+  resolution      String? // How was it fixed
+  notes           String? // Developer notes
+
+  // Alerting
+  alertSent   Boolean   @default(false) // Has alert been sent for this error
+  alertSentAt DateTime? // When was alert sent
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([locationId, severity])
+  @@index([severity])
+  @@index([errorType])
+  @@index([status])
+  @@index([groupId])
+  @@index([createdAt])
+  @@index([employeeId])
+  @@index([orderId])
+  @@index([category])
+}
+
+model PerformanceLog {
+  id String @id @default(cuid())
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Operation Details
+  operation String // Description (e.g., "API: GET /api/orders", "Database: findMany orders")
+  duration  Int // Milliseconds
+  threshold Int // Expected max duration (alert if exceeded)
+
+  // Context
+  context    String? // Additional context (JSON)
+  stackTrace String? // Where was this called from
+  path       String? // URL or code path
+  employeeId String?
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([operation])
+  @@index([duration])
+  @@index([createdAt])
+}
+
+model HealthCheck {
+  id String @id @default(cuid())
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Check Details
+  checkType    String // ORDER_CREATION, PAYMENT_PROCESSING, PRINTER_CONNECTION, DATABASE_QUERY, API_RESPONSE
+  status       String // HEALTHY, DEGRADED, DOWN
+  responseTime Int? // Milliseconds
+  errorMessage String? // If status != HEALTHY
+
+  // Context
+  details String? // Additional details (JSON)
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([checkType])
+  @@index([status])
+  @@index([createdAt])
 }

@@ -2038,6 +2038,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | 13 | Events | `PM Mode: Events` | 🔄 Active |
 | 14 | Financial | `PM Mode: Financial` | 🔄 Active |
 | 15 | Development-RnD | `PM Mode: Development-RnD` | 🔄 Active |
+| 16 | Error Reporting | `PM Mode: Error Reporting` | ✅ DB Complete |
 
 ---
 
@@ -2211,6 +2212,36 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 - RnD code must NOT ship to production (feature flags or `/rnd/` paths)
 - Production code must never import from `/rnd/` paths
 - Features graduate to production domains or get archived
+
+---
+
+#### Domain 16: Error Reporting
+**Trigger:** `PM Mode: Error Reporting`
+**Documentation:** `/docs/domains/ERROR-REPORTING-DOMAIN.md`
+**Changelog:** `/docs/changelogs/ERROR-REPORTING-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Error Capture** | Centralized error collection | `/src/lib/error-capture.ts`, `/src/lib/error-boundary.tsx` |
+| **API** | Error logging endpoints | `/api/monitoring/error`, `/api/monitoring/performance`, `/api/monitoring/health-check` |
+| **Dashboard** | Monitoring UI | `/src/app/(admin)/monitoring/`, `/src/components/monitoring/` |
+| **Alerting** | Notifications (Email, SMS, Slack) | `/src/lib/alert-service.ts` |
+| **Database** | Error storage and queries | `ErrorLog`, `PerformanceLog`, `HealthCheck` models |
+
+**Architecture:**
+- **Hybrid Storage**: Critical errors → Database, Detailed logs → Files
+- **Pivot-Ready**: Schema compatible with Sentry, LogRocket, Datadog
+- **Critical Path Focus**: Orders and Payments (prevent revenue loss)
+- **Severity-Based Alerting**: SMS for CRITICAL, Email for HIGH, Batch for MEDIUM/LOW
+
+**Key Features:**
+- Automatic error capture (React Error Boundary + API interceptors)
+- Smart error grouping (deduplication)
+- Context-rich logging (who, what, where, when, business impact)
+- Performance monitoring (slow queries, API timeouts)
+- Health checks (critical systems status)
+
+**Status**: ✅ Database Layer Complete, Ready for Phase 2
 
 ---
 
