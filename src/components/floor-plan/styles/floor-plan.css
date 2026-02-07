@@ -39,10 +39,12 @@
 
 /* Main Container */
 .floor-plan-home {
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   background: var(--fp-bg-gradient);
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Header */

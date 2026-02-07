@@ -27,6 +27,8 @@ import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { StockBadge } from '@/components/menu/StockBadge'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
 import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
+import { OrderPanelItem } from '@/components/orders/OrderPanelItem'
+import { OrderPanelActions } from '@/components/orders/OrderPanelActions'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
 import { useEvents } from '@/lib/events'
@@ -201,6 +203,7 @@ export function FloorPlanHome({
   const [inlineOrderItems, setInlineOrderItems] = useState<InlineOrderItem[]>([])
   const [showOrderPanel, setShowOrderPanel] = useState(false)
   const [isSendingOrder, setIsSendingOrder] = useState(false)
+  const [pendingPayAfterSave, setPendingPayAfterSave] = useState(false)
   const [guestCount, setGuestCount] = useState(defaultGuestCount)
 
   // Notes editing state
@@ -256,6 +259,14 @@ export function FloorPlanHome({
   const [resendModal, setResendModal] = useState<{ itemId: string; itemName: string } | null>(null)
   const [resendNote, setResendNote] = useState('')
   const [resendLoading, setResendLoading] = useState(false)
+
+  // Sort direction for order panel items: 'newest-bottom' or 'newest-top'
+  const [itemSortDirection, setItemSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
+  // Newest item highlight + auto-scroll
+  const [newestItemId, setNewestItemId] = useState<string | null>(null)
+  const prevItemCountRef2 = useRef(0)
+  const orderScrollRef = useRef<HTMLDivElement>(null)
+  const newestTimerRef2 = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const {
     tables,
@@ -611,7 +622,7 @@ export function FloorPlanHome({
       price: Number(item.price),
       categoryId: item.categoryId,
     })),
-    enabled: showOrderPanel  // Only search when order panel is open
+    enabled: true  // Panel is always visible, search always enabled
   })
 
   // Sort sections based on employee's preferred room order
@@ -1579,11 +1590,6 @@ export function FloorPlanHome({
 
   // Handle menu item tap - add to order
   const handleMenuItemTap = useCallback(async (item: MenuItem) => {
-    if (!showOrderPanel) {
-      // No order panel open, open it first
-      setShowOrderPanel(true)
-    }
-
     // Check for timed rental (entertainment) items - show rate selection modal
     if (item.itemType === 'timed_rental' && onOpenTimedRental) {
       onOpenTimedRental(item, (price: number, blockMinutes: number) => {
@@ -1740,7 +1746,7 @@ export function FloorPlanHome({
     if (navigator.vibrate) {
       navigator.vibrate(10)
     }
-  }, [showOrderPanel, onOpenModifiers, onOpenTimedRental, onOpenPizzaBuilder, activeSeatNumber, activeSourceTableId])
+  }, [onOpenModifiers, onOpenTimedRental, onOpenPizzaBuilder, activeSeatNumber, activeSourceTableId])
 
   // Handle search result selection
   const handleSearchSelect = useCallback((item: { id: string; name: string; price: number; categoryId: string }) => {
@@ -2230,23 +2236,111 @@ export function FloorPlanHome({
       await loadFloorPlanData(false)
       loadOpenOrdersCount()
 
-      // After successful send: Close the order panel and return to floor plan view
-      // The table will now show a visual indicator that it has an order
-      // User can tap the table again to view/add to the order
-      setShowOrderPanel(false)
-      setInlineOrderItems([])
-      setActiveTableId(null)
-      setActiveOrderId(null)
-      setActiveOrderNumber(null)
-      setActiveOrderType(null)
-      setActiveSeatNumber(null)
-      setActiveSourceTableId(null)
+      // Panel stays open after send — order items already marked as sent above
 
     } catch (error) {
       console.error('[FloorPlanHome] Failed to send order:', error)
       toast.error('Failed to send order. Please try again.')
     } finally {
       isProcessingSendRef.current = false
+      setIsSendingOrder(false)
+    }
+  }, [activeTableId, activeOrderId, activeOrderType, inlineOrderItems, locationId, employeeId])
+
+  // Save order to DB without sending to kitchen (for Pay before Send flow)
+  const handleSaveOrderForPayment = useCallback(async () => {
+    if (inlineOrderItems.length === 0) return
+
+    const unsavedItems = inlineOrderItems.filter(item => !item.sentToKitchen)
+    if (unsavedItems.length === 0 && activeOrderId) {
+      // All items already saved, just open payment
+      setPendingPayAfterSave(true)
+      return
+    }
+
+    setIsSendingOrder(true)
+    try {
+      let orderId = activeOrderId
+      const itemsPayload = unsavedItems.map(item => ({
+        menuItemId: item.menuItemId,
+        correlationId: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        modifiers: item.modifiers?.map(m => ({
+          modifierId: m.id,
+          name: m.name,
+          price: m.price,
+        })) || [],
+        seatNumber: item.seatNumber,
+        courseNumber: item.courseNumber,
+        specialNotes: item.specialNotes,
+        blockTimeMinutes: item.blockTimeMinutes,
+      }))
+
+      if (!orderId) {
+        // Create new order (without sending to kitchen)
+        const createRes = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            locationId,
+            employeeId,
+            tableId: activeTableId || undefined,
+            orderType: activeOrderType || 'dine_in',
+            items: itemsPayload,
+          }),
+        })
+
+        if (createRes.ok) {
+          const data = await createRes.json()
+          orderId = data.id
+          setActiveOrderId(orderId)
+          setActiveOrderNumber(String(data.orderNumber))
+
+          // Match correlationIds
+          if (data.items && data.items.length > 0) {
+            const serverItems = data.items as { id: string; correlationId?: string; menuItemId: string; name: string }[]
+            setInlineOrderItems(prev => prev.map(localItem => {
+              const match = serverItems.find(s => s.correlationId === localItem.id)
+              if (match) return { ...localItem, id: match.id }
+              return localItem
+            }))
+          }
+        } else {
+          toast.error('Failed to create order')
+          return
+        }
+      } else if (unsavedItems.length > 0) {
+        // Append items to existing order
+        const appendRes = await fetch(`/api/orders/${orderId}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: itemsPayload }),
+        })
+
+        if (!appendRes.ok) {
+          toast.error('Failed to save items')
+          return
+        }
+
+        const appendData = await appendRes.json().catch(() => ({}))
+        if (appendData?.addedItems) {
+          const addedItems = appendData.addedItems as { id: string; correlationId?: string; name: string }[]
+          setInlineOrderItems(prev => prev.map(localItem => {
+            const match = addedItems.find(s => s.correlationId === localItem.id)
+            if (match) return { ...localItem, id: match.id }
+            return localItem
+          }))
+        }
+      }
+
+      // Flag that payment should open after orderId is set
+      setPendingPayAfterSave(true)
+    } catch (error) {
+      console.error('[FloorPlanHome] Failed to save order for payment:', error)
+      toast.error('Failed to save order')
+    } finally {
       setIsSendingOrder(false)
     }
   }, [activeTableId, activeOrderId, activeOrderType, inlineOrderItems, locationId, employeeId])
@@ -2299,6 +2393,36 @@ export function FloorPlanHome({
     setActiveTableId(null)
     setShowOrderPanel(false)
   }, [defaultGuestCount, inlineOrderItems.length, activeOrderId, activeTableId])
+
+  // Detect new items added → highlight + auto-scroll
+  useEffect(() => {
+    const prevCount = prevItemCountRef2.current
+    prevItemCountRef2.current = inlineOrderItems.length
+
+    if (inlineOrderItems.length > prevCount) {
+      const pendingItems = inlineOrderItems.filter(item =>
+        !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
+      )
+      if (pendingItems.length > 0) {
+        const newest = itemSortDirection === 'newest-top' ? pendingItems[0] : pendingItems[pendingItems.length - 1]
+        if (newest) {
+          setNewestItemId(newest.id)
+
+          requestAnimationFrame(() => {
+            const container = orderScrollRef.current
+            if (!container) return
+            const el = container.querySelector(`[data-item-id="${newest.id}"]`)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+            }
+          })
+
+          if (newestTimerRef2.current) clearTimeout(newestTimerRef2.current)
+          newestTimerRef2.current = setTimeout(() => setNewestItemId(null), 2000)
+        }
+      }
+    }
+  }, [inlineOrderItems, itemSortDirection])
 
   // Payment mode state (cash or card)
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('cash')
@@ -2677,7 +2801,10 @@ export function FloorPlanHome({
   const selectedCategory = categories.find(c => c.id === selectedCategoryId)
 
   return (
-    <div className={`floor-plan-container floor-plan-home ${virtualCombineMode ? 'virtual-combine-mode' : ''}`}>
+    <div
+      className={`floor-plan-container floor-plan-home ${virtualCombineMode ? 'virtual-combine-mode' : ''}`}
+      style={{ height: '100vh', maxHeight: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+    >
       {/* Header */}
       <header className="floor-plan-header">
         <div className="floor-plan-header-left">
@@ -3305,49 +3432,52 @@ export function FloorPlanHome({
         </div>
       </header>
 
-      {/* Quick Access Bar - Personal favorites */}
-      {(quickBarEnabled || isEditingFavorites) && (
-        <QuickAccessBar
-          items={quickBarItems}
-          onItemClick={handleQuickBarItemClick}
-          onRemoveItem={removeFromQuickBar}
-          isEditMode={isEditingFavorites}
-        />
-      )}
+      {/* Content below header: Left column (bars + main) + Right order panel */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        {/* Left Column - Bars + Main Content */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
 
-      {/* Menu Search Bar */}
-      {showOrderPanel && (
-        <div className="px-4 py-2 bg-gray-900/50 border-b border-gray-800/50" ref={searchContainerRef}>
-          <div className="relative max-w-xl">
-            <MenuSearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              onClear={clearSearch}
-              placeholder="Search menu items or ingredients... (⌘K)"
-              isSearching={isSearching}
+          {/* Quick Access Bar - Personal favorites */}
+          {(quickBarEnabled || isEditingFavorites) && (
+            <QuickAccessBar
+              items={quickBarItems}
+              onItemClick={handleQuickBarItemClick}
+              onRemoveItem={removeFromQuickBar}
+              isEditMode={isEditingFavorites}
             />
-            <MenuSearchResults
-              results={searchResults}
-              query={searchQuery}
-              isSearching={isSearching}
-              onSelectItem={handleSearchSelect}
-              onClose={clearSearch}
-            />
+          )}
+
+          {/* Menu Search Bar - always visible */}
+          <div className="px-4 py-2 bg-gray-900/50 border-b border-gray-800/50" ref={searchContainerRef}>
+            <div className="relative max-w-xl">
+              <MenuSearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                onClear={clearSearch}
+                placeholder="Search menu items or ingredients... (⌘K)"
+                isSearching={isSearching}
+              />
+              <MenuSearchResults
+                results={searchResults}
+                query={searchQuery}
+                isSearching={isSearching}
+                onSelectItem={handleSearchSelect}
+                onClose={clearSearch}
+              />
+            </div>
           </div>
-        </div>
-      )}
 
-      {/* Categories Bar */}
-      <CategoriesBar
-        categories={categories}
-        selectedCategoryId={selectedCategoryId}
-        onCategorySelect={handleCategoryClick}
-      />
+          {/* Categories Bar */}
+          <CategoriesBar
+            categories={categories}
+            selectedCategoryId={selectedCategoryId}
+            onCategorySelect={handleCategoryClick}
+          />
 
-      {/* Main Content Area - Tables OR Menu Items */}
-      <div className="floor-plan-main" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Left Panel - Tables or Menu Items */}
-        <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          {/* Main Content Area - Tables OR Menu Items */}
+          <div className="floor-plan-main" style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+            {/* Left Panel - Tables or Menu Items */}
+            <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           {viewMode === 'tables' ? (
             <>
               {/* Room/Section Tabs */}
@@ -4035,24 +4165,22 @@ export function FloorPlanHome({
             </div>
           )}
         </div>
+          </div>{/* end floor-plan-main */}
+        </div>{/* end Left Column */}
 
-        {/* Right Panel - Order Panel */}
-        <AnimatePresence>
-          {showOrderPanel && (
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 360, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              style={{
-                borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
-                background: 'rgba(15, 23, 42, 0.6)',
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'hidden',
-                height: '100%', // Explicit height needed for flex children to work
-              }}
-            >
+        {/* Right Panel - Order Panel (always visible, full height from below header) */}
+        <div
+          style={{
+            width: 360,
+            flexShrink: 0,
+            borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'rgba(15, 23, 42, 0.6)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            minHeight: 0,
+          }}
+        >
               {/* Order Panel Header - Fixed, doesn't scroll */}
               <div
                 style={{
@@ -4127,21 +4255,6 @@ export function FloorPlanHome({
                     )}
                   </div>
                 </div>
-                <button
-                  onClick={handleCloseOrderPanel}
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '8px',
-                    padding: '8px',
-                    color: '#94a3b8',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
               </div>
 
               {/* Seat Selection Buttons (for table orders with seats) - Fixed, doesn't scroll */}
@@ -4349,8 +4462,8 @@ export function FloorPlanHome({
                 </div>
               )}
 
-              {/* Order Items */}
-              <div style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
+              {/* Order Items — uses shared OrderPanelItem for identical rendering across all screens */}
+              <div ref={orderScrollRef} style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
                 {inlineOrderItems.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
                     <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ opacity: 0.5, margin: '0 auto 16px' }}>
@@ -4370,7 +4483,6 @@ export function FloorPlanHome({
                       const pendingItems = inlineOrderItems.filter(item =>
                         !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
                       )
-
                       if (pendingItems.length === 0) return null
 
                       return (
@@ -4379,661 +4491,130 @@ export function FloorPlanHome({
                             fontSize: '11px',
                             fontWeight: 700,
                             color: '#94a3b8',
-                            textTransform: 'uppercase',
+                            textTransform: 'uppercase' as const,
                             letterSpacing: '0.05em',
                             marginBottom: '12px',
                             paddingBottom: '8px',
-                            borderBottom: '2px solid rgba(148, 163, 184, 0.3)'
+                            borderBottom: '2px solid rgba(148, 163, 184, 0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
                           }}>
-                            PENDING ITEMS ({pendingItems.length})
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {/* Group pending items by seat when table has seats */}
-                    {groupedOrderItems.filter(group =>
-                      group.items.some(item =>
-                        !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
-                      )
-                    ).map((group) => (
-                      <div key={group.label}>
-                        {/* Group Header (only show when using seats) */}
-                        {activeTable && getTotalSeats(activeTable) > 0 && groupedOrderItems.length > 1 && (
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              marginBottom: '8px',
-                              paddingBottom: '6px',
-                              borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                            }}
-                          >
-                            <span
+                            <span>PENDING ITEMS ({pendingItems.length})</span>
+                            <button
+                              onClick={() => setItemSortDirection(d => d === 'newest-bottom' ? 'newest-top' : 'newest-bottom')}
+                              title={itemSortDirection === 'newest-bottom' ? 'Newest at bottom — click for top' : 'Newest at top — click for bottom'}
                               style={{
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                color: group.seatNumber ? '#c084fc' : '#94a3b8',
-                                padding: '2px 8px',
-                                background: group.seatNumber ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                background: 'rgba(255, 255, 255, 0.06)',
+                                border: '1px solid rgba(255, 255, 255, 0.12)',
                                 borderRadius: '4px',
-                              }}
-                            >
-                              {group.label}
-                            </span>
-                            <span style={{ fontSize: '11px', color: '#64748b' }}>
-                              {group.items.length} item{group.items.length !== 1 ? 's' : ''}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Items in this group */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {group.items.filter(item =>
-                            !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
-                          ).map((item) => (
-                      <div
-                        key={item.id}
-                        onClick={() => handleOrderItemTap(item)}
-                        style={{
-                          padding: '12px',
-                          background: item.sentToKitchen
-                            ? item.isCompleted ? 'rgba(34, 197, 94, 0.1)' : 'rgba(59, 130, 246, 0.05)'
-                            : 'rgba(255, 255, 255, 0.03)',
-                          border: `1px solid ${
-                            item.sentToKitchen
-                              ? item.isCompleted ? 'rgba(34, 197, 94, 0.3)' : 'rgba(59, 130, 246, 0.2)'
-                              : 'rgba(255, 255, 255, 0.08)'
-                          }`,
-                          borderRadius: '10px',
-                          cursor: item.sentToKitchen ? 'default' : 'pointer',
-                          transition: 'all 0.15s ease',
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!item.sentToKitchen) {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)'
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!item.sentToKitchen) {
-                            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)'
-                            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)'
-                          }
-                        }}
-                      >
-                        {/* Item Header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                              <span style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>
-                                {item.quantity > 1 && <span style={{ color: '#94a3b8' }}>{item.quantity}x </span>}
-                                {item.name}
-                              </span>
-
-                              {/* Status Badges */}
-                              {item.sentToKitchen && !item.isCompleted && (
-                                <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(59, 130, 246, 0.2)', color: '#60a5fa', fontWeight: 600, textTransform: 'uppercase' }}>
-                                  Sent
-                                </span>
-                              )}
-                              {item.isCompleted && (
-                                <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', fontWeight: 600, textTransform: 'uppercase' }}>
-                                  Ready
-                                </span>
-                              )}
-
-                              {/* Seat Badge */}
-                              {item.seatNumber && (
-                                <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', fontWeight: 600 }}>
-                                  S{item.seatNumber}
-                                </span>
-                              )}
-
-                              {/* Course Badge */}
-                              {item.courseNumber && (
-                                <span style={{
-                                  fontSize: '9px',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  background: item.courseStatus === 'fired' ? 'rgba(251, 191, 36, 0.2)'
-                                    : item.courseStatus === 'ready' ? 'rgba(34, 197, 94, 0.2)'
-                                    : 'rgba(59, 130, 246, 0.2)',
-                                  color: item.courseStatus === 'fired' ? '#fbbf24'
-                                    : item.courseStatus === 'ready' ? '#4ade80'
-                                    : '#60a5fa',
-                                  fontWeight: 600
-                                }}>
-                                  C{item.courseNumber}
-                                </span>
-                              )}
-
-                              {/* Held Badge */}
-                              {item.isHeld && (
-                                <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(239, 68, 68, 0.2)', color: '#f87171', fontWeight: 600, textTransform: 'uppercase' }}>
-                                  HELD
-                                </span>
-                              )}
-
-                              {/* Timed Rental Badge */}
-                              {item.blockTimeMinutes && (
-                                <span style={{
-                                  fontSize: '9px',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  background: 'rgba(168, 85, 247, 0.2)',
-                                  color: '#c084fc',
-                                  fontWeight: 600,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '3px'
-                                }}>
-                                  <svg width="10" height="10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  {item.blockTimeMinutes} MIN
-                                </span>
-                              )}
-                            </div>
-
-                            {/* Modifiers - Bullet point format */}
-                            {item.modifiers && item.modifiers.length > 0 && (
-                              <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
-                                {item.modifiers.map((m, idx) => (
-                                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <span style={{ color: '#64748b' }}>•</span>
-                                    <span>{m.name}{m.price > 0 ? ` (+$${m.price.toFixed(2)})` : ''}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* Kitchen Note */}
-                            {item.specialNotes && (
-                              <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                                </svg>
-                                {item.specialNotes}
-                              </div>
-                            )}
-
-                            {/* Timed Session Info */}
-                            {item.blockTimeMinutes && (
-                              <div style={{
-                                marginTop: '8px',
-                                padding: '8px 10px',
-                                background: 'rgba(168, 85, 247, 0.1)',
-                                border: '1px solid rgba(168, 85, 247, 0.2)',
-                                borderRadius: '6px',
-                              }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                  <svg width="14" height="14" fill="none" stroke="#c084fc" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  <span style={{ fontSize: '12px', color: '#c084fc', fontWeight: 500 }}>
-                                    {item.blockTimeMinutes >= 60
-                                      ? `${Math.floor(item.blockTimeMinutes / 60)} hour${item.blockTimeMinutes >= 120 ? 's' : ''} session`
-                                      : `${item.blockTimeMinutes} minute session`
-                                    }
-                                  </span>
-                                </div>
-                                {!item.sentToKitchen && (
-                                  <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '4px' }}>
-                                    Timer starts when order is sent
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Price */}
-                          <div style={{ fontSize: '14px', fontWeight: 600, color: '#22c55e', marginLeft: '8px' }}>
-                            ${((item.price + (item.modifiers || []).reduce((sum, m) => sum + m.price, 0)) * item.quantity).toFixed(2)}
-                          </div>
-                        </div>
-
-                        {/* Action Buttons Row */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
-                          {/* Quantity Controls */}
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleUpdateQuantity(item.id, item.quantity - 1)
-                              }}
-                              disabled={item.sentToKitchen}
-                              style={{
-                                width: '26px',
-                                height: '26px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                borderRadius: '6px',
-                                color: item.sentToKitchen ? '#475569' : '#e2e8f0',
-                                cursor: item.sentToKitchen ? 'not-allowed' : 'pointer',
-                                fontSize: '14px',
-                              }}
-                            >
-                              −
-                            </button>
-                            <span style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9', minWidth: '20px', textAlign: 'center' }}>
-                              {item.quantity}
-                            </span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleUpdateQuantity(item.id, item.quantity + 1)
-                              }}
-                              disabled={item.sentToKitchen}
-                              style={{
-                                width: '26px',
-                                height: '26px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                borderRadius: '6px',
-                                color: item.sentToKitchen ? '#475569' : '#e2e8f0',
-                                cursor: item.sentToKitchen ? 'not-allowed' : 'pointer',
-                                fontSize: '14px',
-                              }}
-                            >
-                              +
-                            </button>
-                          </div>
-
-                          {/* Note Button */}
-                          {!item.sentToKitchen && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleOpenNotesEditor(item.id, item.specialNotes)
-                              }}
-                              style={{
-                                padding: '5px 8px',
-                                background: item.specialNotes ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                border: `1px solid ${item.specialNotes ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
-                                borderRadius: '6px',
-                                color: item.specialNotes ? '#f59e0b' : '#94a3b8',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '11px',
-                              }}
-                              title={item.specialNotes ? 'Edit note' : 'Add note'}
-                            >
-                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                              </svg>
-                              Note
-                            </button>
-                          )}
-
-                          {/* Hold/Fire Button */}
-                          {!item.sentToKitchen && (
-                            item.isHeld ? (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleToggleHold(item.id)
-                                }}
-                                style={{
-                                  padding: '2px 8px',
-                                  fontSize: '10px',
-                                  borderRadius: '4px',
-                                  background: 'rgba(34, 197, 94, 0.8)',
-                                  color: 'white',
-                                  border: 'none',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                }}
-                                title="Fire item - send to kitchen"
-                              >
-                                Fire
-                              </button>
-                            ) : (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  handleToggleHold(item.id)
-                                }}
-                                style={{
-                                  padding: '2px 8px',
-                                  fontSize: '10px',
-                                  borderRadius: '4px',
-                                  background: 'rgba(245, 158, 11, 0.2)',
-                                  color: '#f59e0b',
-                                  border: 'none',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                }}
-                                title="Hold item - don't send to kitchen"
-                              >
-                                Hold
-                              </button>
-                            )
-                          )}
-
-                          {/* Course Assignment Buttons */}
-                          {!item.sentToKitchen && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginLeft: '8px' }}>
-                              <span style={{ fontSize: '10px', color: '#64748b' }}>Course:</span>
-                              {[1, 2, 3].map(c => (
-                                <button
-                                  key={c}
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setInlineOrderItems(prev => prev.map(i =>
-                                      i.id === item.id ? { ...i, courseNumber: item.courseNumber === c ? undefined : c } : i
-                                    ))
-                                  }}
-                                  style={{
-                                    padding: '2px 6px',
-                                    fontSize: '10px',
-                                    borderRadius: '4px',
-                                    background: item.courseNumber === c ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                                    color: item.courseNumber === c ? '#60a5fa' : '#64748b',
-                                    border: item.courseNumber === c ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
-                                    cursor: 'pointer',
-                                    fontWeight: item.courseNumber === c ? 600 : 400,
-                                  }}
-                                  title={`Course ${c}`}
-                                >
-                                  C{c}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Edit Button */}
-                          {!item.sentToKitchen && item.modifiers && item.modifiers.length > 0 && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleEditItem(item)
-                              }}
-                              style={{
-                                padding: '5px 8px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                border: '1px solid rgba(255, 255, 255, 0.1)',
-                                borderRadius: '6px',
                                 color: '#94a3b8',
                                 cursor: 'pointer',
+                                padding: '2px 6px',
+                                fontSize: '13px',
+                                lineHeight: 1,
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '11px',
-                              }}
-                              title="Edit modifiers"
-                            >
-                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                              Edit
-                            </button>
-                          )}
-
-                          {/* Edit Mods Button - Sent items only */}
-                          {item.sentToKitchen && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleEditSentItemModifiers(item)
-                              }}
-                              style={{
-                                padding: '5px 8px',
-                                background: 'rgba(59, 130, 246, 0.1)',
-                                border: '1px solid rgba(59, 130, 246, 0.2)',
-                                borderRadius: '6px',
-                                color: '#60a5fa',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '11px',
-                              }}
-                              title="Edit modifiers (will increment resend count)"
-                            >
-                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                              Edit Mods
-                            </button>
-                          )}
-
-                          {/* Comp/Void Button - Sent items only */}
-                          {item.sentToKitchen && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleOpenCompVoid(item)
-                              }}
-                              style={{
-                                padding: '5px 8px',
-                                background: 'rgba(245, 158, 11, 0.1)',
-                                border: '1px solid rgba(245, 158, 11, 0.2)',
-                                borderRadius: '6px',
-                                color: '#f59e0b',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '11px',
-                              }}
-                              title="Comp or Void"
-                            >
-                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                            </button>
-                          )}
-
-                          {/* Move to Split Check Button - Sent items only */}
-                          {item.sentToKitchen && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setSplitItemId(item.id)
-                                setShowSplitTicketManager(true)
-                              }}
-                              style={{
-                                padding: '5px 8px',
-                                background: 'rgba(168, 85, 247, 0.1)',
-                                border: '1px solid rgba(168, 85, 247, 0.2)',
-                                borderRadius: '6px',
-                                color: '#a855f7',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                fontSize: '11px',
-                              }}
-                              title="Move to split check"
-                            >
-                              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                              </svg>
-                              Split
-                            </button>
-                          )}
-
-                          {/* More Options Toggle */}
-                          {!item.sentToKitchen && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleToggleItemControls(item.id)
-                              }}
-                              style={{
-                                padding: '5px 8px',
-                                background: expandedItemId === item.id ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                border: `1px solid ${expandedItemId === item.id ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
-                                borderRadius: '6px',
-                                color: expandedItemId === item.id ? '#a5b4fc' : '#94a3b8',
-                                cursor: 'pointer',
-                                fontSize: '11px',
+                                gap: '3px',
+                                transition: 'all 0.15s ease',
                               }}
                             >
-                              {expandedItemId === item.id ? '▼' : '▶'} More
+                              {itemSortDirection === 'newest-bottom' ? '\u2193' : '\u2191'}
+                              <span style={{ fontSize: '9px', letterSpacing: '0.03em' }}>NEW</span>
                             </button>
-                          )}
-
-                          {/* Delete Button */}
-                          {!item.sentToKitchen && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleRemoveItem(item.id)
-                              }}
-                              style={{
-                                marginLeft: 'auto',
-                                padding: '5px',
-                                background: 'rgba(239, 68, 68, 0.1)',
-                                border: '1px solid rgba(239, 68, 68, 0.2)',
-                                borderRadius: '6px',
-                                color: '#f87171',
-                                cursor: 'pointer',
-                              }}
-                              title="Remove item"
-                            >
-                              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Expanded Seat/Course Controls */}
-                        {expandedItemId === item.id && !item.sentToKitchen && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            style={{
-                              marginTop: '10px',
-                              padding: '10px',
-                              background: 'rgba(255, 255, 255, 0.02)',
-                              borderRadius: '8px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '10px',
-                            }}
-                          >
-                            {/* Seat Assignment */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '11px', color: '#64748b', width: '45px' }}>Seat:</span>
-                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleUpdateSeat(item.id, null)
-                                  }}
-                                  style={{
-                                    width: '24px',
-                                    height: '24px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    background: !item.seatNumber ? 'rgba(148, 163, 184, 0.3)' : 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    borderRadius: '4px',
-                                    color: '#94a3b8',
-                                    cursor: 'pointer',
-                                    fontSize: '11px',
-                                  }}
-                                >
-                                  −
-                                </button>
-                                {Array.from({ length: Math.max(guestCount, 4) }, (_, i) => i + 1).map(seat => (
-                                  <button
-                                    key={seat}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleUpdateSeat(item.id, seat)
-                                    }}
-                                    style={{
-                                      width: '24px',
-                                      height: '24px',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      background: item.seatNumber === seat ? 'rgba(168, 85, 247, 0.3)' : 'rgba(255, 255, 255, 0.05)',
-                                      border: `1px solid ${item.seatNumber === seat ? 'rgba(168, 85, 247, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
-                                      borderRadius: '4px',
-                                      color: item.seatNumber === seat ? '#c084fc' : '#94a3b8',
-                                      cursor: 'pointer',
-                                      fontSize: '11px',
-                                      fontWeight: item.seatNumber === seat ? 600 : 400,
-                                    }}
-                                  >
-                                    {seat}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Course Assignment */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '11px', color: '#64748b', width: '45px' }}>Course:</span>
-                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    handleUpdateCourse(item.id, null)
-                                  }}
-                                  style={{
-                                    width: '24px',
-                                    height: '24px',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    background: !item.courseNumber ? 'rgba(148, 163, 184, 0.3)' : 'rgba(255, 255, 255, 0.05)',
-                                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                                    borderRadius: '4px',
-                                    color: '#94a3b8',
-                                    cursor: 'pointer',
-                                    fontSize: '11px',
-                                  }}
-                                >
-                                  −
-                                </button>
-                                {[1, 2, 3, 4, 5].map(course => (
-                                  <button
-                                    key={course}
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      handleUpdateCourse(item.id, course)
-                                    }}
-                                    style={{
-                                      width: '24px',
-                                      height: '24px',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      background: item.courseNumber === course ? 'rgba(59, 130, 246, 0.3)' : 'rgba(255, 255, 255, 0.05)',
-                                      border: `1px solid ${item.courseNumber === course ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
-                                      borderRadius: '4px',
-                                      color: item.courseNumber === course ? '#60a5fa' : '#94a3b8',
-                                      cursor: 'pointer',
-                                      fontSize: '11px',
-                                      fontWeight: item.courseNumber === course ? 600 : 400,
-                                    }}
-                                  >
-                                    {course}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </div>
-                    ))}
                           </div>
-                        </div>
-                      ))}
+
+                          {/* Group by seat when table has seats */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                            {groupedOrderItems.filter(group =>
+                              group.items.some(item =>
+                                !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
+                              )
+                            ).map((group) => (
+                              <div key={group.label}>
+                                {/* Group Header (only show when using seats) */}
+                                {activeTable && getTotalSeats(activeTable) > 0 && groupedOrderItems.length > 1 && (
+                                  <div style={{
+                                    display: 'flex', alignItems: 'center', gap: '8px',
+                                    marginBottom: '8px', paddingBottom: '6px',
+                                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                                  }}>
+                                    <span style={{
+                                      fontSize: '12px', fontWeight: 600,
+                                      color: group.seatNumber ? '#c084fc' : '#94a3b8',
+                                      padding: '2px 8px',
+                                      background: group.seatNumber ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                                      borderRadius: '4px',
+                                    }}>
+                                      {group.label}
+                                    </span>
+                                    <span style={{ fontSize: '11px', color: '#64748b' }}>
+                                      {group.items.filter(i => !i.sentToKitchen && (!i.kitchenStatus || i.kitchenStatus === 'pending')).length} item{group.items.filter(i => !i.sentToKitchen && (!i.kitchenStatus || i.kitchenStatus === 'pending')).length !== 1 ? 's' : ''}
+                                    </span>
+                                  </div>
+                                )}
+
+                                {/* Items in this group — using shared OrderPanelItem */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  {(() => {
+                                    const filtered = group.items.filter(item =>
+                                      !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
+                                    )
+                                    const sorted = itemSortDirection === 'newest-top' ? [...filtered].reverse() : filtered
+                                    return sorted.map((item) => (
+                                    <OrderPanelItem
+                                      key={item.id}
+                                      item={{
+                                        id: item.id,
+                                        name: item.name,
+                                        quantity: item.quantity,
+                                        price: item.price,
+                                        modifiers: item.modifiers,
+                                        specialNotes: item.specialNotes,
+                                        kitchenStatus: (item.kitchenStatus as any) || 'pending',
+                                        isHeld: item.isHeld,
+                                        isCompleted: item.isCompleted,
+                                        isTimedRental: !!item.blockTimeMinutes,
+                                        menuItemId: item.menuItemId,
+                                        blockTimeMinutes: item.blockTimeMinutes,
+                                        blockTimeStartedAt: undefined,
+                                        blockTimeExpiresAt: undefined,
+                                        seatNumber: item.seatNumber,
+                                        courseNumber: item.courseNumber,
+                                        courseStatus: item.courseStatus,
+                                        sentToKitchen: item.sentToKitchen,
+                                        resendCount: item.resendCount,
+                                        completedAt: item.completedAt,
+                                        createdAt: item.createdAt,
+                                      }}
+                                      locationId={locationId}
+                                      showControls={true}
+                                      onClick={() => handleOrderItemTap(item)}
+                                      onRemove={(id) => handleRemoveItem(id)}
+                                      onQuantityChange={(id, delta) => handleUpdateQuantity(id, item.quantity + delta)}
+                                      onHoldToggle={(id) => handleToggleHold(id)}
+                                      onNoteEdit={(id, note) => handleOpenNotesEditor(id, note)}
+                                      onCourseChange={(id, course) => {
+                                        setInlineOrderItems(prev => prev.map(i =>
+                                          i.id === id ? { ...i, courseNumber: course ?? undefined } : i
+                                        ))
+                                      }}
+                                      onEditModifiers={(id) => {
+                                        const editItem = inlineOrderItems.find(i => i.id === id)
+                                        if (editItem) handleEditItem(editItem)
+                                      }}
+                                      isExpanded={expandedItemId === item.id}
+                                      onToggleExpand={(id) => setExpandedItemId(prev => prev === id ? null : id)}
+                                      maxSeats={Math.max(guestCount, 4)}
+                                      maxCourses={5}
+                                      onSeatChange={(id, seat) => handleUpdateSeat(id, seat)}
+                                      isNewest={newestItemId === item.id}
+                                    />
+                                  ))
+                                  })()}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )
@@ -5041,30 +4622,10 @@ export function FloorPlanHome({
 
                     {/* SENT TO KITCHEN SECTION */}
                     {(() => {
-                      const STATUS_CONFIG: Record<string, { icon: string; color: string; label: string }> = {
-                        pending: { icon: '○', color: '#94a3b8', label: 'Pending' },
-                        sent: { icon: '↗', color: '#3b82f6', label: 'Sent' },
-                        cooking: { icon: '~', color: '#f59e0b', label: 'Cooking' },
-                        ready: { icon: '✓', color: '#22c55e', label: 'Ready' },
-                        delivered: { icon: '→', color: '#6366f1', label: 'Served' },
-                      }
-
                       const sentItems = inlineOrderItems.filter(item =>
                         item.sentToKitchen || (item.kitchenStatus && item.kitchenStatus !== 'pending')
                       )
-
                       if (sentItems.length === 0) return null
-
-                      // Format timestamp
-                      const formatTimestamp = (timestamp?: string) => {
-                        if (!timestamp) return ''
-                        const date = new Date(timestamp)
-                        const hours = date.getHours()
-                        const minutes = date.getMinutes().toString().padStart(2, '0')
-                        const ampm = hours >= 12 ? 'pm' : 'am'
-                        const displayHours = hours % 12 || 12
-                        return `${displayHours}:${minutes}${ampm}`
-                      }
 
                       return (
                         <div>
@@ -5072,7 +4633,7 @@ export function FloorPlanHome({
                             fontSize: '11px',
                             fontWeight: 700,
                             color: '#3b82f6',
-                            textTransform: 'uppercase',
+                            textTransform: 'uppercase' as const,
                             letterSpacing: '0.05em',
                             marginBottom: '12px',
                             paddingBottom: '8px',
@@ -5080,219 +4641,53 @@ export function FloorPlanHome({
                           }}>
                             SENT TO KITCHEN ({sentItems.length})
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {sentItems.map((item) => {
-                              const status = item.kitchenStatus || 'sent'
-                              const config = STATUS_CONFIG[status] || STATUS_CONFIG.sent
-
-                              return (
-                                <div
-                                  key={item.id}
-                                  style={{
-                                    padding: '12px',
-                                    background: status === 'ready' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(59, 130, 246, 0.05)',
-                                    border: `1px solid ${status === 'ready' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(59, 130, 246, 0.2)'}`,
-                                    borderRadius: '10px',
-                                  }}
-                                >
-                                  {/* Item Header */}
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                    <div style={{ flex: 1 }}>
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                                        {/* Status Icon */}
-                                        <span style={{
-                                          fontSize: '16px',
-                                          color: config.color,
-                                          fontWeight: 700,
-                                          width: '20px',
-                                          textAlign: 'center'
-                                        }}>
-                                          {config.icon}
-                                        </span>
-
-                                        <span style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>
-                                          {item.quantity > 1 && <span style={{ color: '#94a3b8' }}>{item.quantity}x </span>}
-                                          {item.name}
-                                        </span>
-
-                                        {/* Seat Badge */}
-                                        {item.seatNumber && (
-                                          <span style={{ fontSize: '9px', padding: '2px 6px', borderRadius: '4px', background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', fontWeight: 600 }}>
-                                            S{item.seatNumber}
-                                          </span>
-                                        )}
-
-                                        {/* Resend Count Badge */}
-                                        {item.resendCount && item.resendCount > 0 && (
-                                          <span style={{
-                                            fontSize: '9px',
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            background: 'rgba(245, 158, 11, 0.2)',
-                                            color: '#f59e0b',
-                                            fontWeight: 600
-                                          }}>
-                                            Resent {item.resendCount}x
-                                          </span>
-                                        )}
-
-                                        {/* Course Badge */}
-                                        {item.courseNumber && (
-                                          <span style={{
-                                            fontSize: '9px',
-                                            padding: '2px 6px',
-                                            borderRadius: '4px',
-                                            background: item.courseStatus === 'fired' ? 'rgba(251, 191, 36, 0.2)'
-                                              : item.courseStatus === 'ready' ? 'rgba(34, 197, 94, 0.2)'
-                                              : 'rgba(59, 130, 246, 0.2)',
-                                            color: item.courseStatus === 'fired' ? '#fbbf24'
-                                              : item.courseStatus === 'ready' ? '#4ade80'
-                                              : '#60a5fa',
-                                            fontWeight: 600
-                                          }}>
-                                            C{item.courseNumber}
-                                          </span>
-                                        )}
-
-                                        {/* MADE Badge - shows when kitchen has completed the item */}
-                                        {item.isCompleted && (
-                                          <span style={{
-                                            fontSize: '10px',
-                                            padding: '2px 8px',
-                                            borderRadius: '4px',
-                                            background: 'rgba(34, 197, 94, 0.25)',
-                                            color: '#4ade80',
-                                            fontWeight: 700,
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}>
-                                            ✓ MADE
-                                            {item.completedAt && (
-                                              <span style={{ fontWeight: 500, opacity: 0.8, fontSize: '9px' }}>
-                                                {new Date(item.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                              </span>
-                                            )}
-                                          </span>
-                                        )}
-                                      </div>
-
-                                      {/* Timestamp and Status */}
-                                      <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px' }}>
-                                        Sent {formatTimestamp(item.completedAt || item.createdAt)} · <span style={{ color: config.color, fontWeight: 600 }}>{config.label}</span>
-                                      </div>
-
-                                      {/* Modifiers */}
-                                      {item.modifiers && item.modifiers.length > 0 && (
-                                        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>
-                                          {item.modifiers.map((m, idx) => (
-                                            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                              <span style={{ color: '#64748b' }}>•</span>
-                                              <span>{m.name}{m.price > 0 ? ` (+$${m.price.toFixed(2)})` : ''}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-
-                                      {/* Kitchen Note */}
-                                      {item.specialNotes && (
-                                        <div style={{ fontSize: '11px', color: '#f59e0b', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                          <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                                          </svg>
-                                          {item.specialNotes}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Price */}
-                                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#22c55e', marginLeft: '8px' }}>
-                                      ${((item.price + (item.modifiers || []).reduce((sum, m) => sum + m.price, 0)) * item.quantity).toFixed(2)}
-                                    </div>
-                                  </div>
-
-                                  {/* Action Buttons Row */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
-                                    {/* Edit Mods Button */}
-                                    <button
-                                      onClick={() => {
-                                        // TODO (Worker O21): Open modifier edit modal
-                                        console.log('Edit modifiers for sent item:', item.id)
-                                      }}
-                                      style={{
-                                        padding: '5px 10px',
-                                        background: 'rgba(59, 130, 246, 0.15)',
-                                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                                        borderRadius: '6px',
-                                        color: '#60a5fa',
-                                        fontSize: '11px',
-                                        fontWeight: 500,
-                                        cursor: 'pointer',
-                                        transition: 'all 0.15s ease',
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)'
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)'
-                                      }}
-                                    >
-                                      Edit Mods
-                                    </button>
-
-                                    {/* Resend to Kitchen Button */}
-                                    <button
-                                      onClick={() => handleResendItem(item.id, item.name)}
-                                      style={{
-                                        padding: '5px 10px',
-                                        background: 'rgba(245, 158, 11, 0.15)',
-                                        border: '1px solid rgba(245, 158, 11, 0.3)',
-                                        borderRadius: '6px',
-                                        color: '#fbbf24',
-                                        fontSize: '11px',
-                                        fontWeight: 500,
-                                        cursor: 'pointer',
-                                        transition: 'all 0.15s ease',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '4px',
-                                      }}
-                                      onMouseEnter={(e) => {
-                                        e.currentTarget.style.background = 'rgba(245, 158, 11, 0.25)'
-                                      }}
-                                      onMouseLeave={(e) => {
-                                        e.currentTarget.style.background = 'rgba(245, 158, 11, 0.15)'
-                                      }}
-                                      title="Resend to kitchen"
-                                    >
-                                      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                      </svg>
-                                      Resend
-                                    </button>
-
-                                    {/* Grayed Remove Button (requires void approval) */}
-                                    <button
-                                      disabled
-                                      style={{
-                                        padding: '5px 10px',
-                                        background: 'rgba(255, 255, 255, 0.03)',
-                                        border: '1px solid rgba(255, 255, 255, 0.08)',
-                                        borderRadius: '6px',
-                                        color: '#64748b',
-                                        fontSize: '11px',
-                                        fontWeight: 500,
-                                        cursor: 'not-allowed',
-                                        opacity: 0.5,
-                                      }}
-                                      title="Void requires manager approval"
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                </div>
-                              )
-                            })}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {sentItems.map((item) => (
+                              <OrderPanelItem
+                                key={item.id}
+                                item={{
+                                  id: item.id,
+                                  name: item.name,
+                                  quantity: item.quantity,
+                                  price: item.price,
+                                  modifiers: item.modifiers,
+                                  specialNotes: item.specialNotes,
+                                  kitchenStatus: (item.kitchenStatus as any) || 'sent',
+                                  isHeld: item.isHeld,
+                                  isCompleted: item.isCompleted,
+                                  isTimedRental: !!item.blockTimeMinutes,
+                                  menuItemId: item.menuItemId,
+                                  blockTimeMinutes: item.blockTimeMinutes,
+                                  blockTimeStartedAt: undefined,
+                                  blockTimeExpiresAt: undefined,
+                                  seatNumber: item.seatNumber,
+                                  courseNumber: item.courseNumber,
+                                  courseStatus: item.courseStatus,
+                                  sentToKitchen: item.sentToKitchen,
+                                  resendCount: item.resendCount,
+                                  completedAt: item.completedAt,
+                                  createdAt: item.createdAt,
+                                }}
+                                locationId={locationId}
+                                showControls={true}
+                                onEditModifiers={(id) => {
+                                  const editItem = inlineOrderItems.find(i => i.id === id)
+                                  if (editItem) handleEditSentItemModifiers(editItem)
+                                }}
+                                onResend={(id) => {
+                                  const resendItem = inlineOrderItems.find(i => i.id === id)
+                                  if (resendItem) handleResendItem(id, resendItem.name)
+                                }}
+                                onCompVoid={(id) => {
+                                  const voidItem = inlineOrderItems.find(i => i.id === id)
+                                  if (voidItem) handleOpenCompVoid(voidItem)
+                                }}
+                                onSplit={(id) => {
+                                  setSplitItemId(id)
+                                  setShowSplitTicketManager(true)
+                                }}
+                              />
+                            ))}
                           </div>
                         </div>
                       )
@@ -5301,212 +4696,72 @@ export function FloorPlanHome({
                 )}
               </div>
 
-              {/* Order Panel Footer - Fixed at bottom, doesn't scroll */}
-              <div
-                style={{
-                  padding: '16px 20px',
-                  borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-                  background: 'rgba(15, 23, 42, 0.95)',
-                  flexShrink: 0, // Prevent footer from shrinking - stays fixed at bottom
+              {/* Order Panel Footer — shared across all screens */}
+              <OrderPanelActions
+                hasItems={inlineOrderItems.length > 0}
+                hasPendingItems={inlineOrderItems.some(i => !i.sentToKitchen && !i.isHeld)}
+                isSending={isSendingOrder}
+                items={inlineOrderItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price, modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price })) }))}
+                subtotal={orderSubtotal}
+                tax={tax}
+                total={orderTotal}
+                cashDiscountRate={CASH_DISCOUNT_RATE}
+                taxRate={TAX_RATE}
+                onSend={handleSendToKitchen}
+                onPaymentModeChange={(mode) => setPaymentMode(mode)}
+                orderId={activeOrderId}
+                terminalId="terminal-1"
+                employeeId={employeeId}
+                onPaymentSuccess={async (result) => {
+                  toast.success(`Payment approved! Card: ****${result.cardLast4 || '****'}`)
+
+                  // Record the payment in the database and mark order as paid/closed
+                  if (activeOrderId) {
+                    try {
+                      await fetch(`/api/orders/${activeOrderId}/pay`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          payments: [{
+                            method: 'credit',
+                            amount: orderTotal,
+                            tipAmount: result.tipAmount || 0,
+                            cardBrand: result.cardBrand,
+                            cardLast4: result.cardLast4,
+                          }],
+                          employeeId,
+                        }),
+                      })
+                    } catch (err) {
+                      console.error('[FloorPlanHome] Failed to record payment:', err)
+                    }
+                  }
+
+                  // Clear the order panel (same as handleCloseOrderPanel)
+                  setInlineOrderItems([])
+                  setActiveOrderId(null)
+                  setActiveOrderNumber(null)
+                  setActiveOrderType(null)
+                  setExpandedItemId(null)
+                  setEditingNotesItemId(null)
+                  setEditingNotesText('')
+                  setGuestCount(defaultGuestCount)
+                  setActiveSeatNumber(null)
+                  setActiveSourceTableId(null)
+                  setActiveTableId(null)
+                  setShowOrderPanel(false)
+                  setSelectedCategoryId(null)
+                  setViewMode('tables')
+
+                  // Refresh floor plan to show updated table status
+                  loadFloorPlanData()
+                  loadOpenOrdersCount()
                 }}
-              >
-                {/* Cash/Card Toggle */}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <button
-                    onClick={() => setPaymentMode('cash')}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      background: paymentMode === 'cash' ? '#16a34a' : '#14532d', // Light green selected, dark green unselected
-                      border: `1px solid ${paymentMode === 'cash' ? '#22c55e' : '#166534'}`,
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <div style={{ fontSize: '11px', color: paymentMode === 'cash' ? '#bbf7d0' : '#86efac', fontWeight: 500, marginBottom: '2px' }}>
-                      Cash
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: paymentMode === 'cash' ? '#ffffff' : '#86efac' }}>
-                      ${orderTotal.toFixed(2)}
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => setPaymentMode('card')}
-                    style={{
-                      flex: 1,
-                      padding: '10px',
-                      background: paymentMode === 'card' ? '#4f46e5' : '#312e81', // Light blue selected, dark blue unselected
-                      border: `1px solid ${paymentMode === 'card' ? '#6366f1' : '#3730a3'}`,
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      textAlign: 'center',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <div style={{ fontSize: '11px', color: paymentMode === 'card' ? '#c7d2fe' : '#a5b4fc', fontWeight: 500, marginBottom: '2px' }}>
-                      Card
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: paymentMode === 'card' ? '#ffffff' : '#a5b4fc' }}>
-                      ${cardTotal.toFixed(2)}
-                    </div>
-                  </button>
-                </div>
-
-                {/* Expandable Total Section */}
-                <button
-                  onClick={() => setShowTotalDetails(!showTotalDetails)}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '10px 0',
-                    background: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    marginBottom: '12px',
-                  }}
-                >
-                  <span style={{ fontSize: '14px', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <svg
-                      width="12"
-                      height="12"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                      style={{ transform: showTotalDetails ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform 0.2s' }}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                    Total ({inlineOrderItems.length} item{inlineOrderItems.length !== 1 ? 's' : ''})
-                  </span>
-                  <span style={{ fontSize: '20px', fontWeight: 700, color: '#f1f5f9' }}>
-                    ${orderTotal.toFixed(2)}
-                  </span>
-                </button>
-
-                {/* Expanded Total Details */}
-                <AnimatePresence>
-                  {showTotalDetails && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      style={{
-                        overflow: 'hidden',
-                        marginBottom: '12px',
-                        padding: '12px',
-                        background: 'rgba(255, 255, 255, 0.02)',
-                        borderRadius: '10px',
-                        border: '1px solid rgba(255, 255, 255, 0.05)',
-                      }}
-                    >
-                      {/* Line Items */}
-                      {inlineOrderItems.map((item) => (
-                        <div key={item.id} style={{ marginBottom: '8px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                            <span style={{ color: '#e2e8f0' }}>
-                              {item.quantity}x {item.name}
-                            </span>
-                            <span style={{ color: '#94a3b8' }}>
-                              ${(item.price * item.quantity).toFixed(2)}
-                            </span>
-                          </div>
-                          {/* Item modifiers */}
-                          {item.modifiers && item.modifiers.length > 0 && (
-                            <div style={{ marginLeft: '12px', marginTop: '2px' }}>
-                              {item.modifiers.map((m, idx) => (
-                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
-                                  <span>+ {m.name}</span>
-                                  {m.price > 0 && <span>${(m.price * item.quantity).toFixed(2)}</span>}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-
-                      {/* Subtotal */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                        <span style={{ color: '#94a3b8' }}>Subtotal</span>
-                        <span style={{ color: '#e2e8f0' }}>${orderSubtotal.toFixed(2)}</span>
-                      </div>
-
-                      {/* Cash Discount */}
-                      {paymentMode === 'cash' && cashDiscount > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
-                          <span style={{ color: '#4ade80' }}>Cash Discount ({Math.round(CASH_DISCOUNT_RATE * 100)}%)</span>
-                          <span style={{ color: '#4ade80' }}>-${cashDiscount.toFixed(2)}</span>
-                        </div>
-                      )}
-
-                      {/* Tax */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
-                        <span style={{ color: '#94a3b8' }}>Tax ({Math.round(TAX_RATE * 100)}%)</span>
-                        <span style={{ color: '#e2e8f0' }}>${tax.toFixed(2)}</span>
-                      </div>
-
-                      {/* Total */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 600, marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                        <span style={{ color: '#f1f5f9' }}>Total</span>
-                        <span style={{ color: '#22c55e' }}>${orderTotal.toFixed(2)}</span>
-                      </div>
-
-                      {/* Cash savings message */}
-                      {paymentMode === 'cash' && cashDiscount > 0 && (
-                        <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '12px', color: '#4ade80', fontWeight: 500 }}>
-                          You save ${cashDiscount.toFixed(2)} with cash!
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Action Buttons */}
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button
-                    onClick={handleSendToKitchen}
-                    disabled={inlineOrderItems.filter(i => !i.sentToKitchen && !i.isHeld).length === 0 || isSendingOrder}
-                    style={{
-                      flex: 1,
-                      padding: '14px',
-                      background: isSendingOrder ? '#475569' : '#22c55e',
-                      border: 'none',
-                      borderRadius: '10px',
-                      color: '#fff',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      cursor: inlineOrderItems.filter(i => !i.sentToKitchen && !i.isHeld).length === 0 || isSendingOrder ? 'not-allowed' : 'pointer',
-                      opacity: inlineOrderItems.filter(i => !i.sentToKitchen && !i.isHeld).length === 0 ? 0.5 : 1,
-                    }}
-                  >
-                    {isSendingOrder ? 'Sending...' : 'Send'}
-                  </button>
-
-                  <button
-                    onClick={handleOpenPayment}
-                    disabled={!activeOrderId}
-                    style={{
-                      flex: 1,
-                      padding: '14px',
-                      background: activeOrderId ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                      border: `1px solid ${activeOrderId ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
-                      borderRadius: '10px',
-                      color: activeOrderId ? '#a5b4fc' : '#64748b',
-                      fontSize: '14px',
-                      fontWeight: 600,
-                      cursor: activeOrderId ? 'pointer' : 'not-allowed',
-                    }}
-                  >
-                    Pay
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                onSaveOrderFirst={handleSaveOrderForPayment}
+                autoShowPayment={pendingPayAfterSave}
+                onAutoShowPaymentHandled={() => setPendingPayAfterSave(false)}
+              />
+        </div>
       </div>
 
       {/* Virtual Combine Bar */}

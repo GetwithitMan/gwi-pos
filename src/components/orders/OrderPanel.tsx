@@ -1,7 +1,9 @@
 'use client'
 
+import { useRef, useState, useEffect } from 'react'
 import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
+import type { DatacapResult } from '@/hooks/useDatacap'
 
 export type { OrderPanelItemData }
 
@@ -29,11 +31,28 @@ export interface OrderPanelProps {
   onPay?: () => void
   onDiscount?: () => void
   onClear?: () => void
+  onItemHoldToggle?: (itemId: string) => void
+  onItemNoteEdit?: (itemId: string, currentNote?: string) => void
+  onItemCourseChange?: (itemId: string, course: number | null) => void
+  onItemEditModifiers?: (itemId: string) => void
+  onItemCompVoid?: (itemId: string) => void
+  onItemResend?: (itemId: string) => void
+  onItemSplit?: (itemId: string) => void
   onSessionEnded?: () => void
   onTimerStarted?: () => void
   onTimeExtended?: () => void
   isSending?: boolean
   className?: string
+  expandedItemId?: string | null
+  onItemToggleExpand?: (itemId: string) => void
+  maxSeats?: number
+  maxCourses?: number
+  onItemSeatChange?: (itemId: string, seat: number | null) => void
+  // Datacap payment integration
+  terminalId?: string
+  employeeId?: string
+  onPaymentSuccess?: (result: DatacapResult & { tipAmount: number }) => void
+  onPaymentCancel?: () => void
 }
 
 export function OrderPanel({
@@ -60,14 +79,77 @@ export function OrderPanel({
   onPay,
   onDiscount,
   onClear,
+  onItemHoldToggle,
+  onItemNoteEdit,
+  onItemCourseChange,
+  onItemEditModifiers,
+  onItemCompVoid,
+  onItemResend,
+  onItemSplit,
   onSessionEnded,
   onTimerStarted,
   onTimeExtended,
   isSending = false,
   className = '',
+  expandedItemId,
+  onItemToggleExpand,
+  maxSeats,
+  maxCourses,
+  onItemSeatChange,
+  // Datacap payment
+  terminalId,
+  employeeId,
+  onPaymentSuccess,
+  onPaymentCancel,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item => !item.kitchenStatus || item.kitchenStatus === 'pending')
+
+  // Sort direction: 'newest-bottom' (default, newest appended at bottom) or 'newest-top' (newest at top)
+  const [sortDirection, setSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
+
+  // Track newest item for highlight + auto-scroll
+  const [newestItemId, setNewestItemId] = useState<string | null>(null)
+  const prevItemCountRef = useRef(items.length)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const newestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Detect when a new item is added
+  useEffect(() => {
+    const pendingItems = items.filter(item => !item.kitchenStatus || item.kitchenStatus === 'pending')
+    const prevCount = prevItemCountRef.current
+    prevItemCountRef.current = items.length
+
+    if (items.length > prevCount && pendingItems.length > 0) {
+      // New item was added — highlight the newest pending item
+      const newest = sortDirection === 'newest-top' ? pendingItems[0] : pendingItems[pendingItems.length - 1]
+      if (newest) {
+        setNewestItemId(newest.id)
+
+        // Auto-scroll to newest item
+        requestAnimationFrame(() => {
+          const container = scrollContainerRef.current
+          if (!container) return
+          const el = container.querySelector(`[data-item-id="${newest.id}"]`)
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+          }
+        })
+
+        // Clear highlight after 2 seconds
+        if (newestTimerRef.current) clearTimeout(newestTimerRef.current)
+        newestTimerRef.current = setTimeout(() => setNewestItemId(null), 2000)
+      }
+    }
+  }, [items, sortDirection])
+
+  // Sort pending items based on direction
+  const sortPendingItems = (pendingItems: OrderPanelItemData[]) => {
+    if (sortDirection === 'newest-top') {
+      return [...pendingItems].reverse()
+    }
+    return pendingItems
+  }
 
   return (
     <div
@@ -149,24 +231,136 @@ export function OrderPanel({
       </div>
 
       {/* Items list (scrollable) */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+      <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
         {hasItems ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {items.map((item) => (
-              <OrderPanelItem
-                key={item.id}
-                item={item}
-                locationId={locationId}
-                showControls={showItemControls}
-                showEntertainmentTimer={showEntertainmentTimers}
-                onClick={onItemClick}
-                onRemove={onItemRemove}
-                onQuantityChange={onQuantityChange}
-                onSessionEnded={onSessionEnded}
-                onTimerStarted={onTimerStarted}
-                onTimeExtended={onTimeExtended}
-              />
-            ))}
+          <div>
+            {/* PENDING ITEMS */}
+            {(() => {
+              const rawPending = items.filter(item => !item.kitchenStatus || item.kitchenStatus === 'pending')
+              if (rawPending.length === 0) return null
+              const pendingItems = sortPendingItems(rawPending)
+              return (
+                <>
+                  <div style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: '#94a3b8',
+                    textTransform: 'uppercase' as const,
+                    letterSpacing: '0.05em',
+                    marginBottom: '12px',
+                    paddingBottom: '8px',
+                    borderBottom: '2px solid rgba(148, 163, 184, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                  }}>
+                    <span>PENDING ITEMS ({pendingItems.length})</span>
+                    <button
+                      onClick={() => setSortDirection(d => d === 'newest-bottom' ? 'newest-top' : 'newest-bottom')}
+                      title={sortDirection === 'newest-bottom' ? 'Newest at bottom — click for top' : 'Newest at top — click for bottom'}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.06)',
+                        border: '1px solid rgba(255, 255, 255, 0.12)',
+                        borderRadius: '4px',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        padding: '2px 6px',
+                        fontSize: '13px',
+                        lineHeight: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      {sortDirection === 'newest-bottom' ? '\u2193' : '\u2191'}
+                      <span style={{ fontSize: '9px', letterSpacing: '0.03em' }}>NEW</span>
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+                    {pendingItems.map((item) => (
+                      <OrderPanelItem
+                        key={item.id}
+                        item={item}
+                        locationId={locationId}
+                        showControls={showItemControls}
+                        showEntertainmentTimer={showEntertainmentTimers}
+                        onClick={onItemClick}
+                        onRemove={onItemRemove}
+                        onQuantityChange={onQuantityChange}
+                        onSessionEnded={onSessionEnded}
+                        onTimerStarted={onTimerStarted}
+                        onTimeExtended={onTimeExtended}
+                        onHoldToggle={onItemHoldToggle}
+                        onNoteEdit={onItemNoteEdit}
+                        onCourseChange={onItemCourseChange}
+                        onEditModifiers={onItemEditModifiers}
+                        onCompVoid={onItemCompVoid}
+                        onResend={onItemResend}
+                        onSplit={onItemSplit}
+                        isExpanded={expandedItemId === item.id}
+                        onToggleExpand={onItemToggleExpand}
+                        maxSeats={maxSeats}
+                        maxCourses={maxCourses}
+                        onSeatChange={onItemSeatChange}
+                        isNewest={newestItemId === item.id}
+                      />
+                    ))}
+                  </div>
+                </>
+              )
+            })()}
+
+            {/* SENT TO KITCHEN */}
+            {(() => {
+              const sentItems = items.filter(item => item.kitchenStatus && item.kitchenStatus !== 'pending')
+              if (sentItems.length === 0) return null
+              return (
+                <>
+                  <div style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: '#3b82f6',
+                    textTransform: 'uppercase' as const,
+                    letterSpacing: '0.05em',
+                    marginBottom: '12px',
+                    paddingBottom: '8px',
+                    borderBottom: '2px solid rgba(59, 130, 246, 0.3)'
+                  }}>
+                    SENT TO KITCHEN ({sentItems.length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {sentItems.map((item) => (
+                      <OrderPanelItem
+                        key={item.id}
+                        item={item}
+                        locationId={locationId}
+                        showControls={showItemControls}
+                        showEntertainmentTimer={showEntertainmentTimers}
+                        onClick={onItemClick}
+                        onRemove={onItemRemove}
+                        onQuantityChange={onQuantityChange}
+                        onSessionEnded={onSessionEnded}
+                        onTimerStarted={onTimerStarted}
+                        onTimeExtended={onTimeExtended}
+                        onHoldToggle={onItemHoldToggle}
+                        onNoteEdit={onItemNoteEdit}
+                        onCourseChange={onItemCourseChange}
+                        onEditModifiers={onItemEditModifiers}
+                        onCompVoid={onItemCompVoid}
+                        onResend={onItemResend}
+                        onSplit={onItemSplit}
+                        isExpanded={expandedItemId === item.id}
+                        onToggleExpand={onItemToggleExpand}
+                        maxSeats={maxSeats}
+                        maxCourses={maxCourses}
+                        onSeatChange={onItemSeatChange}
+                      />
+                    ))}
+                  </div>
+                </>
+              )
+            })()}
           </div>
         ) : (
           <div style={{
@@ -202,55 +396,26 @@ export function OrderPanel({
         )}
       </div>
 
-      {/* Totals section */}
-      {hasItems && (
-        <div
-          style={{
-            padding: '16px 20px',
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-            background: 'rgba(255, 255, 255, 0.02)',
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
-            <span style={{ color: '#94a3b8' }}>Subtotal</span>
-            <span style={{ color: '#e2e8f0', fontWeight: 500 }}>${subtotal.toFixed(2)}</span>
-          </div>
-          {discounts > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '6px' }}>
-              <span style={{ color: '#94a3b8' }}>Discounts</span>
-              <span style={{ color: '#f87171', fontWeight: 500 }}>-${discounts.toFixed(2)}</span>
-            </div>
-          )}
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '10px' }}>
-            <span style={{ color: '#94a3b8' }}>Tax</span>
-            <span style={{ color: '#e2e8f0', fontWeight: 500 }}>${tax.toFixed(2)}</span>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '18px',
-              fontWeight: 700,
-              paddingTop: '10px',
-              borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-            }}
-          >
-            <span style={{ color: '#f1f5f9' }}>Total</span>
-            <span style={{ color: '#f1f5f9' }}>${total.toFixed(2)}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Action buttons (sticky at bottom) */}
+      {/* Footer: Cash/Card toggle + expandable total + Send/Pay/Discount/Clear */}
       <div style={{ flexShrink: 0 }}>
         <OrderPanelActions
           hasItems={hasItems}
           hasPendingItems={hasPendingItems}
           isSending={isSending}
+          items={items.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price, modifiers: i.modifiers }))}
+          subtotal={subtotal}
+          tax={tax}
+          discounts={discounts}
+          total={total}
           onSend={onSend}
           onPay={onPay}
           onDiscount={onDiscount}
           onClear={onClear}
+          orderId={orderId}
+          terminalId={terminalId}
+          employeeId={employeeId}
+          onPaymentSuccess={onPaymentSuccess}
+          onPaymentCancel={onPaymentCancel}
         />
       </div>
     </div>

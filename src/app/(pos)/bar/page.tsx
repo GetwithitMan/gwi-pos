@@ -74,10 +74,15 @@ export default function BarPage() {
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [showNewTabModal, setShowNewTabModal] = useState(false)
 
-  // Tab detail view state
-  const [viewingTabId, setViewingTabId] = useState<string | null>(null)
-  const [tabItems, setTabItems] = useState<OrderPanelItemData[]>([])
-  const [tabTotals, setTabTotals] = useState({ subtotal: 0, tax: 0, discounts: 0, total: 0 })
+  // Active order state (for the permanent OrderPanel)
+  const [activeOrderId, setActiveOrderId] = useState<string | null>(null)
+  const [activeOrderNumber, setActiveOrderNumber] = useState<number | undefined>()
+  const [activeOrderType, setActiveOrderType] = useState<string | undefined>()
+  const [activeTabName, setActiveTabName] = useState<string | undefined>()
+  const [activeOrderItems, setActiveOrderItems] = useState<OrderPanelItemData[]>([])
+  const [activeOrderTotals, setActiveOrderTotals] = useState({ subtotal: 0, tax: 0, discounts: 0, total: 0 })
+  const [isSendingOrder, setIsSendingOrder] = useState(false)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   // Menu search
   const searchContainerRef = useRef<HTMLDivElement>(null)
@@ -381,29 +386,20 @@ export default function BarPage() {
         }),
       })
 
-      if (!res.ok) {
-        // Rollback optimistic update on error
-        const tabsRes = await fetch(
-          `/api/orders/open?locationId=${employee?.location?.id}`
-        )
-        if (tabsRes.ok) {
-          const tabsData = await tabsRes.json()
-          const sortedTabs = sortTabsByRecent(tabsData.orders || [])
-          setOpenTabs(sortedTabs)
+      if (res.ok) {
+        // If this tab is showing in the OrderPanel, refresh it
+        if (selectedTabId === activeOrderId) {
+          await loadOrderForPanel(selectedTabId)
         }
+      } else {
+        // Rollback optimistic update on error
+        await refreshTabs()
       }
       // Socket will sync the real data across all clients
     } catch (error) {
       console.error('Failed to add item:', error)
       // Rollback on error
-      const tabsRes = await fetch(
-        `/api/orders/open?locationId=${employee?.location?.id}`
-      )
-      if (tabsRes.ok) {
-        const tabsData = await tabsRes.json()
-        const sortedTabs = sortTabsByRecent(tabsData.orders || [])
-        setOpenTabs(sortedTabs)
-      }
+      await refreshTabs()
     }
   }
 
@@ -416,86 +412,283 @@ export default function BarPage() {
     }
   }
 
-  // Load tab details (items and totals)
-  const loadTabDetails = async (tabId: string) => {
+  // Load full order data into the permanent OrderPanel
+  const loadOrderForPanel = async (tabId: string) => {
     try {
       const res = await fetch(`/api/orders/${tabId}`)
       if (!res.ok) {
-        console.error('Failed to load tab details')
+        console.error('Failed to load order for panel')
         return
       }
 
       const data = await res.json()
       const order = data.order
 
+      setActiveOrderId(order.id)
+      setActiveOrderNumber(order.orderNumber)
+      setActiveOrderType(order.orderType)
+      setActiveTabName(order.tabName)
+
       // Map order items to OrderPanelItemData format
       const items: OrderPanelItemData[] = (order.items || []).map((item: any) => ({
         id: item.id,
         name: item.name,
         quantity: item.quantity,
-        price: item.unitPrice,
+        price: Number(item.unitPrice),
         modifiers: (item.modifiers || []).map((mod: any) => ({
           name: mod.name,
-          price: mod.price,
+          price: Number(mod.price),
         })),
         specialNotes: item.specialNotes,
-        kitchenStatus: item.kitchenStatus,
+        kitchenStatus: item.isCompleted ? 'ready' : item.sentToKitchen ? 'sent' : 'pending',
         isHeld: item.isHeld,
-        isTimedRental: item.isTimedRental,
+        isTimedRental: item.isTimedRental || false,
         menuItemId: item.menuItemId,
-        blockTimeMinutes: item.blockTimeMinutes,
-        blockTimeStartedAt: item.blockTimeStartedAt,
-        blockTimeExpiresAt: item.blockTimeExpiresAt,
+        blockTimeMinutes: item.blockTimeMinutes ?? undefined,
+        blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
+        blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
+        seatNumber: item.seatNumber ?? undefined,
+        courseNumber: item.courseNumber ?? undefined,
+        courseStatus: item.courseStatus ?? undefined,
+        sentToKitchen: item.sentToKitchen ?? false,
+        resendCount: item.resendCount ?? undefined,
+        completedAt: item.completedAt ?? undefined,
+        createdAt: item.createdAt ?? undefined,
       }))
 
-      setTabItems(items)
-      setTabTotals({
+      setActiveOrderItems(items)
+      setActiveOrderTotals({
         subtotal: Number(order.subtotal || 0),
         tax: Number(order.tax || 0),
         discounts: Number(order.discounts || 0),
         total: Number(order.total || 0),
       })
     } catch (error) {
-      console.error('Failed to load tab details:', error)
+      console.error('Failed to load order for panel:', error)
     }
   }
 
-  // Handle viewing/editing tab
-  const handleViewTab = async (tabId: string) => {
-    setViewingTabId(tabId)
-    await loadTabDetails(tabId)
-  }
-
-  // Handle payment
+  // Handle payment — loads tab into panel so the inline Datacap processor can be used
   const handlePayTab = (tabId: string) => {
     setSelectedTabId(tabId)
-    setShowPaymentModal(true)
+    loadOrderForPanel(tabId)
   }
 
-  // Close tab detail view
-  const handleCloseTabView = () => {
-    setViewingTabId(null)
-    setTabItems([])
-    setTabTotals({ subtotal: 0, tax: 0, discounts: 0, total: 0 })
-  }
-
-  // Handle OrderPanel actions
-  const handlePayFromPanel = () => {
-    if (viewingTabId) {
-      handlePayTab(viewingTabId)
-      handleCloseTabView()
+  // Send order to kitchen
+  const handleSendToKitchen = async () => {
+    if (!activeOrderId) return
+    setIsSendingOrder(true)
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeId: employee?.id }),
+      })
+      if (res.ok) {
+        toast.success('Order sent to kitchen')
+        await loadOrderForPanel(activeOrderId)
+      } else {
+        toast.error('Failed to send order')
+      }
+    } catch (error) {
+      console.error('Send to kitchen failed:', error)
+      toast.error('Failed to send order')
+    } finally {
+      setIsSendingOrder(false)
     }
   }
 
-  const handleClearTab = async () => {
-    if (!viewingTabId) return
-
+  // Remove item from order
+  const handleRemoveItem = async (itemId: string) => {
+    if (!activeOrderId) return
     try {
-      // In production, this would clear the order items
-      // For now, just close the view
-      handleCloseTabView()
+      const res = await fetch(`/api/orders/${activeOrderId}/items/${itemId}`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        setActiveOrderItems(prev => prev.filter(item => item.id !== itemId))
+        await loadOrderForPanel(activeOrderId)
+        await refreshTabs()
+      }
     } catch (error) {
-      console.error('Failed to clear tab:', error)
+      console.error('Failed to remove item:', error)
+    }
+  }
+
+  // Update item quantity
+  const handleQuantityChange = async (itemId: string, delta: number) => {
+    if (!activeOrderId) return
+    const item = activeOrderItems.find(i => i.id === itemId)
+    if (!item) return
+    const newQty = item.quantity + delta
+    if (newQty < 1) {
+      await handleRemoveItem(itemId)
+      return
+    }
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: newQty }),
+      })
+      if (res.ok) {
+        setActiveOrderItems(prev => prev.map(i =>
+          i.id === itemId ? { ...i, quantity: newQty } : i
+        ))
+        await loadOrderForPanel(activeOrderId)
+        await refreshTabs()
+      }
+    } catch (error) {
+      console.error('Failed to update quantity:', error)
+    }
+  }
+
+  // Clear the active order from the panel (deselect)
+  const handleClearPanel = () => {
+    setActiveOrderId(null)
+    setActiveOrderNumber(undefined)
+    setActiveOrderType(undefined)
+    setActiveTabName(undefined)
+    setActiveOrderItems([])
+    setActiveOrderTotals({ subtotal: 0, tax: 0, discounts: 0, total: 0 })
+    setSelectedTabId(null)
+  }
+
+  // Toggle hold on an item
+  const handleHoldToggle = async (itemId: string) => {
+    if (!activeOrderId) return
+    const item = activeOrderItems.find(i => i.id === itemId)
+    if (!item) return
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isHeld: !item.isHeld }),
+      })
+      if (res.ok) {
+        setActiveOrderItems(prev => prev.map(i =>
+          i.id === itemId ? { ...i, isHeld: !i.isHeld } : i
+        ))
+      }
+    } catch (error) {
+      console.error('Failed to toggle hold:', error)
+    }
+  }
+
+  // Edit note on an item
+  const handleNoteEdit = async (itemId: string, currentNote?: string) => {
+    const note = window.prompt('Kitchen note:', currentNote || '')
+    if (note === null) return
+    if (!activeOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ specialNotes: note || null }),
+      })
+      if (res.ok) {
+        setActiveOrderItems(prev => prev.map(i =>
+          i.id === itemId ? { ...i, specialNotes: note || undefined } : i
+        ))
+      }
+    } catch (error) {
+      console.error('Failed to update note:', error)
+    }
+  }
+
+  // Change course on an item
+  const handleCourseChange = async (itemId: string, course: number | null) => {
+    if (!activeOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseNumber: course }),
+      })
+      if (res.ok) {
+        setActiveOrderItems(prev => prev.map(i =>
+          i.id === itemId ? { ...i, courseNumber: course ?? undefined } : i
+        ))
+      }
+    } catch (error) {
+      console.error('Failed to update course:', error)
+    }
+  }
+
+  // Change seat assignment on an item
+  const handleSeatChange = async (itemId: string, seat: number | null) => {
+    if (!activeOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seatNumber: seat }),
+      })
+      if (res.ok) {
+        setActiveOrderItems(prev => prev.map(i =>
+          i.id === itemId ? { ...i, seatNumber: seat ?? undefined } : i
+        ))
+      }
+    } catch (error) {
+      console.error('Failed to update seat:', error)
+    }
+  }
+
+  // Toggle expanded ▶ More controls for an item
+  const handleToggleExpand = (itemId: string) => {
+    setExpandedItemId(prev => prev === itemId ? null : itemId)
+  }
+
+  // Edit modifiers on an item
+  const handleEditModifiers = (itemId: string) => {
+    // TODO: Open modifier edit modal for this item
+    toast.info('Modifier editing coming soon')
+  }
+
+  // Comp/Void an item
+  const handleCompVoid = (itemId: string) => {
+    // TODO: Open comp/void modal for this item
+    toast.info('Comp/Void coming soon')
+  }
+
+  // Resend item to kitchen
+  const handleResend = async (itemId: string) => {
+    if (!activeOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resendToKitchen: true }),
+      })
+      if (res.ok) {
+        toast.success('Item resent to kitchen')
+        await loadOrderForPanel(activeOrderId)
+      } else {
+        toast.error('Failed to resend item')
+      }
+    } catch (error) {
+      console.error('Failed to resend item:', error)
+      toast.error('Failed to resend item')
+    }
+  }
+
+  // Split item to another check
+  const handleSplit = (itemId: string) => {
+    // TODO: Open split ticket manager
+    toast.info('Split check coming soon')
+  }
+
+  // Helper to refresh tabs list
+  const refreshTabs = async () => {
+    if (!employee?.location?.id) return
+    try {
+      const tabsRes = await fetch(`/api/orders/open?locationId=${employee.location.id}`)
+      if (tabsRes.ok) {
+        const tabsData = await tabsRes.json()
+        setOpenTabs(sortTabsByRecent(tabsData.orders || []))
+      }
+    } catch (error) {
+      console.error('Failed to refresh tabs:', error)
     }
   }
 
@@ -562,7 +755,7 @@ export default function BarPage() {
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content - 3 Column Layout */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Side - Categories + Items */}
         <div className="flex-1 flex flex-col p-4 overflow-hidden">
@@ -616,8 +809,8 @@ export default function BarPage() {
           </div>
         </div>
 
-        {/* Right Side - Tabs List */}
-        <div className="w-80 bg-white border-l border-gray-200 flex flex-col">
+        {/* Middle - Tabs List */}
+        <div className="w-72 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col">
           <div className="p-4 border-b bg-gray-50">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-gray-900">Open Tabs</h2>
@@ -644,24 +837,27 @@ export default function BarPage() {
                 style={{ height: '100%' }}
                 data={openTabs}
                 overscan={10}
-                itemContent={(index, tab) => {
+                itemContent={(_index, tab) => {
                   const isMyTab = tab.employeeId === employee?.id
                   const isSelected = selectedTabId === tab.id
 
                   return (
-                    <div className="px-4 py-2">
+                    <div className="px-3 py-1.5">
                       <div
-                        className={`p-4 rounded-lg border-2 transition-all cursor-pointer ${
+                        className={`p-3 rounded-lg border-2 transition-all cursor-pointer ${
                           isSelected
                             ? 'border-blue-500 bg-blue-50'
                             : isMyTab
                             ? 'border-emerald-500/50 bg-white hover:border-emerald-500 shadow-lg shadow-emerald-500/20'
                             : 'border-gray-200 bg-white hover:border-gray-300'
                         }`}
-                        onClick={() => setSelectedTabId(tab.id)}
+                        onClick={() => {
+                          setSelectedTabId(tab.id)
+                          loadOrderForPanel(tab.id)
+                        }}
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <div className="font-medium text-gray-900">
+                          <div className="font-medium text-gray-900 text-sm">
                             {tab.tableName || tab.tabName || `Tab #${tab.orderNumber}`}
                           </div>
                           <div className="flex items-center gap-1">
@@ -682,19 +878,10 @@ export default function BarPage() {
                             )}
                           </div>
                         </div>
-                        <div className="text-sm text-gray-500 mb-3">
+                        <div className="text-sm text-gray-500 mb-2">
                           {formatCurrency(tab.total)} • {tab.itemCount} items
                         </div>
                         <div className="flex gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleViewTab(tab.id)
-                            }}
-                            className="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded text-sm font-medium"
-                          >
-                            View
-                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation()
@@ -714,59 +901,109 @@ export default function BarPage() {
           </div>
 
           {/* Quick Tab Button */}
-          <div className="p-4 border-t bg-gray-50">
+          <div className="p-3 border-t bg-gray-50">
             <button
               onClick={handleQuickTab}
-              className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors min-h-[64px]"
+              className="w-full py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors min-h-[56px]"
             >
               + QUICK TAB
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Tab Detail View Modal */}
-      {viewingTabId && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl h-[90vh] flex flex-col">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-4 border-b">
-              <h2 className="text-xl font-bold text-gray-900">
-                {openTabs.find(t => t.id === viewingTabId)?.tabName || 'Tab Details'}
-              </h2>
-              <button
-                onClick={handleCloseTabView}
-                className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* OrderPanel */}
-            <div className="flex-1 overflow-hidden">
-              <OrderPanel
-                orderId={viewingTabId}
-                tabName={openTabs.find(t => t.id === viewingTabId)?.tabName || undefined}
-                orderType="bar_tab"
-                locationId={employee?.location?.id}
-                items={tabItems}
-                subtotal={tabTotals.subtotal}
-                tax={tabTotals.tax}
-                discounts={tabTotals.discounts}
-                total={tabTotals.total}
-                showItemControls={false}
-                showEntertainmentTimers={false}
-                onPay={handlePayFromPanel}
-                onClear={handleClearTab}
-              />
+        {/* Right Panel - Permanent OrderPanel (matches order-entry exactly) */}
+        <div className="w-96 flex-shrink-0 bg-white/80 backdrop-blur-xl border-l border-white/30 shadow-xl shadow-black/5 flex flex-col h-full overflow-hidden">
+          {/* Order Header */}
+          <div className="p-5 border-b border-white/30 bg-gradient-to-r from-gray-50/50 to-white/50">
+            <div className="flex items-center justify-between">
+              {activeOrderId ? (
+                <div>
+                  <h2 className="font-semibold text-lg">
+                    {activeTabName || `Order #${activeOrderNumber}`}
+                  </h2>
+                  <span className="text-sm text-gray-500 capitalize">
+                    {(activeOrderType || 'bar_tab').replace('_', ' ')}
+                  </span>
+                </div>
+              ) : (
+                <div>
+                  <h2 className="font-semibold text-lg">New Order</h2>
+                  <span className="text-sm text-gray-500">Select a tab</span>
+                </div>
+              )}
+              {activeOrderId && (
+                <span className="px-3 py-1 text-xs font-semibold rounded-full shadow-md bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-blue-500/25">
+                  Open
+                </span>
+              )}
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Modals would be rendered here in full implementation */}
-      {/* <PaymentModal isOpen={showPaymentModal} orderId={selectedTabId} onClose={() => setShowPaymentModal(false)} /> */}
-      {/* <NewTabModal isOpen={showNewTabModal} onClose={() => setShowNewTabModal(false)} /> */}
+          {/* OrderPanel — full functionality, identical to orders page */}
+          <OrderPanel
+            orderId={activeOrderId}
+            orderNumber={activeOrderNumber}
+            orderType={activeOrderType}
+            tabName={activeTabName}
+            locationId={employee?.location?.id}
+            items={activeOrderItems}
+            subtotal={activeOrderTotals.subtotal}
+            tax={activeOrderTotals.tax}
+            discounts={activeOrderTotals.discounts}
+            total={activeOrderTotals.total}
+            showItemControls={true}
+            showEntertainmentTimers={true}
+            onItemRemove={handleRemoveItem}
+            onQuantityChange={handleQuantityChange}
+            onSend={handleSendToKitchen}
+            onDiscount={() => { /* TODO: wire discount modal */ }}
+            onClear={handleClearPanel}
+            onItemHoldToggle={handleHoldToggle}
+            onItemNoteEdit={handleNoteEdit}
+            onItemCourseChange={handleCourseChange}
+            onItemEditModifiers={handleEditModifiers}
+            onItemCompVoid={handleCompVoid}
+            onItemResend={handleResend}
+            onItemSplit={handleSplit}
+            expandedItemId={expandedItemId}
+            onItemToggleExpand={handleToggleExpand}
+            onItemSeatChange={handleSeatChange}
+            isSending={isSendingOrder}
+            className="flex-1"
+            terminalId="terminal-1"
+            employeeId={employee?.id}
+            onPaymentSuccess={async (result) => {
+              toast.success(`Payment approved! Card: ****${result.cardLast4 || '****'}`)
+
+              // Record the payment in the database and mark order as paid/closed
+              if (activeOrderId) {
+                try {
+                  await fetch(`/api/orders/${activeOrderId}/pay`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      payments: [{
+                        method: 'credit',
+                        amount: activeOrderTotals.total,
+                        tipAmount: result.tipAmount || 0,
+                        cardBrand: result.cardBrand,
+                        cardLast4: result.cardLast4,
+                      }],
+                      employeeId: employee?.id,
+                    }),
+                  })
+                } catch (err) {
+                  console.error('[BarPage] Failed to record payment:', err)
+                }
+              }
+
+              // Refresh tabs and clear panel after payment
+              refreshTabs()
+              handleClearPanel()
+            }}
+          />
+        </div>
+      </div>
     </div>
   )
 }
