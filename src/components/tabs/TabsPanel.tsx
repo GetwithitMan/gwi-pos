@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
 import { PendingTabAnimation } from './PendingTabAnimation'
 import { MultiCardBadges } from './MultiCardBadges'
+import BottleServiceBanner from './BottleServiceBanner'
 
 interface TabCard {
   id: string
@@ -42,6 +43,9 @@ interface Tab {
   cards?: TabCard[]
   openedAt: string
   paidAmount: number
+  isBottleService?: boolean
+  bottleServiceTierName?: string
+  bottleServiceTierColor?: string
 }
 
 interface TabsPanelProps {
@@ -149,20 +153,24 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
             const isPending = tab.tabStatus === 'pending_auth'
             const hasNoCard = tab.tabStatus === 'no_card'
 
+            const isBottle = tab.isBottleService && !isPending && !hasNoCard
+
             return (
               <Card
                 key={tab.id}
                 className={`p-3 cursor-pointer transition-colors relative overflow-hidden
                   ${isPending ? 'border-blue-200 bg-blue-50/30' : ''}
                   ${hasNoCard ? 'border-red-200 bg-red-50/30' : ''}
-                  ${!isPending && !hasNoCard ? 'hover:bg-gray-50' : ''}
+                  ${isBottle ? 'bg-amber-50/20' : ''}
+                  ${!isPending && !hasNoCard && !isBottle ? 'hover:bg-gray-50' : ''}
                 `}
+                style={isBottle ? { borderColor: tab.bottleServiceTierColor || '#D4AF37' } : undefined}
                 onClick={() => onSelectTab(tab.id)}
               >
                 <div className="flex items-start justify-between mb-2">
                   <div className="min-w-0 flex-1">
                     <h4 className="font-medium flex items-center gap-2">
-                      <span>🍺</span>
+                      <span>{tab.isBottleService ? '🍾' : '🍺'}</span>
                       <span className="truncate">{getDisplayName(tab)}</span>
                     </h4>
                     {/* Show cardholder name as subtitle if nickname is set */}
@@ -214,6 +222,18 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
                     </svg>
                     {formatCardDisplay(tab.preAuth.cardBrand, tab.preAuth.last4)}
+                  </div>
+                )}
+
+                {/* Bottle service banner */}
+                {tab.isBottleService && !isPending && (
+                  <div className="mb-2 ml-7">
+                    <BottleServiceBanner
+                      orderId={tab.id}
+                      tierName={tab.bottleServiceTierName}
+                      tierColor={tab.bottleServiceTierColor}
+                      compact
+                    />
                   </div>
                 )}
 

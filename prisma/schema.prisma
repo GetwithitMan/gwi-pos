@@ -201,6 +201,9 @@ model Location {
   dailyPrepCountTransactions   DailyPrepCountTransaction[]
   ingredientStockAdjustments   IngredientStockAdjustment[]
 
+  // Bottle Service (Phase 10)
+  bottleServiceTiers BottleServiceTier[]
+
   @@index([organizationId])
 }
 
@@ -1493,6 +1496,12 @@ model Order {
   preAuthExpiresAt DateTime? // When the hold expires
   preAuthRecordNo  String? // Datacap RecordNo token for capture/increment
   preAuthReaderId  String? // Which reader did the pre-auth
+
+  // Bottle Service (Phase 10)
+  isBottleService       Boolean   @default(false)
+  bottleServiceTierId   String?   // Linked tier
+  bottleServiceDeposit  Decimal?  // Deposit amount pre-authorized
+  bottleServiceMinSpend Decimal?  // Minimum spend requirement (from tier at time of creation)
 
   // Walkout Recovery (Phase 6)
   isWalkout       Boolean   @default(false)
@@ -5684,4 +5693,36 @@ model WalkoutRetry {
   @@index([locationId])
   @@index([status])
   @@index([nextRetryAt])
+}
+
+// ============================================
+// BOTTLE SERVICE TIERS (Phase 10)
+// ============================================
+
+model BottleServiceTier {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Tier details
+  name        String   // e.g., "Bronze", "Silver", "Gold", "Platinum"
+  description String?  // e.g., "Includes reserved seating for 4"
+  color       String   @default("#D4AF37")  // Banner/badge color (default: gold)
+
+  // Financial
+  depositAmount     Decimal  // Pre-auth amount (e.g., $500, $1000, $2000)
+  minimumSpend      Decimal  // Soft minimum spend requirement
+  autoGratuityPercent Decimal? // Override auto-gratuity for this tier (e.g., 20%)
+
+  // Configuration
+  sortOrder  Int      @default(0)  // Display order
+  isActive   Boolean  @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([locationId, isActive])
 }

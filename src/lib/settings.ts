@@ -103,6 +103,12 @@ export interface PaymentSettings {
   // Digital Receipts (Phase 7)
   digitalReceiptRetentionDays: number        // Local retention before cloud archive (default: 90)
   requireSignatureAbove: number              // Require signature for amounts above this (default: 25)
+
+  // Bottle Service (Phase 10)
+  bottleServiceEnabled: boolean              // Enable bottle service tab type (default: false)
+  bottleServiceAutoGratuityPercent: number   // Default auto-gratuity for bottle service (default: 20)
+  bottleServiceReAuthAlertEnabled: boolean   // Alert bartender when tab reaches deposit amount (default: true)
+  bottleServiceMinSpendEnforced: boolean     // Require manager override to close under minimum (default: false)
 }
 
 export interface LoyaltySettings {
@@ -362,6 +368,11 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     // Digital Receipts
     digitalReceiptRetentionDays: 90,
     requireSignatureAbove: 25,
+    // Bottle Service
+    bottleServiceEnabled: false,
+    bottleServiceAutoGratuityPercent: 20,
+    bottleServiceReAuthAlertEnabled: true,
+    bottleServiceMinSpendEnforced: false,
   },
   loyalty: {
     enabled: false,
