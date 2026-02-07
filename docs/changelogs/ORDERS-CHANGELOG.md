@@ -681,6 +681,82 @@ ac53e84 style(orders): Convert OrderPanel components to dark theme
 
 ---
 
+## Session: February 6, 2026 (Workers O31.5-O35 - OrderPanel Unification)
+
+### Context
+
+The OrderPanel component was being rendered differently across three screens: `/orders`, `/bar`, and `FloorPlanHome`. Each had divergent implementations — different props wired, different styling, different item controls. Goal: **"One OrderPanel to rule them all"** — unified component used identically everywhere.
+
+### Completed Workers
+
+| Worker | Task | Status | Files |
+|--------|------|--------|-------|
+| O31.5 | Restore OrderPanel.tsx (lost to agent revert) | ✅ Complete | `src/components/orders/OrderPanel.tsx` |
+| O32 | Wire 13 missing props on /orders page | ✅ Complete | `src/app/(pos)/orders/page.tsx` |
+| O33 | Remove external header from /bar | ✅ Complete | `src/app/(pos)/bar/page.tsx` |
+| O34 | Replace inline rendering in FloorPlanHome | ✅ Complete | `src/components/floor-plan/FloorPlanHome.tsx` |
+| O35 | Fix TS error in items/route.ts (id → orderId) | ✅ Complete | `src/app/api/orders/[id]/items/route.ts` |
+
+### What Changed
+
+**OrderPanel.tsx (O31.5 - Restored to 481 lines)**
+- `SeatGroup` interface for table service display
+- `renderHeader` / `hideHeader` props for consumer customization
+- `cashDiscountRate` / `taxRate` / `onPaymentModeChange` pass-through to OrderPanelActions
+- `seatGroups` prop for grouped item rendering
+- `useMemo` for `pendingItems` / `sentItems` extraction
+- `renderItem` / `renderPendingItems()` / `renderSentItems()` helpers
+- `hasPendingItems` checks `sentToKitchen` flag
+- `orderNumber` type widened to `number | string | null`
+- `discounts` made optional with default 0
+
+**/orders page (O32 - +217 lines)**
+- Added `expandedItemId` state
+- Created 10 handler functions: `handleHoldToggle`, `handleNoteEdit`, `handleCourseChange`, `handleEditModifiers`, `handleCompVoid`, `handleResend`, `handleSplit`, `handleToggleExpand`, `handleSeatChange`, `handlePaymentSuccess`
+- Wired all 13 missing props to `<OrderPanel>` including Datacap props
+
+**/bar page (O33 - -28 lines)**
+- Deleted external light-theme header (was rendered outside OrderPanel)
+- Stripped wrapper div gradient styling
+- OrderPanel now renders its own dark default header
+
+**FloorPlanHome (O34 - net -200 lines)**
+- Removed imports: `OrderPanelItem`, `OrderPanelActions`
+- Added imports: `OrderPanel`, `OrderPanelItemData`
+- Created `seatGroupsForPanel` useMemo
+- Replaced ~300 lines of inline rendering with single `<OrderPanel>` call
+- Uses `hideHeader={true}` (FloorPlanHome has its own header)
+- Added TODO comments on potentially redundant state
+
+**items/route.ts (O35 - 1 line fix)**
+- Fixed line 310: `${id}` → `${orderId}` (undeclared variable reference)
+
+### Issues Encountered
+
+| Issue | Resolution |
+|-------|------------|
+| PM accidentally launched Task agents instead of providing prompts | Stopped agents, user clarified: "going forward send me the worker prompts" |
+| Stopped agents reverted OrderPanel.tsx to older commit, losing uncommitted changes | Added O31.5 worker to restore all features |
+| O32 had 4 TS errors in handleCompVoid | Fixed: `m.modifier?.name` → `m.name`, removed non-existent `status`/`voidReason` fields |
+| Pre-existing TS error in items/route.ts (`id` vs `orderId`) | Fixed by O35 worker |
+| 4 Payments domain TS errors (Datacap interface mismatches) | Acknowledged as in-progress Payments work — not our domain |
+
+### TypeScript Status
+
+**Orders domain: 0 errors** (confirmed after O35)
+
+### Key Architectural Decision
+
+All three screens now use `<OrderPanel>` identically. The component provides:
+- Same item controls everywhere (Qty +/-, Note, Hold, Course, Edit, Delete, More)
+- Same footer and payment buttons
+- Same display rules for items/modifiers
+- Only the header can differ (via `renderHeader` or `hideHeader` props)
+
+No more duplicate layouts to get out of sync.
+
+---
+
 ## Next Steps
 
 ### Priority 1: Bar Tabs Screen
@@ -699,9 +775,9 @@ ac53e84 style(orders): Convert OrderPanel components to dark theme
 - [ ] Reopen closed orders (with reason)
 
 ### Priority 3: File Size / Refactoring
-- [ ] FloorPlanHome.tsx is now ~6,300 lines - needs splitting
+- [ ] orders/page.tsx (~4,500 lines) — extract hooks
+- [ ] FloorPlanHome.tsx (~5,000 lines) — clean up potentially redundant state (itemSortDirection, newestItemId, orderScrollRef)
 - [ ] Extract order panel logic to custom hook
-- [ ] Consider separate InlineOrderPanel component
 
 ---
 
@@ -711,4 +787,4 @@ ac53e84 style(orders): Convert OrderPanel components to dark theme
 PM Mode: Orders
 ```
 
-Then review this changelog and select tasks to work on.
+Then review this changelog, PM Task Board, and Pre-Launch Test Checklist.

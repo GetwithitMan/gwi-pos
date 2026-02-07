@@ -912,33 +912,7 @@ export default function BarPage() {
         </div>
 
         {/* Right Panel - Permanent OrderPanel (matches order-entry exactly) */}
-        <div className="w-96 flex-shrink-0 bg-white/80 backdrop-blur-xl border-l border-white/30 shadow-xl shadow-black/5 flex flex-col h-full overflow-hidden">
-          {/* Order Header */}
-          <div className="p-5 border-b border-white/30 bg-gradient-to-r from-gray-50/50 to-white/50">
-            <div className="flex items-center justify-between">
-              {activeOrderId ? (
-                <div>
-                  <h2 className="font-semibold text-lg">
-                    {activeTabName || `Order #${activeOrderNumber}`}
-                  </h2>
-                  <span className="text-sm text-gray-500 capitalize">
-                    {(activeOrderType || 'bar_tab').replace('_', ' ')}
-                  </span>
-                </div>
-              ) : (
-                <div>
-                  <h2 className="font-semibold text-lg">New Order</h2>
-                  <span className="text-sm text-gray-500">Select a tab</span>
-                </div>
-              )}
-              {activeOrderId && (
-                <span className="px-3 py-1 text-xs font-semibold rounded-full shadow-md bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-blue-500/25">
-                  Open
-                </span>
-              )}
-            </div>
-          </div>
-
+        <div className="w-96 flex-shrink-0 flex flex-col h-full overflow-hidden">
           {/* OrderPanel — full functionality, identical to orders page */}
           <OrderPanel
             orderId={activeOrderId}

@@ -69,6 +69,7 @@ import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
+import { toast } from '@/stores/toast-store'
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig } from '@/types'
 
 export default function OrdersPage() {
@@ -276,6 +277,9 @@ export default function OrdersPage() {
 
   // Open orders count for badge
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
+
+  // Expanded item state for OrderPanel
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   // Item notes modal state (for quick note editing)
   const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
@@ -1395,6 +1399,204 @@ export default function OrdersPage() {
     setTabsRefreshTrigger(prev => prev + 1)
     setShowCompVoidModal(false)
     setCompVoidItem(null)
+  }
+
+  // OrderPanel item control handlers
+  const handleHoldToggle = async (itemId: string) => {
+    if (!savedOrderId) return
+    const item = currentOrder?.items.find(i => i.id === itemId)
+    if (!item) return
+    try {
+      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isHeld: !item.isHeld }),
+      })
+      if (res.ok) {
+        // Refresh order to show updated state
+        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+        if (orderRes.ok) {
+          const orderData = await orderRes.json()
+          loadOrder(orderData)
+        }
+        toast.success(item.isHeld ? 'Item fired' : 'Item held')
+      } else {
+        toast.error('Failed to update item')
+      }
+    } catch (error) {
+      console.error('Failed to toggle hold:', error)
+      toast.error('Failed to update item')
+    }
+  }
+
+  const handleNoteEdit = async (itemId: string, currentNote?: string) => {
+    const note = window.prompt('Kitchen note:', currentNote || '')
+    if (note === null) return
+    if (!savedOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ specialNotes: note || null }),
+      })
+      if (res.ok) {
+        // Refresh order to show updated state
+        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+        if (orderRes.ok) {
+          const orderData = await orderRes.json()
+          loadOrder(orderData)
+        }
+        toast.success('Note updated')
+      } else {
+        toast.error('Failed to update note')
+      }
+    } catch (error) {
+      console.error('Failed to update note:', error)
+      toast.error('Failed to update note')
+    }
+  }
+
+  const handleCourseChange = async (itemId: string, course: number | null) => {
+    if (!savedOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseNumber: course }),
+      })
+      if (res.ok) {
+        // Refresh order to show updated state
+        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+        if (orderRes.ok) {
+          const orderData = await orderRes.json()
+          loadOrder(orderData)
+        }
+        toast.success('Course updated')
+      } else {
+        toast.error('Failed to update course')
+      }
+    } catch (error) {
+      console.error('Failed to update course:', error)
+      toast.error('Failed to update course')
+    }
+  }
+
+  const handleEditModifiers = (itemId: string) => {
+    const fullItem = currentOrder?.items.find(i => i.id === itemId)
+    if (fullItem) {
+      handleEditOrderItem(fullItem)
+    }
+  }
+
+  const handleCompVoid = async (itemId: string) => {
+    const item = currentOrder?.items.find(i => i.id === itemId)
+    if (!item) return
+    await handleOpenCompVoid({
+      id: item.id,
+      name: item.name,
+      quantity: item.quantity,
+      price: Number(item.price),
+      modifiers: item.modifiers?.map(m => ({
+        id: m.id,
+        name: m.name,
+        price: Number(m.price)
+      })) || [],
+    })
+  }
+
+  const handleResend = async (itemId: string) => {
+    if (!savedOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}/resend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (res.ok) {
+        toast.success('Item resent to kitchen')
+        // Refresh order to show updated state
+        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+        if (orderRes.ok) {
+          const orderData = await orderRes.json()
+          loadOrder(orderData)
+        }
+      } else {
+        toast.error('Failed to resend item')
+      }
+    } catch (error) {
+      console.error('Failed to resend item:', error)
+      toast.error('Failed to resend item')
+    }
+  }
+
+  const handleSplit = async (itemId: string) => {
+    // Open split ticket manager
+    await handleOpenSplitTicket()
+  }
+
+  const handleToggleExpand = (itemId: string) => {
+    setExpandedItemId(prev => prev === itemId ? null : itemId)
+  }
+
+  const handleSeatChange = async (itemId: string, seat: number | null) => {
+    if (!savedOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seatNumber: seat }),
+      })
+      if (res.ok) {
+        // Refresh order to show updated state
+        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+        if (orderRes.ok) {
+          const orderData = await orderRes.json()
+          loadOrder(orderData)
+        }
+        toast.success('Seat updated')
+      } else {
+        toast.error('Failed to update seat')
+      }
+    } catch (error) {
+      console.error('Failed to update seat:', error)
+      toast.error('Failed to update seat')
+    }
+  }
+
+  const handlePaymentSuccess = async (result: {
+    cardLast4?: string
+    cardBrand?: string
+    tipAmount?: number
+  }) => {
+    toast.success(`Payment approved! Card: ****${result.cardLast4 || '****'}`)
+
+    // Record the payment in the database and mark order as paid/closed
+    if (savedOrderId) {
+      try {
+        await fetch(`/api/orders/${savedOrderId}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payments: [{
+              method: 'credit',
+              amount: grandTotal,
+              tipAmount: result.tipAmount || 0,
+              cardBrand: result.cardBrand,
+              cardLast4: result.cardLast4,
+            }],
+            employeeId: employee?.id,
+          }),
+        })
+      } catch (err) {
+        console.error('[OrdersPage] Failed to record payment:', err)
+      }
+    }
+
+    // Clear the order panel after payment
+    clearOrder()
+    setSavedOrderId(null)
+    setOrderSent(false)
+    setAppliedDiscounts([])
+    setTabsRefreshTrigger(prev => prev + 1)
   }
 
   // Tab handlers
@@ -3663,8 +3865,21 @@ export default function OrdersPage() {
             setOrderSent(false)
             setAppliedDiscounts([])
           }}
+          onItemHoldToggle={handleHoldToggle}
+          onItemNoteEdit={handleNoteEdit}
+          onItemCourseChange={handleCourseChange}
+          onItemEditModifiers={handleEditModifiers}
+          onItemCompVoid={handleCompVoid}
+          onItemResend={handleResend}
+          onItemSplit={handleSplit}
+          expandedItemId={expandedItemId}
+          onItemToggleExpand={handleToggleExpand}
+          onItemSeatChange={handleSeatChange}
           isSending={isSendingOrder}
           className="flex-1"
+          terminalId="terminal-1"
+          employeeId={employee?.id}
+          onPaymentSuccess={handlePaymentSuccess}
         />
       </div>
 

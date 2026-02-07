@@ -27,8 +27,7 @@ import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { StockBadge } from '@/components/menu/StockBadge'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
 import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
-import { OrderPanelItem } from '@/components/orders/OrderPanelItem'
-import { OrderPanelActions } from '@/components/orders/OrderPanelActions'
+import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
 import { useEvents } from '@/lib/events'
@@ -88,7 +87,11 @@ interface InlineOrderItem {
   sentToKitchen?: boolean
   isCompleted?: boolean
   status?: 'active' | 'voided' | 'comped'
-  blockTimeMinutes?: number // For timed rental items
+  // Timed rental / entertainment items
+  isTimedRental?: boolean
+  blockTimeMinutes?: number
+  blockTimeStartedAt?: string
+  blockTimeExpiresAt?: string
   // Item lifecycle status
   kitchenStatus?: 'pending' | 'cooking' | 'ready' | 'delivered'
   completedAt?: string
@@ -260,11 +263,13 @@ export function FloorPlanHome({
   const [resendNote, setResendNote] = useState('')
   const [resendLoading, setResendLoading] = useState(false)
 
-  // Sort direction for order panel items: 'newest-bottom' or 'newest-top'
+  // TODO: May be redundant now that OrderPanel manages its own sort/highlight state
   const [itemSortDirection, setItemSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
-  // Newest item highlight + auto-scroll
+  // TODO: May be redundant now that OrderPanel manages its own sort/highlight state
   const [newestItemId, setNewestItemId] = useState<string | null>(null)
+  // TODO: May be redundant now that OrderPanel manages its own sort/highlight state
   const prevItemCountRef2 = useRef(0)
+  // TODO: May be redundant now that OrderPanel manages its own scroll ref
   const orderScrollRef = useRef<HTMLDivElement>(null)
   const newestTimerRef2 = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -894,7 +899,7 @@ export function FloorPlanHome({
   const groupedOrderItems = useMemo(() => {
     if (!activeTable || getTotalSeats(activeTable) === 0) {
       // No seats - just return all items in one "group"
-      return [{ seatNumber: null, label: 'All Items', items: inlineOrderItems }]
+      return [{ seatNumber: null, sourceTableId: null, label: 'All Items', items: inlineOrderItems }]
     }
 
     const groups: { seatNumber: number | null; sourceTableId: string | null; label: string; items: InlineOrderItem[] }[] = []
@@ -971,6 +976,48 @@ export function FloorPlanHome({
 
     return groups
   }, [activeTable, getTotalSeats, inlineOrderItems, tables])
+
+  // Convert grouped order items to OrderPanel seatGroups format
+  const seatGroupsForPanel = useMemo(() => {
+    if (!activeTableId || inlineOrderItems.length === 0) return undefined
+
+    const groups = groupedOrderItems
+
+    // If only one group with no seat number (e.g., "All Items"), don't use seat grouping
+    if (groups.length === 1 && groups[0].seatNumber === null) {
+      return undefined
+    }
+
+    // Convert to OrderPanel's SeatGroup format
+    return groups.map(group => ({
+      seatNumber: group.seatNumber,
+      sourceTableId: group.sourceTableId,
+      label: group.label,
+      items: group.items.map(i => ({
+        id: i.id,
+        name: i.name,
+        quantity: i.quantity,
+        price: i.price,
+        modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price })),
+        specialNotes: i.specialNotes,
+        kitchenStatus: i.kitchenStatus as OrderPanelItemData['kitchenStatus'],
+        isHeld: i.isHeld,
+        isCompleted: i.isCompleted,
+        isTimedRental: i.isTimedRental,
+        menuItemId: i.menuItemId,
+        blockTimeMinutes: i.blockTimeMinutes,
+        blockTimeStartedAt: i.blockTimeStartedAt,
+        blockTimeExpiresAt: i.blockTimeExpiresAt,
+        seatNumber: i.seatNumber,
+        courseNumber: i.courseNumber,
+        courseStatus: i.courseStatus,
+        sentToKitchen: i.sentToKitchen,
+        resendCount: i.resendCount,
+        completedAt: i.completedAt,
+        createdAt: i.createdAt,
+      })),
+    }))
+  }, [activeTableId, inlineOrderItems, groupedOrderItems])
 
   // Quick bar items with full data
   const [quickBarItems, setQuickBarItems] = useState<{
@@ -2445,6 +2492,53 @@ export function FloorPlanHome({
   const tax = taxableAmount * TAX_RATE
   const orderTotal = taxableAmount + tax
   const cardTotal = (orderSubtotal * (1 + TAX_RATE))
+
+  // Handle payment success (extracted from inline for OrderPanel)
+  const handlePaymentSuccess = useCallback(async (result: { cardLast4?: string; cardBrand?: string; tipAmount: number }) => {
+    toast.success(`Payment approved! Card: ****${result.cardLast4 || '****'}`)
+
+    // Record the payment in the database and mark order as paid/closed
+    if (activeOrderId) {
+      try {
+        await fetch(`/api/orders/${activeOrderId}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            payments: [{
+              method: 'credit',
+              amount: orderTotal,
+              tipAmount: result.tipAmount || 0,
+              cardBrand: result.cardBrand,
+              cardLast4: result.cardLast4,
+            }],
+            employeeId,
+          }),
+        })
+      } catch (err) {
+        console.error('[FloorPlanHome] Failed to record payment:', err)
+      }
+    }
+
+    // Clear the order panel (same as handleCloseOrderPanel)
+    setInlineOrderItems([])
+    setActiveOrderId(null)
+    setActiveOrderNumber(null)
+    setActiveOrderType(null)
+    setExpandedItemId(null)
+    setEditingNotesItemId(null)
+    setEditingNotesText('')
+    setGuestCount(defaultGuestCount)
+    setActiveSeatNumber(null)
+    setActiveSourceTableId(null)
+    setActiveTableId(null)
+    setShowOrderPanel(false)
+    setSelectedCategoryId(null)
+    setViewMode('tables')
+
+    // Refresh floor plan to show updated table status
+    loadFloorPlanData()
+    loadOpenOrdersCount()
+  }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData, loadOpenOrdersCount])
 
   // Get primary tables for combined groups
   const primaryTables = tables.filter(
@@ -4462,304 +4556,84 @@ export function FloorPlanHome({
                 </div>
               )}
 
-              {/* Order Items — uses shared OrderPanelItem for identical rendering across all screens */}
-              <div ref={orderScrollRef} style={{ flex: 1, overflow: 'auto', padding: '16px 20px' }}>
-                {inlineOrderItems.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
-                    <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ opacity: 0.5, margin: '0 auto 16px' }}>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
-                    <p style={{ fontSize: '14px' }}>No items yet</p>
-                    <p style={{ fontSize: '12px', marginTop: '4px' }}>
-                      {activeTable && getTotalSeats(activeTable) > 0
-                        ? 'Select a seat, then tap a category to add items'
-                        : 'Tap a category to add items'}
-                    </p>
-                  </div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {/* PENDING ITEMS SECTION */}
-                    {(() => {
-                      const pendingItems = inlineOrderItems.filter(item =>
-                        !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
-                      )
-                      if (pendingItems.length === 0) return null
-
-                      return (
-                        <div>
-                          <div style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: '#94a3b8',
-                            textTransform: 'uppercase' as const,
-                            letterSpacing: '0.05em',
-                            marginBottom: '12px',
-                            paddingBottom: '8px',
-                            borderBottom: '2px solid rgba(148, 163, 184, 0.3)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                          }}>
-                            <span>PENDING ITEMS ({pendingItems.length})</span>
-                            <button
-                              onClick={() => setItemSortDirection(d => d === 'newest-bottom' ? 'newest-top' : 'newest-bottom')}
-                              title={itemSortDirection === 'newest-bottom' ? 'Newest at bottom — click for top' : 'Newest at top — click for bottom'}
-                              style={{
-                                background: 'rgba(255, 255, 255, 0.06)',
-                                border: '1px solid rgba(255, 255, 255, 0.12)',
-                                borderRadius: '4px',
-                                color: '#94a3b8',
-                                cursor: 'pointer',
-                                padding: '2px 6px',
-                                fontSize: '13px',
-                                lineHeight: 1,
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '3px',
-                                transition: 'all 0.15s ease',
-                              }}
-                            >
-                              {itemSortDirection === 'newest-bottom' ? '\u2193' : '\u2191'}
-                              <span style={{ fontSize: '9px', letterSpacing: '0.03em' }}>NEW</span>
-                            </button>
-                          </div>
-
-                          {/* Group by seat when table has seats */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                            {groupedOrderItems.filter(group =>
-                              group.items.some(item =>
-                                !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
-                              )
-                            ).map((group) => (
-                              <div key={group.label}>
-                                {/* Group Header (only show when using seats) */}
-                                {activeTable && getTotalSeats(activeTable) > 0 && groupedOrderItems.length > 1 && (
-                                  <div style={{
-                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                    marginBottom: '8px', paddingBottom: '6px',
-                                    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                                  }}>
-                                    <span style={{
-                                      fontSize: '12px', fontWeight: 600,
-                                      color: group.seatNumber ? '#c084fc' : '#94a3b8',
-                                      padding: '2px 8px',
-                                      background: group.seatNumber ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                                      borderRadius: '4px',
-                                    }}>
-                                      {group.label}
-                                    </span>
-                                    <span style={{ fontSize: '11px', color: '#64748b' }}>
-                                      {group.items.filter(i => !i.sentToKitchen && (!i.kitchenStatus || i.kitchenStatus === 'pending')).length} item{group.items.filter(i => !i.sentToKitchen && (!i.kitchenStatus || i.kitchenStatus === 'pending')).length !== 1 ? 's' : ''}
-                                    </span>
-                                  </div>
-                                )}
-
-                                {/* Items in this group — using shared OrderPanelItem */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                  {(() => {
-                                    const filtered = group.items.filter(item =>
-                                      !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
-                                    )
-                                    const sorted = itemSortDirection === 'newest-top' ? [...filtered].reverse() : filtered
-                                    return sorted.map((item) => (
-                                    <OrderPanelItem
-                                      key={item.id}
-                                      item={{
-                                        id: item.id,
-                                        name: item.name,
-                                        quantity: item.quantity,
-                                        price: item.price,
-                                        modifiers: item.modifiers,
-                                        specialNotes: item.specialNotes,
-                                        kitchenStatus: (item.kitchenStatus as any) || 'pending',
-                                        isHeld: item.isHeld,
-                                        isCompleted: item.isCompleted,
-                                        isTimedRental: !!item.blockTimeMinutes,
-                                        menuItemId: item.menuItemId,
-                                        blockTimeMinutes: item.blockTimeMinutes,
-                                        blockTimeStartedAt: undefined,
-                                        blockTimeExpiresAt: undefined,
-                                        seatNumber: item.seatNumber,
-                                        courseNumber: item.courseNumber,
-                                        courseStatus: item.courseStatus,
-                                        sentToKitchen: item.sentToKitchen,
-                                        resendCount: item.resendCount,
-                                        completedAt: item.completedAt,
-                                        createdAt: item.createdAt,
-                                      }}
-                                      locationId={locationId}
-                                      showControls={true}
-                                      onClick={() => handleOrderItemTap(item)}
-                                      onRemove={(id) => handleRemoveItem(id)}
-                                      onQuantityChange={(id, delta) => handleUpdateQuantity(id, item.quantity + delta)}
-                                      onHoldToggle={(id) => handleToggleHold(id)}
-                                      onNoteEdit={(id, note) => handleOpenNotesEditor(id, note)}
-                                      onCourseChange={(id, course) => {
-                                        setInlineOrderItems(prev => prev.map(i =>
-                                          i.id === id ? { ...i, courseNumber: course ?? undefined } : i
-                                        ))
-                                      }}
-                                      onEditModifiers={(id) => {
-                                        const editItem = inlineOrderItems.find(i => i.id === id)
-                                        if (editItem) handleEditItem(editItem)
-                                      }}
-                                      isExpanded={expandedItemId === item.id}
-                                      onToggleExpand={(id) => setExpandedItemId(prev => prev === id ? null : id)}
-                                      maxSeats={Math.max(guestCount, 4)}
-                                      maxCourses={5}
-                                      onSeatChange={(id, seat) => handleUpdateSeat(id, seat)}
-                                      isNewest={newestItemId === item.id}
-                                    />
-                                  ))
-                                  })()}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })()}
-
-                    {/* SENT TO KITCHEN SECTION */}
-                    {(() => {
-                      const sentItems = inlineOrderItems.filter(item =>
-                        item.sentToKitchen || (item.kitchenStatus && item.kitchenStatus !== 'pending')
-                      )
-                      if (sentItems.length === 0) return null
-
-                      return (
-                        <div>
-                          <div style={{
-                            fontSize: '11px',
-                            fontWeight: 700,
-                            color: '#3b82f6',
-                            textTransform: 'uppercase' as const,
-                            letterSpacing: '0.05em',
-                            marginBottom: '12px',
-                            paddingBottom: '8px',
-                            borderBottom: '2px solid rgba(59, 130, 246, 0.3)'
-                          }}>
-                            SENT TO KITCHEN ({sentItems.length})
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                            {sentItems.map((item) => (
-                              <OrderPanelItem
-                                key={item.id}
-                                item={{
-                                  id: item.id,
-                                  name: item.name,
-                                  quantity: item.quantity,
-                                  price: item.price,
-                                  modifiers: item.modifiers,
-                                  specialNotes: item.specialNotes,
-                                  kitchenStatus: (item.kitchenStatus as any) || 'sent',
-                                  isHeld: item.isHeld,
-                                  isCompleted: item.isCompleted,
-                                  isTimedRental: !!item.blockTimeMinutes,
-                                  menuItemId: item.menuItemId,
-                                  blockTimeMinutes: item.blockTimeMinutes,
-                                  blockTimeStartedAt: undefined,
-                                  blockTimeExpiresAt: undefined,
-                                  seatNumber: item.seatNumber,
-                                  courseNumber: item.courseNumber,
-                                  courseStatus: item.courseStatus,
-                                  sentToKitchen: item.sentToKitchen,
-                                  resendCount: item.resendCount,
-                                  completedAt: item.completedAt,
-                                  createdAt: item.createdAt,
-                                }}
-                                locationId={locationId}
-                                showControls={true}
-                                onEditModifiers={(id) => {
-                                  const editItem = inlineOrderItems.find(i => i.id === id)
-                                  if (editItem) handleEditSentItemModifiers(editItem)
-                                }}
-                                onResend={(id) => {
-                                  const resendItem = inlineOrderItems.find(i => i.id === id)
-                                  if (resendItem) handleResendItem(id, resendItem.name)
-                                }}
-                                onCompVoid={(id) => {
-                                  const voidItem = inlineOrderItems.find(i => i.id === id)
-                                  if (voidItem) handleOpenCompVoid(voidItem)
-                                }}
-                                onSplit={(id) => {
-                                  setSplitItemId(id)
-                                  setShowSplitTicketManager(true)
-                                }}
-                              />
-                            ))}
-                          </div>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                )}
-              </div>
-
-              {/* Order Panel Footer — shared across all screens */}
-              <OrderPanelActions
-                hasItems={inlineOrderItems.length > 0}
-                hasPendingItems={inlineOrderItems.some(i => !i.sentToKitchen && !i.isHeld)}
-                isSending={isSendingOrder}
-                items={inlineOrderItems.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price, modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price })) }))}
+              {/* Order Panel — shared component replaces inline rendering + OrderPanelActions */}
+              <OrderPanel
+                orderId={activeOrderId}
+                orderNumber={activeOrderNumber ? Number(activeOrderNumber) : undefined}
+                orderType={activeOrderType || undefined}
+                locationId={locationId}
+                items={inlineOrderItems.map(i => ({
+                  id: i.id,
+                  name: i.name,
+                  quantity: i.quantity,
+                  price: i.price,
+                  modifiers: i.modifiers?.map(m => ({ name: m.name, price: m.price })),
+                  specialNotes: i.specialNotes,
+                  kitchenStatus: i.kitchenStatus as OrderPanelItemData['kitchenStatus'],
+                  isHeld: i.isHeld,
+                  isCompleted: i.isCompleted,
+                  isTimedRental: i.isTimedRental,
+                  menuItemId: i.menuItemId,
+                  blockTimeMinutes: i.blockTimeMinutes,
+                  blockTimeStartedAt: i.blockTimeStartedAt,
+                  blockTimeExpiresAt: i.blockTimeExpiresAt,
+                  seatNumber: i.seatNumber,
+                  courseNumber: i.courseNumber,
+                  courseStatus: i.courseStatus,
+                  sentToKitchen: i.sentToKitchen,
+                  resendCount: i.resendCount,
+                  completedAt: i.completedAt,
+                  createdAt: i.createdAt,
+                }))}
+                seatGroups={seatGroupsForPanel}
                 subtotal={orderSubtotal}
                 tax={tax}
                 total={orderTotal}
-                cashDiscountRate={CASH_DISCOUNT_RATE}
-                taxRate={TAX_RATE}
+                showItemControls={true}
+                showEntertainmentTimers={true}
+                onItemClick={(item) => {
+                  const fullItem = inlineOrderItems.find(i => i.id === item.id)
+                  if (fullItem) handleOrderItemTap(fullItem)
+                }}
+                onItemRemove={handleRemoveItem}
+                onQuantityChange={handleUpdateQuantity}
+                onItemHoldToggle={handleToggleHold}
+                onItemNoteEdit={handleOpenNotesEditor}
+                onItemCourseChange={handleUpdateCourse}
+                onItemEditModifiers={(itemId) => {
+                  const editItem = inlineOrderItems.find(i => i.id === itemId)
+                  if (editItem) handleEditItem(editItem)
+                }}
+                onItemCompVoid={(itemId) => {
+                  const voidItem = inlineOrderItems.find(i => i.id === itemId)
+                  if (voidItem) handleOpenCompVoid(voidItem)
+                }}
+                onItemResend={(itemId) => {
+                  const resendItem = inlineOrderItems.find(i => i.id === itemId)
+                  if (resendItem) handleResendItem(itemId, resendItem.name)
+                }}
+                onItemSplit={(itemId) => {
+                  setSplitItemId(itemId)
+                  setShowSplitTicketManager(true)
+                }}
+                expandedItemId={expandedItemId}
+                onItemToggleExpand={(id) => setExpandedItemId(prev => prev === id ? null : id)}
+                onItemSeatChange={handleUpdateSeat}
+                maxSeats={Math.max(guestCount, 4)}
+                maxCourses={5}
                 onSend={handleSendToKitchen}
-                onPaymentModeChange={(mode) => setPaymentMode(mode)}
-                orderId={activeOrderId}
+                isSending={isSendingOrder}
                 terminalId="terminal-1"
                 employeeId={employeeId}
-                onPaymentSuccess={async (result) => {
-                  toast.success(`Payment approved! Card: ****${result.cardLast4 || '****'}`)
-
-                  // Record the payment in the database and mark order as paid/closed
-                  if (activeOrderId) {
-                    try {
-                      await fetch(`/api/orders/${activeOrderId}/pay`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          payments: [{
-                            method: 'credit',
-                            amount: orderTotal,
-                            tipAmount: result.tipAmount || 0,
-                            cardBrand: result.cardBrand,
-                            cardLast4: result.cardLast4,
-                          }],
-                          employeeId,
-                        }),
-                      })
-                    } catch (err) {
-                      console.error('[FloorPlanHome] Failed to record payment:', err)
-                    }
-                  }
-
-                  // Clear the order panel (same as handleCloseOrderPanel)
-                  setInlineOrderItems([])
-                  setActiveOrderId(null)
-                  setActiveOrderNumber(null)
-                  setActiveOrderType(null)
-                  setExpandedItemId(null)
-                  setEditingNotesItemId(null)
-                  setEditingNotesText('')
-                  setGuestCount(defaultGuestCount)
-                  setActiveSeatNumber(null)
-                  setActiveSourceTableId(null)
-                  setActiveTableId(null)
-                  setShowOrderPanel(false)
-                  setSelectedCategoryId(null)
-                  setViewMode('tables')
-
-                  // Refresh floor plan to show updated table status
-                  loadFloorPlanData()
-                  loadOpenOrdersCount()
-                }}
+                onPaymentSuccess={handlePaymentSuccess}
+                cashDiscountRate={CASH_DISCOUNT_RATE}
+                taxRate={TAX_RATE}
+                onPaymentModeChange={(mode) => setPaymentMode(mode)}
                 onSaveOrderFirst={handleSaveOrderForPayment}
                 autoShowPayment={pendingPayAfterSave}
                 onAutoShowPaymentHandled={() => setPendingPayAfterSave(false)}
+                hideHeader={true}
+                className="flex-1"
               />
         </div>
       </div>

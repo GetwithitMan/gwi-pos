@@ -7,6 +7,8 @@ import type {
   DatacapConfig,
   DatacapRequestFields,
   DatacapResponse,
+  DatacapResult,
+  DatacapError,
   SaleParams,
   PreAuthParams,
   CaptureParams,
@@ -18,8 +20,9 @@ import type {
   CollectCardParams,
   TranCode,
 } from './types'
+import { validateDatacapConfig } from './types'
 import { buildRequest, buildAdminRequest } from './xml-builder'
-import { parseResponse } from './xml-parser'
+import { parseResponse, parseError } from './xml-parser'
 import { getSequenceNo, updateSequenceNo } from './sequence'
 import { simulateResponse } from './simulator'
 import {
@@ -31,6 +34,125 @@ import {
   PARAM_DOWNLOAD_TIMEOUT_MS,
   TRAN_CODES,
 } from './constants'
+import { logger } from '@/lib/logger'
+
+// ─── Error Classification ────────────────────────────────────────────────────
+
+/**
+ * Classify network errors as retryable or not
+ * Maps Node.js error codes to clear error messages with retry guidance
+ */
+function classifyNetworkError(error: unknown, readerId?: string): DatacapError {
+  if (!(error instanceof Error)) {
+    return {
+      code: 'UNKNOWN_ERROR',
+      text: 'Unknown error occurred',
+      description: String(error),
+      isRetryable: false,
+    }
+  }
+
+  const errorCode = (error as Error & { code?: string }).code
+  const errorName = error.name
+
+  // Timeout errors
+  if (errorName === 'AbortError' || errorCode === 'ETIMEDOUT') {
+    return {
+      code: 'DATACAP_TIMEOUT',
+      text: 'Request timed out',
+      description: error.message,
+      isRetryable: true,
+    }
+  }
+
+  // Connection refused (reader is off or unreachable)
+  if (errorCode === 'ECONNREFUSED') {
+    return {
+      code: 'DATACAP_CONNECTION_REFUSED',
+      text: 'Connection refused - reader may be offline',
+      description: `Cannot connect to payment reader${readerId ? ` (${readerId})` : ''}. Check that device is powered on and network connection is active.`,
+      isRetryable: true,
+    }
+  }
+
+  // Network unreachable (network is down)
+  if (errorCode === 'ENETUNREACH') {
+    return {
+      code: 'DATACAP_NETWORK_UNREACHABLE',
+      text: 'Network unreachable',
+      description: 'Cannot reach payment network. Check WiFi/Ethernet connection.',
+      isRetryable: true,
+    }
+  }
+
+  // Host not found (DNS issue or wrong IP)
+  if (errorCode === 'ENOTFOUND') {
+    return {
+      code: 'DATACAP_HOST_NOT_FOUND',
+      text: 'Payment reader not found',
+      description: `Cannot find payment reader${readerId ? ` at configured address (${readerId})` : ''}. Check IP address configuration.`,
+      isRetryable: false, // Config issue, not network
+    }
+  }
+
+  // Generic network error
+  return {
+    code: 'DATACAP_NETWORK_ERROR',
+    text: 'Network error',
+    description: error.message || 'Unknown network error',
+    isRetryable: true,
+  }
+}
+
+/**
+ * Wrap a Datacap operation in Result pattern
+ * Converts exceptions and Datacap errors into typed DatacapResult
+ */
+async function wrapDatacapOperation<T extends DatacapResponse>(
+  operation: () => Promise<T>,
+  operationName: string,
+  readerId?: string
+): Promise<DatacapResult<T>> {
+  try {
+    const response = await operation()
+
+    // Check if response contains a Datacap-level error (declined, error status, etc.)
+    const error = parseError(response)
+    if (error) {
+      logger.warn('datacap', `${operationName} returned error`, { code: error.code, text: error.text, readerId })
+      return {
+        success: false,
+        response: null,
+        error,
+      }
+    }
+
+    // Success
+    return {
+      success: true,
+      response,
+      error: null,
+    }
+  } catch (err) {
+    // Network error or exception
+    let error: DatacapError
+
+    if (err && typeof err === 'object' && 'code' in err && 'text' in err) {
+      // Already a classified DatacapError from classifyNetworkError
+      error = err as DatacapError
+    } else {
+      // Unexpected error - wrap it
+      error = classifyNetworkError(err, readerId)
+    }
+
+    logger.error('datacap', `${operationName} threw exception`, err, { readerId, code: error.code })
+    return {
+      success: false,
+      response: null,
+      error,
+    }
+  }
+}
 
 // ─── Reader Info ─────────────────────────────────────────────────────────────
 
@@ -67,6 +189,8 @@ export class DatacapClient {
   private config: DatacapConfig
 
   constructor(config: DatacapConfig) {
+    // Validate configuration based on communication mode
+    validateDatacapConfig(config)
     this.config = config
   }
 
@@ -79,6 +203,8 @@ export class DatacapClient {
     const timer = setTimeout(() => controller.abort(), timeout)
 
     try {
+      logger.datacap('Sending request to local reader', { readerId: reader.id, url, timeout })
+
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/xml' },
@@ -87,16 +213,19 @@ export class DatacapClient {
       })
 
       if (!res.ok) {
+        logger.error('datacap', `Local reader HTTP error: ${res.status}`, undefined, { readerId: reader.id })
         throw new Error(`Local reader responded with HTTP ${res.status}`)
       }
 
       const responseXml = await res.text()
-      return parseResponse(responseXml)
+      const response = parseResponse(responseXml)
+      logger.datacap('Received response from local reader', { readerId: reader.id, cmdStatus: response.cmdStatus })
+      return response
     } catch (error: unknown) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`Local reader timeout after ${timeout}ms`)
-      }
-      throw error
+      // Classify and throw network errors with context
+      const classified = classifyNetworkError(error, reader.id)
+      logger.error('datacap', `Local reader error: ${classified.text}`, error, { readerId: reader.id, code: classified.code })
+      throw classified
     } finally {
       clearTimeout(timer)
     }
@@ -114,6 +243,8 @@ export class DatacapClient {
     const timer = setTimeout(() => controller.abort(), timeout)
 
     try {
+      logger.datacap('Sending request to cloud', { url: this.config.cloudUrl, timeout })
+
       const res = await fetch(this.config.cloudUrl, {
         method: 'POST',
         headers: {
@@ -125,16 +256,19 @@ export class DatacapClient {
       })
 
       if (!res.ok) {
+        logger.error('datacap', `Cloud server HTTP error: ${res.status}`, undefined, { url: this.config.cloudUrl })
         throw new Error(`Cloud server responded with HTTP ${res.status}`)
       }
 
       const responseXml = await res.text()
-      return parseResponse(responseXml)
+      const response = parseResponse(responseXml)
+      logger.datacap('Received response from cloud', { cmdStatus: response.cmdStatus })
+      return response
     } catch (error: unknown) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error(`Cloud server timeout after ${timeout}ms`)
-      }
-      throw error
+      // Classify and throw network errors
+      const classified = classifyNetworkError(error)
+      logger.error('datacap', `Cloud server error: ${classified.text}`, error, { code: classified.code })
+      throw classified
     } finally {
       clearTimeout(timer)
     }
@@ -218,6 +352,24 @@ export class DatacapClient {
 
   // ─── Transaction Methods ─────────────────────────────────────────────────
 
+  /**
+   * Process an EMV card sale transaction
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Sale parameters (invoice, amounts, tip mode, etc.)
+   * @returns Datacap response with authorization details
+   * @throws DatacapError if transaction fails
+   *
+   * @example
+   * ```typescript
+   * const response = await client.sale('reader-1', {
+   *   invoiceNo: 'ORD-123',
+   *   amounts: { purchase: 25.00, gratuity: 5.00 },
+   *   tipMode: 'suggestive',
+   *   tipSuggestions: [15, 18, 20, 25]
+   * })
+   * ```
+   */
   async sale(readerId: string, params: SaleParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -254,6 +406,23 @@ export class DatacapClient {
     })
   }
 
+  /**
+   * Open a pre-authorization hold on a card (for bar tabs, etc.)
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Pre-auth parameters (invoice, amount)
+   * @returns Datacap response with recordNo for future capture/adjustment
+   * @throws DatacapError if transaction fails
+   *
+   * @example
+   * ```typescript
+   * const response = await client.preAuth('reader-1', {
+   *   invoiceNo: 'TAB-456',
+   *   amount: 50.00
+   * })
+   * // Use response.recordNo for later capture/void
+   * ```
+   */
   async preAuth(readerId: string, params: PreAuthParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -277,6 +446,23 @@ export class DatacapClient {
     })
   }
 
+  /**
+   * Capture a pre-authorized hold (close a bar tab)
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Capture parameters (recordNo, purchase amount, optional gratuity)
+   * @returns Datacap response with final authorization
+   * @throws DatacapError if capture fails
+   *
+   * @example
+   * ```typescript
+   * const response = await client.preAuthCapture('reader-1', {
+   *   recordNo: '123456',
+   *   purchaseAmount: 45.00,
+   *   gratuityAmount: 9.00
+   * })
+   * ```
+   */
   async preAuthCapture(readerId: string, params: CaptureParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -298,6 +484,14 @@ export class DatacapClient {
     })
   }
 
+  /**
+   * Increase a pre-authorized hold amount (for running tabs)
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Increment parameters (recordNo, additional amount)
+   * @returns Datacap response confirming new hold amount
+   * @throws DatacapError if increment fails
+   */
   async incrementalAuth(readerId: string, params: IncrementParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -316,6 +510,14 @@ export class DatacapClient {
     })
   }
 
+  /**
+   * Adjust gratuity on a completed transaction (add tip after close)
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Adjustment parameters (recordNo, purchase amount, new gratuity amount)
+   * @returns Datacap response confirming adjustment
+   * @throws DatacapError if adjustment fails
+   */
   async adjustGratuity(readerId: string, params: AdjustParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -337,6 +539,14 @@ export class DatacapClient {
     })
   }
 
+  /**
+   * Void a completed sale transaction (releases hold, refunds customer)
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Void parameters (recordNo from original transaction)
+   * @returns Datacap response confirming void
+   * @throws DatacapError if void fails
+   */
   async voidSale(readerId: string, params: VoidParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -354,6 +564,14 @@ export class DatacapClient {
     })
   }
 
+  /**
+   * Void a return/refund transaction
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Void parameters (recordNo from original return)
+   * @returns Datacap response confirming void
+   * @throws DatacapError if void fails
+   */
   async voidReturn(readerId: string, params: VoidParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -371,6 +589,14 @@ export class DatacapClient {
     })
   }
 
+  /**
+   * Process a refund with card present (EMVReturn) or by recordNo (ReturnByRecordNo)
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Return parameters (amount, optional recordNo for card-not-present)
+   * @returns Datacap response with refund confirmation
+   * @throws DatacapError if return fails
+   */
   async emvReturn(readerId: string, params: ReturnParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -397,6 +623,14 @@ export class DatacapClient {
     })
   }
 
+  /**
+   * Collect card data without charging (for card-on-file, etc.)
+   *
+   * @param readerId - Payment reader ID
+   * @param params - Optional parameters (placeholder amount for card read)
+   * @returns Datacap response with card token and last4
+   * @throws DatacapError if card read fails
+   */
   async collectCardData(readerId: string, params?: CollectCardParams): Promise<DatacapResponse> {
     return this.withPadReset(readerId, async (reader, seqNo) => {
       const base = this.buildBaseFields(reader, seqNo)
@@ -417,6 +651,16 @@ export class DatacapClient {
 
   // ─── Device Control ──────────────────────────────────────────────────────
 
+  /**
+   * Reset the payment terminal to idle state
+   *
+   * CRITICAL: This is automatically called after every monetary transaction.
+   * Only call manually for device troubleshooting or ping operations.
+   *
+   * @param readerId - Payment reader ID
+   * @returns Datacap response confirming reset
+   * @throws DatacapError if reset fails
+   */
   async padReset(readerId: string): Promise<DatacapResponse> {
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
@@ -434,6 +678,15 @@ export class DatacapClient {
     return this.handleResponse(readerId, response)
   }
 
+  /**
+   * Download configuration parameters to the payment terminal
+   *
+   * Used during terminal setup or after configuration changes.
+   *
+   * @param readerId - Payment reader ID
+   * @returns Datacap response confirming parameter download
+   * @throws DatacapError if download fails
+   */
   async paramDownload(readerId: string): Promise<DatacapResponse> {
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
@@ -453,6 +706,13 @@ export class DatacapClient {
 
   // ─── Batch Operations ────────────────────────────────────────────────────
 
+  /**
+   * Get batch summary (transaction count and totals for current batch)
+   *
+   * @param readerId - Payment reader ID
+   * @returns Datacap response with batch item count and totals
+   * @throws DatacapError if summary retrieval fails
+   */
   async batchSummary(readerId: string): Promise<DatacapResponse> {
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
@@ -470,6 +730,15 @@ export class DatacapClient {
     return this.handleResponse(readerId, response)
   }
 
+  /**
+   * Close the current batch and settle transactions
+   *
+   * Typically run at end-of-day (EOD). Settles all transactions with the processor.
+   *
+   * @param readerId - Payment reader ID
+   * @returns Datacap response with batch close confirmation
+   * @throws DatacapError if batch close fails
+   */
   async batchClose(readerId: string): Promise<DatacapResponse> {
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
@@ -489,6 +758,14 @@ export class DatacapClient {
 
   // ─── Device Prompts ──────────────────────────────────────────────────────
 
+  /**
+   * Display suggestive tip prompt on payment terminal
+   *
+   * @param readerId - Payment reader ID
+   * @param suggestions - Optional tip percentages (default: [15, 18, 20, 25])
+   * @returns Datacap response with selected tip amount
+   * @throws DatacapError if prompt fails
+   */
   async getSuggestiveTip(readerId: string, suggestions?: number[]): Promise<DatacapResponse> {
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
@@ -507,6 +784,13 @@ export class DatacapClient {
     return this.handleResponse(readerId, response)
   }
 
+  /**
+   * Capture signature on payment terminal
+   *
+   * @param readerId - Payment reader ID
+   * @returns Datacap response with base64-encoded signature data
+   * @throws DatacapError if signature capture fails
+   */
   async getSignature(readerId: string): Promise<DatacapResponse> {
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
@@ -524,6 +808,14 @@ export class DatacapClient {
     return this.handleResponse(readerId, response)
   }
 
+  /**
+   * Display yes/no prompt on payment terminal
+   *
+   * @param readerId - Payment reader ID
+   * @param promptText - Question to display
+   * @returns Datacap response with user selection
+   * @throws DatacapError if prompt fails
+   */
   async getYesNo(readerId: string, promptText: string): Promise<DatacapResponse> {
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)
@@ -542,6 +834,15 @@ export class DatacapClient {
     return this.handleResponse(readerId, response)
   }
 
+  /**
+   * Display multiple choice prompt on payment terminal
+   *
+   * @param readerId - Payment reader ID
+   * @param promptText - Question to display
+   * @param buttonLabels - Array of button labels (max 4)
+   * @returns Datacap response with selected button index
+   * @throws DatacapError if prompt fails
+   */
   async getMultipleChoice(readerId: string, promptText: string, buttonLabels: string[]): Promise<DatacapResponse> {
     const reader = await getReaderInfo(readerId)
     const seqNo = await getSequenceNo(readerId)

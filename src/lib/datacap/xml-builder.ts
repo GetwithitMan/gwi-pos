@@ -3,6 +3,50 @@
 
 import type { DatacapRequestFields, DatacapAmountFields, DatacapGratuityFields } from './types'
 
+// ─── Type Guards ─────────────────────────────────────────────────────────────
+
+/**
+ * Type guard to ensure required fields are present before building XML
+ * Throws a descriptive error if validation fails
+ */
+export function validateRequiredFields(
+  fields: DatacapRequestFields
+): asserts fields is DatacapRequestFields & {
+  merchantId: string
+  operatorId: string
+  tranCode: string
+} {
+  if (!fields.merchantId) {
+    throw new Error('DatacapRequestFields validation failed: merchantId is required')
+  }
+  if (!fields.operatorId) {
+    throw new Error('DatacapRequestFields validation failed: operatorId is required')
+  }
+  if (!fields.tranCode) {
+    throw new Error('DatacapRequestFields validation failed: tranCode is required')
+  }
+}
+
+/**
+ * Validate amount fields to ensure they're valid numbers
+ * Throws if any amount is NaN or negative
+ */
+export function validateAmounts(amounts: DatacapAmountFields): void {
+  const amountNames: (keyof DatacapAmountFields)[] = ['purchase', 'gratuity', 'tax', 'cashBack']
+
+  for (const name of amountNames) {
+    const value = amounts[name]
+    if (value !== undefined) {
+      if (isNaN(value)) {
+        throw new Error(`Invalid amount: ${name} is NaN`)
+      }
+      if (value < 0) {
+        throw new Error(`Invalid amount: ${name} cannot be negative (${value})`)
+      }
+    }
+  }
+}
+
 // ─── XML Helpers ─────────────────────────────────────────────────────────────
 
 export function escapeXml(value: string): string {
@@ -25,7 +69,17 @@ function tag(name: string, value: string | number | boolean | undefined | null):
 
 // ─── Amount Block ────────────────────────────────────────────────────────────
 
+/**
+ * Build XML amount block with validation
+ *
+ * @param amounts - Amount fields (purchase, gratuity, tax, cashBack)
+ * @returns XML string with Amount block
+ * @throws Error if any amount is NaN or negative
+ */
 export function buildAmountBlock(amounts: DatacapAmountFields): string {
+  // Validate amounts before building XML
+  validateAmounts(amounts)
+
   const parts: string[] = []
   if (amounts.purchase !== undefined) parts.push(`<Purchase>${formatAmount(amounts.purchase)}</Purchase>`)
   if (amounts.gratuity !== undefined) parts.push(`<Gratuity>${formatAmount(amounts.gratuity)}</Gratuity>`)
@@ -65,10 +119,20 @@ function buildAccountBlock(acctNo: string): string {
 
 // ─── Main Request Builder ────────────────────────────────────────────────────
 
+/**
+ * Build a TStream XML request for Datacap transactions
+ *
+ * @param fields - Request fields (merchantId, operatorId, tranCode are required)
+ * @returns XML string ready to send to Datacap
+ * @throws Error if required fields are missing
+ */
 export function buildRequest(fields: DatacapRequestFields): string {
+  // Validate required fields at runtime (provides compile-time type narrowing)
+  validateRequiredFields(fields)
+
   const parts: string[] = []
 
-  // Required fields
+  // Required fields (now guaranteed by type guard)
   parts.push(tag('MerchantID', fields.merchantId))
   parts.push(tag('OperatorID', fields.operatorId))
   parts.push(tag('TranCode', fields.tranCode))
@@ -135,7 +199,17 @@ export function buildRequest(fields: DatacapRequestFields): string {
 
 // ─── Admin Request Builder (Batch operations) ────────────────────────────────
 
+/**
+ * Build a TStream XML admin request (batch operations)
+ *
+ * @param fields - Request fields (merchantId, operatorId, tranCode are required)
+ * @returns XML string ready to send to Datacap
+ * @throws Error if required fields are missing
+ */
 export function buildAdminRequest(fields: DatacapRequestFields): string {
+  // Validate required fields
+  validateRequiredFields(fields)
+
   const parts: string[] = []
 
   parts.push(tag('MerchantID', fields.merchantId))

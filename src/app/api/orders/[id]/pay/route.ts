@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
 import { db } from '@/lib/db'
 import {
   generateFakeAuthCode,
@@ -39,6 +40,40 @@ interface PaymentInput {
   simulate?: boolean
 }
 
+// Zod schema for request validation
+const PaymentInputSchema = z.object({
+  method: z.enum(['cash', 'credit', 'debit', 'gift_card', 'house_account', 'loyalty_points']),
+  amount: z.number().positive('Amount must be positive'),
+  tipAmount: z.number().min(0, 'Tip amount cannot be negative').optional(),
+  // Cash specific
+  amountTendered: z.number().positive().optional(),
+  // Card specific
+  cardBrand: z.string().optional(),
+  cardLast4: z.string().length(4, 'Card last 4 must be exactly 4 digits').regex(/^\d{4}$/, 'Card last 4 must be numeric').optional(),
+  // Gift card specific
+  giftCardId: z.string().optional(),
+  giftCardNumber: z.string().optional(),
+  // House account specific
+  houseAccountId: z.string().optional(),
+  // Loyalty points specific
+  pointsUsed: z.number().int().positive().optional(),
+  // Datacap Direct fields
+  datacapRecordNo: z.string().optional(),
+  datacapRefNumber: z.string().optional(),
+  datacapSequenceNo: z.string().optional(),
+  authCode: z.string().optional(),
+  entryMethod: z.string().optional(),
+  signatureData: z.string().optional(),
+  amountAuthorized: z.number().positive().optional(),
+  // Simulated
+  simulate: z.boolean().optional(),
+})
+
+const PaymentRequestSchema = z.object({
+  payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
+  employeeId: z.string().optional(),
+})
+
 // POST - Process payment for order
 export async function POST(
   request: NextRequest,
@@ -47,17 +82,20 @@ export async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json()
-    const { payments, employeeId } = body as {
-      payments: PaymentInput[]
-      employeeId?: string
-    }
 
-    if (!payments || !Array.isArray(payments) || payments.length === 0) {
+    // Validate request body with Zod
+    const validation = PaymentRequestSchema.safeParse(body)
+    if (!validation.success) {
       return NextResponse.json(
-        { error: 'At least one payment is required' },
+        {
+          error: 'Invalid payment request data',
+          details: validation.error.format(),
+        },
         { status: 400 }
       )
     }
+
+    const { payments, employeeId } = validation.data
 
     // Get the order with customer for loyalty
     const order = await db.order.findUnique({
@@ -103,6 +141,61 @@ export async function POST(
         { error: `Payment amount ($${paymentTotal.toFixed(2)}) is less than remaining balance ($${remaining.toFixed(2)})` },
         { status: 400 }
       )
+    }
+
+    // Validate payment amounts upfront
+    for (const payment of payments) {
+      const paymentAmount = payment.amount + (payment.tipAmount || 0)
+
+      // Validate amount is a valid number
+      if (isNaN(paymentAmount) || paymentAmount <= 0) {
+        return NextResponse.json(
+          { error: `Invalid payment amount: ${paymentAmount}. Amount must be a positive number.` },
+          { status: 400 }
+        )
+      }
+
+      // Prevent unreasonably large payments (potential UI bugs)
+      const maxReasonablePayment = orderTotal * 1.5
+      if (paymentAmount > maxReasonablePayment) {
+        return NextResponse.json(
+          { error: `Payment amount $${paymentAmount.toFixed(2)} exceeds reasonable limit (150% of order total). This may indicate an error.` },
+          { status: 400 }
+        )
+      }
+
+      // Validate Datacap field mutual exclusivity for card payments
+      if (payment.method === 'credit' || payment.method === 'debit') {
+        const hasAnyDatacapField = !!(
+          payment.datacapRecordNo ||
+          payment.datacapRefNumber ||
+          payment.datacapSequenceNo ||
+          payment.entryMethod ||
+          payment.signatureData ||
+          payment.amountAuthorized
+        )
+
+        const hasAllRequiredDatacapFields = !!(
+          payment.datacapRecordNo &&
+          payment.datacapRefNumber &&
+          payment.cardLast4
+        )
+
+        // If ANY Datacap field is present, ensure ALL required fields are present
+        if (hasAnyDatacapField && !hasAllRequiredDatacapFields) {
+          return NextResponse.json(
+            {
+              error: 'Partial Datacap data detected. Card payments must have either all Datacap fields (RecordNo, RefNumber, CardLast4) or none. This indicates a corrupted payment record.',
+              details: {
+                hasDatacapRecordNo: !!payment.datacapRecordNo,
+                hasDatacapRefNumber: !!payment.datacapRefNumber,
+                hasCardLast4: !!payment.cardLast4,
+              }
+            },
+            { status: 400 }
+          )
+        }
+      }
     }
 
     // Process each payment

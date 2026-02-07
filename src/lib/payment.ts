@@ -3,43 +3,16 @@
 
 import type { PaymentSettings } from './settings'
 
-// Rounding utilities for cash payments
-export function roundAmount(
-  amount: number,
-  rounding: PaymentSettings['cashRounding'],
-  direction: PaymentSettings['roundingDirection']
-): number {
-  if (rounding === 'none') return amount
-
-  const roundingValues = {
-    nickel: 0.05,
-    dime: 0.10,
-    quarter: 0.25,
-    dollar: 1.00,
-  }
-
-  const roundTo = roundingValues[rounding]
-
-  switch (direction) {
-    case 'up':
-      return Math.ceil(amount / roundTo) * roundTo
-    case 'down':
-      return Math.floor(amount / roundTo) * roundTo
-    case 'nearest':
-    default:
-      return Math.round(amount / roundTo) * roundTo
-  }
-}
-
-// Calculate rounding adjustment
-export function calculateRoundingAdjustment(
-  originalAmount: number,
-  rounding: PaymentSettings['cashRounding'],
-  direction: PaymentSettings['roundingDirection']
-): number {
-  const rounded = roundAmount(originalAmount, rounding, direction)
-  return Math.round((rounded - originalAmount) * 100) / 100
-}
+// Re-export rounding functions from domain module
+// This maintains backward compatibility while keeping logic in dedicated module
+export {
+  roundAmount,
+  calculateRoundingAdjustment,
+  applyRounding,
+  validateRoundingConfig,
+  type RoundingMode,
+  type RoundingDirection,
+} from './payment-domain/rounding'
 
 // Calculate change for cash payment
 export function calculateChange(amountDue: number, amountTendered: number): number {

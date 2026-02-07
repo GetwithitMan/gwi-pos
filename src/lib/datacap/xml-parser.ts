@@ -6,9 +6,31 @@ import { CARD_TYPE_MAP, ENTRY_METHOD_MAP, CVM_MAP, DATACAP_ERROR_CODES } from '.
 
 // ─── Tag Extraction ──────────────────────────────────────────────────────────
 
+/**
+ * Regex pattern cache for tag extraction
+ * Prevents creating new regex objects for every tag extraction call
+ */
+const regexCache = new Map<string, RegExp>()
+
+/**
+ * Get or create a cached regex pattern for tag extraction
+ */
+function getTagRegex(tagName: string): RegExp {
+  let regex = regexCache.get(tagName)
+  if (!regex) {
+    regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'i')
+    regexCache.set(tagName, regex)
+  }
+  return regex
+}
+
+/**
+ * Extract value from XML tag
+ * Uses cached regex patterns for better performance
+ */
 export function extractTag(xml: string, tagName: string): string | undefined {
   // Match <TagName>value</TagName> — handles whitespace and multiline
-  const regex = new RegExp(`<${tagName}>([\\s\\S]*?)</${tagName}>`, 'i')
+  const regex = getTagRegex(tagName)
   const match = xml.match(regex)
   if (match && match[1] !== undefined) {
     return match[1].trim()
@@ -27,19 +49,26 @@ export function extractCardLast4(acctNo: string | undefined): string | undefined
 
 // ─── Print Data Extraction ───────────────────────────────────────────────────
 
+/**
+ * Extract print data (Line1-Line36) with optimized single-pass regex
+ * Much faster than calling extractTag() 36 times
+ */
 export function extractPrintData(xml: string): Record<string, string> | undefined {
   const printData: Record<string, string> = {}
-  let found = false
 
-  for (let i = 1; i <= 36; i++) {
-    const value = extractTag(xml, `Line${i}`)
+  // Single regex to capture all Line tags at once (Line1 through Line36)
+  const lineRegex = /<(Line\d+)>([\s\S]*?)<\/\1>/gi
+  let match: RegExpExecArray | null
+
+  while ((match = lineRegex.exec(xml)) !== null) {
+    const tagName = match[1] // e.g., "Line1"
+    const value = match[2]?.trim()
     if (value) {
-      printData[`Line${i}`] = value
-      found = true
+      printData[tagName] = value
     }
   }
 
-  return found ? printData : undefined
+  return Object.keys(printData).length > 0 ? printData : undefined
 }
 
 // ─── Card Type Mapping ───────────────────────────────────────────────────────

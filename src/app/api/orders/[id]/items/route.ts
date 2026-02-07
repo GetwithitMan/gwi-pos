@@ -307,7 +307,7 @@ export async function POST(
 
     // Fire-and-forget: check if bar tab or bottle service tab needs auto-increment
     if ((result.updatedOrder.orderType === 'bar_tab' || result.updatedOrder.isBottleService) && result.updatedOrder.preAuthRecordNo) {
-      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/orders/${id}/auto-increment`, {
+      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/orders/${orderId}/auto-increment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeId: result.updatedOrder.employeeId }),

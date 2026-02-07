@@ -26,7 +26,7 @@ export async function getDatacapClient(locationId: string): Promise<DatacapClien
     merchantId: payments.datacapMerchantId || '',
     operatorId: 'POS',
     posPackageId: POS_PACKAGE_ID,
-    communicationMode: payments.processor === 'simulated' ? 'local' : 'local',
+    communicationMode: payments.processor === 'simulated' ? 'simulated' : 'local',
     cloudUrl: payments.testMode ? CLOUD_URLS.test : CLOUD_URLS.prod,
     localTimeoutMs: (payments.readerTimeoutSeconds || 30) * 1000,
   }

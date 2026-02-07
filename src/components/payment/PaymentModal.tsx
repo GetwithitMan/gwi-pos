@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
@@ -157,23 +157,52 @@ export function PaymentModal({
     )
   }
 
-  // Calculate amounts
-  const alreadyPaid = existingPayments.reduce((sum, p) => sum + p.totalAmount, 0)
-  const pendingTotal = pendingPayments.reduce((sum, p) => sum + p.amount + p.tipAmount, 0)
-  const remainingBeforeTip = effectiveOrderTotal - alreadyPaid - pendingTotal
+  // Calculate amounts (memoized to prevent unnecessary recalculations)
+  const alreadyPaid = useMemo(
+    () => existingPayments.reduce((sum, p) => sum + p.totalAmount, 0),
+    [existingPayments]
+  )
 
-  // Apply dual pricing - card price is displayed, cash gets discount
+  const pendingTotal = useMemo(
+    () => pendingPayments.reduce((sum, p) => sum + p.amount + p.tipAmount, 0),
+    [pendingPayments]
+  )
+
+  const remainingBeforeTip = useMemo(
+    () => effectiveOrderTotal - alreadyPaid - pendingTotal,
+    [effectiveOrderTotal, alreadyPaid, pendingTotal]
+  )
+
+  // Apply dual pricing - card price is displayed, cash gets discount (memoized)
   const discountPercent = dualPricing.cashDiscountPercent || 4.0
-  const cashTotal = remainingBeforeTip  // Original/stored price
-  const cardTotal = dualPricing.enabled
-    ? calculateCardPrice(remainingBeforeTip, discountPercent)
-    : remainingBeforeTip
 
-  const currentTotal = selectedMethod === 'cash' ? cashTotal : cardTotal
-  const totalWithTip = currentTotal + tipAmount
+  const cashTotal = useMemo(
+    () => remainingBeforeTip, // Original/stored price
+    [remainingBeforeTip]
+  )
 
-  // Quick cash amounts
-  const quickAmounts = getQuickCashAmounts(totalWithTip)
+  const cardTotal = useMemo(
+    () => dualPricing.enabled
+      ? calculateCardPrice(remainingBeforeTip, discountPercent)
+      : remainingBeforeTip,
+    [dualPricing.enabled, remainingBeforeTip, discountPercent]
+  )
+
+  const currentTotal = useMemo(
+    () => selectedMethod === 'cash' ? cashTotal : cardTotal,
+    [selectedMethod, cashTotal, cardTotal]
+  )
+
+  const totalWithTip = useMemo(
+    () => currentTotal + tipAmount,
+    [currentTotal, tipAmount]
+  )
+
+  // Quick cash amounts (memoized)
+  const quickAmounts = useMemo(
+    () => getQuickCashAmounts(totalWithTip),
+    [totalWithTip]
+  )
 
   const handleSelectMethod = (method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account') => {
     setSelectedMethod(method)
@@ -295,11 +324,26 @@ export function PaymentModal({
   }
 
   const handleContinueFromTip = () => {
+    // Safety: Validate selectedMethod before proceeding
+    if (!selectedMethod) {
+      setError('No payment method selected. Please go back and select a payment method.')
+      return
+    }
+
     if (selectedMethod === 'cash') {
       setStep('cash')
-    } else {
+    } else if (selectedMethod === 'credit' || selectedMethod === 'debit') {
+      // Validate terminal configuration for card payments
+      if (!terminalId) {
+        setError('Terminal not configured. Cannot process card payments. Please contact support.')
+        setStep('method') // Go back to method selection
+        return
+      }
       // All card payments go through Datacap (simulated or real)
       setStep('datacap_card')
+    } else {
+      // Other payment methods (gift card, house account)
+      setStep(selectedMethod as PaymentStep)
     }
   }
 
@@ -316,10 +360,15 @@ export function PaymentModal({
 
   // Handle Datacap payment success
   const handleDatacapSuccess = (result: DatacapResult & { tipAmount: number }) => {
-    // Guard: ensure selectedMethod is a valid card type
-    const method = (selectedMethod === 'credit' || selectedMethod === 'debit') ? selectedMethod : 'credit'
+    // Safety: Validate selectedMethod is a valid card type
+    if (selectedMethod !== 'credit' && selectedMethod !== 'debit') {
+      setError(`Invalid payment method for card transaction: ${selectedMethod}. Expected 'credit' or 'debit'.`)
+      setStep('method') // Go back to method selection
+      return
+    }
+
     const payment: PendingPayment = {
-      method,
+      method: selectedMethod, // Now type-safe after validation
       amount: currentTotal,
       tipAmount: result.tipAmount,
       cardBrand: result.cardBrand || 'card',
@@ -338,6 +387,13 @@ export function PaymentModal({
   }
 
   const processPayments = async (payments: PendingPayment[]) => {
+    // Safety: Validate orderId exists before attempting payment
+    if (!orderId) {
+      setError('Cannot process payment: No order ID provided. Please close this dialog and try again.')
+      setIsProcessing(false)
+      return
+    }
+
     setIsProcessing(true)
     setError(null)
 

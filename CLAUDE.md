@@ -1814,6 +1814,12 @@ toast.error('Connection lost', 8000)
 | 12.4 | Menu item style customization | Gear → Customize Item Colors → set glow/border → verify | ⬜ |
 | 12.5 | Reset all customizations | Gear → Reset All → verify defaults restored | ⬜ |
 | 12.6 | Toast notifications display | Perform action → verify toast appears bottom-right | ⬜ |
+| 12.7 | OrderPanel uniform on /orders | /orders → add items → verify Qty +/-, Note, Hold, Course, Edit, Delete controls present | ⬜ |
+| 12.8 | OrderPanel uniform on /bar | /bar → select tab → add items → verify same item controls as /orders | ⬜ |
+| 12.9 | OrderPanel uniform on FloorPlanHome | Tap table → add items → verify same item controls as /orders | ⬜ |
+| 12.10 | OrderPanel dark header on /bar | /bar → verify OrderPanel renders its own dark header (no external light header) | ⬜ |
+| 12.11 | FloorPlanHome hides OrderPanel header | Tap table → verify OrderPanel header is hidden (FloorPlanHome has its own) | ⬜ |
+| 12.12 | Send + Pay buttons on all screens | Verify Send (green) and Pay (indigo) buttons appear on /orders, /bar, and FloorPlanHome | ⬜ |
 
 ### 13. Datacap Payment Processing
 

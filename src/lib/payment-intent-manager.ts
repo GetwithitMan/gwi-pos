@@ -1,6 +1,49 @@
 'use client'
 
 import { offlineDb, PaymentIntent, PaymentIntentStatus } from './offline-db'
+import { logger } from './logger'
+
+// ─── Backoff Configuration ────────────────────────────────────────────────
+
+/**
+ * Exponential backoff configuration for sync retries
+ */
+const BACKOFF_CONFIG = {
+  maxRetries: 10,              // Maximum retry attempts before marking as failed
+  baseDelayMs: 15000,          // Base delay: 15 seconds
+  maxDelayMs: 120000,          // Max delay: 2 minutes
+  multiplier: 2,               // Exponential multiplier
+} as const
+
+/**
+ * Calculate backoff delay based on attempt count
+ * Uses exponential backoff: 15s, 30s, 60s, 120s (capped)
+ */
+function calculateBackoffDelay(attempts: number): number {
+  const delay = BACKOFF_CONFIG.baseDelayMs * Math.pow(BACKOFF_CONFIG.multiplier, attempts - 1)
+  return Math.min(delay, BACKOFF_CONFIG.maxDelayMs)
+}
+
+/**
+ * Check if enough time has passed since last attempt to retry
+ */
+function shouldRetry(intent: PaymentIntent): boolean {
+  // Check max retries
+  if (intent.attempts >= BACKOFF_CONFIG.maxRetries) {
+    return false
+  }
+
+  // If no last attempt, can retry immediately
+  if (!intent.lastAttempt) {
+    return true
+  }
+
+  // Calculate required delay based on attempts
+  const requiredDelay = calculateBackoffDelay(intent.attempts)
+  const timeSinceLastAttempt = Date.now() - new Date(intent.lastAttempt).getTime()
+
+  return timeSinceLastAttempt >= requiredDelay
+}
 
 /**
  * PaymentIntentManager - Handles the payment handshake persistence
@@ -47,6 +90,7 @@ interface AuthorizationResult {
 class PaymentIntentManagerClass {
   private syncInterval: ReturnType<typeof setInterval> | null = null
   private isProcessing = false
+  private processingGeneration = 0
 
   /**
    * Initialize the manager - starts the sync worker
@@ -70,17 +114,19 @@ class PaymentIntentManagerClass {
 
   /**
    * Generate an idempotency key (fingerprint) for deduplication
-   * Format: {terminalId}-{orderId}-{timestamp}-{uuid}
+   * Format: {terminalId}-{orderId}-{amountCents}-{timestamp}-{uuid}
    *
    * The UUID suffix ensures 100% collision resistance even if:
    * - Terminal clocks are out of sync with server
    * - App restarts and retries the same order
    * - Multiple terminals have identical timestamps
+   *
+   * Including the amount helps detect mismatched replays (same orderId & terminal, different amount)
    */
-  private generateIdempotencyKey(terminalId: string, orderId: string): string {
+  private generateIdempotencyKey(terminalId: string, orderId: string, amountCents: number): string {
     const timestamp = Date.now()
     const uuid = crypto.randomUUID().slice(0, 8) // Short UUID suffix for collision resistance
-    return `${terminalId}-${orderId}-${timestamp}-${uuid}`
+    return `${terminalId}-${orderId}-${amountCents}-${timestamp}-${uuid}`
   }
 
   /**
@@ -89,7 +135,8 @@ class PaymentIntentManagerClass {
    */
   async createIntent(params: CreateIntentParams): Promise<PaymentIntent> {
     const now = new Date().toISOString()
-    const idempotencyKey = this.generateIdempotencyKey(params.terminalId, params.orderId)
+    const amountCents = Math.round(params.amount * 100) // Convert to cents for idempotency key
+    const idempotencyKey = this.generateIdempotencyKey(params.terminalId, params.orderId, amountCents)
 
     const intent: PaymentIntent = {
       id: crypto.randomUUID(),
@@ -291,13 +338,25 @@ class PaymentIntentManagerClass {
   /**
    * Process pending intents when connection is restored
    * Uses batch sync-resolution endpoint for efficiency and idempotency
+   *
+   * Concurrency Protection:
+   * - Uses generation counter to prevent race conditions when both interval and online event fire
+   * - Only the latest generation will clear the isProcessing flag
    */
   async processPendingIntents(): Promise<void> {
-    if (this.isProcessing) return
+    // Increment generation BEFORE checking isProcessing to track this attempt
+    const currentGeneration = ++this.processingGeneration
+
+    // Prevent concurrent execution
+    if (this.isProcessing) {
+      console.log('[PaymentIntentManager] Already processing, skipping (generation collision)')
+      return
+    }
+
     if (typeof navigator !== 'undefined' && !navigator.onLine) return
 
     this.isProcessing = true
-    console.log('[PaymentIntentManager] Processing pending intents...')
+    console.log(`[PaymentIntentManager] Processing pending intents (gen ${currentGeneration})...`)
 
     try {
       // Get all intents that need capture
@@ -320,14 +379,34 @@ class PaymentIntentManagerClass {
         return
       }
 
-      // Use batch sync-resolution endpoint
-      await this.batchSyncIntents(allPending)
+      // Filter intents using backoff logic
+      const readyToRetry = allPending.filter(shouldRetry)
+      const skippedCount = allPending.length - readyToRetry.length
 
-      console.log(`[PaymentIntentManager] Processed ${allPending.length} intents`)
+      if (skippedCount > 0) {
+        logger.payment(
+          `Skipping ${skippedCount} intents due to backoff delay`,
+          { skippedCount, totalPending: allPending.length }
+        )
+      }
+
+      if (readyToRetry.length === 0) {
+        console.log('[PaymentIntentManager] All pending intents in backoff delay')
+        return
+      }
+
+      // Use batch sync-resolution endpoint
+      await this.batchSyncIntents(readyToRetry)
+
+      console.log(`[PaymentIntentManager] Processed ${allPending.length} intents (gen ${currentGeneration})`)
     } catch (error) {
       console.error('[PaymentIntentManager] Error processing intents:', error)
     } finally {
-      this.isProcessing = false
+      // Only clear flag if this is still the latest generation
+      // (prevents race if a new call started while we were processing)
+      if (currentGeneration === this.processingGeneration) {
+        this.isProcessing = false
+      }
     }
   }
 
@@ -376,11 +455,29 @@ class PaymentIntentManagerClass {
             await this.logSync('payment_synced', intent.id, intent.amount)
           } else if (result.status === 'failed') {
             console.error(`[PaymentIntentManager] Sync failed for ${intent.id}: ${result.error}`)
-            // Increment attempt counter but don't mark as failed - will retry
-            intent.attempts += 1
-            intent.lastAttempt = new Date().toISOString()
-            intent.lastError = result.error
-            await offlineDb.paymentIntents.put(intent)
+
+            // Check if we've exceeded max retries
+            if (intent.attempts + 1 >= BACKOFF_CONFIG.maxRetries) {
+              // Max retries exceeded - mark as permanently failed
+              const errorMsg = `Failed after ${BACKOFF_CONFIG.maxRetries} attempts: ${result.error}`
+              await this.recordFailure(intent.id, errorMsg)
+              logger.error('payment', `Intent ${intent.id} marked as failed after max retries`, result.error, {
+                orderId: intent.orderId,
+                attempts: intent.attempts + 1,
+              })
+            } else {
+              // Increment attempt counter and retry later with backoff
+              intent.attempts += 1
+              intent.lastAttempt = new Date().toISOString()
+              intent.lastError = result.error
+              await offlineDb.paymentIntents.put(intent)
+
+              const nextDelay = calculateBackoffDelay(intent.attempts)
+              logger.payment(
+                `Intent ${intent.id} will retry in ${Math.round(nextDelay / 1000)}s (attempt ${intent.attempts}/${BACKOFF_CONFIG.maxRetries})`,
+                { orderId: intent.orderId, attempts: intent.attempts, nextDelayMs: nextDelay }
+              )
+            }
           }
         }
       } else {
@@ -389,6 +486,30 @@ class PaymentIntentManagerClass {
       }
     } catch (error) {
       console.error('[PaymentIntentManager] Network error during batch sync:', error)
+      logger.error('payment', 'Batch sync network error', error)
+
+      // Mark intents that exceeded max retries as failed
+      for (const intent of intents) {
+        intent.attempts += 1
+        intent.lastAttempt = new Date().toISOString()
+        intent.lastError = error instanceof Error ? error.message : 'Network error'
+
+        if (intent.attempts >= BACKOFF_CONFIG.maxRetries) {
+          const errorMsg = `Network error after ${BACKOFF_CONFIG.maxRetries} attempts: ${intent.lastError}`
+          await this.recordFailure(intent.id, errorMsg)
+          logger.error('payment', `Intent ${intent.id} marked as failed after network errors`, error, {
+            orderId: intent.orderId,
+            attempts: intent.attempts,
+          })
+        } else {
+          await offlineDb.paymentIntents.put(intent)
+          const nextDelay = calculateBackoffDelay(intent.attempts)
+          logger.payment(
+            `Intent ${intent.id} will retry after network error in ${Math.round(nextDelay / 1000)}s`,
+            { orderId: intent.orderId, attempts: intent.attempts }
+          )
+        }
+      }
     }
   }
 

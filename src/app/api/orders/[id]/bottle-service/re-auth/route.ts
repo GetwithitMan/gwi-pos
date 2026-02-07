@@ -48,7 +48,7 @@ export async function POST(
 
     const response = await client.incrementalAuth(readerId, {
       recordNo,
-      amount: incrementAmount,
+      additionalAmount: incrementAmount,
     })
 
     const error = parseError(response)

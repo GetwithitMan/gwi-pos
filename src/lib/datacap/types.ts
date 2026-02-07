@@ -42,7 +42,7 @@ export type GratuityMode = 'SuggestivePrompt' | 'Prompt' | 'PrintBlankLine'
 
 export type DeviceType = 'PAX' | 'INGENICO'
 
-export type CommunicationMode = 'local' | 'cloud' | 'local_with_cloud_fallback'
+export type CommunicationMode = 'local' | 'cloud' | 'local_with_cloud_fallback' | 'simulated'
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -228,4 +228,78 @@ export interface DiscoveredDevice {
   ipAddress: string
   port: number
   deviceType?: DeviceType
+}
+
+// ─── Result Type Pattern ─────────────────────────────────────────────────────
+
+/**
+ * Result pattern for Datacap operations
+ *
+ * This ensures safe error handling by making errors explicit in the return type.
+ * Callers must check the success field before accessing the response.
+ *
+ * Usage:
+ * ```typescript
+ * const result = await datacapClient.sale(params)
+ * if (result.success) {
+ *   console.log('Approved:', result.response.authCode)
+ * } else {
+ *   console.error('Error:', result.error.text)
+ *   if (result.error.isRetryable) {
+ *     // retry logic
+ *   }
+ * }
+ * ```
+ */
+export type DatacapResult<T = DatacapResponse> =
+  | { success: true; response: T; error: null }
+  | { success: false; response: null; error: DatacapError }
+
+// ─── Configuration Validation ────────────────────────────────────────────────
+
+/**
+ * Validate DatacapConfig based on communication mode
+ *
+ * Ensures required fields are present for the selected mode:
+ * - 'local' / 'local_with_cloud_fallback': requires defaultPort
+ * - 'cloud' / 'local_with_cloud_fallback': requires cloudUrl, cloudUsername, cloudPassword
+ * - 'simulated': no additional requirements
+ *
+ * @throws Error if validation fails with descriptive message
+ */
+export function validateDatacapConfig(config: DatacapConfig): void {
+  const { communicationMode } = config
+
+  // Validate mode is one of the allowed values
+  const validModes: CommunicationMode[] = ['local', 'cloud', 'local_with_cloud_fallback', 'simulated']
+  if (!validModes.includes(communicationMode)) {
+    throw new Error(
+      `Invalid communication mode: ${communicationMode}. Must be one of: ${validModes.join(', ')}`
+    )
+  }
+
+  // Local mode requirements
+  if (communicationMode === 'local' || communicationMode === 'local_with_cloud_fallback') {
+    if (!config.defaultPort) {
+      throw new Error(
+        `Communication mode "${communicationMode}" requires defaultPort to be configured`
+      )
+    }
+  }
+
+  // Cloud mode requirements
+  if (communicationMode === 'cloud' || communicationMode === 'local_with_cloud_fallback') {
+    if (!config.cloudUrl) {
+      throw new Error(
+        `Communication mode "${communicationMode}" requires cloudUrl to be configured`
+      )
+    }
+    if (!config.cloudUsername || !config.cloudPassword) {
+      throw new Error(
+        `Communication mode "${communicationMode}" requires cloudUsername and cloudPassword to be configured`
+      )
+    }
+  }
+
+  // Simulated mode has no additional requirements
 }
