@@ -156,6 +156,11 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
       const data = await response.json()
       const terminal = data.terminal
 
+      if (!terminal) {
+        // Terminal not found or API returned empty — skip configuration
+        return
+      }
+
       // Track whether this is a simulated reader (update both state and ref)
       const simulated = terminal.paymentProvider === 'SIMULATED'
       setIsSimulated(simulated)
