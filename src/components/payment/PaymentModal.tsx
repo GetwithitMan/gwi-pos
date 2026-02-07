@@ -24,6 +24,7 @@ interface PaymentModalProps {
   onPaymentComplete: () => void
   employeeId?: string
   terminalId?: string  // Required for Datacap integration
+  locationId?: string  // Required for Datacap integration
 }
 
 interface PendingPayment {
@@ -36,6 +37,14 @@ interface PendingPayment {
   giftCardId?: string
   giftCardNumber?: string
   houseAccountId?: string
+  // Datacap Direct fields
+  datacapRecordNo?: string
+  datacapRefNumber?: string
+  datacapSequenceNo?: string
+  authCode?: string
+  entryMethod?: string
+  signatureData?: string
+  amountAuthorized?: number
 }
 
 interface GiftCardInfo {
@@ -76,6 +85,7 @@ export function PaymentModal({
   onPaymentComplete,
   employeeId,
   terminalId,
+  locationId,
 }: PaymentModalProps) {
   // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
   // State for fetched order data (when orderTotal is not provided)
@@ -335,6 +345,14 @@ export function PaymentModal({
       tipAmount: result.tipAmount,
       cardBrand: result.cardBrand || 'card',
       cardLast4: result.cardLast4 || '****',
+      // Datacap fields for pay API
+      datacapRecordNo: result.recordNo,
+      datacapRefNumber: result.refNumber,
+      datacapSequenceNo: result.sequenceNo,
+      authCode: result.authCode,
+      entryMethod: result.entryMethod,
+      signatureData: result.signatureData,
+      amountAuthorized: result.amountAuthorized,
     }
     setPendingPayments([...pendingPayments, payment])
     processPayments([...pendingPayments, payment])
@@ -359,6 +377,14 @@ export function PaymentModal({
             giftCardId: p.giftCardId,
             giftCardNumber: p.giftCardNumber,
             houseAccountId: p.houseAccountId,
+            // Datacap Direct fields
+            datacapRecordNo: p.datacapRecordNo,
+            datacapRefNumber: p.datacapRefNumber,
+            datacapSequenceNo: p.datacapSequenceNo,
+            authCode: p.authCode,
+            entryMethod: p.entryMethod,
+            signatureData: p.signatureData,
+            amountAuthorized: p.amountAuthorized,
           })),
           employeeId,
         }),
@@ -736,7 +762,7 @@ export function PaymentModal({
           )}
 
           {/* Step: Datacap Direct Card Payment */}
-          {step === 'datacap_card' && orderId && terminalId && employeeId && (
+          {step === 'datacap_card' && orderId && terminalId && employeeId && locationId && (
             <DatacapPaymentProcessor
               orderId={orderId}
               amount={currentTotal}
@@ -744,6 +770,7 @@ export function PaymentModal({
               tipSettings={tipSettings}
               terminalId={terminalId}
               employeeId={employeeId}
+              locationId={locationId}
               onSuccess={handleDatacapSuccess}
               onCancel={() => setStep('method')}
             />

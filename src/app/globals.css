@@ -141,6 +141,21 @@ body {
   100% { background-position: 200% center; }
 }
 
+@keyframes fade-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s linear infinite;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.4) 50%, transparent 100%);
+  background-size: 200% 100%;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
 @keyframes rainbow-border {
   0% { border-color: #ef4444; }
   16% { border-color: #f59e0b; }

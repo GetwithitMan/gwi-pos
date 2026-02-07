@@ -76,6 +76,39 @@ export interface PaymentSettings {
   datacapMerchantId?: string
   readerTimeoutSeconds: number     // Timeout for reader response (default: 30)
   autoSwapOnFailure: boolean       // Automatically offer reader swap when offline (default: true)
+
+  // Bar Tab Pre-Auth (auto-increment)
+  incrementThresholdPercent: number  // Fire IncrementalAuth when tab reaches this % of auth (default: 80)
+  incrementAmount: number            // Fixed increment amount in dollars (default: 25)
+  autoIncrementEnabled: boolean      // Enable background auto-increment (default: true)
+  maxTabAlertAmount: number          // Alert manager when tab exceeds this amount (default: 500)
+
+  // Quick Pay / Tip Configuration
+  quickPayEnabled: boolean                   // Enable Quick Pay single-transaction mode (default: true)
+  tipDollarAmountThreshold: number           // Under this amount, show dollar tips (default: 15)
+  tipDollarSuggestions: number[]             // Dollar suggestions for under-threshold (default: [1, 2, 3])
+  tipPercentSuggestions: number[]            // Percent suggestions for over-threshold (default: [18, 20, 25])
+  requireCustomForZeroTip: boolean           // Must tap Custom to skip tip (default: true)
+
+  // Walkout Recovery (Phase 6)
+  walkoutRetryEnabled: boolean               // Enable auto-retry for walkout tabs (default: true)
+  walkoutRetryFrequencyDays: number          // Days between retry attempts (default: 3)
+  walkoutMaxRetryDays: number                // Stop retrying after this many days (default: 30)
+  walkoutAutoDetectMinutes: number           // Auto-detect walkout if tab idle for N minutes (default: 120)
+
+  // Card Recognition (Phase 8)
+  cardRecognitionEnabled: boolean            // Enable repeat customer tracking by card (default: true)
+  cardRecognitionToastEnabled: boolean       // Show welcome-back toast to bartender (default: true)
+
+  // Digital Receipts (Phase 7)
+  digitalReceiptRetentionDays: number        // Local retention before cloud archive (default: 90)
+  requireSignatureAbove: number              // Require signature for amounts above this (default: 25)
+
+  // Bottle Service (Phase 10)
+  bottleServiceEnabled: boolean              // Enable bottle service tab type (default: false)
+  bottleServiceAutoGratuityPercent: number   // Default auto-gratuity for bottle service (default: 20)
+  bottleServiceReAuthAlertEnabled: boolean   // Alert bartender when tab reaches deposit amount (default: true)
+  bottleServiceMinSpendEnforced: boolean     // Require manager override to close under minimum (default: false)
 }
 
 export interface LoyaltySettings {
@@ -313,6 +346,33 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     testMode: true,
     readerTimeoutSeconds: 30,
     autoSwapOnFailure: true,
+    // Bar Tab Pre-Auth
+    incrementThresholdPercent: 80,
+    incrementAmount: 25,
+    autoIncrementEnabled: true,
+    maxTabAlertAmount: 500,
+    // Quick Pay / Tips
+    quickPayEnabled: true,
+    tipDollarAmountThreshold: 15,
+    tipDollarSuggestions: [1, 2, 3],
+    tipPercentSuggestions: [18, 20, 25],
+    requireCustomForZeroTip: true,
+    // Walkout Recovery
+    walkoutRetryEnabled: true,
+    walkoutRetryFrequencyDays: 3,
+    walkoutMaxRetryDays: 30,
+    walkoutAutoDetectMinutes: 120,
+    // Card Recognition
+    cardRecognitionEnabled: true,
+    cardRecognitionToastEnabled: true,
+    // Digital Receipts
+    digitalReceiptRetentionDays: 90,
+    requireSignatureAbove: 25,
+    // Bottle Service
+    bottleServiceEnabled: false,
+    bottleServiceAutoGratuityPercent: 20,
+    bottleServiceReAuthAlertEnabled: true,
+    bottleServiceMinSpendEnforced: false,
   },
   loyalty: {
     enabled: false,

@@ -27,6 +27,14 @@ interface PaymentInput {
   houseAccountId?: string
   // Loyalty points specific
   pointsUsed?: number
+  // Datacap Direct fields
+  datacapRecordNo?: string
+  datacapRefNumber?: string
+  datacapSequenceNo?: string
+  authCode?: string
+  entryMethod?: string
+  signatureData?: string
+  amountAuthorized?: number
   // Simulated - will be replaced with real processor
   simulate?: boolean
 }
@@ -117,6 +125,13 @@ export async function POST(
         cardLast4?: string
         authCode?: string
         transactionId?: string
+        datacapRecordNo?: string
+        datacapRefNumber?: string
+        datacapSequenceNo?: string
+        entryMethod?: string
+        signatureData?: string
+        amountAuthorized?: number
+        amountRequested?: number
         status: string
       } = {
         locationId: order.locationId,
@@ -159,7 +174,6 @@ export async function POST(
           roundingAdjustment: roundingAdjustment !== 0 ? roundingAdjustment : undefined,
         }
       } else if (payment.method === 'credit' || payment.method === 'debit') {
-        // Simulated card payment
         if (!payment.cardLast4 || !/^\d{4}$/.test(payment.cardLast4)) {
           return NextResponse.json(
             { error: 'Valid card last 4 digits required' },
@@ -167,12 +181,23 @@ export async function POST(
           )
         }
 
+        // Use real Datacap fields when available, fall back to simulated
+        const isDatacap = !!payment.datacapRecordNo || !!payment.datacapRefNumber
         paymentRecord = {
           ...paymentRecord,
           cardBrand: payment.cardBrand || 'visa',
           cardLast4: payment.cardLast4,
-          authCode: generateFakeAuthCode(),
-          transactionId: generateFakeTransactionId(),
+          authCode: isDatacap ? payment.authCode : generateFakeAuthCode(),
+          transactionId: isDatacap ? payment.datacapRefNumber : generateFakeTransactionId(),
+          ...(isDatacap && {
+            datacapRecordNo: payment.datacapRecordNo,
+            datacapRefNumber: payment.datacapRefNumber,
+            datacapSequenceNo: payment.datacapSequenceNo,
+            entryMethod: payment.entryMethod,
+            signatureData: payment.signatureData,
+            amountAuthorized: payment.amountAuthorized,
+            amountRequested: payment.amount,
+          }),
         }
       } else if (payment.method === 'loyalty_points') {
         // Loyalty points redemption

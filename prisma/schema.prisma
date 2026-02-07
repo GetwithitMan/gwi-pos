@@ -161,6 +161,15 @@ model Location {
   printJobs      PrintJob[]
   paymentReaders PaymentReader[]
 
+  // Order Cards (multi-card tabs)
+  orderCards OrderCard[]
+
+  // Datacap Advanced Features (Sprint 3)
+  digitalReceipts  DigitalReceipt[]
+  chargebackCases  ChargebackCase[]
+  cardProfiles     CardProfile[]
+  walkoutRetries   WalkoutRetry[]
+
   // Sync Audit
   syncAuditEntries SyncAuditEntry[]
 
@@ -191,6 +200,9 @@ model Location {
   dailyPrepCountItems          DailyPrepCountItem[]
   dailyPrepCountTransactions   DailyPrepCountTransaction[]
   ingredientStockAdjustments   IngredientStockAdjustment[]
+
+  // Bottle Service (Phase 10)
+  bottleServiceTiers BottleServiceTier[]
 
   @@index([organizationId])
 }
@@ -1439,7 +1451,9 @@ model Order {
   seatVersion     Int      @default(0)  // Monotonic counter for concurrency control
   seatTimestamps  Json?                 // When each seat was added: { "1": "2026-02-01T10:00:00Z", ... }
 
-  tabName      String? // For bar tabs
+  tabName      String? // For bar tabs (auto-filled from cardholder name on chip)
+  tabNickname  String? // Editable display name (e.g., "John S - Beard")
+  tabStatus    String? // pending_auth | open | no_card | closed (null = not a tab)
 
   // Custom fields collected for this order type (e.g., phone, pickupTime, vehicleColor)
   customFields Json?
@@ -1480,6 +1494,19 @@ model Order {
   preAuthLast4     String? // Last 4 digits of held card
   preAuthCardBrand String? // Visa, Mastercard, etc.
   preAuthExpiresAt DateTime? // When the hold expires
+  preAuthRecordNo  String? // Datacap RecordNo token for capture/increment
+  preAuthReaderId  String? // Which reader did the pre-auth
+
+  // Bottle Service (Phase 10)
+  isBottleService       Boolean   @default(false)
+  bottleServiceTierId   String?   // Linked tier
+  bottleServiceDeposit  Decimal?  // Deposit amount pre-authorized
+  bottleServiceMinSpend Decimal?  // Minimum spend requirement (from tier at time of creation)
+
+  // Walkout Recovery (Phase 6)
+  isWalkout       Boolean   @default(false)
+  walkoutAt       DateTime?
+  walkoutMarkedBy String?   // Employee who marked as walkout
 
   // Coursing (T013)
   currentCourse Int    @default(1) // Currently active course
@@ -1502,6 +1529,7 @@ model Order {
   payments  Payment[]
   discounts OrderDiscount[]
   voidLogs  VoidLog[]
+  cards     OrderCard[]
   syncAuditEntries SyncAuditEntry[]
   remoteVoidApprovals RemoteVoidApproval[]
 
@@ -1672,9 +1700,11 @@ model Payment {
   transactionId String?
 
   // Datacap Direct integration
-  paymentReaderId  String? // Which reader processed this payment
-  datacapRefNumber String? // Datacap reference for voids/refunds
-  entryMethod      String? // "Chip" | "Tap" | "Swipe" | "Manual"
+  paymentReaderId   String? // Which reader processed this payment
+  datacapRefNumber  String? // Datacap reference for voids/refunds
+  datacapRecordNo   String? // RecordNo token — needed for voids, adjustments, captures
+  datacapSequenceNo String? // SequenceNo for audit trail
+  entryMethod       String? // "Chip" | "Tap" | "Swipe" | "Manual"
 
   // Partial Approvals & Signature (Chargeback Defense)
   amountRequested  Decimal? // Original amount requested
@@ -4531,8 +4561,13 @@ model PaymentReader {
   port         Int    @default(8080) // Datacap default port
 
   // Datacap Configuration
-  merchantId String? // Datacap merchant ID if different per reader
-  terminalId String? // Datacap terminal ID (their concept, not ours)
+  merchantId        String? // Datacap merchant ID if different per reader
+  terminalId        String? // Datacap terminal ID (their concept, not ours)
+  lastSequenceNo    String  @default("0010010010") // Track Datacap SequenceNo per device
+  deviceType        String  @default("PAX")        // PAX | INGENICO — determines port/protocol
+  communicationMode String  @default("local")      // local | cloud | local_with_cloud_fallback | simulated
+  cloudUsername     String?                         // Basic Auth username (cloud mode)
+  cloudPassword     String?                         // Basic Auth password (cloud mode, encrypted)
 
   // Verification Settings
   verificationType String @default("SERIAL_HANDSHAKE") // "SERIAL_HANDSHAKE" | "IP_ONLY"
@@ -5462,4 +5497,232 @@ model DailyPrepCountTransaction {
   @@index([dailyCountId])
   @@index([type])
   @@index([createdAt])
+}
+
+// ============================================
+// ORDER CARDS — Multi-Card Tab Support (Datacap)
+// ============================================
+
+model OrderCard {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  // Reader that processed this card
+  readerId String
+
+  // Datacap tokens
+  recordNo String  // Datacap RecordNo token — needed for capture/increment/void
+
+  // Card info (from chip/tap data)
+  cardType       String  // VISA, MASTERCARD, AMEX, DISCOVER, etc.
+  cardLast4      String  // Last 4 digits
+  cardholderName String? // Name from chip data (auto-fills tab name)
+
+  // Authorization tracking
+  authAmount     Decimal // Current total authorized amount
+  isDefault      Boolean @default(false) // Default payment card for this tab
+
+  // Status: authorized | declined | captured | voided
+  status         String  @default("authorized")
+
+  // Capture details (at tab close)
+  capturedAmount Decimal?
+  capturedAt     DateTime?
+  tipAmount      Decimal?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([orderId])
+  @@index([locationId])
+  @@index([status])
+}
+
+// ============================================
+// DIGITAL RECEIPTS — Chargeback Defense (Phase 7)
+// ============================================
+
+model DigitalReceipt {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  orderId    String   @unique
+  paymentId  String
+
+  // Full receipt content (items, amounts, taxes, discounts, etc.)
+  receiptData     Json
+
+  // Signature for chargeback defense
+  signatureData   String?  // Base64 PNG from reader or POS screen
+  signatureSource String?  // "reader" | "pos_screen"
+
+  // Archive lifecycle
+  archivedAt      DateTime?  // When moved to cloud archive
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([locationId, createdAt])
+  @@index([paymentId])
+}
+
+// ============================================
+// CHARGEBACK CASES — Dispute Tracking (Phase 7)
+// ============================================
+
+model ChargebackCase {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Auto-matched order/payment (if found)
+  orderId    String?
+  paymentId  String?
+
+  // Card info for matching
+  cardLast4  String
+  cardBrand  String?
+  amount     Decimal
+
+  // Chargeback details
+  chargebackDate   DateTime
+  reason           String?
+  reasonCode       String?   // Processor reason code (e.g., "10.4" for fraud)
+  responseDeadline DateTime?
+
+  // Status: open | responded | won | lost
+  status String @default("open")
+  notes  String?
+
+  // Response tracking
+  respondedAt    DateTime?
+  respondedBy    String?   // Employee who responded
+  responseNotes  String?
+  resolvedAt     DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([cardLast4])
+  @@index([status])
+  @@index([chargebackDate])
+}
+
+// ============================================
+// CARD PROFILES — Repeat Customer Recognition (Phase 8)
+// ============================================
+
+model CardProfile {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Hashed card identity (privacy-safe — cannot reverse to card number)
+  cardholderIdHash String    // SHA-256 of Datacap CardholderID
+
+  // Card info
+  cardType       String     // VISA, MASTERCARD, etc.
+  cardLast4      String
+  cardholderName String?    // From chip data
+
+  // Visit tracking
+  visitCount     Int       @default(0)
+  firstSeenAt    DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  totalSpend     Decimal   @default(0)
+
+  // Link to Customer record (future: merge via phone number)
+  customerId     String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([locationId, cardholderIdHash])
+  @@index([locationId, cardLast4])
+  @@index([locationId])
+}
+
+// ============================================
+// WALKOUT RETRY — Declined Tab Recovery (Phase 6)
+// ============================================
+
+model WalkoutRetry {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  orderId    String
+  orderCardId String   // Which OrderCard to retry capture against
+
+  // Amount to capture
+  amount     Decimal
+
+  // Retry schedule
+  nextRetryAt    DateTime
+  retryCount     Int       @default(0)
+  maxRetries     Int       @default(10)  // Calculated from settings
+
+  // Status: pending | collected | exhausted | written_off
+  status     String  @default("pending")
+
+  // Result tracking
+  lastRetryAt    DateTime?
+  lastRetryError String?
+  collectedAt    DateTime?
+  writtenOffAt   DateTime?
+  writtenOffBy   String?   // Employee who wrote off
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([status])
+  @@index([nextRetryAt])
+}
+
+// ============================================
+// BOTTLE SERVICE TIERS (Phase 10)
+// ============================================
+
+model BottleServiceTier {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  // Tier details
+  name        String   // e.g., "Bronze", "Silver", "Gold", "Platinum"
+  description String?  // e.g., "Includes reserved seating for 4"
+  color       String   @default("#D4AF37")  // Banner/badge color (default: gold)
+
+  // Financial
+  depositAmount     Decimal  // Pre-auth amount (e.g., $500, $1000, $2000)
+  minimumSpend      Decimal  // Soft minimum spend requirement
+  autoGratuityPercent Decimal? // Override auto-gratuity for this tier (e.g., 20%)
+
+  // Configuration
+  sortOrder  Int      @default(0)  // Display order
+  isActive   Boolean  @default(true)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
+  @@index([locationId, isActive])
 }
