@@ -400,7 +400,7 @@ export function FloorPlanEditor({
     } else {
       const fixtures = FloorCanvasAPI.getFixtures(selectedRoomId);
       const entertainmentIds = fixtures
-        .filter(f => f.type === 'entertainment' && (f as any).linkedMenuItemId)
+        .filter(f => (f as any).linkedMenuItemId)
         .map(f => (f as any).linkedMenuItemId as string);
       setPlacedEntertainmentIds(entertainmentIds);
     }

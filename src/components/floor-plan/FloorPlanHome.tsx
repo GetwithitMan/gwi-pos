@@ -216,6 +216,8 @@ export function FloorPlanHome({
     name: string
     price: number
     quantity: number
+    modifiers: { name: string; price: number }[]
+    status?: string
   } | null>(null)
 
   // Split ticket manager state
@@ -1025,14 +1027,14 @@ export function FloorPlanHome({
       callbacksRef.current.clearExpiredUndos()
       callbacksRef.current.clearExpiredFlashes()
 
-      // Every 5 ticks (5s): Refresh floor plan data for live preview
+      // Every 30 ticks (30s): Refresh floor plan data for live preview
       // This allows admin changes to tables/entertainment to appear on POS
-      if (tickCount % 5 === 0) {
+      if (tickCount % 30 === 0 && tickCount > 0) {
         callbacksRef.current.loadFloorPlanData?.()
       }
 
-      // Every 30 ticks (30s): Refresh open orders count
-      if (tickCount >= 30) {
+      // Every 60 ticks (60s): Refresh open orders count
+      if (tickCount >= 60) {
         tickCount = 0
         callbacksRef.current.loadOpenOrdersCount?.()
       }
@@ -2071,6 +2073,8 @@ export function FloorPlanHome({
       name: item.name,
       price: item.price,
       quantity: item.quantity,
+      modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price })),
+      status: item.status,
     })
   }, [])
 
@@ -5852,12 +5856,17 @@ export function FloorPlanHome({
           isOpen={true}
           onClose={() => setCompVoidItem(null)}
           orderId={activeOrderId}
-          orderItemId={compVoidItem.id}
-          itemName={compVoidItem.name}
-          itemPrice={compVoidItem.price}
-          itemQuantity={compVoidItem.quantity}
+          item={{
+            id: compVoidItem.id,
+            name: compVoidItem.name,
+            price: compVoidItem.price,
+            quantity: compVoidItem.quantity,
+            modifiers: compVoidItem.modifiers,
+            status: compVoidItem.status,
+          }}
           employeeId={employeeId}
-          onSuccess={async () => {
+          locationId={locationId}
+          onComplete={async () => {
             setCompVoidItem(null)
             // Refresh order data by reloading the order
             if (activeOrderId) {
@@ -5903,7 +5912,17 @@ export function FloorPlanHome({
             setShowSplitTicketManager(false)
             setSplitItemId(null)
           }}
-          preSelectedItemId={splitItemId || undefined}
+          orderNumber={activeOrderNumber || ''}
+          items={inlineOrderItems.map(item => ({
+            id: item.id,
+            tempId: item.id,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price })),
+          }))}
+          orderDiscount={0}
+          taxRate={0.08}
           onSplitComplete={async () => {
             // Refresh order data by reloading the order
             if (activeOrderId) {

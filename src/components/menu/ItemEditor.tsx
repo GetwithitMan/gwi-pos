@@ -20,15 +20,15 @@ interface Ingredient {
   needsVerification?: boolean  // ← Verification status
 }
 
-interface IngredientLibraryItem {
+export interface IngredientLibraryItem {
   id: string
   name: string
   category: string | null
-  categoryName?: string | null      // NEW: from categoryRelation.name
-  categoryId?: string | null        // NEW: actual category relation ID
-  parentIngredientId?: string | null // NEW: to identify child items
-  parentName?: string | null        // NEW: parent ingredient's name for sub-headers
-  needsVerification?: boolean       // NEW: verification flag
+  categoryName: string | null       // from categoryRelation.name
+  categoryId: string | null         // actual category relation ID
+  parentIngredientId: string | null  // to identify child items
+  parentName: string | null         // parent ingredient's name for sub-headers
+  needsVerification: boolean        // verification flag
   allowNo: boolean
   allowLite: boolean
   allowOnSide: boolean

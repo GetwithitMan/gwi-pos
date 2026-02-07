@@ -408,7 +408,7 @@ export async function POST(
 
         // Calculate due date
         const dueDate = new Date()
-        dueDate.setDate(dueDate.getDate() + (houseAccount.paymentTerms || 30))
+        dueDate.setDate(dueDate.getDate() + (houseAccount.paymentTerms ?? 30))
 
         // Charge to house account
         await db.houseAccount.update({

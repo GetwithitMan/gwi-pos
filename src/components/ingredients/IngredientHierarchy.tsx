@@ -157,7 +157,7 @@ function HierarchyNode({
   const [recipeComponents, setRecipeComponents] = useState<RecipeComponent[]>([])
 
   // Use caching hooks for data fetching (5 min TTL)
-  const linkedItemsCache = useCachedFetch<{ menuItemIngredients: LinkedMenuItem[] }>(5 * 60 * 1000)
+  const linkedItemsCache = useCachedFetch<{ menuItemIngredients: LinkedMenuItem[]; linkedModifiers?: LinkedModifier[] }>(5 * 60 * 1000)
   const recipeCache = useCachedFetch<RecipeComponent[]>(5 * 60 * 1000)
 
   const hasChildren = (ingredient.childIngredients?.length || 0) > 0 || (ingredient.childCount || 0) > 0

@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
         phone,
         address,
         creditLimit: creditLimit || 0,
-        paymentTerms: paymentTerms || 30,
+        paymentTerms: paymentTerms ?? 30,
         billingCycle: billingCycle || 'monthly',
         taxExempt: taxExempt || false,
         taxId,

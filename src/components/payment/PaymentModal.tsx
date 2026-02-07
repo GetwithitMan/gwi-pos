@@ -62,7 +62,7 @@ interface HouseAccountInfo {
   status: string
 }
 
-type PaymentStep = 'method' | 'cash' | 'card' | 'tip' | 'confirm' | 'gift_card' | 'house_account' | 'datacap_card'
+type PaymentStep = 'method' | 'cash' | 'tip' | 'gift_card' | 'house_account' | 'datacap_card'
 
 // Default tip settings
 const DEFAULT_TIP_SETTINGS: TipSettings = {
@@ -105,10 +105,6 @@ export function PaymentModal({
   // Cash payment state
   const [amountTendered, setAmountTendered] = useState('')
   const [customCashAmount, setCustomCashAmount] = useState('')
-
-  // Card payment state
-  const [cardLast4, setCardLast4] = useState('')
-  const [cardBrand, setCardBrand] = useState('visa')
 
   // Gift card state
   const [giftCardNumber, setGiftCardNumber] = useState('')
@@ -200,7 +196,8 @@ export function PaymentModal({
     } else if (method === 'cash') {
       setStep('cash')
     } else {
-      setStep('card')
+      // All card payments go through Datacap (simulated or real)
+      setStep('datacap_card')
     }
   }
 
@@ -300,12 +297,9 @@ export function PaymentModal({
   const handleContinueFromTip = () => {
     if (selectedMethod === 'cash') {
       setStep('cash')
-    } else if ((selectedMethod === 'credit' || selectedMethod === 'debit') && paymentSettings.processor === 'datacap') {
-      // Use Datacap Direct for card payments
-      setStep('datacap_card')
     } else {
-      // Simulated card payment (dev/test mode)
-      setStep('card')
+      // All card payments go through Datacap (simulated or real)
+      setStep('datacap_card')
     }
   }
 
@@ -320,27 +314,12 @@ export function PaymentModal({
     processPayments([...pendingPayments, payment])
   }
 
-  const handleCardPayment = () => {
-    if (cardLast4.length !== 4) {
-      setError('Please enter the last 4 digits of the card')
-      return
-    }
-
-    const payment: PendingPayment = {
-      method: selectedMethod as 'credit' | 'debit',
-      amount: currentTotal,
-      tipAmount,
-      cardBrand,
-      cardLast4,
-    }
-    setPendingPayments([...pendingPayments, payment])
-    processPayments([...pendingPayments, payment])
-  }
-
   // Handle Datacap payment success
   const handleDatacapSuccess = (result: DatacapResult & { tipAmount: number }) => {
+    // Guard: ensure selectedMethod is a valid card type
+    const method = (selectedMethod === 'credit' || selectedMethod === 'debit') ? selectedMethod : 'credit'
     const payment: PendingPayment = {
-      method: selectedMethod as 'credit' | 'debit',
+      method,
       amount: currentTotal,
       tipAmount: result.tipAmount,
       cardBrand: result.cardBrand || 'card',
@@ -696,68 +675,12 @@ export function PaymentModal({
             </div>
           )}
 
-          {/* Step: Card Payment (Simulated) */}
-          {step === 'card' && (
-            <div className="space-y-3">
-              <h3 className="font-medium mb-2">Card Payment</h3>
-
-              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg mb-3">
-                <p className="text-sm text-yellow-800">
-                  <strong>Development Mode:</strong> Enter any 4 digits to simulate a card payment.
-                </p>
-              </div>
-
-              <div className="p-3 bg-blue-50 rounded-lg mb-3">
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Amount</span>
-                  <span>{formatCurrency(totalWithTip)}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-600 block mb-1">Card Last 4 Digits</label>
-                <input
-                  type="text"
-                  value={cardLast4}
-                  onChange={(e) => setCardLast4(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  className="w-full px-3 py-2 border rounded-lg text-center text-2xl tracking-widest"
-                  placeholder="0000"
-                  maxLength={4}
-                />
-              </div>
-
-              <div>
-                <label className="text-sm text-gray-600 block mb-1">Card Type</label>
-                <select
-                  value={cardBrand}
-                  onChange={(e) => setCardBrand(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                >
-                  <option value="visa">Visa</option>
-                  <option value="mastercard">Mastercard</option>
-                  <option value="amex">American Express</option>
-                  <option value="discover">Discover</option>
-                </select>
-              </div>
-
-              <div className="flex gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => setStep(tipSettings.enabled ? 'tip' : 'method')}
-                  disabled={isProcessing}
-                >
-                  Back
-                </Button>
-                <Button
-                  variant="primary"
-                  className="flex-1"
-                  onClick={handleCardPayment}
-                  disabled={isProcessing || cardLast4.length !== 4}
-                >
-                  {isProcessing ? 'Processing...' : 'Process Payment'}
-                </Button>
-              </div>
+          {/* Step: Datacap Direct Card Payment */}
+          {step === 'datacap_card' && orderId && !terminalId && (
+            <div className="text-center py-8">
+              <p className="text-red-500 font-bold mb-2">Terminal Not Configured</p>
+              <p className="text-gray-500 text-sm mb-4">No terminal ID assigned. Card payments require a configured terminal.</p>
+              <Button onClick={() => setStep('method')} variant="outline">Back</Button>
             </div>
           )}
 

@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { ItemTreeView } from '@/components/menu/ItemTreeView'
-import { ItemEditor } from '@/components/menu/ItemEditor'
+import { ItemEditor, IngredientLibraryItem } from '@/components/menu/ItemEditor'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
@@ -113,24 +113,7 @@ interface ModifierGroup {
   modifiers: { id: string; name: string; price: number }[]
 }
 
-interface IngredientLibraryItem {
-  id: string
-  name: string
-  category: string | null          // legacy string field
-  categoryName: string | null      // NEW: from categoryRelation.name
-  categoryId: string | null        // NEW: actual category relation ID
-  parentIngredientId: string | null // NEW: to identify child items
-  parentName: string | null        // NEW: parent ingredient's name for sub-headers
-  needsVerification: boolean       // NEW: verification flag
-  allowNo: boolean
-  allowLite: boolean
-  allowOnSide: boolean
-  allowExtra: boolean
-  extraPrice: number
-  allowSwap: boolean
-  swapModifierGroupId: string | null
-  swapUpcharge: number
-}
+// IngredientLibraryItem imported from '@/components/menu/ItemEditor'
 
 interface IngredientCategory {
   id: string

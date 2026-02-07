@@ -302,7 +302,7 @@ export default function OrdersPage() {
   const [comboTemplate, setComboTemplate] = useState<{
     id: string
     basePrice: number
-    comparePrice?: number
+    comparePrice?: number | null
     components: {
       id: string
       slotName: string
@@ -335,7 +335,7 @@ export default function OrdersPage() {
       itemPriceOverride?: number | null
       modifierPriceOverrides?: Record<string, number> | null
       // Legacy fields
-      options: { id: string; menuItemId: string; name: string; upcharge: number }[]
+      options: { id: string; menuItemId: string; name: string; upcharge: number; isAvailable: boolean }[]
     }[]
   } | null>(null)
   // comboSelections maps componentId -> groupId -> modifierIds
@@ -2761,6 +2761,7 @@ export default function OrdersPage() {
               setTabsRefreshTrigger(prev => prev + 1)
             }}
             employeeId={employee?.id}
+            terminalId="terminal-1"
           />
         )}
         {/* Receipt Modal - for floor plan after payment */}
@@ -2870,6 +2871,7 @@ export default function OrdersPage() {
               setTabsRefreshTrigger(prev => prev + 1)
             }}
             employeeId={employee?.id}
+            terminalId="terminal-1"
           />
         )}
         {/* Receipt Modal - for bartender after payment */}
@@ -4050,6 +4052,7 @@ export default function OrdersPage() {
           paymentSettings={paymentSettings}
           onPaymentComplete={handlePaymentComplete}
           employeeId={employee?.id}
+          terminalId="terminal-1"
         />
       )}
 

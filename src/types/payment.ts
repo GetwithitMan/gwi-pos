@@ -1,10 +1,11 @@
 // Payment Types
-// Types for payment processing and simulated card reader
+// Types for payment processing and Datacap card reader integration
 
 import type { CardType } from '@/lib/mock-cards'
 
 /**
  * Result from simulated card reader (tap or chip)
+ * Used by the simulated Datacap reader API routes
  */
 export interface SimulatedPaymentResult {
   success: boolean
@@ -13,15 +14,6 @@ export interface SimulatedPaymentResult {
   cardType?: CardType
   lastFour?: string
   customerName?: string  // Only available from chip card reads
-}
-
-/**
- * Props for the SimulatedCardReader component
- */
-export interface SimulatedCardReaderProps {
-  amount: number
-  onResult: (result: SimulatedPaymentResult) => void
-  disabled?: boolean
 }
 
 /**

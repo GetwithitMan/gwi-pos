@@ -79,6 +79,7 @@ export async function PUT(
       include: {
         table: {
           select: {
+            locationId: true,
             combinedWithId: true,
             combinedTableIds: true,
           },

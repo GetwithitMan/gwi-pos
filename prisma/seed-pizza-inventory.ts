@@ -66,133 +66,173 @@ async function main() {
   console.log('=== TIER 1: Raw Ingredients ===')
 
   // Pizza Dough Flour - 50 lb bag
-  const flour = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Pizza Dough Flour' } },
-    update: {
-      description: 'High-gluten bread flour for pizza dough',
-      categoryId: category.id,
-      standardQuantity: 50,
-      standardUnit: 'lb',
-      isBaseIngredient: true,
-      visibility: 'visible',
-      isActive: true,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Pizza Dough Flour',
-      description: 'High-gluten bread flour for pizza dough',
-      categoryId: category.id,
-      standardQuantity: 50,
-      standardUnit: 'lb',
-      isBaseIngredient: true,
-      visibility: 'visible',
-      isActive: true,
-    }
+  let flour = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Pizza Dough Flour', deletedAt: null }
   })
+  if (flour) {
+    flour = await prisma.ingredient.update({
+      where: { id: flour.id },
+      data: {
+        description: 'High-gluten bread flour for pizza dough',
+        categoryId: category.id,
+        standardQuantity: 50,
+        standardUnit: 'lb',
+        isBaseIngredient: true,
+        visibility: 'visible',
+        isActive: true,
+      },
+    })
+  } else {
+    flour = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Pizza Dough Flour',
+        description: 'High-gluten bread flour for pizza dough',
+        categoryId: category.id,
+        standardQuantity: 50,
+        standardUnit: 'lb',
+        isBaseIngredient: true,
+        visibility: 'visible',
+        isActive: true,
+      }
+    })
+  }
   console.log(`  ✓ ${flour.name} (1 unit = ${flour.standardQuantity} ${flour.standardUnit})`)
 
   // Water
-  const water = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Water' } },
-    update: {
-      description: 'Filtered water for dough',
-      categoryId: category.id,
-      standardQuantity: 1,
-      standardUnit: 'gallons',
-      isBaseIngredient: true,
-      visibility: 'admin_only',
-      isActive: true,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Water',
-      description: 'Filtered water for dough',
-      categoryId: category.id,
-      standardQuantity: 1,
-      standardUnit: 'gallons',
-      isBaseIngredient: true,
-      visibility: 'admin_only',
-      isActive: true,
-    }
+  let water = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Water', deletedAt: null }
   })
+  if (water) {
+    water = await prisma.ingredient.update({
+      where: { id: water.id },
+      data: {
+        description: 'Filtered water for dough',
+        categoryId: category.id,
+        standardQuantity: 1,
+        standardUnit: 'gallons',
+        isBaseIngredient: true,
+        visibility: 'admin_only',
+        isActive: true,
+      },
+    })
+  } else {
+    water = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Water',
+        description: 'Filtered water for dough',
+        categoryId: category.id,
+        standardQuantity: 1,
+        standardUnit: 'gallons',
+        isBaseIngredient: true,
+        visibility: 'admin_only',
+        isActive: true,
+      }
+    })
+  }
   console.log(`  ✓ ${water.name}`)
 
   // Yeast
-  const yeast = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Active Dry Yeast' } },
-    update: {
-      description: 'For pizza dough',
-      categoryId: category.id,
-      standardQuantity: 1,
-      standardUnit: 'lb',
-      isBaseIngredient: true,
-      visibility: 'admin_only',
-      isActive: true,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Active Dry Yeast',
-      description: 'For pizza dough',
-      categoryId: category.id,
-      standardQuantity: 1,
-      standardUnit: 'lb',
-      isBaseIngredient: true,
-      visibility: 'admin_only',
-      isActive: true,
-    }
+  let yeast = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Active Dry Yeast', deletedAt: null }
   })
+  if (yeast) {
+    yeast = await prisma.ingredient.update({
+      where: { id: yeast.id },
+      data: {
+        description: 'For pizza dough',
+        categoryId: category.id,
+        standardQuantity: 1,
+        standardUnit: 'lb',
+        isBaseIngredient: true,
+        visibility: 'admin_only',
+        isActive: true,
+      },
+    })
+  } else {
+    yeast = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Active Dry Yeast',
+        description: 'For pizza dough',
+        categoryId: category.id,
+        standardQuantity: 1,
+        standardUnit: 'lb',
+        isBaseIngredient: true,
+        visibility: 'admin_only',
+        isActive: true,
+      }
+    })
+  }
   console.log(`  ✓ ${yeast.name}`)
 
   // Olive Oil
-  const oil = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Olive Oil' } },
-    update: {
-      description: 'For pizza dough and cooking',
-      categoryId: category.id,
-      standardQuantity: 1,
-      standardUnit: 'gallons',
-      isBaseIngredient: true,
-      visibility: 'admin_only',
-      isActive: true,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Olive Oil',
-      description: 'For pizza dough and cooking',
-      categoryId: category.id,
-      standardQuantity: 1,
-      standardUnit: 'gallons',
-      isBaseIngredient: true,
-      visibility: 'admin_only',
-      isActive: true,
-    }
+  let oil = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Olive Oil', deletedAt: null }
   })
+  if (oil) {
+    oil = await prisma.ingredient.update({
+      where: { id: oil.id },
+      data: {
+        description: 'For pizza dough and cooking',
+        categoryId: category.id,
+        standardQuantity: 1,
+        standardUnit: 'gallons',
+        isBaseIngredient: true,
+        visibility: 'admin_only',
+        isActive: true,
+      },
+    })
+  } else {
+    oil = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Olive Oil',
+        description: 'For pizza dough and cooking',
+        categoryId: category.id,
+        standardQuantity: 1,
+        standardUnit: 'gallons',
+        isBaseIngredient: true,
+        visibility: 'admin_only',
+        isActive: true,
+      }
+    })
+  }
   console.log(`  ✓ ${oil.name}`)
 
   // Salt
-  const salt = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Kosher Salt' } },
-    update: {
-      description: 'For seasoning and dough',
-      categoryId: category.id,
-      standardQuantity: 3,
-      standardUnit: 'lb',
-      isBaseIngredient: true,
-      visibility: 'admin_only',
-      isActive: true,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Kosher Salt',
-      description: 'For seasoning and dough',
-      categoryId: category.id,
-      standardQuantity: 3,
-      standardUnit: 'lb',
-      isBaseIngredient: true,
-      visibility: 'admin_only',
-      isActive: true,
-    }
+  let salt = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Kosher Salt', deletedAt: null }
   })
+  if (salt) {
+    salt = await prisma.ingredient.update({
+      where: { id: salt.id },
+      data: {
+        description: 'For seasoning and dough',
+        categoryId: category.id,
+        standardQuantity: 3,
+        standardUnit: 'lb',
+        isBaseIngredient: true,
+        visibility: 'admin_only',
+        isActive: true,
+      },
+    })
+  } else {
+    salt = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Kosher Salt',
+        description: 'For seasoning and dough',
+        categoryId: category.id,
+        standardQuantity: 3,
+        standardUnit: 'lb',
+        isBaseIngredient: true,
+        visibility: 'admin_only',
+        isActive: true,
+      }
+    })
+  }
   console.log(`  ✓ ${salt.name}`)
 
   // ============================================
@@ -203,41 +243,49 @@ async function main() {
   // Bulk Dough Batch - yields ~22.5 kg from 50 lbs flour
   // 50 lbs flour = 22.7 kg, hydration adds ~65% = ~37 kg total dough
   // At 400g average per ball, that's about 90 dough balls per batch
-  const bulkBatch = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Bulk Dough Batch' } },
-    update: {
-      description: 'One full batch of pizza dough (50 lbs flour + water + yeast + oil)',
-      categoryId: category.id,
-      standardUnit: 'batches',
-      batchYield: 1,
-      yieldPercent: 1.0, // 100% - no loss at batch level
-      isBaseIngredient: false,
-      isDailyCountItem: true,
-      countPrecision: 'whole',
-      preparationType: 'Mixed',
-      visibility: 'visible',
-      isActive: true,
-      lowStockThreshold: 1,
-      criticalStockThreshold: 0,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Bulk Dough Batch',
-      description: 'One full batch of pizza dough (50 lbs flour + water + yeast + oil)',
-      categoryId: category.id,
-      standardUnit: 'batches',
-      batchYield: 1,
-      yieldPercent: 1.0,
-      isBaseIngredient: false,
-      isDailyCountItem: true,
-      countPrecision: 'whole',
-      preparationType: 'Mixed',
-      visibility: 'visible',
-      isActive: true,
-      lowStockThreshold: 1,
-      criticalStockThreshold: 0,
-    }
+  let bulkBatch = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Bulk Dough Batch', deletedAt: null }
   })
+  if (bulkBatch) {
+    bulkBatch = await prisma.ingredient.update({
+      where: { id: bulkBatch.id },
+      data: {
+        description: 'One full batch of pizza dough (50 lbs flour + water + yeast + oil)',
+        categoryId: category.id,
+        standardUnit: 'batches',
+        batchYield: 1,
+        yieldPercent: 1.0, // 100% - no loss at batch level
+        isBaseIngredient: false,
+        isDailyCountItem: true,
+        countPrecision: 'whole',
+        preparationType: 'Mixed',
+        visibility: 'visible',
+        isActive: true,
+        lowStockThreshold: 1,
+        criticalStockThreshold: 0,
+      },
+    })
+  } else {
+    bulkBatch = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Bulk Dough Batch',
+        description: 'One full batch of pizza dough (50 lbs flour + water + yeast + oil)',
+        categoryId: category.id,
+        standardUnit: 'batches',
+        batchYield: 1,
+        yieldPercent: 1.0,
+        isBaseIngredient: false,
+        isDailyCountItem: true,
+        countPrecision: 'whole',
+        preparationType: 'Mixed',
+        visibility: 'visible',
+        isActive: true,
+        lowStockThreshold: 1,
+        criticalStockThreshold: 0,
+      }
+    })
+  }
   console.log(`  ✓ ${bulkBatch.name} (1 batch from 50 lbs flour)`)
 
   // Add recipe components for bulk batch
@@ -280,41 +328,49 @@ async function main() {
   // Large Ball (600g): 37,400g / 600g = ~62 balls per batch
 
   // Small Dough Ball (250g) - for Personal/Small pizzas
-  const smallBall = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Small Dough Ball (250g)' } },
-    update: {
-      description: 'For personal and small pizzas, breadsticks',
-      categoryId: category.id,
-      standardUnit: 'balls',
-      batchYield: 150, // ~150 small balls from one batch
-      yieldPercent: 0.98, // 2% loss from portioning
-      isBaseIngredient: false,
-      isDailyCountItem: true,
-      countPrecision: 'whole',
-      preparationType: 'Portioned',
-      visibility: 'visible',
-      isActive: true,
-      lowStockThreshold: 20,
-      criticalStockThreshold: 10,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Small Dough Ball (250g)',
-      description: 'For personal and small pizzas, breadsticks',
-      categoryId: category.id,
-      standardUnit: 'balls',
-      batchYield: 150,
-      yieldPercent: 0.98,
-      isBaseIngredient: false,
-      isDailyCountItem: true,
-      countPrecision: 'whole',
-      preparationType: 'Portioned',
-      visibility: 'visible',
-      isActive: true,
-      lowStockThreshold: 20,
-      criticalStockThreshold: 10,
-    }
+  let smallBall = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Small Dough Ball (250g)', deletedAt: null }
   })
+  if (smallBall) {
+    smallBall = await prisma.ingredient.update({
+      where: { id: smallBall.id },
+      data: {
+        description: 'For personal and small pizzas, breadsticks',
+        categoryId: category.id,
+        standardUnit: 'balls',
+        batchYield: 150, // ~150 small balls from one batch
+        yieldPercent: 0.98, // 2% loss from portioning
+        isBaseIngredient: false,
+        isDailyCountItem: true,
+        countPrecision: 'whole',
+        preparationType: 'Portioned',
+        visibility: 'visible',
+        isActive: true,
+        lowStockThreshold: 20,
+        criticalStockThreshold: 10,
+      },
+    })
+  } else {
+    smallBall = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Small Dough Ball (250g)',
+        description: 'For personal and small pizzas, breadsticks',
+        categoryId: category.id,
+        standardUnit: 'balls',
+        batchYield: 150,
+        yieldPercent: 0.98,
+        isBaseIngredient: false,
+        isDailyCountItem: true,
+        countPrecision: 'whole',
+        preparationType: 'Portioned',
+        visibility: 'visible',
+        isActive: true,
+        lowStockThreshold: 20,
+        criticalStockThreshold: 10,
+      }
+    })
+  }
   console.log(`  ✓ ${smallBall.name} (~150 per batch)`)
 
   // Add recipe for small ball
@@ -336,41 +392,49 @@ async function main() {
   })
 
   // Medium Dough Ball (400g) - for Medium pizzas, calzones
-  const mediumBall = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Medium Dough Ball (400g)' } },
-    update: {
-      description: 'For medium pizzas, calzones',
-      categoryId: category.id,
-      standardUnit: 'balls',
-      batchYield: 93, // ~93 medium balls from one batch
-      yieldPercent: 0.98,
-      isBaseIngredient: false,
-      isDailyCountItem: true,
-      countPrecision: 'whole',
-      preparationType: 'Portioned',
-      visibility: 'visible',
-      isActive: true,
-      lowStockThreshold: 15,
-      criticalStockThreshold: 8,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Medium Dough Ball (400g)',
-      description: 'For medium pizzas, calzones',
-      categoryId: category.id,
-      standardUnit: 'balls',
-      batchYield: 93,
-      yieldPercent: 0.98,
-      isBaseIngredient: false,
-      isDailyCountItem: true,
-      countPrecision: 'whole',
-      preparationType: 'Portioned',
-      visibility: 'visible',
-      isActive: true,
-      lowStockThreshold: 15,
-      criticalStockThreshold: 8,
-    }
+  let mediumBall = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Medium Dough Ball (400g)', deletedAt: null }
   })
+  if (mediumBall) {
+    mediumBall = await prisma.ingredient.update({
+      where: { id: mediumBall.id },
+      data: {
+        description: 'For medium pizzas, calzones',
+        categoryId: category.id,
+        standardUnit: 'balls',
+        batchYield: 93, // ~93 medium balls from one batch
+        yieldPercent: 0.98,
+        isBaseIngredient: false,
+        isDailyCountItem: true,
+        countPrecision: 'whole',
+        preparationType: 'Portioned',
+        visibility: 'visible',
+        isActive: true,
+        lowStockThreshold: 15,
+        criticalStockThreshold: 8,
+      },
+    })
+  } else {
+    mediumBall = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Medium Dough Ball (400g)',
+        description: 'For medium pizzas, calzones',
+        categoryId: category.id,
+        standardUnit: 'balls',
+        batchYield: 93,
+        yieldPercent: 0.98,
+        isBaseIngredient: false,
+        isDailyCountItem: true,
+        countPrecision: 'whole',
+        preparationType: 'Portioned',
+        visibility: 'visible',
+        isActive: true,
+        lowStockThreshold: 15,
+        criticalStockThreshold: 8,
+      }
+    })
+  }
   console.log(`  ✓ ${mediumBall.name} (~93 per batch)`)
 
   await prisma.ingredientRecipe.upsert({
@@ -391,41 +455,49 @@ async function main() {
   })
 
   // Large Dough Ball (600g) - for Large/XL pizzas
-  const largeBall = await prisma.ingredient.upsert({
-    where: { locationId_name: { locationId: LOCATION_ID, name: 'Large Dough Ball (600g)' } },
-    update: {
-      description: 'For large and XL pizzas',
-      categoryId: category.id,
-      standardUnit: 'balls',
-      batchYield: 62, // ~62 large balls from one batch
-      yieldPercent: 0.98,
-      isBaseIngredient: false,
-      isDailyCountItem: true,
-      countPrecision: 'whole',
-      preparationType: 'Portioned',
-      visibility: 'visible',
-      isActive: true,
-      lowStockThreshold: 12,
-      criticalStockThreshold: 6,
-    },
-    create: {
-      locationId: LOCATION_ID,
-      name: 'Large Dough Ball (600g)',
-      description: 'For large and XL pizzas',
-      categoryId: category.id,
-      standardUnit: 'balls',
-      batchYield: 62,
-      yieldPercent: 0.98,
-      isBaseIngredient: false,
-      isDailyCountItem: true,
-      countPrecision: 'whole',
-      preparationType: 'Portioned',
-      visibility: 'visible',
-      isActive: true,
-      lowStockThreshold: 12,
-      criticalStockThreshold: 6,
-    }
+  let largeBall = await prisma.ingredient.findFirst({
+    where: { locationId: LOCATION_ID, name: 'Large Dough Ball (600g)', deletedAt: null }
   })
+  if (largeBall) {
+    largeBall = await prisma.ingredient.update({
+      where: { id: largeBall.id },
+      data: {
+        description: 'For large and XL pizzas',
+        categoryId: category.id,
+        standardUnit: 'balls',
+        batchYield: 62, // ~62 large balls from one batch
+        yieldPercent: 0.98,
+        isBaseIngredient: false,
+        isDailyCountItem: true,
+        countPrecision: 'whole',
+        preparationType: 'Portioned',
+        visibility: 'visible',
+        isActive: true,
+        lowStockThreshold: 12,
+        criticalStockThreshold: 6,
+      },
+    })
+  } else {
+    largeBall = await prisma.ingredient.create({
+      data: {
+        locationId: LOCATION_ID,
+        name: 'Large Dough Ball (600g)',
+        description: 'For large and XL pizzas',
+        categoryId: category.id,
+        standardUnit: 'balls',
+        batchYield: 62,
+        yieldPercent: 0.98,
+        isBaseIngredient: false,
+        isDailyCountItem: true,
+        countPrecision: 'whole',
+        preparationType: 'Portioned',
+        visibility: 'visible',
+        isActive: true,
+        lowStockThreshold: 12,
+        criticalStockThreshold: 6,
+      }
+    })
+  }
   console.log(`  ✓ ${largeBall.name} (~62 per batch)`)
 
   await prisma.ingredientRecipe.upsert({
@@ -462,41 +534,49 @@ async function main() {
   ]
 
   for (const product of products) {
-    const ing = await prisma.ingredient.upsert({
-      where: { locationId_name: { locationId: LOCATION_ID, name: product.name } },
-      update: {
-        categoryId: category.id,
-        standardUnit: product.name.includes('Breadsticks') ? 'pieces' : 'crusts',
-        batchYield: 1, // 1 ball = 1 crust/product
-        yieldPercent: product.yield,
-        isBaseIngredient: false,
-        isDailyCountItem: true,
-        countPrecision: 'whole',
-        preparationType: 'Baked',
-        visibility: 'visible',
-        isActive: true,
-        sortOrder: product.sortOrder,
-        lowStockThreshold: 5,
-        criticalStockThreshold: 2,
-      },
-      create: {
-        locationId: LOCATION_ID,
-        name: product.name,
-        categoryId: category.id,
-        standardUnit: product.name.includes('Breadsticks') ? 'pieces' : 'crusts',
-        batchYield: 1,
-        yieldPercent: product.yield,
-        isBaseIngredient: false,
-        isDailyCountItem: true,
-        countPrecision: 'whole',
-        preparationType: 'Baked',
-        visibility: 'visible',
-        isActive: true,
-        sortOrder: product.sortOrder,
-        lowStockThreshold: 5,
-        criticalStockThreshold: 2,
-      }
+    let ing = await prisma.ingredient.findFirst({
+      where: { locationId: LOCATION_ID, name: product.name, deletedAt: null }
     })
+    if (ing) {
+      ing = await prisma.ingredient.update({
+        where: { id: ing.id },
+        data: {
+          categoryId: category.id,
+          standardUnit: product.name.includes('Breadsticks') ? 'pieces' : 'crusts',
+          batchYield: 1, // 1 ball = 1 crust/product
+          yieldPercent: product.yield,
+          isBaseIngredient: false,
+          isDailyCountItem: true,
+          countPrecision: 'whole',
+          preparationType: 'Baked',
+          visibility: 'visible',
+          isActive: true,
+          sortOrder: product.sortOrder,
+          lowStockThreshold: 5,
+          criticalStockThreshold: 2,
+        },
+      })
+    } else {
+      ing = await prisma.ingredient.create({
+        data: {
+          locationId: LOCATION_ID,
+          name: product.name,
+          categoryId: category.id,
+          standardUnit: product.name.includes('Breadsticks') ? 'pieces' : 'crusts',
+          batchYield: 1,
+          yieldPercent: product.yield,
+          isBaseIngredient: false,
+          isDailyCountItem: true,
+          countPrecision: 'whole',
+          preparationType: 'Baked',
+          visibility: 'visible',
+          isActive: true,
+          sortOrder: product.sortOrder,
+          lowStockThreshold: 5,
+          criticalStockThreshold: 2,
+        }
+      })
+    }
 
     // Add recipe linking to dough ball
     await prisma.ingredientRecipe.upsert({

@@ -1,0 +1,94 @@
+You are a CODE REVIEWER auditing the Datacap Simulated Payment integration in GWI POS.
+
+## Your Task
+Review all files listed below for correctness, security, edge cases, and consistency.
+Do NOT modify any files. Only produce a written report.
+
+## Context
+This integration adds simulated Datacap card reader support so the POS can process
+card payments in development without physical hardware. The simulated reader runs as
+local Next.js API routes that mimic a real Datacap Direct reader's HTTP interface.
+
+The payment flow is:
+1. User selects Credit or Debit payment method
+2. PaymentModal transitions to 'datacap_card' step
+3. DatacapPaymentProcessor renders (tip selection, reader status, action buttons)
+4. useDatacap hook fetches terminal config → discovers SIMULATED provider
+5. On "COLLECT PAYMENT" click: pre-flight GET /device/info → POST /process
+6. Simulated reader picks a random mock card, delays 800-1500ms, returns result
+7. DatacapPaymentProcessor shows APPROVED/DECLINED overlay
+8. On success → PaymentModal calls processPayments() → POST /api/orders/{id}/pay
+
+## Files to Review
+
+### New API Routes (simulated reader)
+1. src/app/api/simulated-reader/device/info/route.ts
+2. src/app/api/simulated-reader/process/route.ts
+3. src/app/api/simulated-reader/cancel/route.ts
+4. src/app/api/simulated-reader/device/beep/route.ts
+
+### Modified Core Files
+5. src/lib/db.ts — Added WAL mode + busy_timeout pragmas for SQLite concurrency
+6. src/hooks/useDatacap.ts — Added isSimulated flag, getReaderUrl() routing to /api/simulated-reader/* for SIMULATED provider, skips serial verification for simulated
+7. src/components/payment/PaymentModal.tsx — Removed old manual card input step, removed dead 'confirm' from PaymentStep type, hardened handleDatacapSuccess cast, added missing-terminalId error state, all card payments now route through DatacapPaymentProcessor
+8. src/app/(pos)/orders/page.tsx — Added terminalId="terminal-1" to all 3 PaymentModal instances
+9. src/components/floor-plan/FloorPlanHome.tsx — Reduced heartbeat polling intervals (5s→30s for floor plan data, 30s→60s for orders count)
+
+### Bug Fixes
+10. src/app/api/orders/[id]/pay/route.ts — Fixed paymentTerms || 30 → ?? 30 (0 was coerced to 30)
+11. src/app/api/house-accounts/route.ts — Fixed paymentTerms || 30 → ?? 30
+12. src/app/(admin)/house-accounts/page.tsx — Fixed parseInt(formPaymentTerms) || 30 → isNaN guard
+
+### Type Cleanup
+13. src/types/payment.ts — Removed orphaned SimulatedCardReaderProps interface
+14. src/types/index.ts — Removed SimulatedCardReaderProps re-export
+
+### Seed Data
+15. prisma/seed.ts — Added PaymentReader and Terminal records (search for "SIM-001-DEV" and "terminal-1")
+
+### Deleted File
+16. src/components/payment/SimulatedCardReader.tsx — Orphaned deprecated component, was not imported anywhere
+
+## Review Checklist
+
+### Critical Path
+- [ ] Simulated reader API routes: Are responses shaped correctly for useDatacap to parse? Check field names match what processPayment() expects (amountAuthorized, ResponseCode, CardBrand, CardLast4, etc.)
+- [ ] useDatacap: Does getReaderUrl correctly route simulated vs real? Is isSimulated set at the right time (before processPayment runs)? Could there be a race condition where isSimulated is still false when processPayment fires?
+- [ ] PaymentModal: Is the payment flow complete? method → tip → datacap_card → success → processPayments → API call. Any missing steps or dead ends?
+- [ ] PaymentModal: Does the missing-terminalId error state work? Can user get stuck with no way back?
+
+### Infrastructure
+- [ ] db.ts: Are the WAL pragmas safe? Could the async PRAGMA execution cause a race where early requests run before WAL is enabled?
+- [ ] db.ts: Does WAL mode persist across server restarts or does it need to be set every time?
+- [ ] FloorPlanHome: Are the new polling intervals (30s/60s) acceptable for UX? Will admin changes feel delayed?
+
+### Security
+- [ ] Can the simulated reader routes be hit in production? Should they be gated behind NODE_ENV?
+- [ ] The simulated reader auto-approves ~95% of transactions. If these routes leak to production, anyone could process fake payments.
+- [ ] Are there any authentication/authorization checks on the simulated reader routes?
+
+### Data Integrity
+- [ ] Seed data: Will the terminal-1 and reader records conflict with existing data on re-seed? Are upserts used?
+- [ ] orders/page.tsx: Is hardcoding terminalId="terminal-1" OK for now? What happens in multi-terminal setups?
+- [ ] paymentTerms fixes: Are there any other || coercion bugs for numeric fields that could be 0? (creditLimit, failoverTimeout, etc.)
+
+### Edge Cases
+- [ ] What happens if simulated reader process route is called with amount=0 or negative?
+- [ ] What if DatacapPaymentProcessor unmounts mid-transaction (user navigates away)?
+- [ ] What if the order fetch in PaymentModal (when orderTotal=0) fails or times out?
+- [ ] What if processPayments() is called but the Datacap result has empty cardLast4 (the pay API requires it for credit/debit)?
+- [ ] Partial approval flow: Does the simulated reader ever return partial approvals? If not, is that code path testable?
+
+### Consistency
+- [ ] PaymentSettings.processor supports 'simulated', but PaymentModal no longer branches on processor type. Is this documented?
+- [ ] The mock-cards.ts file is used by both the old SimulatedCardReader (now deleted) and the new simulated-reader routes. Are all imports still valid?
+- [ ] DatacapResult interface vs simulated reader response: Do all field mappings work (both camelCase and PascalCase)?
+
+## Output Format
+Produce a report with:
+1. **Critical Issues** — Must fix before shipping
+2. **Warnings** — Should fix but not blocking
+3. **Suggestions** — Nice-to-have improvements
+4. **Verified OK** — Things you checked that look correct
+
+Do NOT write code. Only produce the review report.

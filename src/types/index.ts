@@ -528,10 +528,9 @@ export interface PizzaOrderConfig {
   }
 }
 
-// Re-export payment types
+// Re-export payment types (legacy SimulatedCardReader types removed)
 export type {
   SimulatedPaymentResult,
-  SimulatedCardReaderProps,
   CardReadMethod,
   CardReaderState,
 } from './payment'
