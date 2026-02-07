@@ -1743,6 +1743,14 @@ toast.error('Connection lost', 8000)
 | 5.6 | Table resize and rotation | Floor Plan Editor → drag handles → verify resize + rotation | ⬜ |
 | 5.7 | Entertainment items on floor plan | Add entertainment → place on floor plan → verify status glow | ⬜ |
 | 5.8 | Seat count correct after combine | Combine 4-top + 5-top → verify 9 seats shown (not stale) | ⬜ |
+| 5.9 | No console spam in production | Build production (npm run build) → drag tables → check console for logs | ⬜ |
+| 5.10 | Deterministic table placement | Reset DB → create 6 tables → verify grid layout (not random) | ⬜ |
+| 5.11 | API failure shows toast | Network offline → drag table → verify error toast + rollback | ⬜ |
+| 5.12 | Table property save failure rollback | Network offline → edit table properties → save → verify rollback + toast | ⬜ |
+| 5.13 | NaN coordinate error logged | Pass invalid coord in dev → verify throw with context, log in prod | ⬜ |
+| 5.14 | Legacy combine endpoint blocked | Call /api/tables/combine → verify 410 Gone response | ⬜ |
+| 5.15 | Soft deleted tables hidden | Soft delete table (deletedAt) → refresh floor plan → verify hidden | ⬜ |
+| 5.16 | Virtual group border renders | Combine 3 tables → verify perimeter polygon closes correctly | ⬜ |
 
 ### 6. KDS & Kitchen
 

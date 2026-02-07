@@ -78,9 +78,9 @@ export function TopBar({
           <span>Orders</span>
         </Link>
 
-        {/* Bar Link */}
+        {/* Bar Link - redirects to /orders (Bar mode is a toggle on the orders page) */}
         <Link
-          href="/bar"
+          href="/orders"
           className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
             currentRoute === 'bar'
               ? 'bg-blue-600 text-white'

@@ -198,8 +198,35 @@ export async function POST(request: NextRequest) {
     const tableShape = shape ?? 'rectangle'
     const tableSeatPattern = seatPattern ?? 'all_around'
     const tableRotation = rotation ?? 0
-    const tablePosX = posX ?? 0
-    const tablePosY = posY ?? 0
+
+    // Deterministic grid placement when position not specified
+    let tablePosX = posX
+    let tablePosY = posY
+
+    if (posX === undefined || posY === undefined) {
+      // Count existing tables in this section/location for grid positioning
+      const existingTablesCount = await db.table.count({
+        where: {
+          locationId,
+          sectionId: sectionId ?? null,
+          deletedAt: null,
+          isActive: true,
+        },
+      })
+
+      // Auto-grid layout: 3 columns, deterministic spacing
+      const GRID_COLS = 3
+      const GRID_SPACING_X = 180
+      const GRID_SPACING_Y = 150
+      const GRID_START_X = 50
+      const GRID_START_Y = 50
+
+      const col = existingTablesCount % GRID_COLS
+      const row = Math.floor(existingTablesCount / GRID_COLS)
+
+      tablePosX = posX ?? (GRID_START_X + col * GRID_SPACING_X)
+      tablePosY = posY ?? (GRID_START_Y + row * GRID_SPACING_Y)
+    }
 
     // Create the table
     const table = await db.table.create({

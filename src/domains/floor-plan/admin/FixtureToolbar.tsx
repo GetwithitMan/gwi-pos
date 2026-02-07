@@ -10,6 +10,7 @@
 import React from 'react';
 import type { EditorToolMode, FixtureType, TableShape } from './types';
 import { FIXTURE_TYPES, TABLE_SHAPES } from './types';
+import { logger } from '@/lib/logger';
 
 // =============================================================================
 // TYPES
@@ -57,7 +58,7 @@ export function FixtureToolbar({
 
   // Debug logging for tool selection
   React.useEffect(() => {
-    console.log('[FixtureToolbar] selectedTool:', selectedTool);
+    logger.log('[FixtureToolbar] selectedTool:', selectedTool);
   }, [selectedTool]);
 
   return (

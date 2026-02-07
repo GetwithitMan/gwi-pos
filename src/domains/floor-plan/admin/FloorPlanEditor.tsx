@@ -24,6 +24,8 @@ import {
   ZOOM_MAX,
   ZOOM_STEP,
 } from '@/lib/floorplan/constants';
+import { logger } from '@/lib/logger';
+import { toast } from '@/stores/toast-store';
 
 // =============================================================================
 // TYPES
@@ -475,11 +477,19 @@ export function FloorPlanEditor({
   const handleFixtureUpdate = useCallback(
     async (fixtureId: string, updates: Partial<Fixture>) => {
       if (useDatabase) {
-        try {
-          // Get current element to merge updates
-          const currentElement = dbElements.find(el => el.id === fixtureId);
-          if (!currentElement) return;
+        // Capture original state for rollback
+        let originalElements: FloorPlanElement[] = [];
+        let currentElement: FloorPlanElement | undefined;
 
+        setDbElements(prev => {
+          originalElements = prev;
+          currentElement = prev.find(el => el.id === fixtureId);
+          return prev;
+        });
+
+        if (!currentElement) return;
+
+        try {
           // Convert current element to fixture, apply updates, then convert back
           const currentFixture = elementToFixture(currentElement, selectedRoomId);
           const updatedFixture = { ...currentFixture, ...updates };
@@ -491,6 +501,13 @@ export function FloorPlanEditor({
 
           const elementData = fixtureToElement(updatedFixture);
 
+          // Optimistic update - update UI immediately
+          setDbElements(prev => prev.map(el =>
+            el.id === fixtureId
+              ? { ...el, ...elementData } as FloorPlanElement
+              : el
+          ));
+
           const response = await fetch(`/api/floor-plan-elements/${fixtureId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -500,45 +517,76 @@ export function FloorPlanEditor({
             }),
           });
 
-          if (response.ok) {
-            // Update local state immediately for responsiveness
-            setDbElements(prev => prev.map(el =>
-              el.id === fixtureId
-                ? { ...el, ...elementData } as FloorPlanElement
-                : el
-            ));
-            setRefreshKey((prev) => prev + 1);
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || `Failed to update fixture (HTTP ${response.status})`);
           }
+
+          setRefreshKey((prev) => prev + 1);
+          // Note: No success toast for drag operations to avoid spam
         } catch (error) {
-          console.error('Failed to update element:', error);
+          // Rollback on failure
+          setDbElements(originalElements);
+
+          // Show error to user
+          toast.error(`Failed to save fixture: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+          // Log for debugging
+          logger.error('Fixture update failed:', { fixtureId, updates, error });
         }
       } else {
         FloorCanvasAPI.updateFixture(fixtureId, updates);
         setRefreshKey((prev) => prev + 1);
       }
     },
-    [useDatabase, dbElements, selectedRoomId, locationId]
+    [useDatabase, selectedRoomId, locationId]
   );
 
   // Handle fixture deletion
   const handleFixtureDelete = useCallback(
     async (fixtureId: string) => {
       if (useDatabase) {
+        // Capture original state for rollback
+        let originalElements: FloorPlanElement[] = [];
+        let originalSelectedFixtureId: string | null = null;
+
+        // Optimistic update - remove from UI immediately and capture state
+        setDbElements(prev => {
+          originalElements = prev;
+          return prev.filter(el => el.id !== fixtureId);
+        });
+        setSelectedFixtureId(prev => {
+          originalSelectedFixtureId = prev;
+          return null;
+        });
+
         try {
           const response = await fetch(`/api/floor-plan-elements/${fixtureId}?locationId=${locationId}`, {
             method: 'DELETE',
           });
-          if (response.ok) {
-            setDbElements(prev => prev.filter(el => el.id !== fixtureId));
-            setRefreshKey((prev) => prev + 1);
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || `Failed to delete fixture (HTTP ${response.status})`);
           }
+
+          setRefreshKey((prev) => prev + 1);
+          toast.success('Fixture deleted');
         } catch (error) {
-          console.error('Failed to delete element:', error);
+          // Rollback on failure
+          setDbElements(originalElements);
+          setSelectedFixtureId(originalSelectedFixtureId);
+
+          // Show error to user
+          toast.error(`Failed to delete fixture: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+          // Log for debugging
+          logger.error('Fixture delete failed:', { fixtureId, error });
         }
       } else {
         FloorCanvasAPI.removeFixture(fixtureId);
+        setSelectedFixtureId(null);
       }
-      setSelectedFixtureId(null);
     },
     [useDatabase, locationId]
   );
@@ -552,6 +600,17 @@ export function FloorPlanEditor({
   }) => {
     if (!selectedEntertainmentElement || !locationId) return;
 
+    // Capture original state for rollback
+    let originalElements: FloorPlanElement[] = [];
+
+    // Optimistic update and capture previous state
+    setDbElements(prev => {
+      originalElements = prev;
+      return prev.map(el =>
+        el.id === selectedEntertainmentElement.id ? { ...el, ...updates } : el
+      );
+    });
+
     try {
       const response = await fetch(`/api/floor-plan-elements/${selectedEntertainmentElement.id}?locationId=${locationId}`, {
         method: 'PUT',
@@ -562,15 +621,22 @@ export function FloorPlanEditor({
         }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setDbElements(prev => prev.map(el =>
-          el.id === selectedEntertainmentElement.id ? { ...el, ...data.element } : el
-        ));
-        setRefreshKey(prev => prev + 1);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Failed to update entertainment (HTTP ${response.status})`);
       }
+
+      setRefreshKey(prev => prev + 1);
+      // Note: No success toast for drag/resize operations to avoid spam
     } catch (error) {
-      console.error('Failed to update entertainment:', error);
+      // Rollback on failure
+      setDbElements(originalElements);
+
+      // Show error to user
+      toast.error(`Failed to save entertainment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+      // Log for debugging
+      logger.error('Entertainment update failed:', { elementId: selectedEntertainmentElement.id, updates, error });
     }
   }, [selectedEntertainmentElement, locationId]);
 
@@ -578,26 +644,52 @@ export function FloorPlanEditor({
   const handleEntertainmentDelete = useCallback(async () => {
     if (!selectedEntertainmentElement || !locationId) return;
 
+    // Capture original state for rollback
+    let originalElements: FloorPlanElement[] = [];
+    let originalPlacedIds: string[] = [];
+    let originalSelectedFixtureId: string | null = null;
+
+    // Optimistic update and capture state
+    setDbElements(prev => {
+      originalElements = prev;
+      return prev.filter(el => el.id !== selectedEntertainmentElement.id);
+    });
+
+    if (selectedEntertainmentElement.linkedMenuItemId) {
+      setPlacedEntertainmentIds(prev => {
+        originalPlacedIds = prev;
+        return prev.filter(id => id !== selectedEntertainmentElement.linkedMenuItemId);
+      });
+    }
+
+    setSelectedFixtureId(prev => {
+      originalSelectedFixtureId = prev;
+      return null;
+    });
+
     try {
       const response = await fetch(`/api/floor-plan-elements/${selectedEntertainmentElement.id}?locationId=${locationId}`, {
         method: 'DELETE',
       });
 
-      if (response.ok) {
-        // Remove from local state
-        setDbElements(prev => prev.filter(el => el.id !== selectedEntertainmentElement.id));
-        // Remove from placed IDs
-        if (selectedEntertainmentElement.linkedMenuItemId) {
-          setPlacedEntertainmentIds(prev =>
-            prev.filter(id => id !== selectedEntertainmentElement.linkedMenuItemId)
-          );
-        }
-        // Clear selection
-        setSelectedFixtureId(null);
-        setRefreshKey(prev => prev + 1);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || `Failed to delete entertainment (HTTP ${response.status})`);
       }
+
+      setRefreshKey(prev => prev + 1);
+      toast.success('Entertainment element deleted');
     } catch (error) {
-      console.error('Failed to delete entertainment:', error);
+      // Rollback on failure
+      setDbElements(originalElements);
+      setPlacedEntertainmentIds(originalPlacedIds);
+      setSelectedFixtureId(originalSelectedFixtureId);
+
+      // Show error to user
+      toast.error(`Failed to delete entertainment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+      // Log for debugging
+      logger.error('Entertainment delete failed:', { elementId: selectedEntertainmentElement.id, error });
     }
   }, [selectedEntertainmentElement, locationId]);
 
@@ -684,6 +776,15 @@ export function FloorPlanEditor({
     async (tableId: string, updates: Partial<EditorTable>) => {
       if (!useDatabase) return;
 
+      // Capture original state in closure for rollback
+      let originalTables: EditorTable[] = [];
+
+      // Optimistic update - update UI immediately and capture previous state
+      setDbTables(prev => {
+        originalTables = prev; // Capture before update
+        return prev.map(t => t.id === tableId ? { ...t, ...updates } : t);
+      });
+
       try {
         const response = await fetch(`/api/tables/${tableId}`, {
           method: 'PUT',
@@ -691,15 +792,22 @@ export function FloorPlanEditor({
           body: JSON.stringify(updates),
         });
 
-        if (response.ok) {
-          // Update local state immediately for responsiveness
-          setDbTables(prev => prev.map(t =>
-            t.id === tableId ? { ...t, ...updates } : t
-          ));
-          setRefreshKey((prev) => prev + 1);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `Failed to update table (HTTP ${response.status})`);
         }
+
+        setRefreshKey((prev) => prev + 1);
+        // Note: No success toast for drag operations to avoid spam
       } catch (error) {
-        console.error('Failed to update table:', error);
+        // Rollback to original state on failure
+        setDbTables(originalTables);
+
+        // Show error to user
+        toast.error(`Failed to save table: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+        // Log for debugging
+        logger.error('Table update failed:', { tableId, updates, error });
       }
     },
     [useDatabase]
@@ -710,18 +818,42 @@ export function FloorPlanEditor({
     async (tableId: string) => {
       if (!useDatabase) return;
 
+      // Capture original state for rollback
+      let originalTables: EditorTable[] = [];
+      let originalSelectedTableId: string | null = null;
+
+      // Optimistic update - remove from UI immediately and capture state
+      setDbTables(prev => {
+        originalTables = prev;
+        return prev.filter(t => t.id !== tableId);
+      });
+      setSelectedTableId(prev => {
+        originalSelectedTableId = prev;
+        return null;
+      });
+
       try {
         const response = await fetch(`/api/tables/${tableId}`, {
           method: 'DELETE',
         });
 
-        if (response.ok) {
-          setDbTables(prev => prev.filter(t => t.id !== tableId));
-          setSelectedTableId(null);
-          setRefreshKey((prev) => prev + 1);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `Failed to delete table (HTTP ${response.status})`);
         }
+
+        setRefreshKey((prev) => prev + 1);
+        toast.success('Table deleted');
       } catch (error) {
-        console.error('Failed to delete table:', error);
+        // Rollback on failure
+        setDbTables(originalTables);
+        setSelectedTableId(originalSelectedTableId);
+
+        // Show error to user
+        toast.error(`Failed to delete table: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+        // Log for debugging
+        logger.error('Table delete failed:', { tableId, error });
       }
     },
     [useDatabase]
@@ -791,7 +923,7 @@ export function FloorPlanEditor({
         if (response.ok) {
           // Check if there was a collision warning even with successful generation
           if (data.warning && data.collisions?.length > 0) {
-            console.warn('Seats generated with collisions:', data.collisions);
+            logger.warn('Seats generated with collisions:', data.collisions);
           }
           // Refresh tables first, then increment key to trigger re-render
           await fetchTables();
@@ -821,6 +953,13 @@ export function FloorPlanEditor({
     }) => {
       if (!useDatabase) return;
 
+      // Capture original state for rollback
+      let originalTables: EditorTable[] = [];
+      setDbTables(prev => {
+        originalTables = prev;
+        return prev;
+      });
+
       try {
         const response = await fetch(`/api/tables/${tableId}/seats/reflow`, {
           method: 'POST',
@@ -828,12 +967,22 @@ export function FloorPlanEditor({
           body: JSON.stringify(dimensions),
         });
 
-        if (response.ok) {
-          await fetchTables();
-          setRefreshKey((prev) => prev + 1);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `Failed to reflow seats (HTTP ${response.status})`);
         }
+
+        await fetchTables();
+        setRefreshKey((prev) => prev + 1);
       } catch (error) {
-        console.error('Failed to reflow seats:', error);
+        // Rollback by restoring original tables
+        setDbTables(originalTables);
+
+        // Show error to user
+        toast.error(`Failed to reflow seats: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+        // Log for debugging
+        logger.error('Seat reflow failed:', { tableId, dimensions, error });
       }
     },
     [useDatabase, fetchTables]
@@ -844,6 +993,13 @@ export function FloorPlanEditor({
     async (seatId: string, updates: { relativeX?: number; relativeY?: number }) => {
       if (!useDatabase) return;
 
+      // Capture original state for rollback
+      let originalTables: EditorTable[] = [];
+      setDbTables(prev => {
+        originalTables = prev;
+        return prev;
+      });
+
       try {
         const response = await fetch(`/api/seats/${seatId}`, {
           method: 'PUT',
@@ -851,12 +1007,23 @@ export function FloorPlanEditor({
           body: JSON.stringify(updates),
         });
 
-        if (response.ok) {
-          await fetchTables();
-          setRefreshKey((prev) => prev + 1);
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `Failed to update seat (HTTP ${response.status})`);
         }
+
+        await fetchTables();
+        setRefreshKey((prev) => prev + 1);
+        // Note: No success toast for drag operations to avoid spam
       } catch (error) {
-        console.error('Failed to update seat:', error);
+        // Rollback by restoring original tables
+        setDbTables(originalTables);
+
+        // Show error to user
+        toast.error(`Failed to save seat position: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+        // Log for debugging
+        logger.error('Seat update failed:', { seatId, updates, error });
       }
     },
     [useDatabase, fetchTables]

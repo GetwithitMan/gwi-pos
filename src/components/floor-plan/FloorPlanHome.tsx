@@ -28,8 +28,11 @@ import { StockBadge } from '@/components/menu/StockBadge'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
 import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
+import { logger } from '@/lib/logger'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
+import { useOrderStore } from '@/stores/order-store'
+import { usePricing } from '@/hooks/usePricing'
 import { useEvents } from '@/lib/events'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
@@ -328,6 +331,118 @@ export function FloorPlanHome({
     groupColor: string
     isStatic?: boolean // True for long-hold groups (tables keep their own seats)
   }
+
+  // Helper to sync order data to Zustand store for cross-route persistence
+  const syncOrderToStore = useCallback((data: any) => {
+    useOrderStore.getState().loadOrder({
+      id: data.id,
+      orderNumber: data.orderNumber,
+      orderType: data.orderType || 'dine_in',
+      tableId: data.tableId || undefined,
+      tableName: data.tableName || undefined,
+      tabName: data.tabName || undefined,
+      guestCount: data.guestCount || 1,
+      status: data.status,
+      items: (data.items || []).map((item: any) => ({
+        id: item.id,
+        menuItemId: item.menuItemId,
+        name: item.name,
+        price: Number(item.unitPrice || item.price),
+        quantity: item.quantity,
+        itemTotal: Number(item.itemTotal || (item.unitPrice || item.price) * item.quantity),
+        specialNotes: item.specialNotes || null,
+        seatNumber: item.seatNumber || null,
+        courseNumber: item.courseNumber || null,
+        courseStatus: item.courseStatus || null,
+        isHeld: item.isHeld || false,
+        holdUntil: item.holdUntil || null,
+        firedAt: item.firedAt || null,
+        isCompleted: item.isCompleted || false,
+        completedAt: item.completedAt || null,
+        resendCount: item.resendCount || 0,
+        blockTimeMinutes: item.blockTimeMinutes || null,
+        blockTimeStartedAt: item.blockTimeStartedAt || null,
+        blockTimeExpiresAt: item.blockTimeExpiresAt || null,
+        modifiers: (item.modifiers || []).map((mod: any) => ({
+          id: mod.id,
+          modifierId: mod.modifierId || mod.id,
+          name: mod.name,
+          price: Number(mod.price),
+          preModifier: mod.preModifier || null,
+          depth: mod.depth || 0,
+        })),
+      })),
+      subtotal: Number(data.subtotal || 0),
+      discountTotal: Number(data.discountTotal || 0),
+      taxTotal: Number(data.taxTotal || data.tax || 0),
+      tipTotal: Number(data.tipTotal || 0),
+      total: Number(data.total || 0),
+      notes: data.notes || undefined,
+    })
+  }, [])
+
+  // Sync local (unsaved) items to Zustand store before view switches
+  // This ensures items persist when switching from FloorPlanHome to BartenderView
+  const syncLocalItemsToStore = useCallback(() => {
+    if (inlineOrderItems.length === 0) return
+
+    const subtotal = inlineOrderItems.reduce((sum, item) => {
+      const itemTotal = item.price * item.quantity
+      const modTotal = (item.modifiers || []).reduce((ms, m) => ms + m.price, 0) * item.quantity
+      return sum + itemTotal + modTotal
+    }, 0)
+
+    useOrderStore.getState().loadOrder({
+      id: activeOrderId || `local-${Date.now()}`,
+      orderNumber: activeOrderNumber ? Number(activeOrderNumber) : 0,
+      orderType: activeOrderType || 'bar_tab',
+      tableId: activeTableId || undefined,
+      guestCount: guestCount || 1,
+      status: 'open',
+      items: inlineOrderItems.map(item => ({
+        id: item.id,
+        menuItemId: item.menuItemId,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        itemTotal: item.price * item.quantity + (item.modifiers || []).reduce((s, m) => s + m.price, 0) * item.quantity,
+        specialNotes: item.specialNotes || null,
+        seatNumber: item.seatNumber || null,
+        courseNumber: item.courseNumber || null,
+        courseStatus: item.courseStatus || null,
+        isHeld: item.isHeld || false,
+        holdUntil: null,
+        firedAt: null,
+        isCompleted: item.isCompleted || false,
+        completedAt: item.completedAt || null,
+        resendCount: item.resendCount || 0,
+        blockTimeMinutes: item.blockTimeMinutes || null,
+        blockTimeStartedAt: item.blockTimeStartedAt || null,
+        blockTimeExpiresAt: item.blockTimeExpiresAt || null,
+        modifiers: (item.modifiers || []).map(mod => ({
+          id: mod.id,
+          modifierId: mod.id,
+          name: mod.name,
+          price: mod.price,
+          preModifier: null,
+          depth: 0,
+        })),
+      })),
+      subtotal,
+      discountTotal: 0,
+      taxTotal: 0,
+      tipTotal: 0,
+      total: subtotal,
+    })
+  }, [inlineOrderItems, activeOrderId, activeOrderNumber, activeOrderType, activeTableId, guestCount])
+
+  // Wrap Bar Mode switch to sync items first
+  const handleSwitchToBartenderView = useCallback(() => {
+    if (onSwitchToBartenderView) {
+      syncLocalItemsToStore()
+      onSwitchToBartenderView()
+    }
+  }, [onSwitchToBartenderView, syncLocalItemsToStore])
 
   // Helper function to calculate snap position for a secondary table relative to a primary table
   // Used when tables don't have stored visual offsets
@@ -794,7 +909,7 @@ export function FloorPlanHome({
         const tableExtra = extraSeats.get(t.id) || 0
         return sum + tableSeats + tableExtra
       }, 0)
-      console.log(`[getTotalSeats] Virtual group ${table.name}: tables=${groupTables.length}, total=${total}`)
+      logger.log(`[getTotalSeats] Virtual group ${table.name}: tables=${groupTables.length}, total=${total}`)
       return total
     }
 
@@ -803,7 +918,7 @@ export function FloorPlanHome({
     if (table.combinedWithId) {
       const primaryTable = currentTables.find(t => t.id === table.combinedWithId)
       if (primaryTable) {
-        console.log(`[getTotalSeats] Redirecting from child ${table.name} to primary ${primaryTable.name}`)
+        logger.log(`[getTotalSeats] Redirecting from child ${table.name} to primary ${primaryTable.name}`)
         // Calculate seats from the primary's perspective
         const combinedIds = primaryTable.combinedTableIds as string[] | null
         if (combinedIds && Array.isArray(combinedIds) && combinedIds.length > 0) {
@@ -824,14 +939,14 @@ export function FloorPlanHome({
             totalSeats = primaryTable.capacity || 0
           }
 
-          console.log(`[getTotalSeats] Child ${table.name} -> Primary ${primaryTable.name}: TOTAL=${totalSeats}`)
+          logger.log(`[getTotalSeats] Child ${table.name} -> Primary ${primaryTable.name}: TOTAL=${totalSeats}`)
           return totalSeats
         }
         // Primary doesn't have combinedTableIds - fall back to primary's seat count
         return getTableSeatCount(primaryTable)
       }
       // Primary not found - just return this table's count
-      console.warn(`[getTotalSeats] Primary table ${table.combinedWithId} not found for child ${table.name}`)
+      logger.warn(`[getTotalSeats] Primary table ${table.combinedWithId} not found for child ${table.name}`)
     }
 
     // If this is a combined table (primary), sum seats from primary + all children
@@ -843,7 +958,7 @@ export function FloorPlanHome({
       const primaryExtra = extraSeats.get(table.id) || 0
       let totalSeats = primarySeats + primaryExtra
 
-      console.log(`[getTotalSeats] Combined primary ${table.name}: seats.length=${primarySeats}, extra=${primaryExtra}, combinedIds=${combinedIds.length}`)
+      logger.log(`[getTotalSeats] Combined primary ${table.name}: seats.length=${primarySeats}, extra=${primaryExtra}, combinedIds=${combinedIds.length}`)
 
       // Add seats from each child table listed in combinedTableIds
       for (const childId of combinedIds) {
@@ -851,26 +966,26 @@ export function FloorPlanHome({
         if (childTable) {
           const childSeats = childTable.seats?.length || 0
           const childExtra = extraSeats.get(childId) || 0
-          console.log(`[getTotalSeats] + Child ${childTable.name}: seats.length=${childSeats}, extra=${childExtra}`)
+          logger.log(`[getTotalSeats] + Child ${childTable.name}: seats.length=${childSeats}, extra=${childExtra}`)
           totalSeats += childSeats + childExtra
         } else {
-          console.warn(`[getTotalSeats] Child table ${childId} not found in tables array! (tables count: ${currentTables.length})`)
+          logger.warn(`[getTotalSeats] Child table ${childId} not found in tables array! (tables count: ${currentTables.length})`)
         }
       }
 
       // If no actual seat records exist, fall back to primary's combined capacity
       if (totalSeats === 0) {
         totalSeats = table.capacity || 0
-        console.log(`[getTotalSeats] No seats found, using capacity=${totalSeats}`)
+        logger.log(`[getTotalSeats] No seats found, using capacity=${totalSeats}`)
       }
 
-      console.log(`[getTotalSeats] Combined table ${table.name}: TOTAL=${totalSeats}`)
+      logger.log(`[getTotalSeats] Combined table ${table.name}: TOTAL=${totalSeats}`)
       return totalSeats
     }
 
     // Single table - use MAX of capacity and seats array length
     const seatCount = getTableSeatCount(table)
-    console.log(`[getTotalSeats] Table ${table.name}: capacity=${table.capacity}, seats.length=${table.seats?.length}, returning=${seatCount}`)
+    logger.log(`[getTotalSeats] Table ${table.name}: capacity=${table.capacity}, seats.length=${table.seats?.length}, returning=${seatCount}`)
     return seatCount
   }, [getTableSeatCount, getVirtualGroupTables, extraSeats])
 
@@ -1110,7 +1225,7 @@ export function FloorPlanHome({
     // Subscribe to floor-plan:updated event for live preview
     // Pass false to skip loading state during background refresh
     const unsubscribe = subscribe('floor-plan:updated', () => {
-      console.log('[FloorPlanHome] Received floor-plan:updated event, refreshing...')
+      logger.log('[FloorPlanHome] Received floor-plan:updated event, refreshing...')
       loadFloorPlanData(false)
     })
 
@@ -1170,6 +1285,9 @@ export function FloorPlanHome({
         }))
         setInlineOrderItems(items)
 
+        // Sync to Zustand store for cross-route persistence
+        syncOrderToStore(data)
+
         // Notify parent that order is loaded
         onOrderLoaded?.()
       } catch (error) {
@@ -1217,6 +1335,9 @@ export function FloorPlanHome({
     setShowOrderPanel(false)
     setSelectedCategoryId(null)
     setViewMode('tables')
+
+    // Clear Zustand store for cross-route persistence
+    useOrderStore.getState().clearOrder()
 
     // Refresh floor plan to show updated table status
     loadFloorPlanData()
@@ -1508,7 +1629,7 @@ export function FloorPlanHome({
   // If in virtual combine mode, toggle selection instead
   // FIX: Uses tablesRef.current to always access latest tables data
   const handleTableTap = useCallback(async (table: FloorPlanTable) => {
-    console.log('[VirtualCombine] handleTableTap called:', { tableId: table.id, virtualCombineMode, selectedIds: Array.from(virtualCombineSelectedIds) })
+    logger.log('[VirtualCombine] handleTableTap called:', { tableId: table.id, virtualCombineMode, selectedIds: Array.from(virtualCombineSelectedIds) })
 
     // Always use the ref to get the latest tables data
     const currentTables = tablesRef.current
@@ -1528,7 +1649,7 @@ export function FloorPlanHome({
         toast.error(`${table.name} is physically combined. Split it first.`)
         return
       }
-      console.log('[VirtualCombine] Toggling selection for table:', table.id)
+      logger.log('[VirtualCombine] Toggling selection for table:', table.id)
       toggleVirtualCombineSelection(table.id)
       return
     }
@@ -1553,7 +1674,7 @@ export function FloorPlanHome({
       const foundPrimary = currentTables.find(t => t.id === freshTable.combinedWithId)
       if (foundPrimary) {
         primaryTable = foundPrimary
-        console.log(`[handleTableTap] Redirecting from child ${table.name} to primary ${foundPrimary.name}`)
+        logger.log(`[handleTableTap] Redirecting from child ${table.name} to primary ${foundPrimary.name}`)
       }
     } else if (table.combinedWithId) {
       const foundPrimary = currentTables.find(t => t.id === table.combinedWithId)
@@ -1563,7 +1684,7 @@ export function FloorPlanHome({
     }
 
     const totalSeats = getTotalSeats(primaryTable)
-    console.log(`[handleTableTap] Setting guest count to ${totalSeats} for table ${primaryTable.name} (capacity=${primaryTable.capacity})`)
+    logger.log(`[handleTableTap] Setting guest count to ${totalSeats} for table ${primaryTable.name} (capacity=${primaryTable.capacity})`)
 
     setActiveTableId(primaryTable.id)
     setActiveOrderType('dine_in')
@@ -1608,6 +1729,9 @@ export function FloorPlanHome({
             createdAt: item.createdAt,
           }))
           setInlineOrderItems(items)
+
+          // Sync to Zustand store for cross-route persistence
+          syncOrderToStore(data)
         }
       } catch (error) {
         console.error('[FloorPlanHome] Failed to load order:', error)
@@ -1620,6 +1744,7 @@ export function FloorPlanHome({
         setActiveOrderId(null)
         setActiveOrderNumber(null)
         setInlineOrderItems([])
+        useOrderStore.getState().clearOrder()
       }
       // If same table, keep existing items (user may have added items but not sent yet)
     }
@@ -1632,6 +1757,7 @@ export function FloorPlanHome({
     setActiveOrderId(null)
     setActiveOrderNumber(null)
     setInlineOrderItems([])
+    useOrderStore.getState().clearOrder()
     setShowOrderPanel(true)
   }, [])
 
@@ -2283,6 +2409,19 @@ export function FloorPlanHome({
       await loadFloorPlanData(false)
       loadOpenOrdersCount()
 
+      // Sync saved order to store for cross-route persistence
+      if (orderId) {
+        try {
+          const orderRes = await fetch(`/api/orders/${orderId}`)
+          if (orderRes.ok) {
+            const orderData = await orderRes.json()
+            syncOrderToStore(orderData)
+          }
+        } catch (err) {
+          console.error('[FloorPlanHome] Failed to sync order to store:', err)
+        }
+      }
+
       // Panel stays open after send — order items already marked as sent above
 
     } catch (error) {
@@ -2436,6 +2575,9 @@ export function FloorPlanHome({
     setActiveSeatNumber(null)
     setActiveSourceTableId(null)
 
+    // Clear Zustand store for cross-route persistence
+    useOrderStore.getState().clearOrder()
+
     // Clear primary state LAST
     setActiveTableId(null)
     setShowOrderPanel(false)
@@ -2482,16 +2624,19 @@ export function FloorPlanHome({
     return sum + itemTotal + modifiersTotal
   }, 0)
 
-  // Tax rate (TODO: make this configurable per location)
-  const TAX_RATE = 0.08
-  const CASH_DISCOUNT_RATE = 0.04
+  // Pricing (replaces hardcoded TAX_RATE and CASH_DISCOUNT_RATE)
+  const pricing = usePricing({
+    subtotal: orderSubtotal,  // The calculated orderSubtotal from inlineOrderItems
+    discountTotal: 0,
+    tipTotal: 0,
+    paymentMethod: paymentMode || 'card',
+  })
 
-  // Calculate totals
-  const cashDiscount = paymentMode === 'cash' ? orderSubtotal * CASH_DISCOUNT_RATE : 0
-  const taxableAmount = orderSubtotal - cashDiscount
-  const tax = taxableAmount * TAX_RATE
-  const orderTotal = taxableAmount + tax
-  const cardTotal = (orderSubtotal * (1 + TAX_RATE))
+  // Totals from pricing hook (replaces hardcoded TAX_RATE and CASH_DISCOUNT_RATE)
+  const cashDiscount = pricing.cashDiscount
+  const tax = pricing.tax
+  const orderTotal = pricing.total
+  const cardTotal = pricing.cardSubtotal + pricing.tax
 
   // Handle payment success (extracted from inline for OrderPanel)
   const handlePaymentSuccess = useCallback(async (result: { cardLast4?: string; cardBrand?: string; tipAmount: number }) => {
@@ -2530,6 +2675,7 @@ export function FloorPlanHome({
     setGuestCount(defaultGuestCount)
     setActiveSeatNumber(null)
     setActiveSourceTableId(null)
+    useOrderStore.getState().clearOrder()
     setActiveTableId(null)
     setShowOrderPanel(false)
     setSelectedCategoryId(null)
@@ -2607,7 +2753,7 @@ export function FloorPlanHome({
 
   // Note: Ghost preview calculation is now handled by useFloorPlanDrag hook
 
-  // Handle table combine - NOW USES VIRTUAL COMBINE (no permanent DB changes)
+  // Handle table combine - USES VIRTUAL COMBINE (no permanent DB changes)
   // Dragging tables together in FOH view creates a temporary visual group only
   // The backend database positions are NOT modified
   const handleTableCombine = useCallback(async (
@@ -2651,7 +2797,7 @@ export function FloorPlanHome({
       }
       visualOffsets.push({ tableId: sourceId, ...offset })
 
-      console.log('[FloorPlanHome] Virtual combine request:', {
+      logger.log('[FloorPlanHome] Virtual combine request:', {
         sourceId,
         targetId,
         primaryId,
@@ -3028,7 +3174,7 @@ export function FloorPlanHome({
                       <button
                         onClick={() => {
                           setShowEmployeeDropdown(false)
-                          onSwitchToBartenderView()
+                          handleSwitchToBartenderView()
                         }}
                         style={{
                           display: 'flex',
@@ -3041,7 +3187,7 @@ export function FloorPlanHome({
                           color: '#818cf8',
                           fontSize: '13px',
                           cursor: 'pointer',
-                          textAlign: 'left',
+                          textAlign: 'left' as const,
                         }}
                         onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
@@ -3161,7 +3307,7 @@ export function FloorPlanHome({
 
             {onSwitchToBartenderView && (
               <button
-                onClick={() => onSwitchToBartenderView()}
+                onClick={() => handleSwitchToBartenderView()}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -4626,8 +4772,8 @@ export function FloorPlanHome({
                 terminalId="terminal-1"
                 employeeId={employeeId}
                 onPaymentSuccess={handlePaymentSuccess}
-                cashDiscountRate={CASH_DISCOUNT_RATE}
-                taxRate={TAX_RATE}
+                cashDiscountRate={pricing.cashDiscountRate / 100}
+                taxRate={pricing.taxRate}
                 onPaymentModeChange={(mode) => setPaymentMode(mode)}
                 onSaveOrderFirst={handleSaveOrderForPayment}
                 autoShowPayment={pendingPayAfterSave}
@@ -5051,7 +5197,7 @@ export function FloorPlanHome({
             modifiers: (item.modifiers || []).map(m => ({ name: m.name, price: m.price })),
           }))}
           orderDiscount={0}
-          taxRate={0.08}
+          taxRate={pricing.taxRate}
           onSplitComplete={async () => {
             // Refresh order data by reloading the order
             if (activeOrderId) {

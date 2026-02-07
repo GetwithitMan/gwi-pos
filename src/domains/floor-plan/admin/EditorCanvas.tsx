@@ -30,6 +30,7 @@ import {
   ZOOM_STEP,
   GRID_SIZE,
 } from '@/lib/floorplan/constants';
+import { logger } from '@/lib/logger';
 
 // =============================================================================
 // TYPES
@@ -1012,13 +1013,13 @@ export function EditorCanvas({
 
         // Check for collision with fixtures
         if (checkTableFixtureCollision(posX, posY, shapeMetadata.defaultWidth, shapeMetadata.defaultHeight)) {
-          console.log('[EditorCanvas] Cannot place table: collision with fixture');
+          logger.log('[EditorCanvas] Cannot place table: collision with fixture');
           return;
         }
 
         // Check for collision with other tables
         if (checkTableCollision(posX, posY, shapeMetadata.defaultWidth, shapeMetadata.defaultHeight)) {
-          console.log('[EditorCanvas] Cannot place table: collision with another table');
+          logger.log('[EditorCanvas] Cannot place table: collision with another table');
           return;
         }
 

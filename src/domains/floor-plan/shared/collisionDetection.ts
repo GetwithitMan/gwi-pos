@@ -12,6 +12,7 @@
  */
 
 import type { Point } from './types'
+import { logger } from '@/lib/logger'
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -283,7 +284,7 @@ export function checkTableFixtureCollision(
       break
 
     default:
-      console.warn(`Unknown fixture type: ${fixture.type}`)
+      logger.warn(`Unknown fixture type: ${fixture.type}`)
   }
 
   return false

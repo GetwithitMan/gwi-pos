@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { logger } from '@/lib/logger'
 
 // Table status types
 export type TableStatus = 'available' | 'occupied' | 'reserved' | 'dirty' | 'in_use'
@@ -322,7 +323,7 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
 
   // Drag & drop actions
   startDrag: (tableId) => {
-    console.log('[STORE] startDrag called:', tableId)
+    logger.log('[STORE] startDrag called:', tableId)
     set({
       draggedTableId: tableId,
       selectedTableId: tableId,
@@ -487,7 +488,7 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
 
   // Virtual combine actions
   startVirtualCombineMode: (tableId) => {
-    console.log('[VirtualCombine Store] startVirtualCombineMode called with tableId:', tableId)
+    logger.log('[VirtualCombine Store] startVirtualCombineMode called with tableId:', tableId)
     set({
       virtualCombineMode: true,
       virtualCombineSelectedIds: new Set([tableId]),
@@ -496,29 +497,29 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
       // Close any open info panel
       infoPanelTableId: null,
     })
-    console.log('[VirtualCombine Store] Virtual combine mode started, primary table:', tableId)
+    logger.log('[VirtualCombine Store] Virtual combine mode started, primary table:', tableId)
   },
 
   toggleVirtualCombineSelection: (tableId) => {
     const { virtualCombineSelectedIds, virtualCombinePrimaryId } = get()
-    console.log('[VirtualCombine Store] toggleVirtualCombineSelection called:', { tableId, currentSelectedIds: Array.from(virtualCombineSelectedIds), primaryId: virtualCombinePrimaryId })
+    logger.log('[VirtualCombine Store] toggleVirtualCombineSelection called:', { tableId, currentSelectedIds: Array.from(virtualCombineSelectedIds), primaryId: virtualCombinePrimaryId })
 
     const newSet = new Set(virtualCombineSelectedIds)
 
     if (newSet.has(tableId)) {
       // Don't allow removing the primary table
       if (tableId === virtualCombinePrimaryId) {
-        console.log('[VirtualCombine Store] Cannot remove primary table')
+        logger.log('[VirtualCombine Store] Cannot remove primary table')
         return
       }
       newSet.delete(tableId)
-      console.log('[VirtualCombine Store] Removed table from selection')
+      logger.log('[VirtualCombine Store] Removed table from selection')
     } else {
       newSet.add(tableId)
-      console.log('[VirtualCombine Store] Added table to selection')
+      logger.log('[VirtualCombine Store] Added table to selection')
     }
 
-    console.log('[VirtualCombine Store] New selected IDs:', Array.from(newSet))
+    logger.log('[VirtualCombine Store] New selected IDs:', Array.from(newSet))
     set({ virtualCombineSelectedIds: newSet })
   },
 

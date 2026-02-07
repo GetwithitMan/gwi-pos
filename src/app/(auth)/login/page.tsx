@@ -47,14 +47,12 @@ function LoginContent() {
 
         switch (defaultScreen) {
           case 'bar':
-            router.push('/bar')
-            break
-          case 'kds':
-            router.push('/kds')
-            break
           case 'orders':
           default:
             router.push('/orders')
+            break
+          case 'kds':
+            router.push('/kds')
             break
         }
       }

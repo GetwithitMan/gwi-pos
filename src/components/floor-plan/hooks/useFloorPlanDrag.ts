@@ -14,6 +14,7 @@
 import { useState, useCallback, useMemo, RefObject } from 'react'
 import { calculateAttachSide, calculateAttachPosition } from '../table-positioning'
 import { checkTableAllFixturesCollision, type FixtureBounds } from '@/domains/floor-plan/shared/collisionDetection'
+import { logger } from '@/lib/logger'
 
 interface TableLike {
   id: string
@@ -170,7 +171,7 @@ export function useFloorPlanDrag({
   const handlePointerUp = useCallback(async () => {
     // Prevent combine if colliding with fixtures
     if (isColliding) {
-      console.warn('[useFloorPlanDrag] Cannot place table - collides with fixture')
+      logger.warn('[useFloorPlanDrag] Cannot place table - collides with fixture')
       endDrag()
       setLastDropPosition(null)
       setIsColliding(false)

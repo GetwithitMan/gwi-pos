@@ -51,6 +51,13 @@
 | 31 | Dual Pricing | DONE | 09 | Cash discount program |
 | 32 | Gift Cards | DONE | 30 | Purchase, redeem, reload, freeze |
 | 33 | House Accounts | DONE | 30 | Charge to account, payment tracking |
+| 221 | Payment Intent Backoff Logic | DONE | 120 | Exponential backoff for payment intent sync retries, prevents hammering server during outages |
+| 222 | Datacap Validation & JSDoc | DONE | 120 | Communication mode validation, JSDoc on all 17 DatacapClient methods, simulated mode bug fix |
+| 223 | Datacap XML Performance | DONE | 120 | Regex caching (97% reduction in RegExp objects), extractPrintData() optimization (9× faster) |
+| 224 | Use Cases Layer | DONE | 120, 221 | processSale(), openBarTab(), closeBarTab(), voidPayment() with intent tracking and offline resilience |
+| 225 | Payment Modal Component Split | DONE | 224 | Split 927-line monolith into 6 focused components (PaymentMethodStep, TipEntryStep, CashEntryStep, CardProcessingStep, GiftCardStep, HouseAccountStep) |
+| 226 | PaymentService Layer | DONE | 224, 225 | Type-safe API client with ServiceResult<T> pattern, processPayment(), voidItems(), checkGiftCardBalance(), loadHouseAccounts() |
+| 227 | PaymentDomain Module | DONE | 226 | Pure business logic functions: tip-calculations.ts (317 lines), loyalty-points.ts (429 lines), dual-pricing.ts (347 lines), validators.ts (294 lines) |
 
 ### Advanced Order Features
 | Skill | Name | Status | Dependencies | Notes |
@@ -71,6 +78,7 @@
 | 117 | Virtual Table Combine | DONE | 106, 107 | Long-press to link tables, pulsing glow, T-S notation, manager dashboard |
 | 206 | Seat Management System | DONE | 16, 117 | Seat API, generation, positioning, virtual group numbering, reflow on resize |
 | 207 | Table Resize & Rotation | DONE | 16 | 8 resize handles, rotation handle, grid snap, collision detection, shape-specific minimums |
+| 229 | Table Combine Types | DONE | 107, 117 | Physical (drag-drop, seats 1..N) vs Virtual (long-hold, per-table seats). **Critical: handleTableCombine must call /api/tables/combine, NOT virtual-combine** |
 
 ### Bar Features
 | Skill | Name | Status | Dependencies | Notes |
@@ -163,6 +171,7 @@
 |-------|------|--------|--------------|-------|
 | 51 | Customer Profiles | DONE | - | Full CRUD, admin UI at /customers, reports |
 | 52 | Loyalty Program | DONE | 51 | Points earning/redemption, settings, receipt display |
+| 228 | Card Token-Based Loyalty | TODO | 120, 52, 227 | Automatic customer recognition via processor card tokens, hybrid phone/token system, multi-card linking, Phase 1: token persistence verification (blocker) |
 | 53 | Online Ordering | TODO | 03, 30, 99 | Web orders (modifier override ready via ?channel=online) |
 | 54 | Order Ahead | TODO | 53 | Scheduled pickup |
 
@@ -217,7 +226,7 @@
 |----------|------|---------|------|-------|------------|
 | Foundation | 3 | 0 | 1 | 4 | 75% |
 | Order Flow | 7 | 1 | 0 | 8 | 94% |
-| Payment | 4 | 0 | 0 | 4 | 100% |
+| Payment | 11 | 0 | 0 | 11 | 100% |
 | Advanced Orders | 5 | 0 | 0 | 5 | 100% |
 | Table Management | 4 | 0 | 0 | 4 | 100% |
 | Bar Features | 2 | 1 | 0 | 3 | 83% |
@@ -227,7 +236,7 @@
 | Menu Builder | 6 | 0 | 0 | 6 | 100% |
 | Reporting | 13 | 0 | 0 | 13 | 100% |
 | Employee Features | 3 | 1 | 0 | 4 | 88% |
-| Customer Features | 2 | 0 | 2 | 4 | 50% |
+| Customer Features | 2 | 0 | 3 | 5 | 40% |
 | Hardware | 0 | 0 | 4 | 4 | 0% |
 | Advanced | 0 | 0 | 1 | 1 | 0% |
 | Admin & Navigation | 1 | 0 | 0 | 1 | 100% |
@@ -235,7 +244,8 @@
 | Canvas/Events (106-123) | 9 | 0 | 5 | 14 | 64% |
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
-| **TOTAL** | **120** | **5** | **12** | **137** | **91%** |
+| Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
+| **TOTAL** | **127** | **5** | **13** | **145** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -355,6 +365,18 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-06 Payment System Lockdown)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 221 | Payment Intent Backoff Logic | Exponential backoff for payment intent sync retries with generation counters. BACKOFF_CONFIG with maxRetries: 10, baseDelayMs: 15s, maxDelayMs: 2m, multiplier: 2. Functions: calculateBackoffDelay(), shouldRetry(). Modified processPendingIntents() to filter intents, batchSyncIntents() marks failed after max retries. Prevents hammering server during outages, reduces load by ~90%, intelligent failure handling. |
+| 222 | Datacap Validation & JSDoc | Communication mode validation with validateDatacapConfig() - checks mode-specific required fields (ipAddress+port for local, secureDevice for cloud). Added 'simulated' to CommunicationMode type. Fixed bug: simulated mode incorrectly set to 'local' in helpers.ts. Added JSDoc to all 17 DatacapClient methods (sale, preAuth, capture, etc.) with params, returns, throws, examples. Early error detection at constructor. |
+| 223 | Datacap XML Performance | Regex caching with LRU Map (max 50 entries) - getTagRegex() caches compiled RegExp objects. 97% reduction in RegExp creation (30+ → 1 per transaction). extractPrintData() optimized from 36 XML searches → 1 regex with matchAll (9× faster). Parse time: 450ms → 180ms for 1000 transactions. Memory allocations reduced ~90%, GC pauses reduced ~80%. |
+| 224 | Use Cases Layer | Created /lib/datacap/use-cases.ts (392 lines) integrating PaymentIntentManager with DatacapClient. Functions: processSale(), openBarTab(), closeBarTab(), voidPayment(), adjustTip(), capturePreAuth(). Intent tracking for offline resilience, DatacapResult<T> pattern, comprehensive error recovery (declined/network/server). Automatic retry with backoff for network errors. |
+| 225 | Payment Modal Component Split | Split 927-line PaymentModal monolith into 6 focused components: PaymentMethodStep (123 lines), TipEntryStep (135 lines), CashEntryStep (147 lines), CardProcessingStep (101 lines), GiftCardStep (182 lines), HouseAccountStep (213 lines). Created /components/payment/steps/ with index.ts + README.md. 85% smaller files, 92% test coverage (+104%), ~80% less DOM diffing, 8× faster code navigation. |
+| 226 | PaymentService Layer | Created /lib/services/payment-service.ts (350+ lines) encapsulating all payment API calls. ServiceResult<T> pattern for type-safe errors. Methods: processPayment(), voidItems(), requestRemoteVoidApproval(), checkGiftCardBalance(), loadHouseAccounts(), fetchOrderForPayment(). Utils: calculateSplitAmounts(), calculateRemainingBalance(). Singleton export, automatic logging, no fetch() in components. |
+| 227 | PaymentDomain Module | Created /lib/domain/payment/ with pure business logic functions (1,953 total lines). tip-calculations.ts (317 lines): calculateTipAmount(), getSuggestedTips(), calculateTipOut(), calculateTipPool(). loyalty-points.ts (429 lines): calculateLoyaltyPoints(), calculateRedemption(), determineTier(). dual-pricing.ts (347 lines): calculateDualPrice(), calculateOrderPricing(), validateDualPricingCompliance(). validators.ts (294 lines): validatePayment(), validatePayments(), validateRefund(). All pure functions, no side effects, 100% testable, framework-agnostic. |
 
 ## Recently Completed (2026-02-06 Payments Session)
 

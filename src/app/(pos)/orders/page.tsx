@@ -26,6 +26,8 @@ import { useDevStore } from '@/stores/dev-store'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { usePOSDisplay } from '@/hooks/usePOSDisplay'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
+import { useActiveOrder } from '@/hooks/useActiveOrder'
+import { usePricing } from '@/hooks/usePricing'
 import { POSDisplaySettingsModal } from '@/components/orders/POSDisplaySettings'
 import { ModeToggle } from '@/components/pos/ModeToggle'
 import { SortableCategoryButton } from '@/components/pos/SortableCategoryButton'
@@ -77,6 +79,21 @@ export default function OrdersPage() {
   const { employee, isAuthenticated, logout } = useAuthStore()
   const { currentOrder, startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore()
   const { hasDevAccess, setHasDevAccess } = useDevStore()
+
+  // Shared handlers from useActiveOrder hook
+  const {
+    expandedItemId,
+    handleHoldToggle: sharedHoldToggle,
+    handleNoteEdit: sharedNoteEdit,
+    handleCourseChange: sharedCourseChange,
+    handleSeatChange: sharedSeatChange,
+    handleResend: sharedResend,
+    handleToggleExpand,
+  } = useActiveOrder({
+    locationId: employee?.location?.id,
+    employeeId: employee?.id,
+  })
+
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
@@ -173,6 +190,14 @@ export default function OrdersPage() {
   })
 
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('cash')
+
+  // Unified pricing calculations
+  const pricing = usePricing({
+    subtotal: currentOrder?.subtotal || 0,
+    discountTotal: currentOrder?.discountTotal || 0,
+    tipTotal: currentOrder?.tipTotal || 0,
+    paymentMethod,
+  })
 
   // Display settings modal
   const [showDisplaySettings, setShowDisplaySettings] = useState(false)
@@ -277,9 +302,6 @@ export default function OrdersPage() {
 
   // Open orders count for badge
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
-
-  // Expanded item state for OrderPanel
-  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   // Item notes modal state (for quick note editing)
   const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
@@ -425,30 +447,11 @@ export default function OrdersPage() {
     })
   }, [currentOrder?.items, menuItems])
 
-  // OrderPanel calculations
-  const { subtotal, taxAmount, totalDiscounts, grandTotal } = useMemo(() => {
-    const storedSubtotal = currentOrder?.subtotal || 0
-    const discountPct = dualPricing.cashDiscountPercent || 4.0
-    const cardSubtotal = dualPricing.enabled
-      ? calculateCardPrice(storedSubtotal, discountPct)
-      : storedSubtotal
-    const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash'
-      ? cardSubtotal - storedSubtotal
-      : 0
-    const discount = currentOrder?.discountTotal || 0
-    const taxableAmount = cardSubtotal - cashDiscountAmount - discount
-    const tax = taxableAmount * taxRate
-    const gratuity = currentOrder?.tipTotal || 0
-    const unroundedTotal = taxableAmount + tax + gratuity
-    const total = applyPriceRounding(unroundedTotal, priceRounding, paymentMethod)
-
-    return {
-      subtotal: cardSubtotal,
-      taxAmount: tax,
-      totalDiscounts: discount + cashDiscountAmount,
-      grandTotal: total,
-    }
-  }, [currentOrder?.subtotal, currentOrder?.discountTotal, currentOrder?.tipTotal, dualPricing, paymentMethod, taxRate, priceRounding])
+  // OrderPanel calculations (from usePricing hook)
+  const subtotal = pricing.subtotal
+  const taxAmount = pricing.tax
+  const totalDiscounts = pricing.discounts + pricing.cashDiscount
+  const grandTotal = pricing.total
 
   // Menu search: Click outside to close
   useEffect(() => {
@@ -1403,81 +1406,38 @@ export default function OrdersPage() {
 
   // OrderPanel item control handlers
   const handleHoldToggle = async (itemId: string) => {
-    if (!savedOrderId) return
-    const item = currentOrder?.items.find(i => i.id === itemId)
-    if (!item) return
-    try {
-      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isHeld: !item.isHeld }),
-      })
-      if (res.ok) {
-        // Refresh order to show updated state
-        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
-        if (orderRes.ok) {
-          const orderData = await orderRes.json()
-          loadOrder(orderData)
-        }
-        toast.success(item.isHeld ? 'Item fired' : 'Item held')
-      } else {
-        toast.error('Failed to update item')
+    await sharedHoldToggle(itemId)
+    // Reload order into local store to keep /orders page in sync
+    if (savedOrderId) {
+      const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+      if (orderRes.ok) {
+        const orderData = await orderRes.json()
+        loadOrder(orderData)
       }
-    } catch (error) {
-      console.error('Failed to toggle hold:', error)
-      toast.error('Failed to update item')
     }
   }
 
   const handleNoteEdit = async (itemId: string, currentNote?: string) => {
-    const note = window.prompt('Kitchen note:', currentNote || '')
-    if (note === null) return
-    if (!savedOrderId) return
-    try {
-      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ specialNotes: note || null }),
-      })
-      if (res.ok) {
-        // Refresh order to show updated state
-        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
-        if (orderRes.ok) {
-          const orderData = await orderRes.json()
-          loadOrder(orderData)
-        }
-        toast.success('Note updated')
-      } else {
-        toast.error('Failed to update note')
+    await sharedNoteEdit(itemId, currentNote)
+    // Reload order into local store to keep /orders page in sync
+    if (savedOrderId) {
+      const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+      if (orderRes.ok) {
+        const orderData = await orderRes.json()
+        loadOrder(orderData)
       }
-    } catch (error) {
-      console.error('Failed to update note:', error)
-      toast.error('Failed to update note')
     }
   }
 
   const handleCourseChange = async (itemId: string, course: number | null) => {
-    if (!savedOrderId) return
-    try {
-      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ courseNumber: course }),
-      })
-      if (res.ok) {
-        // Refresh order to show updated state
-        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
-        if (orderRes.ok) {
-          const orderData = await orderRes.json()
-          loadOrder(orderData)
-        }
-        toast.success('Course updated')
-      } else {
-        toast.error('Failed to update course')
+    await sharedCourseChange(itemId, course)
+    // Reload order into local store to keep /orders page in sync
+    if (savedOrderId) {
+      const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+      if (orderRes.ok) {
+        const orderData = await orderRes.json()
+        loadOrder(orderData)
       }
-    } catch (error) {
-      console.error('Failed to update course:', error)
-      toast.error('Failed to update course')
     }
   }
 
@@ -1505,26 +1465,14 @@ export default function OrdersPage() {
   }
 
   const handleResend = async (itemId: string) => {
-    if (!savedOrderId) return
-    try {
-      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}/resend`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      if (res.ok) {
-        toast.success('Item resent to kitchen')
-        // Refresh order to show updated state
-        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
-        if (orderRes.ok) {
-          const orderData = await orderRes.json()
-          loadOrder(orderData)
-        }
-      } else {
-        toast.error('Failed to resend item')
+    await sharedResend(itemId)
+    // Reload order into local store to keep /orders page in sync
+    if (savedOrderId) {
+      const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+      if (orderRes.ok) {
+        const orderData = await orderRes.json()
+        loadOrder(orderData)
       }
-    } catch (error) {
-      console.error('Failed to resend item:', error)
-      toast.error('Failed to resend item')
     }
   }
 
@@ -1533,32 +1481,17 @@ export default function OrdersPage() {
     await handleOpenSplitTicket()
   }
 
-  const handleToggleExpand = (itemId: string) => {
-    setExpandedItemId(prev => prev === itemId ? null : itemId)
-  }
+  // handleToggleExpand now comes from useActiveOrder hook — no local function needed
 
   const handleSeatChange = async (itemId: string, seat: number | null) => {
-    if (!savedOrderId) return
-    try {
-      const res = await fetch(`/api/orders/${savedOrderId}/items/${itemId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seatNumber: seat }),
-      })
-      if (res.ok) {
-        // Refresh order to show updated state
-        const orderRes = await fetch(`/api/orders/${savedOrderId}`)
-        if (orderRes.ok) {
-          const orderData = await orderRes.json()
-          loadOrder(orderData)
-        }
-        toast.success('Seat updated')
-      } else {
-        toast.error('Failed to update seat')
+    await sharedSeatChange(itemId, seat)
+    // Reload order into local store to keep /orders page in sync
+    if (savedOrderId) {
+      const orderRes = await fetch(`/api/orders/${savedOrderId}`)
+      if (orderRes.ok) {
+        const orderData = await orderRes.json()
+        loadOrder(orderData)
       }
-    } catch (error) {
-      console.error('Failed to update seat:', error)
-      toast.error('Failed to update seat')
     }
   }
 

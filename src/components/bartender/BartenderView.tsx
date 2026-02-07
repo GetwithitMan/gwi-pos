@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
+import { usePricing } from '@/hooks/usePricing'
 import { getDualPrices } from '@/lib/pricing'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 
@@ -97,6 +98,20 @@ interface OrderItem {
   quantity: number
   modifiers?: { id: string; name: string; price: number }[]
   sentToKitchen?: boolean
+  specialNotes?: string
+  isHeld?: boolean
+  isCompleted?: boolean
+  completedAt?: string | null
+  seatNumber?: number | null
+  courseNumber?: number | null
+  courseStatus?: string | null
+  resendCount?: number
+  isTimedRental?: boolean
+  blockTimeMinutes?: number | null
+  blockTimeStartedAt?: string | null
+  blockTimeExpiresAt?: string | null
+  kitchenStatus?: string
+  createdAt?: string
 }
 
 
@@ -321,6 +336,7 @@ export function BartenderView({
   // Current order items (for new tab or selected tab)
   const [orderItems, setOrderItems] = useState<OrderItem[]>([])
   const [isSending, setIsSending] = useState(false)
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   // New tab modal
   const [showNewTabModal, setShowNewTabModal] = useState(false)
@@ -447,21 +463,23 @@ export function BartenderView({
     return result
   }, [tabs, searchQuery, showMineOnly, employeeId, tabSortBy])
 
-  const orderTotals = useMemo(() => {
-    const subtotal = orderItems.reduce((sum, item) => {
+  // Calculate subtotal from local items for usePricing
+  const orderSubtotal = useMemo(() => {
+    return orderItems.reduce((sum, item) => {
       const itemTotal = item.price * item.quantity
       const modTotal = (item.modifiers || []).reduce((m, mod) => m + mod.price, 0) * item.quantity
       return sum + itemTotal + modTotal
     }, 0)
-
-    // Get tax rate from location settings (default 8%)
-    const taxRate = 0.08
-    const tax = Math.round(subtotal * taxRate * 100) / 100
-    const discounts = 0 // No discounts in bartender view yet
-    const total = Math.round((subtotal + tax - discounts) * 100) / 100
-
-    return { subtotal, tax, discounts, total }
   }, [orderItems])
+
+  // Use the shared pricing hook (same as FloorPlanHome and /orders)
+  const pricing = usePricing({ subtotal: orderSubtotal })
+  const orderTotals = {
+    subtotal: pricing.subtotal,
+    tax: pricing.tax,
+    discounts: pricing.discounts,
+    total: pricing.total,
+  }
 
   // Backward compatibility - keep orderTotal for existing code
   const orderTotal = orderTotals.total
@@ -885,7 +903,8 @@ export function BartenderView({
       }
 
       loadedTabIdRef.current = selectedTab.id
-      const items: OrderItem[] = selectedTab.items.map(item => ({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const items: OrderItem[] = selectedTab.items.map((item: any) => ({
         id: item.id,
         menuItemId: item.menuItemId,
         name: item.name,
@@ -893,6 +912,14 @@ export function BartenderView({
         quantity: item.quantity,
         modifiers: item.modifiers,
         sentToKitchen: item.sentToKitchen ?? true,
+        specialNotes: item.specialNotes || undefined,
+        isHeld: item.isHeld || false,
+        isCompleted: item.isCompleted || false,
+        seatNumber: item.seatNumber ?? null,
+        courseNumber: item.courseNumber ?? null,
+        courseStatus: item.courseStatus ?? null,
+        resendCount: item.resendCount || 0,
+        createdAt: item.createdAt || undefined,
       }))
       setOrderItems(items)
     } else {
@@ -1014,6 +1041,56 @@ export function BartenderView({
   const handleEditItem = useCallback((item: OrderPanelItemData) => {
     // TODO: Open modifier modal for editing
     toast.info(`Edit ${item.name} (coming soon)`)
+  }, [])
+
+  const handleToggleHold = useCallback((itemId: string) => {
+    setOrderItems(prev => prev.map(item =>
+      item.id === itemId ? { ...item, isHeld: !item.isHeld } : item
+    ))
+  }, [])
+
+  const handleOpenNotesEditor = useCallback((itemId: string, currentNote?: string) => {
+    const note = prompt('Item note:', currentNote || '')
+    if (note !== null) {
+      setOrderItems(prev => prev.map(item =>
+        item.id === itemId ? { ...item, specialNotes: note || undefined } : item
+      ))
+    }
+  }, [])
+
+  const handleUpdateCourse = useCallback((itemId: string, course: number | null) => {
+    setOrderItems(prev => prev.map(item =>
+      item.id === itemId ? { ...item, courseNumber: course } : item
+    ))
+  }, [])
+
+  const handleEditItemModifiers = useCallback((itemId: string) => {
+    const editItem = orderItems.find(i => i.id === itemId)
+    if (!editItem) return
+    // TODO: Wire to modifier modal for editing existing item modifiers
+    toast.info(`Edit modifiers for ${editItem.name} (coming soon)`)
+  }, [orderItems])
+
+  const handleCompVoidItem = useCallback((itemId: string) => {
+    const voidItem = orderItems.find(i => i.id === itemId)
+    if (!voidItem) return
+    // TODO: Wire to CompVoidModal
+    toast.info(`Comp/void ${voidItem.name} (coming soon)`)
+  }, [orderItems])
+
+  const handleResendItem = useCallback((itemId: string) => {
+    const resendItem = orderItems.find(i => i.id === itemId)
+    if (!resendItem) return
+    setOrderItems(prev => prev.map(item =>
+      item.id === itemId ? { ...item, resendCount: (item.resendCount || 0) + 1 } : item
+    ))
+    toast.success(`Resend ${resendItem.name} to kitchen`)
+  }, [orderItems])
+
+  const handleUpdateSeat = useCallback((itemId: string, seat: number | null) => {
+    setOrderItems(prev => prev.map(item =>
+      item.id === itemId ? { ...item, seatNumber: seat } : item
+    ))
   }, [])
 
   // Handle clicking a spirit tier button on a cocktail item
@@ -2435,23 +2512,53 @@ export function BartenderView({
                 name: m.name,
                 price: m.price,
               })),
-              kitchenStatus: item.sentToKitchen ? 'sent' : 'pending',
+              specialNotes: item.specialNotes,
+              kitchenStatus: (item.kitchenStatus || (item.sentToKitchen ? 'sent' : 'pending')) as OrderPanelItemData['kitchenStatus'],
+              isHeld: item.isHeld,
+              isCompleted: item.isCompleted,
+              isTimedRental: item.isTimedRental,
               menuItemId: item.menuItemId,
+              seatNumber: item.seatNumber ?? undefined,
+              courseNumber: item.courseNumber ?? undefined,
+              courseStatus: item.courseStatus ?? undefined,
+              sentToKitchen: item.sentToKitchen,
+              resendCount: item.resendCount,
+              completedAt: item.completedAt ?? undefined,
+              createdAt: item.createdAt,
+              blockTimeMinutes: item.blockTimeMinutes ?? undefined,
+              blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
+              blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined,
             }))}
             subtotal={orderTotals.subtotal}
             tax={orderTotals.tax}
             discounts={orderTotals.discounts}
             total={orderTotals.total}
             showItemControls={true}
+            showEntertainmentTimers={true}
             cardLast4={selectedTab?.cardLast4 || undefined}
             cardBrand={selectedTab?.cardBrand || undefined}
             hasCard={!!selectedTab?.cardLast4}
             onItemClick={handleEditItem}
             onItemRemove={handleRemoveItem}
             onQuantityChange={handleUpdateQuantity}
+            onItemHoldToggle={handleToggleHold}
+            onItemNoteEdit={handleOpenNotesEditor}
+            onItemCourseChange={handleUpdateCourse}
+            onItemEditModifiers={handleEditItemModifiers}
+            onItemCompVoid={handleCompVoidItem}
+            onItemResend={handleResendItem}
+            onItemSeatChange={handleUpdateSeat}
+            expandedItemId={expandedItemId}
+            onItemToggleExpand={(id) => setExpandedItemId(prev => prev === id ? null : id)}
+            maxSeats={4}
+            maxCourses={5}
             onSend={handleSend}
             onPay={handlePay}
             isSending={isSending}
+            cashDiscountRate={pricing.cashDiscountRate / 100}
+            taxRate={pricing.taxRate}
+            terminalId="terminal-1"
+            employeeId={employeeId}
             className="w-72 flex-shrink-0"
           />
         )}

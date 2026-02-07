@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { logger } from '@/lib/logger'
 
 // GET - List all floor plan elements for a location (optionally filtered by section)
 export async function GET(req: Request) {
@@ -93,7 +94,7 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    console.log('[floor-plan-elements] POST body:', body)
+    logger.log('[floor-plan-elements] POST body:', body)
 
     const {
       locationId,
@@ -103,8 +104,8 @@ export async function POST(req: Request) {
       elementType = 'entertainment',
       visualType,
       linkedMenuItemId,
-      posX = 100,
-      posY = 100,
+      posX,
+      posY,
       width,
       height,
       rotation = 0,
@@ -157,7 +158,34 @@ export async function POST(req: Request) {
       select: { sortOrder: true },
     })
 
-    console.log('[floor-plan-elements] Creating element...')
+    // Deterministic grid placement when position not specified
+    let elementPosX = posX
+    let elementPosY = posY
+
+    if (posX === undefined || posY === undefined) {
+      // Count existing elements in this section/location for grid positioning
+      const existingElementsCount = await db.floorPlanElement.count({
+        where: {
+          locationId,
+          sectionId: sectionId || null,
+          deletedAt: null,
+        },
+      })
+
+      // Auto-grid layout: 3 columns, offset from tables area
+      const GRID_COLS = 3
+      const GRID_SPACING = 150
+      const GRID_START_X = 400 // Offset from tables to avoid overlap
+      const GRID_START_Y = 50
+
+      const col = existingElementsCount % GRID_COLS
+      const row = Math.floor(existingElementsCount / GRID_COLS)
+
+      elementPosX = posX ?? (GRID_START_X + col * GRID_SPACING)
+      elementPosY = posY ?? (GRID_START_Y + row * GRID_SPACING)
+    }
+
+    logger.log('[floor-plan-elements] Creating element...')
 
     const element = await db.floorPlanElement.create({
       data: {
@@ -168,8 +196,8 @@ export async function POST(req: Request) {
         elementType,
         visualType,
         linkedMenuItemId: linkedMenuItemId || null,
-        posX,
-        posY,
+        posX: elementPosX,
+        posY: elementPosY,
         width: width || 100,
         height: height || 100,
         rotation,
@@ -201,7 +229,7 @@ export async function POST(req: Request) {
       },
     })
 
-    console.log('[floor-plan-elements] Created element:', element.id)
+    logger.log('[floor-plan-elements] Created element:', element.id)
 
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(locationId, { async: true })

@@ -9,6 +9,7 @@ import { TableEditPanel } from './panels/TableEditPanel'
 import { RoomTabs } from './RoomTabs'
 import { calculateAttachSide, calculateAttachPosition } from './table-positioning'
 import './styles/floor-plan.css'
+import { logger } from '@/lib/logger'
 
 type FloorPlanMode = 'admin' | 'pos'
 
@@ -861,7 +862,7 @@ export function UnifiedFloorPlan({
           showAddButton={mode === 'admin'}
           onAddRoom={() => {
             // TODO: Open add section modal
-            console.log('Add section clicked')
+            logger.log('Add section clicked')
           }}
         />
       )}

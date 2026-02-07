@@ -12,6 +12,7 @@ import { create } from 'zustand'
 import type { Table, TableStatus, Section } from '../types'
 import * as TableService from '../services/table-service'
 import * as StatusEngine from '../services/status-engine'
+import { logger } from '@/lib/logger'
 
 // =============================================================================
 // STORE TYPES
@@ -133,7 +134,7 @@ export function useFloorPlan(locationId?: string) {
 
       // Validate transition
       if (!StatusEngine.isValidTransition(table.status, newStatus)) {
-        console.warn(`Invalid status transition: ${table.status} -> ${newStatus}`)
+        logger.warn(`Invalid status transition: ${table.status} -> ${newStatus}`)
         return false
       }
 
