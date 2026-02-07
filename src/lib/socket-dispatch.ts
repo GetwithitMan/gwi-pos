@@ -361,3 +361,104 @@ export async function dispatchIngredientLibraryUpdate(
 
   return promise
 }
+
+/**
+ * Dispatch menu item change event (for online ordering)
+ *
+ * Called when a menu item is created, updated, deleted, or restored.
+ * Allows online ordering UI to update in real-time without polling.
+ */
+export async function dispatchMenuItemChanged(
+  locationId: string,
+  payload: {
+    itemId: string
+    action: 'created' | 'updated' | 'deleted' | 'restored'
+    changes?: Record<string, unknown>
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('MENU_ITEM_CHANGED', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch menu stock change event (for online ordering)
+ *
+ * Called when an item's stock status changes (e.g., in_stock → out_of_stock).
+ * Allows online ordering to immediately show "Sold Out" without polling.
+ */
+export async function dispatchMenuStockChanged(
+  locationId: string,
+  payload: {
+    itemId: string
+    stockStatus: 'in_stock' | 'low_stock' | 'critical' | 'out_of_stock'
+    isOrderableOnline: boolean
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('MENU_STOCK_CHANGED', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch menu structure change event
+ *
+ * Called when categories or modifier groups are added/updated/deleted.
+ * Notifies menu builders and admin UIs to refresh structure.
+ */
+export async function dispatchMenuStructureChanged(
+  locationId: string,
+  payload: {
+    action: 'category-created' | 'category-updated' | 'category-deleted' | 'modifier-group-updated'
+    entityId: string
+    entityType: 'category' | 'modifier-group'
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('MENU_STRUCTURE_CHANGED', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}
+
+/**
+ * Dispatch entertainment status change event
+ *
+ * Called when entertainment item status changes (available → in_use, etc.).
+ * Replaces polling for entertainment category status updates.
+ */
+export async function dispatchEntertainmentStatusChanged(
+  locationId: string,
+  payload: {
+    itemId: string
+    entertainmentStatus: 'available' | 'in_use' | 'reserved' | 'maintenance'
+    currentOrderId: string | null
+    expiresAt: string | null
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('ENTERTAINMENT_STATUS_CHANGED', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}

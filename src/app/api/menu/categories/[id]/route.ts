@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 
 export async function PUT(
   request: NextRequest,
@@ -22,6 +23,15 @@ export async function PUT(
           printerIds: printerIds && printerIds.length > 0 ? printerIds : null
         }),
       }
+    })
+
+    // Dispatch socket event for real-time menu structure update
+    dispatchMenuStructureChanged(category.locationId, {
+      action: 'category-updated',
+      entityId: category.id,
+      entityType: 'category',
+    }, { async: true }).catch(err => {
+      console.error('Failed to dispatch category updated event:', err)
     })
 
     return NextResponse.json({
@@ -61,7 +71,25 @@ export async function DELETE(
       )
     }
 
+    // Get category info before deletion for socket dispatch
+    const category = await db.category.findUnique({
+      where: { id },
+      select: { locationId: true }
+    })
+
     await db.category.delete({ where: { id } })
+
+    // Dispatch socket event for real-time menu structure update
+    if (category) {
+      dispatchMenuStructureChanged(category.locationId, {
+        action: 'category-deleted',
+        entityId: id,
+        entityType: 'category',
+      }, { async: true }).catch(err => {
+        console.error('Failed to dispatch category deleted event:', err)
+      })
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Failed to delete category:', error)

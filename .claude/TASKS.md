@@ -71,6 +71,8 @@
 | T018 | Super Admin Role + Dev Access | ✅ COMPLETE | Worker 2 | T016 |
 | T016 | Simulated Card Reader (Tap/Chip) | ✅ COMPLETE | Worker 2 | None |
 | T039 | Inventory & Recipe Costing System (Skill 115) | 🔵 IN PROGRESS | - | Skill 126 (Input/Output) complete |
+| T041 | Online Ordering Simplification (Menu Domain) | 🟡 READY | - | None |
+| T042 | Skills Audit & Update | 🟡 READY | - | None |
 
 ---
 
@@ -643,6 +645,128 @@ Comprehensive inventory management tracking food and liquor at the ingredient le
 
 ---
 
+### T041: Online Ordering Simplification (Menu Domain)
+**Priority:** 🔴 CRITICAL (Foundation for Online Ordering)
+**Estimated Effort:** X-Large (6 weeks, 22 tasks)
+**Status:** 🟡 READY
+**Location:** Menu Domain - `/src/app/(admin)/menu/`, `/src/app/api/menu/`, `/src/lib/menu-visibility.ts`
+
+**Overview:**
+Complete overhaul of online ordering menu management. Enable restaurant owners to simplify their online menus with a "master switch" and layered visibility controls (category → item → modifier). POS menu remains source of truth, online is a reversible mask.
+
+**Key Features:**
+1. **Master Switch** - Location-level toggle to enable/disable online ordering
+2. **Three-Level Visibility** - Control at category, item, and modifier levels
+3. **Online Settings Override** - Per-item JSON field for custom online flows
+4. **Safety Rules** - Prevent un-orderable configurations (required groups, defaults, OOS)
+5. **Simple Mode** - Basic show/hide toggles for modifiers
+6. **Custom Mode** - Advanced controls (reorder groups, pricing overrides)
+7. **Bulk Actions** - "Dumb Down" button, templates (burger, pizza, salad)
+8. **Setup Wizard** - Guided walk-through for entire menu setup
+
+**Project Files:**
+- **Project Plan:** `/ONLINE_ORDERING_PROJECT_PLAN.md` (comprehensive, 22 tasks, 8 phases)
+- **Worker Prompts:** `/ONLINE_ORDERING_WORKER_PROMPTS.md` (M001-A and M001-B ready)
+- **Analysis Output:** `/ONLINE_ORDERING_ANALYSIS.md` (to be created by worker)
+- **Code Export:** `/MENU_CODE_EXPORT.txt` (to be created by worker)
+
+**Implementation Phases:**
+1. Foundation & Master Switch (3 days) - M001, M002, M003
+2. Schema & Data Model (4 days) - M004, M005
+3. Business Logic Layer (5 days) - M006, M007, M008
+4. Admin UI - Simple Mode (7 days) - M009, M010, M011, M012
+5. Admin UI - Custom Mode (5 days) - M013, M014
+6. Bulk Actions & Templates (5 days) - M015, M016, M017
+7. Testing & Validation (5 days) - M018, M019, M020
+8. Rollout & Documentation (3 days) - M021, M022
+
+**Schema Changes:**
+```prisma
+model Location {
+  onlineOrderingEnabled Boolean @default(false)
+}
+
+model MenuItem {
+  onlineSettings Json?  // Online channel overrides
+}
+```
+
+**Core Library:**
+```ts
+// Central visibility function
+applyOnlineOverrides(
+  item: MenuItem,
+  channel: 'pos' | 'online'
+): MenuItemForFrontend
+```
+
+**Acceptance Criteria:**
+- [ ] Master switch enables/disables online ordering
+- [ ] Can hide categories, items, and modifiers for online
+- [ ] Required groups force default selections when hidden
+- [ ] No un-orderable items exposed online
+- [ ] Owner can set up online menu in <15 minutes
+- [ ] 50% reduction in online menu complexity
+- [ ] Zero data loss during migration
+- [ ] <50ms API response time with caching
+- [ ] 100% test coverage for safety rules
+
+**Risk Mitigation:**
+- Database backup before schema migration
+- POS channel ignores all online settings
+- Extensive unit and integration tests
+- Phased rollout (pilot → beta → GA)
+- Templates and wizard for ease of use
+
+**Next Steps:**
+1. Execute M001-A worker prompt (code extraction)
+2. Execute M001-B worker prompt (analysis)
+3. Review outputs and validate project plan
+4. Begin M002 (Master Switch implementation)
+
+**Related:**
+- CLAUDE.md Domain 4 (Menu): Lines 2091-2100
+- Test Cases: CLAUDE.md Lines 1680-1694 (Modifiers & Menu Builder)
+- Existing fields: `showOnPOS`, `showOnline`, `hasOnlineOverride`
+
+**Timeline:** 6 weeks (30 working days)
+**Started:** Not yet
+**Target Completion:** TBD (awaiting approval)
+
+---
+
+### T042: Skills Audit & Update
+**Priority:** 🟡 HIGH (Foundation Maintenance)
+**Estimated Effort:** Medium (30-45 minutes audit + follow-up work)
+**Status:** 🟡 READY
+**Location:** `/docs/skills/`
+
+**Overview:**
+Comprehensive audit of all 145+ skills to find orphaned files, missing skills, status updates needed, and prepare for Online Ordering skills (230-249 range).
+
+**Problems to Solve:**
+1. Orphaned Files - Skill files exist but not in SKILLS-INDEX.md
+2. Missing Skills - Features in CLAUDE.md/code without skills
+3. Status Updates - TODO/PARTIAL skills that are actually DONE
+4. Missing Files - DONE skills without documentation files
+5. Dependencies - Outdated dependency listings
+6. Numbering Gaps - Skills 146-199, 228-229 missing
+7. Online Ordering - Need 20+ new skills for T041 project
+
+**Deliverables:**
+- `SKILLS_AUDIT_REPORT.md` (9 comprehensive sections)
+- Action plan for updates and new skills
+
+**Worker Prompt:**
+`SKILLS_AUDIT_WORKER_PROMPT.md` (ready to execute)
+
+**Dependencies:** None
+**Blocks:** T041 (should document Online Ordering skills)
+**Timeline:** 1-2 days
+**Started:** Not yet
+
+---
+
 ## Backlog (Future Sprints)
 
 ### Infrastructure
@@ -714,9 +838,83 @@ Comprehensive inventory management tracking food and liquor at the ingredient le
 
 ---
 
-*Last Updated: January 30, 2026 (End of Day)*
+## Session Notes: 2026-02-07 - PM Mode: Menu (Online Ordering)
+
+### T041 Created - Online Ordering Simplification
+**PM Session:** Full planning session completed
+**Duration:** Extended planning session
+**Output:** Comprehensive 6-week project plan
+
+**Created:**
+1. `ONLINE_ORDERING_PROJECT_PLAN.md` - 22 tasks, 8 phases, complete roadmap
+2. `ONLINE_ORDERING_WORKER_PROMPTS.md` - M001-A and M001-B ready to execute
+3. Updated `.claude/TASKS.md` - Added T041 to task queue
+
+**Project Scope:**
+- Master switch for online ordering
+- Three-level visibility (category → item → modifier)
+- Safety rules to prevent un-orderable configs
+- Simple Mode + Custom Mode UIs
+- Bulk actions and templates
+- Complete testing and rollout plan
+
+**Key Decisions:**
+- POS menu as single source of truth
+- Online settings as reversible mask (JSON field)
+- Safety-first approach (required groups must have defaults)
+- "Fewest clicks" philosophy throughout
+
+**Next Session (Tomorrow):**
+1. Execute M001-A (code extraction) - 5 min
+2. Execute M001-B (analysis) - 10-15 min
+3. Review outputs and refine plan
+4. Begin M002 (Master Switch implementation)
+
+**Dependencies:**
+- None - Ready to start immediately
+
+**Timeline:** 6 weeks estimated
+**Status:** Planning complete, ready for execution
+
+---
+
+---
+
+## Session Notes: 2026-02-07 Evening - Skills Audit Task Created
+
+### T042 Created - Skills Audit & Update
+**Request:** User asked to review and update all skills
+**Duration:** Task creation session
+**Output:** Worker prompt and task documentation
+
+**Created:**
+1. `SKILLS_AUDIT_WORKER_PROMPT.md` - Comprehensive audit worker prompt
+2. Updated `.claude/TASKS.md` - Added T042 to task queue
+
+**Scope:**
+- Audit all 145+ existing skills
+- Find orphaned skill files
+- Identify missing skills from CLAUDE.md and code
+- Update statuses (TODO→DONE where applicable)
+- Plan Online Ordering skills (230-249)
+- Fill numbering gaps
+
+**Key Goals:**
+- Comprehensive report with 9 sections
+- Actionable recommendations
+- Foundation for T041 Online Ordering project
+
+**Next Steps:**
+1. Execute skills audit worker prompt (30-45 min)
+2. Review SKILLS_AUDIT_REPORT.md
+3. Implement recommendations
+
+---
+
+*Last Updated: February 7, 2026 (Evening)*
 *Workers Active: 0*
-*Tasks Completed Today: 21 (including T037)*
-*Tasks In Progress: 2 (T019, T035)*
-*Tasks Paused: 2 (T023 - Floor Plan Home, T024 - Pizza Builder)*
-*Next Session Priority: T025 (Bar Tabs UI), T036 (Closed Order Management)*
+*Tasks Completed Today: 0 (planning sessions)*
+*Tasks In Progress: 3 (T019, T035, T039)*
+*Tasks Paused: 2 (T023, T024)*
+*New Tasks: 2 (T041 - Online Ordering, T042 - Skills Audit)*
+*Next Session Priority: T041 execution (M001-A, M001-B) + T042 (Skills Audit)*

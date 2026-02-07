@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 
 // GET /api/menu/items - Fetch menu items, optionally filtered by category
 export async function GET(request: NextRequest) {
@@ -271,6 +272,22 @@ export async function POST(request: NextRequest) {
         // Combo print mode
         comboPrintMode: comboPrintMode || null,
       }
+    })
+
+    // Dispatch socket event for real-time menu updates
+    dispatchMenuItemChanged(category.locationId, {
+      itemId: item.id,
+      action: 'created',
+      changes: {
+        id: item.id,
+        categoryId: item.categoryId,
+        name: item.name,
+        price: Number(item.price),
+        isActive: item.isActive,
+        isAvailable: item.isAvailable,
+      }
+    }, { async: true }).catch(err => {
+      console.error('Failed to dispatch menu item created event:', err)
     })
 
     return NextResponse.json({

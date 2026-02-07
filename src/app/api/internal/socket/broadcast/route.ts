@@ -26,7 +26,7 @@ import type { RoutingResult } from '@/types/routing'
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || 'dev-internal-secret'
 
 interface BroadcastRequest {
-  type: 'NEW_ORDER' | 'ITEM_STATUS' | 'ORDER_BUMPED' | 'ENTERTAINMENT_UPDATE' | 'LOCATION_ALERT' | 'VOID_APPROVAL' | 'FLOOR_PLAN_UPDATE' | 'MENU_UPDATE' | 'INGREDIENT_LIBRARY_UPDATE'
+  type: 'NEW_ORDER' | 'ITEM_STATUS' | 'ORDER_BUMPED' | 'ENTERTAINMENT_UPDATE' | 'LOCATION_ALERT' | 'VOID_APPROVAL' | 'FLOOR_PLAN_UPDATE' | 'MENU_UPDATE' | 'INGREDIENT_LIBRARY_UPDATE' | 'INVENTORY_ADJUSTMENT' | 'STOCK_LEVEL_CHANGE' | 'MENU_ITEM_CHANGED' | 'MENU_STOCK_CHANGED' | 'MENU_STRUCTURE_CHANGED' | 'ENTERTAINMENT_STATUS_CHANGED'
   locationId: string
   routingResult?: RoutingResult
   payload?: unknown
@@ -208,6 +208,60 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
         }
         await emitToLocation(locationId, 'ingredient:library-update', payload)
+        break
+      }
+
+      case 'INVENTORY_ADJUSTMENT': {
+        // Notify all terminals of bulk inventory adjustment
+        if (!payload) {
+          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+        }
+        await emitToLocation(locationId, 'inventory:adjustment', payload)
+        break
+      }
+
+      case 'STOCK_LEVEL_CHANGE': {
+        // Notify terminals of single stock level change
+        if (!payload) {
+          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+        }
+        await emitToLocation(locationId, 'inventory:stock-change', payload)
+        break
+      }
+
+      case 'MENU_ITEM_CHANGED': {
+        // Notify online ordering and POS of menu item changes
+        if (!payload) {
+          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+        }
+        await emitToLocation(locationId, 'menu:item-changed', payload)
+        break
+      }
+
+      case 'MENU_STOCK_CHANGED': {
+        // Notify online ordering of stock status changes
+        if (!payload) {
+          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+        }
+        await emitToLocation(locationId, 'menu:stock-changed', payload)
+        break
+      }
+
+      case 'MENU_STRUCTURE_CHANGED': {
+        // Notify menu builders of category/modifier group changes
+        if (!payload) {
+          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+        }
+        await emitToLocation(locationId, 'menu:structure-changed', payload)
+        break
+      }
+
+      case 'ENTERTAINMENT_STATUS_CHANGED': {
+        // Notify terminals of entertainment item status changes (replaces polling)
+        if (!payload) {
+          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+        }
+        await emitToLocation(locationId, 'entertainment:status-changed', payload)
         break
       }
 

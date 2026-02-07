@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
+import { dispatchMenuItemChanged, dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 
 export async function GET(
   request: NextRequest,
@@ -98,6 +98,12 @@ export async function PUT(
       comboPrintMode,
     } = body
 
+    // Get old item to detect stock changes
+    const oldItem = await db.menuItem.findUnique({
+      where: { id },
+      select: { isAvailable: true, locationId: true }
+    })
+
     const item = await db.menuItem.update({
       where: { id },
       data: {
@@ -131,14 +137,34 @@ export async function PUT(
       }
     })
 
-    // Dispatch socket event for real-time update
+    // Dispatch socket events for real-time updates
     const action = deletedAt ? 'deleted' : (item.deletedAt === null && deletedAt === undefined) ? 'updated' : 'restored'
-    dispatchMenuUpdate(item.locationId, {
+
+    // Dispatch item changed event
+    dispatchMenuItemChanged(item.locationId, {
+      itemId: item.id,
       action,
-      menuItemId: item.id,
-      bottleId: item.linkedBottleProductId || undefined,
-      name: item.name,
-    }, { async: true })
+      changes: {
+        name: item.name,
+        price: Number(item.price),
+        isActive: item.isActive,
+        isAvailable: item.isAvailable,
+      }
+    }, { async: true }).catch(err => {
+      console.error('Failed to dispatch menu item changed event:', err)
+    })
+
+    // If stock status changed (isAvailable), dispatch stock change event
+    if (oldItem && isAvailable !== undefined && oldItem.isAvailable !== isAvailable) {
+      const stockStatus = isAvailable ? 'in_stock' : 'out_of_stock'
+      dispatchMenuStockChanged(item.locationId, {
+        itemId: item.id,
+        stockStatus,
+        isOrderableOnline: isAvailable, // For now, simple logic
+      }, { async: true }).catch(err => {
+        console.error('Failed to dispatch stock changed event:', err)
+      })
+    }
 
     return NextResponse.json({
       id: item.id,
@@ -177,7 +203,24 @@ export async function DELETE(
   try {
     const { id } = await params
 
+    // Get item info before deletion for socket dispatch
+    const item = await db.menuItem.findUnique({
+      where: { id },
+      select: { locationId: true }
+    })
+
     await db.menuItem.delete({ where: { id } })
+
+    // Dispatch socket event for real-time update
+    if (item) {
+      dispatchMenuItemChanged(item.locationId, {
+        itemId: id,
+        action: 'deleted',
+      }, { async: true }).catch(err => {
+        console.error('Failed to dispatch menu item deleted event:', err)
+      })
+    }
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Failed to delete item:', error)

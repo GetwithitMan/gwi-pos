@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 
 // GET - List all categories for a location
 export async function GET(request: NextRequest) {
@@ -78,6 +79,15 @@ export async function POST(request: NextRequest) {
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         ...(printerIds && { printerIds }),
       }
+    })
+
+    // Dispatch socket event for real-time menu structure update
+    dispatchMenuStructureChanged(location.id, {
+      action: 'category-created',
+      entityId: category.id,
+      entityType: 'category',
+    }, { async: true }).catch(err => {
+      console.error('Failed to dispatch category created event:', err)
     })
 
     return NextResponse.json({

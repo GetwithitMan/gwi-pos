@@ -927,6 +927,52 @@ model DeviceSession {
 
 ## Recent Changes
 
+### Legacy ItemModal Cleanup & Menu Socket Infrastructure (Skill 217 - Feb 7, 2026)
+Major cleanup of legacy code and infrastructure setup for real-time menu updates.
+
+**Legacy Code Removed**:
+- Removed entire ItemModal component (1,141 lines)
+- Removed `handleSaveItem` function (called deprecated endpoint)
+- Removed `showItemModal` and `editingItem` state variables
+- Removed ItemModal rendering block
+- File size reduced: 2,172 → 1,031 lines (52% smaller!)
+- "Add Item" button now creates blank item and opens in modern ItemEditor
+
+**Data Consistency Fixes**:
+- Fixed `extraPrice` / `extraUpsellPrice` to consistently use `null` (not mixing `0` and `null`)
+- Fixed boolean overwrites in PUT operations (`showOnPOS`/`showOnline` now use `!== undefined` pattern)
+- Standardized `Prisma.DbNull` usage for JSON columns (was inconsistently using `Prisma.JsonNull`)
+
+**Socket Infrastructure Added** (✅ Ready for online ordering):
+- Created `/src/types/public-menu.ts` - TypeScript contracts for public menu API
+- Added socket dispatch functions:
+  - `dispatchMenuItemChanged()` - Item CRUD events
+  - `dispatchMenuStockChanged()` - Stock status changes (86'd items)
+  - `dispatchMenuStructureChanged()` - Category/modifier changes
+  - `dispatchEntertainmentStatusChanged()` - Entertainment status (replaces polling)
+- Updated broadcast handlers in `/src/app/api/internal/socket/broadcast/route.ts`
+- Multi-location safety verified ✅
+
+**Tasks Created for Future Work**:
+1. Task #1: Implement online ordering socket subscriptions (client-side)
+2. Task #2: Replace entertainment polling with sockets (QUICK WIN - 2-3 hours)
+3. Task #3: Add `isOrderableOnline` computed field
+4. Task #4: Wire socket dispatches to menu CRUD routes
+
+**Benefits**:
+- Cleaner codebase (no deprecated code calling 410 endpoints)
+- Infrastructure ready for real-time menu updates
+- Path forward for 90% reduction in menu API polling
+- Foundation for instant "Sold Out" updates on online ordering
+
+**Key Files**:
+- `/src/app/(admin)/menu/page.tsx` - Cleaned up (52% smaller)
+- `/src/types/public-menu.ts` - New public menu contracts
+- `/src/lib/socket-dispatch.ts` - New dispatch functions
+- `/docs/skills/217-MENU-SOCKET-REALTIME-UPDATES.md` - Full documentation
+
+**See Also**: Priority 9 in Upcoming Work (TODO) section
+
 ### Modifier Cascade Delete & Orphan Cleanup (Skill 210 - Feb 2026)
 Safe recursive deletion of modifier groups with preview and automatic orphan cleanup.
 
@@ -1588,7 +1634,46 @@ Servers are tipped less when discounts/promos/gift cards are applied because tip
       - Swap group configuration
       (Some of this may already exist in ModifierGroup/Modifier models)
 
-### Priority 9: Table Capacity/Seats Sync (Database Integrity)
+### Priority 9: Real-Time Menu Updates & Online Ordering (Skill 217)
+**Status**: 🔄 Infrastructure Complete, Client Integration Pending
+**Created**: February 7, 2026
+
+Real-time socket-based updates for menu data to eliminate polling and enable instant sync.
+
+**✅ COMPLETED (Feb 7, 2026)**:
+- [x] TypeScript contracts for public menu API (`/src/types/public-menu.ts`)
+- [x] Socket dispatch functions (`dispatchMenuItemChanged`, `dispatchMenuStockChanged`, etc.)
+- [x] Broadcast handlers in socket server
+- [x] Multi-location safety verified
+
+**📋 PENDING - Required for Online Ordering**:
+- [ ] **Task #1**: Implement online ordering socket subscriptions (4-6 hours)
+  - Create `/src/hooks/useMenuSocket.ts` hook for client-side listeners
+  - Subscribe to `menu:item-changed`, `menu:stock-changed` events
+  - Patch React Query cache on socket events (eliminates polling)
+- [ ] **Task #2**: Replace entertainment polling with sockets (2-3 hours) - **QUICK WIN**
+  - Remove 3-second polling loop in `/src/app/(admin)/menu/page.tsx`
+  - Add socket listener for `entertainment:status-changed`
+  - Saves ~20 requests/minute
+- [ ] **Task #3**: Add `isOrderableOnline` computed field (2 hours)
+  - Server-side availability logic (time windows, day restrictions, stock)
+  - Single source of truth for "can customer order this?"
+  - Eliminates client-side logic duplication
+- [ ] **Task #4**: Wire socket dispatches to menu CRUD routes (3-4 hours)
+  - Add `dispatchMenuItemChanged()` calls to item POST/PUT/DELETE
+  - Add `dispatchMenuStockChanged()` when `isAvailable` changes
+  - Add `dispatchMenuStructureChanged()` to category/modifier routes
+  - Fire-and-forget pattern (`{ async: true }`)
+
+**Benefits**:
+- 90% reduction in menu API calls (no more polling)
+- Instant "Sold Out" display on online ordering when item 86'd
+- Real-time updates across all POS terminals and admin UIs
+- Lower server load and better scalability
+
+**See**: `/docs/skills/217-MENU-SOCKET-REALTIME-UPDATES.md` for full documentation
+
+### Priority 10: Table Capacity/Seats Sync (Database Integrity)
 The `Table.capacity` column can drift from actual `Seat` count if updated via direct DB edit or third-party API.
 This caused the "8 seats for two 4-tops" bug and can recur without proper safeguards.
 
