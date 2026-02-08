@@ -2651,14 +2651,22 @@ export function FloorPlanHome({
   const handleCloseOrder = useCallback(async () => {
     if (!activeOrderId) return
     try {
-      await fetch(`/api/orders/${activeOrderId}`, {
+      const res = await fetch(`/api/orders/${activeOrderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'cancelled' }),
       })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error('[handleCloseOrder] API error:', res.status, err)
+        toast.error(err.error || 'Failed to close order')
+        return
+      }
       toast.success('Order closed')
-    } catch {
-      toast.error('Failed to close order')
+    } catch (e) {
+      console.error('[handleCloseOrder] Network error:', e)
+      toast.error('Failed to close order — check connection')
+      return
     }
     // Clear the panel
     setInlineOrderItems([])
