@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
     const minOrders = parseInt(searchParams.get('minOrders') || '0')
     const minSpent = parseFloat(searchParams.get('minSpent') || '0')
     const sortBy = searchParams.get('sortBy') || 'totalSpent'
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
       return NextResponse.json(
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_CUSTOMERS)
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_CUSTOMERS, { soft: true })
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

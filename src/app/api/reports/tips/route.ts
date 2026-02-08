@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const employeeId = searchParams.get('employeeId')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || employeeId
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
       return NextResponse.json(
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE, { soft: true })
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

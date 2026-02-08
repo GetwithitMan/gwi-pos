@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const sectionId = searchParams.get('sectionId')
     const tableId = searchParams.get('tableId')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
       return NextResponse.json(
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW, { soft: true })
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

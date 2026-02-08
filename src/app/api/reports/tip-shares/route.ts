@@ -12,13 +12,13 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate') // YYYY-MM-DD
     const employeeId = searchParams.get('employeeId') // Optional filter
     const status = searchParams.get('status') // pending, accepted, paid_out, all
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || employeeId
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId') || employeeId
 
     if (!locationId) {
       return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
     }
 
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE, { soft: true })
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

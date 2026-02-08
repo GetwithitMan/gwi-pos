@@ -9,13 +9,13 @@ export async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
       return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
     }
 
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW)
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_VIEW, { soft: true })
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

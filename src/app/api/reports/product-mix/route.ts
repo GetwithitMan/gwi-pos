@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const endDate = searchParams.get('endDate')
     const categoryId = searchParams.get('categoryId')
     const groupBy = searchParams.get('groupBy') || 'item' // item, category, hour, day
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
 
     if (!locationId) {
       return NextResponse.json(
@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_PRODUCT_MIX)
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_PRODUCT_MIX, { soft: true })
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

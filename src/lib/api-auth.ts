@@ -31,9 +31,19 @@ type AuthResult = AuthSuccess | AuthFailure
 export async function requirePermission(
   employeeId: string | undefined | null,
   locationId: string,
-  permission: string
+  permission: string,
+  options?: { soft?: boolean }
 ): Promise<AuthResult> {
   if (!employeeId) {
+    // Soft mode: allow through when no employeeId (for UI pages that don't send it yet)
+    // TODO: Remove soft mode once all UI pages send employeeId
+    if (options?.soft) {
+      console.warn(`[api-auth] Soft auth bypass: no employeeId for permission ${permission}`)
+      return {
+        authorized: true,
+        employee: { id: '', firstName: '', lastName: '', displayName: null, locationId, permissions: [] },
+      }
+    }
     return {
       authorized: false,
       error: 'Employee ID is required',

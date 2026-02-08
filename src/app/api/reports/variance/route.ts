@@ -43,8 +43,8 @@ export async function GET(request: NextRequest) {
 
     const { locationId, startDate, endDate, department, category } = validation.data
 
-    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || searchParams.get('employeeId')
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY, { soft: true })
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
