@@ -2816,6 +2816,7 @@ export default function OrdersPage() {
               <OpenOrdersPanel
                 locationId={employee.location.id}
                 employeeId={employee.id}
+                employeePermissions={permissionsArray}
                 refreshTrigger={tabsRefreshTrigger}
                 isExpanded={isTabManagerExpanded}
                 onToggleExpand={() => setIsTabManagerExpanded(!isTabManagerExpanded)}
@@ -2845,6 +2846,12 @@ export default function OrdersPage() {
                 onNewTab={() => {
                   setShowTabsPanel(false)
                   setIsTabManagerExpanded(false)
+                }}
+                onClosedOrderAction={() => setTabsRefreshTrigger(prev => prev + 1)}
+                onOpenTipAdjustment={() => setShowTipAdjustment(true)}
+                onViewReceipt={(orderId) => {
+                  setReceiptOrderId(orderId)
+                  setShowReceiptModal(true)
                 }}
               />
             </div>
