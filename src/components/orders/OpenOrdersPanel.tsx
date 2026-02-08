@@ -419,6 +419,11 @@ export function OpenOrdersPanel({
             <span className={`text-xs ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
               #{order.displayNumber || order.orderNumber} • {order.employee.name} • {formatTime(order.createdAt)}
             </span>
+            {order.reopenedAt && (
+              <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold ${dark ? 'bg-orange-600/30 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
+                🔓 Reopened
+              </span>
+            )}
           </div>
           <span className={`font-bold text-sm ${dark ? 'text-green-400' : 'text-gray-900'}`}>
             {formatCurrency(order.total)}

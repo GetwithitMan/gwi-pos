@@ -1111,5 +1111,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     // Per-item delay
     setItemDelay,
     handleFireItem,
+
+    // Reopened order tracking
+    reopenedAt: currentOrder?.reopenedAt ?? null,
+    reopenReason: currentOrder?.reopenReason ?? null,
   }
 }

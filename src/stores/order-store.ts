@@ -132,6 +132,9 @@ interface Order {
   pendingDelay?: number | null       // Preset delay minutes (5, 10, etc.) — set by gutter 5m/10m
   delayStartedAt?: string | null     // ISO timestamp when delay timer started (on Send)
   delayFiredAt?: string | null       // ISO timestamp when delayed items were fired
+  // Reopened order tracking
+  reopenedAt?: string | null
+  reopenReason?: string | null
 }
 
 interface LoadedOrderData {
@@ -189,6 +192,8 @@ interface LoadedOrderData {
   tipTotal?: number
   total: number
   notes?: string
+  reopenedAt?: string | null
+  reopenReason?: string | null
 }
 
 interface OrderState {
@@ -346,6 +351,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         total: orderData.total,
         notes: orderData.notes,
         commissionTotal: 0,
+        reopenedAt: orderData.reopenedAt || null,
+        reopenReason: orderData.reopenReason || null,
       },
     })
   },

@@ -4049,6 +4049,8 @@ export default function OrdersPage() {
           multiSelectMode={quickPickMultiSelect}
           onToggleMultiSelect={toggleQuickPickMultiSelect}
           onSelectAllPending={selectAllPendingQuickPick}
+          reopenedAt={currentOrder?.reopenedAt}
+          reopenReason={currentOrder?.reopenReason}
           pendingDelay={currentOrder?.pendingDelay ?? undefined}
           delayStartedAt={currentOrder?.delayStartedAt ?? undefined}
           delayFiredAt={currentOrder?.delayFiredAt ?? undefined}

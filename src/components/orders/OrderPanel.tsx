@@ -95,6 +95,9 @@ export interface OrderPanelProps {
   // Per-item delay
   onFireItem?: (itemId: string) => void
   onCancelItemDelay?: (itemId: string) => void
+  // Reopened order tracking
+  reopenedAt?: string | null
+  reopenReason?: string | null
 }
 
 export function OrderPanel({
@@ -177,6 +180,9 @@ export function OrderPanel({
   // Per-item delay
   onFireItem,
   onCancelItemDelay,
+  // Reopened order tracking
+  reopenedAt,
+  reopenReason,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -614,6 +620,28 @@ export function OrderPanel({
           </div>
         )}
       </div>
+
+      {/* Reopened order banner */}
+      {reopenedAt && (
+        <div style={{
+          margin: '0 8px 8px',
+          padding: '8px 12px',
+          background: 'rgba(234, 88, 12, 0.15)',
+          border: '1px solid rgba(234, 88, 12, 0.4)',
+          borderRadius: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}>
+          <span style={{ fontSize: '16px' }}>🔓</span>
+          <div>
+            <span style={{ fontSize: '13px', fontWeight: 700, color: '#fb923c' }}>REOPENED ORDER</span>
+            {reopenReason && (
+              <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: '8px' }}>{reopenReason}</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Footer: Cash/Card toggle + expandable total + Send/Pay/Discount/Clear */}
       <div style={{ flexShrink: 0 }}>

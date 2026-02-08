@@ -5026,6 +5026,8 @@ export function FloorPlanHome({
                 courseDelays={activeOrder.courseDelays}
                 onSetCourseDelay={activeOrder.setCourseDelay}
                 onFireCourse={activeOrder.handleFireCourse}
+                reopenedAt={activeOrder.reopenedAt}
+                reopenReason={activeOrder.reopenReason}
                 pendingDelay={activeOrder.pendingDelay}
                 delayStartedAt={activeOrder.delayStartedAt}
                 delayFiredAt={activeOrder.delayFiredAt}
