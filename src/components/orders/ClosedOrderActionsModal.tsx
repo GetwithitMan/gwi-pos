@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { hasPermission } from '@/lib/auth-utils'
 
 interface Payment {
   id: string
@@ -59,16 +60,6 @@ const VOID_REASONS = [
 
 type ActionStep = 'select' | 'reason' | 'pin' | 'amount'
 type ActionType = 'reopen' | 'void' | 'rerun' | null
-
-function hasPermission(permissions: string[], required: string): boolean {
-  if (permissions.includes('*')) return true
-  const parts = required.split('.')
-  for (let i = parts.length; i > 0; i--) {
-    const wildcard = parts.slice(0, i - 1).join('.') + '.*'
-    if (permissions.includes(wildcard)) return true
-  }
-  return permissions.includes(required)
-}
 
 export function ClosedOrderActionsModal({
   isOpen,
