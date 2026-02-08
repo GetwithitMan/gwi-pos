@@ -1052,6 +1052,104 @@ All Phase 2 & 3 code was committed in previous sessions. This session added docu
 
 ---
 
+## Session: February 7, 2026 (Late) — OrderPanel Pipeline Consolidation & Depth Fix
+
+### Overview
+
+Cross-domain session (primarily run under PM: Menu) that fixed critical OrderPanel issues. The Orders domain received:
+1. Shared `useOrderPanelItems` hook eliminating 3 duplicate item mapping pipelines
+2. Modifier depth indentation fix (parent-chain walk replacing broken selections-based depth)
+3. Updated modifier rendering in OrderPanelItem (Tailwind classes, `↳` arrows)
+4. Pre-modifier boolean fields added to child modifier API response
+
+### Changes to Orders Domain Files
+
+#### NEW: `src/hooks/useOrderPanelItems.ts` (Skill 234)
+Single source of truth for mapping Zustand order store items → `OrderPanelItemData[]`.
+
+**Previously:** FloorPlanHome, BartenderView, and orders/page each had their own `.map()` pipeline to convert store items to `OrderPanelItemData`. These pipelines would diverge — some had `depth`, some didn't, some had `preModifier`, some didn't.
+
+**Now:** All 3 views call `useOrderPanelItems(menuItems?)` and get identical data including:
+- `depth: m.depth ?? 0`
+- `preModifier: m.preModifier ?? null`
+- `spiritTier: m.spiritTier ?? null`
+- `linkedBottleProductId: m.linkedBottleProductId ?? null`
+- `parentModifierId: m.parentModifierId ?? null`
+
+#### Modified: `src/components/orders/OrderPanelItem.tsx`
+- Updated `OrderPanelItemData` interface with all modifier fields
+- Replaced modifier rendering block (lines 480-515):
+  - Old: `•`/`–`/`∘` bullets, 10px indent, hardcoded hex colors
+  - New: `•` top-level, `↳` children, 20px indent per depth, Tailwind classes
+  - Pre-modifier labels: `NO` (red-400), `EXTRA` (amber-400), `LITE`/`SIDE` (blue-400)
+
+#### Modified: `src/components/floor-plan/FloorPlanHome.tsx`
+- Now imports and uses `useOrderPanelItems()` hook instead of inline `.map()`
+
+#### Modified: `src/components/bartender/BartenderView.tsx`
+- Now imports and uses `useOrderPanelItems()` hook instead of inline `.map()`
+
+#### Modified: `src/app/(pos)/orders/page.tsx`
+- Now imports and uses `useOrderPanelItems()` hook instead of inline `.map()`
+
+#### Modified: `src/types/orders.ts`
+- Added shared `IngredientModification` type (was only in order-store.ts)
+
+### Cross-Domain Changes (Owned by PM: Menu, Affecting Orders)
+
+#### `src/components/modifiers/useModifierSelections.ts`
+- **Depth computation rewrite:** Replaced broken `getGroupDepth()` (walked selections, always returned 0) with `childToParentGroupId` useMemo + parent-chain walk
+- **Stacking pricing fix:** Stacked modifier instances now use `extraPrice` when available
+- Added `useMemo` import
+
+#### `src/components/modifiers/ModifierGroupSection.tsx`
+- Pre-modifier fallback: uses boolean fields (`allowNo`, `allowLite`, `allowExtra`, `allowOnSide`) when `allowedPreModifiers` JSON array is empty
+
+#### `src/app/api/menu/modifiers/[id]/route.ts`
+- Added `allowNo`, `allowLite`, `allowExtra`, `allowOnSide` to child modifier group API response
+
+### Git Commit
+- `a1ec1c7` — **Order Panel Update** (pushed to `fix-001-modifier-normalization`)
+
+### Tests Verified
+- Test 2.4: Child modifier groups depth display ✅
+- Test 12.23: Modifier depth indentation with ↳ prefix ✅
+- Test 12.24: Pre-modifier color labels (NO/EXTRA/LITE) ✅
+
+### Known Issues
+1. **T-038: `usePOSLayout.loadLayout` Failed to fetch** — Pre-existing timing issue, unchanged
+2. **T-043: Duplicate `IngredientModification` interface** in `order-store.ts` shadows import from `@/types/orders`
+3. **Multi-select pre-modifiers** not supported (T-042, assigned to PM: Menu)
+
+### Task Board Updates
+- **T-041 COMPLETED** — Modifier depth indentation verified on live POS
+- **T-043 CREATED** → PM: Orders — Clean up duplicate interface in order-store.ts
+
+---
+
+## Next Steps
+
+### Priority 1: Bar Tabs Screen
+- [ ] Improve tab list UI in OpenOrdersPanel
+- [ ] Quick tab creation from floor plan
+- [ ] Pre-auth card capture for tabs
+- [ ] Tab transfer between employees
+- [ ] Tab merge functionality
+
+### Priority 2: Closed Orders Management
+- [ ] Closed orders list view with search/filter
+- [ ] View closed order details
+- [ ] Void payments on closed orders (manager approval)
+- [ ] Adjust tips after close
+- [ ] Reprint receipts
+- [ ] Reopen closed orders (with reason)
+
+### Priority 3: File Size Refactoring
+- [ ] orders/page.tsx still ~2,500+ lines — needs extraction
+- [ ] FloorPlanHome.tsx is very large — needs component extraction
+
+---
+
 ## How to Resume
 
 ```

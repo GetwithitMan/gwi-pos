@@ -35,6 +35,7 @@ interface OrderPanelActionsProps {
   employeeId?: string
   onPaymentSuccess?: (result: DatacapResult & { tipAmount: number }) => void
   onPaymentCancel?: () => void
+  onCloseOrder?: () => void      // Close/cancel order with $0 balance
   onSaveOrderFirst?: () => void  // Called when Pay is clicked but order isn't saved yet
   autoShowPayment?: boolean      // Auto-open payment processor (after order saved)
   onAutoShowPaymentHandled?: () => void  // Callback to clear the flag
@@ -62,6 +63,7 @@ export function OrderPanelActions({
   employeeId,
   onPaymentSuccess,
   onPaymentCancel,
+  onCloseOrder,
   onSaveOrderFirst,
   autoShowPayment,
   onAutoShowPaymentHandled,
@@ -696,6 +698,25 @@ export function OrderPanelActions({
             }}
           >
             💳 Pay
+          </button>
+        )}
+        {onCloseOrder && !hasItems && (
+          <button
+            onClick={onCloseOrder}
+            style={{
+              flex: 1,
+              padding: '14px',
+              borderRadius: '10px',
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              color: '#f87171',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            Close Order
           </button>
         )}
       </div>

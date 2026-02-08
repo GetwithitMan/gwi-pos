@@ -70,7 +70,8 @@
 | 230 | Quick Pick Numbers | DONE | 76, 99 | Gutter strip (1-9) for instant qty, multi-digit entry, multi-select, hold/delay/course buttons, per-employee setting |
 | 231 | Per-Item Delays | DONE | 13, 230 | Per-item delay presets (5/10/15/20m), countdown timers, auto-fire, hold/delay mutual exclusivity, fire-course API |
 | 232 | Note Edit Modal | DONE | - | Dark glassmorphism modal replacing window.prompt() for kitchen notes, touch-friendly |
-| 233 | Modifier Depth Indentation | DONE | 123 | Depth-based rendering (•/–/∘ prefixes), pre-modifier color labels (NO/EXTRA/LITE), pipeline fix across 7 stripping points |
+| 233 | Modifier Depth Indentation | DONE | 123 | Depth-based rendering (• top-level, ↳ children, 20px indent/depth), pre-modifier color labels (NO=red/EXTRA=amber/LITE=blue), childToParentGroupId parent-chain walk for depth computation |
+| 234 | Shared OrderPanel Items Hook | DONE | 233 | useOrderPanelItems hook consolidating 3 duplicate item mapping pipelines (FloorPlanHome, BartenderView, orders/page) into single source of truth |
 
 ### Table Management
 | Skill | Name | Status | Dependencies | Notes |
@@ -231,7 +232,7 @@
 | Foundation | 3 | 0 | 1 | 4 | 75% |
 | Order Flow | 7 | 1 | 0 | 8 | 94% |
 | Payment | 11 | 0 | 0 | 11 | 100% |
-| Advanced Orders | 5 | 0 | 0 | 5 | 100% |
+| Advanced Orders | 6 | 0 | 0 | 6 | 100% |
 | Table Management | 4 | 0 | 0 | 4 | 100% |
 | Bar Features | 2 | 1 | 0 | 3 | 83% |
 | Kitchen Display | 4 | 1 | 2 | 7 | 71% |
@@ -249,7 +250,7 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **127** | **5** | **13** | **145** | **92%** |
+| **TOTAL** | **129** | **5** | **13** | **147** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -369,6 +370,13 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-07 OrderPanel Pipeline Fixes)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 233 | Modifier Depth Indentation (v2) | Replaced broken depth computation with childToParentGroupId useMemo + parent-chain walk. Updated rendering: • for top-level, ↳ for children, 20px indent per depth, all Tailwind classes. Pre-modifier color labels: NO=red, EXTRA=amber, LITE/SIDE=blue. |
+| 234 | Shared OrderPanel Items Hook | Created useOrderPanelItems hook consolidating 3 duplicate item mapping pipelines from FloorPlanHome, BartenderView, and orders/page into single source of truth. Maps all modifier fields including depth, preModifier, spiritTier, linkedBottleProductId, parentModifierId. |
 
 ## Recently Completed (2026-02-06 Payment System Lockdown)
 
@@ -691,7 +699,8 @@ These skills emerged during development and are now part of the system:
 | 214 | Ingredient Verification Visibility | DONE | 145, 211 | ⚠ badges, category warnings, recursive reverse ingredient↔modifier linking |
 | 215 | Unified Modifier Inventory Deduction | DONE | 125, 143 | Fallback path: Modifier.ingredientId → Ingredient → InventoryItem for deduction |
 | 216 | Ingredient-Modifier Connection Visibility | DONE | 143, 204, 211, 214 | Connected badge, dual-path menu item resolution, expandable linked modifiers |
-| 217 | Bottle Service Tiers | DONE | 120 | BottleServiceTier model, deposit pre-auth, tiered packages, spend progress, re-auth alerts, auto-gratuity |
+| 217 | Menu Socket Real-Time Updates | DONE | - | Socket dispatch functions (dispatchMenuItemChanged, dispatchMenuStockChanged, dispatchMenuStructureChanged), broadcast handlers, multi-location safety. Client integration pending. |
+| 217b | Bottle Service Tiers | DONE | 120 | BottleServiceTier model, deposit pre-auth, tiered packages, spend progress, re-auth alerts, auto-gratuity |
 | 218 | Customer-Facing Display (CFD) | DONE | 120 | /cfd route, state machine (8 states), 5 components, Socket.io event types defined (not yet wired) |
 | 219 | Pay-at-Table | DONE | 120 | /pay-at-table route, split check (2-6 ways), 3 components, processes via Datacap sale |
 | 220 | Bartender Mobile | DONE | 120 | /mobile/tabs list + detail, 2 components, 10s polling, Socket.io event stubs (not yet wired) |

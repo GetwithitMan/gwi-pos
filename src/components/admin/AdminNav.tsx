@@ -190,6 +190,11 @@ const Icons = {
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   ),
+  dollar: (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  ),
   chevronDown: (
     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -213,6 +218,7 @@ interface NavItem {
   icon?: React.ReactNode
   permission?: string
   subItems?: NavItem[]
+  action?: string  // If set, triggers onAction instead of navigation
 }
 
 interface NavSection {
@@ -231,6 +237,7 @@ const navSections: NavSection[] = [
     permission: null,
     items: [
       { name: 'Floor Plan', href: '/orders', icon: Icons.grid },
+      { name: 'Tip Adjustments', href: '#', icon: Icons.dollar, action: 'tip_adjustments' },
       { name: 'Kitchen Display', href: '/kds', icon: Icons.monitor },
     ],
   },
@@ -356,9 +363,10 @@ interface AdminNavProps {
   forceOpen?: boolean
   onClose?: () => void
   permissions?: string[]
+  onAction?: (action: string) => void
 }
 
-export function AdminNav({ forceOpen, onClose, permissions = [] }: AdminNavProps) {
+export function AdminNav({ forceOpen, onClose, permissions = [], onAction }: AdminNavProps) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
   const [expandedSections, setExpandedSections] = useState<string[]>(['POS', 'Menu & Products', 'Reports'])
@@ -560,6 +568,18 @@ export function AdminNav({ forceOpen, onClose, permissions = [] }: AdminNavProps
                               </div>
                             )}
                           </>
+                        ) : item.action ? (
+                          // Action item (triggers callback instead of navigation)
+                          <button
+                            onClick={() => {
+                              onAction?.(item.action!)
+                              handleClose()
+                            }}
+                            className="flex items-center gap-3 px-6 py-2 text-sm transition-colors text-gray-600 hover:bg-gray-50 hover:text-gray-900 w-full text-left"
+                          >
+                            <span className="text-gray-400">{item.icon}</span>
+                            <span>{item.name}</span>
+                          </button>
                         ) : (
                           // Regular nav item
                           <Link

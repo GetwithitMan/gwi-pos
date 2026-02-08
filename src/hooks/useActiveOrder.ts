@@ -191,9 +191,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           id: item.id,
           menuItemId: item.menuItemId,
           name: item.name,
-          price: Number(item.unitPrice),
+          price: Number(item.price ?? item.unitPrice ?? 0),
           quantity: item.quantity,
-          itemTotal: Number(item.itemTotal || item.unitPrice * item.quantity),
+          itemTotal: Number(item.itemTotal || (item.price ?? item.unitPrice ?? 0) * item.quantity),
           specialNotes: item.specialNotes || null,
           seatNumber: item.seatNumber || null,
           courseNumber: item.courseNumber || null,
@@ -317,6 +317,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       }
 
       try {
+        console.log('[useActiveOrder] Creating order with tableId:', order.tableId, 'orderType:', order.orderType)
         const res = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

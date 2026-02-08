@@ -416,6 +416,7 @@ export function FloorPlanHome({
 
     // Ensure order exists in store before mutating items
     if (!store.currentOrder) {
+      console.log('[FloorPlanHome] startOrder with tableId:', activeTableIdRef.current, 'orderType:', activeOrderTypeRef.current)
       store.startOrder(activeOrderTypeRef.current || 'dine_in', {
         locationId,
         tableId: activeTableIdRef.current || undefined,
@@ -2000,8 +2001,13 @@ export function FloorPlanHome({
       if (!isSameTable) {
         setActiveOrderId(null)
         setActiveOrderNumber(null)
-        setInlineOrderItems([])
         useOrderStore.getState().clearOrder()
+        // Start a fresh order with the correct tableId so it's set before items are added
+        useOrderStore.getState().startOrder('dine_in', {
+          locationId,
+          tableId: primaryTable.id,
+          guestCount: totalSeats,
+        })
       }
       // If same table, keep existing items (user may have added items but not sent yet)
     }
@@ -2628,6 +2634,32 @@ export function FloorPlanHome({
     }
   }, [activeOrderId, onOpenPayment])
 
+  // Close/cancel an order with $0 balance (e.g. after voiding all items)
+  const handleCloseOrder = useCallback(async () => {
+    if (!activeOrderId) return
+    try {
+      await fetch(`/api/orders/${activeOrderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' }),
+      })
+      toast.success('Order closed')
+    } catch {
+      toast.error('Failed to close order')
+    }
+    // Clear the panel
+    setInlineOrderItems([])
+    setActiveOrderId(null)
+    setActiveOrderNumber(null)
+    setActiveOrderType(null)
+    setExpandedItemId(null)
+    activeOrder.closeNoteEditor()
+    setGuestCount(defaultGuestCount)
+    setActiveSeatNumber(null)
+    useOrderStore.getState().clearOrder()
+    loadFloorPlanData()
+  }, [activeOrderId, defaultGuestCount, activeOrder, loadFloorPlanData])
+
   // Close order panel
   const handleCloseOrderPanel = useCallback(() => {
     // If no items were added and no order exists, clear extra seats (reset to original)
@@ -2730,13 +2762,18 @@ export function FloorPlanHome({
     // Record the payment in the database and mark order as paid/closed
     if (activeOrderId) {
       try {
+        // Fetch server-side total to avoid client/server pricing mismatch
+        const orderRes = await fetch(`/api/orders/${activeOrderId}`)
+        const orderData = await orderRes.json()
+        const serverTotal = Number(orderData?.data?.total ?? orderData?.total ?? orderTotal)
+
         await fetch(`/api/orders/${activeOrderId}/pay`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             payments: [{
               method: 'credit',
-              amount: orderTotal,
+              amount: serverTotal,
               tipAmount: result.tipAmount || 0,
               cardBrand: result.cardBrand,
               cardLast4: result.cardLast4,
@@ -4973,6 +5010,7 @@ export function FloorPlanHome({
                 cashDiscountRate={pricing.cashDiscountRate / 100}
                 taxRate={pricing.taxRate}
                 onPaymentModeChange={(mode) => setPaymentMode(mode)}
+                onCloseOrder={activeOrderId ? handleCloseOrder : undefined}
                 onSaveOrderFirst={handleSaveOrderForPayment}
                 autoShowPayment={pendingPayAfterSave}
                 onAutoShowPaymentHandled={() => setPendingPayAfterSave(false)}

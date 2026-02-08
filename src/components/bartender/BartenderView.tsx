@@ -15,6 +15,7 @@ import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { useQuickPick } from '@/hooks/useQuickPick'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
+import ModeSelector from '@/components/orders/ModeSelector'
 
 // ============================================================================
 // TYPES
@@ -23,7 +24,9 @@ import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 interface Tab {
   id: string
   orderNumber: number
+  orderType: string
   tabName: string | null
+  tableName: string | null
   customerName: string | null
   cardLast4: string | null
   cardBrand: string | null
@@ -752,32 +755,33 @@ export function BartenderView({
 
   const loadTabs = useCallback(async () => {
     try {
-      const res = await fetch(`/api/tabs?status=open&limit=200`)
+      const res = await fetch(`/api/orders/open?locationId=${locationId}`)
       if (res.ok) {
         const data = await res.json()
-        console.log('[BartenderView] Raw tabs from API:', data.tabs?.slice(0, 2)) // Debug: show first 2 tabs
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mappedTabs: Tab[] = (data.tabs || []).map((t: any) => ({
+        const mappedTabs: Tab[] = (data.orders || []).map((t: any) => ({
           id: t.id,
           orderNumber: t.orderNumber,
-          tabName: t.tabName, // null if no custom name - will show employeeName instead
-          customerName: null,
+          orderType: t.orderType || 'bar_tab',
+          tabName: t.tabName,
+          tableName: t.tableName || (t.table?.name) || null,
+          customerName: t.customer?.name || null,
           cardLast4: t.preAuth?.last4 || null,
           cardBrand: t.preAuth?.cardBrand || null,
           total: t.total,
           itemCount: t.itemCount,
-          openedAt: t.openedAt,
+          openedAt: t.openedAt || t.createdAt,
           employeeId: t.employee.id,
           employeeName: t.employee.name,
-          stationId: t.stationId || null,
-          stationName: t.stationName || null,
+          stationId: null,
+          stationName: null,
           items: (t.items || []).map((item: any) => ({
             id: item.id,
             menuItemId: item.menuItemId,
             name: item.name,
             price: item.price,
             quantity: item.quantity,
-            sentToKitchen: item.sentToKitchen ?? true,
+            sentToKitchen: item.isCompleted || false,
             specialNotes: item.specialNotes || undefined,
             isHeld: item.isHeld || false,
             isCompleted: item.isCompleted || false,
@@ -802,7 +806,7 @@ export function BartenderView({
     } finally {
       setIsLoadingTabs(false)
     }
-  }, [])
+  }, [locationId])
 
   const loadCategories = useCallback(async () => {
     try {
@@ -1143,7 +1147,7 @@ export function BartenderView({
       store.loadOrder({
         id: selectedTab.id,
         orderNumber: selectedTab.orderNumber,
-        orderType: 'bar_tab',
+        orderType: selectedTab.orderType || 'bar_tab',
         tabName: selectedTab.tabName || undefined,
         guestCount: 1,
         status: 'open',
@@ -1675,43 +1679,7 @@ export function BartenderView({
           </div>
 
           {/* Center: BAR / FOOD / ENT Buttons */}
-          <div className="flex items-center gap-2">
-            {/* BAR Button */}
-            <button
-              onClick={() => setMenuSection('bar')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
-                menuSection === 'bar'
-                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/50 scale-105 ring-2 ring-blue-400/50'
-                  : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 hover:scale-102'
-              }`}
-            >
-              🍸 BAR
-            </button>
-
-            {/* FOOD Button */}
-            <button
-              onClick={() => setMenuSection('food')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
-                menuSection === 'food'
-                  ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/50 scale-105 ring-2 ring-orange-400/50'
-                  : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 hover:scale-102'
-              }`}
-            >
-              🍔 FOOD
-            </button>
-
-            {/* Entertainment Button */}
-            <button
-              onClick={() => setMenuSection('entertainment')}
-              className={`px-4 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
-                menuSection === 'entertainment'
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/50 scale-105 ring-2 ring-purple-400/50'
-                  : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700 hover:scale-102'
-              }`}
-            >
-              🎱 ENT
-            </button>
-          </div>
+          <ModeSelector value={menuSection} onChange={setMenuSection} />
 
           {/* Right: Navigation */}
           <div className="flex items-center gap-2">
@@ -1870,9 +1838,15 @@ export function BartenderView({
                           : 'bg-slate-700/30 border-2 border-transparent hover:bg-slate-700/50'
                       }`}
                     >
+                      {/* Order type badge */}
+                      {tab.orderType !== 'bar_tab' && (
+                        <div className="text-[10px] font-medium uppercase tracking-wider mb-0.5" style={{ color: tab.orderType === 'dine_in' ? '#818cf8' : tab.orderType === 'takeout' ? '#f59e0b' : '#94a3b8' }}>
+                          {tab.orderType === 'dine_in' ? (tab.tableName || 'Table') : tab.orderType === 'takeout' ? 'Takeout' : tab.orderType === 'delivery' ? 'Delivery' : tab.orderType.replace(/_/g, ' ')}
+                        </div>
+                      )}
                       {/* Tab name/number as primary identifier */}
                       <div className="font-bold text-white text-lg truncate">
-                        {tab.tabName || tab.customerName || `Tab #${tab.orderNumber}`}
+                        {tab.tabName || tab.customerName || (tab.orderType === 'dine_in' && tab.tableName ? tab.tableName : `#${tab.orderNumber}`)}
                       </div>
                       {/* Card info if present */}
                       {tab.cardLast4 && (
@@ -1910,9 +1884,16 @@ export function BartenderView({
                     >
                       <div className="flex-1 min-w-0">
                         <span className="font-medium text-white truncate block">
-                          {tab.tabName || tab.customerName || `Tab #${tab.orderNumber}`}
+                          {tab.tabName || tab.customerName || (tab.orderType === 'dine_in' && tab.tableName ? tab.tableName : `#${tab.orderNumber}`)}
                         </span>
-                        <span className="text-[10px] text-slate-500">{tab.employeeName}</span>
+                        <span className="text-[10px] text-slate-500">
+                          {tab.orderType !== 'bar_tab' && (
+                            <span className="uppercase mr-1" style={{ color: tab.orderType === 'dine_in' ? '#818cf8' : tab.orderType === 'takeout' ? '#f59e0b' : '#94a3b8' }}>
+                              {tab.orderType === 'dine_in' ? 'Table' : tab.orderType.replace(/_/g, ' ')}
+                            </span>
+                          )}
+                          {tab.employeeName}
+                        </span>
                       </div>
                       {tab.cardLast4 && (
                         <span className="text-xs text-slate-500">****{tab.cardLast4}</span>
@@ -2642,10 +2623,10 @@ export function BartenderView({
                                         if (navigator.vibrate) navigator.vibrate(10)
                                       }
                                     }}
-                                    className={`flex-1 flex flex-col items-center px-0.5 py-0.5 rounded text-[8px] font-semibold transition-all cursor-pointer ${config.color} ${isDefault ? 'ring-1 ring-white/50' : ''} text-white hover:brightness-110`}
+                                    className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer min-h-[36px] ${config.color} ${isDefault ? 'ring-1 ring-white/50' : ''} text-white hover:brightness-110`}
                                   >
                                     <span className="leading-tight">{config.label}</span>
-                                    <span className="text-[7px] opacity-75">{formatCurrency(displayPrice)}</span>
+                                    <span className="text-[10px] opacity-75">{formatCurrency(displayPrice)}</span>
                                   </div>
                                 )
                               })}
@@ -2678,10 +2659,10 @@ export function BartenderView({
                                         handleSpiritTierClick(item, tier)
                                       }
                                     }}
-                                    className={`flex-1 flex flex-col items-center px-1 py-0.5 rounded text-[8px] font-semibold transition-all ${config.color} ${config.hoverColor} text-white cursor-pointer`}
+                                    className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all min-h-[36px] ${config.color} ${config.hoverColor} text-white cursor-pointer`}
                                   >
                                     <span className="leading-tight">{config.label}</span>
-                                    <span className="text-[7px] opacity-75">{formatCurrency(displayPrice)}{tierOptions.length > 1 ? '+' : ''}</span>
+                                    <span className="text-[10px] opacity-75">{formatCurrency(displayPrice)}{tierOptions.length > 1 ? '+' : ''}</span>
                                   </div>
                                 )
                               })}

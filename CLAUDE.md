@@ -1812,7 +1812,7 @@ toast.error('Connection lost', 8000)
 | 2.1 | Add modifier to item | Select item → modifier modal → select modifier → verify on order | ⬜ |
 | 2.2 | Pre-modifiers (No/Lite/Extra) | Select modifier → tap No/Lite/Extra → verify prefix on order | ⬜ |
 | 2.3 | Stacked modifiers (2x) | Enable stacking → tap same modifier twice → verify 2x badge | ⬜ |
-| 2.4 | Child modifier groups (nested) | Select modifier with child group → navigate to child → select → verify depth display | ⬜ |
+| 2.4 | Child modifier groups (nested) | Select modifier with child group → navigate to child → select → verify depth display | ✅ 2026-02-07 |
 | 2.5 | Modifier with ingredient link | In Menu Builder: link modifier to ingredient → verify connection badge in /ingredients | ⬜ |
 | 2.6 | Spirit tier upgrades (quick select) | On cocktail: tap Call/Prem/Top → verify spirit upgrade applied | ⬜ |
 | 2.7 | Pour size selection | On liquor item: tap Shot/Dbl/Tall → verify price multiplier | ⬜ |
@@ -1966,8 +1966,8 @@ toast.error('Connection lost', 8000)
 | 12.20 | Per-item delay countdown | Set 5m delay → Send order → verify countdown timer renders on item → verify auto-fires at 0 | ⬜ |
 | 12.21 | Per-item delay Fire Now | Set delay → Send → tap "Fire" on countdown → verify item immediately fires to kitchen | ⬜ |
 | 12.22 | Hold and Delay mutually exclusive | Hold item → set delay → verify hold clears. Set delay → hold → verify delay clears | ⬜ |
-| 12.23 | Modifier depth indentation | Add item with child modifiers (House Salad → Ranch) → verify Ranch indented with – prefix | ⬜ |
-| 12.24 | Pre-modifier color labels | Add item → set modifier to "Extra" → verify amber EXTRA label in order panel | ⬜ |
+| 12.23 | Modifier depth indentation | Add item with child modifiers (House Salad → Ranch) → verify Ranch indented with ↳ prefix | ✅ 2026-02-07 |
+| 12.24 | Pre-modifier color labels | Add item → set modifier to "Extra" → verify amber EXTRA label in order panel | ✅ 2026-02-07 |
 | 12.25 | Coursing toggle via table options | Tap table name → enable coursing → verify items group by course in OrderPanel | ⬜ |
 | 12.26 | Open orders delay/hold/course badges | Create order with delayed/held items → open Orders panel → verify status badges shown | ⬜ |
 | 12.27 | Delete button under price | Add pending item → verify trash icon appears under price amount (not in separate row) | ⬜ |

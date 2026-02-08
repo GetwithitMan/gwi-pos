@@ -142,22 +142,8 @@ export function PaymentModal({
   // Use subtotal from props or fetched or default to orderTotal
   const effectiveSubtotal = subtotal ?? fetchedSubtotal ?? effectiveOrderTotal
 
-  // Don't render if not open
-  if (!isOpen) return null
-
-  // Show loading while fetching order
-  if (loadingOrder) {
-    return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-8 text-center">
-          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading order...</p>
-        </div>
-      </div>
-    )
-  }
-
   // Calculate amounts (memoized to prevent unnecessary recalculations)
+  // ALL hooks must be before any conditional returns
   const alreadyPaid = useMemo(
     () => existingPayments.reduce((sum, p) => sum + p.totalAmount, 0),
     [existingPayments]
@@ -203,6 +189,21 @@ export function PaymentModal({
     () => getQuickCashAmounts(totalWithTip),
     [totalWithTip]
   )
+
+  // Don't render if not open
+  if (!isOpen) return null
+
+  // Show loading while fetching order
+  if (loadingOrder) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-8 text-center">
+          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading order...</p>
+        </div>
+      </div>
+    )
+  }
 
   const handleSelectMethod = (method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account') => {
     setSelectedMethod(method)
@@ -372,7 +373,7 @@ export function PaymentModal({
       amount: currentTotal,
       tipAmount: result.tipAmount,
       cardBrand: result.cardBrand || 'card',
-      cardLast4: result.cardLast4 || '****',
+      cardLast4: result.cardLast4 || '0000',
       // Datacap fields for pay API
       datacapRecordNo: result.recordNo,
       datacapRefNumber: result.refNumber,
@@ -412,14 +413,16 @@ export function PaymentModal({
             giftCardId: p.giftCardId,
             giftCardNumber: p.giftCardNumber,
             houseAccountId: p.houseAccountId,
-            // Datacap Direct fields
-            datacapRecordNo: p.datacapRecordNo,
-            datacapRefNumber: p.datacapRefNumber,
-            datacapSequenceNo: p.datacapSequenceNo,
-            authCode: p.authCode,
-            entryMethod: p.entryMethod,
-            signatureData: p.signatureData,
-            amountAuthorized: p.amountAuthorized,
+            // Datacap Direct fields — only include if we have the required fields
+            ...(p.datacapRecordNo && p.datacapRefNumber ? {
+              datacapRecordNo: p.datacapRecordNo,
+              datacapRefNumber: p.datacapRefNumber,
+              datacapSequenceNo: p.datacapSequenceNo,
+              authCode: p.authCode,
+              entryMethod: p.entryMethod,
+              signatureData: p.signatureData,
+              amountAuthorized: p.amountAuthorized,
+            } : {}),
           })),
           employeeId,
         }),

@@ -65,6 +65,7 @@ export interface OrderPanelProps {
   cashDiscountRate?: number
   taxRate?: number
   onPaymentModeChange?: (mode: 'cash' | 'card') => void
+  onCloseOrder?: () => void
   onSaveOrderFirst?: () => void
   autoShowPayment?: boolean
   onAutoShowPaymentHandled?: () => void
@@ -146,6 +147,7 @@ export function OrderPanel({
   cashDiscountRate,
   taxRate,
   onPaymentModeChange,
+  onCloseOrder,
   onSaveOrderFirst,
   autoShowPayment,
   onAutoShowPaymentHandled,
@@ -636,6 +638,7 @@ export function OrderPanel({
           cashDiscountRate={cashDiscountRate}
           taxRate={taxRate}
           onPaymentModeChange={onPaymentModeChange}
+          onCloseOrder={onCloseOrder}
           onSaveOrderFirst={onSaveOrderFirst}
           autoShowPayment={autoShowPayment}
           onAutoShowPaymentHandled={onAutoShowPaymentHandled}

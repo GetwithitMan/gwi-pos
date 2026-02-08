@@ -134,7 +134,12 @@ export async function PUT(
     if (tableId !== undefined) updateData.tableId = tableId
     if (orderTypeId !== undefined) updateData.orderTypeId = orderTypeId
     if (customerId !== undefined) updateData.customerId = customerId
-    if (status !== undefined) updateData.status = status
+    if (status !== undefined) {
+      updateData.status = status
+      if (status === 'cancelled' || status === 'closed') {
+        updateData.closedAt = new Date()
+      }
+    }
 
     const updatedOrder = await db.order.update({
       where: { id },

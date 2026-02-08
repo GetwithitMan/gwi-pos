@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
         name: item.name,
         price: item.price,
         quantity: item.quantity,
-        itemTotal: itemTotal + modifiersTotal,
+        itemTotal: fullItemTotal,
         commissionAmount: itemCommission,
         specialNotes: item.specialNotes || null,
         seatNumber: item.seatNumber || null,

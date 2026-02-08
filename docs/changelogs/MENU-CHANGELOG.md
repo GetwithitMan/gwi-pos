@@ -601,3 +601,143 @@ This is now the #1 priority per user direction. The ordering experience desperat
 3. Review this changelog
 4. Review Pre-Launch Test Checklist in CLAUDE.md (Section 2)
 5. Pick up T-016 (POS UI lift) as first priority
+
+---
+
+## Session: Feb 7, 2026 — OrderPanel Pipeline Fixes (Depth, Pricing, Pre-Modifiers)
+
+### Context
+Continued from previous session. Workers had been sent to consolidate 3 duplicate OrderPanel item mapping pipelines and fix modifier rendering. Workers claimed completion but several changes were not actually applied. This session focused on directly fixing the remaining issues.
+
+### Problem Summary
+1. **Modifier depth indentation not working** — All modifiers rendered flat with `•` bullets at depth 0, even child modifiers (e.g., Ranch under House Salad)
+2. **Modifier pricing not flowing to OrderPanel** — Ranch at `$0.50` not adding to subtotal; stacked modifiers at `$0`
+3. **Pre-modifier buttons missing on child modifiers** — No/Lite/Extra/Side buttons not appearing for modifiers in child groups
+4. **Duplicate OrderPanel pipelines** — 3 views (FloorPlanHome, BartenderView, orders/page) each had their own `.map()` for order items
+
+### Workers Completed (from previous context)
+
+#### Worker 1: Shared useOrderPanelItems Hook ✅
+**Status:** COMPLETED
+**Files Created:**
+- `src/hooks/useOrderPanelItems.ts` — NEW shared hook mapping Zustand order store items → OrderPanelItemData[]
+**Files Modified:**
+- `src/components/floor-plan/FloorPlanHome.tsx` — Uses `useOrderPanelItems()` instead of inline `.map()`
+- `src/components/bartender/BartenderView.tsx` — Uses `useOrderPanelItems()` instead of inline `.map()`
+- `src/app/(pos)/orders/page.tsx` — Uses `useOrderPanelItems()` instead of inline `.map()`
+- `src/components/orders/OrderPanelItem.tsx` — Updated `OrderPanelItemData` interface with full modifier fields
+- `src/types/orders.ts` — Added shared `IngredientModification` type
+
+#### Worker 2: OrderPanel Modifier Rendering ⚠️ PARTIAL
+**Status:** CLAIMED COMPLETE but changes NOT APPLIED to OrderPanelItem.tsx
+**Issue:** Worker said it updated the modifier rendering block but the old `•`/`–`/`∘` bullets and hardcoded hex colors remained. Fixed directly by PM.
+
+### Direct Fixes Applied (This Session)
+
+#### Fix 1: Modifier Rendering Block (OrderPanelItem.tsx lines 480-515)
+**Problem:** Old rendering used `•`/`–`/`∘` bullets with 10px indent and hardcoded hex colors
+**Fix:** Replaced with `•` for top-level, `↳` for children, 20px indent per depth, all Tailwind classes
+**File:** `src/components/orders/OrderPanelItem.tsx`
+
+#### Fix 2: Stacked Modifier Pricing (useModifierSelections.ts)
+**Problem:** Ranch has `price: 0` and `extraPrice: 0.50` in DB. Stacking code used `modifier.price` ($0) for additional instances, so stacked Ranch = $0
+**Fix:** Stacked modifier instances now use `extraPrice` when available (`extraPrice > 0` ? `extraPrice` : `price`)
+**File:** `src/components/modifiers/useModifierSelections.ts`
+
+#### Fix 3: Child Modifier Pre-Modifier Buttons (API route)
+**Problem:** `/api/menu/modifiers/[id]/route.ts` (used to load child groups) didn't return `allowNo`/`allowLite`/`allowExtra`/`allowOnSide` boolean fields. ModifierGroupSection fallback logic couldn't find them, and `allowedPreModifiers` JSON was empty.
+**Fix:** Added 4 boolean fields to the modifier response object
+**File:** `src/app/api/menu/modifiers/[id]/route.ts`
+
+#### Fix 4: Modifier Depth Computation — CRITICAL (useModifierSelections.ts)
+**Problem:** `getGroupDepth()` walked through `selections` to find parent relationships, but the API returns ALL modifier groups (top-level AND child) in a flat array. `modifierGroups.some(g => g.id === groupId)` matched child groups too, always returning depth 0.
+
+**First attempt (failed):** Added `childGroupIds` set to exclude known child groups from "top-level" check. Still returned 0 because selections-based parent lookup was unreliable.
+
+**Final fix:** Replaced entire depth computation with:
+1. `childToParentGroupId` useMemo — builds static `childGroupId → parentGroupId` mapping from API group/modifier data
+2. `getGroupDepth()` parent-chain walk — walks up `childToParentGroupId` map counting hops
+
+This uses static group data (always available) instead of selection state (timing-dependent). User confirmed: "hey that worked"
+
+**File:** `src/components/modifiers/useModifierSelections.ts`
+
+---
+
+### Files Modified (This Session)
+
+| File | Change | Details |
+|------|--------|---------|
+| `src/hooks/useOrderPanelItems.ts` | NEW | Shared hook for OrderPanel item mapping (Worker 1) |
+| `src/components/orders/OrderPanelItem.tsx` | Modified | Updated interface + modifier rendering block |
+| `src/components/floor-plan/FloorPlanHome.tsx` | Modified | Uses shared hook (Worker 1) |
+| `src/components/bartender/BartenderView.tsx` | Modified | Uses shared hook (Worker 1) |
+| `src/app/(pos)/orders/page.tsx` | Modified | Uses shared hook (Worker 1) |
+| `src/types/orders.ts` | Modified | Added shared IngredientModification type |
+| `src/components/modifiers/useModifierSelections.ts` | Modified | Depth computation rewrite + stacking pricing fix |
+| `src/components/modifiers/ModifierGroupSection.tsx` | Modified | Pre-modifier boolean fallback (previous context) |
+| `src/app/api/menu/modifiers/[id]/route.ts` | Modified | Added allowNo/Lite/Extra/OnSide to response |
+
+### Git Commit
+- `a1ec1c7` — **Order Panel Update** (pushed to `fix-001-modifier-normalization`)
+
+### Architectural Decisions Made
+1. **childToParentGroupId useMemo over selections-based depth** — Static group data is always available; selection state has timing issues
+2. **extraPrice for stacked instances** — Stacking = adding extras, so `extraPrice` ($0.50) is the correct charge, not `price` ($0 for included dressings)
+3. **Boolean field fallback for pre-modifiers** — `allowedPreModifiers` JSON array is often empty; boolean fields (`allowNo` etc.) are more reliable
+4. **Shared useOrderPanelItems hook** — Single source of truth eliminates 3 duplicate mapping pipelines
+
+### Known Issues
+1. **First Ranch selection is $0** — By design for included dressings. If all Ranch should cost money, set `price: 0.50` in Menu Builder
+2. **Multi-select pre-modifiers not supported** — Can't do "Side Extra Ranch" (both Side + Extra on same modifier). Pre-modifier field is a single string. Workaround: use stacking (add Ranch twice, one as Side, one as Extra). Future enhancement to make `preModifier` an array.
+3. **order-store.ts duplicate interface** — Has a duplicate `IngredientModification` interface that shadows the import from `@/types/orders`. Cleanup candidate.
+
+### Tests Ready to Verify
+- Test 2.4: Child modifier groups (nested) — depth display now working ✅
+- Test 12.23: Modifier depth indentation — `↳` arrows + indentation working ✅
+- Test 12.24: Pre-modifier color labels — red NO, amber EXTRA, blue LITE/SIDE working ✅
+
+---
+
+### Next Session TODO — Menu Domain (UPDATED)
+
+### ⭐ Priority 1: POS Front-End Ordering UI Lift (T-016)
+- [ ] ModifierModal flow redesign — better group navigation, stacking, child groups
+- [ ] Item selection UX — category/item grid, touch targets, visual hierarchy
+- [ ] Order summary panel polish — modifier depth confirmed working, continue polish
+- [ ] Glassmorphism consistency across all POS order screens
+- [ ] Combo step flow UX
+- [ ] Mobile/tablet responsive touch targets
+- [ ] Animation/transition cleanup
+
+### Priority 2: Modifier Customization in Item Builder (T-013)
+- [ ] Extra price upcharge per modifier
+- [ ] Lite/Extra multipliers for inventory
+- [ ] Swap group configuration
+
+### Priority 3: Inventory ↔ Menu Sync Verification (T-017)
+- [ ] Test ingredient linking end-to-end
+- [ ] Investigate "Beef Patty → Casa Fries" bug if still reproducing
+- [ ] Verify modifier ingredient deduction via Skill 215
+
+### Priority 4: (CARRYOVER) Ingredient Visibility Toggle
+- [ ] `showOnPOS` boolean
+- [ ] Admin toggle
+- [ ] POS filter
+
+### Priority 5: Admin UX Polish (CARRYOVER)
+- [ ] Exclusion Group Key → Dropdown Selector
+- [ ] Drag-and-Drop Modifier Group Reordering
+
+### Priority 6: Modifier Recipe Support (T-005)
+- [ ] Multi-ingredient recipes for modifiers (big feature, P3)
+
+---
+
+### How to Resume
+1. Say: `PM Mode: Menu`
+2. **Review `/docs/PM-TASK-BOARD.md`** — check for tasks assigned to PM: Menu
+3. Review this changelog
+4. Review Pre-Launch Test Checklist in CLAUDE.md (Section 2 + Section 12)
+5. All workers from this session are COMPLETE ✅
+6. Focus on Priority 1: POS Front-End Ordering UI Lift (T-016)

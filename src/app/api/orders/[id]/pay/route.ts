@@ -268,11 +268,9 @@ export async function POST(
           roundingAdjustment: roundingAdjustment !== 0 ? roundingAdjustment : undefined,
         }
       } else if (payment.method === 'credit' || payment.method === 'debit') {
+        // Default cardLast4 to '0000' if missing or invalid (e.g. simulated payments)
         if (!payment.cardLast4 || !/^\d{4}$/.test(payment.cardLast4)) {
-          return NextResponse.json(
-            { error: 'Valid card last 4 digits required' },
-            { status: 400 }
-          )
+          payment.cardLast4 = '0000'
         }
 
         // Use real Datacap fields when available, fall back to simulated

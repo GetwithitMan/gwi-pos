@@ -69,19 +69,21 @@
 | T-038 | Fix `usePOSLayout.loadLayout` Failed to fetch on page load — timing issue where layout API fires before employee ID is available. Needs guard or retry. | PM: Orders | PM: Orders | 2026-02-07 | P2 | Pre-existing issue. File: src/hooks/usePOSLayout.ts |
 | T-039 | Add Quick Pick Numbers toggle to gear dropdown on all 3 views — FloorPlanHome, BartenderView, orders/page need gear menu option for `quickPickEnabled` | PM: Orders | PM: Orders | 2026-02-07 | P2 | Settings infrastructure done (`src/lib/settings.ts`), just needs UI toggle wiring |
 | T-040 | Verify per-item delay countdown + auto-fire end-to-end — Add 5m delay to item, send order, verify countdown renders, verify item auto-fires when timer hits 0 | PM: Orders | PM: Orders | 2026-02-07 | P1 | Critical feature verification. Timer logic in OrderPanelItem.tsx, fire logic in useActiveOrder.ts |
-| T-041 | Verify modifier depth indentation visually — Add item with child modifiers (e.g. House Salad → Ranch), confirm depth 0/1/2 renders with correct prefix/indent/color | PM: Orders | PM: Orders | 2026-02-07 | P1 | Pipeline fix shipped in f7e479a. Needs visual confirmation on live POS. |
+| T-042 | Multi-select pre-modifiers — Allow combining pre-modifiers (e.g. "Side Extra Ranch"). Requires `preModifier` field to become array or compound string. | PM: Menu | PM: Menu | 2026-02-07 | P3 | Discovered during OrderPanel session. Workaround: stack modifier twice with different pre-mods. Files: useModifierSelections.ts, ModifierGroupSection.tsx, OrderPanelItem.tsx |
+| T-043 | Clean up duplicate IngredientModification interface in order-store.ts — shadows import from @/types/orders.ts | PM: Orders | PM: Menu | 2026-02-07 | P3 | Tech debt. File: src/stores/order-store.ts |
 
 ## In Progress
 
 | ID | Task | Assigned To | Picked Up | Notes |
 |----|------|-------------|-----------|-------|
-| | | | | |
+| T-016 | POS front-end ordering UI lift — ModifierModal flow, item selection UX, order panel polish | PM: Menu | 2026-02-07 | OrderPanel modifier depth, pricing, pre-modifier buttons fixed this session. Remaining: ModifierModal redesign, item grid layout, glassmorphism consistency |
 
 ## Completed
 
 | ID | Task | Completed By | Date | Notes |
 |----|------|-------------|------|-------|
 | T-015 | Sync updated Skill 215 doc to worktree | PM: Inventory | 2026-02-06 | Verified — 215 doc synced with all 13 sections |
+| T-041 | Verify modifier depth indentation visually | PM: Menu | 2026-02-07 | Fixed: `childToParentGroupId` parent-chain walk in useModifierSelections.ts. Depth 0=`•`, depth 1+=`↳` with 20px indent. Committed as `a1ec1c7` |
 
 ---
 

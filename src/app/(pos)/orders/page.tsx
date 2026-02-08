@@ -77,6 +77,7 @@ import { useQuickPick } from '@/hooks/useQuickPick'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import { toast } from '@/stores/toast-store'
+import TipAdjustmentOverlay from '@/components/tips/TipAdjustmentOverlay'
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig } from '@/types'
 
 export default function OrdersPage() {
@@ -290,6 +291,8 @@ export default function OrdersPage() {
 
   // Tabs panel state
   const [showTabsPanel, setShowTabsPanel] = useState(false)
+  const [isTabManagerExpanded, setIsTabManagerExpanded] = useState(false)
+  const [showTipAdjustment, setShowTipAdjustment] = useState(false)
   const [showNewTabModal, setShowNewTabModal] = useState(false)
   const [showTabDetailModal, setShowTabDetailModal] = useState(false)
   const [showTabTransferModal, setShowTabTransferModal] = useState(false)
@@ -2789,6 +2792,7 @@ export default function OrdersPage() {
             forceOpen={true}
             onClose={() => setShowAdminNav(false)}
             permissions={employee?.permissions || []}
+            onAction={(action) => { if (action === 'tip_adjustments') setShowTipAdjustment(true) }}
           />
         )}
         {/* Display Settings Modal */}
@@ -2802,23 +2806,21 @@ export default function OrdersPage() {
         {/* Open Orders Panel */}
         {showTabsPanel && (
           <>
-            <div
-              className="fixed inset-0 bg-black/30 z-40"
-              onClick={() => setShowTabsPanel(false)}
-            />
-            <div className="fixed left-0 top-0 bottom-0 w-80 bg-slate-900 shadow-xl z-50">
+            {!isTabManagerExpanded && (
+              <div
+                className="fixed inset-0 bg-black/30 z-40"
+                onClick={() => setShowTabsPanel(false)}
+              />
+            )}
+            <div className={isTabManagerExpanded ? '' : 'fixed left-0 top-0 bottom-0 w-80 bg-slate-900 shadow-xl z-50'}>
               <OpenOrdersPanel
                 locationId={employee.location.id}
                 employeeId={employee.id}
                 refreshTrigger={tabsRefreshTrigger}
+                isExpanded={isTabManagerExpanded}
+                onToggleExpand={() => setIsTabManagerExpanded(!isTabManagerExpanded)}
                 onSelectOrder={(order) => {
-                  // Open payment modal for the selected order
-                  setOrderToPayId(order.id)
-                  setShowPaymentModal(true)
-                  setShowTabsPanel(false)
-                }}
-                onViewOrder={(order) => {
-                  // Load order into FloorPlanHome for viewing/editing
+                  // Load the order into the order panel (same as View)
                   setOrderToLoad({
                     id: order.id,
                     orderNumber: order.orderNumber,
@@ -2827,10 +2829,22 @@ export default function OrdersPage() {
                     orderType: order.orderType,
                   })
                   setShowTabsPanel(false)
+                  setIsTabManagerExpanded(false)
+                }}
+                onViewOrder={(order) => {
+                  setOrderToLoad({
+                    id: order.id,
+                    orderNumber: order.orderNumber,
+                    tableId: order.tableId || undefined,
+                    tabName: order.tabName || undefined,
+                    orderType: order.orderType,
+                  })
+                  setShowTabsPanel(false)
+                  setIsTabManagerExpanded(false)
                 }}
                 onNewTab={() => {
-                  // Close panel - user can use the Bar Tab button on the floor plan
                   setShowTabsPanel(false)
+                  setIsTabManagerExpanded(false)
                 }}
               />
             </div>
@@ -3021,6 +3035,7 @@ export default function OrdersPage() {
             }}
             employeeId={employee?.id}
             terminalId="terminal-1"
+            locationId={employee?.location?.id}
           />
         )}
         {/* Receipt Modal - for floor plan after payment */}
@@ -3037,6 +3052,14 @@ export default function OrdersPage() {
           orderId={receiptOrderId}
           locationId={employee.location?.id || ''}
           receiptSettings={receiptSettings}
+        />
+
+        {/* Tip Adjustment Overlay (Floor Plan) */}
+        <TipAdjustmentOverlay
+          isOpen={showTipAdjustment}
+          onClose={() => setShowTipAdjustment(false)}
+          locationId={employee?.location?.id}
+          employeeId={employee?.id}
         />
       </>
     )
@@ -3101,6 +3124,7 @@ export default function OrdersPage() {
             forceOpen={true}
             onClose={() => setShowAdminNav(false)}
             permissions={employee?.permissions || []}
+            onAction={(action) => { if (action === 'tip_adjustments') setShowTipAdjustment(true) }}
           />
         )}
         {/* Modifier Modal - shared */}
@@ -3147,6 +3171,7 @@ export default function OrdersPage() {
             }}
             employeeId={employee?.id}
             terminalId="terminal-1"
+            locationId={employee?.location?.id}
           />
         )}
         {/* Receipt Modal - for bartender after payment */}
@@ -3159,6 +3184,14 @@ export default function OrdersPage() {
           orderId={receiptOrderId}
           locationId={employee.location?.id || ''}
           receiptSettings={receiptSettings}
+        />
+
+        {/* Tip Adjustment Overlay (Bartender) */}
+        <TipAdjustmentOverlay
+          isOpen={showTipAdjustment}
+          onClose={() => setShowTipAdjustment(false)}
+          locationId={employee?.location?.id}
+          employeeId={employee?.id}
         />
       </>
     )
@@ -4066,7 +4099,7 @@ export default function OrdersPage() {
             onClick={() => setShowAdminNav(false)}
           />
           {/* Admin Nav - positioned over the overlay */}
-          <AdminNav forceOpen={true} onClose={() => setShowAdminNav(false)} permissions={employee?.permissions || []} />
+          <AdminNav forceOpen={true} onClose={() => setShowAdminNav(false)} permissions={employee?.permissions || []} onAction={(action) => { if (action === 'tip_adjustments') setShowTipAdjustment(true) }} />
         </>
       )}
 
@@ -4248,17 +4281,21 @@ export default function OrdersPage() {
       {/* Open Orders Panel Slide-out */}
       {showTabsPanel && (
         <>
-          <div
-            className="fixed inset-0 bg-black/30 z-40"
-            onClick={() => setShowTabsPanel(false)}
-          />
-          <div className="fixed left-0 top-0 bottom-0 w-80 bg-white shadow-xl z-50">
+          {!isTabManagerExpanded && (
+            <div
+              className="fixed inset-0 bg-black/30 z-40"
+              onClick={() => setShowTabsPanel(false)}
+            />
+          )}
+          <div className={isTabManagerExpanded ? '' : 'fixed left-0 top-0 bottom-0 w-80 bg-white shadow-xl z-50'}>
             <OpenOrdersPanel
               locationId={employee?.location?.id}
               employeeId={employee?.id}
               onSelectOrder={handleSelectOpenOrder}
               onNewTab={handleNewTab}
               refreshTrigger={tabsRefreshTrigger}
+              isExpanded={isTabManagerExpanded}
+              onToggleExpand={() => setIsTabManagerExpanded(prev => !prev)}
               onViewReceipt={(orderId) => {
                 setReceiptOrderId(orderId)
                 setShowReceiptModal(true)
@@ -4442,6 +4479,7 @@ export default function OrdersPage() {
           onPaymentComplete={handlePaymentComplete}
           employeeId={employee?.id}
           terminalId="terminal-1"
+          locationId={employee?.location?.id}
         />
       )}
 
@@ -4762,6 +4800,14 @@ export default function OrdersPage() {
           }}
         />
       )}
+
+      {/* Tip Adjustment Overlay */}
+      <TipAdjustmentOverlay
+        isOpen={showTipAdjustment}
+        onClose={() => setShowTipAdjustment(false)}
+        locationId={employee?.location?.id}
+        employeeId={employee?.id}
+      />
     </div>
   )
 }
