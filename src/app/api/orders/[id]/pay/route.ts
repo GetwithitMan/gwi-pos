@@ -145,6 +145,20 @@ export async function POST(
     const orderTotal = Number(order.total)
     const remaining = orderTotal - alreadyPaid
 
+    // If order total is $0 (e.g., all items voided), close the order without payment
+    if (remaining <= 0 && alreadyPaid === 0) {
+      await db.order.update({
+        where: { id: orderId },
+        data: { status: 'paid', paidAt: new Date() },
+      })
+      return NextResponse.json({
+        success: true,
+        orderId,
+        message: 'Order closed with $0 balance (all items voided/comped)',
+        totals: { subtotal: 0, tax: 0, total: 0, tip: 0 },
+      })
+    }
+
     // Calculate total being paid now
     const paymentTotal = payments.reduce((sum, p) => sum + p.amount + (p.tipAmount || 0), 0)
 

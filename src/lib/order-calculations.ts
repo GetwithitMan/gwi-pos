@@ -18,6 +18,7 @@
 export interface OrderItemForCalculation {
   price: number
   quantity: number
+  status?: string // 'active' | 'voided' | 'comped' — voided/comped items excluded from totals
   modifiers?: Array<{
     price: number
     quantity?: number
@@ -111,7 +112,9 @@ export function calculateItemCommission(
  * Use this for both inline items (client) and persisted items (server)
  */
 export function calculateOrderSubtotal(items: OrderItemForCalculation[]): number {
-  return items.reduce((sum, item) => sum + calculateItemTotal(item), 0)
+  return items
+    .filter(item => !item.status || item.status === 'active')
+    .reduce((sum, item) => sum + calculateItemTotal(item), 0)
 }
 
 /**

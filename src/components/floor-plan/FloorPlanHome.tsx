@@ -5324,6 +5324,7 @@ export function FloorPlanHome({
                     name: item.name,
                     price: Number(item.price),
                     quantity: item.quantity,
+                    status: item.status || 'active',
                     modifiers: item.modifiers?.map((mod: any) => ({
                       id: (mod.id || mod.modifierId) ?? '',
                       modifierId: mod.modifierId,
@@ -5396,6 +5397,7 @@ export function FloorPlanHome({
                     name: item.name,
                     price: Number(item.price),
                     quantity: item.quantity,
+                    status: item.status || 'active',
                     modifiers: item.modifiers?.map((mod: any) => ({
                       id: (mod.id || mod.modifierId) ?? '',
                       modifierId: mod.modifierId,
