@@ -113,6 +113,7 @@ interface OpenOrdersPanelProps {
   onOpenTipAdjustment?: () => void
   isExpanded?: boolean
   onToggleExpand?: () => void
+  forceDark?: boolean
 }
 
 type SortOption = 'newest' | 'oldest' | 'alpha_first' | 'alpha_last' | 'total_high' | 'total_low' | 'employee'
@@ -162,7 +163,7 @@ function getOrderTypeDisplay(order: OpenOrder, dark: boolean): { icon: string; l
 
 export function OpenOrdersPanel({
   locationId, employeeId, employeePermissions = [], onSelectOrder, onViewOrder, onNewTab,
-  refreshTrigger, onViewReceipt, onClosedOrderAction, onOpenTipAdjustment, isExpanded = false, onToggleExpand,
+  refreshTrigger, onViewReceipt, onClosedOrderAction, onOpenTipAdjustment, isExpanded = false, onToggleExpand, forceDark = false,
 }: OpenOrdersPanelProps) {
   const [orders, setOrders] = useState<OpenOrder[]>([])
   const [closedOrders, setClosedOrders] = useState<OpenOrder[]>([])
@@ -181,7 +182,7 @@ export function OpenOrdersPanel({
   const [hasMoreClosed, setHasMoreClosed] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
-  const dark = isExpanded
+  const dark = isExpanded || forceDark
 
   useEffect(() => {
     if (locationId) loadOrders()

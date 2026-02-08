@@ -3080,6 +3080,7 @@ export default function OrdersPage() {
           locationId={employee.location.id}
           employeeId={employee.id}
           employeeName={employee.displayName}
+          employeePermissions={permissionsArray}
           onLogout={logout}
           onSwitchToFloorPlan={() => setViewMode('floor-plan')}
           onOpenPayment={(orderId) => {

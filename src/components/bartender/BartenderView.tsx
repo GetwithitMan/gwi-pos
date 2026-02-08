@@ -16,47 +16,12 @@ import { useQuickPick } from '@/hooks/useQuickPick'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 import ModeSelector from '@/components/orders/ModeSelector'
+import { OpenOrdersPanel } from '@/components/orders/OpenOrdersPanel'
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-interface Tab {
-  id: string
-  orderNumber: number
-  orderType: string
-  tabName: string | null
-  tableName: string | null
-  customerName: string | null
-  cardLast4: string | null
-  cardBrand: string | null
-  total: number
-  itemCount: number
-  openedAt: string
-  employeeId: string
-  employeeName: string
-  stationId?: string | null
-  stationName?: string | null
-  items: TabItem[]
-}
-
-interface TabItem {
-  id: string
-  menuItemId: string
-  name: string
-  price: number
-  quantity: number
-  modifiers?: { id: string; name: string; price: number; preModifier?: string; depth?: number }[]
-  sentToKitchen?: boolean
-  specialNotes?: string
-  isHeld?: boolean
-  isCompleted?: boolean
-  seatNumber?: number | null
-  courseNumber?: number | null
-  courseStatus?: string | null
-  resendCount?: number
-  createdAt?: string
-}
 
 interface Category {
   id: string
@@ -150,16 +115,11 @@ interface BartenderViewProps {
     existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
   ) => void
   onSwitchToFloorPlan?: () => void
+  employeePermissions?: string[]
   // Settings
   requireNameWithoutCard?: boolean
   tapCardBehavior?: 'close' | 'tab' | 'prompt'
 }
-
-// Sort options for tabs
-type TabSortOption = 'newest' | 'oldest' | 'alpha_first' | 'alpha_last' | 'total_high' | 'total_low' | 'employee'
-
-// Tab view modes
-type TabViewMode = 'condensed' | 'card'
 
 // Menu sections - bar, food, or entertainment (standalone)
 type MenuSection = 'bar' | 'food' | 'entertainment'
@@ -299,6 +259,7 @@ export function BartenderView({
   onOpenPayment,
   onOpenModifiers,
   onSwitchToFloorPlan,
+  employeePermissions = [],
   requireNameWithoutCard = false,
 }: BartenderViewProps) {
   // ---------------------------------------------------------------------------
@@ -311,22 +272,11 @@ export function BartenderView({
   // ---------------------------------------------------------------------------
 
   // Tabs
-  const [tabs, setTabs] = useState<Tab[]>([])
-  const [isLoadingTabs, setIsLoadingTabs] = useState(true)
   const [selectedTabId, setSelectedTabId] = useState<string | null>(null)
 
   // Tab panel expansion
   const [isTabPanelExpanded, setIsTabPanelExpanded] = useState(false)
-
-  // Tab view mode
-  const [tabViewMode, setTabViewMode] = useState<TabViewMode>('card')
-
-  // Tab sorting
-  const [tabSortBy, setTabSortBy] = useState<TabSortOption>('newest')
-
-  // Search/Filter
-  const [searchQuery, setSearchQuery] = useState('')
-  const [showMineOnly, setShowMineOnly] = useState(false)
+  const [tabRefreshTrigger, setTabRefreshTrigger] = useState(0)
 
   // Menu section (Bar / Food / My Bar)
   const [menuSection, setMenuSection] = useState<MenuSection>('bar')
@@ -564,7 +514,6 @@ export function BartenderView({
   const [selectedSpiritTier, setSelectedSpiritTier] = useState<string | null>(null)
 
   // Refs
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const categoryLongPressTimer = useRef<NodeJS.Timeout | null>(null)
   const favoritesLongPressTimer = useRef<NodeJS.Timeout | null>(null)
   const itemsLongPressTimer = useRef<NodeJS.Timeout | null>(null)
@@ -580,9 +529,6 @@ export function BartenderView({
   // COMPUTED
   // ---------------------------------------------------------------------------
 
-  const selectedTab = useMemo(() => {
-    return tabs.find(t => t.id === selectedTabId) || null
-  }, [tabs, selectedTabId])
 
   // Filter categories by categoryShow field
   const filteredCategories = useMemo(() => {
@@ -628,57 +574,6 @@ export function BartenderView({
   }, [menuSection])
 
   // Filtered and sorted tabs
-  const filteredTabs = useMemo(() => {
-    let result = tabs.filter(tab => {
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase()
-        const matchesTabName = tab.tabName?.toLowerCase().includes(q)
-        const matchesCustomer = tab.customerName?.toLowerCase().includes(q)
-        const matchesCard = tab.cardLast4?.includes(q)
-        const matchesNumber = tab.orderNumber.toString().includes(q)
-        const matchesEmployee = tab.employeeName?.toLowerCase().includes(q)
-        const matchesStation = tab.stationName?.toLowerCase().includes(q)
-        if (!matchesTabName && !matchesCustomer && !matchesCard && !matchesNumber && !matchesEmployee && !matchesStation) {
-          return false
-        }
-      }
-      if (showMineOnly && tab.employeeId !== employeeId) return false
-      return true
-    })
-
-    result = [...result].sort((a, b) => {
-      switch (tabSortBy) {
-        case 'newest':
-          return new Date(b.openedAt).getTime() - new Date(a.openedAt).getTime()
-        case 'oldest':
-          return new Date(a.openedAt).getTime() - new Date(b.openedAt).getTime()
-        case 'alpha_first': {
-          const aName = (a.tabName || a.customerName || `#${a.orderNumber}`).toLowerCase()
-          const bName = (b.tabName || b.customerName || `#${b.orderNumber}`).toLowerCase()
-          return aName.localeCompare(bName)
-        }
-        case 'alpha_last': {
-          const getLastName = (tab: Tab) => {
-            const name = tab.tabName || tab.customerName || ''
-            const parts = name.trim().split(/\s+/)
-            return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : name.toLowerCase()
-          }
-          return getLastName(a).localeCompare(getLastName(b))
-        }
-        case 'total_high':
-          return b.total - a.total
-        case 'total_low':
-          return a.total - b.total
-        case 'employee':
-          return (a.employeeName || '').localeCompare(b.employeeName || '')
-        default:
-          return 0
-      }
-    })
-
-    return result
-  }, [tabs, searchQuery, showMineOnly, employeeId, tabSortBy])
-
   // Calculate subtotal from local items for usePricing
   const orderSubtotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
@@ -753,61 +648,6 @@ export function BartenderView({
   // DATA LOADING
   // ---------------------------------------------------------------------------
 
-  const loadTabs = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/orders/open?locationId=${locationId}`)
-      if (res.ok) {
-        const data = await res.json()
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mappedTabs: Tab[] = (data.orders || []).map((t: any) => ({
-          id: t.id,
-          orderNumber: t.orderNumber,
-          orderType: t.orderType || 'bar_tab',
-          tabName: t.tabName,
-          tableName: t.tableName || (t.table?.name) || null,
-          customerName: t.customer?.name || null,
-          cardLast4: t.preAuth?.last4 || null,
-          cardBrand: t.preAuth?.cardBrand || null,
-          total: t.total,
-          itemCount: t.itemCount,
-          openedAt: t.openedAt || t.createdAt,
-          employeeId: t.employee.id,
-          employeeName: t.employee.name,
-          stationId: null,
-          stationName: null,
-          items: (t.items || []).map((item: any) => ({
-            id: item.id,
-            menuItemId: item.menuItemId,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            sentToKitchen: item.isCompleted || false,
-            specialNotes: item.specialNotes || undefined,
-            isHeld: item.isHeld || false,
-            isCompleted: item.isCompleted || false,
-            seatNumber: item.seatNumber ?? null,
-            courseNumber: item.courseNumber ?? null,
-            courseStatus: item.courseStatus ?? null,
-            resendCount: item.resendCount || 0,
-            createdAt: item.createdAt || undefined,
-            modifiers: (item.modifiers || []).map((m: any) => ({
-              id: m.id,
-              name: m.name,
-              price: m.price,
-              preModifier: m.preModifier,
-              depth: m.depth || 0,
-            })),
-          })),
-        }))
-        setTabs(mappedTabs)
-      }
-    } catch (error) {
-      console.error('[BartenderView] Failed to load tabs:', error)
-    } finally {
-      setIsLoadingTabs(false)
-    }
-  }, [locationId])
-
   const loadCategories = useCallback(async () => {
     try {
       const res = await fetch(`/api/menu?locationId=${locationId}`)
@@ -839,9 +679,8 @@ export function BartenderView({
 
   // Initial load
   useEffect(() => {
-    loadTabs()
     loadCategories()
-  }, [loadTabs, loadCategories])
+  }, [loadCategories])
 
   // Items from FloorPlanHome are automatically available via Zustand store
   // No mount-time sync needed — the store IS the source of truth
@@ -1121,78 +960,73 @@ export function BartenderView({
     }
   }, [menuSection, filteredCategories, loadMenuItems, loadEntertainmentItems])
 
-  // Auto-refresh tabs every 3 seconds
-  useEffect(() => {
-    const interval = setInterval(loadTabs, 3000)
-    return () => clearInterval(interval)
-  }, [loadTabs])
-
-  // Track which tab ID we last loaded items for (to prevent re-polling from overwriting local changes)
+  // Track which tab ID we last loaded items for (to prevent overwriting local changes)
   const loadedTabIdRef = useRef<string | null>(null)
 
-  // Load tab items into Zustand store when selecting a DIFFERENT tab
+  // Load order into Zustand store when selecting a DIFFERENT tab via direct API fetch
   useEffect(() => {
-    if (selectedTab) {
-      // FIX: Only reload items if we're switching to a DIFFERENT tab
-      // This prevents the 3-second polling from overwriting locally added items
-      if (loadedTabIdRef.current === selectedTab.id) {
-        // Same tab - don't overwrite local items (they may have unsaved additions)
-        return
-      }
+    if (selectedTabId) {
+      // Only reload if switching to a DIFFERENT tab
+      if (loadedTabIdRef.current === selectedTabId) return
+      loadedTabIdRef.current = selectedTabId
 
-      loadedTabIdRef.current = selectedTab.id
-
-      // Load full order metadata + items into store via loadOrder
-      const store = useOrderStore.getState()
-      store.loadOrder({
-        id: selectedTab.id,
-        orderNumber: selectedTab.orderNumber,
-        orderType: selectedTab.orderType || 'bar_tab',
-        tabName: selectedTab.tabName || undefined,
-        guestCount: 1,
-        status: 'open',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        items: selectedTab.items.map((item: any) => ({
-          id: item.id,
-          menuItemId: item.menuItemId,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          itemTotal: item.price * item.quantity,
-          specialNotes: item.specialNotes || null,
-          seatNumber: item.seatNumber ?? null,
-          courseNumber: item.courseNumber ?? null,
-          courseStatus: item.courseStatus || null,
-          isHeld: item.isHeld || false,
-          isCompleted: item.isCompleted || false,
-          completedAt: null,
-          resendCount: item.resendCount || 0,
-          blockTimeMinutes: item.blockTimeMinutes || null,
-          blockTimeStartedAt: item.blockTimeStartedAt || null,
-          blockTimeExpiresAt: item.blockTimeExpiresAt || null,
-          modifiers: (item.modifiers || []).map((mod: any) => ({
-            id: mod.id || mod.modifierId,
-            modifierId: mod.id || mod.modifierId,
-            name: mod.name,
-            price: mod.price,
-            preModifier: mod.preModifier || null,
-            depth: mod.depth || 0,
-          })),
-        })),
-        subtotal: selectedTab.total || 0,
-        discountTotal: 0,
-        taxTotal: 0,
-        tipTotal: 0,
-        total: selectedTab.total || 0,
-      })
+      // Fetch order details and load into store
+      fetch(`/api/orders/${selectedTabId}?locationId=${locationId}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (!data) return
+          const order = data.data || data
+          const store = useOrderStore.getState()
+          store.loadOrder({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            orderType: order.orderType || 'bar_tab',
+            tabName: order.tabName || undefined,
+            guestCount: order.guestCount || 1,
+            status: order.status || 'open',
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            items: (order.items || []).map((item: any) => ({
+              id: item.id,
+              menuItemId: item.menuItemId,
+              name: item.name,
+              price: Number(item.price),
+              quantity: item.quantity,
+              itemTotal: Number(item.price) * item.quantity,
+              specialNotes: item.specialNotes || null,
+              seatNumber: item.seatNumber ?? null,
+              courseNumber: item.courseNumber ?? null,
+              courseStatus: item.courseStatus || null,
+              isHeld: item.isHeld || false,
+              isCompleted: item.isCompleted || false,
+              completedAt: null,
+              resendCount: item.resendCount || 0,
+              blockTimeMinutes: item.blockTimeMinutes || null,
+              blockTimeStartedAt: item.blockTimeStartedAt || null,
+              blockTimeExpiresAt: item.blockTimeExpiresAt || null,
+              modifiers: (item.modifiers || []).map((mod: any) => ({
+                id: mod.id || mod.modifierId,
+                modifierId: mod.id || mod.modifierId,
+                name: mod.name,
+                price: Number(mod.price),
+                preModifier: mod.preModifier || null,
+                depth: mod.depth || 0,
+              })),
+            })),
+            subtotal: Number(order.subtotal) || 0,
+            discountTotal: Number(order.discountTotal) || 0,
+            taxTotal: Number(order.taxTotal) || 0,
+            tipTotal: Number(order.tipTotal) || 0,
+            total: Number(order.total) || 0,
+          })
+        })
+        .catch(err => console.error('[BartenderView] Failed to load order:', err))
     } else {
-      // Only clear if we had a tab selected before
       if (loadedTabIdRef.current !== null) {
         loadedTabIdRef.current = null
         useOrderStore.getState().clearOrder()
       }
     }
-  }, [selectedTab])
+  }, [selectedTabId, locationId])
 
   // ---------------------------------------------------------------------------
   // HANDLERS
@@ -1448,7 +1282,7 @@ export function BartenderView({
         toast.success('Tab created')
         setShowNewTabModal(false)
         setNewTabName('')
-        await loadTabs()
+        setTabRefreshTrigger(t => t + 1)
         if (data.id) {
           setSelectedTabId(data.id)
         }
@@ -1462,7 +1296,7 @@ export function BartenderView({
     } finally {
       setIsCreatingTab(false)
     }
-  }, [locationId, employeeId, newTabName, requireNameWithoutCard, loadTabs])
+  }, [locationId, employeeId, newTabName, requireNameWithoutCard])
 
   const handleQuickTab = useCallback(async () => {
     if (requireNameWithoutCard) {
@@ -1484,7 +1318,7 @@ export function BartenderView({
       if (res.ok) {
         const data = await res.json()
         toast.success('Tab created')
-        await loadTabs()
+        setTabRefreshTrigger(t => t + 1)
         if (data.id) {
           setSelectedTabId(data.id)
         }
@@ -1493,7 +1327,7 @@ export function BartenderView({
       console.error('[BartenderView] Failed to create quick tab:', error)
       toast.error('Failed to create tab')
     }
-  }, [locationId, employeeId, requireNameWithoutCard, loadTabs])
+  }, [locationId, employeeId, requireNameWithoutCard])
 
   const handleSend = useCallback(async () => {
     const unsavedItems = orderItems.filter(i => !i.sentToKitchen)
@@ -1569,7 +1403,7 @@ export function BartenderView({
       setSelectedTabId(null)
       loadedTabIdRef.current = null  // Reset so we can load a new tab
 
-      await loadTabs()
+      setTabRefreshTrigger(t => t + 1)
 
     } catch (error) {
       console.error('[BartenderView] Failed to send:', error)
@@ -1578,7 +1412,7 @@ export function BartenderView({
     } finally {
       setIsSending(false)
     }
-  }, [orderItems, selectedTabId, locationId, employeeId, loadTabs])
+  }, [orderItems, selectedTabId, locationId, employeeId])
 
   const handlePay = useCallback(() => {
     if (selectedTabId && onOpenPayment) {
@@ -1703,214 +1537,28 @@ export function BartenderView({
 
       {/* ====== MAIN CONTENT ====== */}
       <div className="flex-1 flex overflow-hidden">
-        {/* ====== LEFT: TABS PANEL ====== */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={isTabPanelExpanded ? 'expanded' : 'collapsed'}
-            initial={false}
-            animate={{ width: isTabPanelExpanded ? '100%' : 288 }}
-            transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="flex-shrink-0 bg-slate-800/30 border-r border-white/10 flex flex-col"
-          >
-            {/* Header with expand button */}
-            <div className="p-2 border-b border-white/10 flex items-center justify-between gap-2">
-              <button
-                onClick={handleQuickTab}
-                className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white font-semibold transition-colors"
-              >
-                + NEW TAB
-              </button>
-              <button
-                onClick={() => setIsTabPanelExpanded(!isTabPanelExpanded)}
-                className="p-2.5 bg-slate-700/50 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors"
-                title={isTabPanelExpanded ? 'Collapse' : 'Expand full screen'}
-              >
-                {isTabPanelExpanded ? (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-                  </svg>
-                )}
-              </button>
-            </div>
-
-            {/* Search */}
-            <div className="p-2 border-b border-white/10">
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Search name, card, employee..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-700/50 border border-white/10 rounded-lg text-white placeholder-slate-400 text-sm focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Filters & Sort Row */}
-            <div className="p-2 border-b border-white/10 flex flex-wrap items-center gap-2">
-              {/* Mine / All toggle */}
-              <div className="flex rounded-lg overflow-hidden border border-white/10">
-                <button
-                  onClick={() => setShowMineOnly(false)}
-                  className={`px-3 py-1 text-xs font-medium transition-colors ${
-                    !showMineOnly ? 'bg-indigo-600 text-white' : 'bg-slate-700/30 text-slate-400 hover:bg-slate-700/50'
-                  }`}
-                >
-                  All
-                </button>
-                <button
-                  onClick={() => setShowMineOnly(true)}
-                  className={`px-3 py-1 text-xs font-medium transition-colors ${
-                    showMineOnly ? 'bg-indigo-600 text-white' : 'bg-slate-700/30 text-slate-400 hover:bg-slate-700/50'
-                  }`}
-                >
-                  Mine
-                </button>
-              </div>
-
-              {/* View mode toggle */}
-              <div className="flex rounded-lg overflow-hidden border border-white/10">
-                <button
-                  onClick={() => setTabViewMode('card')}
-                  className={`px-2 py-1 text-xs transition-colors ${
-                    tabViewMode === 'card' ? 'bg-indigo-600 text-white' : 'bg-slate-700/30 text-slate-400 hover:bg-slate-700/50'
-                  }`}
-                  title="Card view"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setTabViewMode('condensed')}
-                  className={`px-2 py-1 text-xs transition-colors ${
-                    tabViewMode === 'condensed' ? 'bg-indigo-600 text-white' : 'bg-slate-700/30 text-slate-400 hover:bg-slate-700/50'
-                  }`}
-                  title="List view"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Sort dropdown */}
-              <select
-                value={tabSortBy}
-                onChange={(e) => setTabSortBy(e.target.value as TabSortOption)}
-                className="px-2 py-1 text-xs bg-slate-700/50 border border-white/10 rounded-lg text-slate-300 focus:outline-none focus:border-indigo-500"
-              >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="alpha_first">A-Z (First Name)</option>
-                <option value="alpha_last">A-Z (Last Name)</option>
-                <option value="total_high">Highest Total</option>
-                <option value="total_low">Lowest Total</option>
-                <option value="employee">By Employee</option>
-              </select>
-
-              {/* Tab count */}
-              <span className="ml-auto text-xs text-slate-500">
-                {filteredTabs.length} tab{filteredTabs.length !== 1 ? 's' : ''}
-              </span>
-            </div>
-
-            {/* Tabs List */}
-            <div className="flex-1 overflow-y-auto scrollbar-hide p-2">
-              {isLoadingTabs ? (
-                <div className="text-center py-8 text-slate-500">Loading...</div>
-              ) : filteredTabs.length === 0 ? (
-                <div className="text-center py-8 text-slate-500 text-sm">
-                  {searchQuery ? 'No tabs found' : 'No open tabs'}
-                </div>
-              ) : tabViewMode === 'card' ? (
-                <div className={`grid gap-2 ${isTabPanelExpanded ? 'grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6' : 'grid-cols-1'}`}>
-                  {filteredTabs.map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => handleSelectTab(tab.id)}
-                      className={`text-left p-3 rounded-lg transition-all ${
-                        selectedTabId === tab.id
-                          ? 'bg-indigo-600/40 border-2 border-indigo-500 ring-2 ring-indigo-500/30'
-                          : 'bg-slate-700/30 border-2 border-transparent hover:bg-slate-700/50'
-                      }`}
-                    >
-                      {/* Order type badge */}
-                      {tab.orderType !== 'bar_tab' && (
-                        <div className="text-[10px] font-medium uppercase tracking-wider mb-0.5" style={{ color: tab.orderType === 'dine_in' ? '#818cf8' : tab.orderType === 'takeout' ? '#f59e0b' : '#94a3b8' }}>
-                          {tab.orderType === 'dine_in' ? (tab.tableName || 'Table') : tab.orderType === 'takeout' ? 'Takeout' : tab.orderType === 'delivery' ? 'Delivery' : tab.orderType.replace(/_/g, ' ')}
-                        </div>
-                      )}
-                      {/* Tab name/number as primary identifier */}
-                      <div className="font-bold text-white text-lg truncate">
-                        {tab.tabName || tab.customerName || (tab.orderType === 'dine_in' && tab.tableName ? tab.tableName : `#${tab.orderNumber}`)}
-                      </div>
-                      {/* Card info if present */}
-                      {tab.cardLast4 && (
-                        <div className="text-xs text-slate-400 mt-0.5">
-                          ****{tab.cardLast4}
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between mt-1.5">
-                        <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                          <span>{tab.itemCount} items</span>
-                          <span>•</span>
-                          <span>{getTimeOpen(tab.openedAt)}</span>
-                        </div>
-                        <span className="text-green-400 font-bold text-lg">
-                          {formatCurrency(tab.total)}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-[10px] text-slate-600">
-                        Opened {formatTimeOpened(tab.openedAt)} by {tab.employeeName}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {filteredTabs.map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => handleSelectTab(tab.id)}
-                      className={`w-full text-left px-3 py-2 rounded transition-all flex items-center gap-3 ${
-                        selectedTabId === tab.id
-                          ? 'bg-indigo-600/40 border-l-4 border-indigo-500'
-                          : 'bg-slate-700/20 border-l-4 border-transparent hover:bg-slate-700/40'
-                      }`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium text-white truncate block">
-                          {tab.tabName || tab.customerName || (tab.orderType === 'dine_in' && tab.tableName ? tab.tableName : `#${tab.orderNumber}`)}
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          {tab.orderType !== 'bar_tab' && (
-                            <span className="uppercase mr-1" style={{ color: tab.orderType === 'dine_in' ? '#818cf8' : tab.orderType === 'takeout' ? '#f59e0b' : '#94a3b8' }}>
-                              {tab.orderType === 'dine_in' ? 'Table' : tab.orderType.replace(/_/g, ' ')}
-                            </span>
-                          )}
-                          {tab.employeeName}
-                        </span>
-                      </div>
-                      {tab.cardLast4 && (
-                        <span className="text-xs text-slate-500">****{tab.cardLast4}</span>
-                      )}
-                      <span className="text-xs text-slate-400 whitespace-nowrap">
-                        {tab.itemCount}i • {getTimeOpen(tab.openedAt)}
-                      </span>
-                      <span className="text-green-400 font-semibold text-sm">
-                        {formatCurrency(tab.total)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        </AnimatePresence>
+        {/* ====== LEFT: TABS PANEL (Unified OpenOrdersPanel) ====== */}
+        <motion.div
+          key={isTabPanelExpanded ? 'expanded' : 'collapsed'}
+          initial={false}
+          animate={{ width: isTabPanelExpanded ? '100%' : 288 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          className="flex-shrink-0 flex flex-col"
+        >
+          <OpenOrdersPanel
+            locationId={locationId}
+            employeeId={employeeId}
+            employeePermissions={employeePermissions}
+            isExpanded={isTabPanelExpanded}
+            onToggleExpand={() => setIsTabPanelExpanded(!isTabPanelExpanded)}
+            forceDark={true}
+            onSelectOrder={(order) => { handleSelectTab(order.id) }}
+            onViewOrder={(order) => { handleSelectTab(order.id) }}
+            onNewTab={handleQuickTab}
+            onClosedOrderAction={() => setTabRefreshTrigger(t => t + 1)}
+            refreshTrigger={tabRefreshTrigger}
+          />
+        </motion.div>
 
         {/* ====== CENTER: MENU GRID (hidden when tabs expanded) ====== */}
         {!isTabPanelExpanded && (
@@ -2788,9 +2436,9 @@ export function BartenderView({
         {!isTabPanelExpanded && (
           <OrderPanel
             orderId={selectedTabId}
-            orderNumber={selectedTab?.orderNumber}
-            orderType="bar_tab"
-            tabName={selectedTab?.tabName || selectedTab?.customerName || undefined}
+            orderNumber={activeOrder.orderNumber}
+            orderType={activeOrder.orderType || 'bar_tab'}
+            tabName={activeOrder.tabName || undefined}
             locationId={locationId}
             items={orderPanelItems}
             subtotal={orderTotals.subtotal}
@@ -2799,9 +2447,6 @@ export function BartenderView({
             total={orderTotals.total}
             showItemControls={true}
             showEntertainmentTimers={true}
-            cardLast4={selectedTab?.cardLast4 || undefined}
-            cardBrand={selectedTab?.cardBrand || undefined}
-            hasCard={!!selectedTab?.cardLast4}
             onItemClick={handleEditItem}
             onItemRemove={handleRemoveItem}
             onQuantityChange={handleUpdateQuantity}
