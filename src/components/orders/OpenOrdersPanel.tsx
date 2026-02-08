@@ -881,7 +881,6 @@ export function OpenOrdersPanel({
             onClose={() => setClosedOrderModalOrder(null)}
             order={closedOrderModalOrder}
             employeeId={employeeId}
-            locationId={locationId || ''}
             employeePermissions={employeePermissions}
             onActionComplete={() => {
               setClosedOrderModalOrder(null)

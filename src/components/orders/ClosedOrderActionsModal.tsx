@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { hasPermission } from '@/lib/auth-utils'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface Payment {
   id: string
@@ -38,7 +39,6 @@ interface ClosedOrderActionsModalProps {
   onClose: () => void
   order: ClosedOrder
   employeeId: string
-  locationId: string
   employeePermissions: string[]
   onActionComplete: () => void
   onOpenTipAdjustment?: () => void
@@ -67,11 +67,11 @@ export function ClosedOrderActionsModal({
   onClose,
   order,
   employeeId,
-  locationId,
   employeePermissions,
   onActionComplete,
   onOpenTipAdjustment,
 }: ClosedOrderActionsModalProps) {
+  const locationId = useAuthStore(s => s.locationId)
   const [action, setAction] = useState<ActionType>(null)
   const [step, setStep] = useState<ActionStep>('select')
   const [reason, setReason] = useState('')
