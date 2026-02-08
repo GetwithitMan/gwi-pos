@@ -7,6 +7,7 @@ interface CompVoidRequest {
   itemId: string
   reason: string
   employeeId: string
+  wasMade?: boolean  // Was the item already made? Determines waste tracking
   approvedById?: string  // Manager ID if approval required
   remoteApprovalCode?: string  // 6-digit code from remote manager approval (Skill 121)
 }
@@ -20,7 +21,7 @@ export async function POST(
     const { id: orderId } = await params
     const body = await request.json() as CompVoidRequest
 
-    const { action, itemId, reason, employeeId, approvedById, remoteApprovalCode } = body
+    const { action, itemId, reason, employeeId, wasMade, approvedById, remoteApprovalCode } = body
 
     if (!action || !itemId || !reason || !employeeId) {
       return NextResponse.json(
@@ -131,6 +132,7 @@ export async function POST(
         itemId,
         amount: itemTotal,
         reason,
+        wasMade: action === 'comp' ? true : (wasMade ?? false),
         approvedById: effectiveApprovedById,
         approvedAt: effectiveApprovedAt,
         remoteApprovalId: remoteApproval?.id || null,
@@ -150,9 +152,10 @@ export async function POST(
 
     // Deduct inventory for voids where food was made (fire-and-forget)
     // For comps, food was definitely made so always deduct
-    // For voids, check if reason indicates food was prepared
+    // For voids, use explicit wasMade flag from UI (falls back to reason-based detection)
     const normalizedReason = reason.toLowerCase().replace(/\s+/g, '_')
-    const shouldDeductInventory = action === 'comp' || WASTE_VOID_REASONS.includes(normalizedReason)
+    const shouldDeductInventory = action === 'comp'
+      || (wasMade !== undefined ? wasMade : WASTE_VOID_REASONS.includes(normalizedReason))
 
     if (shouldDeductInventory) {
       deductInventoryForVoidedItem(itemId, reason, employeeId).catch(err => {
@@ -379,6 +382,7 @@ export async function GET(
         itemId: log.itemId,
         amount: Number(log.amount),
         reason: log.reason,
+        wasMade: log.wasMade,
         employeeName: log.employee.displayName ||
           `${log.employee.firstName} ${log.employee.lastName}`,
         approvedById: log.approvedById,

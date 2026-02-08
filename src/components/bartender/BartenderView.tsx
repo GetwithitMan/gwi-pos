@@ -115,6 +115,7 @@ interface BartenderViewProps {
     existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
   ) => void
   onSwitchToFloorPlan?: () => void
+  onOpenCompVoid?: (item: { id: string; name: string; quantity: number; price: number; modifiers: { id: string; name: string; price: number }[]; status?: string; voidReason?: string }) => void
   employeePermissions?: string[]
   // Settings
   requireNameWithoutCard?: boolean
@@ -259,6 +260,7 @@ export function BartenderView({
   onOpenPayment,
   onOpenModifiers,
   onSwitchToFloorPlan,
+  onOpenCompVoid,
   employeePermissions = [],
   requireNameWithoutCard = false,
 }: BartenderViewProps) {
@@ -1185,10 +1187,19 @@ export function BartenderView({
 
   const handleCompVoidItem = useCallback((itemId: string) => {
     const voidItem = orderItems.find(i => i.id === itemId)
-    if (!voidItem) return
-    // TODO: Wire to CompVoidModal
-    toast.info(`Comp/void ${voidItem.name} (coming soon)`)
-  }, [orderItems])
+    if (!voidItem || !onOpenCompVoid) return
+    onOpenCompVoid({
+      id: voidItem.id,
+      name: voidItem.name,
+      quantity: voidItem.quantity,
+      price: Number(voidItem.price),
+      modifiers: (voidItem.modifiers || []).map(m => ({
+        id: m.id,
+        name: m.name,
+        price: Number(m.price),
+      })),
+    })
+  }, [orderItems, onOpenCompVoid])
 
   const handleResendItem = useCallback((itemId: string) => {
     const resendItem = orderItems.find(i => i.id === itemId)

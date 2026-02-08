@@ -2113,6 +2113,7 @@ model VoidLog {
   itemId   String? // If item void
   amount   Decimal
   reason   String
+  wasMade  Boolean @default(false) // Was the item already made? For waste/loss tracking
 
   approvedById String?
   approvedAt   DateTime?

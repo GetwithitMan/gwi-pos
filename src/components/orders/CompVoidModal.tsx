@@ -68,6 +68,7 @@ export function CompVoidModal({
   const [action, setAction] = useState<'comp' | 'void' | null>(null)
   const [reason, setReason] = useState('')
   const [customReason, setCustomReason] = useState('')
+  const [wasMade, setWasMade] = useState<boolean | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showRemoteApproval, setShowRemoteApproval] = useState(false)
@@ -93,6 +94,12 @@ export function CompVoidModal({
       return
     }
 
+    // For voids, require "was it made?" answer
+    if (action === 'void' && wasMade === null) {
+      setError('Please indicate if the item was already made')
+      return
+    }
+
     setIsProcessing(true)
     setError(null)
 
@@ -105,6 +112,7 @@ export function CompVoidModal({
           itemId: item.id,
           reason: finalReason,
           employeeId,
+          wasMade: action === 'comp' ? true : wasMade,
           ...(remoteApprovalCode && { remoteApprovalCode }),
         }),
       })
@@ -192,6 +200,7 @@ export function CompVoidModal({
           itemId: item.id,
           reason: finalReason,
           employeeId,
+          wasMade: action === 'comp' ? true : wasMade,
           remoteApprovalCode: code,
         }),
       })
@@ -290,6 +299,7 @@ export function CompVoidModal({
                     onClick={() => {
                       setAction('comp')
                       setReason('')
+                      setWasMade(null)
                     }}
                   >
                     <span className="text-lg">🎁</span>
@@ -302,6 +312,7 @@ export function CompVoidModal({
                     onClick={() => {
                       setAction('void')
                       setReason('')
+                      setWasMade(null)
                     }}
                   >
                     <span className="text-lg">🗑️</span>
@@ -356,6 +367,44 @@ export function CompVoidModal({
                 </div>
               )}
 
+              {/* Was it made? (void only) */}
+              {action === 'void' && reason && (reason !== 'custom' || customReason.trim()) && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Was this item already made?
+                  </label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    This determines waste tracking for inventory and loss reports
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      className={`px-4 py-3 rounded-lg border-2 font-medium transition-colors ${
+                        wasMade === true
+                          ? 'bg-red-50 border-red-500 text-red-700'
+                          : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                      }`}
+                      onClick={() => setWasMade(true)}
+                    >
+                      <span className="text-lg block mb-1">🍳</span>
+                      Yes, it was made
+                      <span className="block text-xs opacity-75 mt-0.5">Count as waste</span>
+                    </button>
+                    <button
+                      className={`px-4 py-3 rounded-lg border-2 font-medium transition-colors ${
+                        wasMade === false
+                          ? 'bg-green-50 border-green-500 text-green-700'
+                          : 'border-gray-200 hover:bg-gray-50 text-gray-700'
+                      }`}
+                      onClick={() => setWasMade(false)}
+                    >
+                      <span className="text-lg block mb-1">✋</span>
+                      No, not made
+                      <span className="block text-xs opacity-75 mt-0.5">No waste</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Summary */}
               {action && reason && (
                 <div className={`p-3 rounded-lg ${
@@ -381,7 +430,7 @@ export function CompVoidModal({
                     variant={action === 'comp' ? 'primary' : 'danger'}
                     className="w-full"
                     onClick={handleSubmit}
-                    disabled={isProcessing || !reason || (reason === 'custom' && !customReason.trim())}
+                    disabled={isProcessing || !reason || (reason === 'custom' && !customReason.trim()) || (action === 'void' && wasMade === null)}
                   >
                     {isProcessing
                       ? 'Processing...'

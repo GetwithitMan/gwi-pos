@@ -3083,6 +3083,28 @@ export default function OrdersPage() {
           employeePermissions={permissionsArray}
           onLogout={logout}
           onSwitchToFloorPlan={() => setViewMode('floor-plan')}
+          onOpenCompVoid={(item) => {
+            // Ensure order is saved first (BartenderView selected tab = savedOrderId)
+            const orderId = useOrderStore.getState().currentOrder?.id
+            if (orderId) {
+              setOrderToPayId(orderId)
+              setCompVoidItem({
+                ...item,
+                modifiers: item.modifiers.map(m => ({
+                  id: m.id,
+                  modifierId: m.id,
+                  name: m.name,
+                  price: m.price,
+                  depth: 0,
+                  preModifier: null,
+                  spiritTier: null,
+                  linkedBottleProductId: null,
+                  parentModifierId: null,
+                })),
+              })
+              setShowCompVoidModal(true)
+            }
+          }}
           onOpenPayment={(orderId) => {
             setOrderToPayId(orderId)
             setShowPaymentModal(true)
