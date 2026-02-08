@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { PinPad } from '@/components/ui/pin-pad'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,9 +11,57 @@ function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const login = useAuthStore((state) => state.login)
+  const clockInStore = useAuthStore((state) => state.clockIn)
   const setHasDevAccess = useDevStore((state) => state.setHasDevAccess)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showClockInPrompt, setShowClockInPrompt] = useState(false)
+  const [pendingRedirect, setPendingRedirect] = useState<string | null>(null)
+  const [pendingEmployee, setPendingEmployee] = useState<{ id: string; locationId: string } | null>(null)
+  const [clockingIn, setClockingIn] = useState(false)
+
+  const getRedirectPath = useCallback((employee: { defaultScreen?: string }) => {
+    const redirectParam = searchParams.get('redirect')
+    if (redirectParam) return redirectParam
+    const defaultScreen = employee.defaultScreen || 'orders'
+    switch (defaultScreen) {
+      case 'kds':
+        return '/kds'
+      case 'bar':
+      case 'orders':
+      default:
+        return '/orders'
+    }
+  }, [searchParams])
+
+  const handleClockInYes = async () => {
+    if (!pendingEmployee) return
+    setClockingIn(true)
+    try {
+      const res = await fetch('/api/time-clock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId: pendingEmployee.locationId,
+          employeeId: pendingEmployee.id,
+        }),
+      })
+      if (res.ok) {
+        clockInStore()
+      }
+    } catch {
+      // Non-blocking: clock-in failure shouldn't prevent POS access
+    } finally {
+      setClockingIn(false)
+      setShowClockInPrompt(false)
+      if (pendingRedirect) router.push(pendingRedirect)
+    }
+  }
+
+  const handleClockInNo = () => {
+    setShowClockInPrompt(false)
+    if (pendingRedirect) router.push(pendingRedirect)
+  }
 
   const handlePinSubmit = async (pin: string) => {
     setIsLoading(true)
@@ -38,29 +86,63 @@ function LoginContent() {
 
       login(data.employee)
 
-      // Redirect based on defaultScreen preference
-      const redirectParam = searchParams.get('redirect')
-      if (redirectParam) {
-        router.push(redirectParam)
-      } else {
-        const defaultScreen = data.employee.defaultScreen || 'orders'
+      const redirect = getRedirectPath(data.employee)
 
-        switch (defaultScreen) {
-          case 'bar':
-          case 'orders':
-          default:
-            router.push('/orders')
-            break
-          case 'kds':
-            router.push('/kds')
-            break
+      // Check clock-in status
+      try {
+        const statusRes = await fetch(`/api/time-clock/status?employeeId=${data.employee.id}`)
+        const statusData = await statusRes.json()
+
+        if (statusRes.ok && statusData.clockedIn) {
+          // Already clocked in — update store and redirect
+          clockInStore()
+          router.push(redirect)
+          return
         }
+      } catch {
+        // Status check failed — just redirect (non-blocking)
+        router.push(redirect)
+        return
       }
+
+      // Not clocked in — show prompt
+      setPendingEmployee({ id: data.employee.id, locationId: data.employee.location.id })
+      setPendingRedirect(redirect)
+      setShowClockInPrompt(true)
     } catch (err) {
       setError('Connection error. Please try again.')
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (showClockInPrompt) {
+    return (
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Not Clocked In</CardTitle>
+          <CardDescription className="text-base mt-2">
+            You are not currently clocked in. Would you like to clock in now?
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex gap-4 justify-center">
+          <button
+            onClick={handleClockInYes}
+            disabled={clockingIn}
+            className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg text-lg disabled:opacity-50 transition-colors"
+          >
+            {clockingIn ? 'Clocking In...' : 'Yes, Clock In'}
+          </button>
+          <button
+            onClick={handleClockInNo}
+            disabled={clockingIn}
+            className="px-8 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg text-lg disabled:opacity-50 transition-colors"
+          >
+            No, Skip
+          </button>
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -84,7 +166,7 @@ function LoginContent() {
           </div>
         </div>
         <CardTitle className="text-2xl">GWI POS</CardTitle>
-        <CardDescription>Enter your PIN to clock in</CardDescription>
+        <CardDescription>Enter your PIN to sign in</CardDescription>
       </CardHeader>
       <CardContent>
         <PinPad

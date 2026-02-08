@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settings'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET location settings
 export async function GET() {
@@ -33,7 +35,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { settings } = body as { settings: Partial<LocationSettings> }
+    const { settings, employeeId } = body as { settings: Partial<LocationSettings>; employeeId?: string }
 
     const location = await db.location.findFirst()
     if (!location) {
@@ -41,6 +43,25 @@ export async function PUT(request: NextRequest) {
         { error: 'No location found' },
         { status: 404 }
       )
+    }
+
+    // Auth: editing settings requires admin.manage_settings
+    if (employeeId) {
+      const auth = await requirePermission(employeeId, location.id, PERMISSIONS.ADMIN)
+      if (!auth.authorized) {
+        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
+    }
+
+    // Validate dual pricing: cashDiscountPercent must be 0-10%
+    if (settings.dualPricing?.cashDiscountPercent !== undefined) {
+      const pct = settings.dualPricing.cashDiscountPercent
+      if (pct < 0 || pct > 10) {
+        return NextResponse.json(
+          { error: 'cashDiscountPercent must be between 0 and 10' },
+          { status: 400 }
+        )
+      }
     }
 
     // Get current settings and merge with updates

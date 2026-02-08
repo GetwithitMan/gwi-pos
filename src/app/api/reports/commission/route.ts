@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET commission report
 export async function GET(request: NextRequest) {
@@ -8,6 +10,7 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const employeeId = searchParams.get('employeeId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
     const locationId = searchParams.get('locationId')
 
     if (!locationId) {
@@ -15,6 +18,19 @@ export async function GET(request: NextRequest) {
         { error: 'Location ID is required' },
         { status: 400 }
       )
+    }
+
+    // Auth: require report viewing permission
+    const authEmployeeId = requestingEmployeeId || employeeId
+    if (!authEmployeeId) {
+      return NextResponse.json(
+        { error: 'requestingEmployeeId or employeeId is required' },
+        { status: 401 }
+      )
+    }
+    const auth = await requirePermission(authEmployeeId, locationId, PERMISSIONS.REPORTS_COMMISSION)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Build date filter

@@ -148,6 +148,22 @@ export async function POST(
       console.error('[API /orders/[id]/send] Prep stock deduction failed:', err)
     })
 
+    // Audit log: sent to kitchen
+    await db.auditLog.create({
+      data: {
+        locationId: order.locationId,
+        employeeId: order.employeeId,
+        action: 'sent_to_kitchen',
+        entityType: 'order',
+        entityId: id,
+        details: {
+          regularItemCount: regularItemIds.length,
+          entertainmentItemCount: entertainmentUpdates.length,
+          itemNames: itemsToProcess.filter(i => !i.isHeld).map(i => i.name),
+        },
+      },
+    })
+
     return NextResponse.json({
       success: true,
       sentItemCount: updatedItemIds.length,

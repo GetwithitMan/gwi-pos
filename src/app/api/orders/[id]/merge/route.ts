@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationSettings } from '@/lib/location-cache'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { calculateOrderTotals } from '@/lib/tax-calculations'
 
 // POST - Merge another order into this one
 export async function POST(
@@ -44,6 +47,12 @@ export async function POST(
       )
     }
 
+    // Server-side permission check
+    const auth = await requirePermission(employeeId, targetOrder.locationId, PERMISSIONS.MGR_BULK_OPERATIONS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     if (targetOrder.status === 'paid' || targetOrder.status === 'closed' || targetOrder.status === 'voided') {
       return NextResponse.json(
         { error: 'Cannot merge into a paid/closed/voided order' },
@@ -84,86 +93,84 @@ export async function POST(
       )
     }
 
-    // Move all items from source to target
-    const movedItems = await db.orderItem.updateMany({
-      where: { orderId: sourceOrderId },
-      data: { orderId: targetOrderId },
-    })
+    // Move items, recalculate totals, void source, and audit log atomically
+    const { movedItems, movedDiscounts } = await db.$transaction(async (tx) => {
+      // Move all items from source to target
+      const moved = await tx.orderItem.updateMany({
+        where: { orderId: sourceOrderId },
+        data: { orderId: targetOrderId },
+      })
 
-    // Move discounts (if any) - update their orderId
-    const movedDiscounts = await db.orderDiscount.updateMany({
-      where: { orderId: sourceOrderId },
-      data: { orderId: targetOrderId },
-    })
+      // Move discounts (if any) - update their orderId
+      const movedDisc = await tx.orderDiscount.updateMany({
+        where: { orderId: sourceOrderId },
+        data: { orderId: targetOrderId },
+      })
 
-    // Recalculate target order totals
-    const allItems = await db.orderItem.findMany({
-      where: { orderId: targetOrderId, status: 'active' },
-      include: { modifiers: true },
-    })
+      // Recalculate target order totals
+      const allItems = await tx.orderItem.findMany({
+        where: { orderId: targetOrderId, status: 'active' },
+        include: { modifiers: true },
+      })
 
-    const subtotal = allItems.reduce((sum, item) => sum + Number(item.itemTotal), 0)
-    const commissionTotal = allItems.reduce((sum, item) => sum + (item.commissionAmount ? Number(item.commissionAmount) : 0), 0)
+      const subtotal = allItems.reduce((sum, item) => sum + Number(item.itemTotal), 0)
+      const commissionTotal = allItems.reduce((sum, item) => sum + (item.commissionAmount ? Number(item.commissionAmount) : 0), 0)
 
-    // Get all discounts for recalculation
-    const allDiscounts = await db.orderDiscount.findMany({
-      where: { orderId: targetOrderId },
-    })
-    const discountTotal = allDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
+      // Get all discounts for recalculation
+      const allDiscounts = await tx.orderDiscount.findMany({
+        where: { orderId: targetOrderId },
+      })
+      const discountTotal = allDiscounts.reduce((sum, d) => sum + Number(d.amount), 0)
 
-    // Get tax rate from location settings (cached - FIX-009)
-    const locationSettings = await getLocationSettings(targetOrder.locationId)
-    const taxRate = (locationSettings?.tax?.defaultRate || 8) / 100
+      // Recalculate order totals using centralized tax engine
+      const locationSettings = await getLocationSettings(targetOrder.locationId)
+      const totals = calculateOrderTotals(subtotal, discountTotal, locationSettings)
 
-    const taxableAmount = subtotal - discountTotal
-    const taxTotal = Math.round(taxableAmount * taxRate * 100) / 100
-    const total = Math.round((taxableAmount + taxTotal) * 100) / 100
+      // Update target order totals and guest count
+      const newGuestCount = (targetOrder.guestCount || 1) + (sourceOrder.guestCount || 1)
 
-    // Update target order totals and guest count
-    const newGuestCount = (targetOrder.guestCount || 1) + (sourceOrder.guestCount || 1)
-
-    await db.order.update({
-      where: { id: targetOrderId },
-      data: {
-        subtotal,
-        discountTotal,
-        taxTotal,
-        total,
-        commissionTotal,
-        guestCount: newGuestCount,
-        notes: targetOrder.notes
-          ? `${targetOrder.notes}\nMerged from order #${sourceOrder.orderNumber}`
-          : `Merged from order #${sourceOrder.orderNumber}`,
-      },
-    })
-
-    // Void the source order (soft delete)
-    await db.order.update({
-      where: { id: sourceOrderId },
-      data: {
-        status: 'voided',
-        notes: sourceOrder.notes
-          ? `${sourceOrder.notes}\nMerged into order #${targetOrder.orderNumber}`
-          : `Merged into order #${targetOrder.orderNumber}`,
-      },
-    })
-
-    // Create audit log entry
-    await db.auditLog.create({
-      data: {
-        locationId: targetOrder.locationId,
-        employeeId,
-        action: 'order_merged',
-        entityType: 'order',
-        entityId: targetOrderId,
-        details: {
-          sourceOrderId,
-          sourceOrderNumber: sourceOrder.orderNumber,
-          targetOrderNumber: targetOrder.orderNumber,
-          itemsMoved: movedItems.count,
-          discountsMoved: movedDiscounts.count,
+      await tx.order.update({
+        where: { id: targetOrderId },
+        data: {
+          ...totals,
+          commissionTotal,
+          guestCount: newGuestCount,
+          notes: targetOrder.notes
+            ? `${targetOrder.notes}\nMerged from order #${sourceOrder.orderNumber}`
+            : `Merged from order #${sourceOrder.orderNumber}`,
         },
-      },
+      })
+
+      // Void the source order (soft delete)
+      await tx.order.update({
+        where: { id: sourceOrderId },
+        data: {
+          status: 'voided',
+          notes: sourceOrder.notes
+            ? `${sourceOrder.notes}\nMerged into order #${targetOrder.orderNumber}`
+            : `Merged into order #${targetOrder.orderNumber}`,
+        },
+      })
+
+      // Create audit log entry
+      await tx.auditLog.create({
+        data: {
+          locationId: targetOrder.locationId,
+          employeeId,
+          action: 'order_merged',
+          entityType: 'order',
+          entityId: targetOrderId,
+          details: {
+            sourceOrderId,
+            sourceOrderNumber: sourceOrder.orderNumber,
+            targetOrderNumber: targetOrder.orderNumber,
+            itemsMoved: moved.count,
+            discountsMoved: movedDisc.count,
+          },
+        },
+      })
+
+      return { movedItems: moved, movedDiscounts: movedDisc }
     })
 
     // Return updated target order

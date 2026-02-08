@@ -114,6 +114,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Look up active time clock entry to link
+    const activeClockEntry = await db.timeClockEntry.findFirst({
+      where: {
+        employeeId,
+        clockOut: null,
+        deletedAt: null,
+      },
+      select: { id: true },
+    })
+
     // Create new shift
     const shift = await db.shift.create({
       data: {
@@ -122,6 +132,7 @@ export async function POST(request: NextRequest) {
         startingCash,
         notes,
         status: 'open',
+        timeClockEntryId: activeClockEntry?.id || null,
       },
       include: {
         employee: {

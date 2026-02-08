@@ -445,6 +445,9 @@ model TimeClockEntry {
 
   notes String?
 
+  // Reverse relation
+  shifts Shift[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -490,6 +493,10 @@ model Shift {
   notes  String?
   status String  @default("open") // open, closed
 
+  // Link to time clock entry
+  timeClockEntryId String?
+  timeClockEntry   TimeClockEntry? @relation(fields: [timeClockEntryId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -502,6 +509,7 @@ model Shift {
   @@index([locationId])
   @@index([employeeId])
   @@index([startedAt])
+  @@index([timeClockEntryId])
 }
 
 model Drawer {
@@ -1739,6 +1747,11 @@ model Payment {
   isOfflineCapture   Boolean   @default(false) // Was this captured while offline?
   offlineCapturedAt  DateTime? // When it was queued for offline capture
   offlineTerminalId  String?   // Which terminal processed this offline
+
+  // Dual Pricing / Cash Discount (Visa Compliance)
+  cashDiscountAmount  Decimal?  // Amount of cash discount applied (null if no dual pricing)
+  priceBeforeDiscount Decimal?  // Original card price before cash discount
+  pricingMode         String?   // "cash" or "card" — which price was used
 
   // Reconciliation (for EOD reports)
   needsReconciliation Boolean   @default(false) // Flag for accountant review

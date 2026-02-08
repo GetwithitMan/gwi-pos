@@ -278,6 +278,21 @@ export async function POST(
         },
       })
 
+      // Audit log: items added
+      await tx.auditLog.create({
+        data: {
+          locationId: existingOrder.locationId,
+          employeeId: existingOrder.employeeId,
+          action: 'items_added',
+          entityType: 'order',
+          entityId: orderId,
+          details: {
+            itemCount: createdItems.length,
+            items: createdItems.map((i: any) => ({ name: i.name, quantity: i.quantity, price: Number(i.price) })),
+          },
+        },
+      })
+
       return { updatedOrder, createdItems }
     })
 

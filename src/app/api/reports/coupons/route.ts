@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,9 +9,15 @@ export async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
       return NextResponse.json({ error: 'Location ID required' }, { status: 400 })
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Build date filter for redemptions

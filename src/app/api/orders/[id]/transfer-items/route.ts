@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { calculateOrderTotals } from '@/lib/tax-calculations'
 
 interface TransferItemsRequest {
   toOrderId: string
@@ -54,6 +57,12 @@ export async function POST(
       )
     }
 
+    // Server-side permission check
+    const auth = await requirePermission(employeeId, fromOrder.locationId, PERMISSIONS.MGR_TRANSFER_CHECKS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     if (fromOrder.status !== 'open' && fromOrder.status !== 'in_progress') {
       return NextResponse.json(
         { error: 'Cannot transfer items from a closed order' },
@@ -89,9 +98,8 @@ export async function POST(
       )
     }
 
-    // Get tax rate from location settings
+    // Get location settings for tax calculation
     const settings = parseSettings(fromOrder.location.settings)
-    const taxRate = settings.tax.defaultRate
 
     // Calculate totals for transferred items
     let transferSubtotal = 0
@@ -133,16 +141,11 @@ export async function POST(
         newSubtotal += itemPrice + modifiersPrice
       }
 
-      const newTaxTotal = newSubtotal * (taxRate / 100)
-      const newTotal = newSubtotal + newTaxTotal - Number(toOrder.discountTotal)
+      const destTotals = calculateOrderTotals(newSubtotal, Number(toOrder.discountTotal), settings)
 
       await tx.order.update({
         where: { id: toOrderId },
-        data: {
-          subtotal: newSubtotal,
-          taxTotal: newTaxTotal,
-          total: Math.max(0, newTotal),
-        },
+        data: destTotals,
       })
 
       // Update source order totals
@@ -161,16 +164,11 @@ export async function POST(
         sourceSubtotal += itemPrice + modifiersPrice
       }
 
-      const sourceTaxTotal = sourceSubtotal * (taxRate / 100)
-      const sourceTotal = sourceSubtotal + sourceTaxTotal - Number(fromOrder.discountTotal)
+      const sourceTotals = calculateOrderTotals(sourceSubtotal, Number(fromOrder.discountTotal), settings)
 
       await tx.order.update({
         where: { id: fromOrderId },
-        data: {
-          subtotal: sourceSubtotal,
-          taxTotal: sourceTaxTotal,
-          total: Math.max(0, sourceTotal),
-        },
+        data: sourceTotals,
       })
 
       // Create audit log

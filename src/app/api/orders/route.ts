@@ -217,6 +217,24 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // Audit log: order created
+    await db.auditLog.create({
+      data: {
+        locationId,
+        employeeId,
+        action: 'order_created',
+        entityType: 'order',
+        entityId: order.id,
+        details: {
+          orderNumber,
+          orderType,
+          tableId: tableId || null,
+          tabName: tabName || null,
+          itemCount: items.length,
+        },
+      },
+    })
+
     // Use mapper for complete response with correlationId support
     const response = {
       ...mapOrderForResponse(order),

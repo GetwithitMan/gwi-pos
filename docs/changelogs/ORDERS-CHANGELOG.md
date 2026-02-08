@@ -1,5 +1,69 @@
 # Orders Domain - Change Log
 
+## Session: February 7, 2026 (Late Night — BartenderView Unification & Void/Comp)
+
+### Skills Completed
+| Skill | Name | Status |
+|-------|------|--------|
+| 235 | Unified BartenderView Tab Panel | DONE |
+| 236 | Comp/Void from BartenderView | DONE |
+| 237 | Waste Tracking "Was It Made?" | DONE |
+| 238 | VOID/COMP Stamps on Order Panel | PARTIAL |
+
+### Skill 235: Unified BartenderView Tab Panel
+- Deleted ~450 lines of custom tab list from BartenderView (loadTabs, Tab/TabItem types, polling, filteredTabs, tabs state)
+- Replaced with shared `<OpenOrdersPanel>` component
+- Added `forceDark` prop to OpenOrdersPanel for BartenderView dark theme
+- Added `employeePermissions` prop pass-through from orders/page.tsx
+- Replaced selectedTab-based item loading with direct API fetch on selectedTabId change
+
+### Skill 236: Comp/Void from BartenderView
+- Added `onOpenCompVoid` callback prop to BartenderView
+- Wired in orders/page.tsx to open CompVoidModal
+- Previously showed "coming soon" toast — now fully functional
+
+### Skill 237: Waste Tracking "Was It Made?"
+- Added wasMade state to CompVoidModal with Yes/No buttons after reason selection
+- Added `wasMade Boolean?` to OrderItem schema
+- Added `wasMade Boolean @default(false)` to VoidLog schema
+- API uses explicit `wasMade` from UI, falls back to reason-based detection
+- Comp always sets wasMade=true (food was served)
+
+### Skill 238: VOID/COMP Stamps on Order Panel (PARTIAL)
+- Added `status`, `voidReason`, `wasMade` to OrderItem in order-store.ts
+- Added same fields to LoadedOrderData, OrderPanelItemData interfaces
+- Added to useOrderPanelItems hook mapping
+- Added to order-response-mapper.ts
+- OrderPanelItem renders: VOID/COMP badges, strikethrough, $0.00 price, waste indicator
+- **Bug found**: FloorPlanHome's `setInlineOrderItems` shim was dropping status/voidReason/wasMade
+- **Fix applied** to InlineOrderItem interface, prevAsInline, addItem, updateItem, and both API fetch mappings
+- **NOT YET VERIFIED** — needs testing next session (T-044)
+
+### Bugs Found
+1. FloorPlanHome `setInlineOrderItems` shim silently drops fields not explicitly mapped
+2. `calculateTotals` in order-store.ts sums ALL items including voided/comped — needs fix
+3. PrismaClientValidationError after adding wasMade to schema — required dev server restart
+
+### Files Modified
+- `src/components/bartender/BartenderView.tsx` — Major deletion + OpenOrdersPanel integration + onOpenCompVoid
+- `src/app/(pos)/orders/page.tsx` — employeePermissions, comp/void handlers, order reload after void
+- `src/components/orders/CompVoidModal.tsx` — wasMade UI
+- `src/components/orders/OrderPanelItem.tsx` — VOID/COMP visual stamps
+- `src/components/orders/OpenOrdersPanel.tsx` — forceDark prop
+- `src/stores/order-store.ts` — status/voidReason/wasMade on interfaces
+- `src/hooks/useOrderPanelItems.ts` — Pass through status fields
+- `src/lib/api/order-response-mapper.ts` — voidReason/wasMade in response
+- `src/app/api/orders/[id]/comp-void/route.ts` — wasMade field, improved error logging
+- `src/components/floor-plan/FloorPlanHome.tsx` — Fixed shim to pass status fields
+- `prisma/schema.prisma` — wasMade on VoidLog and OrderItem
+
+### Next Session Priority
+1. **T-044 (P0)**: Verify VOID/COMP stamps render on FloorPlanHome after shim fix
+2. Fix `calculateTotals` to skip voided/comped items
+3. Add test checklist items for void/comp visual verification
+
+---
+
 ## Session: February 5, 2026 (Domain Initialization)
 
 ### Domain Overview
@@ -1127,7 +1191,91 @@ Single source of truth for mapping Zustand order store items → `OrderPanelItem
 
 ---
 
+## Session: February 7, 2026 (Late Night) — BartenderView Unification & Void/Comp Enhancements
+
+### Overview
+
+Four skills completed in this session: unified BartenderView tab panel, comp/void from BartenderView, waste tracking ("Was it made?"), and VOID/COMP visual stamps on the OrderPanel.
+
+### Skill 235: Unified BartenderView Tab Panel (COMPLETE)
+
+**Problem:** BartenderView had its own custom tab list implementation (~450 lines) that was divergent from the shared OpenOrdersPanel used on /orders.
+
+**Solution:** Replaced custom tab list with shared `OpenOrdersPanel` component.
+
+**Deleted from BartenderView:**
+- `loadTabs` function
+- `Tab` / `TabItem` types
+- `TabSortOption` / `TabViewMode` types
+- `tabs` state, `searchInputRef`, `selectedTab` useMemo
+- 3-second polling interval
+
+**Added:**
+- `forceDark` prop on OpenOrdersPanel for dark theme in BartenderView
+- `employeePermissions` prop pass-through from orders/page.tsx to BartenderView
+
+### Skill 236: Comp/Void from BartenderView (COMPLETE)
+
+**Problem:** BartenderView showed "coming soon" toast when attempting comp/void.
+
+**Solution:** Added `onOpenCompVoid` callback prop to BartenderView, wired in orders/page.tsx to open CompVoidModal.
+
+### Skill 237: Waste Tracking — "Was It Made?" (COMPLETE)
+
+**Problem:** Void/comp flow guessed whether food was made based on reason text. Inaccurate for inventory tracking.
+
+**Solution:**
+- Added `wasMade` two-button UI (Yes/No) to CompVoidModal
+- Added `wasMade` column to `VoidLog` schema
+- Added `wasMade` column to `OrderItem` schema
+- API uses explicit `wasMade` from UI instead of heuristic
+- CompVoidModal requires "Was it made?" answer before void submission
+
+### Skill 238: VOID/COMP Stamps on Order Panel (PARTIAL — needs verification)
+
+**Changes:**
+- Added `status`, `voidReason`, `wasMade` to OrderItem in order store (`order-store.ts`)
+- Added same fields to `LoadedOrderData` interface
+- Added same fields to `OrderPanelItemData`
+- Added to `useOrderPanelItems` mapping
+- Added to `order-response-mapper.ts`
+- OrderPanelItem visual changes: VOID/COMP badges, strikethrough name, $0.00 price, waste indicator
+- `handleCompVoidComplete` reloads order from API after comp/void
+
+**Bug Found & Fixed:**
+- FloorPlanHome's `setInlineOrderItems` shim was dropping `status`/`voidReason`/`wasMade` fields
+- Added these fields to `InlineOrderItem` interface, `prevAsInline` mapping, `addItem` call, `updateItem` call, and both API fetch mappings in FloorPlanHome
+- **Status:** Fix applied but not yet verified working — needs testing next session
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/components/bartender/BartenderView.tsx` | Replaced tab panel with OpenOrdersPanel, added onOpenCompVoid prop |
+| `src/app/(pos)/orders/page.tsx` | Pass permissions, comp/void handlers to BartenderView, reload after void |
+| `src/components/orders/CompVoidModal.tsx` | Added wasMade UI (Yes/No buttons) |
+| `src/components/orders/OrderPanelItem.tsx` | VOID/COMP visual stamps |
+| `src/components/orders/OpenOrdersPanel.tsx` | forceDark prop |
+| `src/stores/order-store.ts` | Added status/voidReason/wasMade to interfaces |
+| `src/hooks/useOrderPanelItems.ts` | Pass through status fields |
+| `src/lib/api/order-response-mapper.ts` | Added voidReason/wasMade to response |
+| `src/app/api/orders/[id]/comp-void/route.ts` | wasMade field in API, improved error logging |
+| `src/components/floor-plan/FloorPlanHome.tsx` | Fixed shim to pass status/voidReason/wasMade |
+| `prisma/schema.prisma` | Added wasMade to VoidLog and OrderItem |
+
+### Known Issues
+
+1. **T-044:** VOID/COMP stamps on FloorPlanHome need verification after setInlineOrderItems shim fix
+2. **Pre-existing:** `usePOSLayout.loadLayout` failed to fetch (T-038)
+
+---
+
 ## Next Steps
+
+### Priority 0: Verify VOID/COMP stamps (T-044)
+- [ ] Test void/comp on FloorPlanHome — verify stamps render
+- [ ] Test void/comp on BartenderView — verify stamps render
+- [ ] Test void/comp on /orders page — verify stamps render
 
 ### Priority 1: Bar Tabs Screen
 - [ ] Improve tab list UI in OpenOrdersPanel

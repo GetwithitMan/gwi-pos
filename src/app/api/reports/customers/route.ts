@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET customer analytics report
 export async function GET(request: NextRequest) {
@@ -11,13 +13,19 @@ export async function GET(request: NextRequest) {
     const customerId = searchParams.get('customerId')
     const minOrders = parseInt(searchParams.get('minOrders') || '0')
     const minSpent = parseFloat(searchParams.get('minSpent') || '0')
-    const sortBy = searchParams.get('sortBy') || 'totalSpent' // totalSpent, totalOrders, lastVisit, averageTicket
+    const sortBy = searchParams.get('sortBy') || 'totalSpent'
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
 
     if (!locationId) {
       return NextResponse.json(
         { error: 'Location ID is required' },
         { status: 400 }
       )
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_CUSTOMERS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Build date filter for orders

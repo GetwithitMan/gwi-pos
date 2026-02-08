@@ -256,6 +256,36 @@ export async function PUT(request: NextRequest) {
       },
     })
 
+    // Break audit trail: create/close Break records
+    if (action === 'startBreak') {
+      await db.break.create({
+        data: {
+          locationId: entry.locationId,
+          employeeId: entry.employeeId,
+          timeClockEntryId: entryId,
+          startedAt: now,
+          status: 'active',
+        },
+      }).catch(err => console.error('Failed to create Break audit record:', err))
+    } else if (action === 'endBreak' || action === 'clockOut') {
+      // Close any open Break records (endBreak closes current, clockOut catches auto-ended breaks)
+      const breakDuration = entry.breakStart
+        ? Math.round((now.getTime() - entry.breakStart.getTime()) / (1000 * 60))
+        : 0
+      await db.break.updateMany({
+        where: {
+          timeClockEntryId: entryId,
+          endedAt: null,
+          status: 'active',
+        },
+        data: {
+          endedAt: now,
+          duration: breakDuration,
+          status: 'completed',
+        },
+      }).catch(err => console.error('Failed to close Break audit record:', err))
+    }
+
     return NextResponse.json({
       id: updated.id,
       employeeId: updated.employeeId,

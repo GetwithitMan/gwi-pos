@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationTaxRate, calculateTax } from '@/lib/tax-calculations'
 
 interface SplitRequest {
   type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'get_splits'
@@ -57,8 +58,7 @@ export async function POST(
     const isAlreadySplit = order.parentOrderId !== null || order.splitOrders.length > 0
 
     // Get tax rate from location settings
-    const settings = order.location.settings as { tax?: { defaultRate?: number } } | null
-    const taxRate = (settings?.tax?.defaultRate || 8) / 100
+    const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
 
     // Handle get_splits - return all split orders for navigation
     if (body.type === 'get_splits') {
@@ -289,7 +289,7 @@ export async function POST(
         }
       })
 
-      const newTax = Math.round(newSubtotal * taxRate * 100) / 100
+      const newTax = calculateTax(newSubtotal, taxRate)
       const newTotal = Math.round((newSubtotal + newTax) * 100) / 100
 
       // Get the next split index
@@ -359,7 +359,7 @@ export async function POST(
         remainingSubtotal += itemTotal + modifiersTotal
       })
 
-      const remainingTax = Math.round(remainingSubtotal * taxRate * 100) / 100
+      const remainingTax = calculateTax(remainingSubtotal, taxRate)
       const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
 
       // Update original order totals
@@ -485,7 +485,7 @@ export async function POST(
           }
         })
 
-        const seatTax = Math.round(seatSubtotal * taxRate * 100) / 100
+        const seatTax = calculateTax(seatSubtotal, taxRate)
         const seatTotal = Math.round((seatSubtotal + seatTax) * 100) / 100
 
         // Create split order for this seat
@@ -556,7 +556,7 @@ export async function POST(
         remainingSubtotal += itemTotal + modifiersTotal
       })
 
-      const remainingTax = Math.round(remainingSubtotal * taxRate * 100) / 100
+      const remainingTax = calculateTax(remainingSubtotal, taxRate)
       const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
 
       // Update original order totals
@@ -676,7 +676,7 @@ export async function POST(
           }
         })
 
-        const tableTax = Math.round(tableSubtotal * taxRate * 100) / 100
+        const tableTax = calculateTax(tableSubtotal, taxRate)
         const tableTotal = Math.round((tableSubtotal + tableTax) * 100) / 100
 
         // Create split order for this table
@@ -748,7 +748,7 @@ export async function POST(
         remainingSubtotal += itemTotal + modifiersTotal
       })
 
-      const remainingTax = Math.round(remainingSubtotal * taxRate * 100) / 100
+      const remainingTax = calculateTax(remainingSubtotal, taxRate)
       const remainingTotal = Math.round((remainingSubtotal + remainingTax) * 100) / 100
 
       // Update original order totals

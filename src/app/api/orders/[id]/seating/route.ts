@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationTaxRate, calculateTax } from '@/lib/tax-calculations'
 
 /**
  * Atomic Seat Management API (Skill 121)
@@ -63,8 +64,7 @@ export async function GET(
     const totalSeats = order.baseSeatCount + order.extraSeatCount
 
     // Get tax rate from location settings
-    const settings = order.location.settings as { tax?: { defaultRate?: number } } | null
-    const taxRate = (settings?.tax?.defaultRate || 8) / 100
+    const taxRate = getLocationTaxRate(order.location.settings as { tax?: { defaultRate?: number } })
 
     // Calculate per-seat balances
     const seatTimestamps = (order.seatTimestamps as SeatTimestamps) || {}
@@ -95,7 +95,7 @@ export async function GET(
         return sum + itemBase + modTotal
       }, 0)
 
-      const taxAmount = Math.round(subtotal * taxRate * 100) / 100
+      const taxAmount = calculateTax(subtotal, taxRate)
       const total = subtotal + taxAmount
 
       // Determine seat status

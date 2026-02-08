@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Generate employee shift report
 export async function GET(request: NextRequest) {
@@ -9,6 +11,7 @@ export async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
     const locationId = searchParams.get('locationId')
     const dateStr = searchParams.get('date')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || employeeId
 
     // Can query by shiftId OR by employeeId + date
     if (!shiftId && (!employeeId || !locationId)) {
@@ -16,6 +19,14 @@ export async function GET(request: NextRequest) {
         { error: 'Either shiftId or (employeeId + locationId) required' },
         { status: 400 }
       )
+    }
+
+    // Auth check (locationId may be null when querying by shiftId — resolved after shift lookup)
+    if (locationId) {
+      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
+      if (!auth.authorized) {
+        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
     }
 
     let shift

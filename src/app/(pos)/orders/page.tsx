@@ -1470,6 +1470,7 @@ export default function OrdersPage() {
 
   const handleCompVoidComplete = async (result: {
     action: 'comp' | 'void' | 'restore'
+    item?: { id: string }
     orderTotals: {
       subtotal: number
       discountTotal: number
@@ -1480,9 +1481,8 @@ export default function OrdersPage() {
     // Trigger a refresh to update order display
     setTabsRefreshTrigger(prev => prev + 1)
     setShowCompVoidModal(false)
-    setCompVoidItem(null)
 
-    // Reload order into store so voided/comped items show updated status
+    // Reload full order from API so voided/comped items show updated status
     const orderId = savedOrderId || orderToPayId
     if (orderId) {
       try {
@@ -1495,6 +1495,7 @@ export default function OrdersPage() {
         console.error('Failed to reload order after comp/void:', err)
       }
     }
+    setCompVoidItem(null)
   }
 
   // OrderPanel item control handlers
@@ -4591,14 +4592,14 @@ export default function OrdersPage() {
       )}
 
       {/* Comp/Void Modal */}
-      {showCompVoidModal && savedOrderId && compVoidItem && employee && (
+      {showCompVoidModal && (savedOrderId || orderToPayId) && compVoidItem && employee && (
         <CompVoidModal
           isOpen={showCompVoidModal}
           onClose={() => {
             setShowCompVoidModal(false)
             setCompVoidItem(null)
           }}
-          orderId={savedOrderId}
+          orderId={(savedOrderId || orderToPayId)!}
           item={compVoidItem}
           employeeId={employee.id}
           locationId={employee.location?.id || ''}

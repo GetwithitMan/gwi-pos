@@ -97,6 +97,8 @@ interface InlineOrderItem {
   sentToKitchen?: boolean
   isCompleted?: boolean
   status?: 'active' | 'voided' | 'comped'
+  voidReason?: string
+  wasMade?: boolean
   // Timed rental / entertainment items
   isTimedRental?: boolean
   blockTimeMinutes?: number
@@ -447,6 +449,9 @@ export function FloorPlanHome({
       blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined, completedAt: item.completedAt,
       resendCount: item.resendCount,
       ingredientModifications: item.ingredientModifications,
+      status: item.status,
+      voidReason: item.voidReason,
+      wasMade: item.wasMade,
     }))
 
     const newItems = typeof action === 'function' ? action(prevAsInline) : action
@@ -501,6 +506,9 @@ export function FloorPlanHome({
           completedAt: newItem.completedAt,
           resendCount: newItem.resendCount,
           ingredientModifications: newItem.ingredientModifications,
+          status: newItem.status,
+          voidReason: newItem.voidReason,
+          wasMade: newItem.wasMade,
         })
         // Override the auto-generated ID with the intended one
         const storeNow = useOrderStore.getState().currentOrder?.items || []
@@ -537,6 +545,9 @@ export function FloorPlanHome({
           completedAt: newItem.completedAt,
           resendCount: newItem.resendCount,
           ingredientModifications: newItem.ingredientModifications,
+          status: newItem.status,
+          voidReason: newItem.voidReason,
+          wasMade: newItem.wasMade,
         })
       }
     }
@@ -1504,7 +1515,7 @@ export function FloorPlanHome({
         setShowOrderPanel(true)
 
         // Load items
-        const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
+        const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; voidReason?: string; wasMade?: boolean; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
           id: item.id,
           menuItemId: item.menuItemId,
           name: item.name || 'Unknown',
@@ -1529,6 +1540,8 @@ export function FloorPlanHome({
           isCompleted: item.isCompleted,
           sentToKitchen: item.kitchenStatus !== 'pending' && item.kitchenStatus !== undefined,
           status: item.status as 'active' | 'voided' | 'comped' | undefined,
+          voidReason: item.voidReason,
+          wasMade: item.wasMade,
           blockTimeMinutes: item.blockTimeMinutes,
           // Item lifecycle status
           kitchenStatus: item.kitchenStatus as 'pending' | 'cooking' | 'ready' | 'delivered' | undefined,
@@ -1954,7 +1967,7 @@ export function FloorPlanHome({
         const res = await fetch(`/api/orders/${primaryTable.currentOrder.id}`)
         if (res.ok) {
           const data = await res.json()
-          const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
+          const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; voidReason?: string; wasMade?: boolean; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
             id: item.id,
             menuItemId: item.menuItemId,
             name: item.name || 'Unknown',

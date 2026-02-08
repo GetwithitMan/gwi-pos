@@ -71,6 +71,7 @@
 | T-040 | Verify per-item delay countdown + auto-fire end-to-end — Add 5m delay to item, send order, verify countdown renders, verify item auto-fires when timer hits 0 | PM: Orders | PM: Orders | 2026-02-07 | P1 | Critical feature verification. Timer logic in OrderPanelItem.tsx, fire logic in useActiveOrder.ts |
 | T-042 | Multi-select pre-modifiers — Allow combining pre-modifiers (e.g. "Side Extra Ranch"). Requires `preModifier` field to become array or compound string. | PM: Menu | PM: Menu | 2026-02-07 | P3 | Discovered during OrderPanel session. Workaround: stack modifier twice with different pre-mods. Files: useModifierSelections.ts, ModifierGroupSection.tsx, OrderPanelItem.tsx |
 | T-043 | Clean up duplicate IngredientModification interface in order-store.ts — shadows import from @/types/orders.ts | PM: Orders | PM: Menu | 2026-02-07 | P3 | Tech debt. File: src/stores/order-store.ts |
+| T-044 | Verify VOID/COMP stamps render on FloorPlanHome after setInlineOrderItems shim fix (status/voidReason/wasMade fields). Also test on BartenderView and orders page. | PM: Orders | PM: Orders | 2026-02-07 | P0 | Skill 238 fix applied but not verified. Files: FloorPlanHome.tsx, BartenderView.tsx, orders/page.tsx, OrderPanelItem.tsx |
 
 ## In Progress
 

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { deductInventoryForVoidedItem, restorePrepStockForVoid, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+import { calculateOrderTotals } from '@/lib/tax-calculations'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -80,6 +83,24 @@ export async function POST(
         { error: 'Order not found' },
         { status: 404 }
       )
+    }
+
+    // Server-side permission check: requesting employee needs basic POS access
+    // Actual void/comp authorization comes from approvedById or remote approval code
+    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
+    // Validate approvedById has manager void permission if provided
+    if (approvedById && !remoteApprovalCode) {
+      const approverAuth = await requirePermission(approvedById, order.locationId, PERMISSIONS.MGR_VOID_ITEMS)
+      if (!approverAuth.authorized) {
+        return NextResponse.json(
+          { error: 'You do not have permission to perform this action' },
+          { status: 403 }
+        )
+      }
     }
 
     if (order.status !== 'open' && order.status !== 'in_progress') {
@@ -187,31 +208,19 @@ export async function POST(
       newSubtotal += (Number(activeItem.price) + mods) * activeItem.quantity
     })
 
-    // Get tax rate and recalculate
-    const settings = order.location.settings as { tax?: { defaultRate?: number } } | null
-    const taxRate = (settings?.tax?.defaultRate || 8) / 100
-
     // Get existing discounts
     const discounts = await db.orderDiscount.findMany({
       where: { orderId },
     })
     const discountTotal = discounts.reduce((sum, d) => sum + Number(d.amount), 0)
 
-    // Ensure discount doesn't exceed new subtotal
-    const effectiveDiscount = Math.min(discountTotal, newSubtotal)
-    const taxableAmount = newSubtotal - effectiveDiscount
-    const newTaxTotal = Math.round(taxableAmount * taxRate * 100) / 100
-    const newTotal = Math.round((taxableAmount + newTaxTotal) * 100) / 100
+    // Recalculate order totals using centralized tax engine
+    const totals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
 
     // Update order totals
     await db.order.update({
       where: { id: orderId },
-      data: {
-        subtotal: newSubtotal,
-        discountTotal: effectiveDiscount,
-        taxTotal: newTaxTotal,
-        total: newTotal,
-      },
+      data: totals,
     })
 
     return NextResponse.json({
@@ -223,17 +232,12 @@ export async function POST(
         amount: itemTotal,
         newStatus,
       },
-      orderTotals: {
-        subtotal: newSubtotal,
-        discountTotal: effectiveDiscount,
-        taxTotal: newTaxTotal,
-        total: newTotal,
-      },
+      orderTotals: totals,
     })
   } catch (error) {
-    console.error('Failed to comp/void item:', error)
+    console.error('Failed to comp/void item:', error instanceof Error ? error.message : error)
     return NextResponse.json(
-      { error: 'Failed to process request' },
+      { error: error instanceof Error ? error.message : 'Failed to process request' },
       { status: 500 }
     )
   }
@@ -275,6 +279,12 @@ export async function PUT(
       )
     }
 
+    // Restoring a voided/comped item requires manager void permission
+    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.MGR_VOID_ITEMS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     const item = order.items[0]
     if (!item) {
       return NextResponse.json(
@@ -314,26 +324,16 @@ export async function PUT(
       newSubtotal += (Number(activeItem.price) + mods) * activeItem.quantity
     })
 
-    const settings = order.location.settings as { tax?: { defaultRate?: number } } | null
-    const taxRate = (settings?.tax?.defaultRate || 8) / 100
-
     const discounts = await db.orderDiscount.findMany({
       where: { orderId },
     })
     const discountTotal = discounts.reduce((sum, d) => sum + Number(d.amount), 0)
-    const effectiveDiscount = Math.min(discountTotal, newSubtotal)
-    const taxableAmount = newSubtotal - effectiveDiscount
-    const newTaxTotal = Math.round(taxableAmount * taxRate * 100) / 100
-    const newTotal = Math.round((taxableAmount + newTaxTotal) * 100) / 100
+
+    const totals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
 
     await db.order.update({
       where: { id: orderId },
-      data: {
-        subtotal: newSubtotal,
-        discountTotal: effectiveDiscount,
-        taxTotal: newTaxTotal,
-        total: newTotal,
-      },
+      data: totals,
     })
 
     return NextResponse.json({
@@ -343,12 +343,7 @@ export async function PUT(
         name: item.name,
         restored: true,
       },
-      orderTotals: {
-        subtotal: newSubtotal,
-        discountTotal: effectiveDiscount,
-        taxTotal: newTaxTotal,
-        total: newTotal,
-      },
+      orderTotals: totals,
     })
   } catch (error) {
     console.error('Failed to restore item:', error)
@@ -366,6 +361,27 @@ export async function GET(
 ) {
   try {
     const { id: orderId } = await params
+    const { searchParams } = new URL(request.url)
+    const employeeId = searchParams.get('employeeId')
+
+    // Get order to determine locationId for auth check
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+      select: { locationId: true },
+    })
+
+    if (!order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    if (!employeeId) {
+      return NextResponse.json({ error: 'Employee ID is required' }, { status: 401 })
+    }
+
+    const auth = await requirePermission(employeeId, order.locationId, PERMISSIONS.POS_ACCESS)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     const voidLogs = await db.voidLog.findMany({
       where: { orderId },

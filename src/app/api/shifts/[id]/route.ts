@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requireAnyPermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get shift details with sales summary
 export async function GET(
@@ -84,11 +86,12 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { action, actualCash, tipsDeclared, notes, tipDistribution } = body as {
+    const { action, actualCash, tipsDeclared, notes, tipDistribution, employeeId: requestingEmployeeId } = body as {
       action: 'close' | 'update'
       actualCash?: number
       tipsDeclared?: number
       notes?: string
+      employeeId?: string
       tipDistribution?: {
         grossTips: number
         tipOutTotal: number
@@ -110,6 +113,24 @@ export async function PUT(
     }
 
     if (action === 'close') {
+      // Require requesting employee ID for shift close
+      if (!requestingEmployeeId) {
+        return NextResponse.json(
+          { error: 'requestingEmployeeId is required to close a shift' },
+          { status: 400 }
+        )
+      }
+
+      // Auth: must be the shift owner or have manager.bulk_operations
+      if (requestingEmployeeId !== shift.employeeId) {
+        const auth = await requireAnyPermission(requestingEmployeeId, shift.locationId, [
+          PERMISSIONS.MGR_BULK_OPERATIONS,
+        ])
+        if (!auth.authorized) {
+          return NextResponse.json({ error: auth.error }, { status: auth.status })
+        }
+      }
+
       if (shift.status === 'closed') {
         return NextResponse.json(
           { error: 'Shift is already closed' },
@@ -137,47 +158,72 @@ export async function PUT(
       const expectedCash = Number(shift.startingCash) + summary.netCashReceived
       const variance = actualCash - expectedCash
 
-      // Update shift with closeout data
-      const updatedShift = await db.shift.update({
-        where: { id },
-        data: {
-          endedAt: endTime,
-          status: 'closed',
-          expectedCash,
-          actualCash,
-          variance,
-          totalSales: summary.totalSales,
-          cashSales: summary.cashSales,
-          cardSales: summary.cardSales,
-          tipsDeclared: tipsDeclared || summary.totalTips,
-          notes: notes || shift.notes,
-          // Tip distribution tracking
-          grossTips: tipDistribution?.grossTips || tipsDeclared || summary.totalTips,
-          tipOutTotal: tipDistribution?.tipOutTotal || 0,
-          netTips: tipDistribution?.netTips || tipsDeclared || summary.totalTips,
-        },
-        include: {
-          employee: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              displayName: true,
-              roleId: true,
+      // Update shift + process tip distribution atomically
+      const updatedShift = await db.$transaction(async (tx) => {
+        const closed = await tx.shift.update({
+          where: { id },
+          data: {
+            endedAt: endTime,
+            status: 'closed',
+            expectedCash,
+            actualCash,
+            variance,
+            totalSales: summary.totalSales,
+            cashSales: summary.cashSales,
+            cardSales: summary.cardSales,
+            tipsDeclared: tipsDeclared || summary.totalTips,
+            notes: notes || shift.notes,
+            grossTips: tipDistribution?.grossTips || tipsDeclared || summary.totalTips,
+            tipOutTotal: tipDistribution?.tipOutTotal || 0,
+            netTips: tipDistribution?.netTips || tipsDeclared || summary.totalTips,
+          },
+          include: {
+            employee: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                displayName: true,
+                roleId: true,
+              },
             },
           },
-        },
-      })
+        })
 
-      // Process tip distribution if provided
-      if (tipDistribution) {
-        await processTipDistribution(
-          shift.locationId,
-          shift.employeeId,
-          updatedShift.id,
-          tipDistribution
-        )
-      }
+        if (tipDistribution) {
+          await processTipDistribution(
+            tx,
+            shift.locationId,
+            shift.employeeId,
+            closed.id,
+            tipDistribution
+          )
+        }
+
+        // Audit log: shift closed
+        await tx.auditLog.create({
+          data: {
+            locationId: shift.locationId,
+            employeeId: requestingEmployeeId || shift.employeeId,
+            action: 'shift_closed',
+            entityType: 'shift',
+            entityId: closed.id,
+            details: {
+              shiftEmployeeId: shift.employeeId,
+              totalSales: summary.totalSales,
+              cashSales: summary.cashSales,
+              cardSales: summary.cardSales,
+              expectedCash,
+              actualCash,
+              variance,
+              tipsDeclared: tipsDeclared || summary.totalTips,
+              hasTipDistribution: !!tipDistribution,
+            },
+          },
+        })
+
+        return closed
+      })
 
       return NextResponse.json({
         shift: {
@@ -361,6 +407,7 @@ async function calculateShiftSummary(
 
 // Helper function to process tip distribution
 async function processTipDistribution(
+  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
   locationId: string,
   fromEmployeeId: string,
   shiftId: string,
@@ -373,7 +420,7 @@ async function processTipDistribution(
   }
 ) {
   // Get all currently clocked-in employees to determine if recipients are on shift
-  const activeShifts = await db.shift.findMany({
+  const activeShifts = await tx.shift.findMany({
     where: {
       locationId,
       status: 'open',
@@ -409,7 +456,7 @@ async function processTipDistribution(
 
     if (!toEmployeeId) {
       // No active employee with this role - find any employee with this role for banking
-      const employeeWithRole = await db.employee.findFirst({
+      const employeeWithRole = await tx.employee.findFirst({
         where: {
           locationId,
           roleId: tipOut.toRoleId,
@@ -429,7 +476,7 @@ async function processTipDistribution(
     }
 
     // Create TipShare record
-    const tipShare = await db.tipShare.create({
+    const tipShare = await tx.tipShare.create({
       data: {
         locationId,
         shiftId,
@@ -444,7 +491,7 @@ async function processTipDistribution(
 
     // If banked, create TipBank entry
     if (status === 'banked') {
-      await db.tipBank.create({
+      await tx.tipBank.create({
         data: {
           locationId,
           employeeId: toEmployeeId,
@@ -465,7 +512,7 @@ async function processTipDistribution(
     const status = isOnShift ? 'pending' : 'banked'
 
     // Create TipShare record
-    const tipShare = await db.tipShare.create({
+    const tipShare = await tx.tipShare.create({
       data: {
         locationId,
         shiftId,
@@ -479,7 +526,7 @@ async function processTipDistribution(
 
     // If banked, create TipBank entry
     if (status === 'banked') {
-      await db.tipBank.create({
+      await tx.tipBank.create({
         data: {
           locationId,
           employeeId: share.toEmployeeId,

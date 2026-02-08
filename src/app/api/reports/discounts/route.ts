@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET discount usage report
 export async function GET(request: NextRequest) {
@@ -10,12 +12,18 @@ export async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const employeeId = searchParams.get('employeeId')
     const discountRuleId = searchParams.get('discountRuleId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || employeeId
 
     if (!locationId) {
       return NextResponse.json(
         { error: 'Location ID is required' },
         { status: 400 }
       )
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Build date filter on order

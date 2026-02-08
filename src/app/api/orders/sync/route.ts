@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationTaxRate, calculateTax } from '@/lib/tax-calculations'
 
 const DEFAULT_LOCATION_ID = 'loc-1'
 
@@ -126,10 +127,9 @@ export async function POST(request: NextRequest) {
       const location = await tx.location.findUnique({
         where: { id: locationId },
       })
-      const settings = (location?.settings as any) || {}
-      const taxRate = settings.tax?.defaultRate || 0
-      const taxTotal = subtotal * (taxRate / 100)
-      const total = subtotal + taxTotal
+      const taxRate = getLocationTaxRate(location?.settings as { tax?: { defaultRate?: number } })
+      const taxTotal = calculateTax(subtotal, taxRate)
+      const total = Math.round((subtotal + taxTotal) * 100) / 100
 
       // Create the order
       const newOrder = await tx.order.create({

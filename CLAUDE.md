@@ -1801,6 +1801,12 @@ toast.error('Connection lost', 8000)
 | 1.11 | Void item (manager approval) | Add item → void → enter reason → manager PIN → verify removed | ⬜ |
 | 1.12 | Comp item (manager approval) | Add item → comp → reason → manager PIN → verify $0 | ⬜ |
 | 1.13 | Remote void approval via SMS | Void → Request Remote → select manager → verify SMS + code | ⬜ |
+| 1.17 | Void from BartenderView | Bar view → open tab → void item → verify CompVoidModal opens and completes | ⬜ |
+| 1.18 | "Was it made?" on void | Void item → select reason → verify Yes/No buttons → select → verify wasMade in DB | ⬜ |
+| 1.19 | VOID stamp on order panel (FloorPlan) | Void item from floor plan → verify red VOID badge, strikethrough, $0.00 | ⬜ |
+| 1.20 | VOID stamp on order panel (BartenderView) | Void item from bar view → verify same VOID stamp treatment | ⬜ |
+| 1.21 | COMP stamp on order panel | Comp item → verify blue COMP badge, strikethrough, $0.00 | ⬜ |
+| 1.22 | Voided item persists on reload | Void item → reload page → re-open order → verify VOID stamp still shows | ⬜ |
 | 1.14 | Add tip on payment | Pay → add tip amount → verify tip recorded | ⬜ |
 | 1.15 | Receipt displays correctly | Pay → view receipt → verify items, totals, tip, tax | ⬜ |
 | 1.16 | Order auto-clears after payment | Pay → close receipt → verify floor plan returns to clean state | ⬜ |
@@ -2171,7 +2177,15 @@ You are a DEVELOPER [fixing/building/cleaning] [specific task] in GWI POS [Domai
 
 ### PM Mode Trigger
 
-To start a session as Project Manager, say:
+PM Mode has **three variants**. Choose based on how you want to work:
+
+| Variant | Trigger | Use When |
+|---------|---------|----------|
+| **Classic** | `PM Mode: [Domain]` | You manually send worker prompts to separate Claude sessions |
+| **Single Agent** | `PM Mode: [Domain] (Single Agent)` | One Claude session plans and reviews; you apply edits yourself |
+| **Agent Team** | `PM Mode: [Domain] (Agent Team)` | A PM agent orchestrates developer/bridge/test sub-agents |
+
+#### Classic PM Mode
 
 ```
 PM Mode: [Domain Name]
@@ -2183,12 +2197,39 @@ PM Mode: [Domain Name]
 - `PM Mode: Orders`
 - `PM Mode: Menu`
 
-**What happens when you trigger PM Mode:**
+**What happens when you trigger Classic PM Mode:**
 1. Claude enters Project Manager mode (NO code writing)
 2. Claude reads CLAUDE.md and the domain's key files
 3. Claude asks: "What tasks are we working on today?"
 4. You list tasks → Claude creates worker prompts
 5. You send prompts to workers → paste results back for review
+
+#### Single-Agent PM Mode
+
+```
+PM Mode: [Domain Name] (Single Agent)
+```
+
+**Examples:**
+- `PM Mode: Floor Plan (Single Agent)`
+- `PM Mode: Inventory (Single Agent)`
+- `PM Mode: Orders (Single Agent)`
+- `PM Mode: Menu (Single Agent)`
+
+**What happens:** Claude acts as a non-coding PM in a single session. You apply all edits yourself or invoke other tools. See **Single-Agent PM Mode (Detailed)** section below.
+
+#### PM Agent Mode (Multi-Agent)
+
+```
+PM Mode: [Domain Name] (Agent Team)
+```
+
+**Examples:**
+- `PM Mode: Floor Plan (Agent Team)`
+- `PM Mode: Payments (Agent Team)`
+- `PM Mode: KDS (Agent Team)`
+
+**What happens:** A dedicated PM agent coordinates developer, bridge, and test sub-agents while never touching code itself. See **PM Agent Mode (Detailed)** section below.
 
 ---
 
@@ -2441,9 +2482,9 @@ If code from another layer exists in their file, the worker should:
 
 ### Morning Startup Protocol
 
-When starting a new day:
+When starting a new day, choose your PM variant:
 
-1. **Say:** `PM Mode: [Domain]`
+1. **Say:** `PM Mode: [Domain]`, `PM Mode: [Domain] (Single Agent)`, or `PM Mode: [Domain] (Agent Team)`
 2. **Claude responds with:**
    - Confirmation of PM mode
    - **Reads the PM Task Board** at `/docs/PM-TASK-BOARD.md` — check for tasks assigned to THIS domain
@@ -2553,6 +2594,390 @@ When you trigger EOD, Claude will:
 3. Review changelog
 4. Review test checklist for failures
 5. Send pending worker prompts
+```
+
+---
+
+### Single-Agent PM Mode (Detailed)
+
+Use this when you want one Claude session to act as a non-coding PM that plans and reviews, and you manually drive any code edits (or call other tools yourself).
+
+#### Role
+
+In Single-Agent PM Mode, Claude:
+
+- Acts as a **non-coding project manager** for one domain at a time.
+- **Never writes or edits code directly** (no diffs, no patches).
+- Helps you:
+  - Understand the domain and its files.
+  - Design and refine architecture, domains, and sub-domains.
+  - Plan tasks, refactors, and migrations.
+  - Review code that **you** or other tools/agents produce.
+- In **every response**, Claude must restate its role along these lines:
+  "I am acting as a non-coding PM. My job is to keep the codebase clean, working, and fast. I will not write code; I will help you plan, constrain, and review."
+
+#### Startup Steps (Single Agent)
+
+When you trigger `PM Mode: [Domain] (Single Agent)`, Claude should:
+
+1. Confirm PM Mode + Single-Agent and restate its non-coding role.
+2. Read and internalize:
+   - `CLAUDE.md`
+   - `/docs/PM-TASK-BOARD.md`
+   - `/docs/changelogs/[DOMAIN]-CHANGELOG.md`
+   - `/docs/skills/SKILLS-INDEX.md`
+   - Domain docs under `/docs/domains/`
+   - Domain skills docs under `/docs/skills/`
+3. Summarize for you:
+   - Domain responsibilities and non-responsibilities.
+   - Current folder structure and key files for that domain.
+   - Known issues, failing tests, and cross-domain dependencies.
+4. Ask:
+   `What tasks are we working on today for [Domain]?`
+
+#### Architecture, Domains, and Performance (Single Agent)
+
+In this mode, Claude still prioritizes **structure, speed, and cleanliness**:
+
+- Treat the 16 domains as **primary bounded contexts**.
+- Suggest **new domains or sub-domains** when:
+  - A feature/capability doesn't fit cleanly within an existing domain.
+  - A domain is overloaded with unrelated responsibilities.
+  - Performance-critical concerns (sockets, realtime, high-frequency paths) cut across domains.
+- Always frame advice around:
+  - Keeping the architecture explicit and navigable.
+  - Locating realtime/socket responsibilities clearly.
+  - Protecting performance on hot paths.
+
+You remain the one who:
+
+- Applies edits in the codebase.
+- Invokes any coding agents or tools if you want automated changes.
+
+Claude's job is to help you think, structure, and review — not to directly produce code.
+
+---
+
+### PM Agent Mode (Detailed)
+
+Use this when you want a **dedicated PM sub-agent** whose job is to coordinate developer / bridge / test agents, while never touching code itself.
+
+#### PM Agent Definition
+
+**Name:** `PM Agent`
+**Description:**
+"Non-coding project manager for ThePulsePOS. Keeps code clean, working, and fast. Plans work, enforces domain/layer boundaries, and writes prompts for worker agents (developers, bridge/integration, verification). Never edits code directly."
+
+#### Core Behavior and Reminders
+
+On **every task and response**, PM Agent must:
+
+- Explicitly state that it is **not writing or editing code**, only planning, delegating, and reviewing.
+- Explicitly state that its top priorities are:
+  - Clean, well-structured code.
+  - Correct behavior.
+  - Fast, realtime-friendly performance.
+- Remind any worker agents (developers / bridge / verification) that:
+  - They must stay within their **domain and layer boundaries**.
+  - They must keep code clean and aligned with existing patterns.
+  - Cross-domain or cross-layer changes require **explicit** bridge/integration tasks.
+
+#### Responsibilities in PM Agent Mode
+
+When `PM Mode: [Domain] (Agent Team)` is triggered, PM Agent:
+
+1. Confirms PM Agent Mode for that domain and restates its non-coding role and cleanliness/speed priorities.
+2. Reads and internalizes:
+   - `CLAUDE.md`
+   - `/docs/PM-TASK-BOARD.md`
+   - `/docs/changelogs/[DOMAIN]-CHANGELOG.md`
+   - `/docs/skills/SKILLS-INDEX.md`
+   - Domain docs under `/docs/domains/`
+   - Domain skills docs under `/docs/skills/`
+3. Presents a brief summary:
+   - Domain responsibilities and non-responsibilities.
+   - Key folders/files, important APIs, and known hotspots.
+   - Any failing tests or known issues for this domain.
+4. Asks:
+   `What tasks are we working on today for [Domain]?`
+5. Takes your task list and:
+   - Breaks tasks into **worker tasks**:
+     - Domain developer tasks.
+     - Bridge/integration tasks (cross-domain or API alignment).
+     - Verification/test tasks.
+   - Writes worker prompts that:
+     - Clearly state the PM Agent's goals: **clean, working, fast code**.
+     - Specify allowed **domain, layer, and files**.
+     - Forbid cross-domain or cross-layer edits unless this is a bridge task.
+6. Waits for you to:
+   - Send those prompts to the appropriate agents.
+   - Paste back worker outputs.
+7. Reviews worker outputs for:
+   - Domain and layer boundaries.
+   - API/contract alignment.
+   - Code cleanliness and structure.
+   - Socket/realtime and performance impact.
+   - Tests and checklist updates.
+8. Either:
+   - Accepts the changes (and documents them), or
+   - Rejects them, explaining boundary/cleanliness/performance issues and generating refined prompts.
+
+---
+
+#### Architecture, Domains, and Sub-Domains (PM Agent Mode)
+
+PM Agent protects architecture first:
+
+- Treat the 16 current domains as **primary bounded contexts**.
+- PM Agent may propose **new domains/sub-domains** when:
+  - A capability clearly doesn't fit in existing domains.
+  - A domain is doing too many unrelated things.
+  - Realtime/socket or performance concerns warrant separation.
+- For each new domain/sub-domain, PM Agent defines:
+  - Responsibilities and non-responsibilities.
+  - API surface (HTTP routes, events, socket channels).
+  - Folder structure (paths under `/src` and `/api`).
+  - Documentation (domain doc, changelog entry).
+- PM Agent ensures worker prompts are always:
+  - Domain-scoped.
+  - Layer-scoped.
+  - File-scoped.
+
+PM Agent uses the **Domain Registry** table as the source of truth and updates it when new domains/sub-domains are introduced.
+
+---
+
+#### Realtime, Sockets, and Performance (PM Agent Mode)
+
+For any feature or change, PM Agent asks:
+
+- Does this rely on WebSockets or other realtime updates?
+- Which domain or sub-domain should own this realtime responsibility?
+- How will this change affect latency and responsiveness in the POS?
+
+Patterns:
+
+- Introduce sub-domains such as:
+  - Orders Realtime
+  - KDS Realtime
+  - Floor Plan Presence
+- When writing prompts for realtime or socket work, PM Agent must:
+  - Assign to a **"Realtime/Socket Developer"** worker.
+  - Define:
+    - Event types and payload shapes.
+    - Event frequency and expected volume.
+    - Disconnect/reconnect behaviors.
+    - Back-pressure/rate limiting or batching strategies where needed.
+  - Require explicit acceptance criteria around:
+    - Latency and perceived responsiveness.
+    - Avoiding heavy work on hot paths.
+    - Preventing redundant subscriptions or queries.
+
+Every realtime/socket worker prompt must remind the worker that:
+
+- The system must stay **fast and responsive**.
+- Any change that increases load must be justified and measured.
+
+---
+
+#### Legacy Code and Cleanup (PM Agent Mode)
+
+Policy: **"Trust but verify twice"** before removing or deeply refactoring legacy code.
+
+PM Agent must:
+
+- Ensure there is a clear behavioral description of what the legacy code does today.
+- Ensure tests exist (or are created) that:
+  - Capture current behavior, or
+  - Define the intended new behavior explicitly.
+- Create **Legacy Cleanup** worker prompts that:
+  - List files allowed to change.
+  - Clarify preserved vs. intentionally changed behavior.
+  - Request feature flags or monitoring for risky changes.
+
+After a legacy cleanup task:
+
+- PM Agent reviews worker output for:
+  - Respect of domain/layer boundaries.
+  - Equivalent/intended behavior.
+  - Updated/added tests that pass.
+- If behavior is not confidently verified:
+  - Keep legacy paths behind a feature flag, or
+  - Create follow-up tasks instead of deleting.
+
+All legacy cleanup prompts must emphasize:
+
+- No "drive-by" deletions.
+- No broad refactors beyond the specified scope.
+- The end goal is **clean, safe, well-understood** code.
+
+---
+
+#### Layer Separation and Cross-Domain Rules (PM Agent Mode)
+
+PM Agent enforces two hard rules:
+
+##### Layer Rule
+
+- A worker assigned to one **layer** must not modify behavior for another layer, even when code appears in the same file.
+
+Example (Floor Plan):
+
+- **Tables layer worker**:
+  - ✅ Table CRUD, table properties, table rendering.
+  - ❌ Seats behavior.
+  - ❌ Fixtures behavior.
+
+If cross-layer work is unavoidable:
+
+- PM Agent:
+  - Creates **separate** worker prompts per layer, or
+  - Creates a specific **bridge/integration** worker prompt with:
+    - Narrow scope.
+    - Clear contracts and tests.
+
+##### Cross-Domain Rule
+
+- No worker may freely touch multiple domains.
+- Cross-domain changes occur only via **bridge/integration tasks**.
+
+Bridge prompts must:
+
+- Identify domains involved.
+- List exact files to modify.
+- Define contracts (request/response, events).
+- Include explicit acceptance criteria and tests.
+
+If a worker violates these rules, PM Agent must:
+
+- Reject the output.
+- Explain exactly which boundary was crossed.
+- Regenerate a more constrained prompt.
+
+---
+
+#### Morning Startup and End of Day (PM Agent Mode)
+
+##### Morning Startup (Agent Team)
+
+On `PM Mode: [Domain] (Agent Team)`:
+
+- PM Agent:
+  - Confirms non-coding PM role and goals:
+    - **Clean structure, working behavior, fast performance.**
+  - Reads:
+    - Task board, changelog, skills index, domain docs, checklist.
+  - Shows:
+    - Last session summary.
+    - Pending workers.
+    - Failing/untested tests.
+    - Cross-domain tasks involving this domain.
+  - Asks what you want to work on.
+  - Generates tightly scoped worker prompts.
+
+##### End of Day (Agent Team)
+
+On `EOD: [Domain]`:
+
+- PM Agent:
+  - Updates the domain changelog.
+  - Updates skills docs and skills index as needed.
+  - Updates PM Task Board (new, picked up, completed tasks).
+  - Updates the Pre-Launch Test Checklist in `CLAUDE.md`.
+  - Includes a "How to Resume" section for the next session.
+  - Explicitly notes:
+    - Structural changes (domains, sub-domains, boundaries).
+    - Cleanups/refactors.
+    - Performance and realtime decisions.
+
+EOD template (for PM Agent to use):
+
+```md
+## EOD Summary for [Domain] - [Date]
+
+### Completed Today
+- [x] Worker 1: Task name
+- [x] Worker 2: Task name
+
+### Pending (Prompts Ready)
+- [ ] Worker 3: Task name
+- [ ] Worker 4: Task name
+
+### Issues Discovered
+1. Issue description
+
+### New Skills Documented
+- Skill XXX: Name
+
+### Tests Added/Updated
+- Added: Test X.XX - [description]
+- Ready to verify: Test X.XX - [description]
+- FAILING: Test X.XX - [description + reason]
+
+### Cross-Domain Tasks Added/Updated
+- NEW → PM: [Domain]: T-XXX - [description]
+- PICKED UP: T-XXX - [description]
+- COMPLETED: T-XXX - [description]
+
+### Files Updated
+- /docs/changelogs/[DOMAIN]-CHANGELOG.md
+- /docs/skills/XXX-SKILL-NAME.md
+- /docs/PM-TASK-BOARD.md
+- CLAUDE.md (test checklist)
+
+### Resume Tomorrow
+1. Say: `PM Mode: [Domain] (Agent Team)`
+2. Review PM Task Board for assigned tasks
+3. Review changelog
+4. Review test checklist for failures
+5. Send pending worker prompts
+```
+
+---
+
+#### Worker Prompt Style (PM Agent Mode)
+
+PM Agent must write prompts that:
+
+- Name the **domain** and **layer** clearly.
+- List exact files allowed to change.
+- Restate the global goal: **clean, working, fast code** within strict boundaries.
+- Forbid cross-domain or cross-layer edits unless this is an explicit bridge task.
+
+Example "GOOD" worker prompt (Agent Team):
+
+```md
+You are a DEVELOPER working in the Floor Plan domain, Tables layer only.
+
+Your job is to make a small, clean, safe change that keeps the codebase fast and maintainable.
+Stay within your lane and do not modify other layers or domains.
+
+## Files You May Modify (STRICT)
+1. /src/app/api/tables/route.ts
+2. /src/app/api/tables/[id]/route.ts
+
+You MUST NOT modify any other files.
+You MUST NOT change behavior for Seats, Fixtures, or other layers.
+You MUST NOT touch other domains.
+
+## Changes Required
+DELETE: generateSeatPositions function (lines 84-157)
+DELETE: skipSeatGeneration parameter
+DELETE: All db.seat.* operations
+KEEP: capacity field (metadata)
+KEEP: seatPattern field (configuration)
+
+## Acceptance Criteria
+- [ ] POST /api/tables creates table WITHOUT seats
+- [ ] No db.seat.* calls in POST or PUT handlers
+- [ ] No changes to Seats behavior or models
+- [ ] No new performance regressions (no extra queries, no heavy loops on the hot path)
+
+## Limitations
+- Do NOT create /seats routes
+- Do NOT modify Seat model
+- Do NOT modify any UI components
+- Do NOT refactor unrelated code
 ```
 
 ---

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationTaxRate } from '@/lib/tax-calculations'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { validateRequest, idSchema } from '@/lib/validations'
 import { z } from 'zod'
@@ -137,7 +138,7 @@ export async function POST(
       tax?: { defaultRate?: number }
       priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
     } | null
-    const taxRate = (settings?.tax?.defaultRate || 8) / 100
+    const taxRate = getLocationTaxRate(settings)
     const roundTo: RoundingIncrement = settings?.priceRounding?.enabled
       ? (settings.priceRounding.increment || '0.05')
       : 'none'

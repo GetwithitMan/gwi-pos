@@ -8,10 +8,13 @@ import {
   roundAmount,
 } from '@/lib/payment'
 import { parseSettings } from '@/lib/settings'
+import { requireAnyPermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { processLiquorInventory } from '@/lib/liquor-inventory'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { tableEvents } from '@/lib/realtime/table-events'
 import { errorCapture } from '@/lib/error-capture'
+import { calculateCardPrice, calculateCashDiscount } from '@/lib/pricing'
 
 interface PaymentInput {
   method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'loyalty_points'
@@ -115,6 +118,15 @@ export async function POST(
       )
     }
 
+    // Server-side permission check for payment processing
+    const auth = await requireAnyPermission(employeeId, order.locationId, [
+      PERMISSIONS.POS_CASH_PAYMENTS,
+      PERMISSIONS.POS_CARD_PAYMENTS,
+    ])
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     if (order.status === 'paid' || order.status === 'closed') {
       return NextResponse.json(
         { error: 'Order is already paid' },
@@ -200,7 +212,11 @@ export async function POST(
     }
 
     // Process each payment
-    const createdPayments = []
+    // Payments from special types (loyalty, gift card, house account) are created
+    // inside their own transactions. Default payments (cash, card) are collected
+    // and created atomically with the order status update below.
+    const createdPayments: Awaited<ReturnType<typeof db.payment.create>>[] = []
+    const pendingDefaultRecords: Record<string, unknown>[] = []
     let totalTips = 0
 
     for (const payment of payments) {
@@ -226,6 +242,9 @@ export async function POST(
         signatureData?: string
         amountAuthorized?: number
         amountRequested?: number
+        cashDiscountAmount?: number
+        priceBeforeDiscount?: number
+        pricingMode?: string
         status: string
       } = {
         locationId: order.locationId,
@@ -236,6 +255,29 @@ export async function POST(
         totalAmount: payment.amount + (payment.tipAmount || 0),
         paymentMethod: payment.method,
         status: 'completed',
+      }
+
+      // Dual pricing: record pricing mode and discount info
+      const dualPricing = settings.dualPricing
+      if (dualPricing.enabled) {
+        const isCash = payment.method === 'cash'
+        const isCard = (payment.method === 'credit' && dualPricing.applyToCredit) ||
+                       (payment.method === 'debit' && dualPricing.applyToDebit)
+
+        if (isCash) {
+          // Dual pricing fields calculated after cash rounding below
+          paymentRecord.pricingMode = 'cash'
+        } else if (isCard) {
+          paymentRecord.pricingMode = 'card'
+          paymentRecord.cashDiscountAmount = 0
+          paymentRecord.priceBeforeDiscount = payment.amount
+
+          // Validate: card amount should match expected card price (warn, don't reject)
+          const expectedCardAmount = calculateCardPrice(Number(order.total), dualPricing.cashDiscountPercent)
+          if (Math.abs(payment.amount - expectedCardAmount) > 0.01) {
+            console.warn(`[DualPricing] Card payment amount $${payment.amount} differs from expected $${expectedCardAmount} for order ${orderId}`)
+          }
+        }
       }
 
       if (payment.method === 'cash') {
@@ -258,6 +300,20 @@ export async function POST(
 
         const amountTendered = payment.amountTendered || finalAmount + (payment.tipAmount || 0)
         const changeGiven = Math.max(0, amountTendered - finalAmount - (payment.tipAmount || 0))
+
+        // Dual pricing: calculate from post-rounding amount
+        if (dualPricing?.enabled && paymentRecord.pricingMode === 'cash') {
+          const cardPrice = calculateCardPrice(finalAmount, dualPricing.cashDiscountPercent)
+          const discountAmount = calculateCashDiscount(cardPrice, dualPricing.cashDiscountPercent)
+          paymentRecord.priceBeforeDiscount = cardPrice
+          paymentRecord.cashDiscountAmount = discountAmount
+
+          // Validate: cash amount should match expected cash price (warn, don't reject)
+          const expectedCashAmount = Number(order.total)
+          if (Math.abs(finalAmount - expectedCashAmount) > 0.01) {
+            console.warn(`[DualPricing] Cash payment amount $${finalAmount} differs from total $${expectedCashAmount} for order ${orderId}`)
+          }
+        }
 
         paymentRecord = {
           ...paymentRecord,
@@ -340,20 +396,26 @@ export async function POST(
           )
         }
 
-        // Deduct points from customer
-        await db.customer.update({
-          where: { id: order.customer.id },
-          data: {
-            loyaltyPoints: { decrement: payment.pointsUsed },
-          },
-        })
-
         // Store points used in payment record metadata
         paymentRecord = {
           ...paymentRecord,
-          // Use transactionId to store points info for now
           transactionId: `LOYALTY:${payment.pointsUsed}pts`,
         }
+
+        // Deduct points + create payment atomically
+        const loyaltyResult = await db.$transaction(async (tx) => {
+          await tx.customer.update({
+            where: { id: order.customer!.id },
+            data: {
+              loyaltyPoints: { decrement: payment.pointsUsed! },
+            },
+          })
+          return tx.payment.create({ data: paymentRecord })
+        })
+
+        createdPayments.push(loyaltyResult)
+        totalTips += payment.tipAmount || 0
+        continue
       } else if (payment.method === 'gift_card') {
         // Gift card payment
         if (!settings.payments.acceptGiftCards) {
@@ -418,34 +480,41 @@ export async function POST(
           )
         }
 
-        // Deduct from gift card
+        // Deduct from gift card + create payment atomically
         const newBalance = cardBalance - paymentAmount
-
-        await db.giftCard.update({
-          where: { id: giftCard.id },
-          data: {
-            currentBalance: newBalance,
-            status: newBalance === 0 ? 'depleted' : 'active',
-            transactions: {
-              create: {
-                locationId: order.locationId,
-                type: 'redemption',
-                amount: -paymentAmount,
-                balanceBefore: cardBalance,
-                balanceAfter: newBalance,
-                orderId,
-                employeeId: employeeId || null,
-                notes: `Payment for order #${order.orderNumber}`,
-              }
-            }
-          }
-        })
 
         paymentRecord = {
           ...paymentRecord,
           transactionId: `GC:${giftCard.cardNumber}`,
           cardLast4: giftCard.cardNumber.slice(-4),
         }
+
+        const gcResult = await db.$transaction(async (tx) => {
+          await tx.giftCard.update({
+            where: { id: giftCard!.id },
+            data: {
+              currentBalance: newBalance,
+              status: newBalance === 0 ? 'depleted' : 'active',
+              transactions: {
+                create: {
+                  locationId: order.locationId,
+                  type: 'redemption',
+                  amount: -paymentAmount,
+                  balanceBefore: cardBalance,
+                  balanceAfter: newBalance,
+                  orderId,
+                  employeeId: employeeId || null,
+                  notes: `Payment for order #${order.orderNumber}`,
+                }
+              }
+            }
+          })
+          return tx.payment.create({ data: paymentRecord })
+        })
+
+        createdPayments.push(gcResult)
+        totalTips += payment.tipAmount || 0
+        continue
       } else if (payment.method === 'house_account') {
         // House account payment
         if (!settings.payments.acceptHouseAccounts) {
@@ -502,40 +571,42 @@ export async function POST(
         const dueDate = new Date()
         dueDate.setDate(dueDate.getDate() + (houseAccount.paymentTerms ?? 30))
 
-        // Charge to house account
-        await db.houseAccount.update({
-          where: { id: houseAccount.id },
-          data: {
-            currentBalance: newBalance,
-            transactions: {
-              create: {
-                locationId: order.locationId,
-                type: 'charge',
-                amount: paymentAmount,
-                balanceBefore: currentBalance,
-                balanceAfter: newBalance,
-                orderId,
-                employeeId: employeeId || null,
-                notes: `Order #${order.orderNumber}`,
-                dueDate,
-              }
-            }
-          }
-        })
-
+        // Charge to house account + create payment atomically
         paymentRecord = {
           ...paymentRecord,
           transactionId: `HA:${houseAccount.id}`,
-          // Store account name info for receipt
           authCode: houseAccount.name,
         }
+
+        const haResult = await db.$transaction(async (tx) => {
+          await tx.houseAccount.update({
+            where: { id: houseAccount!.id },
+            data: {
+              currentBalance: newBalance,
+              transactions: {
+                create: {
+                  locationId: order.locationId,
+                  type: 'charge',
+                  amount: paymentAmount,
+                  balanceBefore: currentBalance,
+                  balanceAfter: newBalance,
+                  orderId,
+                  employeeId: employeeId || null,
+                  notes: `Order #${order.orderNumber}`,
+                  dueDate,
+                }
+              }
+            }
+          })
+          return tx.payment.create({ data: paymentRecord })
+        })
+
+        createdPayments.push(haResult)
+        totalTips += payment.tipAmount || 0
+        continue
       }
 
-      const created = await db.payment.create({
-        data: paymentRecord,
-      })
-
-      createdPayments.push(created)
+      pendingDefaultRecords.push(paymentRecord)
       totalTips += payment.tipAmount || 0
     }
 
@@ -566,9 +637,53 @@ export async function POST(
       updateData.closedAt = new Date()
     }
 
-    await db.order.update({
-      where: { id: orderId },
-      data: updateData,
+    // Create default payments + update order status atomically
+    await db.$transaction(async (tx) => {
+      for (const record of pendingDefaultRecords) {
+        const created = await tx.payment.create({ data: record as Parameters<typeof tx.payment.create>[0]['data'] })
+        createdPayments.push(created)
+
+        // Audit log: payment processed
+        await tx.auditLog.create({
+          data: {
+            locationId: order.locationId,
+            employeeId: employeeId || null,
+            action: 'payment_processed',
+            entityType: 'payment',
+            entityId: created.id,
+            details: {
+              paymentMethod: created.paymentMethod,
+              amount: Number(created.amount),
+              tipAmount: Number(created.tipAmount),
+              orderId,
+              orderNumber: order.orderNumber,
+            },
+          },
+        })
+      }
+      await tx.order.update({
+        where: { id: orderId },
+        data: updateData,
+      })
+
+      // Audit log: order closed (when fully paid)
+      if (updateData.status === 'paid') {
+        await tx.auditLog.create({
+          data: {
+            locationId: order.locationId,
+            employeeId: employeeId || null,
+            action: 'order_closed',
+            entityType: 'order',
+            entityId: orderId,
+            details: {
+              orderNumber: order.orderNumber,
+              totalPaid: newPaidTotal,
+              paymentCount: createdPayments.length,
+              paymentMethods: [...new Set(createdPayments.map(p => p.paymentMethod))],
+            },
+          },
+        })
+      }
     })
 
     // If order is fully paid, reset entertainment items and cleanup virtual groups

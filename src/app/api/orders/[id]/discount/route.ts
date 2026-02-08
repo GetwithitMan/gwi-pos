@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { calculateOrderTotals } from '@/lib/tax-calculations'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -172,18 +173,14 @@ export async function POST(
 
     // Update order totals
     const newDiscountTotal = currentDiscountTotal + discountAmount
-    const settings = order.location.settings as { tax?: { defaultRate?: number } } | null
-    const taxRate = (settings?.tax?.defaultRate || 8) / 100
-    const taxableAmount = Number(order.subtotal) - newDiscountTotal
-    const newTaxTotal = Math.round(taxableAmount * taxRate * 100) / 100
-    const newTotal = Math.round((taxableAmount + newTaxTotal) * 100) / 100
+    const totals = calculateOrderTotals(Number(order.subtotal), newDiscountTotal, order.location.settings as { tax?: { defaultRate?: number } })
 
     await db.order.update({
       where: { id: orderId },
       data: {
-        discountTotal: newDiscountTotal,
-        taxTotal: newTaxTotal,
-        total: newTotal,
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        total: totals.total,
       },
     })
 
@@ -195,10 +192,10 @@ export async function POST(
         percent: discount.percent ? Number(discount.percent) : null,
       },
       orderTotals: {
-        subtotal: Number(order.subtotal),
-        discountTotal: newDiscountTotal,
-        taxTotal: newTaxTotal,
-        total: newTotal,
+        subtotal: totals.subtotal,
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        total: totals.total,
       },
       requiresApproval,
     })
@@ -305,28 +302,24 @@ export async function DELETE(
       .filter(d => d.id !== discountId)
       .reduce((sum, d) => sum + Number(d.amount), 0)
 
-    const settings = order.location.settings as { tax?: { defaultRate?: number } } | null
-    const taxRate = (settings?.tax?.defaultRate || 8) / 100
-    const taxableAmount = Number(order.subtotal) - newDiscountTotal
-    const newTaxTotal = Math.round(taxableAmount * taxRate * 100) / 100
-    const newTotal = Math.round((taxableAmount + newTaxTotal) * 100) / 100
+    const totals = calculateOrderTotals(Number(order.subtotal), newDiscountTotal, order.location.settings as { tax?: { defaultRate?: number } })
 
     await db.order.update({
       where: { id: orderId },
       data: {
-        discountTotal: newDiscountTotal,
-        taxTotal: newTaxTotal,
-        total: newTotal,
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        total: totals.total,
       },
     })
 
     return NextResponse.json({
       success: true,
       orderTotals: {
-        subtotal: Number(order.subtotal),
-        discountTotal: newDiscountTotal,
-        taxTotal: newTaxTotal,
-        total: newTotal,
+        subtotal: totals.subtotal,
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        total: totals.total,
       },
     })
   } catch (error) {

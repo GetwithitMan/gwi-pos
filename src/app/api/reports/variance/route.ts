@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateTheoreticalUsage, toNumber } from '@/lib/inventory-calculations'
 import { varianceQuerySchema, validateRequest } from '@/lib/validations'
 
@@ -40,6 +42,12 @@ export async function GET(request: NextRequest) {
     }
 
     const { locationId, startDate, endDate, department, category } = validation.data
+
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_INVENTORY)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     // Parse dates
     const start = new Date(startDate)

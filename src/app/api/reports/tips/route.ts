@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
 
 // GET - Get tips report data
 export async function GET(request: NextRequest) {
@@ -10,12 +12,18 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate')
     const endDate = searchParams.get('endDate')
     const employeeId = searchParams.get('employeeId')
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId') || employeeId
 
     if (!locationId) {
       return NextResponse.json(
         { error: 'Location ID is required' },
         { status: 400 }
       )
+    }
+
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
+    if (!auth.authorized) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Build date filter
