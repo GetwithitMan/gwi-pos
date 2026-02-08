@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
+import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
 
 interface OpenOrder {
   id: string
@@ -82,6 +83,8 @@ interface OpenOrder {
     paymentMethod: string
     cardBrand: string | null
     cardLast4: string | null
+    status?: string
+    datacapRecordNo?: string | null
   }[]
   hasCardPayment?: boolean
   needsTip?: boolean
@@ -98,11 +101,14 @@ interface OpenOrder {
 interface OpenOrdersPanelProps {
   locationId?: string
   employeeId?: string
+  employeePermissions?: string[]
   onSelectOrder: (order: OpenOrder) => void
   onViewOrder?: (order: OpenOrder) => void
   onNewTab: () => void
   refreshTrigger?: number
   onViewReceipt?: (orderId: string) => void
+  onClosedOrderAction?: () => void
+  onOpenTipAdjustment?: () => void
   isExpanded?: boolean
   onToggleExpand?: () => void
 }
@@ -153,8 +159,8 @@ function getOrderTypeDisplay(order: OpenOrder, dark: boolean): { icon: string; l
 }
 
 export function OpenOrdersPanel({
-  locationId, employeeId, onSelectOrder, onViewOrder, onNewTab,
-  refreshTrigger, onViewReceipt, isExpanded = false, onToggleExpand,
+  locationId, employeeId, employeePermissions = [], onSelectOrder, onViewOrder, onNewTab,
+  refreshTrigger, onViewReceipt, onClosedOrderAction, onOpenTipAdjustment, isExpanded = false, onToggleExpand,
 }: OpenOrdersPanelProps) {
   const [orders, setOrders] = useState<OpenOrder[]>([])
   const [closedOrders, setClosedOrders] = useState<OpenOrder[]>([])
@@ -168,6 +174,7 @@ export function OpenOrdersPanel({
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [viewStyle, setViewStyle] = useState<'card' | 'condensed'>('card')
   const [datePreset, setDatePreset] = useState<DatePreset>('today')
+  const [closedOrderModalOrder, setClosedOrderModalOrder] = useState<OpenOrder | null>(null)
   const [closedCursor, setClosedCursor] = useState<string | null>(null)
   const [hasMoreClosed, setHasMoreClosed] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -432,7 +439,7 @@ export function OpenOrdersPanel({
       <div
         key={order.id}
         onClick={() => {
-          if (isPaidOrClosed) return // Don't open paid/closed orders
+          if (isPaidOrClosed) { setClosedOrderModalOrder(order); return }
           onViewOrder ? onViewOrder(order) : onSelectOrder(order)
         }}
         className={`p-3 rounded-xl transition-all border ${
@@ -582,21 +589,36 @@ export function OpenOrdersPanel({
           </div>
         )}
         {viewMode === 'open' && isPaidOrClosed && (
-          <div className={`mt-2 text-center py-2 rounded-lg text-sm font-bold ${dark ? 'bg-green-600/20 text-green-400' : 'bg-green-100 text-green-700'}`}>
-            Paid & Closed
-          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); setClosedOrderModalOrder(order) }}
+            className={`mt-2 w-full text-center py-2 rounded-lg text-sm font-bold transition-colors ${dark ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}
+          >
+            Manage
+          </button>
         )}
 
         {/* Closed order actions */}
-        {viewMode === 'closed' && onViewReceipt && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onViewReceipt(order.id) }}
-            className={`mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-              dark ? 'bg-white/10 hover:bg-white/15 text-slate-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            View Receipt
-          </button>
+        {viewMode === 'closed' && (
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); setClosedOrderModalOrder(order) }}
+              className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-colors ${
+                dark ? 'bg-indigo-600/30 hover:bg-indigo-600/40 text-indigo-300' : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-700'
+              }`}
+            >
+              Manage
+            </button>
+            {onViewReceipt && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onViewReceipt(order.id) }}
+                className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  dark ? 'bg-white/10 hover:bg-white/15 text-slate-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                Receipt
+              </button>
+            )}
+          </div>
         )}
       </div>
     )
@@ -842,25 +864,64 @@ export function OpenOrdersPanel({
   // Expanded: full-screen overlay
   if (isExpanded) {
     return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex flex-col"
-        style={{ background: 'rgba(15, 15, 30, 0.98)', backdropFilter: 'blur(24px)' }}
-      >
-        {toolbarContent}
-        {ordersList}
-      </motion.div>
+      <>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex flex-col"
+          style={{ background: 'rgba(15, 15, 30, 0.98)', backdropFilter: 'blur(24px)' }}
+        >
+          {toolbarContent}
+          {ordersList}
+        </motion.div>
+        {closedOrderModalOrder && employeeId && (
+          <ClosedOrderActionsModal
+            isOpen={true}
+            onClose={() => setClosedOrderModalOrder(null)}
+            order={closedOrderModalOrder}
+            employeeId={employeeId}
+            employeePermissions={employeePermissions}
+            onActionComplete={() => {
+              setClosedOrderModalOrder(null)
+              if (onClosedOrderAction) onClosedOrderAction()
+              loadOrders()
+              loadClosedOrders(null)
+            }}
+            onOpenTipAdjustment={onOpenTipAdjustment}
+          />
+        )}
+      </>
     )
   }
 
+  const closedOrderModal = closedOrderModalOrder && employeeId && (
+    <ClosedOrderActionsModal
+      isOpen={true}
+      onClose={() => setClosedOrderModalOrder(null)}
+      order={closedOrderModalOrder}
+      employeeId={employeeId}
+      employeePermissions={employeePermissions}
+      onActionComplete={() => {
+        setClosedOrderModalOrder(null)
+        // Refresh both open and closed orders
+        if (onClosedOrderAction) onClosedOrderAction()
+        loadOrders()
+        loadClosedOrders(null)
+      }}
+      onOpenTipAdjustment={onOpenTipAdjustment}
+    />
+  )
+
   // Collapsed: sidebar
   return (
-    <div className="h-full flex flex-col">
-      {toolbarContent}
-      {ordersList}
-    </div>
+    <>
+      <div className="h-full flex flex-col">
+        {toolbarContent}
+        {ordersList}
+      </div>
+      {closedOrderModal}
+    </>
   )
 }
 

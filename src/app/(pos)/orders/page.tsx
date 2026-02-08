@@ -4291,6 +4291,7 @@ export default function OrdersPage() {
             <OpenOrdersPanel
               locationId={employee?.location?.id}
               employeeId={employee?.id}
+              employeePermissions={permissionsArray}
               onSelectOrder={handleSelectOpenOrder}
               onNewTab={handleNewTab}
               refreshTrigger={tabsRefreshTrigger}
@@ -4300,6 +4301,8 @@ export default function OrdersPage() {
                 setReceiptOrderId(orderId)
                 setShowReceiptModal(true)
               }}
+              onClosedOrderAction={() => setTabsRefreshTrigger(prev => prev + 1)}
+              onOpenTipAdjustment={() => setShowTipAdjustment(true)}
             />
           </div>
         </>

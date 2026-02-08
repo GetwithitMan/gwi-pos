@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { hasPermission } from '@/lib/auth-utils'
 
 export async function POST(
   request: NextRequest,
@@ -15,6 +16,19 @@ export async function POST(
         { error: 'Missing required fields' },
         { status: 400 }
       )
+    }
+
+    // Verify manager has permission
+    const manager = await db.employee.findUnique({
+      where: { id: managerId },
+      include: { role: true },
+    })
+    if (!manager) {
+      return NextResponse.json({ error: 'Manager not found' }, { status: 404 })
+    }
+    const permissions = Array.isArray(manager.role?.permissions) ? manager.role.permissions as string[] : []
+    if (!hasPermission(permissions, 'manager.void_payments')) {
+      return NextResponse.json({ error: 'Insufficient permissions to void payments' }, { status: 403 })
     }
 
     // Get the order with payment

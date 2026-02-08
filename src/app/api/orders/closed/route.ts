@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
           },
         },
         payments: {
-          where: { status: 'completed', deletedAt: null },
+          where: { deletedAt: null },
         },
       },
       orderBy,
@@ -117,8 +117,9 @@ export async function GET(request: NextRequest) {
 
     // Map and filter by tipStatus
     let mappedOrders = resultOrders.map(order => {
-      const tipTotal = order.payments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
-      const hasCardPayment = order.payments.some(p =>
+      const activePayments = order.payments.filter(p => p.status === 'completed')
+      const tipTotal = activePayments.reduce((sum, p) => sum + Number(p.tipAmount), 0)
+      const hasCardPayment = activePayments.some(p =>
         ['credit', 'debit'].includes(p.paymentMethod)
       )
 
@@ -160,7 +161,7 @@ export async function GET(request: NextRequest) {
         createdAt: order.createdAt.toISOString(),
         openedAt: order.openedAt.toISOString(),
         closedAt: order.closedAt?.toISOString() || null,
-        paidAmount: order.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0),
+        paidAmount: activePayments.reduce((sum, p) => sum + Number(p.totalAmount), 0),
         paymentMethods: [...new Set(order.payments.map(p => p.paymentMethod))],
         payments: order.payments.map(p => ({
           id: p.id,
@@ -170,6 +171,8 @@ export async function GET(request: NextRequest) {
           paymentMethod: p.paymentMethod,
           cardBrand: p.cardBrand,
           cardLast4: p.cardLast4,
+          status: p.status,
+          datacapRecordNo: p.datacapRecordNo || null,
         })),
         hasPreAuth: false,
         preAuth: null,
