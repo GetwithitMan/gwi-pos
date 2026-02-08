@@ -38,6 +38,7 @@ interface ClosedOrderActionsModalProps {
   onClose: () => void
   order: ClosedOrder
   employeeId: string
+  locationId: string
   employeePermissions: string[]
   onActionComplete: () => void
   onOpenTipAdjustment?: () => void
@@ -66,6 +67,7 @@ export function ClosedOrderActionsModal({
   onClose,
   order,
   employeeId,
+  locationId,
   employeePermissions,
   onActionComplete,
   onOpenTipAdjustment,
@@ -104,14 +106,14 @@ export function ClosedOrderActionsModal({
       const res = await fetch('/api/auth/verify-pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }),
+        body: JSON.stringify({ pin, locationId }),
       })
       const data = await res.json()
       if (!res.ok) {
         setPinError(data.error || 'Invalid PIN')
         return null
       }
-      return data.employeeId || data.data?.employeeId
+      return data.employee?.id || data.employeeId || data.data?.employeeId
     } catch {
       setPinError('Failed to verify PIN')
       return null
