@@ -31,6 +31,10 @@ export interface OrderPanelItemData {
   delayMinutes?: number | null
   delayStartedAt?: string | null
   delayFiredAt?: string | null
+  // Comp/void status
+  status?: 'active' | 'comped' | 'voided'
+  voidReason?: string
+  wasMade?: boolean
   // Ingredient modifications (No, Lite, Extra, On Side, Swap)
   ingredientModifications?: IngredientModification[]
 }
@@ -98,9 +102,14 @@ export function OrderPanelItem({
   onFireItem,
   onCancelItemDelay,
 }: OrderPanelItemProps) {
+  const isVoided = item.status === 'voided'
+  const isComped = item.status === 'comped'
+  const isCompedOrVoided = isVoided || isComped
+
   const itemTotal = item.price * item.quantity
   const modifiersTotal = (item.modifiers || []).reduce((sum, mod) => sum + mod.price, 0) * item.quantity
-  const totalPrice = itemTotal + modifiersTotal
+  const totalPrice = isCompedOrVoided ? 0 : itemTotal + modifiersTotal
+  const originalPrice = itemTotal + modifiersTotal
 
   const isSent = item.kitchenStatus && item.kitchenStatus !== 'pending'
   const isReady = item.kitchenStatus === 'ready' || item.isCompleted
@@ -151,7 +160,10 @@ export function OrderPanelItem({
       data-item-id={item.id}
       style={{
         padding: '12px',
-        background: isNewest
+        opacity: isCompedOrVoided ? 0.6 : 1,
+        background: isCompedOrVoided
+          ? (isVoided ? 'rgba(239, 68, 68, 0.08)' : 'rgba(59, 130, 246, 0.08)')
+          : isNewest
           ? 'rgba(34, 197, 94, 0.12)'
           : isSelected
           ? 'rgba(168, 85, 247, 0.06)'
@@ -283,9 +295,38 @@ export function OrderPanelItem({
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Name row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '14px', fontWeight: 500, color: '#e2e8f0' }}>
+            <span style={{
+              fontSize: '14px',
+              fontWeight: 500,
+              color: isCompedOrVoided ? '#94a3b8' : '#e2e8f0',
+              textDecoration: isCompedOrVoided ? 'line-through' : 'none',
+            }}>
               {item.name}
             </span>
+
+            {/* VOIDED / COMPED stamp */}
+            {isVoided && (
+              <span style={{
+                fontSize: '10px', padding: '2px 8px', borderRadius: '4px',
+                background: 'rgba(239, 68, 68, 0.25)',
+                color: '#f87171', fontWeight: 800, letterSpacing: '1px',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                textTransform: 'uppercase',
+              }}>
+                VOID
+              </span>
+            )}
+            {isComped && (
+              <span style={{
+                fontSize: '10px', padding: '2px 8px', borderRadius: '4px',
+                background: 'rgba(59, 130, 246, 0.25)',
+                color: '#60a5fa', fontWeight: 800, letterSpacing: '1px',
+                border: '1px solid rgba(59, 130, 246, 0.4)',
+                textTransform: 'uppercase',
+              }}>
+                COMP
+              </span>
+            )}
 
             {/* Status badge */}
             {statusConfig && (
@@ -527,6 +568,28 @@ export function OrderPanelItem({
             </div>
           )}
 
+          {/* Void/Comp details */}
+          {isCompedOrVoided && (
+            <div style={{
+              marginTop: '6px', padding: '6px 10px',
+              background: isVoided ? 'rgba(239, 68, 68, 0.08)' : 'rgba(59, 130, 246, 0.08)',
+              border: `1px solid ${isVoided ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)'}`,
+              borderRadius: '6px', fontSize: '11px',
+            }}>
+              {item.voidReason && (
+                <div style={{ color: '#94a3b8', marginBottom: '2px' }}>
+                  Reason: {item.voidReason}
+                </div>
+              )}
+              <div style={{
+                color: item.wasMade ? '#f87171' : '#4ade80',
+                fontWeight: 600,
+              }}>
+                {item.wasMade ? '🍳 Was Made — Waste' : '✋ Not Made — No Waste'}
+              </div>
+            </div>
+          )}
+
           {/* Per-item delay PRESET indicator (before send — shows delay is queued) */}
           {hasDelayPreset && (
             <div
@@ -665,13 +728,26 @@ export function OrderPanelItem({
 
         {/* Price + Delete (two-column: delete sits under price) */}
         <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-          <div style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
-            ${totalPrice.toFixed(2)}
-          </div>
-          {item.quantity > 1 && (
-            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '-2px' }}>
-              ${(totalPrice / item.quantity).toFixed(2)} ea
-            </div>
+          {isCompedOrVoided ? (
+            <>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: isVoided ? '#f87171' : '#60a5fa' }}>
+                $0.00
+              </div>
+              <div style={{ fontSize: '10px', color: '#64748b', textDecoration: 'line-through', marginTop: '-2px' }}>
+                ${originalPrice.toFixed(2)}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
+                ${totalPrice.toFixed(2)}
+              </div>
+              {item.quantity > 1 && (
+                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '-2px' }}>
+                  ${(totalPrice / item.quantity).toFixed(2)} ea
+                </div>
+              )}
+            </>
           )}
           {/* Delete button — under price for pending items */}
           {showControls && !isSent && onRemove && (

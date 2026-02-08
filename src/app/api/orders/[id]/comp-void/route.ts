@@ -110,11 +110,13 @@ export async function POST(
 
     // Update the item status
     const newStatus = action === 'comp' ? 'comped' : 'voided'
+    const itemWasMade = action === 'comp' ? true : (wasMade ?? false)
     await db.orderItem.update({
       where: { id: itemId },
       data: {
         status: newStatus,
         voidReason: reason,
+        wasMade: itemWasMade,
       },
     })
 

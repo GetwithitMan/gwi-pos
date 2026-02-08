@@ -1468,7 +1468,7 @@ export default function OrdersPage() {
     }
   }
 
-  const handleCompVoidComplete = (result: {
+  const handleCompVoidComplete = async (result: {
     action: 'comp' | 'void' | 'restore'
     orderTotals: {
       subtotal: number
@@ -1481,6 +1481,20 @@ export default function OrdersPage() {
     setTabsRefreshTrigger(prev => prev + 1)
     setShowCompVoidModal(false)
     setCompVoidItem(null)
+
+    // Reload order into store so voided/comped items show updated status
+    const orderId = savedOrderId || orderToPayId
+    if (orderId) {
+      try {
+        const res = await fetch(`/api/orders/${orderId}`)
+        if (res.ok) {
+          const data = await res.json()
+          loadOrder(data)
+        }
+      } catch (err) {
+        console.error('Failed to reload order after comp/void:', err)
+      }
+    }
   }
 
   // OrderPanel item control handlers

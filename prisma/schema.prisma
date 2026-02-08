@@ -1605,8 +1605,9 @@ model OrderItem {
   specialNotes String?
 
   // Status
-  status     String  @default("active") // active, voided, comped
+  status     String   @default("active") // active, voided, comped
   voidReason String?
+  wasMade    Boolean? // Was item made before void/comp? For waste tracking
 
   // Totals
   modifierTotal Decimal @default(0)

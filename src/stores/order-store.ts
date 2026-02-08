@@ -85,6 +85,9 @@ interface OrderItem {
   isCompleted?: boolean  // KDS completion status (kitchen marked done)
   completedAt?: string  // When kitchen marked it done
   resendCount?: number  // How many times resent to kitchen
+  status?: 'active' | 'comped' | 'voided'  // Item status for comp/void tracking
+  voidReason?: string  // Reason for comp/void
+  wasMade?: boolean  // Was item made before void? For waste tracking
   // Per-item delay (5m, 10m, etc.)
   delayMinutes?: number | null      // Delay preset in minutes
   delayStartedAt?: string | null    // ISO timestamp when delay timer started (on Send)
@@ -163,6 +166,9 @@ interface LoadedOrderData {
     isCompleted?: boolean
     completedAt?: string | null
     resendCount?: number
+    status?: string
+    voidReason?: string | null
+    wasMade?: boolean
     // Entertainment/timed rental fields
     blockTimeMinutes?: number | null
     blockTimeStartedAt?: string | null
@@ -307,6 +313,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       isCompleted: item.isCompleted || false,
       completedAt: item.completedAt || undefined,
       resendCount: item.resendCount || 0,
+      status: item.status || 'active',
+      voidReason: item.voidReason || undefined,
+      wasMade: item.wasMade,
       // Entertainment/timed rental fields
       blockTimeMinutes: item.blockTimeMinutes,
       blockTimeStartedAt: item.blockTimeStartedAt,

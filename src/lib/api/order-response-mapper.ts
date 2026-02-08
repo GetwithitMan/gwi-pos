@@ -26,6 +26,8 @@ export function mapOrderItemForResponse(item: any, correlationId?: string) {
     lastResentAt: item.lastResentAt,
     resendNote: item.resendNote,
     status: item.status,
+    voidReason: item.voidReason || null,
+    wasMade: item.wasMade ?? null,
     specialNotes: item.specialNotes,
     modifiers: item.modifiers?.map((mod: any) => ({
       id: mod.id,
