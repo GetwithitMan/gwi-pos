@@ -225,6 +225,8 @@ export async function GET(request: NextRequest) {
         } : null,
         createdAt: order.createdAt.toISOString(),
         openedAt: order.openedAt.toISOString(),
+        reopenedAt: order.reopenedAt?.toISOString() || null,
+        reopenReason: order.reopenReason || null,
         // Payment status
         paidAmount: order.payments
           .filter(p => p.status === 'completed')

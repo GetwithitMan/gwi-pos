@@ -96,6 +96,8 @@ interface OpenOrder {
   hasCoursingEnabled?: boolean
   hasDelayedItems?: boolean
   courseMode?: string | null
+  reopenedAt?: string | null
+  reopenReason?: string | null
 }
 
 interface OpenOrdersPanelProps {
@@ -541,6 +543,11 @@ export function OpenOrdersPanel({
           {(order.hasCoursingEnabled || (order.courseMode && order.courseMode !== 'off')) && (
             <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${dark ? 'bg-blue-600/30 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
               CRS
+            </span>
+          )}
+          {order.reopenedAt && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${dark ? 'bg-orange-600/30 text-orange-300 border border-orange-500/30' : 'bg-orange-100 text-orange-700'}`} title={order.reopenReason || 'Reopened'}>
+              🔓 Reopened
             </span>
           )}
         </div>
