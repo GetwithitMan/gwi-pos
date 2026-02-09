@@ -4731,8 +4731,7 @@ export function FloorPlanHome({
                 onItemNoteEdit={handleOpenNotesEditor}
                 onItemCourseChange={handleUpdateCourse}
                 onItemEditModifiers={(itemId) => {
-                  const editItem = inlineOrderItems.find(i => i.id === itemId)
-                  if (editItem) handleEditItem(editItem)
+                  engine.handleEditItem(itemId)
                 }}
                 onItemCompVoid={(itemId) => {
                   const voidItem = inlineOrderItems.find(i => i.id === itemId)
