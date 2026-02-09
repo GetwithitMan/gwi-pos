@@ -101,6 +101,8 @@ export async function GET(request: NextRequest) {
     // Initialize summary stats
     let totalGrossSales = 0
     let totalTax = 0
+    let totalTaxFromInclusive = 0
+    let totalTaxFromExclusive = 0
     let totalDiscounts = 0
     let totalTips = 0
     let cashSales = 0
@@ -130,6 +132,8 @@ export async function GET(request: NextRequest) {
 
       totalGrossSales += orderSubtotal
       totalTax += orderTax
+      totalTaxFromInclusive += Number(order.taxFromInclusive) || 0
+      totalTaxFromExclusive += Number(order.taxFromExclusive) || 0
       totalDiscounts += orderDiscount
 
       // Payment method breakdown
@@ -359,16 +363,19 @@ export async function GET(request: NextRequest) {
         orderCount,
         itemCount,
         guestCount,
-        grossSales: Math.round(totalGrossSales * 100) / 100,
+        // Back out hidden tax from inclusive items for accurate gross sales
+        grossSales: Math.round((totalGrossSales - totalTaxFromInclusive) * 100) / 100,
         discounts: Math.round(totalDiscounts * 100) / 100,
-        netSales: Math.round((totalGrossSales - totalDiscounts) * 100) / 100,
+        netSales: Math.round((totalGrossSales - totalTaxFromInclusive - totalDiscounts) * 100) / 100,
         tax: Math.round(totalTax * 100) / 100,
+        taxFromInclusive: Math.round(totalTaxFromInclusive * 100) / 100,
+        taxFromExclusive: Math.round(totalTaxFromExclusive * 100) / 100,
         tips: Math.round(totalTips * 100) / 100,
-        total: Math.round((totalGrossSales - totalDiscounts + totalTax) * 100) / 100,
+        total: Math.round((totalGrossSales - totalTaxFromInclusive - totalDiscounts + totalTax) * 100) / 100,
         cashSales: Math.round(cashSales * 100) / 100,
         cardSales: Math.round(cardSales * 100) / 100,
-        averageOrderValue: orderCount > 0 ? Math.round((totalGrossSales / orderCount) * 100) / 100 : 0,
-        averageGuestSpend: guestCount > 0 ? Math.round((totalGrossSales / guestCount) * 100) / 100 : 0,
+        averageOrderValue: orderCount > 0 ? Math.round(((totalGrossSales - totalTaxFromInclusive) / orderCount) * 100) / 100 : 0,
+        averageGuestSpend: guestCount > 0 ? Math.round(((totalGrossSales - totalTaxFromInclusive) / guestCount) * 100) / 100 : 0,
       },
       byDay: dailyReport,
       byHour: hourlyReport,

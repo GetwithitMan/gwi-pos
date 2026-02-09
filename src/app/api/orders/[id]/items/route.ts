@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
-import { calculateItemTotal, calculateItemCommission, calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive } from '@/lib/order-calculations'
+import { calculateCardPrice } from '@/lib/pricing'
+import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 
@@ -118,9 +120,40 @@ export async function POST(
       const menuItemIds = items.map(item => item.menuItemId)
       const menuItemsWithCommission = await tx.menuItem.findMany({
         where: { id: { in: menuItemIds } },
-        select: { id: true, commissionType: true, commissionValue: true, itemType: true },
+        select: { id: true, commissionType: true, commissionValue: true, itemType: true, category: { select: { categoryType: true } } },
       })
       const menuItemMap = new Map(menuItemsWithCommission.map(mi => [mi.id, mi]))
+
+      // Derive tax-inclusive flags + dual pricing settings
+      const locSettings = existingOrder.location.settings
+      const parsedSettings = locSettings ? parseSettings(locSettings) : null
+      const dualPricingEnabled = parsedSettings?.dualPricing?.enabled ?? false
+      const cashDiscountPct = parsedSettings?.dualPricing?.cashDiscountPercent ?? 4.0
+
+      const [taxRules, allCategories] = await Promise.all([
+        tx.taxRule.findMany({
+          where: { locationId: existingOrder.locationId, isActive: true, isInclusive: true, deletedAt: null },
+          select: { appliesTo: true, categoryIds: true },
+        }),
+        tx.category.findMany({
+          where: { locationId: existingOrder.locationId, deletedAt: null },
+          select: { id: true, categoryType: true },
+        }),
+      ])
+      let taxInclusiveLiquor = false
+      let taxInclusiveFood = false
+      for (const rule of taxRules) {
+        if (rule.appliesTo === 'all') { taxInclusiveLiquor = true; taxInclusiveFood = true; break }
+        if (rule.appliesTo === 'category' && rule.categoryIds) {
+          for (const cat of allCategories) {
+            if ((rule.categoryIds as string[]).includes(cat.id)) {
+              if (cat.categoryType && ['liquor', 'drinks'].includes(cat.categoryType)) taxInclusiveLiquor = true
+              if (cat.categoryType && ['food', 'pizza', 'combos'].includes(cat.categoryType)) taxInclusiveFood = true
+            }
+          }
+        }
+      }
+      const taxIncSettings = { taxInclusiveLiquor, taxInclusiveFood }
 
       // Create the new items
       const createdItems = []
@@ -142,6 +175,10 @@ export async function POST(
         )
         newItemsCommission += itemCommission
 
+        // Determine item-level pricing truth
+        const catType = menuItem?.category?.categoryType ?? null
+        const itemTaxInclusive = isItemTaxInclusive(catType ?? undefined, taxIncSettings)
+
         // Create the order item
         const createdItem = await tx.orderItem.create({
           data: {
@@ -150,6 +187,9 @@ export async function POST(
             menuItemId: item.menuItemId,
             name: item.name,
             price: item.price,
+            cardPrice: dualPricingEnabled ? calculateCardPrice(item.price, cashDiscountPct) : null,
+            isTaxInclusive: itemTaxInclusive,
+            categoryType: catType,
             quantity: item.quantity,
             itemTotal: fullItemTotal,
             commissionAmount: itemCommission,
@@ -245,15 +285,25 @@ export async function POST(
         },
       })
 
+      // Map Prisma Decimal types to numbers for calculation
+      const itemsForCalc = allItems.map(i => ({
+        ...i,
+        price: Number(i.price),
+        itemTotal: Number(i.itemTotal),
+        commissionAmount: i.commissionAmount ? Number(i.commissionAmount) : undefined,
+        modifiers: i.modifiers.map(m => ({ ...m, price: Number(m.price) })),
+        ingredientModifications: i.ingredientModifications.map(ing => ({ ...ing, priceAdjustment: Number(ing.priceAdjustment) })),
+      }))
+
       // Use centralized calculation function (single source of truth)
       const totals = calculateOrderTotals(
-        allItems,
+        itemsForCalc,
         existingOrder.location.settings,
         Number(existingOrder.discountTotal) || 0,
         Number(existingOrder.tipTotal) || 0
       )
 
-      const { subtotal: newSubtotal, taxTotal: newTaxTotal, total: newTotal, commissionTotal: newCommissionTotal } = totals
+      const { subtotal: newSubtotal, taxTotal: newTaxTotal, taxFromInclusive: newTaxFromInc, taxFromExclusive: newTaxFromExc, total: newTotal, commissionTotal: newCommissionTotal } = totals
 
       // Update order totals
       const updatedOrder = await tx.order.update({
@@ -261,6 +311,8 @@ export async function POST(
         data: {
           subtotal: newSubtotal,
           taxTotal: newTaxTotal,
+          taxFromInclusive: newTaxFromInc,
+          taxFromExclusive: newTaxFromExc,
           total: newTotal,
           commissionTotal: newCommissionTotal,
         },

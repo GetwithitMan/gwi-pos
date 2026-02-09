@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { roundToCents } from '@/lib/pricing'
 import { useDatacap, type DatacapResult } from '@/hooks/useDatacap'
 import { ReaderStatusIndicator } from '@/components/payment/ReaderStatusIndicator'
 import { SwapConfirmationModal } from '@/components/payment/SwapConfirmationModal'
@@ -18,12 +19,18 @@ interface OrderPanelActionsProps {
   hasPendingItems: boolean
   isSending?: boolean
   items?: OrderPanelActionsItem[]
-  subtotal?: number
-  tax?: number
-  discounts?: number
-  total?: number
-  cashDiscountRate?: number
-  taxRate?: number
+  // All pricing comes pre-calculated from usePricing — no local recalculation
+  subtotal?: number      // Cash subtotal (stored DB price)
+  cashSubtotal?: number  // Cash subtotal (same as subtotal, explicit)
+  cardSubtotal?: number  // Card subtotal (with surcharge if dual pricing)
+  tax?: number           // Tax amount
+  discounts?: number     // Dollar discounts
+  total?: number         // Current display total (based on active payment mode)
+  cashTotal?: number     // Total if paying cash (always lower or equal to cardTotal)
+  cardTotal?: number     // Total if paying card (always higher or equal to cashTotal)
+  cashDiscount?: number  // Savings amount (cardTotal - cashTotal)
+  cashDiscountPct?: number // Cash discount percentage for display label (e.g. 4)
+  taxPct?: number        // Tax percentage for display label (e.g. 8)
   onSend?: () => void
   onPay?: () => void
   onDiscount?: () => void
@@ -35,10 +42,12 @@ interface OrderPanelActionsProps {
   employeeId?: string
   onPaymentSuccess?: (result: DatacapResult & { tipAmount: number }) => void
   onPaymentCancel?: () => void
-  onCloseOrder?: () => void      // Close/cancel order with $0 balance
-  onSaveOrderFirst?: () => void  // Called when Pay is clicked but order isn't saved yet
-  autoShowPayment?: boolean      // Auto-open payment processor (after order saved)
-  onAutoShowPaymentHandled?: () => void  // Callback to clear the flag
+  onCloseOrder?: () => void
+  onSaveOrderFirst?: () => void
+  autoShowPayment?: boolean
+  onAutoShowPaymentHandled?: () => void
+  hasTaxInclusiveItems?: boolean
+  roundingAdjustment?: number  // Rounding applied (positive = rounded up, negative = down)
 }
 
 export function OrderPanelActions({
@@ -47,17 +56,21 @@ export function OrderPanelActions({
   isSending = false,
   items = [],
   subtotal = 0,
+  cashSubtotal: cashSubtotalProp,
+  cardSubtotal: cardSubtotalProp,
   tax = 0,
   discounts = 0,
   total = 0,
-  cashDiscountRate = 0,
-  taxRate = 0,
+  cashTotal: cashTotalProp,
+  cardTotal: cardTotalProp,
+  cashDiscount: cashDiscountProp,
+  cashDiscountPct = 0,
+  taxPct = 0,
   onSend,
   onPay,
   onDiscount,
   onClear,
   onPaymentModeChange,
-  // Datacap payment props
   orderId,
   terminalId,
   employeeId,
@@ -67,6 +80,8 @@ export function OrderPanelActions({
   onSaveOrderFirst,
   autoShowPayment,
   onAutoShowPaymentHandled,
+  hasTaxInclusiveItems,
+  roundingAdjustment,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
@@ -86,13 +101,18 @@ export function OrderPanelActions({
     }
   }, [autoShowPayment, orderId, terminalId, employeeId, onAutoShowPaymentHandled])
 
-  const cashDiscount = cashDiscountRate > 0 ? subtotal * cashDiscountRate : 0
-  const cashSubtotal = subtotal - cashDiscount
-  const cashTax = taxRate > 0 ? cashSubtotal * taxRate : tax
-  const cashTotal = cashSubtotal + cashTax
-  const cardTotal = total
+  // All totals come from props (usePricing) — no local recalculation
+  const cashTotal = cashTotalProp ?? total
+  const cardTotal = cardTotalProp ?? total
+  const cashDiscount = cashDiscountProp ?? 0
+  const hasDualPricing = cashDiscount > 0
 
-  const displayTotal = paymentMode === 'cash' && cashDiscountRate > 0 ? cashTotal : cardTotal
+  // Pre-computed subtotals from usePricing (no local multiplier math)
+  const cashSub = cashSubtotalProp ?? subtotal
+  const cardSub = cardSubtotalProp ?? subtotal
+  const displaySubtotal = paymentMode === 'cash' ? cashSub : cardSub
+
+  const displayTotal = paymentMode === 'cash' ? cashTotal : cardTotal
   const totalToCharge = displayTotal + tipAmount
 
   // Datacap hook — only active when we have terminalId + employeeId
@@ -101,7 +121,6 @@ export function OrderPanelActions({
     employeeId: employeeId || '',
     onSuccess: (result) => {
       onPaymentSuccess?.({ ...result, tipAmount })
-      // Reset payment view after short delay to show approved state
       setTimeout(() => {
         setShowPaymentProcessor(false)
         setTipAmount(0)
@@ -138,17 +157,14 @@ export function OrderPanelActions({
   }
 
   const handlePayClick = () => {
-    // If we have Datacap config, show inline payment processor
     if (terminalId && employeeId && orderId) {
       setShowPaymentProcessor(true)
       setTipAmount(0)
       setCustomTip('')
       setShowCustomTip(false)
     } else if (terminalId && employeeId && !orderId && onSaveOrderFirst) {
-      // Need to create the order in DB first, then open payment
       onSaveOrderFirst()
     } else {
-      // Fallback to original onPay callback (opens modal, etc.)
       onPay?.()
     }
   }
@@ -497,7 +513,7 @@ export function OrderPanelActions({
       }}
     >
       {/* Cash/Card Toggle - Compact */}
-      {hasItems && (
+      {hasItems && hasDualPricing && (
         <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
           <button
             onClick={() => handlePaymentModeChange('cash')}
@@ -516,7 +532,7 @@ export function OrderPanelActions({
               Cash
             </div>
             <div style={{ fontSize: '12px', fontWeight: 600, color: paymentMode === 'cash' ? '#ffffff' : '#86efac' }}>
-              ${(cashDiscountRate > 0 ? cashTotal : total).toFixed(2)}
+              ${cashTotal.toFixed(2)}
             </div>
           </button>
           <button
@@ -588,40 +604,48 @@ export function OrderPanelActions({
                 border: '1px solid rgba(255, 255, 255, 0.05)',
               }}
             >
-              {/* Line Items */}
-              {items.map((item) => (
+              {/* Line Items — show card price as default when dual pricing enabled */}
+              {items.map((item) => {
+                // Per-item card price: items stored as cash prices, apply surcharge for display
+                const cpm = cashDiscountPct > 0 ? 1 + cashDiscountPct / 100 : 1
+                const displayPrice = roundToCents(item.price * cpm)
+                return (
                 <div key={item.id} style={{ marginBottom: '8px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
                     <span style={{ color: '#e2e8f0' }}>
                       {item.quantity}x {item.name}
                     </span>
                     <span style={{ color: '#94a3b8' }}>
-                      ${(item.price * item.quantity).toFixed(2)}
+                      ${roundToCents(displayPrice * item.quantity).toFixed(2)}
                     </span>
                   </div>
                   {item.modifiers && item.modifiers.length > 0 && (
                     <div style={{ marginLeft: '12px', marginTop: '2px' }}>
-                      {item.modifiers.map((m, idx) => (
+                      {item.modifiers.map((m, idx) => {
+                        const modDisplayPrice = roundToCents(m.price * cpm)
+                        return (
                         <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b' }}>
                           <span>+ {m.name}</span>
-                          {m.price > 0 && <span>${(m.price * item.quantity).toFixed(2)}</span>}
+                          {m.price > 0 && <span>${roundToCents(modDisplayPrice * item.quantity).toFixed(2)}</span>}
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </div>
-              ))}
+                )
+              })}
 
-              {/* Subtotal */}
+              {/* Subtotal — always shows card subtotal, cash discount shown below when paying cash */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
                 <span style={{ color: '#94a3b8' }}>Subtotal</span>
-                <span style={{ color: '#e2e8f0' }}>${subtotal.toFixed(2)}</span>
+                <span style={{ color: '#e2e8f0' }}>${cardSub.toFixed(2)}</span>
               </div>
 
-              {/* Cash Discount */}
+              {/* Cash Discount (only when paying cash with dual pricing) */}
               {paymentMode === 'cash' && cashDiscount > 0 && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
-                  <span style={{ color: '#4ade80' }}>Cash Discount ({Math.round(cashDiscountRate * 100)}%)</span>
+                  <span style={{ color: '#4ade80' }}>Cash Discount ({cashDiscountPct}%)</span>
                   <span style={{ color: '#4ade80' }}>-${cashDiscount.toFixed(2)}</span>
                 </div>
               )}
@@ -636,9 +660,22 @@ export function OrderPanelActions({
 
               {/* Tax */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
-                <span style={{ color: '#94a3b8' }}>Tax{taxRate > 0 ? ` (${Math.round(taxRate * 100)}%)` : ''}</span>
-                <span style={{ color: '#e2e8f0' }}>${(paymentMode === 'cash' && cashDiscountRate > 0 ? cashTax : tax).toFixed(2)}</span>
+                <span style={{ color: '#94a3b8' }}>Tax{taxPct > 0 ? ` (${taxPct}%)` : ''}</span>
+                <span style={{ color: '#e2e8f0' }}>${tax.toFixed(2)}</span>
               </div>
+              {hasTaxInclusiveItems && (
+                <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', marginTop: '2px', textAlign: 'right' }}>
+                  Included in item prices
+                </div>
+              )}
+
+              {/* Cash Rounding — only visible when paying cash and rounding is active */}
+              {paymentMode === 'cash' && roundingAdjustment !== undefined && roundingAdjustment !== 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
+                  <span style={{ color: '#94a3b8' }}>Rounding</span>
+                  <span style={{ color: '#94a3b8' }}>{roundingAdjustment > 0 ? '+' : '-'}${Math.abs(roundingAdjustment).toFixed(2)}</span>
+                </div>
+              )}
 
               {/* Total */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 600, marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.1)' }}>

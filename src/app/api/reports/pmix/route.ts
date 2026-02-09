@@ -4,6 +4,8 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getEffectiveCost, toNumber } from '@/lib/inventory-calculations'
 import { pmixQuerySchema, validateRequest } from '@/lib/validations'
+import { getLocationSettings } from '@/lib/location-cache'
+import { parseSettings } from '@/lib/settings'
 
 interface PMixItem {
   menuItemId: string
@@ -197,6 +199,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Get tax rate for backing out inclusive tax
+    const locationSettings = await getLocationSettings(locationId)
+    const parsedSettings = locationSettings ? parseSettings(locationSettings) : null
+    const taxRate = ((parsedSettings as any)?.tax?.defaultRate || 8) / 100
+
     // Aggregate by menu item
     const itemMap = new Map<string, {
       menuItem: NonNullable<typeof orderItems[0]['menuItem']>
@@ -204,6 +211,7 @@ export async function GET(request: NextRequest) {
       grossSales: number
       discounts: number
       foodCost: number
+      isTaxInclusive: boolean
     }>()
 
     for (const orderItem of orderItems) {
@@ -296,6 +304,7 @@ export async function GET(request: NextRequest) {
           grossSales: lineTotal,
           discounts: itemDiscount,
           foodCost: itemFoodCost,
+          isTaxInclusive: (orderItem as any).isTaxInclusive ?? false,
         })
       }
     }
@@ -306,7 +315,11 @@ export async function GET(request: NextRequest) {
 
     // Build report items
     const pmixItems: PMixItem[] = Array.from(itemMap.entries()).map(([menuItemId, data]) => {
-      const netSales = data.grossSales - data.discounts
+      // For tax-inclusive items, back out hidden tax for accurate revenue/profit
+      const preTaxGross = data.isTaxInclusive
+        ? data.grossSales / (1 + taxRate)
+        : data.grossSales
+      const netSales = preTaxGross - data.discounts
       const grossProfit = netSales - data.foodCost
 
       return {
@@ -315,12 +328,12 @@ export async function GET(request: NextRequest) {
         category: data.menuItem.category?.name || 'Uncategorized',
         department: data.menuItem.category?.categoryType || 'other',
         quantitySold: data.quantitySold,
-        grossSales: data.grossSales,
+        grossSales: Math.round(preTaxGross * 100) / 100,
         discounts: data.discounts,
-        netSales,
+        netSales: Math.round(netSales * 100) / 100,
         foodCost: data.foodCost,
         foodCostPercent: netSales > 0 ? (data.foodCost / netSales) * 100 : 0,
-        grossProfit,
+        grossProfit: Math.round(grossProfit * 100) / 100,
         grossProfitPercent: netSales > 0 ? (grossProfit / netSales) * 100 : 0,
         mixPercent: totalQuantity > 0 ? (data.quantitySold / totalQuantity) * 100 : 0,
       }

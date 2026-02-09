@@ -38,11 +38,12 @@ import { toast } from '@/stores/toast-store'
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 import { useEvents } from '@/lib/events'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
-import { calculateOrderSubtotal } from '@/lib/order-calculations'
+import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
 import './styles/floor-plan.css'
 
 interface Category {
@@ -122,6 +123,8 @@ interface InlineOrderItem {
     priceAdjustment: number
     swappedTo?: { modifierId: string; name: string; price: number }
   }[]
+  // Category type for tax-inclusive pricing
+  categoryType?: string
 }
 
 interface OpenOrder {
@@ -280,6 +283,10 @@ export function FloorPlanHome({
       delayStartedAt: item.delayStartedAt,
       delayFiredAt: item.delayFiredAt,
       ingredientModifications: item.ingredientModifications,
+      status: item.status,
+      voidReason: item.voidReason,
+      wasMade: item.wasMade,
+      categoryType: item.categoryType,
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
@@ -509,6 +516,7 @@ export function FloorPlanHome({
           status: newItem.status,
           voidReason: newItem.voidReason,
           wasMade: newItem.wasMade,
+          categoryType: newItem.categoryType,
         })
         // Override the auto-generated ID with the intended one
         const storeNow = useOrderStore.getState().currentOrder?.items || []
@@ -2052,6 +2060,7 @@ export function FloorPlanHome({
           seatNumber: activeSeatNumber || undefined,
           sourceTableId: activeSourceTableId || undefined,
           sentToKitchen: false,
+          categoryType: item.categoryType,
           // Store block time info for timed session
           blockTimeMinutes: blockMinutes,
         }
@@ -2105,6 +2114,7 @@ export function FloorPlanHome({
           seatNumber: activeSeatNumber || undefined,
           sourceTableId: activeSourceTableId || undefined,
           sentToKitchen: false,
+          categoryType: item.categoryType,
         }
         setInlineOrderItems(prev => [...prev, newItem])
       })
@@ -2147,6 +2157,7 @@ export function FloorPlanHome({
                 seatNumber: activeSeatNumber || undefined,
                 sourceTableId: activeSourceTableId || undefined,
                 sentToKitchen: false,
+                categoryType: item.categoryType,
               }
               setInlineOrderItems(prev => [...prev, newItem])
               if (navigator.vibrate) navigator.vibrate(10)
@@ -2172,6 +2183,7 @@ export function FloorPlanHome({
           seatNumber: activeSeatNumber || undefined,
           sourceTableId: activeSourceTableId || undefined,
           sentToKitchen: false,
+          categoryType: item.categoryType,
         }
         setInlineOrderItems(prev => [...prev, newItem])
       })
@@ -2189,6 +2201,7 @@ export function FloorPlanHome({
       seatNumber: activeSeatNumber || undefined, // Assign active seat
       sourceTableId: activeSourceTableId || undefined,
       sentToKitchen: false,
+      categoryType: item.categoryType,
     }
     setInlineOrderItems(prev => [...prev, newItem])
 
@@ -2756,15 +2769,26 @@ export function FloorPlanHome({
   }, [inlineOrderItems, itemSortDirection])
 
   // Payment mode state (cash or card)
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('cash')
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
 
   // Calculate order subtotal using centralized function (single source of truth)
   const orderSubtotal = calculateOrderSubtotal(inlineOrderItems)
 
+  // Tax-inclusive settings for split pricing
+  const { taxInclusiveLiquor: settingsTaxIncLiquor, taxInclusiveFood: settingsTaxIncFood } = useOrderSettings()
+
+  // Split subtotals for tax-inclusive pricing (liquor vs food)
+  const taxSplit = useMemo(() => splitSubtotalsByTaxInclusion(inlineOrderItems, {
+    taxInclusiveLiquor: settingsTaxIncLiquor,
+    taxInclusiveFood: settingsTaxIncFood,
+  }), [inlineOrderItems, settingsTaxIncLiquor, settingsTaxIncFood])
+
   // Pricing (replaces hardcoded TAX_RATE and CASH_DISCOUNT_RATE)
   const pricing = usePricing({
-    subtotal: orderSubtotal,  // The calculated orderSubtotal from inlineOrderItems
+    subtotal: orderSubtotal,
+    inclusiveSubtotal: taxSplit.inclusiveSubtotal,
+    exclusiveSubtotal: taxSplit.exclusiveSubtotal,
     discountTotal: 0,
     tipTotal: 0,
     paymentMethod: paymentMode || 'card',
@@ -2774,7 +2798,9 @@ export function FloorPlanHome({
   const cashDiscount = pricing.cashDiscount
   const tax = pricing.tax
   const orderTotal = pricing.total
-  const cardTotal = pricing.cardSubtotal + pricing.tax
+  // Both cash and card totals from usePricing (tax-inclusive aware)
+  const cashTotalForButton = pricing.cashTotal
+  const cardTotalForButton = pricing.cardTotal
 
   // Handle payment success (extracted from inline for OrderPanel)
   const handlePaymentSuccess = useCallback(async (result: { cardLast4?: string; cardBrand?: string; tipAmount: number }) => {
@@ -3873,6 +3899,7 @@ export function FloorPlanHome({
                 isSearching={isSearching}
                 onSelectItem={handleSearchSelect}
                 onClose={clearSearch}
+                cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
               />
             </div>
           </div>
@@ -4560,7 +4587,7 @@ export function FloorPlanHome({
                               color: isItem86d ? '#6b7280' : '#22c55e',
                             }}
                           >
-                            ${item.price.toFixed(2)}
+                            ${pricing.isDualPricingEnabled ? (item.price * (1 + pricing.cashDiscountRate / 100)).toFixed(2) : item.price.toFixed(2)}
                           </span>
                           {item.hasModifiers && !isItem86d && (
                             <span
@@ -4989,6 +5016,8 @@ export function FloorPlanHome({
                 items={orderPanelItems}
                 seatGroups={seatGroupsForPanel}
                 subtotal={orderSubtotal}
+                cashSubtotal={pricing.cashSubtotal}
+                cardSubtotal={pricing.cardSubtotal}
                 tax={tax}
                 total={orderTotal}
                 showItemControls={true}
@@ -5028,8 +5057,13 @@ export function FloorPlanHome({
                 terminalId="terminal-1"
                 employeeId={employeeId}
                 onPaymentSuccess={handlePaymentSuccess}
-                cashDiscountRate={pricing.cashDiscountRate / 100}
-                taxRate={pricing.taxRate}
+                cashDiscountPct={pricing.cashDiscountRate}
+                taxPct={Math.round(pricing.taxRate * 100)}
+                hasTaxInclusiveItems={taxSplit.inclusiveSubtotal > 0}
+                roundingAdjustment={pricing.cashRoundingDelta !== 0 ? pricing.cashRoundingDelta : undefined}
+                cashTotal={cashTotalForButton}
+                cardTotal={cardTotalForButton}
+                cashDiscountAmount={pricing.isDualPricingEnabled ? cardTotalForButton - cashTotalForButton : 0}
                 onPaymentModeChange={(mode) => setPaymentMode(mode)}
                 onCloseOrder={activeOrderId ? handleCloseOrder : undefined}
                 onSaveOrderFirst={handleSaveOrderForPayment}
@@ -5317,15 +5351,26 @@ export function FloorPlanHome({
           }}
           employeeId={employeeId}
           locationId={locationId}
-          onComplete={async () => {
+          onComplete={async (result) => {
+            const voidedItemId = compVoidItem?.id
             setCompVoidItem(null)
-            // Refresh order data by reloading the order
+
+            // Immediately update the voided/comped item status in local state
+            // This ensures totals recalculate without waiting for API refresh
+            if (voidedItemId) {
+              setInlineOrderItems(prev => prev.map(item =>
+                item.id === voidedItemId
+                  ? { ...item, status: result.action === 'restore' ? 'active' as const : result.action as 'voided' | 'comped' }
+                  : item
+              ))
+            }
+
+            // Also refresh from server for full data consistency
             if (activeOrderId) {
               try {
                 const response = await fetch(`/api/orders/${activeOrderId}`)
                 if (response.ok) {
                   const orderData = await response.json()
-                  // Update inline order items from the fresh order data
                   const freshItems = orderData.items?.map((item: any) => ({
                     id: item.id,
                     menuItemId: item.menuItemId,

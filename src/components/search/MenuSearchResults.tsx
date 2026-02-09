@@ -29,6 +29,7 @@ interface MenuSearchResultsProps {
   isSearching: boolean
   onSelectItem: (item: MenuItem) => void
   onClose: () => void
+  cardPriceMultiplier?: number
 }
 
 export function MenuSearchResults({
@@ -36,7 +37,8 @@ export function MenuSearchResults({
   query,
   isSearching,
   onSelectItem,
-  onClose
+  onClose,
+  cardPriceMultiplier,
 }: MenuSearchResultsProps) {
   if (!query || query.length < 2) return null
 
@@ -84,6 +86,7 @@ export function MenuSearchResults({
                     key={item.id}
                     item={item}
                     onClick={() => onSelectItem(item)}
+                    cardPriceMultiplier={cardPriceMultiplier}
                   />
                 ))}
               </div>
@@ -104,6 +107,7 @@ export function MenuSearchResults({
                     item={item}
                     onClick={() => onSelectItem(item)}
                     badge={group.ingredientType}
+                    cardPriceMultiplier={cardPriceMultiplier}
                   />
                 ))}
               </div>

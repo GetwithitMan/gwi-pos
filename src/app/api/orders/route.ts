@@ -4,7 +4,9 @@ import { db } from '@/lib/db'
 import { createOrderSchema, validateRequest } from '@/lib/validations'
 import { errorCapture } from '@/lib/error-capture'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
-import { calculateItemTotal, calculateItemCommission, calculateOrderTotals } from '@/lib/order-calculations'
+import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive } from '@/lib/order-calculations'
+import { calculateCardPrice } from '@/lib/pricing'
+import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { getLocationSettings } from '@/lib/location-cache'
 import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
@@ -45,7 +47,7 @@ export async function POST(request: NextRequest) {
     const menuItemIds = items.map(item => item.menuItemId)
     const menuItems = await db.menuItem.findMany({
       where: { id: { in: menuItemIds } },
-      select: { id: true, commissionType: true, commissionValue: true },
+      select: { id: true, commissionType: true, commissionValue: true, category: { select: { categoryType: true } } },
     })
     const menuItemMap = new Map(menuItems.map(mi => [mi.id, mi]))
 
@@ -153,10 +155,59 @@ export async function POST(request: NextRequest) {
 
     // Get location settings for tax calculation (cached - FIX-009)
     const locationSettings = await getLocationSettings(locationId)
+    const parsedSettings = locationSettings ? parseSettings(locationSettings) : null
+    const dualPricingEnabled = parsedSettings?.dualPricing?.enabled ?? false
+    const cashDiscountPct = parsedSettings?.dualPricing?.cashDiscountPercent ?? 4.0
+
+    // Derive tax-inclusive flags from TaxRule records (same logic as /api/settings GET)
+    const [taxRules, allCategories] = await Promise.all([
+      db.taxRule.findMany({
+        where: { locationId, isActive: true, isInclusive: true, deletedAt: null },
+        select: { appliesTo: true, categoryIds: true },
+      }),
+      db.category.findMany({
+        where: { locationId, deletedAt: null },
+        select: { id: true, categoryType: true },
+      }),
+    ])
+    let taxInclusiveLiquor = false
+    let taxInclusiveFood = false
+    const LIQUOR_TYPES = ['liquor', 'drinks']
+    const FOOD_TYPES = ['food', 'pizza', 'combos']
+    for (const rule of taxRules) {
+      if (rule.appliesTo === 'all') { taxInclusiveLiquor = true; taxInclusiveFood = true; break }
+      if (rule.appliesTo === 'category' && rule.categoryIds) {
+        const ruleCategories = rule.categoryIds as string[]
+        for (const cat of allCategories) {
+          if (ruleCategories.includes(cat.id)) {
+            if (cat.categoryType && LIQUOR_TYPES.includes(cat.categoryType)) taxInclusiveLiquor = true
+            if (cat.categoryType && FOOD_TYPES.includes(cat.categoryType)) taxInclusiveFood = true
+          }
+        }
+      }
+    }
+    const taxIncSettings = { taxInclusiveLiquor, taxInclusiveFood }
+
+    // Stamp each orderItem with pricing truth + mark items for split tax calc
+    for (const oi of orderItems) {
+      const mi = menuItemMap.get(oi.menuItemId)
+      const catType = mi?.category?.categoryType ?? null
+      const taxInc = isItemTaxInclusive(catType ?? undefined, taxIncSettings)
+      ;(oi as any).categoryType = catType
+      ;(oi as any).isTaxInclusive = taxInc
+      ;(oi as any).cardPrice = dualPricingEnabled ? calculateCardPrice(Number(oi.price), cashDiscountPct) : null
+    }
+
+    // Also mark the raw items array so calculateOrderTotals can split
+    for (const item of items) {
+      const mi = menuItemMap.get(item.menuItemId)
+      const catType = mi?.category?.categoryType ?? null
+      ;(item as any).isTaxInclusive = isItemTaxInclusive(catType ?? undefined, taxIncSettings)
+    }
 
     // Use centralized calculation function (single source of truth)
     const totals = calculateOrderTotals(items, locationSettings, 0, 0)
-    const { taxTotal, total } = totals
+    const { taxTotal, taxFromInclusive, taxFromExclusive, total } = totals
 
     // Create the order
     // Initialize seat management (Skill 121)
@@ -185,6 +236,8 @@ export async function POST(request: NextRequest) {
         subtotal,
         discountTotal: 0,
         taxTotal,
+        taxFromInclusive,
+        taxFromExclusive,
         tipTotal: 0,
         total,
         commissionTotal,

@@ -13,9 +13,10 @@ interface MenuSearchResultItemProps {
   item: MenuItem
   onClick: () => void
   badge?: 'spirit' | 'food'
+  cardPriceMultiplier?: number
 }
 
-export function MenuSearchResultItem({ item, onClick, badge }: MenuSearchResultItemProps) {
+export function MenuSearchResultItem({ item, onClick, badge, cardPriceMultiplier }: MenuSearchResultItemProps) {
   return (
     <button
       onClick={onClick}
@@ -42,7 +43,7 @@ export function MenuSearchResultItem({ item, onClick, badge }: MenuSearchResultI
         {item.name}
       </div>
       <div className="text-blue-400 text-sm font-bold mt-1">
-        {formatCurrency(item.price)}
+        {formatCurrency(item.price * (cardPriceMultiplier || 1))}
       </div>
     </button>
   )

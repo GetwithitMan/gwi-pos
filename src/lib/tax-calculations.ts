@@ -1,8 +1,14 @@
-// Centralized tax calculation engine
-// Single source of truth for all tax logic across the POS
+// Tax Calculations — Thin wrappers over order-calculations.ts
 //
-// Location settings store defaultRate as a percentage number (e.g., 8.0 = 8%)
-// MenuItem can override with taxRate (Decimal) or isTaxExempt (Boolean)
+// DEPRECATED: New code should import directly from '@/lib/order-calculations'
+// and '@/lib/pricing'. These wrappers exist for backward compatibility with
+// existing API routes that use the simplified (subtotal-only) signature.
+//
+// NOTE: This simplified calculateOrderTotals does NOT handle tax-inclusive
+// pricing or price rounding. Routes handling tax-inclusive items should
+// migrate to the full calculateOrderTotals from order-calculations.ts.
+
+import { roundToCents } from './pricing'
 
 interface TaxSettings {
   tax?: {
@@ -13,7 +19,6 @@ interface TaxSettings {
 
 /**
  * Get the location's default tax rate as a decimal (e.g., 0.08 for 8%).
- * Extracts from location settings JSON with consistent fallback.
  */
 export function getLocationTaxRate(settings: TaxSettings | null | undefined): number {
   const rate = settings?.tax?.defaultRate ?? 8
@@ -22,11 +27,6 @@ export function getLocationTaxRate(settings: TaxSettings | null | undefined): nu
 
 /**
  * Get the effective tax rate for a specific item.
- * Priority: item-level override > location default.
- *
- * @param itemTaxRate - MenuItem.taxRate (percentage number, e.g. 10 for 10%), or null
- * @param itemTaxExempt - MenuItem.isTaxExempt
- * @param locationTaxRate - Already-converted decimal rate from getLocationTaxRate()
  */
 export function getEffectiveTaxRate(
   itemTaxRate: number | null | undefined,
@@ -40,19 +40,14 @@ export function getEffectiveTaxRate(
 
 /**
  * Calculate tax on a subtotal using a single rate.
- * Applies consistent rounding (to nearest cent).
  */
 export function calculateTax(subtotal: number, taxRate: number): number {
-  return Math.round(subtotal * taxRate * 100) / 100
+  return roundToCents(subtotal * taxRate)
 }
 
 /**
- * Recalculate order totals from active items.
- * Used after comp/void, discount changes, item transfers, etc.
- *
- * @param subtotal - Sum of active item prices (already calculated by caller)
- * @param discountTotal - Total discounts applied
- * @param locationSettings - Location settings JSON (or parsed)
+ * Simplified order totals (subtotal-only signature).
+ * @deprecated Use calculateOrderTotals from '@/lib/order-calculations' for full support.
  */
 export function calculateOrderTotals(
   subtotal: number,
@@ -67,8 +62,8 @@ export function calculateOrderTotals(
   const taxRate = getLocationTaxRate(locationSettings)
   const effectiveDiscount = Math.min(discountTotal, subtotal)
   const taxableAmount = subtotal - effectiveDiscount
-  const taxTotal = calculateTax(taxableAmount, taxRate)
-  const total = Math.round((taxableAmount + taxTotal) * 100) / 100
+  const taxTotal = roundToCents(taxableAmount * taxRate)
+  const total = roundToCents(taxableAmount + taxTotal)
 
   return {
     subtotal,

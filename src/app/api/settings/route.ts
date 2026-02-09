@@ -4,6 +4,10 @@ import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settin
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 
+// Category types that map to liquor/food tax-inclusive flags
+const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
+const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
+
 // GET location settings
 export async function GET() {
   try {
@@ -16,6 +20,51 @@ export async function GET() {
     }
 
     const settings = parseSettings(location.settings)
+
+    // Derive taxInclusiveLiquor/taxInclusiveFood from TaxRule records
+    const [taxRules, categories] = await Promise.all([
+      db.taxRule.findMany({
+        where: { locationId: location.id, isActive: true, isInclusive: true, deletedAt: null },
+        select: { appliesTo: true, categoryIds: true },
+      }),
+      db.category.findMany({
+        where: { locationId: location.id, deletedAt: null },
+        select: { id: true, categoryType: true },
+      }),
+    ])
+
+    // Check if any inclusive rule covers liquor or food categories
+    let taxInclusiveLiquor = false
+    let taxInclusiveFood = false
+
+    for (const rule of taxRules) {
+      if (rule.appliesTo === 'all') {
+        // An "all items" inclusive rule makes everything inclusive
+        taxInclusiveLiquor = true
+        taxInclusiveFood = true
+        break
+      }
+      if (rule.appliesTo === 'category' && rule.categoryIds) {
+        const ruleCategories = rule.categoryIds as string[]
+        for (const cat of categories) {
+          if (ruleCategories.includes(cat.id)) {
+            if (cat.categoryType && LIQUOR_CATEGORY_TYPES.includes(cat.categoryType)) {
+              taxInclusiveLiquor = true
+            }
+            if (cat.categoryType && FOOD_CATEGORY_TYPES.includes(cat.categoryType)) {
+              taxInclusiveFood = true
+            }
+          }
+        }
+      }
+    }
+
+    // Inject derived tax-inclusive flags into settings
+    settings.tax = {
+      ...settings.tax,
+      taxInclusiveLiquor,
+      taxInclusiveFood,
+    }
 
     return NextResponse.json({
       locationId: location.id,
@@ -72,6 +121,7 @@ export async function PUT(request: NextRequest) {
       // Deep merge for nested objects
       tax: { ...currentSettings.tax, ...(settings.tax || {}) },
       dualPricing: { ...currentSettings.dualPricing, ...(settings.dualPricing || {}) },
+      priceRounding: { ...currentSettings.priceRounding, ...(settings.priceRounding || {}) },
       tips: { ...currentSettings.tips, ...(settings.tips || {}) },
       tipShares: { ...currentSettings.tipShares, ...(settings.tipShares || {}) },
       receipts: { ...currentSettings.receipts, ...(settings.receipts || {}) },

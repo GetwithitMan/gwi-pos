@@ -158,7 +158,7 @@ export default function OrdersPage() {
   } | null>(null)
 
   // Settings loaded from API via custom hook
-  const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings } = useOrderSettings()
+  const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings, taxInclusiveLiquor, taxInclusiveFood } = useOrderSettings()
   const { settings: displaySettings, menuItemClass, gridColsClass, orderPanelClass, categorySize, categoryColorMode, categoryButtonBgColor, categoryButtonTextColor, showPriceOnMenuItems, updateSetting, updateSettings } = usePOSDisplay()
 
   // POS Layout (Bar/Food mode, favorites, category order)
@@ -2705,15 +2705,10 @@ export default function OrdersPage() {
     if (!dualPricing.enabled) {
       return <span className="text-sm font-medium">{formatCurrency(storedPrice)}</span>
     }
-    // Stored price is cash price, calculate card price
-    const cashPrice = storedPrice
+    // Card price is default display; cash price shown smaller
     const cardPrice = calculateCardPrice(storedPrice, discountPercent)
     return (
-      <span className="text-xs">
-        <span className="text-gray-700">{formatCurrency(cardPrice)}</span>
-        <span className="text-gray-400 mx-1">-</span>
-        <span className="text-green-600">{formatCurrency(cashPrice)}</span>
-      </span>
+      <span className="text-sm font-medium">{formatCurrency(cardPrice)}</span>
     )
   }
 
@@ -3540,6 +3535,7 @@ export default function OrdersPage() {
             currentMode={currentMode}
             showPrices={showPriceOnMenuItems}
             isEditing={isEditingFavorites}
+            cardPriceMultiplier={dualPricing.enabled ? 1 + (dualPricing.cashDiscountPercent || 4) / 100 : undefined}
           />
         )}
 
@@ -3559,6 +3555,7 @@ export default function OrdersPage() {
               isSearching={isMenuSearching}
               onSelectItem={handleSearchItemSelect}
               onClose={clearMenuSearch}
+              cardPriceMultiplier={dualPricing.enabled ? 1 + (dualPricing.cashDiscountPercent || 4) / 100 : undefined}
             />
           </div>
         </div>
@@ -4046,6 +4043,8 @@ export default function OrdersPage() {
           locationId={employee?.location?.id}
           items={orderPanelItems}
           subtotal={subtotal}
+          cashSubtotal={pricing.cashSubtotal}
+          cardSubtotal={pricing.cardSubtotal}
           tax={taxAmount}
           discounts={totalDiscounts}
           total={grandTotal}
@@ -4081,6 +4080,8 @@ export default function OrdersPage() {
           terminalId="terminal-1"
           employeeId={employee?.id}
           onPaymentSuccess={handlePaymentSuccess}
+          hasTaxInclusiveItems={taxInclusiveLiquor || taxInclusiveFood}
+          roundingAdjustment={pricing.cashRoundingDelta !== 0 ? pricing.cashRoundingDelta : undefined}
           selectedItemId={layout.quickPickEnabled ? quickPickSelectedId : undefined}
           selectedItemIds={layout.quickPickEnabled ? quickPickSelectedIds : undefined}
           onItemSelect={layout.quickPickEnabled ? selectQuickPickItem : undefined}

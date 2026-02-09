@@ -23,6 +23,7 @@ interface ModifierGroupSectionProps {
   getModifiersByTier?: (modifiers: Modifier[]) => Record<SpiritTier, Modifier[]>
   getTieredPrice?: (group: ModifierGroup, modifier: Modifier, selectionIndex: number) => number
   getExcludedModifierIds?: (currentGroupId: string, exclusionGroupKey: string | null | undefined) => Set<string>
+  cardPriceMultiplier?: number
 }
 
 export function ModifierGroupSection({
@@ -41,7 +42,9 @@ export function ModifierGroupSection({
   getModifiersByTier,
   getTieredPrice,
   getExcludedModifierIds,
+  cardPriceMultiplier,
 }: ModifierGroupSectionProps) {
+  const cpm = cardPriceMultiplier || 1
   const selectedCount = selections.length
   const isComplete = group.isRequired
     ? selectedCount >= group.minSelections
@@ -110,7 +113,7 @@ export function ModifierGroupSection({
             <div className="text-[11px] bg-white/10 rounded px-2 py-1 flex justify-between items-center mb-1">
               <span className="font-medium text-slate-200 truncate">{currentSelection.name}</span>
               <span className="text-emerald-400 text-[10px] ml-1 flex-shrink-0">
-                {currentSelection.price === 0 ? 'Incl' : `+${formatCurrency(currentSelection.price)}`}
+                {currentSelection.price === 0 ? 'Incl' : `+${formatCurrency(currentSelection.price * cpm)}`}
               </span>
             </div>
           )}
@@ -144,7 +147,7 @@ export function ModifierGroupSection({
                   >
                     <span className="truncate">{mod.name}</span>
                     {mod.price > 0 && (
-                      <span className="text-[10px] text-emerald-400 flex-shrink-0">+{formatCurrency(mod.price)}</span>
+                      <span className="text-[10px] text-emerald-400 flex-shrink-0">+{formatCurrency(mod.price * cpm)}</span>
                     )}
                   </button>
                 )
@@ -237,7 +240,7 @@ export function ModifierGroupSection({
                     <span className="text-[10px] text-green-400 font-semibold">FREE</span>
                   ) : displayPrice > 0 ? (
                     <span className={`text-[10px] ${selected ? 'text-white/80' : 'text-emerald-400'}`}>
-                      +{formatCurrency(displayPrice)}
+                      +{formatCurrency(displayPrice * cpm)}
                     </span>
                   ) : null}
 
@@ -278,7 +281,7 @@ export function ModifierGroupSection({
                       >
                         {config.label}
                         {preMod === 'extra' && modifier.extraPrice && modifier.extraPrice > 0 && (
-                          <span className="ml-0.5">+${modifier.extraPrice}</span>
+                          <span className="ml-0.5">+${(modifier.extraPrice * cpm).toFixed(2)}</span>
                         )}
                       </button>
                     )

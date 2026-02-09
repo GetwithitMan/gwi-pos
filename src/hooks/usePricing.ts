@@ -4,9 +4,10 @@ import { useMemo } from 'react'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import {
   calculateCardPrice,
-  applyPriceRounding,
+  roundToCents,
   formatSavingsMessage,
 } from '@/lib/pricing'
+import { calculateOrderTotals } from '@/lib/order-calculations'
 import type { DualPricingSettings, PriceRoundingSettings } from '@/lib/settings'
 
 interface UsePricingOptions {
@@ -14,6 +15,10 @@ interface UsePricingOptions {
   subtotal: number           // Sum of item prices (stored as cash prices in DB)
   discountTotal?: number     // Dollar discounts applied
   tipTotal?: number          // Gratuity amount
+
+  // Tax-inclusive split subtotals (optional — when provided, overrides flat tax calc)
+  inclusiveSubtotal?: number  // Subtotal of tax-inclusive items (liquor/food with inclusive pricing)
+  exclusiveSubtotal?: number  // Subtotal of tax-exclusive items (normal pricing)
 
   // Payment context
   paymentMethod?: 'cash' | 'card'   // Default: 'card' (shows card price by default)
@@ -31,6 +36,13 @@ interface UsePricingReturn {
   tip: number              // Tip/gratuity
   total: number            // Final total (after rounding)
   totalBeforeRounding: number  // Total before price rounding
+  roundingDelta: number    // total - totalBeforeRounding
+
+  // === Cash & Card totals (both always computed for toggle buttons) ===
+  cashTotal: number        // Cash total with tax (tax-inclusive aware)
+  cardTotal: number        // Card total with tax (tax-inclusive aware)
+  cashRoundingDelta: number  // Rounding applied to cash total (for UI display)
+  cardRoundingDelta: number  // Rounding applied to card total (usually 0)
 
   // === Settings (from API) ===
   taxRate: number           // Decimal (0.08)
@@ -46,49 +58,74 @@ interface UsePricingReturn {
   cashDiscountRate: number  // The percentage (4.0, not 0.04)
 }
 
+/**
+ * Thin adapter hook over calculateOrderTotals.
+ *
+ * All tax, rounding, and total logic lives in order-calculations.ts.
+ * This hook:
+ * 1. Gets settings from useOrderSettings()
+ * 2. Builds synthetic items from subtotal splits
+ * 3. Calls calculateOrderTotals twice (cash + card) for toggle buttons
+ * 4. Returns the same shape consumers expect
+ */
 export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePricingReturn {
-  const { dualPricing, taxRate, priceRounding, isLoading } = useOrderSettings()
+  const { dualPricing, taxRate, priceRounding, taxInclusiveLiquor, taxInclusiveFood, isLoading } = useOrderSettings()
 
+  const hasTaxInclusive = taxInclusiveLiquor || taxInclusiveFood
   const paymentMethod = options.paymentMethod || 'card'
 
   const calculated = useMemo(() => {
     // 1. Start with stored subtotal (cash prices in DB)
     const storedSubtotal = options.subtotal || 0
-
-    // 2. Calculate card price if dual pricing enabled
     const discountPct = dualPricing.cashDiscountPercent || 4.0
+    const dollarDiscounts = options.discountTotal || 0
+    const tip = options.tipTotal || 0
+
+    // 2. Derive cash and card subtotals (dual pricing computed ONCE here)
+    const cashSubtotal = storedSubtotal
     const cardSubtotal = dualPricing.enabled
       ? calculateCardPrice(storedSubtotal, discountPct)
       : storedSubtotal
-    const cashSubtotal = storedSubtotal
 
-    // 3. Calculate cash discount based on payment method
-    const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash'
-      ? cardSubtotal - storedSubtotal
-      : 0
+    // 3. Build synthetic items for the centralized calculator
+    // Split into inclusive/exclusive if tax-inclusive pricing is active
+    const buildItems = (sub: number, inclSub?: number, exclSub?: number) => {
+      const items: Array<{ price: number; quantity: number; isTaxInclusive: boolean; modifiers: never[] }> = []
+      if (hasTaxInclusive && inclSub !== undefined && exclSub !== undefined) {
+        if (inclSub > 0) items.push({ price: inclSub, quantity: 1, isTaxInclusive: true, modifiers: [] })
+        if (exclSub > 0) items.push({ price: exclSub, quantity: 1, isTaxInclusive: false, modifiers: [] })
+      } else if (sub > 0) {
+        items.push({ price: sub, quantity: 1, isTaxInclusive: false, modifiers: [] })
+      }
+      return items
+    }
 
-    // 4. The display subtotal depends on payment method
-    //    Card: show card price (higher)
-    //    Cash: show cash price (lower, because discount applied)
+    const locationSettings = { tax: { defaultRate: taxRate * 100 } }
+
+    // 4. Calculate cash totals
+    const cashInclSub = options.inclusiveSubtotal || 0
+    const cashExclSub = options.exclusiveSubtotal || 0
+    const cashItems = buildItems(cashSubtotal, cashInclSub, cashExclSub)
+    const cashResult = calculateOrderTotals(cashItems, locationSettings, dollarDiscounts, tip, priceRounding, 'cash')
+
+    // 5. Calculate card totals (apply surcharge to subtotals)
+    let cardInclSub = cashInclSub
+    let cardExclSub = cashExclSub
+    if (dualPricing.enabled) {
+      cardInclSub = cashInclSub > 0 ? calculateCardPrice(cashInclSub, discountPct) : 0
+      cardExclSub = cashExclSub > 0 ? calculateCardPrice(cashExclSub, discountPct) : 0
+    }
+    const cardItems = buildItems(cardSubtotal, cardInclSub, cardExclSub)
+    const cardResult = calculateOrderTotals(cardItems, locationSettings, dollarDiscounts, tip, priceRounding, 'card')
+
+    // 6. Pick active result based on payment method
+    const active = paymentMethod === 'cash' ? cashResult : cardResult
     const displaySubtotal = paymentMethod === 'cash' ? cashSubtotal : cardSubtotal
 
-    // 5. Apply dollar discounts
-    const dollarDiscounts = options.discountTotal || 0
-
-    // 6. Calculate taxable amount
-    const taxableAmount = displaySubtotal - cashDiscountAmount - dollarDiscounts
-
-    // 7. Calculate tax
-    const taxAmount = Math.round(taxableAmount * taxRate * 100) / 100
-
-    // 8. Add tip
-    const tip = options.tipTotal || 0
-
-    // 9. Calculate total before rounding
-    const totalBeforeRounding = taxableAmount + taxAmount + tip
-
-    // 10. Apply price rounding
-    const total = applyPriceRounding(totalBeforeRounding, priceRounding, paymentMethod)
+    // Cash discount amount (only when paying cash and dual pricing enabled)
+    const cashDiscountAmount = dualPricing.enabled && paymentMethod === 'cash'
+      ? roundToCents(cardSubtotal - cashSubtotal)
+      : 0
 
     return {
       subtotal: displaySubtotal,
@@ -96,25 +133,33 @@ export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePri
       cardSubtotal,
       cashDiscount: cashDiscountAmount,
       discounts: dollarDiscounts,
-      taxableAmount,
-      tax: taxAmount,
+      taxableAmount: roundToCents(displaySubtotal - cashDiscountAmount - dollarDiscounts),
+      tax: active.taxTotal,
       tip,
-      total,
-      totalBeforeRounding,
+      total: active.total,
+      totalBeforeRounding: active.totalBeforeRounding,
+      roundingDelta: active.roundingDelta,
+      cashTotal: cashResult.total,
+      cardTotal: cardResult.total,
+      cashRoundingDelta: cashResult.roundingDelta,
+      cardRoundingDelta: cardResult.roundingDelta,
     }
   }, [
     options.subtotal,
+    options.inclusiveSubtotal,
+    options.exclusiveSubtotal,
     options.discountTotal,
     options.tipTotal,
     paymentMethod,
     dualPricing,
     taxRate,
     priceRounding,
+    hasTaxInclusive,
   ])
 
   // Savings message - only show when paying with card and dual pricing is enabled
   const savingsMessage = dualPricing.enabled && paymentMethod === 'card'
-    ? formatSavingsMessage(calculated.cashSubtotal + calculated.tax, calculated.cardSubtotal + calculated.tax)
+    ? formatSavingsMessage(calculated.cashTotal, calculated.cardTotal)
     : ''
 
   return {

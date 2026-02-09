@@ -2475,8 +2475,11 @@ export function BartenderView({
             onSend={handleSend}
             onPay={handlePay}
             isSending={isSending}
-            cashDiscountRate={pricing.cashDiscountRate / 100}
-            taxRate={pricing.taxRate}
+            cashDiscountPct={pricing.cashDiscountRate}
+            taxPct={Math.round(pricing.taxRate * 100)}
+            cashTotal={pricing.cashTotal}
+            cardTotal={pricing.cardTotal}
+            cashDiscountAmount={pricing.isDualPricingEnabled ? pricing.cardTotal - pricing.cashTotal : 0}
             terminalId="terminal-1"
             employeeId={employeeId}
             className="w-[360px] flex-shrink-0"

@@ -4,12 +4,15 @@
  * Centralized calculation logic for order totals, taxes, and commissions.
  * Used by both client (UI) and server (API routes) to ensure consistency.
  *
- * FIX-006: Eliminates duplicate calculation logic scattered across:
- * - FloorPlanHome.tsx
- * - orders/page.tsx
- * - /api/orders/[id]/items/route.ts
- * - /api/orders/[id]/route.ts
+ * PRINCIPLES:
+ * - All money rounding goes through roundToCents() from pricing.ts
+ * - Rounding is the absolute last step (sum raw → surcharge → discount → tax → tip → THEN round)
+ * - Tax lines are rounded to 2 decimals (compliance), final total optionally rounded per settings
+ * - taxRate is always a decimal (0.08), never ambiguous 8 vs 0.08
  */
+
+import { roundToCents, applyPriceRounding } from './pricing'
+import type { PriceRoundingSettings } from './settings'
 
 // ============================================================================
 // TYPES
@@ -28,20 +31,26 @@ export interface OrderItemForCalculation {
   }>
   itemTotal?: number // For persisted items from DB
   commissionAmount?: number // For persisted items from DB
+  categoryType?: string // For tax-inclusive pricing split
+  isTaxInclusive?: boolean // Stored on OrderItem — true if item was tax-inclusive at time of sale
 }
 
 export interface LocationTaxSettings {
   tax?: {
-    defaultRate?: number
+    defaultRate?: number // Stored as percentage (e.g. 8 for 8%), converted to decimal internally
   }
 }
 
 export interface OrderTotals {
   subtotal: number
   taxTotal: number
+  taxFromInclusive: number  // Tax backed out of inclusive items
+  taxFromExclusive: number  // Tax added on top of exclusive items
   discountTotal: number
   tipTotal: number
-  total: number
+  totalBeforeRounding: number  // Total before price rounding applied
+  total: number                // Final total (after rounding if applicable)
+  roundingDelta: number        // total - totalBeforeRounding (0 if no rounding)
   commissionTotal?: number
 }
 
@@ -76,11 +85,6 @@ export function calculateItemTotal(item: OrderItemForCalculation): number {
 
 /**
  * Calculate commission for a single item
- *
- * @param itemTotal - Total for the item (from calculateItemTotal)
- * @param quantity - Item quantity
- * @param commissionType - 'percent' or 'fixed'
- * @param commissionValue - Percentage (e.g., 5 for 5%) or fixed amount
  */
 export function calculateItemCommission(
   itemTotal: number,
@@ -88,15 +92,14 @@ export function calculateItemCommission(
   commissionType: string | null,
   commissionValue: number | null
 ): number {
-  // If item already has commission (from DB), use it
   if (!commissionType || commissionValue === null || commissionValue === undefined) {
     return 0
   }
 
   if (commissionType === 'percent') {
-    return Math.round((itemTotal * commissionValue / 100) * 100) / 100
+    return roundToCents(itemTotal * commissionValue / 100)
   } else if (commissionType === 'fixed') {
-    return Math.round((commissionValue * quantity) * 100) / 100
+    return roundToCents(commissionValue * quantity)
   }
 
   return 0
@@ -108,8 +111,6 @@ export function calculateItemCommission(
 
 /**
  * Calculate order subtotal from all items
- *
- * Use this for both inline items (client) and persisted items (server)
  */
 export function calculateOrderSubtotal(items: OrderItemForCalculation[]): number {
   return items
@@ -119,15 +120,11 @@ export function calculateOrderSubtotal(items: OrderItemForCalculation[]): number
 
 /**
  * Calculate total commission from all items
- *
- * For persisted items, sums existing commissionAmount.
- * For new items, calculates commission based on menu item settings.
  */
 export function calculateOrderCommission(
   items: Array<OrderItemForCalculation & { commissionAmount?: number }>
 ): number {
   return items.reduce((sum, item) => {
-    // Use existing commission if available (from DB)
     if (item.commissionAmount !== undefined && item.commissionAmount !== null) {
       return sum + Number(item.commissionAmount)
     }
@@ -137,23 +134,17 @@ export function calculateOrderCommission(
 
 /**
  * Calculate tax based on subtotal and location settings
- *
- * @param subtotal - Order subtotal (before tax/discount/tip)
- * @param locationSettings - Location settings with tax rate
- * @returns Tax amount rounded to 2 decimals
  */
 export function calculateOrderTax(
   subtotal: number,
   locationSettings: LocationTaxSettings | null
 ): number {
   const taxRate = (locationSettings?.tax?.defaultRate || 8) / 100
-  return Math.round(subtotal * taxRate * 100) / 100
+  return roundToCents(subtotal * taxRate)
 }
 
 /**
  * Calculate final order total
- *
- * Formula: subtotal + tax - discount + tip
  */
 export function calculateOrderTotal(
   subtotal: number,
@@ -161,35 +152,86 @@ export function calculateOrderTotal(
   discountTotal: number,
   tipTotal: number
 ): number {
-  return Math.round((subtotal + taxTotal - discountTotal + tipTotal) * 100) / 100
+  return roundToCents(subtotal + taxTotal - discountTotal + tipTotal)
 }
 
 /**
- * Calculate all order totals at once (convenience function)
+ * Calculate all order totals at once.
+ *
+ * Pipeline:
+ * 1. Sum raw item totals → inclusiveSubtotal, exclusiveSubtotal
+ * 2. Calculate split tax (back out inclusive, add exclusive) — rounded to cents for compliance
+ * 3. Compute totalBeforeRounding = inclusive + exclusive + taxFromExclusive - discounts + tip
+ * 4. Apply price rounding as absolute last step (if settings provided)
+ * 5. Return roundingDelta for display
  *
  * @param items - Array of order items (inline or persisted)
- * @param locationSettings - Location settings (for tax rate)
+ * @param locationSettings - Location settings (for tax rate, stored as percentage e.g. 8)
  * @param existingDiscountTotal - Order-level discount (default 0)
  * @param existingTipTotal - Order-level tip (default 0)
- * @returns Complete order totals object
+ * @param priceRounding - Optional price rounding settings (Skill 88)
+ * @param paymentMethod - Payment method for rounding rules (default 'card')
  */
 export function calculateOrderTotals(
   items: Array<OrderItemForCalculation & { commissionAmount?: number }>,
   locationSettings: LocationTaxSettings | null,
   existingDiscountTotal: number = 0,
-  existingTipTotal: number = 0
+  existingTipTotal: number = 0,
+  priceRounding?: PriceRoundingSettings,
+  paymentMethod: 'cash' | 'card' = 'card'
 ): OrderTotals {
-  const subtotal = calculateOrderSubtotal(items)
-  const taxTotal = calculateOrderTax(subtotal, locationSettings)
+  const taxRate = (locationSettings?.tax?.defaultRate || 8) / 100
   const commissionTotal = calculateOrderCommission(items)
-  const total = calculateOrderTotal(subtotal, taxTotal, existingDiscountTotal, existingTipTotal)
+
+  // 1. Split items into tax-inclusive vs tax-exclusive
+  let inclusiveSubtotal = 0
+  let exclusiveSubtotal = 0
+
+  for (const item of items) {
+    if (item.status && item.status !== 'active') continue
+    const total = calculateItemTotal(item)
+    if (item.isTaxInclusive) {
+      inclusiveSubtotal += total
+    } else {
+      exclusiveSubtotal += total
+    }
+  }
+
+  inclusiveSubtotal = roundToCents(inclusiveSubtotal)
+  exclusiveSubtotal = roundToCents(exclusiveSubtotal)
+  const subtotal = roundToCents(inclusiveSubtotal + exclusiveSubtotal)
+
+  // 2. Split tax — rounded to cents for compliance
+  const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
+    inclusiveSubtotal, exclusiveSubtotal, taxRate
+  )
+
+  // 3. Total before rounding
+  // Inclusive items already contain tax (no extra added), exclusive items get taxFromExclusive added
+  const totalBeforeRounding = roundToCents(
+    inclusiveSubtotal + exclusiveSubtotal + taxFromExclusive
+    - existingDiscountTotal + existingTipTotal
+  )
+
+  // 4. Apply price rounding as absolute last step
+  let total = totalBeforeRounding
+  let roundingDelta = 0
+
+  if (priceRounding) {
+    total = applyPriceRounding(totalBeforeRounding, priceRounding, paymentMethod)
+    roundingDelta = roundToCents(total - totalBeforeRounding)
+  }
 
   return {
     subtotal,
-    taxTotal,
+    taxTotal: totalTax,
+    taxFromInclusive,
+    taxFromExclusive,
     discountTotal: existingDiscountTotal,
     tipTotal: existingTipTotal,
+    totalBeforeRounding,
     total,
+    roundingDelta,
     commissionTotal,
   }
 }
@@ -200,8 +242,6 @@ export function calculateOrderTotals(
 
 /**
  * Recalculate order total when tip changes
- *
- * Use this in PUT /api/orders/[id] when tipTotal is updated
  */
 export function recalculateTotalWithTip(
   subtotal: number,
@@ -210,4 +250,78 @@ export function recalculateTotalWithTip(
   newTipTotal: number
 ): number {
   return calculateOrderTotal(subtotal, taxTotal, discountTotal, newTipTotal)
+}
+
+// ============================================================================
+// TAX-INCLUSIVE PRICING
+// ============================================================================
+
+const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
+const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
+
+export interface TaxInclusiveSettings {
+  taxInclusiveLiquor: boolean
+  taxInclusiveFood: boolean
+}
+
+/**
+ * Check if an item's category type is tax-inclusive based on settings
+ */
+export function isItemTaxInclusive(
+  categoryType: string | undefined,
+  settings: TaxInclusiveSettings
+): boolean {
+  if (!categoryType) return false
+  if (settings.taxInclusiveLiquor && LIQUOR_CATEGORY_TYPES.includes(categoryType)) return true
+  if (settings.taxInclusiveFood && FOOD_CATEGORY_TYPES.includes(categoryType)) return true
+  return false
+}
+
+/**
+ * Split order items into tax-inclusive and tax-exclusive subtotals.
+ */
+export function splitSubtotalsByTaxInclusion(
+  items: OrderItemForCalculation[],
+  taxInclusiveSettings: TaxInclusiveSettings
+): { inclusiveSubtotal: number; exclusiveSubtotal: number } {
+  let inclusiveSubtotal = 0
+  let exclusiveSubtotal = 0
+
+  for (const item of items) {
+    if (item.status && item.status !== 'active') continue
+    const total = calculateItemTotal(item)
+    if (isItemTaxInclusive(item.categoryType, taxInclusiveSettings)) {
+      inclusiveSubtotal += total
+    } else {
+      exclusiveSubtotal += total
+    }
+  }
+
+  return {
+    inclusiveSubtotal: roundToCents(inclusiveSubtotal),
+    exclusiveSubtotal: roundToCents(exclusiveSubtotal),
+  }
+}
+
+/**
+ * Calculate tax for a mixed order with both inclusive and exclusive items.
+ *
+ * Inclusive: tax = price - (price / (1 + rate))  — backed out
+ * Exclusive: tax = price × rate                  — added on top
+ */
+export function calculateSplitTax(
+  inclusiveSubtotal: number,
+  exclusiveSubtotal: number,
+  taxRate: number
+): { taxFromInclusive: number; taxFromExclusive: number; totalTax: number } {
+  const taxFromInclusive = inclusiveSubtotal > 0
+    ? roundToCents(inclusiveSubtotal - (inclusiveSubtotal / (1 + taxRate)))
+    : 0
+  const taxFromExclusive = roundToCents(exclusiveSubtotal * taxRate)
+
+  return {
+    taxFromInclusive,
+    taxFromExclusive,
+    totalTax: roundToCents(taxFromInclusive + taxFromExclusive),
+  }
 }

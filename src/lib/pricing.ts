@@ -8,6 +8,15 @@ import { formatCurrency } from './utils'
 export { formatCurrency }
 
 /**
+ * Round a dollar value to exactly 2 decimal places using integer cents.
+ * Prevents floating-point drift (e.g. 10.2 * 0.1 → 1.0200000000000002).
+ * Use this everywhere money is rounded — never use ad-hoc Math.round(x*100)/100.
+ */
+export function roundToCents(value: number): number {
+  return Math.round(value * 100) / 100
+}
+
+/**
  * Calculate the card/display price from the stored cash price
  * IMPORTANT: Menu item prices are stored as CASH prices
  * Card price = cash price × (1 + discount%)
@@ -15,7 +24,7 @@ export { formatCurrency }
  * Example: Cash price $10, 4% fee → Card price $10.40
  */
 export function calculateCardPrice(cashPrice: number, discountPercent: number): number {
-  return Math.round(cashPrice * (1 + discountPercent / 100) * 100) / 100
+  return roundToCents(cashPrice * (1 + discountPercent / 100))
 }
 
 /**
@@ -25,10 +34,8 @@ export function calculateCardPrice(cashPrice: number, discountPercent: number): 
  * Example: Card price $10.40, 4% discount → Discount $0.40
  */
 export function calculateCashDiscount(cardPrice: number, discountPercent: number): number {
-  // The discount is: cardPrice - (cardPrice / (1 + discount%))
-  // Or approximately: cardPrice × (discount% / (100 + discount%))
   const cashPrice = cardPrice / (1 + discountPercent / 100)
-  return Math.round((cardPrice - cashPrice) * 100) / 100
+  return roundToCents(cardPrice - cashPrice)
 }
 
 /**
@@ -68,7 +75,7 @@ export function calculateCommission(
   }
 
   if (commissionType === 'percent') {
-    return Math.round(salePrice * (commissionValue / 100) * 100) / 100
+    return roundToCents(salePrice * (commissionValue / 100))
   }
 
   return 0
@@ -88,38 +95,52 @@ export function formatSavingsMessage(cashTotal: number, cardTotal: number): stri
  * Used when you know the card price and need the cash price
  */
 export function calculateCashPrice(cardPrice: number, discountPercent: number): number {
-  return Math.round((cardPrice / (1 + discountPercent / 100)) * 100) / 100
+  return roundToCents(cardPrice / (1 + discountPercent / 100))
 }
 
 /**
- * Round a price to the specified increment
+ * Round a price to the specified increment using cent-based integer math.
  * Skill 88: Price Rounding
+ *
+ * All arithmetic is done in integer cents to avoid floating-point artifacts
+ * (e.g. 0.05 increments producing 32.3999... instead of 32.40).
  *
  * @param price - The price to round
  * @param increment - The increment to round to ('none', '0.05', '0.10', '0.25', '0.50', '1.00')
  * @param direction - Rounding direction ('nearest', 'up', 'down')
- * @returns The rounded price
+ * @returns The rounded price, always clean 2-decimal
  */
 export function roundPrice(
   price: number,
   increment: 'none' | '0.05' | '0.10' | '0.25' | '0.50' | '1.00',
   direction: 'nearest' | 'up' | 'down' = 'nearest'
 ): number {
+  const cents = Math.round(price * 100)
+
   if (increment === 'none') {
-    return Math.round(price * 100) / 100  // Just round to 2 decimal places
+    return cents / 100
   }
 
-  const incrementValue = parseFloat(increment)
+  const incCents = Math.round(parseFloat(increment) * 100)
+  if (incCents <= 0) {
+    return cents / 100
+  }
 
+  let roundedCents: number
   switch (direction) {
     case 'up':
-      return Math.ceil(price / incrementValue) * incrementValue
+      roundedCents = Math.ceil(cents / incCents) * incCents
+      break
     case 'down':
-      return Math.floor(price / incrementValue) * incrementValue
+      roundedCents = Math.floor(cents / incCents) * incCents
+      break
     case 'nearest':
     default:
-      return Math.round(price / incrementValue) * incrementValue
+      roundedCents = Math.round(cents / incCents) * incCents
+      break
   }
+
+  return roundedCents / 100
 }
 
 /**

@@ -361,7 +361,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         })
 
         if (!res.ok) {
-          const error = await res.json()
+          const error = await res.json().catch(() => ({}))
           toast.error(error.error || 'Failed to create order')
           return null
         }

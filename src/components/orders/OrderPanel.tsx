@@ -62,8 +62,15 @@ export interface OrderPanelProps {
   // Seat grouping
   seatGroups?: SeatGroup[]
   // OrderPanelActions pass-through props
-  cashDiscountRate?: number
-  taxRate?: number
+  cashSubtotal?: number
+  cardSubtotal?: number
+  cashDiscountPct?: number
+  taxPct?: number
+  hasTaxInclusiveItems?: boolean
+  roundingAdjustment?: number
+  cashTotal?: number
+  cardTotal?: number
+  cashDiscountAmount?: number
   onPaymentModeChange?: (mode: 'cash' | 'card') => void
   onCloseOrder?: () => void
   onSaveOrderFirst?: () => void
@@ -147,8 +154,15 @@ export function OrderPanel({
   // Seat grouping
   seatGroups,
   // OrderPanelActions pass-through
-  cashDiscountRate,
-  taxRate,
+  cashSubtotal,
+  cardSubtotal,
+  cashDiscountPct,
+  taxPct,
+  hasTaxInclusiveItems,
+  roundingAdjustment,
+  cashTotal: cashTotalProp,
+  cardTotal: cardTotalProp,
+  cashDiscountAmount,
   onPaymentModeChange,
   onCloseOrder,
   onSaveOrderFirst,
@@ -245,6 +259,9 @@ export function OrderPanel({
     [items]
   )
 
+  // Card price multiplier for dual pricing display (e.g. 1.04 for 4%)
+  const cardPriceMultiplier = cashDiscountPct && cashDiscountPct > 0 ? 1 + cashDiscountPct / 100 : undefined
+
   // Shared item renderer — ensures identical rendering everywhere
   const renderItem = (item: OrderPanelItemData) => (
     <OrderPanelItem
@@ -276,6 +293,7 @@ export function OrderPanel({
       onSelect={onItemSelect}
       onFireItem={onFireItem}
       onCancelItemDelay={onCancelItemDelay}
+      cardPriceMultiplier={cardPriceMultiplier}
     />
   )
 
@@ -651,6 +669,8 @@ export function OrderPanel({
           isSending={isSending}
           items={items.map(i => ({ id: i.id, name: i.name, quantity: i.quantity, price: i.price, modifiers: i.modifiers }))}
           subtotal={subtotal}
+          cashSubtotal={cashSubtotal}
+          cardSubtotal={cardSubtotal}
           tax={tax}
           discounts={discounts}
           total={total}
@@ -663,8 +683,13 @@ export function OrderPanel({
           employeeId={employeeId}
           onPaymentSuccess={onPaymentSuccess}
           onPaymentCancel={onPaymentCancel}
-          cashDiscountRate={cashDiscountRate}
-          taxRate={taxRate}
+          cashDiscountPct={cashDiscountPct}
+          taxPct={taxPct}
+          hasTaxInclusiveItems={hasTaxInclusiveItems}
+          roundingAdjustment={roundingAdjustment}
+          cashTotal={cashTotalProp}
+          cardTotal={cardTotalProp}
+          cashDiscount={cashDiscountAmount}
           onPaymentModeChange={onPaymentModeChange}
           onCloseOrder={onCloseOrder}
           onSaveOrderFirst={onSaveOrderFirst}

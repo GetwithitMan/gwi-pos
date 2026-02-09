@@ -4,6 +4,9 @@ import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { useOrderSettings } from '@/hooks/useOrderSettings'
+import { calculateCardPrice } from '@/lib/pricing'
+import { isItemTaxInclusive } from '@/lib/order-calculations'
 
 interface Ingredient {
   id: string
@@ -113,6 +116,21 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+
+  // Pricing settings — item is the source of truth for all pricing
+  const { dualPricing, taxRate, taxInclusiveLiquor, taxInclusiveFood } = useOrderSettings()
+  const isDualPricingEnabled = dualPricing.enabled
+  const cashDiscountPct = dualPricing.cashDiscountPercent || 4.0
+
+  const itemCardPrice = useMemo(() => {
+    if (!item || !isDualPricingEnabled) return item?.price ?? 0
+    return calculateCardPrice(item.price, cashDiscountPct)
+  }, [item?.price, isDualPricingEnabled, cashDiscountPct])
+
+  const isTaxInclusive = useMemo(() => {
+    if (!item) return false
+    return isItemTaxInclusive(item.categoryType, { taxInclusiveLiquor, taxInclusiveFood })
+  }, [item?.categoryType, taxInclusiveLiquor, taxInclusiveFood])
 
   // Collapse states
   const [ingredientsExpanded, setIngredientsExpanded] = useState(false)
@@ -1445,6 +1463,11 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                   step="0.01"
                   min="0"
                 />
+                {isDualPricingEnabled && editModValues.price && parseFloat(editModValues.price) > 0 && (
+                  <span className="text-[9px] text-indigo-400 font-semibold whitespace-nowrap">
+                    card {formatCurrency(calculateCardPrice(parseFloat(editModValues.price) || 0, cashDiscountPct))}
+                  </span>
+                )}
               </div>
             </div>
           ) : (
@@ -1455,7 +1478,12 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             >
               <span className="truncate">{mod.name}</span>
               {mod.price > 0 && (
-                <span className="text-xs text-green-600 font-semibold shrink-0">+{formatCurrency(mod.price)}</span>
+                <span className="text-xs font-semibold shrink-0 flex items-center gap-1">
+                  <span className="text-green-600">+{formatCurrency(mod.price)}</span>
+                  {isDualPricingEnabled && (
+                    <span className="text-indigo-400">+{formatCurrency(calculateCardPrice(mod.price, cashDiscountPct))}</span>
+                  )}
+                </span>
               )}
               {mod.isDefault && (
                 <span className="text-[8px] px-1 py-0.5 bg-amber-100 text-amber-700 rounded font-semibold shrink-0">DEFAULT</span>
@@ -1581,6 +1609,11 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               ) : (
                 <span className="w-14 h-5 flex items-center justify-center text-[10px] text-green-300 font-semibold">
                   {(mod.extraPrice ?? 0).toFixed(2)}
+                </span>
+              )}
+              {isDualPricingEnabled && (mod.extraPrice ?? 0) > 0 && (
+                <span className="text-[8px] text-indigo-400 font-semibold ml-0.5">
+                  {formatCurrency(calculateCardPrice(mod.extraPrice ?? 0, cashDiscountPct))}
                 </span>
               )}
             </span>
@@ -2421,7 +2454,23 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 )
               })()}
             </div>
-            <p className="text-2xl font-bold mt-1">{formatCurrency(item.price)}</p>
+            <div className="mt-1">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold">{formatCurrency(item.price)}</span>
+                {isDualPricingEnabled && (
+                  <>
+                    <span className="text-xs text-slate-400">cash</span>
+                    <span className="text-lg font-semibold text-indigo-400">{formatCurrency(itemCardPrice)}</span>
+                    <span className="text-xs text-slate-400">card</span>
+                  </>
+                )}
+              </div>
+              {isTaxInclusive && (
+                <span className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 mt-1">
+                  TAX INCLUSIVE
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex gap-2 shrink-0">
             {onToggle86 && (

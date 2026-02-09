@@ -41,6 +41,8 @@ export function useOrderSettings() {
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>(DEFAULT_PAYMENT_SETTINGS)
   const [priceRounding, setPriceRounding] = useState<PriceRoundingSettings>(DEFAULT_PRICE_ROUNDING)
   const [taxRate, setTaxRate] = useState(0.08)
+  const [taxInclusiveLiquor, setTaxInclusiveLiquor] = useState(false)
+  const [taxInclusiveFood, setTaxInclusiveFood] = useState(false)
   const [receiptSettings, setReceiptSettings] = useState<Partial<ReceiptSettings>>({})
   const [isLoading, setIsLoading] = useState(true)
 
@@ -59,6 +61,12 @@ export function useOrderSettings() {
         }
         if (settings.tax?.defaultRate) {
           setTaxRate(settings.tax.defaultRate / 100)
+        }
+        if (settings.tax?.taxInclusiveLiquor !== undefined) {
+          setTaxInclusiveLiquor(settings.tax.taxInclusiveLiquor)
+        }
+        if (settings.tax?.taxInclusiveFood !== undefined) {
+          setTaxInclusiveFood(settings.tax.taxInclusiveFood)
         }
         if (settings.payments) {
           setPaymentSettings(settings.payments)
@@ -83,6 +91,8 @@ export function useOrderSettings() {
     paymentSettings,
     priceRounding,
     taxRate,
+    taxInclusiveLiquor,
+    taxInclusiveFood,
     receiptSettings,
     isLoading,
     reloadSettings: loadSettings,

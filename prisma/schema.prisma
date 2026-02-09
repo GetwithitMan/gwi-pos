@@ -1489,11 +1489,13 @@ model Order {
   reopenReason   String?
 
   // Totals
-  subtotal      Decimal @default(0)
-  discountTotal Decimal @default(0)
-  taxTotal      Decimal @default(0)
-  tipTotal      Decimal @default(0)
-  total         Decimal @default(0)
+  subtotal         Decimal @default(0)
+  discountTotal    Decimal @default(0)
+  taxTotal         Decimal @default(0)
+  taxFromInclusive Decimal @default(0)  // Tax backed out of inclusive items
+  taxFromExclusive Decimal @default(0)  // Tax added on top of exclusive items
+  tipTotal         Decimal @default(0)
+  total            Decimal @default(0)
 
   // Dual Pricing (Skill 31)
   primaryPaymentMethod String? // 'cash' | 'card' - determines which price applies
@@ -1575,6 +1577,11 @@ model OrderItem {
   name     String
   price    Decimal
   quantity Int     @default(1)
+
+  // Item-level pricing truth (Layer 2)
+  cardPrice      Decimal?           // Computed card price at time of order (null if no dual pricing)
+  isTaxInclusive Boolean  @default(false)  // Was this item tax-inclusive at time of sale?
+  categoryType   String?            // Snapshot of category type at time of order
 
   // Seat tracking (Skill 24)
   seatNumber Int?

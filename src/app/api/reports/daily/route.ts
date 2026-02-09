@@ -233,6 +233,8 @@ export async function GET(request: NextRequest) {
     let adjustedGrossSales = 0
     let totalDiscounts = 0
     let totalTax = 0
+    let totalTaxFromInclusive = 0
+    let totalTaxFromExclusive = 0
     let totalSurcharge = 0
     let totalTips = 0
     let totalGratuity = 0
@@ -282,6 +284,8 @@ export async function GET(request: NextRequest) {
       adjustedGrossSales += orderSubtotal
       totalDiscounts += orderDiscount
       totalTax += orderTax
+      totalTaxFromInclusive += Number(order.taxFromInclusive) || 0
+      totalTaxFromExclusive += Number(order.taxFromExclusive) || 0
       totalTips += orderTip
       totalCommission += orderCommission
 
@@ -339,7 +343,10 @@ export async function GET(request: NextRequest) {
       })
     })
 
-    const netSales = adjustedGrossSales - totalDiscounts
+    // Back out hidden tax from inclusive items for accurate gross sales
+    // adjustedGrossSales (subtotal) includes hidden tax for inclusive items
+    const preTaxGrossSales = adjustedGrossSales - totalTaxFromInclusive
+    const netSales = preTaxGrossSales - totalDiscounts
     const grossSales = netSales + totalTax + totalSurcharge
     const totalCollected = grossSales + totalTips - totalRefunds
 
@@ -671,10 +678,12 @@ export async function GET(request: NextRequest) {
       generatedAt: new Date().toISOString(),
 
       revenue: {
-        adjustedGrossSales: round(adjustedGrossSales),
+        adjustedGrossSales: round(preTaxGrossSales),
         discounts: round(totalDiscounts),
         netSales: round(netSales),
         salesTax: round(totalTax),
+        taxFromInclusive: round(totalTaxFromInclusive),
+        taxFromExclusive: round(totalTaxFromExclusive),
         surcharge: round(totalSurcharge),
         grossSales: round(grossSales),
         tips: round(totalTips),

@@ -88,6 +88,11 @@ export function ModifierModal({
     getExcludedModifierIds,
   } = useModifierSelections(item, modifierGroups, editingItem, dualPricing, initialNotes)
 
+  // Card price multiplier for dual pricing display
+  const cpm = dualPricing?.enabled && dualPricing.cashDiscountPercent > 0
+    ? 1 + dualPricing.cashDiscountPercent / 100
+    : 1
+
   // View mode: stepped (default) or grid (all at once)
   const [viewMode, setViewMode] = useState<ViewMode>('steps')
 
@@ -172,7 +177,7 @@ export function ModifierModal({
             const multiplier = getPourSizeMultiplier(value as PourSizeValue)
             const label = getPourSizeLabel(size, value as PourSizeValue)
             const isSel = selectedPourSize === size
-            const price = item.price * multiplier
+            const price = item.price * multiplier * cpm
 
             return (
               <button
@@ -261,6 +266,7 @@ export function ModifierModal({
           getModifiersByTier={getModifiersByTier}
           getTieredPrice={getTieredPrice}
           getExcludedModifierIds={getExcludedModifierIds}
+          cardPriceMultiplier={cpm}
         />
 
         {/* Inline child groups — appear right below their parent */}
@@ -327,10 +333,10 @@ export function ModifierModal({
           <div className="min-w-0">
             <h2 className="text-lg font-bold text-white truncate">{item.name}</h2>
             <p className="text-slate-300 text-sm">
-              Base: {formatCurrency(item.price)}
+              Base: {formatCurrency(item.price * cpm)}
               {pourMultiplier !== 1 && (
                 <span className="ml-2 text-purple-300">
-                  × {pourMultiplier} = {formatCurrency(item.price * pourMultiplier)}
+                  × {pourMultiplier} = {formatCurrency(item.price * cpm * pourMultiplier)}
                 </span>
               )}
             </p>
@@ -484,7 +490,7 @@ export function ModifierModal({
         <div className="p-3 border-t border-white/10" style={{ background: 'rgba(30, 30, 50, 0.9)', backdropFilter: 'blur(12px)' }}>
           <div className="flex items-center justify-between mb-2">
             <span className="font-semibold text-sm text-slate-300">Total</span>
-            <span className="text-xl font-bold text-emerald-400">{formatCurrency(totalPrice)}</span>
+            <span className="text-xl font-bold text-emerald-400">{formatCurrency(totalPrice * cpm)}</span>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1 text-slate-300 border-white/20 hover:bg-white/10 bg-transparent" onClick={onCancel}>

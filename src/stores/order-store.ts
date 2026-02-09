@@ -100,6 +100,8 @@ interface OrderItem {
   sourceTableId?: string  // Which table this item was ordered from (for virtual groups)
   // Pizza builder configuration
   pizzaConfig?: PizzaOrderConfigStore
+  // Category type for tax-inclusive pricing
+  categoryType?: string
 }
 
 export interface CourseDelay {

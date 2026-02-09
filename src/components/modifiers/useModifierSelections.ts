@@ -422,7 +422,11 @@ export function useModifierSelections(
     const existingIndex = current.findIndex(s => s.id === modifier.id)
     const existingMod = existingIndex >= 0 ? current[existingIndex] : null
 
+    // Apply tiered pricing: use selection index to determine if this item is free
     let price = modifier.price
+    if (group.tieredPricingConfig?.enabled) {
+      price = getTieredPrice(group, modifier, current.length)
+    }
     if (preModifier === 'extra' && modifier.extraPrice) {
       price = modifier.extraPrice
     } else if (preModifier === 'no') {
@@ -594,7 +598,21 @@ export function useModifierSelections(
   }
 
   const getAllSelectedModifiers = (): SelectedModifier[] => {
-    return Object.values(selections).flat()
+    // Recalculate tiered prices at confirm time to ensure correctness
+    const result: SelectedModifier[] = []
+    for (const [groupId, groupSels] of Object.entries(selections)) {
+      const group = modifierGroups.find(g => g.id === groupId)
+        || Object.values(childGroups).find(g => g.id === groupId)
+      groupSels.forEach((sel, index) => {
+        if (group?.tieredPricingConfig?.enabled && !sel.preModifier) {
+          const tieredPrice = getTieredPrice(group, { price: sel.price } as Modifier, index)
+          result.push({ ...sel, price: tieredPrice })
+        } else {
+          result.push(sel)
+        }
+      })
+    }
+    return result
   }
 
   // Calculate total with pour multiplier

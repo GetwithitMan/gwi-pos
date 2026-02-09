@@ -71,6 +71,9 @@ interface OrderPanelItemProps {
   // Per-item delay
   onFireItem?: (itemId: string) => void
   onCancelItemDelay?: (itemId: string) => void
+  // Dual pricing: multiplier to convert cash (DB) price to card (display) price
+  // e.g. 1.04 for 4% surcharge. When undefined or 1, shows cash price as-is.
+  cardPriceMultiplier?: number
 }
 
 export function OrderPanelItem({
@@ -101,13 +104,19 @@ export function OrderPanelItem({
   onSelect,
   onFireItem,
   onCancelItemDelay,
+  cardPriceMultiplier,
 }: OrderPanelItemProps) {
   const isVoided = item.status === 'voided'
   const isComped = item.status === 'comped'
   const isCompedOrVoided = isVoided || isComped
 
-  const itemTotal = item.price * item.quantity
-  const modifiersTotal = (item.modifiers || []).reduce((sum, mod) => sum + mod.price, 0) * item.quantity
+  // Apply card price multiplier for dual pricing display
+  const pm = cardPriceMultiplier || 1
+  const displayItemPrice = Math.round(item.price * pm * 100) / 100
+  const displayModPrices = (item.modifiers || []).map(mod => Math.round(mod.price * pm * 100) / 100)
+
+  const itemTotal = displayItemPrice * item.quantity
+  const modifiersTotal = displayModPrices.reduce((sum, p) => sum + p, 0) * item.quantity
   const totalPrice = isCompedOrVoided ? 0 : itemTotal + modifiersTotal
   const originalPrice = itemTotal + modifiersTotal
 
@@ -545,7 +554,7 @@ export function OrderPanelItem({
                       {mod.name}
                     </span>
                     {mod.price > 0 && (
-                      <span className="text-slate-500 text-[11px]">+${mod.price.toFixed(2)}</span>
+                      <span className="text-slate-500 text-[11px]">+${displayModPrices[idx].toFixed(2)}</span>
                     )}
                   </div>
                 )
@@ -777,18 +786,7 @@ export function OrderPanelItem({
           {/* SENT ITEMS: Edit Mods + Resend + Comp/Void + Split */}
           {isSent && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              {onEditModifiers && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onEditModifiers(item.id) }}
-                  style={{
-                    padding: '5px 10px',
-                    background: 'rgba(59, 130, 246, 0.15)',
-                    border: '1px solid rgba(59, 130, 246, 0.3)',
-                    borderRadius: '6px', color: '#60a5fa',
-                    fontSize: '11px', fontWeight: 500, cursor: 'pointer',
-                  }}
-                >Edit Mods</button>
-              )}
+              {/* Edit Mods hidden after send — must void and re-ring to change */}
               {onResend && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onResend(item.id) }}

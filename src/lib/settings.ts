@@ -24,6 +24,8 @@ export interface PriceRoundingSettings {
 export interface TaxSettings {
   defaultRate: number
   calculateAfterDiscount: boolean
+  taxInclusiveLiquor: boolean   // Liquor & alcohol prices include tax (categoryType: 'liquor', 'drinks')
+  taxInclusiveFood: boolean     // Food prices include tax (categoryType: 'food', 'pizza', 'combos')
 }
 
 export interface TipSettings {

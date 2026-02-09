@@ -461,6 +461,7 @@ export default function SettingsPage() {
               />
               <span className="text-sm">Calculate tax after discounts</span>
             </label>
+
           </div>
         </Card>
 

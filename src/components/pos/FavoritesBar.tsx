@@ -39,6 +39,7 @@ interface FavoritesBarProps {
   currentMode: 'bar' | 'food'
   showPrices?: boolean
   isEditing?: boolean
+  cardPriceMultiplier?: number
 }
 
 // Sortable favorite item component
@@ -145,7 +146,9 @@ export function FavoritesBar({
   currentMode,
   showPrices = true,
   isEditing = false,
+  cardPriceMultiplier,
 }: FavoritesBarProps) {
+  const cpm = cardPriceMultiplier || 1
   const accentColor = currentMode === 'bar' ? 'blue' : 'orange'
 
   // Map favorite IDs to items
@@ -157,11 +160,11 @@ export function FavoritesBar({
         return {
           id: menuItem.id,
           name: menuItem.name,
-          price: menuItem.price,
+          price: menuItem.price * cpm,
         }
       })
       .filter((item): item is FavoriteItem => item !== null)
-  }, [favoriteIds, menuItems])
+  }, [favoriteIds, menuItems, cpm])
 
   // DnD sensors - PointerSensor for mouse, TouchSensor for touch devices
   const sensors = useSensors(
