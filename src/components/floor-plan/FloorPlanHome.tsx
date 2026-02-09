@@ -2145,18 +2145,23 @@ export function FloorPlanHome({
 
   // Edit item (reopen modifiers)
   const handleEditItem = useCallback((item: InlineOrderItem) => {
-    // Find the menu item to get its data
     const menuItem = menuItems.find(mi => mi.id === item.menuItemId)
-    if (!menuItem) return
-
-    // Delegate to engine's edit handler
+    const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === item.id)
+    const engineItem: EngineMenuItem = {
+      id: item.menuItemId,
+      name: item.name,
+      price: item.price,
+      categoryId: menuItem?.categoryId || '',
+      categoryType: menuItem?.categoryType || storeItem?.categoryType,
+      hasModifiers: true,
+    }
     engine.handleEditItemModifiers(
       item.id,
-      menuItem as EngineMenuItem,
-      item.modifiers as EngineModifier[],
-      item.ingredientModifications as EngineIngredientMod[],
+      engineItem,
+      (storeItem?.modifiers || item.modifiers || []) as EngineModifier[],
+      (storeItem?.ingredientModifications || item.ingredientModifications || []) as EngineIngredientMod[],
     )
-  }, [menuItems, onOpenModifiers])
+  }, [menuItems, engine])
 
   // Save modifier changes to API and update local state
   const handleSaveModifierChanges = useCallback(async (
