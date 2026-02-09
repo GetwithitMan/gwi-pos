@@ -236,6 +236,19 @@ export function FloorPlanHome({
   const [pendingPayAfterSave, setPendingPayAfterSave] = useState(false)
   const [guestCount, setGuestCount] = useState(defaultGuestCount)
 
+  // Restore active table from store when remounting (e.g., after switching back from bar mode)
+  useEffect(() => {
+    const currentOrder = useOrderStore.getState().currentOrder
+    if (currentOrder?.tableId && currentOrder.items?.length > 0 && !activeTableId) {
+      setActiveTableId(currentOrder.tableId)
+      setActiveOrderId(currentOrder.id || null)
+      setActiveOrderNumber(currentOrder.orderNumber ? String(currentOrder.orderNumber) : null)
+      setActiveOrderType(currentOrder.orderType || null)
+      setShowOrderPanel(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only on mount
+
   // === Shared order hook (single source of truth for order items) ===
   const activeOrder = useActiveOrder({
     locationId,
