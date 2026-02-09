@@ -513,6 +513,29 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
   }, [onOpenModifiers])
 
   /**
+   * Simple edit handler — just needs an item ID.
+   * Pulls all data from the store so views don't need to construct EngineMenuItem.
+   */
+  const handleEditItem = useCallback((itemId: string) => {
+    const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === itemId)
+    if (!storeItem) return
+    const engineItem: EngineMenuItem = {
+      id: storeItem.menuItemId,
+      name: storeItem.name,
+      price: storeItem.price,
+      categoryId: '',
+      categoryType: storeItem.categoryType,
+      hasModifiers: true,
+    }
+    handleEditItemModifiers(
+      itemId,
+      engineItem,
+      (storeItem.modifiers || []) as EngineModifier[],
+      (storeItem.ingredientModifications || []) as EngineIngredientMod[],
+    )
+  }, [handleEditItemModifiers])
+
+  /**
    * Cancel pending modal (e.g., user closes modifier modal without selecting).
    */
   const cancelPending = useCallback(() => {
@@ -530,6 +553,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
     handlePizzaComplete,
     handleTimedRentalComplete,
     handleEditItemModifiers,
+    handleEditItem,
     cancelPending,
 
     // Store access

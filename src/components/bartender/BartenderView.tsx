@@ -988,24 +988,8 @@ export function BartenderView({
   }, [])
 
   const handleEditItem = useCallback((item: OrderPanelItemData) => {
-    const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === item.id)
-    const menuItem = menuItems.find(mi => mi.id === (item.menuItemId || storeItem?.menuItemId))
-    const itemMenuId = item.menuItemId || storeItem?.menuItemId || item.id
-    const engineItem: EngineMenuItem = {
-      id: itemMenuId,
-      name: item.name,
-      price: item.price,
-      categoryId: menuItem?.categoryId || '',
-      categoryType: storeItem?.categoryType,
-      hasModifiers: true,
-    }
-    engine.handleEditItemModifiers(
-      item.id,
-      engineItem,
-      (storeItem?.modifiers || []) as EngineModifier[],
-      (storeItem?.ingredientModifications || []) as EngineIngredientMod[],
-    )
-  }, [menuItems, engine])
+    engine.handleEditItem(item.id)
+  }, [engine])
 
   const handleToggleHold = useCallback((itemId: string) => {
     useOrderStore.getState().updateItem(itemId, {
@@ -1029,24 +1013,8 @@ export function BartenderView({
   }, [])
 
   const handleEditItemModifiers = useCallback((itemId: string) => {
-    const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === itemId)
-    if (!storeItem) return
-    const menuItem = menuItems.find(mi => mi.id === storeItem.menuItemId)
-    const engineItem: EngineMenuItem = {
-      id: storeItem.menuItemId,
-      name: storeItem.name,
-      price: storeItem.price,
-      categoryId: menuItem?.categoryId || '',
-      categoryType: storeItem.categoryType,
-      hasModifiers: true,
-    }
-    engine.handleEditItemModifiers(
-      itemId,
-      engineItem,
-      (storeItem.modifiers || []) as EngineModifier[],
-      (storeItem.ingredientModifications || []) as EngineIngredientMod[],
-    )
-  }, [menuItems, engine])
+    engine.handleEditItem(itemId)
+  }, [engine])
 
   const handleCompVoidItem = useCallback((itemId: string) => {
     const voidItem = orderItems.find(i => i.id === itemId)

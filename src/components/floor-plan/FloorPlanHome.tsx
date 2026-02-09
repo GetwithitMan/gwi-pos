@@ -2143,25 +2143,10 @@ export function FloorPlanHome({
     setExpandedItemId(prev => prev === itemId ? null : itemId)
   }, [])
 
-  // Edit item (reopen modifiers)
+  // Edit item (reopen modifiers) — delegates entirely to engine
   const handleEditItem = useCallback((item: InlineOrderItem) => {
-    const menuItem = menuItems.find(mi => mi.id === item.menuItemId)
-    const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === item.id)
-    const engineItem: EngineMenuItem = {
-      id: item.menuItemId,
-      name: item.name,
-      price: item.price,
-      categoryId: menuItem?.categoryId || '',
-      categoryType: menuItem?.categoryType || storeItem?.categoryType,
-      hasModifiers: true,
-    }
-    engine.handleEditItemModifiers(
-      item.id,
-      engineItem,
-      (storeItem?.modifiers || item.modifiers || []) as EngineModifier[],
-      (storeItem?.ingredientModifications || item.ingredientModifications || []) as EngineIngredientMod[],
-    )
-  }, [menuItems, engine])
+    engine.handleEditItem(item.id)
+  }, [engine])
 
   // Save modifier changes to API and update local state
   const handleSaveModifierChanges = useCallback(async (
