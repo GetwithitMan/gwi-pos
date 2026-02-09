@@ -2744,9 +2744,11 @@ export default function OrdersPage() {
   // The floor plan IS the main order screen - no navigation away
   // T014: Feature flag for V2 migration - gradual rollout
 
-  if (viewMode === 'floor-plan' && employee.location?.id) {
+  if ((viewMode === 'floor-plan' || viewMode === 'bartender') && employee.location?.id) {
     return (
       <>
+        {/* Both views stay mounted — hidden with CSS to preserve state across switches */}
+        <div style={{ display: viewMode === 'floor-plan' ? 'contents' : 'none' }}>
         <FloorPlanHome
             locationId={employee.location.id}
             employeeId={employee.id}
@@ -2855,7 +2857,57 @@ export default function OrdersPage() {
             </div>
           </>
         )}
-        {/* Modifier Modal - shared with floor plan inline ordering */}
+        </div>
+        {/* ===== BartenderView (hidden when floor-plan active) ===== */}
+        <div style={{ display: viewMode === 'bartender' ? 'contents' : 'none' }}>
+        <BartenderView
+          locationId={employee.location.id}
+          employeeId={employee.id}
+          employeeName={employee.displayName}
+          employeePermissions={permissionsArray}
+          onLogout={logout}
+          onSwitchToFloorPlan={() => setViewMode('floor-plan')}
+          onOpenCompVoid={(item) => {
+            const orderId = useOrderStore.getState().currentOrder?.id
+            if (orderId) {
+              setOrderToPayId(orderId)
+              setCompVoidItem({
+                ...item,
+                modifiers: item.modifiers.map(m => ({
+                  id: m.id,
+                  modifierId: m.id,
+                  name: m.name,
+                  price: m.price,
+                  depth: 0,
+                  preModifier: null,
+                  spiritTier: null,
+                  linkedBottleProductId: null,
+                  parentModifierId: null,
+                })),
+              })
+              setShowCompVoidModal(true)
+            }
+          }}
+          onOpenPayment={(orderId) => {
+            setOrderToPayId(orderId)
+            setShowPaymentModal(true)
+          }}
+          onOpenModifiers={handleOpenModifiersShared as any}
+          requireNameWithoutCard={false}
+          tapCardBehavior="close"
+        />
+        </div>
+        {/* ===== Shared Modals (rendered once for both views) ===== */}
+        {/* Admin Nav Sidebar */}
+        {showAdminNav && (
+          <AdminNav
+            forceOpen={true}
+            onClose={() => setShowAdminNav(false)}
+            permissions={employee?.permissions || []}
+            onAction={(action) => { if (action === 'tip_adjustments') setShowTipAdjustment(true) }}
+          />
+        )}
+        {/* Modifier Modal */}
         {showModifierModal && selectedItem && (
           <ModifierModal
             item={selectedItem}
@@ -2874,7 +2926,7 @@ export default function OrdersPage() {
             }}
           />
         )}
-        {/* Pizza Builder Modal - shared with floor plan inline ordering */}
+        {/* Pizza Builder Modal */}
         {showPizzaModal && selectedPizzaItem && (
           <PizzaBuilderModal
             item={selectedPizzaItem}
@@ -2917,7 +2969,7 @@ export default function OrdersPage() {
             />
           </div>
         )}
-        {/* Timed Rental Modal - shared with floor plan inline ordering */}
+        {/* Timed Rental Modal */}
         {showTimedRentalModal && selectedTimedItem && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
@@ -3012,135 +3064,7 @@ export default function OrdersPage() {
             </div>
           </div>
         )}
-        {/* Payment Modal - for floor plan inline ordering */}
-        {showPaymentModal && orderToPayId && (
-          <PaymentModal
-            isOpen={showPaymentModal}
-            onClose={() => {
-              setShowPaymentModal(false)
-              setOrderToPayId(null)
-            }}
-            orderId={orderToPayId}
-            orderTotal={0} // Will be fetched by modal
-            remainingBalance={0} // Will be fetched by modal
-            dualPricing={dualPricing}
-            paymentSettings={paymentSettings}
-            onPaymentComplete={async () => {
-              // Store order ID for receipt before closing payment modal
-              const paidOrderId = orderToPayId
-              setShowPaymentModal(false)
-              setOrderToPayId(null)
-              // Show receipt modal
-              if (paidOrderId) {
-                setReceiptOrderId(paidOrderId)
-                setShowReceiptModal(true)
-              }
-              // Refresh the floor plan to show updated table status
-              setTabsRefreshTrigger(prev => prev + 1)
-            }}
-            employeeId={employee?.id}
-            terminalId="terminal-1"
-            locationId={employee?.location?.id}
-          />
-        )}
-        {/* Receipt Modal - for floor plan after payment */}
-        <ReceiptModal
-          isOpen={showReceiptModal}
-          onClose={() => {
-            // Set paidOrderId to trigger FloorPlanHome to clear the order
-            if (receiptOrderId) {
-              setPaidOrderId(receiptOrderId)
-            }
-            setShowReceiptModal(false)
-            setReceiptOrderId(null)
-          }}
-          orderId={receiptOrderId}
-          locationId={employee.location?.id || ''}
-          receiptSettings={receiptSettings}
-        />
-
-        {/* Tip Adjustment Overlay (Floor Plan) */}
-        <TipAdjustmentOverlay
-          isOpen={showTipAdjustment}
-          onClose={() => setShowTipAdjustment(false)}
-          locationId={employee?.location?.id}
-          employeeId={employee?.id}
-        />
-      </>
-    )
-  }
-
-  // Bartender View - Speed-optimized for bar tabs (T024)
-  if (viewMode === 'bartender' && employee.location?.id) {
-    return (
-      <>
-        <BartenderView
-          locationId={employee.location.id}
-          employeeId={employee.id}
-          employeeName={employee.displayName}
-          employeePermissions={permissionsArray}
-          onLogout={logout}
-          onSwitchToFloorPlan={() => setViewMode('floor-plan')}
-          onOpenCompVoid={(item) => {
-            // Ensure order is saved first (BartenderView selected tab = savedOrderId)
-            const orderId = useOrderStore.getState().currentOrder?.id
-            if (orderId) {
-              setOrderToPayId(orderId)
-              setCompVoidItem({
-                ...item,
-                modifiers: item.modifiers.map(m => ({
-                  id: m.id,
-                  modifierId: m.id,
-                  name: m.name,
-                  price: m.price,
-                  depth: 0,
-                  preModifier: null,
-                  spiritTier: null,
-                  linkedBottleProductId: null,
-                  parentModifierId: null,
-                })),
-              })
-              setShowCompVoidModal(true)
-            }
-          }}
-          onOpenPayment={(orderId) => {
-            setOrderToPayId(orderId)
-            setShowPaymentModal(true)
-          }}
-          onOpenModifiers={handleOpenModifiersShared as any}
-          // Settings props (TODO: load from location settings)
-          requireNameWithoutCard={false}
-          tapCardBehavior="close"
-        />
-        {/* Admin Nav Sidebar */}
-        {showAdminNav && (
-          <AdminNav
-            forceOpen={true}
-            onClose={() => setShowAdminNav(false)}
-            permissions={employee?.permissions || []}
-            onAction={(action) => { if (action === 'tip_adjustments') setShowTipAdjustment(true) }}
-          />
-        )}
-        {/* Modifier Modal - shared */}
-        {showModifierModal && selectedItem && (
-          <ModifierModal
-            item={selectedItem}
-            modifierGroups={itemModifierGroups}
-            loading={loadingModifiers}
-            editingItem={editingOrderItem}
-            dualPricing={dualPricing}
-            initialNotes={editingOrderItem?.specialNotes}
-            onConfirm={editingOrderItem && !inlineModifierCallbackRef.current ? handleUpdateItemWithModifiers : handleAddItemWithModifiers}
-            onCancel={() => {
-              setShowModifierModal(false)
-              setSelectedItem(null)
-              setItemModifierGroups([])
-              setEditingOrderItem(null)
-              inlineModifierCallbackRef.current = null
-            }}
-          />
-        )}
-        {/* Payment Modal - shared */}
+        {/* Payment Modal — shared across both views */}
         {showPaymentModal && orderToPayId && (
           <PaymentModal
             isOpen={showPaymentModal}
@@ -3168,10 +3092,13 @@ export default function OrdersPage() {
             locationId={employee?.location?.id}
           />
         )}
-        {/* Receipt Modal - for bartender after payment */}
+        {/* Receipt Modal — shared across both views */}
         <ReceiptModal
           isOpen={showReceiptModal}
           onClose={() => {
+            if (receiptOrderId) {
+              setPaidOrderId(receiptOrderId)
+            }
             setShowReceiptModal(false)
             setReceiptOrderId(null)
           }}
@@ -3179,8 +3106,7 @@ export default function OrdersPage() {
           locationId={employee.location?.id || ''}
           receiptSettings={receiptSettings}
         />
-
-        {/* Tip Adjustment Overlay (Bartender) */}
+        {/* Tip Adjustment Overlay — shared across both views */}
         <TipAdjustmentOverlay
           isOpen={showTipAdjustment}
           onClose={() => setShowTipAdjustment(false)}
