@@ -29,7 +29,7 @@
 |-------|------|--------|--------|--------------|-------|
 | 01 | Employee Management | DONE | Employees | - | CRUD, roles, permissions, PIN login |
 | 09 | Features & Config | DONE | Settings | - | Settings, feature flags, category types (food/drinks/liquor/entertainment/combos) |
-| 36 | Tax Calculations | DONE | Settings | 09 | Tax rules, multiple rates, admin UI |
+| 36 | Tax Calculations | DONE | Settings | 09 | Tax rules, multiple rates, admin UI, tax-inclusive pricing (Skill 240) |
 | 59 | Location Multi-tenancy | TODO | Settings | - | Multi-location support |
 
 ### Order Flow (Core)
@@ -116,6 +116,9 @@
 | 34 | Comps & Voids | DONE | Orders | 02, 01 | Comp/void items, reasons, reports |
 | 122 | Remote Void Approval | DONE | Orders | 34 | SMS-based manager approval for voids when off-site, Twilio integration |
 | 35 | Coupons | DONE | Settings | 28 | Promo codes, admin page, redemption tracking |
+| 88 | Price Rounding | DONE | Payments | 09 | Cent-safe rounding via `roundToCents()`, `roundPrice()` rewritten to cent-based math (Skill 239) |
+| 239 | Pricing Engine Refactor | DONE | Payments | 31, 36, 88 | Single source of truth: `roundToCents()`, extended `calculateOrderTotals`, `usePricing` as thin adapter, 29 files |
+| 240 | Tax-Inclusive Pricing | DONE | Settings | 36, 239 | Category-based tax-inclusive rules, `calculateSplitTax()`, item stamping, split UI display |
 
 ### Inventory & Menu
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -240,7 +243,7 @@
 | Table Management | 4 | 0 | 0 | 4 | 100% |
 | Bar Features | 2 | 1 | 0 | 3 | 83% |
 | Kitchen Display | 4 | 1 | 2 | 7 | 71% |
-| Pricing & Discounts | 5 | 0 | 0 | 5 | 100% |
+| Pricing & Discounts | 8 | 0 | 0 | 8 | 100% |
 | Inventory & Menu | 23 | 0 | 0 | 23 | 100% |
 | Menu Builder | 6 | 0 | 0 | 6 | 100% |
 | Reporting | 13 | 0 | 0 | 13 | 100% |
@@ -254,7 +257,7 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **135** | **7** | **13** | **155** | **92%** |
+| **TOTAL** | **138** | **7** | **13** | **158** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -374,6 +377,13 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-08 — Pricing Engine Refactor & Tax-Inclusive Pricing)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 239 | Pricing Engine Refactor | Single source of truth: `roundToCents()` utility, cent-based `roundPrice()`, extended `calculateOrderTotals` with rounding/paymentMethod, rewrote `usePricing` as thin adapter (calls engine twice for cash/card), removed inline math from `OrderPanelActions`, `cashSubtotal`/`cardSubtotal` prop chain, `cashRoundingDelta`/`cardRoundingDelta` separation, 29 files modified. |
+| 240 | Tax-Inclusive Pricing | Category-based tax-inclusive rules (liquor/food), `calculateSplitTax()` for mixed inclusive/exclusive orders, `isTaxInclusive` item stamping at order creation, `taxFromInclusive`/`taxFromExclusive` on Order model, settings exposure via `useOrderSettings`. |
 
 ## Recently Completed (2026-02-07 Late Night — BartenderView Unification & Void/Comp)
 
@@ -713,6 +723,8 @@ These skills emerged during development and are now part of the system:
 | 215 | Unified Modifier Inventory Deduction | DONE | Inventory | 125, 143 | Fallback path: Modifier.ingredientId -> Ingredient -> InventoryItem for deduction |
 | 216 | Ingredient-Modifier Connection Visibility | DONE | Inventory | 143, 204, 211, 214 | Connected badge, dual-path menu item resolution, expandable linked modifiers |
 | 217 | Menu Socket Real-Time Updates | DONE | Menu | - | Socket dispatch functions (dispatchMenuItemChanged, dispatchMenuStockChanged, dispatchMenuStructureChanged), broadcast handlers, multi-location safety. Client integration pending. |
+| 239 | Pricing Engine Refactor | DONE | Payments | 31, 36, 88 | Single source of truth: `roundToCents()`, extended `calculateOrderTotals` with rounding/paymentMethod, `usePricing` as thin adapter, removed inline math from components, 29 files |
+| 240 | Tax-Inclusive Pricing | DONE | Settings | 36, 239 | Category-based tax-inclusive rules, `calculateSplitTax()`, item stamping with `isTaxInclusive`, split UI display |
 | 217b | Bottle Service Tiers | DONE | Payments | 120 | BottleServiceTier model, deposit pre-auth, tiered packages, spend progress, re-auth alerts, auto-gratuity |
 | 218 | Customer-Facing Display (CFD) | DONE | Guest | 120 | /cfd route, state machine (8 states), 5 components, Socket.io event types defined (not yet wired) |
 | 219 | Pay-at-Table | DONE | Guest | 120 | /pay-at-table route, split check (2-6 ways), 3 components, processes via Datacap sale |
