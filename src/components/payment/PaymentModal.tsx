@@ -1,14 +1,21 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, calculateChange, PAYMENT_METHOD_LABELS } from '@/lib/payment'
 import type { DualPricingSettings, TipSettings, PaymentSettings } from '@/lib/settings'
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
+
+export interface TabCard {
+  id: string
+  cardType: string
+  cardLast4: string
+  cardholderName?: string | null
+  authAmount: number
+  isDefault: boolean
+}
 
 interface PaymentModalProps {
   isOpen: boolean
@@ -18,6 +25,7 @@ interface PaymentModalProps {
   remainingBalance?: number
   subtotal?: number
   existingPayments?: { method: string; totalAmount: number }[]
+  tabCards?: TabCard[]  // Pre-authed cards on tab — show "Charge existing card" option
   dualPricing: DualPricingSettings
   tipSettings?: TipSettings
   paymentSettings: PaymentSettings
@@ -25,6 +33,7 @@ interface PaymentModalProps {
   employeeId?: string
   terminalId?: string  // Required for Datacap integration
   locationId?: string  // Required for Datacap integration
+  initialMethod?: 'cash' | 'credit'  // Skip method selection, go straight to payment
 }
 
 interface PendingPayment {
@@ -79,6 +88,7 @@ export function PaymentModal({
   remainingBalance,
   subtotal,
   existingPayments = [],
+  tabCards = [],
   dualPricing,
   tipSettings = DEFAULT_TIP_SETTINGS,
   paymentSettings,
@@ -86,6 +96,7 @@ export function PaymentModal({
   employeeId,
   terminalId,
   locationId,
+  initialMethod,
 }: PaymentModalProps) {
   // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
   // State for fetched order data (when orderTotal is not provided)
@@ -93,9 +104,11 @@ export function PaymentModal({
   const [fetchedSubtotal, setFetchedSubtotal] = useState<number | null>(null)
   const [loadingOrder, setLoadingOrder] = useState(false)
 
-  // Payment flow state
-  const [step, setStep] = useState<PaymentStep>('method')
-  const [selectedMethod, setSelectedMethod] = useState<'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | null>(null)
+  // Payment flow state — skip to the right step if initialMethod provided
+  const [step, setStep] = useState<PaymentStep>(
+    initialMethod === 'cash' ? 'cash' : initialMethod === 'credit' ? 'datacap_card' : 'method'
+  )
+  const [selectedMethod, setSelectedMethod] = useState<'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | null>(initialMethod || null)
   const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([])
   const [tipAmount, setTipAmount] = useState(0)
   const [customTip, setCustomTip] = useState('')
@@ -105,6 +118,8 @@ export function PaymentModal({
   // Cash payment state
   const [amountTendered, setAmountTendered] = useState('')
   const [customCashAmount, setCustomCashAmount] = useState('')
+  const [cashTendered, setCashTendered] = useState(0)
+  const [cashComplete, setCashComplete] = useState(false)
 
   // Gift card state
   const [giftCardNumber, setGiftCardNumber] = useState('')
@@ -196,10 +211,10 @@ export function PaymentModal({
   // Show loading while fetching order
   if (loadingOrder) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-8 text-center">
-          <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading order...</p>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0, 0, 0, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+        <div style={{ background: 'rgba(15, 23, 42, 0.95)', backdropFilter: 'blur(20px)', borderRadius: 16, padding: 32, textAlign: 'center', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+          <div style={{ width: 32, height: 32, border: '4px solid rgba(99, 102, 241, 0.3)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+          <p style={{ color: '#94a3b8' }}>Loading order...</p>
         </div>
       </div>
     )
@@ -228,6 +243,33 @@ export function PaymentModal({
     } else {
       // All card payments go through Datacap (simulated or real)
       setStep('datacap_card')
+    }
+  }
+
+  // Close tab by capturing against a pre-authed card
+  const handleChargeExistingCard = async (card: TabCard) => {
+    if (!orderId || !employeeId) return
+    setIsProcessing(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/orders/${orderId}/close-tab`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId,
+          tipMode: 'receipt', // Bartender enters tip later
+        }),
+      })
+      const data = await res.json()
+      if (data.data?.success) {
+        onPaymentComplete()
+      } else {
+        setError(data.data?.error?.message || data.error || 'Capture failed')
+      }
+    } catch (err) {
+      setError('Failed to charge card')
+    } finally {
+      setIsProcessing(false)
     }
   }
 
@@ -348,12 +390,20 @@ export function PaymentModal({
     }
   }
 
-  const handleCashPayment = (tendered: number) => {
+  const handleCashTender = (amount: number) => {
+    const newTotal = cashTendered + amount
+    setCashTendered(newTotal)
+    if (newTotal >= totalWithTip) {
+      setCashComplete(true)
+    }
+  }
+
+  const handleCashFinalize = () => {
     const payment: PendingPayment = {
       method: 'cash',
       amount: currentTotal,
       tipAmount,
-      amountTendered: tendered,
+      amountTendered: cashTendered,
     }
     setPendingPayments([...pendingPayments, payment])
     processPayments([...pendingPayments, payment])
@@ -454,46 +504,148 @@ export function PaymentModal({
     setPendingPayments(pendingPayments.filter((_, i) => i !== index))
   }
 
+  // Shared styles
+  const overlayStyle: React.CSSProperties = {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0, 0, 0, 0.6)',
+    backdropFilter: 'blur(4px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 50,
+  }
+
+  const modalStyle: React.CSSProperties = {
+    background: 'rgba(15, 23, 42, 0.95)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: 16,
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    boxShadow: '0 25px 50px rgba(0, 0, 0, 0.5)',
+    width: '100%',
+    maxWidth: 448,
+    maxHeight: '90vh',
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column' as const,
+  }
+
+  const headerStyle: React.CSSProperties = {
+    padding: 16,
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  }
+
+  const contentStyle: React.CSSProperties = {
+    flex: 1,
+    overflowY: 'auto' as const,
+    padding: 16,
+  }
+
+  const footerStyle: React.CSSProperties = {
+    padding: 16,
+    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+  }
+
+  const sectionLabelStyle: React.CSSProperties = {
+    color: '#f1f5f9',
+    fontWeight: 600,
+    fontSize: 16,
+    marginBottom: 8,
+  }
+
+  const mutedTextStyle: React.CSSProperties = {
+    color: '#94a3b8',
+    fontSize: 14,
+  }
+
+  const inputStyle: React.CSSProperties = {
+    background: 'rgba(15, 23, 42, 0.8)',
+    border: '1px solid rgba(100, 116, 139, 0.3)',
+    borderRadius: 8,
+    color: '#ffffff',
+    padding: '10px 12px',
+    width: '100%',
+    fontSize: 14,
+    outline: 'none',
+  }
+
+  const backButtonStyle: React.CSSProperties = {
+    flex: 1,
+    padding: '12px 16px',
+    borderRadius: 10,
+    border: '1px solid rgba(100, 116, 139, 0.3)',
+    background: 'transparent',
+    color: '#94a3b8',
+    fontSize: 15,
+    fontWeight: 500,
+    cursor: 'pointer',
+  }
+
+  const primaryButtonStyle: React.CSSProperties = {
+    flex: 1,
+    padding: '12px 16px',
+    borderRadius: 10,
+    border: 'none',
+    background: '#4f46e5',
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: 600,
+    cursor: 'pointer',
+  }
+
+  const infoPanelStyle = (color: string): React.CSSProperties => ({
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 12,
+    background: color,
+  })
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+    <div style={overlayStyle}>
+      <div style={modalStyle}>
         {/* Header */}
-        <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
-          <h2 className="text-xl font-bold">Pay Order</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div style={headerStyle}>
+          <h2 style={{ color: '#f1f5f9', fontSize: 20, fontWeight: 700, margin: 0 }}>Pay Order</h2>
+          <button
+            onClick={onClose}
+            style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: 4 }}
+          >
+            <svg style={{ width: 24, height: 24 }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div style={contentStyle}>
           {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <div style={{ marginBottom: 16, padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 10, color: '#f87171', fontSize: 14 }}>
               {error}
             </div>
           )}
 
           {/* Order Summary */}
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg">
-            <div className="flex justify-between text-sm">
+          <div style={{ marginBottom: 16, padding: 12, background: 'rgba(30, 41, 59, 0.6)', borderRadius: 10, border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#94a3b8', marginBottom: 4 }}>
               <span>Order Total</span>
-              <span className="font-medium">{formatCurrency(effectiveOrderTotal)}</span>
+              <span style={{ color: '#f1f5f9', fontWeight: 500 }}>{formatCurrency(effectiveOrderTotal)}</span>
             </div>
             {alreadyPaid > 0 && (
-              <div className="flex justify-between text-sm text-green-600">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#22c55e' }}>
                 <span>Already Paid</span>
                 <span>-{formatCurrency(alreadyPaid)}</span>
               </div>
             )}
             {pendingPayments.length > 0 && (
-              <div className="flex justify-between text-sm text-blue-600">
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#818cf8' }}>
                 <span>Pending</span>
                 <span>-{formatCurrency(pendingTotal)}</span>
               </div>
             )}
-            <div className="flex justify-between font-bold mt-2 pt-2 border-t">
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.08)', color: '#ffffff', fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
               <span>Remaining</span>
               <span>{formatCurrency(remainingBeforeTip)}</span>
             </div>
@@ -501,245 +653,455 @@ export function PaymentModal({
 
           {/* Step: Select Payment Method */}
           {step === 'method' && (
-            <div className="space-y-3">
-              <h3 className="font-medium mb-2">Select Payment Method</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <h3 style={sectionLabelStyle}>Select Payment Method</h3>
+
+              {/* Pre-authed tab cards — charge existing card */}
+              {tabCards.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
+                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Cards on Tab</div>
+                  {tabCards.map((card) => (
+                    <button
+                      key={card.id}
+                      onClick={() => handleChargeExistingCard(card)}
+                      disabled={isProcessing}
+                      style={{
+                        width: '100%',
+                        height: 72,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 16,
+                        padding: '0 20px',
+                        borderRadius: 12,
+                        border: '1px solid rgba(168, 85, 247, 0.4)',
+                        background: 'rgba(168, 85, 247, 0.12)',
+                        cursor: isProcessing ? 'wait' : 'pointer',
+                        textAlign: 'left' as const,
+                      }}
+                    >
+                      <span style={{ fontSize: 28 }}>💳</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>
+                          Charge •••{card.cardLast4}
+                          {card.isDefault && <span style={{ marginLeft: 8, fontSize: 11, color: '#a78bfa', background: 'rgba(167, 139, 250, 0.15)', padding: '2px 6px', borderRadius: 4 }}>DEFAULT</span>}
+                        </div>
+                        <div style={{ color: '#c084fc', fontSize: 13 }}>
+                          {card.cardType}{card.cardholderName ? ` — ${card.cardholderName}` : ''}
+                          <span style={{ marginLeft: 8, color: '#94a3b8' }}>Pre-authed ${card.authAmount.toFixed(2)}</span>
+                        </div>
+                      </div>
+                      <div style={{ color: '#e9d5ff', fontSize: 17, fontWeight: 700 }}>{formatCurrency(cardTotal)}</div>
+                    </button>
+                  ))}
+                  <div style={{ height: 1, background: 'rgba(148, 163, 184, 0.15)', margin: '4px 0' }} />
+                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Or pay another way</div>
+                </div>
+              )}
 
               {dualPricing.enabled && (
-                <div className="text-sm text-gray-600 mb-3 p-2 bg-green-50 rounded">
-                  <span className="text-green-700 font-medium">Cash: {formatCurrency(cashTotal)}</span>
-                  <span className="mx-2">|</span>
+                <div style={{ fontSize: 13, color: '#94a3b8', marginBottom: 8, padding: 10, background: 'rgba(34, 197, 94, 0.1)', borderRadius: 8, border: '1px solid rgba(34, 197, 94, 0.15)' }}>
+                  <span style={{ color: '#22c55e', fontWeight: 600 }}>Cash: {formatCurrency(cashTotal)}</span>
+                  <span style={{ margin: '0 8px', color: '#475569' }}>|</span>
                   <span>Card: {formatCurrency(cardTotal)}</span>
                 </div>
               )}
 
               {paymentSettings.acceptCash && (
-                <Button
-                  variant="outline"
-                  className="w-full h-16 text-lg justify-start gap-4"
+                <button
                   onClick={() => handleSelectMethod('cash')}
+                  style={{
+                    width: '100%',
+                    height: 72,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '0 20px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                    background: 'rgba(34, 197, 94, 0.08)',
+                    cursor: 'pointer',
+                    textAlign: 'left' as const,
+                  }}
                 >
-                  <span className="text-2xl">💵</span>
-                  <div className="text-left">
-                    <div>Cash</div>
-                    <div className="text-sm text-green-600 font-normal">
+                  <span style={{ fontSize: 28 }}>💵</span>
+                  <div>
+                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Cash</div>
+                    <div style={{ color: '#22c55e', fontSize: 13, fontWeight: 500 }}>
                       {formatCurrency(cashTotal)}
                       {dualPricing.enabled && dualPricing.showSavingsMessage && (
-                        <span className="ml-2">Save {formatCurrency(cardTotal - cashTotal)}</span>
+                        <span style={{ marginLeft: 8, color: '#4ade80' }}>Save {formatCurrency(cardTotal - cashTotal)}</span>
                       )}
                     </div>
                   </div>
-                </Button>
+                </button>
               )}
 
               {paymentSettings.acceptCredit && (
-                <Button
-                  variant="outline"
-                  className="w-full h-16 text-lg justify-start gap-4"
+                <button
                   onClick={() => handleSelectMethod('credit')}
+                  style={{
+                    width: '100%',
+                    height: 72,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '0 20px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    background: 'rgba(99, 102, 241, 0.08)',
+                    cursor: 'pointer',
+                    textAlign: 'left' as const,
+                  }}
                 >
-                  <span className="text-2xl">💳</span>
-                  <div className="text-left">
-                    <div>Credit Card</div>
-                    <div className="text-sm text-gray-500 font-normal">
-                      {formatCurrency(cardTotal)}
-                    </div>
+                  <span style={{ fontSize: 28 }}>💳</span>
+                  <div>
+                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Credit Card</div>
+                    <div style={{ color: '#818cf8', fontSize: 13 }}>{formatCurrency(cardTotal)}</div>
                   </div>
-                </Button>
+                </button>
               )}
 
               {paymentSettings.acceptDebit && (
-                <Button
-                  variant="outline"
-                  className="w-full h-16 text-lg justify-start gap-4"
+                <button
                   onClick={() => handleSelectMethod('debit')}
+                  style={{
+                    width: '100%',
+                    height: 72,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '0 20px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    background: 'rgba(99, 102, 241, 0.08)',
+                    cursor: 'pointer',
+                    textAlign: 'left' as const,
+                  }}
                 >
-                  <span className="text-2xl">💳</span>
-                  <div className="text-left">
-                    <div>Debit Card</div>
-                    <div className="text-sm text-gray-500 font-normal">
-                      {formatCurrency(cardTotal)}
-                    </div>
+                  <span style={{ fontSize: 28 }}>💳</span>
+                  <div>
+                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Debit Card</div>
+                    <div style={{ color: '#818cf8', fontSize: 13 }}>{formatCurrency(cardTotal)}</div>
                   </div>
-                </Button>
+                </button>
               )}
 
               {paymentSettings.acceptGiftCards && (
-                <Button
-                  variant="outline"
-                  className="w-full h-16 text-lg justify-start gap-4"
+                <button
                   onClick={() => handleSelectMethod('gift_card')}
+                  style={{
+                    width: '100%',
+                    height: 72,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '0 20px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(168, 85, 247, 0.3)',
+                    background: 'rgba(168, 85, 247, 0.08)',
+                    cursor: 'pointer',
+                    textAlign: 'left' as const,
+                  }}
                 >
-                  <span className="text-2xl">🎁</span>
-                  <div className="text-left">
-                    <div>Gift Card</div>
-                    <div className="text-sm text-gray-500 font-normal">
-                      Enter gift card number
-                    </div>
+                  <span style={{ fontSize: 28 }}>🎁</span>
+                  <div>
+                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>Gift Card</div>
+                    <div style={{ color: '#c084fc', fontSize: 13 }}>Enter gift card number</div>
                   </div>
-                </Button>
+                </button>
               )}
 
               {paymentSettings.acceptHouseAccounts && (
-                <Button
-                  variant="outline"
-                  className="w-full h-16 text-lg justify-start gap-4"
+                <button
                   onClick={() => handleSelectMethod('house_account')}
+                  style={{
+                    width: '100%',
+                    height: 72,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '0 20px',
+                    borderRadius: 12,
+                    border: '1px solid rgba(100, 116, 139, 0.3)',
+                    background: 'rgba(100, 116, 139, 0.08)',
+                    cursor: 'pointer',
+                    textAlign: 'left' as const,
+                  }}
                 >
-                  <span className="text-2xl">🏢</span>
-                  <div className="text-left">
-                    <div>House Account</div>
-                    <div className="text-sm text-gray-500 font-normal">
-                      Charge to account
-                    </div>
+                  <span style={{ fontSize: 28 }}>🏢</span>
+                  <div>
+                    <div style={{ color: '#f1f5f9', fontSize: 17, fontWeight: 600 }}>House Account</div>
+                    <div style={{ color: '#94a3b8', fontSize: 13 }}>Charge to account</div>
                   </div>
-                </Button>
+                </button>
               )}
             </div>
           )}
 
           {/* Step: Tip Selection */}
           {step === 'tip' && (
-            <div className="space-y-3">
-              <h3 className="font-medium mb-2">Add Tip</h3>
-              <p className="text-sm text-gray-500 mb-3">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <h3 style={sectionLabelStyle}>Add Tip</h3>
+              <p style={{ ...mutedTextStyle, marginBottom: 8 }}>
                 Paying with {selectedMethod === 'cash' ? 'Cash' : 'Card'}: {formatCurrency(currentTotal)}
               </p>
 
-              <div className="grid grid-cols-4 gap-2">
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                 {tipSettings.suggestedPercentages.map(percent => {
                   const tipForPercent = calculateTip(effectiveSubtotal, percent, tipSettings.calculateOn, effectiveOrderTotal)
+                  const isSelected = tipAmount === tipForPercent
                   return (
-                    <Button
+                    <button
                       key={percent}
-                      variant={tipAmount === tipForPercent ? 'primary' : 'outline'}
-                      className="flex-col h-16"
                       onClick={() => handleSelectTip(percent)}
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: 64,
+                        borderRadius: 10,
+                        border: isSelected ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid rgba(100, 116, 139, 0.3)',
+                        background: isSelected ? 'rgba(99, 102, 241, 0.2)' : 'rgba(30, 41, 59, 0.5)',
+                        color: isSelected ? '#a5b4fc' : '#94a3b8',
+                        cursor: 'pointer',
+                      }}
                     >
-                      <span className="font-bold">{percent}%</span>
-                      <span className="text-xs">{formatCurrency(tipForPercent)}</span>
-                    </Button>
+                      <span style={{ fontWeight: 700, fontSize: 16 }}>{percent}%</span>
+                      <span style={{ fontSize: 12, marginTop: 2 }}>{formatCurrency(tipForPercent)}</span>
+                    </button>
                   )
                 })}
               </div>
 
-              <div className="flex gap-2 mt-3">
-                <Button
-                  variant={tipAmount === 0 && !customTip ? 'primary' : 'outline'}
-                  className="flex-1"
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
                   onClick={() => handleSelectTip(null)}
+                  style={{
+                    flex: 1,
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    border: tipAmount === 0 && !customTip ? '1px solid rgba(99, 102, 241, 0.5)' : '1px solid rgba(100, 116, 139, 0.3)',
+                    background: tipAmount === 0 && !customTip ? 'rgba(99, 102, 241, 0.2)' : 'rgba(30, 41, 59, 0.5)',
+                    color: tipAmount === 0 && !customTip ? '#a5b4fc' : '#94a3b8',
+                    cursor: 'pointer',
+                    fontSize: 14,
+                    fontWeight: 500,
+                  }}
                 >
                   No Tip
-                </Button>
-                <div className="flex-1 flex gap-2">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3 top-2.5 text-gray-500">$</span>
-                    <input
-                      type="number"
-                      value={customTip}
-                      onChange={(e) => setCustomTip(e.target.value)}
-                      onBlur={handleCustomTip}
-                      className="w-full pl-7 pr-3 py-2 border rounded-lg"
-                      placeholder="Custom"
-                      step="0.01"
-                      min="0"
-                    />
-                  </div>
+                </button>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 12, top: 11, color: '#64748b', fontSize: 14 }}>$</span>
+                  <input
+                    type="number"
+                    value={customTip}
+                    onChange={(e) => setCustomTip(e.target.value)}
+                    onBlur={handleCustomTip}
+                    style={{ ...inputStyle, paddingLeft: 28 }}
+                    placeholder="Custom"
+                    step="0.01"
+                    min="0"
+                  />
                 </div>
               </div>
 
-              <div className="mt-4 p-3 bg-blue-50 rounded-lg">
-                <div className="flex justify-between font-bold">
+              <div style={infoPanelStyle('rgba(99, 102, 241, 0.15)')}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: '#ffffff', fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
                   <span>Total with Tip</span>
                   <span>{formatCurrency(totalWithTip)}</span>
                 </div>
               </div>
 
-              <div className="flex gap-2 mt-4">
-                <Button variant="outline" className="flex-1" onClick={() => setStep('method')}>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={() => setStep('method')} style={backButtonStyle}>
                   Back
-                </Button>
-                <Button variant="primary" className="flex-1" onClick={handleContinueFromTip}>
+                </button>
+                <button onClick={handleContinueFromTip} style={primaryButtonStyle}>
                   Continue
-                </Button>
+                </button>
               </div>
             </div>
           )}
 
           {/* Step: Cash Payment */}
-          {step === 'cash' && (
-            <div className="space-y-3">
-              <h3 className="font-medium mb-2">Cash Payment</h3>
-              <div className="p-3 bg-green-50 rounded-lg mb-3">
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Amount Due</span>
-                  <span className="text-green-700">{formatCurrency(totalWithTip)}</span>
+          {step === 'cash' && !cashComplete && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <h3 style={sectionLabelStyle}>Cash Payment</h3>
+              {/* Amount due and tendered so far */}
+              <div style={infoPanelStyle('rgba(34, 197, 94, 0.12)')}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 20, fontFamily: 'ui-monospace, monospace' }}>
+                  <span style={{ color: '#94a3b8' }}>Total Due</span>
+                  <span style={{ color: '#22c55e' }}>{formatCurrency(totalWithTip)}</span>
                 </div>
+                {cashTendered > 0 && (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 16, fontFamily: 'ui-monospace, monospace', marginTop: 6 }}>
+                      <span style={{ color: '#94a3b8' }}>Tendered</span>
+                      <span style={{ color: '#f1f5f9' }}>{formatCurrency(cashTendered)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 18, fontFamily: 'ui-monospace, monospace', marginTop: 4, paddingTop: 6, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                      <span style={{ color: '#fbbf24' }}>Remaining</span>
+                      <span style={{ color: '#fbbf24' }}>{formatCurrency(Math.max(0, totalWithTip - cashTendered))}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
-              <p className="text-sm text-gray-600 mb-2">Quick amounts:</p>
-              <div className="grid grid-cols-4 gap-2">
-                {quickAmounts.map(amount => (
-                  <Button
+              <p style={{ ...mutedTextStyle, marginBottom: 4 }}>Tap bills received:</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {/* Exact amount button */}
+                <button
+                  onClick={() => handleCashTender(totalWithTip - cashTendered)}
+                  disabled={isProcessing}
+                  style={{
+                    padding: '14px 8px',
+                    borderRadius: 10,
+                    border: '1px solid rgba(34, 197, 94, 0.4)',
+                    background: 'rgba(34, 197, 94, 0.15)',
+                    color: '#22c55e',
+                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                    fontSize: 15,
+                    fontWeight: 700,
+                    opacity: isProcessing ? 0.5 : 1,
+                    gridColumn: 'span 3',
+                  }}
+                >
+                  Exact {formatCurrency(totalWithTip - cashTendered)}
+                </button>
+                {[1, 5, 10, 20, 50, 100].map(amount => (
+                  <button
                     key={amount}
-                    variant="outline"
-                    onClick={() => handleCashPayment(amount)}
+                    onClick={() => handleCashTender(amount)}
                     disabled={isProcessing}
+                    style={{
+                      padding: '16px 8px',
+                      borderRadius: 10,
+                      border: '1px solid rgba(100, 116, 139, 0.3)',
+                      background: 'rgba(30, 41, 59, 0.5)',
+                      color: '#f1f5f9',
+                      cursor: isProcessing ? 'not-allowed' : 'pointer',
+                      fontSize: 16,
+                      fontWeight: 700,
+                      opacity: isProcessing ? 0.5 : 1,
+                    }}
                   >
                     {formatCurrency(amount)}
-                  </Button>
+                  </button>
                 ))}
               </div>
 
-              <div className="mt-4">
-                <label className="text-sm text-gray-600">Custom amount:</label>
-                <div className="flex gap-2 mt-1">
-                  <div className="relative flex-1">
-                    <span className="absolute left-3 top-2.5 text-gray-500">$</span>
+              <div style={{ marginTop: 12 }}>
+                <label style={{ color: '#94a3b8', fontSize: 13, display: 'block', marginBottom: 6 }}>Custom amount:</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ flex: 1, position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 12, top: 11, color: '#64748b', fontSize: 14 }}>$</span>
                     <input
                       type="number"
                       value={customCashAmount}
                       onChange={(e) => setCustomCashAmount(e.target.value)}
-                      className="w-full pl-7 pr-3 py-2 border rounded-lg"
+                      style={{ ...inputStyle, paddingLeft: 28 }}
                       placeholder="0.00"
                       step="0.01"
-                      min={totalWithTip}
+                      min="0"
                     />
                   </div>
-                  <Button
-                    variant="primary"
-                    onClick={() => handleCashPayment(parseFloat(customCashAmount) || totalWithTip)}
+                  <button
+                    onClick={() => {
+                      const val = parseFloat(customCashAmount) || 0
+                      if (val > 0) { handleCashTender(val); setCustomCashAmount('') }
+                    }}
                     disabled={isProcessing || !customCashAmount}
+                    style={{
+                      ...primaryButtonStyle,
+                      flex: 'none',
+                      padding: '10px 20px',
+                      opacity: (isProcessing || !customCashAmount) ? 0.5 : 1,
+                      cursor: (isProcessing || !customCashAmount) ? 'not-allowed' : 'pointer',
+                      background: '#16a34a',
+                    }}
                   >
-                    Accept
-                  </Button>
+                    Add
+                  </button>
                 </div>
               </div>
 
-              {customCashAmount && parseFloat(customCashAmount) > totalWithTip && (
-                <div className="mt-3 p-3 bg-yellow-50 rounded-lg">
-                  <div className="flex justify-between font-bold">
-                    <span>Change Due</span>
-                    <span>{formatCurrency(calculateChange(totalWithTip, parseFloat(customCashAmount)))}</span>
-                  </div>
-                </div>
-              )}
-
-              <Button
-                variant="outline"
-                className="w-full mt-4"
-                onClick={() => setStep(tipSettings.enabled ? 'tip' : 'method')}
-              >
-                Back
-              </Button>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
+                  onClick={() => { setCashTendered(0); setStep(tipSettings.enabled ? 'tip' : 'method') }}
+                  style={{ ...backButtonStyle, flex: 1 }}
+                >
+                  Back
+                </button>
+                {cashTendered > 0 && (
+                  <button
+                    onClick={() => setCashTendered(0)}
+                    style={{ ...backButtonStyle, flex: 1, color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.3)' }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
-          {/* Step: Datacap Direct Card Payment */}
+          {/* Cash complete - change due screen */}
+          {step === 'cash' && cashComplete && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', paddingTop: 16 }}>
+              <div style={{ fontSize: 48, lineHeight: 1 }}>💵</div>
+              <h3 style={{ ...sectionLabelStyle, fontSize: 22, textAlign: 'center', margin: 0 }}>Payment Complete</h3>
+
+              <div style={{ ...infoPanelStyle('rgba(34, 197, 94, 0.12)'), width: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 16, fontFamily: 'ui-monospace, monospace' }}>
+                  <span style={{ color: '#94a3b8' }}>Total</span>
+                  <span style={{ color: '#f1f5f9' }}>{formatCurrency(totalWithTip)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 16, fontFamily: 'ui-monospace, monospace', marginTop: 4 }}>
+                  <span style={{ color: '#94a3b8' }}>Tendered</span>
+                  <span style={{ color: '#f1f5f9' }}>{formatCurrency(cashTendered)}</span>
+                </div>
+                {cashTendered > totalWithTip && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 28, fontFamily: 'ui-monospace, monospace', marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                    <span style={{ color: '#fbbf24' }}>Change Due</span>
+                    <span style={{ color: '#fbbf24' }}>{formatCurrency(cashTendered - totalWithTip)}</span>
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, width: '100%', marginTop: 8 }}>
+                <button
+                  onClick={handleCashFinalize}
+                  disabled={isProcessing}
+                  style={{
+                    ...primaryButtonStyle,
+                    flex: 1,
+                    padding: '16px',
+                    fontSize: 16,
+                    fontWeight: 700,
+                    opacity: isProcessing ? 0.5 : 1,
+                    cursor: isProcessing ? 'not-allowed' : 'pointer',
+                    background: '#16a34a',
+                  }}
+                >
+                  {isProcessing ? 'Processing...' : 'Done'}
+                </button>
+              </div>
+
+              <button
+                onClick={() => { setCashComplete(false); setCashTendered(0) }}
+                style={{ ...backButtonStyle, width: '100%' }}
+              >
+                Start Over
+              </button>
+            </div>
+          )}
+
+          {/* Step: Datacap Direct Card Payment - No Terminal */}
           {step === 'datacap_card' && orderId && !terminalId && (
-            <div className="text-center py-8">
-              <p className="text-red-500 font-bold mb-2">Terminal Not Configured</p>
-              <p className="text-gray-500 text-sm mb-4">No terminal ID assigned. Card payments require a configured terminal.</p>
-              <Button onClick={() => setStep('method')} variant="outline">Back</Button>
+            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+              <p style={{ color: '#f87171', fontWeight: 700, marginBottom: 8, fontSize: 16 }}>Terminal Not Configured</p>
+              <p style={{ color: '#94a3b8', fontSize: 14, marginBottom: 16 }}>No terminal ID assigned. Card payments require a configured terminal.</p>
+              <button onClick={() => setStep('method')} style={{ ...backButtonStyle, flex: 'none' }}>Back</button>
             </div>
           )}
 
@@ -760,53 +1122,59 @@ export function PaymentModal({
 
           {/* Step: Gift Card Payment */}
           {step === 'gift_card' && (
-            <div className="space-y-3">
-              <h3 className="font-medium mb-2">Gift Card Payment</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <h3 style={sectionLabelStyle}>Gift Card Payment</h3>
 
-              <div className="p-3 bg-purple-50 rounded-lg mb-3">
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Amount Due</span>
-                  <span>{formatCurrency(totalWithTip)}</span>
+              <div style={infoPanelStyle('rgba(168, 85, 247, 0.12)')}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
+                  <span style={{ color: '#94a3b8' }}>Amount Due</span>
+                  <span style={{ color: '#c084fc' }}>{formatCurrency(totalWithTip)}</span>
                 </div>
               </div>
 
               <div>
-                <label className="text-sm text-gray-600 block mb-1">Gift Card Number</label>
-                <div className="flex gap-2">
+                <label style={{ color: '#94a3b8', fontSize: 13, display: 'block', marginBottom: 6 }}>Gift Card Number</label>
+                <div style={{ display: 'flex', gap: 8 }}>
                   <input
                     type="text"
                     value={giftCardNumber}
                     onChange={(e) => setGiftCardNumber(e.target.value.toUpperCase())}
-                    className="flex-1 px-3 py-2 border rounded-lg uppercase"
+                    style={{ ...inputStyle, flex: 1, textTransform: 'uppercase' as const }}
                     placeholder="GC-XXXX-XXXX-XXXX"
                   />
-                  <Button
-                    variant="outline"
+                  <button
                     onClick={lookupGiftCard}
                     disabled={giftCardLoading || !giftCardNumber.trim()}
+                    style={{
+                      ...backButtonStyle,
+                      flex: 'none',
+                      padding: '10px 16px',
+                      opacity: (giftCardLoading || !giftCardNumber.trim()) ? 0.5 : 1,
+                      cursor: (giftCardLoading || !giftCardNumber.trim()) ? 'not-allowed' : 'pointer',
+                    }}
                   >
                     {giftCardLoading ? 'Looking...' : 'Lookup'}
-                  </Button>
+                  </button>
                 </div>
               </div>
 
               {giftCardError && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: 10, color: '#f87171', fontSize: 14 }}>
                   {giftCardError}
                 </div>
               )}
 
               {giftCardInfo && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="text-sm text-gray-600 mb-1">Card: {giftCardInfo.cardNumber}</div>
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium">Available Balance:</span>
-                    <span className="text-xl font-bold text-green-600">
+                <div style={{ padding: 16, background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', borderRadius: 10 }}>
+                  <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 4 }}>Card: {giftCardInfo.cardNumber}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: '#cbd5e1', fontWeight: 500 }}>Available Balance:</span>
+                    <span style={{ fontSize: 22, fontWeight: 700, color: '#22c55e', fontFamily: 'ui-monospace, monospace' }}>
                       {formatCurrency(giftCardInfo.currentBalance)}
                     </span>
                   </div>
                   {giftCardInfo.currentBalance < totalWithTip && (
-                    <div className="mt-2 text-sm text-amber-600">
+                    <div style={{ marginTop: 8, fontSize: 13, color: '#fbbf24' }}>
                       Partial payment of {formatCurrency(giftCardInfo.currentBalance)} will be applied.
                       Remaining: {formatCurrency(totalWithTip - giftCardInfo.currentBalance)}
                     </div>
@@ -814,58 +1182,61 @@ export function PaymentModal({
                 </div>
               )}
 
-              <div className="flex gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  className="flex-1"
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
                   onClick={() => setStep('method')}
                   disabled={isProcessing}
+                  style={{ ...backButtonStyle, opacity: isProcessing ? 0.5 : 1 }}
                 >
                   Back
-                </Button>
-                <Button
-                  variant="primary"
-                  className="flex-1"
+                </button>
+                <button
                   onClick={handleGiftCardPayment}
                   disabled={isProcessing || !giftCardInfo || giftCardInfo.currentBalance === 0}
+                  style={{
+                    ...primaryButtonStyle,
+                    background: '#7c3aed',
+                    opacity: (isProcessing || !giftCardInfo || giftCardInfo?.currentBalance === 0) ? 0.5 : 1,
+                    cursor: (isProcessing || !giftCardInfo || giftCardInfo?.currentBalance === 0) ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   {isProcessing ? 'Processing...' : giftCardInfo && giftCardInfo.currentBalance >= totalWithTip
                     ? 'Pay Full Amount'
                     : giftCardInfo
                       ? `Pay ${formatCurrency(Math.min(giftCardInfo.currentBalance, totalWithTip))}`
                       : 'Apply Gift Card'}
-                </Button>
+                </button>
               </div>
             </div>
           )}
 
           {/* Step: House Account Payment */}
           {step === 'house_account' && (
-            <div className="space-y-3">
-              <h3 className="font-medium mb-2">House Account</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <h3 style={sectionLabelStyle}>House Account</h3>
 
-              <div className="p-3 bg-blue-50 rounded-lg mb-3">
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Amount to Charge</span>
-                  <span>{formatCurrency(totalWithTip)}</span>
+              <div style={infoPanelStyle('rgba(99, 102, 241, 0.12)')}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
+                  <span style={{ color: '#94a3b8' }}>Amount to Charge</span>
+                  <span style={{ color: '#818cf8' }}>{formatCurrency(totalWithTip)}</span>
                 </div>
               </div>
 
               <div>
-                <label className="text-sm text-gray-600 block mb-1">Search Account</label>
+                <label style={{ color: '#94a3b8', fontSize: 13, display: 'block', marginBottom: 6 }}>Search Account</label>
                 <input
                   type="text"
                   value={houseAccountSearch}
                   onChange={(e) => setHouseAccountSearch(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
+                  style={inputStyle}
                   placeholder="Search by name..."
                 />
               </div>
 
               {houseAccountsLoading ? (
-                <div className="text-center py-4 text-gray-500">Loading accounts...</div>
+                <div style={{ textAlign: 'center', padding: 16, color: '#94a3b8' }}>Loading accounts...</div>
               ) : (
-                <div className="max-h-48 overflow-y-auto border rounded-lg divide-y">
+                <div style={{ maxHeight: 192, overflowY: 'auto', borderRadius: 10, border: '1px solid rgba(100, 116, 139, 0.2)' }}>
                   {houseAccounts
                     .filter(acc =>
                       !houseAccountSearch ||
@@ -876,18 +1247,27 @@ export function PaymentModal({
                         ? account.creditLimit - account.currentBalance
                         : Infinity
                       const canCharge = availableCredit >= totalWithTip
+                      const isSelected = selectedHouseAccount?.id === account.id
 
                       return (
                         <button
                           key={account.id}
-                          className={`w-full p-3 text-left hover:bg-gray-50 ${
-                            selectedHouseAccount?.id === account.id ? 'bg-blue-50' : ''
-                          } ${!canCharge ? 'opacity-50' : ''}`}
+                          style={{
+                            width: '100%',
+                            padding: 12,
+                            textAlign: 'left' as const,
+                            background: isSelected ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                            borderBottom: '1px solid rgba(100, 116, 139, 0.1)',
+                            border: 'none',
+                            borderBlockEnd: '1px solid rgba(100, 116, 139, 0.1)',
+                            cursor: canCharge ? 'pointer' : 'not-allowed',
+                            opacity: canCharge ? 1 : 0.4,
+                          }}
                           onClick={() => canCharge && setSelectedHouseAccount(account)}
                           disabled={!canCharge}
                         >
-                          <div className="font-medium">{account.name}</div>
-                          <div className="text-sm text-gray-500 flex justify-between">
+                          <div style={{ color: '#f1f5f9', fontWeight: 500 }}>{account.name}</div>
+                          <div style={{ fontSize: 13, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
                             <span>Balance: {formatCurrency(account.currentBalance)}</span>
                             <span>
                               {account.creditLimit > 0
@@ -896,7 +1276,7 @@ export function PaymentModal({
                             </span>
                           </div>
                           {!canCharge && (
-                            <div className="text-xs text-red-500 mt-1">
+                            <div style={{ fontSize: 12, color: '#f87171', marginTop: 4 }}>
                               Insufficient credit available
                             </div>
                           )}
@@ -904,7 +1284,7 @@ export function PaymentModal({
                       )
                     })}
                   {houseAccounts.length === 0 && (
-                    <div className="p-4 text-center text-gray-500">
+                    <div style={{ padding: 16, textAlign: 'center', color: '#64748b' }}>
                       No house accounts available
                     </div>
                   )}
@@ -912,12 +1292,12 @@ export function PaymentModal({
               )}
 
               {selectedHouseAccount && (
-                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="font-medium">{selectedHouseAccount.name}</div>
-                  <div className="text-sm text-gray-600">
+                <div style={{ padding: 12, background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', borderRadius: 10 }}>
+                  <div style={{ color: '#f1f5f9', fontWeight: 500 }}>{selectedHouseAccount.name}</div>
+                  <div style={{ fontSize: 13, color: '#94a3b8' }}>
                     Current balance: {formatCurrency(selectedHouseAccount.currentBalance)}
                     {selectedHouseAccount.creditLimit > 0 && (
-                      <span className="ml-2">
+                      <span style={{ marginLeft: 8 }}>
                         (Available: {formatCurrency(selectedHouseAccount.creditLimit - selectedHouseAccount.currentBalance)})
                       </span>
                     )}
@@ -925,33 +1305,50 @@ export function PaymentModal({
                 </div>
               )}
 
-              <div className="flex gap-2 mt-4">
-                <Button
-                  variant="outline"
-                  className="flex-1"
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
                   onClick={() => setStep('method')}
                   disabled={isProcessing}
+                  style={{ ...backButtonStyle, opacity: isProcessing ? 0.5 : 1 }}
                 >
                   Back
-                </Button>
-                <Button
-                  variant="primary"
-                  className="flex-1"
+                </button>
+                <button
                   onClick={handleHouseAccountPayment}
                   disabled={isProcessing || !selectedHouseAccount}
+                  style={{
+                    ...primaryButtonStyle,
+                    opacity: (isProcessing || !selectedHouseAccount) ? 0.5 : 1,
+                    cursor: (isProcessing || !selectedHouseAccount) ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   {isProcessing ? 'Processing...' : 'Charge to Account'}
-                </Button>
+                </button>
               </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t bg-gray-50">
-          <Button variant="outline" className="w-full" onClick={onClose} disabled={isProcessing}>
+        <div style={footerStyle}>
+          <button
+            onClick={onClose}
+            disabled={isProcessing}
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              borderRadius: 10,
+              border: '1px solid rgba(100, 116, 139, 0.3)',
+              background: 'transparent',
+              color: '#94a3b8',
+              fontSize: 15,
+              fontWeight: 500,
+              cursor: isProcessing ? 'not-allowed' : 'pointer',
+              opacity: isProcessing ? 0.5 : 1,
+            }}
+          >
             Cancel
-          </Button>
+          </button>
         </div>
       </div>
     </div>

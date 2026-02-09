@@ -25,6 +25,7 @@ import { buildRequest, buildAdminRequest } from './xml-builder'
 import { parseResponse, parseError } from './xml-parser'
 import { getSequenceNo, updateSequenceNo } from './sequence'
 import { simulateResponse } from './simulator'
+import { SIMULATED_DEFAULTS } from './simulated-defaults' // 🚨 SIMULATED_DEFAULTS — remove for go-live
 import {
   LOCAL_ENDPOINT,
   POS_PACKAGE_ID,
@@ -331,9 +332,10 @@ export class DatacapClient {
   // ─── Field Builder ───────────────────────────────────────────────────────
 
   private buildBaseFields(reader: ReaderInfo, seqNo: string): Partial<DatacapRequestFields> {
+    const isSimulated = (reader.communicationMode || this.config.communicationMode) === 'simulated'
     return {
-      merchantId: reader.merchantId || this.config.merchantId,
-      operatorId: this.config.operatorId,
+      merchantId: reader.merchantId || this.config.merchantId || (isSimulated ? SIMULATED_DEFAULTS.merchantId : undefined),
+      operatorId: this.config.operatorId || (isSimulated ? SIMULATED_DEFAULTS.operatorId : undefined),
       posPackageId: this.config.posPackageId || POS_PACKAGE_ID,
       sequenceNo: seqNo,
       acctNo: 'SecureDevice',

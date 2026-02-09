@@ -92,21 +92,25 @@ export async function POST(
       await batchUpdateOrderItemStatus(regularItemIds, 'sent', now)
     }
 
-    // Batch update entertainment items with sessions
-    for (const { itemId, menuItemId, sessionEnd } of entertainmentUpdates) {
-      // Update order item
-      await db.orderItem.update({
-        where: { id: itemId },
-        data: {
-          kitchenStatus: 'sent',
-          firedAt: now,
-          blockTimeStartedAt: now,
-          blockTimeExpiresAt: sessionEnd,
-        },
+    // Batch update entertainment items with sessions in a single transaction
+    if (entertainmentUpdates.length > 0) {
+      await db.$transaction(async (tx) => {
+        for (const { itemId, menuItemId, sessionEnd } of entertainmentUpdates) {
+          await tx.orderItem.update({
+            where: { id: itemId },
+            data: {
+              kitchenStatus: 'sent',
+              firedAt: now,
+              blockTimeStartedAt: now,
+              blockTimeExpiresAt: sessionEnd,
+            },
+          })
+        }
       })
-
-      // Update menu item + floor plan element in single transaction (FIX-010)
-      await startEntertainmentSession(menuItemId, order.id, itemId, now, sessionEnd)
+      // Start entertainment sessions outside transaction (touches menu items + floor plan)
+      for (const { itemId, menuItemId, sessionEnd } of entertainmentUpdates) {
+        await startEntertainmentSession(menuItemId, order.id, itemId, now, sessionEnd)
+      }
     }
 
     // Route order to stations using tag-based routing engine

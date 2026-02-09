@@ -20,6 +20,8 @@ interface OpenOrder {
   } | null
   customFields?: Record<string, string> | null
   tabName: string | null
+  tabStatus: string | null
+  cardholderName: string | null
   tableId: string | null
   table?: {
     id: string
@@ -106,7 +108,7 @@ interface OpenOrdersPanelProps {
   employeePermissions?: string[]
   onSelectOrder: (order: OpenOrder) => void
   onViewOrder?: (order: OpenOrder) => void
-  onNewTab: () => void
+  onNewTab?: () => void
   refreshTrigger?: number
   onViewReceipt?: (orderId: string) => void
   onClosedOrderAction?: () => void
@@ -293,10 +295,13 @@ export function OpenOrdersPanel({
       const tabName = o.tabName?.toLowerCase() || ''
       const tableName = o.table?.name?.toLowerCase() || ''
       const customerName = o.customer?.name?.toLowerCase() || ''
+      const cardholderName = o.cardholderName?.toLowerCase() || ''
+      const cardLast4 = o.preAuth?.last4 || ''
       const orderNum = String(o.orderNumber)
       const displayNum = o.displayNumber || ''
       const empName = o.employee.name?.toLowerCase() || ''
       return tabName.includes(query) || tableName.includes(query) || customerName.includes(query) ||
+        cardholderName.includes(query) || cardLast4.includes(query) ||
         orderNum.includes(query) || displayNum.includes(query) || empName.includes(query)
     })
   }
@@ -325,7 +330,13 @@ export function OpenOrdersPanel({
   const getOrderDisplayName = (order: OpenOrder): { primary: string; secondary: string | null } => {
     let primary = `Order #${order.displayNumber || order.orderNumber}`
     let secondary: string | null = null
-    if (order.tabName) primary = order.tabName
+    if (order.tabName) {
+      primary = order.tabName
+      // Show cardholder name as secondary if different from tab name
+      if (order.cardholderName && order.cardholderName !== order.tabName) {
+        secondary = order.cardholderName
+      }
+    }
     else if (order.customer?.name) primary = order.customer.name
     if (order.table) {
       secondary = order.table.section ? `${order.table.section} - ${order.table.name}` : order.table.name
@@ -419,7 +430,15 @@ export function OpenOrdersPanel({
             </span>
             <span className={`text-xs ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
               #{order.displayNumber || order.orderNumber} • {order.employee.name} • {formatTime(order.createdAt)}
+              {order.hasPreAuth && order.preAuth && (
+                <> • •••{order.preAuth.last4}{order.preAuth.amount != null && ` ${formatCurrency(order.preAuth.amount)}`}</>
+              )}
             </span>
+            {order.tabStatus === 'pending_auth' && (
+              <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold animate-pulse ${dark ? 'bg-amber-600/30 text-amber-300' : 'bg-amber-100 text-amber-700'}`}>
+                Authorizing...
+              </span>
+            )}
             {order.reopenedAt && (
               <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold ${dark ? 'bg-orange-600/30 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
                 🔓 Reopened
@@ -496,8 +515,8 @@ export function OpenOrdersPanel({
               <span className="truncate">{displayName.primary}</span>
             </h4>
             {displayName.secondary && (
-              <p className={`text-sm font-semibold mt-0.5 ${dark ? 'text-blue-400' : 'text-blue-700'}`}>
-                📍 {displayName.secondary}
+              <p className={`text-sm mt-0.5 ${order.table ? (dark ? 'text-blue-400 font-semibold' : 'text-blue-700 font-semibold') : (dark ? 'text-slate-400' : 'text-gray-500')}`}>
+                {order.table ? '📍 ' : ''}{displayName.secondary}
               </p>
             )}
             <p className={`text-xs mt-1 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
@@ -558,13 +577,23 @@ export function OpenOrdersPanel({
           )}
         </div>
 
-        {/* Pre-auth */}
+        {/* Pre-auth / Tab card info */}
         {order.hasPreAuth && order.preAuth && (
-          <div className={`flex items-center gap-1 text-xs font-medium mb-2 ${dark ? 'text-blue-400' : 'text-blue-600'}`}>
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className={`flex items-center gap-2 text-xs font-medium mb-2 ${dark ? 'text-blue-400' : 'text-blue-600'}`}>
+            <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
             </svg>
-            {formatCardDisplay(order.preAuth.cardBrand, order.preAuth.last4)}
+            <span>{formatCardDisplay(order.preAuth.cardBrand, order.preAuth.last4)}</span>
+            {order.preAuth.amount != null && (
+              <span className={dark ? 'text-slate-400' : 'text-gray-500'}>
+                {formatCurrency(order.preAuth.amount)} hold
+              </span>
+            )}
+          </div>
+        )}
+        {order.tabStatus === 'pending_auth' && (
+          <div className={`flex items-center gap-1 text-xs font-bold mb-2 animate-pulse ${dark ? 'text-amber-400' : 'text-amber-600'}`}>
+            <span>Authorizing card...</span>
           </div>
         )}
 
@@ -650,7 +679,7 @@ export function OpenOrdersPanel({
           {renderSearchIcon()}
         </div>
         <div className="flex items-center gap-2">
-          {viewMode === 'open' && (
+          {viewMode === 'open' && onNewTab && (
             <Button
               variant={dark ? 'glass' : 'primary'}
               size="sm"

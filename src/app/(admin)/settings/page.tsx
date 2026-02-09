@@ -131,6 +131,13 @@ export default function SettingsPage() {
     }))
   }
 
+  const updatePayments = (updates: Partial<LocationSettings['payments']>) => {
+    setSettings(prev => ({
+      ...prev,
+      payments: { ...prev.payments, ...updates },
+    }))
+  }
+
   const updateLoyalty = (updates: Partial<LocationSettings['loyalty']>) => {
     setSettings(prev => ({
       ...prev,
@@ -522,6 +529,125 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </Card>
+
+        {/* Bar Tab / Pre-Auth Section */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold">Bar Tab / Pre-Auth</h2>
+              <p className="text-sm text-gray-500">Configure auto-increment and hold amounts for bar tabs</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={settings.payments.autoIncrementEnabled}
+                onChange={(e) => updatePayments({ autoIncrementEnabled: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+            </label>
+          </div>
+
+          <div className="space-y-4 border-t pt-4">
+            {/* Tip Buffer */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tip Buffer on Hold
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="50"
+                  value={settings.payments.incrementTipBufferPercent ?? 25}
+                  onChange={(e) => updatePayments({ incrementTipBufferPercent: parseInt(e.target.value) || 0 })}
+                  className="w-20 px-3 py-2 border rounded-lg"
+                />
+                <span className="text-gray-500">%</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Extra % added to hold to cover potential tip. Set to 0 to hold exact tab total only.
+              </p>
+              {(settings.payments.incrementTipBufferPercent ?? 25) > 0 && (
+                <div className="mt-2 p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                  Example: $50.00 tab → ${(50 * (1 + (settings.payments.incrementTipBufferPercent ?? 25) / 100)).toFixed(2)} hold
+                  (covers up to {settings.payments.incrementTipBufferPercent ?? 25}% tip)
+                </div>
+              )}
+            </div>
+
+            {settings.payments.autoIncrementEnabled && (
+              <>
+                {/* Auto-Increment Threshold */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Auto-Increment Threshold
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="5"
+                      min="50"
+                      max="100"
+                      value={settings.payments.incrementThresholdPercent}
+                      onChange={(e) => updatePayments({ incrementThresholdPercent: parseInt(e.target.value) || 80 })}
+                      className="w-20 px-3 py-2 border rounded-lg"
+                    />
+                    <span className="text-gray-500">%</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Automatically re-auth when tab reaches this % of the current hold
+                  </p>
+                </div>
+
+                {/* Minimum Increment Amount */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Minimum Auto-Increment
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-500">$</span>
+                    <input
+                      type="number"
+                      step="5"
+                      min="5"
+                      max="200"
+                      value={settings.payments.incrementAmount}
+                      onChange={(e) => updatePayments({ incrementAmount: parseInt(e.target.value) || 25 })}
+                      className="w-24 px-3 py-2 border rounded-lg"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Minimum amount for background auto-increments (avoids frequent small auths)
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Max Tab Alert */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Manager Alert Amount
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500">$</span>
+                <input
+                  type="number"
+                  step="50"
+                  min="0"
+                  max="5000"
+                  value={settings.payments.maxTabAlertAmount}
+                  onChange={(e) => updatePayments({ maxTabAlertAmount: parseInt(e.target.value) || 500 })}
+                  className="w-28 px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Alert manager when a tab exceeds this amount
+              </p>
+            </div>
+          </div>
         </Card>
 
         {/* Loyalty Program Section */}

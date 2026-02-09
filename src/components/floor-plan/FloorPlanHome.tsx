@@ -27,11 +27,8 @@ import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { StockBadge } from '@/components/menu/StockBadge'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
 import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
-import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
-import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
 import { TableOptionsPopover } from '@/components/orders/TableOptionsPopover'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
-import { useQuickPick } from '@/hooks/useQuickPick'
 import { logger } from '@/lib/logger'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
@@ -39,7 +36,6 @@ import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
-import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 import { useEvents } from '@/lib/events'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
@@ -179,6 +175,10 @@ interface FloorPlanHomeProps {
   paidOrderId?: string | null
   // Callback when paid order is cleared (to reset paidOrderId prop)
   onPaidOrderCleared?: () => void
+  // OrderPanel rendered by parent, passed as children to fill the right panel slot
+  children?: React.ReactNode
+  // Ref to allow parent to deselect current table (e.g., "Hide" button)
+  onRegisterDeselectTable?: (fn: () => void) => void
 }
 
 // Pizza order configuration (matches what pizza builder produces)
@@ -204,6 +204,8 @@ export function FloorPlanHome({
   onOrderLoaded,
   paidOrderId,
   onPaidOrderCleared,
+  children,
+  onRegisterDeselectTable,
 }: FloorPlanHomeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -236,6 +238,20 @@ export function FloorPlanHome({
   const [pendingPayAfterSave, setPendingPayAfterSave] = useState(false)
   const [guestCount, setGuestCount] = useState(defaultGuestCount)
 
+  // Register deselect function so parent can trigger "Hide" (deselect current table)
+  useEffect(() => {
+    if (onRegisterDeselectTable) {
+      onRegisterDeselectTable(() => {
+        setActiveTableId(null)
+        setActiveOrderId(null)
+        setActiveOrderNumber(null)
+        setActiveOrderType(null)
+        setShowOrderPanel(false)
+        useOrderStore.getState().clearOrder()
+      })
+    }
+  }, [onRegisterDeselectTable])
+
   // Restore active table from store when remounting (e.g., after switching back from bar mode)
   useEffect(() => {
     const currentOrder = useOrderStore.getState().currentOrder
@@ -254,9 +270,6 @@ export function FloorPlanHome({
     locationId,
     employeeId,
   })
-
-  // OrderPanel items from shared hook
-  const orderPanelItems = useOrderPanelItems(menuItems)
 
   // DEPRECATED: inlineOrderItems now reads from Zustand store via useActiveOrder hook
   // This alias exists for backward compatibility while we migrate all call sites
@@ -303,123 +316,6 @@ export function FloorPlanHome({
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
-
-  // Quick Pick: selection state for fast quantity setting
-  const quickPickItems = useMemo<OrderPanelItemData[]>(() =>
-    inlineOrderItems.map(i => ({
-      id: i.id,
-      name: i.name,
-      quantity: i.quantity,
-      price: i.price,
-      sentToKitchen: i.sentToKitchen,
-      kitchenStatus: i.sentToKitchen ? 'sent' as const : 'pending' as const,
-      delayMinutes: i.delayMinutes,
-      delayStartedAt: i.delayStartedAt,
-      delayFiredAt: i.delayFiredAt,
-    })),
-    [inlineOrderItems]
-  )
-  const {
-    selectedItemId: quickPickSelectedId,
-    selectedItemIds: quickPickSelectedIds,
-    selectItem: selectQuickPickItem,
-    setSelectedItemId: setQuickPickSelectedId,
-    clearSelection: clearQuickPick,
-    multiSelectMode: quickPickMultiSelect,
-    toggleMultiSelect: toggleQuickPickMultiSelect,
-    selectAllPending: selectAllPendingQuickPick,
-  } = useQuickPick(quickPickItems)
-
-  // Multi-digit entry: tapping 1 then 0 quickly = 10, 2 then 1 = 21, etc.
-  const digitBufferRef = useRef<string>('')
-  const digitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleQuickPickNumber = useCallback((num: number) => {
-    if (!quickPickSelectedId) return
-    const item = inlineOrderItems.find(i => i.id === quickPickSelectedId)
-    if (!item || item.sentToKitchen) return
-
-    // Clear any pending commit timer
-    if (digitTimerRef.current) clearTimeout(digitTimerRef.current)
-
-    // Append digit to buffer
-    digitBufferRef.current += String(num)
-    const pendingQty = parseInt(digitBufferRef.current, 10)
-
-    // Apply immediately (so user sees feedback)
-    if (pendingQty === 0) {
-      // If buffer is just "0", remove item
-      digitBufferRef.current = ''
-      activeOrder.handleRemoveItem(quickPickSelectedId)
-      return
-    }
-
-    const delta = pendingQty - item.quantity
-    if (delta !== 0) activeOrder.handleQuantityChange(quickPickSelectedId, delta)
-
-    // Set timer — if no more digits within 600ms, commit and clear buffer
-    digitTimerRef.current = setTimeout(() => {
-      digitBufferRef.current = ''
-    }, 600)
-  }, [quickPickSelectedId, inlineOrderItems, activeOrder])
-
-  // Clear digit buffer when selection changes
-  useEffect(() => {
-    digitBufferRef.current = ''
-    if (digitTimerRef.current) clearTimeout(digitTimerRef.current)
-  }, [quickPickSelectedId])
-
-  // Gutter: Hold toggle for selected item
-  const handleGutterHold = useCallback(() => {
-    if (!quickPickSelectedId) return
-    activeOrder.handleHoldToggle(quickPickSelectedId)
-  }, [quickPickSelectedId, activeOrder])
-
-  // Gutter: Course assign for selected item
-  const handleGutterCourseAssign = useCallback((courseNumber: number) => {
-    if (!quickPickSelectedId) return
-    activeOrder.handleCourseChange(quickPickSelectedId, courseNumber)
-  }, [quickPickSelectedId, activeOrder])
-
-  // Gutter: Set delay (5m / 10m buttons)
-  // Sets order-level delay (always available) AND course delays when coursing is on
-  const handleGutterSetDelay = useCallback((minutes: number) => {
-    // Per-item delay: apply to selected items
-    const selectedIds = Array.from(quickPickSelectedIds)
-    if (selectedIds.length > 0) {
-      // Check if all selected items already have this delay — if so, toggle off
-      const allHaveThisDelay = selectedIds.every(id => {
-        const item = inlineOrderItems.find(i => i.id === id)
-        return item?.delayMinutes === minutes
-      })
-      activeOrder.setItemDelay(selectedIds, allHaveThisDelay ? null : minutes)
-    } else {
-      // No items selected — set order-level delay as fallback
-      const currentDelay = activeOrder.pendingDelay
-      if (currentDelay === minutes) {
-        activeOrder.setPendingDelay(null)
-      } else {
-        activeOrder.setPendingDelay(minutes)
-      }
-    }
-
-    // Also set course delays when coursing is enabled
-    if (activeOrder.coursingEnabled) {
-      const delays = activeOrder.courseDelays || {}
-      const pendingCourses = new Set<number>()
-      for (const item of inlineOrderItems) {
-        if (!item.sentToKitchen && item.courseNumber && item.courseNumber > 1) {
-          pendingCourses.add(item.courseNumber)
-        }
-      }
-      for (const cn of pendingCourses) {
-        if (!delays[cn]?.firedAt) {
-          const currentDelay = activeOrder.pendingDelay
-          activeOrder.setCourseDelay(cn, currentDelay === minutes ? 0 : minutes)
-        }
-      }
-    }
-  }, [activeOrder, inlineOrderItems, quickPickSelectedIds])
 
   // Helper: load items from API response into the store (used by orderToLoad and refreshes)
   const loadItemsIntoStore = useCallback((apiItems: any[]) => {
@@ -494,9 +390,6 @@ export function FloorPlanHome({
   // Split ticket manager state
   const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
   const [splitItemId, setSplitItemId] = useState<string | null>(null)
-
-  // Item controls expansion state
-  const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   // Active seat for auto-assignment (null = "Shared")
   const [activeSeatNumber, setActiveSeatNumber] = useState<number | null>(null)
@@ -1185,142 +1078,6 @@ export function FloorPlanHome({
   // Get the active table object
   const activeTable = activeTableId ? tables.find(t => t.id === activeTableId) || null : null
 
-  // FIX 3: Group order items by seat for display - use useMemo instead of useCallback
-  // useCallback returns a function that runs on every render; useMemo caches the result
-  const groupedOrderItems = useMemo(() => {
-    if (!activeTable || getTotalSeats(activeTable) === 0) {
-      // No seats - just return all items in one "group"
-      return [{ seatNumber: null, sourceTableId: null, label: 'All Items', items: inlineOrderItems }]
-    }
-
-    const groups: { seatNumber: number | null; sourceTableId: string | null; label: string; items: InlineOrderItem[] }[] = []
-
-    // For virtual groups, use T-S notation (e.g., T4-S1)
-    const isVirtualGroup = activeTable.virtualGroupId !== null
-
-    if (isVirtualGroup) {
-      // Group by sourceTableId + seatNumber
-      const seatKeys = new Map<string, InlineOrderItem[]>()
-
-      inlineOrderItems.forEach(item => {
-        if (item.seatNumber && item.sourceTableId) {
-          const key = `${item.sourceTableId}-${item.seatNumber}`
-          if (!seatKeys.has(key)) {
-            seatKeys.set(key, [])
-          }
-          seatKeys.get(key)!.push(item)
-        }
-      })
-
-      // Sort by table name, then seat number
-      const sortedKeys = Array.from(seatKeys.keys()).sort((a, b) => {
-        const [tableIdA, seatA] = a.split('-')
-        const [tableIdB, seatB] = b.split('-')
-        const tableA = tables.find(t => t.id === tableIdA)
-        const tableB = tables.find(t => t.id === tableIdB)
-        const nameCompare = (tableA?.name || '').localeCompare(tableB?.name || '')
-        if (nameCompare !== 0) return nameCompare
-        return parseInt(seatA) - parseInt(seatB)
-      })
-
-      sortedKeys.forEach(key => {
-        const [tableId, seatNumStr] = key.split('-')
-        const seatNum = parseInt(seatNumStr)
-        const table = tables.find(t => t.id === tableId)
-        const tableLabel = table?.abbreviation || table?.name || 'Table'
-        groups.push({
-          seatNumber: seatNum,
-          sourceTableId: tableId,
-          label: `${tableLabel}-S${seatNum}`,
-          items: seatKeys.get(key)!,
-        })
-      })
-    } else {
-      // Non-virtual group - simple seat grouping
-      const seatsWithItems = new Set<number>()
-      inlineOrderItems.forEach(item => {
-        if (item.seatNumber) {
-          seatsWithItems.add(item.seatNumber)
-        }
-      })
-
-      Array.from(seatsWithItems).sort((a, b) => a - b).forEach(seatNum => {
-        groups.push({
-          seatNumber: seatNum,
-          sourceTableId: null,
-          label: `Seat ${seatNum}`,
-          items: inlineOrderItems.filter(item => item.seatNumber === seatNum),
-        })
-      })
-    }
-
-    // Add shared items (no seat) at the end
-    const sharedItems = inlineOrderItems.filter(item => !item.seatNumber)
-    if (sharedItems.length > 0) {
-      groups.push({
-        seatNumber: null,
-        sourceTableId: null,
-        label: 'Shared',
-        items: sharedItems,
-      })
-    }
-
-    return groups
-  }, [activeTable, getTotalSeats, inlineOrderItems, tables])
-
-  // Convert grouped order items to OrderPanel seatGroups format
-  const seatGroupsForPanel = useMemo(() => {
-    if (!activeTableId || inlineOrderItems.length === 0) return undefined
-
-    const groups = groupedOrderItems
-
-    // If only one group with no seat number (e.g., "All Items"), don't use seat grouping
-    if (groups.length === 1 && groups[0].seatNumber === null) {
-      return undefined
-    }
-
-    // Convert to OrderPanel's SeatGroup format
-    return groups.map(group => ({
-      seatNumber: group.seatNumber,
-      sourceTableId: group.sourceTableId,
-      label: group.label,
-      items: group.items.map(i => ({
-        id: i.id,
-        name: i.name,
-        quantity: i.quantity,
-        price: i.price,
-        modifiers: i.modifiers?.map(m => ({
-          id: (m.id || m.modifierId) ?? '',
-          modifierId: m.modifierId,
-          name: m.name,
-          price: Number(m.price),
-          depth: m.depth ?? 0,
-          preModifier: m.preModifier ?? null,
-          spiritTier: m.spiritTier ?? null,
-          linkedBottleProductId: m.linkedBottleProductId ?? null,
-          parentModifierId: m.parentModifierId ?? null,
-        })),
-        specialNotes: i.specialNotes,
-        kitchenStatus: i.kitchenStatus as OrderPanelItemData['kitchenStatus'],
-        isHeld: i.isHeld,
-        isCompleted: i.isCompleted,
-        isTimedRental: i.isTimedRental,
-        menuItemId: i.menuItemId,
-        blockTimeMinutes: i.blockTimeMinutes,
-        blockTimeStartedAt: i.blockTimeStartedAt,
-        blockTimeExpiresAt: i.blockTimeExpiresAt,
-        seatNumber: i.seatNumber,
-        courseNumber: i.courseNumber,
-        courseStatus: i.courseStatus,
-        sentToKitchen: i.sentToKitchen,
-        resendCount: i.resendCount,
-        completedAt: i.completedAt,
-        createdAt: i.createdAt,
-        ingredientModifications: i.ingredientModifications,
-      })),
-    }))
-  }, [activeTableId, inlineOrderItems, groupedOrderItems])
-
   // Quick bar items with full data
   const [quickBarItems, setQuickBarItems] = useState<{
     id: string
@@ -1487,7 +1244,22 @@ export function FloorPlanHome({
           resendNote: item.resendNote,
           createdAt: item.createdAt,
         }))
-        loadItemsIntoStore(items)
+        // Load the full order (with tableId, orderType, etc.) into Zustand store
+        const store = useOrderStore.getState()
+        store.loadOrder({
+          id: orderToLoad.id,
+          orderNumber: data.orderNumber ?? orderToLoad.orderNumber,
+          orderType: data.orderType || orderToLoad.orderType || 'dine_in',
+          tableId: data.tableId || orderToLoad.tableId,
+          tabName: data.tabName,
+          guestCount: data.guestCount || 1,
+          items,
+          subtotal: Number(data.subtotal) || 0,
+          discountTotal: Number(data.discountTotal) || 0,
+          taxTotal: Number(data.taxTotal) || 0,
+          tipTotal: Number(data.tipTotal) || 0,
+          total: Number(data.total) || 0,
+        })
 
         // Notify parent that order is loaded
         onOrderLoaded?.()
@@ -1935,7 +1707,60 @@ export function FloorPlanHome({
             resendNote: item.resendNote,
             createdAt: item.createdAt,
           }))
-          loadItemsIntoStore(items)
+          // Use loadOrder to atomically set tableId + items in Zustand store
+          // (loadItemsIntoStore only adds items without setting tableId, causing
+          // "Please select a table" errors on Send)
+          const store = useOrderStore.getState()
+          store.loadOrder({
+            id: primaryTable.currentOrder.id,
+            orderNumber: data.orderNumber ?? primaryTable.currentOrder.orderNumber,
+            orderType: data.orderType || 'dine_in',
+            tableId: data.tableId || primaryTable.id,
+            tabName: data.tabName,
+            guestCount: data.guestCount || totalSeats,
+            items: (data.items || []).map((item: any) => ({
+              id: item.id,
+              menuItemId: item.menuItemId,
+              name: item.name || 'Unknown',
+              price: Number(item.price) || 0,
+              quantity: item.quantity,
+              itemTotal: Number(item.itemTotal) || (Number(item.price) || 0) * (item.quantity || 1),
+              specialNotes: item.specialNotes,
+              seatNumber: item.seatNumber,
+              courseNumber: item.courseNumber,
+              courseStatus: item.courseStatus,
+              isHeld: item.isHeld,
+              holdUntil: item.holdUntil,
+              firedAt: item.firedAt,
+              isCompleted: item.isCompleted,
+              completedAt: item.completedAt,
+              resendCount: item.resendCount,
+              status: item.status || 'active',
+              voidReason: item.voidReason,
+              wasMade: item.wasMade,
+              blockTimeMinutes: item.blockTimeMinutes,
+              blockTimeStartedAt: item.blockTimeStartedAt,
+              blockTimeExpiresAt: item.blockTimeExpiresAt,
+              sourceTableId: item.sourceTableId,
+              modifiers: (item.modifiers || []).map((m: any) => ({
+                id: m.id || m.modifierId || '',
+                modifierId: m.modifierId || m.id || '',
+                name: m.name || '',
+                price: Number(m.price) || 0,
+                depth: m.depth ?? 0,
+                preModifier: m.preModifier ?? null,
+              })),
+              ingredientModifications: item.ingredientModifications,
+              pizzaConfig: item.pizzaConfig,
+            })),
+            subtotal: Number(data.subtotal) || 0,
+            taxTotal: Number(data.taxTotal) || 0,
+            tipTotal: Number(data.tipTotal) || 0,
+            total: Number(data.total) || 0,
+            notes: data.notes,
+            reopenedAt: data.reopenedAt,
+            reopenReason: data.reopenReason,
+          })
         }
       } catch (error) {
         console.error('[FloorPlanHome] Failed to load order:', error)
@@ -1961,11 +1786,23 @@ export function FloorPlanHome({
 
   // Handle quick order type (Takeout, Delivery, Bar Tab)
   const handleQuickOrderType = useCallback((orderType: QuickOrderType) => {
+    const store = useOrderStore.getState()
+    const hasItems = (store.currentOrder?.items.length ?? 0) > 0
+
+    if (hasItems) {
+      // Preserve existing items — only change the order type metadata
+      store.updateOrderType(orderType)
+    } else {
+      // No items yet — start fresh with the new type
+      store.clearOrder()
+      store.startOrder(orderType)
+    }
+
+    // Clear table context for non-table order types
     setActiveTableId(null)
     setActiveOrderType(orderType)
     setActiveOrderId(null)
     setActiveOrderNumber(null)
-    useOrderStore.getState().clearOrder()
     setShowOrderPanel(true)
   }, [])
 
@@ -2026,39 +1863,6 @@ export function FloorPlanHome({
     setContextMenu(null)
   }, [])
 
-  // Update item quantity
-  const handleUpdateQuantity = useCallback((itemId: string, quantity: number) => {
-    const store = useOrderStore.getState()
-    if (quantity <= 0) {
-      store.removeItem(itemId)
-    } else {
-      store.updateItem(itemId, { quantity })
-    }
-  }, [])
-
-  // Remove item
-  const handleRemoveItem = useCallback((itemId: string) => {
-    useOrderStore.getState().removeItem(itemId)
-  }, [])
-
-  // Toggle hold on item
-  const handleToggleHold = useCallback((itemId: string) => {
-    const store = useOrderStore.getState()
-    const item = store.currentOrder?.items.find(i => i.id === itemId)
-    if (!item) return
-    const newHeld = !item.isHeld
-    store.updateItem(itemId, {
-      isHeld: newHeld,
-      // Hold and delay are mutually exclusive
-      ...(newHeld ? { delayMinutes: null, delayStartedAt: null, delayFiredAt: null } : {}),
-    })
-  }, [])
-
-  // Open notes editor — delegates to useActiveOrder's NoteEditModal state
-  const handleOpenNotesEditor = useCallback((itemId: string, currentNotes?: string) => {
-    activeOrder.openNoteEditor(itemId, currentNotes)
-  }, [activeOrder.openNoteEditor])
-
   // Handle tapping an existing order item to edit modifiers
   const handleOrderItemTap = useCallback((item: InlineOrderItem) => {
     // Don't allow editing sent items
@@ -2087,11 +1891,6 @@ export function FloorPlanHome({
     }
     activeOrder.closeNoteEditor()
   }, [activeOrder.noteEditTarget, activeOrder.saveNote, activeOrder.closeNoteEditor])
-
-  // Update seat number
-  const handleUpdateSeat = useCallback((itemId: string, seatNumber: number | null) => {
-    useOrderStore.getState().updateItem(itemId, { seatNumber: seatNumber || undefined })
-  }, [])
 
   // Add a new seat to the table (Skill 121 - Atomic Seat Management)
   // Works with or without an active order
@@ -2145,21 +1944,6 @@ export function FloorPlanHome({
       toast.success(`Seat ${newSeatNum} added`)
     }
   }, [activeOrderId, activeTable, getTotalSeats])
-
-  // Update course number
-  const handleUpdateCourse = useCallback((itemId: string, courseNumber: number | null) => {
-    useOrderStore.getState().updateItem(itemId, { courseNumber: courseNumber || undefined })
-  }, [])
-
-  // Toggle item controls expansion
-  const handleToggleItemControls = useCallback((itemId: string) => {
-    setExpandedItemId(prev => prev === itemId ? null : itemId)
-  }, [])
-
-  // Edit item (reopen modifiers) — delegates entirely to engine
-  const handleEditItem = useCallback((item: InlineOrderItem) => {
-    engine.handleEditItem(item.id)
-  }, [engine])
 
   // Save modifier changes to API and update local state
   const handleSaveModifierChanges = useCallback(async (
@@ -2398,7 +2182,6 @@ export function FloorPlanHome({
     setActiveOrderId(null)
     setActiveOrderNumber(null)
     setActiveOrderType(null)
-    setExpandedItemId(null)
     activeOrder.closeNoteEditor()
     setGuestCount(defaultGuestCount)
     setActiveSeatNumber(null)
@@ -2436,7 +2219,6 @@ export function FloorPlanHome({
     setActiveOrderId(null)
     setActiveOrderNumber(null)
     setActiveOrderType(null)
-    setExpandedItemId(null)
     activeOrder.closeNoteEditor()
     setGuestCount(defaultGuestCount)
     setActiveSeatNumber(null)
@@ -2482,7 +2264,6 @@ export function FloorPlanHome({
 
   // Payment mode state (cash or card)
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
-  const [showTotalDetails, setShowTotalDetails] = useState(false)
 
   // Calculate order subtotal using centralized function (single source of truth)
   const orderSubtotal = calculateOrderSubtotal(inlineOrderItems)
@@ -2507,12 +2288,7 @@ export function FloorPlanHome({
   })
 
   // Totals from pricing hook (replaces hardcoded TAX_RATE and CASH_DISCOUNT_RATE)
-  const cashDiscount = pricing.cashDiscount
-  const tax = pricing.tax
   const orderTotal = pricing.total
-  // Both cash and card totals from usePricing (tax-inclusive aware)
-  const cashTotalForButton = pricing.cashTotal
-  const cardTotalForButton = pricing.cardTotal
 
   // Handle payment success (extracted from inline for OrderPanel)
   const handlePaymentSuccess = useCallback(async (result: { cardLast4?: string; cardBrand?: string; tipAmount: number }) => {
@@ -2550,7 +2326,6 @@ export function FloorPlanHome({
     setActiveOrderId(null)
     setActiveOrderNumber(null)
     setActiveOrderType(null)
-    setExpandedItemId(null)
     activeOrder.closeNoteEditor()
     setGuestCount(defaultGuestCount)
     setActiveSeatNumber(null)
@@ -3580,8 +3355,8 @@ export function FloorPlanHome({
         </div>
       </header>
 
-      {/* Content below header: Left column (bars + main) + Right order panel */}
-      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      {/* Content below header: Order panel (left) + Main content (right) */}
+      <div style={{ display: 'flex', flexDirection: 'row-reverse', flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {/* Left Column - Bars + Main Content */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
 
@@ -4323,38 +4098,12 @@ export function FloorPlanHome({
           </div>{/* end floor-plan-main */}
         </div>{/* end Left Column */}
 
-        {/* Quick Pick Gutter — between menu and order panel */}
-        {layout.quickPickEnabled && (
-          <QuickPickStrip
-            selectedItemId={quickPickSelectedId}
-            selectedItemQty={quickPickSelectedId ? inlineOrderItems.find(i => i.id === quickPickSelectedId)?.quantity : undefined}
-            selectedCount={quickPickSelectedIds.size}
-            onNumberTap={handleQuickPickNumber}
-            multiSelectMode={quickPickMultiSelect}
-            onToggleMultiSelect={toggleQuickPickMultiSelect}
-            coursingEnabled={activeOrder.coursingEnabled}
-            courseCount={layout.coursingCourseCount || 5}
-            activeCourseNumber={quickPickSelectedId ? inlineOrderItems.find(i => i.id === quickPickSelectedId)?.courseNumber ?? null : null}
-            onCourseAssign={handleGutterCourseAssign}
-            onHoldToggle={handleGutterHold}
-            isHeld={quickPickSelectedId ? inlineOrderItems.find(i => i.id === quickPickSelectedId)?.isHeld : false}
-            onSetDelay={handleGutterSetDelay}
-            activeDelay={(() => {
-              // Show active delay based on selected items' per-item delay
-              const selectedIds = Array.from(quickPickSelectedIds)
-              if (selectedIds.length === 0) return activeOrder.pendingDelay ?? null
-              const firstItem = inlineOrderItems.find(i => i.id === selectedIds[0])
-              return firstItem?.delayMinutes ?? null
-            })()}
-          />
-        )}
-
-        {/* Right Panel - Order Panel (always visible, full height from below header) */}
+        {/* Left Panel - Order Panel (always visible, full height from below header) */}
         <div
           style={{
             width: 360,
             flexShrink: 0,
-            borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+            borderRight: '1px solid rgba(255, 255, 255, 0.08)',
             background: 'rgba(15, 23, 42, 0.6)',
             display: 'flex',
             flexDirection: 'column',
@@ -4719,91 +4468,7 @@ export function FloorPlanHome({
                 </div>
               )}
 
-              {/* Order Panel — shared component replaces inline rendering + OrderPanelActions */}
-              <OrderPanel
-                orderId={activeOrderId}
-                orderNumber={activeOrderNumber ? Number(activeOrderNumber) : undefined}
-                orderType={activeOrderType || undefined}
-                locationId={locationId}
-                items={orderPanelItems}
-                seatGroups={seatGroupsForPanel}
-                subtotal={orderSubtotal}
-                cashSubtotal={pricing.cashSubtotal}
-                cardSubtotal={pricing.cardSubtotal}
-                tax={tax}
-                total={orderTotal}
-                showItemControls={true}
-                showEntertainmentTimers={true}
-                onItemClick={(item) => {
-                  // Check if sent — don't allow editing sent items
-                  const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === item.id)
-                  if (storeItem?.sentToKitchen) return
-                  engine.handleEditItem(item.id)
-                }}
-                onItemRemove={handleRemoveItem}
-                onQuantityChange={handleUpdateQuantity}
-                onItemHoldToggle={handleToggleHold}
-                onItemNoteEdit={handleOpenNotesEditor}
-                onItemCourseChange={handleUpdateCourse}
-                onItemEditModifiers={(itemId) => {
-                  engine.handleEditItem(itemId)
-                }}
-                onItemCompVoid={(itemId) => {
-                  const voidItem = inlineOrderItems.find(i => i.id === itemId)
-                  if (voidItem) handleOpenCompVoid(voidItem)
-                }}
-                onItemResend={(itemId) => {
-                  const resendItem = inlineOrderItems.find(i => i.id === itemId)
-                  if (resendItem) handleResendItem(itemId, resendItem.name)
-                }}
-                onItemSplit={(itemId) => {
-                  setSplitItemId(itemId)
-                  setShowSplitTicketManager(true)
-                }}
-                expandedItemId={expandedItemId}
-                onItemToggleExpand={(id) => setExpandedItemId(prev => prev === id ? null : id)}
-                onItemSeatChange={handleUpdateSeat}
-                maxSeats={Math.max(guestCount, 4)}
-                maxCourses={5}
-                onSend={handleSendToKitchen}
-                isSending={isSendingOrder}
-                terminalId="terminal-1"
-                employeeId={employeeId}
-                onPaymentSuccess={handlePaymentSuccess}
-                cashDiscountPct={pricing.cashDiscountRate}
-                taxPct={Math.round(pricing.taxRate * 100)}
-                hasTaxInclusiveItems={taxSplit.inclusiveSubtotal > 0}
-                roundingAdjustment={pricing.cashRoundingDelta !== 0 ? pricing.cashRoundingDelta : undefined}
-                cashTotal={cashTotalForButton}
-                cardTotal={cardTotalForButton}
-                cashDiscountAmount={pricing.isDualPricingEnabled ? cardTotalForButton - cashTotalForButton : 0}
-                onPaymentModeChange={(mode) => setPaymentMode(mode)}
-                onCloseOrder={activeOrderId ? handleCloseOrder : undefined}
-                onSaveOrderFirst={handleSaveOrderForPayment}
-                autoShowPayment={pendingPayAfterSave}
-                onAutoShowPaymentHandled={() => setPendingPayAfterSave(false)}
-                hideHeader={true}
-                className="flex-1"
-                selectedItemId={layout.quickPickEnabled ? quickPickSelectedId : undefined}
-                selectedItemIds={layout.quickPickEnabled ? quickPickSelectedIds : undefined}
-                onItemSelect={layout.quickPickEnabled ? selectQuickPickItem : undefined}
-                multiSelectMode={quickPickMultiSelect}
-                onToggleMultiSelect={toggleQuickPickMultiSelect}
-                onSelectAllPending={selectAllPendingQuickPick}
-                coursingEnabled={activeOrder.coursingEnabled}
-                courseDelays={activeOrder.courseDelays}
-                onSetCourseDelay={activeOrder.setCourseDelay}
-                onFireCourse={activeOrder.handleFireCourse}
-                reopenedAt={activeOrder.reopenedAt}
-                reopenReason={activeOrder.reopenReason}
-                pendingDelay={activeOrder.pendingDelay}
-                delayStartedAt={activeOrder.delayStartedAt}
-                delayFiredAt={activeOrder.delayFiredAt}
-                onFireDelayed={activeOrder.handleFireDelayed}
-                onCancelDelay={() => activeOrder.setPendingDelay(null)}
-                onFireItem={activeOrder.handleFireItem}
-                onCancelItemDelay={(itemId) => activeOrder.setItemDelay([itemId], null)}
-              />
+              {children}
         </div>
       </div>
 

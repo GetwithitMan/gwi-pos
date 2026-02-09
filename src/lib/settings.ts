@@ -83,6 +83,7 @@ export interface PaymentSettings {
   incrementThresholdPercent: number  // Fire IncrementalAuth when tab reaches this % of auth (default: 80)
   incrementAmount: number            // Fixed increment amount in dollars (default: 25)
   autoIncrementEnabled: boolean      // Enable background auto-increment (default: true)
+  incrementTipBufferPercent: number  // Extra % added to hold to cover potential tip (default: 25, 0 = disabled)
   maxTabAlertAmount: number          // Alert manager when tab exceeds this amount (default: 500)
 
   // Quick Pay / Tip Configuration
@@ -366,6 +367,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     incrementThresholdPercent: 80,
     incrementAmount: 25,
     autoIncrementEnabled: true,
+    incrementTipBufferPercent: 25,
     maxTabAlertAmount: 500,
     // Quick Pay / Tips
     quickPayEnabled: true,

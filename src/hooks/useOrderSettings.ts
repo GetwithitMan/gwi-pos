@@ -30,6 +30,7 @@ const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
   incrementThresholdPercent: 80,
   incrementAmount: 25,
   autoIncrementEnabled: true,
+  incrementTipBufferPercent: 25,
   maxTabAlertAmount: 500,
   // Quick Pay / Tip
   quickPayEnabled: true,
@@ -72,6 +73,7 @@ export function useOrderSettings() {
   const [taxInclusiveLiquor, setTaxInclusiveLiquor] = useState(false)
   const [taxInclusiveFood, setTaxInclusiveFood] = useState(false)
   const [receiptSettings, setReceiptSettings] = useState<Partial<ReceiptSettings>>({})
+  const [requireCardForTab, setRequireCardForTab] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
   const loadSettings = async () => {
@@ -102,6 +104,9 @@ export function useOrderSettings() {
         if (settings.receipts) {
           setReceiptSettings(settings.receipts)
         }
+        if (settings.barTabs?.requireCardForTab !== undefined) {
+          setRequireCardForTab(settings.barTabs.requireCardForTab)
+        }
       }
     } catch (error) {
       console.error('Failed to load settings:', error)
@@ -122,6 +127,7 @@ export function useOrderSettings() {
     taxInclusiveLiquor,
     taxInclusiveFood,
     receiptSettings,
+    requireCardForTab,
     isLoading,
     reloadSettings: loadSettings,
   }

@@ -50,6 +50,12 @@ export async function GET(request: NextRequest) {
               modifiers: true,
             },
           },
+          cards: {
+            where: { deletedAt: null, status: 'authorized' },
+            select: { cardholderName: true, cardType: true, cardLast4: true },
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+          },
           payments: true,
           splitOrders: {
             select: {
@@ -89,6 +95,12 @@ export async function GET(request: NextRequest) {
             include: {
               modifiers: true,
             },
+          },
+          cards: {
+            where: { deletedAt: null, status: 'authorized' },
+            select: { cardholderName: true, cardType: true, cardLast4: true },
+            take: 1,
+            orderBy: { createdAt: 'desc' },
           },
           payments: true,
         },
@@ -161,6 +173,8 @@ export async function GET(request: NextRequest) {
         } : null,
         customFields: order.customFields as Record<string, string> | null,
         tabName: order.tabName,
+        tabStatus: (order as Record<string, unknown>).tabStatus || null,
+        cardholderName: (order as { cards?: { cardholderName: string | null }[] }).cards?.[0]?.cardholderName || null,
         tableName: order.table?.name || null,  // Convenience field for display
         tableId: order.tableId,
         table: order.table ? {

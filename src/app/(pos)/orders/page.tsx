@@ -74,10 +74,13 @@ import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
 import { useQuickPick } from '@/hooks/useQuickPick'
+import { useOrderPanelCallbacks } from '@/hooks/useOrderPanelCallbacks'
+import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import { toast } from '@/stores/toast-store'
 import TipAdjustmentOverlay from '@/components/tips/TipAdjustmentOverlay'
+import { CardFirstTabFlow } from '@/components/tabs/CardFirstTabFlow'
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
 export default function OrdersPage() {
@@ -87,6 +90,10 @@ export default function OrdersPage() {
   const { hasDevAccess, setHasDevAccess } = useDevStore()
 
   // Shared handlers from useActiveOrder hook
+  const activeOrderFull = useActiveOrder({
+    locationId: employee?.location?.id,
+    employeeId: employee?.id,
+  })
   const {
     expandedItemId,
     handleHoldToggle: sharedHoldToggle,
@@ -95,10 +102,7 @@ export default function OrdersPage() {
     handleSeatChange: sharedSeatChange,
     handleResend: sharedResend,
     handleToggleExpand,
-  } = useActiveOrder({
-    locationId: employee?.location?.id,
-    employeeId: employee?.id,
-  })
+  } = activeOrderFull
 
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
@@ -142,6 +146,9 @@ export default function OrdersPage() {
     pizzaConfig?: PizzaOrderConfig
   } | null>(null)
 
+  // Ref for handleOpenModifiersShared — defined later but needed by useOrderingEngine
+  const handleOpenModifiersSharedRef = useRef<((...args: any[]) => void) | null>(null)
+
   // T023: Inline ordering modifier callback ref
   const inlineModifierCallbackRef = useRef<((modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null; modifierId?: string | null; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void) | null>(null)
   // T023: Inline ordering timed rental callback ref
@@ -158,7 +165,7 @@ export default function OrdersPage() {
   } | null>(null)
 
   // Settings loaded from API via custom hook
-  const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings, taxInclusiveLiquor, taxInclusiveFood } = useOrderSettings()
+  const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings, taxInclusiveLiquor, taxInclusiveFood, requireCardForTab } = useOrderSettings()
   const { settings: displaySettings, menuItemClass, gridColsClass, orderPanelClass, categorySize, categoryColorMode, categoryButtonBgColor, categoryButtonTextColor, showPriceOnMenuItems, updateSetting, updateSettings } = usePOSDisplay()
 
   // POS Layout (Bar/Food mode, favorites, category order)
@@ -237,10 +244,17 @@ export default function OrdersPage() {
 
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [initialPayMethod, setInitialPayMethod] = useState<'cash' | 'credit' | undefined>(undefined)
   const [orderToPayId, setOrderToPayId] = useState<string | null>(null)
+  const [paymentTabCards, setPaymentTabCards] = useState<Array<{ id: string; cardType: string; cardLast4: string; cardholderName?: string | null; authAmount: number; isDefault: boolean }>>([])
 
   // Order to load into FloorPlanHome (for editing from Open Orders panel)
   const [orderToLoad, setOrderToLoad] = useState<{ id: string; orderNumber: number; tableId?: string; tabName?: string; orderType: string } | null>(null)
+
+  // BartenderView tab deselect callback (registered via onRegisterDeselectTab)
+  const bartenderDeselectTabRef = useRef<(() => void) | null>(null)
+  // FloorPlanHome table deselect callback (registered via onRegisterDeselectTable)
+  const floorPlanDeselectTableRef = useRef<(() => void) | null>(null)
 
   // Receipt modal state
   const [showReceiptModal, setShowReceiptModal] = useState(false)
@@ -258,6 +272,27 @@ export default function OrdersPage() {
   // Discount modal state
   const [showDiscountModal, setShowDiscountModal] = useState(false)
   const [appliedDiscounts, setAppliedDiscounts] = useState<{ id: string; name: string; amount: number; percent?: number | null }[]>([])
+
+  // Tab name prompt state
+  const [showTabNamePrompt, setShowTabNamePrompt] = useState(false)
+  const [tabNameInput, setTabNameInput] = useState('')
+  const [tabNameCallback, setTabNameCallback] = useState<(() => void) | null>(null)
+
+  // Card-first tab flow state
+  const [showCardTabFlow, setShowCardTabFlow] = useState(false)
+  const [cardTabOrderId, setCardTabOrderId] = useState<string | null>(null)
+  const [tabCardInfo, setTabCardInfo] = useState<{ cardholderName?: string; cardLast4?: string; cardType?: string } | null>(null)
+
+  // Clear tab card info only when order transitions FROM something TO null
+  // (not when currentOrder is already null — avoids race with async order loading)
+  const prevOrderRef = useRef(currentOrder)
+  useEffect(() => {
+    if (prevOrderRef.current && !currentOrder) {
+      setTabCardInfo(null)
+      setCardTabOrderId(null)
+    }
+    prevOrderRef.current = currentOrder
+  }, [currentOrder])
 
   // Comp/Void modal state
   const [showCompVoidModal, setShowCompVoidModal] = useState(false)
@@ -438,6 +473,47 @@ export default function OrdersPage() {
     toggleMultiSelect: toggleQuickPickMultiSelect,
     selectAllPending: selectAllPendingQuickPick,
   } = useQuickPick(orderPanelItems)
+
+  // Unified ordering engine for OrderPanel callbacks (floor-plan + bartender views)
+  const engine = useOrderingEngine({
+    locationId: employee?.location?.id || '',
+    employeeId: employee?.id,
+    onOpenModifiers: ((...args: any[]) => handleOpenModifiersSharedRef.current?.(...args)) as any,
+    onOpenPizzaBuilder: (item, onComplete) => {
+      inlinePizzaCallbackRef.current = onComplete
+      setSelectedPizzaItem(item as MenuItem)
+      setEditingPizzaItem(null)
+      setShowPizzaModal(true)
+    },
+    onOpenTimedRental: (item, onComplete) => {
+      inlineTimedRentalCallbackRef.current = onComplete
+      setSelectedTimedItem(item as MenuItem)
+      setShowTimedRentalModal(true)
+    },
+  })
+
+  // Unified OrderPanel callbacks (shared between floor-plan and bartender)
+  const panelCallbacks = useOrderPanelCallbacks({
+    engine,
+    activeOrder: activeOrderFull,
+    onOpenCompVoid: (item) => {
+      const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId
+      if (!orderId) {
+        console.error('[CompVoid] No order ID found — cannot open comp/void modal')
+        return
+      }
+      setOrderToPayId(orderId)
+      setCompVoidItem(item)
+      setShowCompVoidModal(true)
+    },
+    onOpenResend: (itemId, itemName) => {
+      setResendNote('')
+      setResendModal({ itemId, itemName })
+    },
+    onOpenSplit: () => {
+      setShowSplitTicketManager(true)
+    },
+  })
 
   // Multi-digit entry: tapping 1 then 0 quickly = 10
   const ordersDigitBufferRef = useRef<string>('')
@@ -712,9 +788,29 @@ export default function OrdersPage() {
     return () => { cancelled = true }
   }, [quickBar, menuItemColors])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Check for open shift and prompt for closeout
+    if (employee?.id) {
+      try {
+        const res = await fetch(`/api/shifts?employeeId=${employee.id}&status=open`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.data?.length > 0) {
+            const closeShift = window.confirm(
+              'You have an open shift. Would you like to close your shift before logging out?'
+            )
+            if (closeShift) {
+              router.push('/reports/shift')
+              return
+            }
+          }
+        }
+      } catch {
+        // Shift check failed — proceed with logout anyway
+      }
+    }
     clearOrder()
-    setHasDevAccess(false)  // Clear dev access on logout
+    setHasDevAccess(false)
     logout()
     router.push('/login')
   }
@@ -842,6 +938,14 @@ export default function OrdersPage() {
       }
 
       const savedOrder = await response.json()
+
+      // Sync server-calculated totals back to store (tax, discounts, dual pricing)
+      // This ensures client totals match server truth without disturbing item state
+      const store = useOrderStore.getState()
+      if (store.currentOrder && savedOrder.subtotal !== undefined) {
+        store.updateOrderId(savedOrder.id, savedOrder.orderNumber)
+      }
+
       return savedOrder.id
     } catch (error) {
       console.error('Failed to save order:', error)
@@ -855,6 +959,14 @@ export default function OrdersPage() {
     setSelectedOrderType(orderType)
     if (customFields) {
       setOrderCustomFields(customFields)
+    }
+
+    // Sync bar/food category mode with order type
+    if (orderType.slug === 'bar_tab') {
+      setMode('bar')
+    } else {
+      // All non-bar order types (dine_in, takeout, delivery, drive_thru, custom) default to food mode
+      setMode('food')
     }
 
     // If order type requires table selection, open table picker
@@ -903,14 +1015,14 @@ export default function OrdersPage() {
 
     const workflowRules = (orderTypeConfig.workflowRules || {}) as WorkflowRules
 
-    // Check table selection requirement
+    // If table is required but none selected, block and prompt for table picker
     if (workflowRules.requireTableSelection && !currentOrder.tableId) {
-      return { valid: false, message: 'Please select a table before sending to kitchen' }
+      return { valid: false, message: 'TABLE_REQUIRED' }
     }
 
     // Check customer name requirement
     if (workflowRules.requireCustomerName && !currentOrder.tabName && !orderCustomFields.customerName) {
-      return { valid: false, message: 'Please enter a customer name before sending to kitchen' }
+      return { valid: false, message: 'TAB_NAME_REQUIRED' }
     }
 
     // Check payment requirement (for takeout/delivery)
@@ -930,12 +1042,26 @@ export default function OrdersPage() {
     // Validate based on workflow rules
     const validation = validateBeforeSend()
     if (!validation.valid) {
-      alert(validation.message)
+      if (validation.message === 'TABLE_REQUIRED') {
+        toast.warning('Please select a table for this order')
+        setShowTablePicker(true)
+        return
+      }
+      if (validation.message === 'TAB_NAME_REQUIRED') {
+        // Show tab name prompt, then retry send after name is entered
+        setTabNameInput('')
+        setTabNameCallback(() => () => handleSendToKitchen())
+        setShowTabNamePrompt(true)
+        return
+      }
       // If payment is required, open payment modal
       const orderTypeConfig = orderTypes.find(t => t.slug === currentOrder.orderType)
       const workflowRules = (orderTypeConfig?.workflowRules || {}) as WorkflowRules
       if (workflowRules.requirePaymentBeforeSend) {
+        toast.warning('Payment is required before sending this order')
         handleOpenPayment()
+      } else {
+        toast.warning(validation.message || 'Cannot send order')
       }
       return
     }
@@ -1083,6 +1209,15 @@ export default function OrdersPage() {
     setSavedOrderId(order.id)
     setOrderSent(false) // Allow sending updates to kitchen
 
+    // Restore tab card info from pre-auth data (so "Add to Tab" works correctly)
+    if (order.hasPreAuth && order.preAuth?.last4) {
+      setTabCardInfo({
+        cardholderName: order.cardholderName || undefined,
+        cardLast4: order.preAuth.last4,
+        cardType: order.preAuth.cardBrand,
+      })
+    }
+
     // Close the panel
     setShowTabsPanel(false)
   }
@@ -1110,6 +1245,11 @@ export default function OrdersPage() {
 
     if (orderId) {
       setOrderToPayId(orderId)
+      // Fetch pre-authed tab cards for "Charge existing card" option
+      fetch(`/api/orders/${orderId}/cards`)
+        .then(r => r.ok ? r.json() : { data: [] })
+        .then(d => setPaymentTabCards((d.data || []).filter((c: { status: string }) => c.status === 'authorized')))
+        .catch(() => setPaymentTabCards([]))
       setShowPaymentModal(true)
     }
   }
@@ -1522,9 +1662,7 @@ export default function OrdersPage() {
     }
   }
 
-  const handleCompVoid = async (itemId: string) => {
-    const item = currentOrder?.items.find(i => i.id === itemId)
-    if (!item) return
+  const handleCompVoid = async (item: OrderPanelItemData) => {
     await handleOpenCompVoid({
       id: item.id,
       menuItemId: item.menuItemId || '',
@@ -1539,8 +1677,8 @@ export default function OrdersPage() {
     })
   }
 
-  const handleResend = async (itemId: string) => {
-    await sharedResend(itemId)
+  const handleResend = async (item: OrderPanelItemData) => {
+    await sharedResend(item.id)
     // Reload order into local store to keep /orders page in sync
     if (savedOrderId) {
       const orderRes = await fetch(`/api/orders/${savedOrderId}`)
@@ -2417,6 +2555,8 @@ export default function OrdersPage() {
       inlineModifierCallbackRef.current = null
     }
   }, [])
+  // Wire up the ref so useOrderingEngine can call it
+  handleOpenModifiersSharedRef.current = handleOpenModifiersShared
 
   const handleOpenTimedRental = (
     item: any,
@@ -2740,40 +2880,359 @@ export default function OrdersPage() {
     return null
   }
 
-  // Floor Plan HOME view (T023 - Major UX Overhaul)
-  // The floor plan IS the main order screen - no navigation away
-  // T014: Feature flag for V2 migration - gradual rollout
+  // Combined Floor Plan + Bartender view with shared OrderPanel and modals
+  // Shared OrderPanel element — passed as children to whichever view is active
+  const sharedOrderPanel = (viewMode === 'floor-plan' || viewMode === 'bartender') && employee.location?.id ? (
+    <div className="flex h-full">
+    <OrderPanel
+            orderId={currentOrder?.id || savedOrderId}
+            orderNumber={currentOrder?.orderNumber}
+            orderType={currentOrder?.orderType || (viewMode === 'bartender' ? 'bar_tab' : undefined)}
+            tabName={currentOrder?.tabName}
+            tableId={currentOrder?.tableId}
+            locationId={employee.location.id}
+            items={orderPanelItems}
+            subtotal={pricing.subtotal}
+            cashSubtotal={pricing.cashSubtotal}
+            cardSubtotal={pricing.cardSubtotal}
+            tax={pricing.tax}
+            total={pricing.total}
+            showItemControls={true}
+            showEntertainmentTimers={true}
+            onItemClick={panelCallbacks.onItemClick}
+            onItemRemove={panelCallbacks.onItemRemove}
+            onQuantityChange={panelCallbacks.onQuantityChange}
+            onItemHoldToggle={panelCallbacks.onItemHoldToggle}
+            onItemNoteEdit={panelCallbacks.onItemNoteEdit}
+            onItemCourseChange={panelCallbacks.onItemCourseChange}
+            onItemEditModifiers={panelCallbacks.onItemEditModifiers}
+            onItemCompVoid={panelCallbacks.onItemCompVoid}
+            onItemResend={panelCallbacks.onItemResend}
+            onItemSplit={panelCallbacks.onItemSplit}
+            onItemSeatChange={panelCallbacks.onItemSeatChange}
+            expandedItemId={panelCallbacks.expandedItemId}
+            onItemToggleExpand={panelCallbacks.onItemToggleExpand}
+            onSend={handleSendToKitchen}
+            onPay={async (method) => {
+              // Ensure order is saved to DB before opening payment
+              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await saveOrderToDatabase()
+              if (orderId) {
+                setInitialPayMethod(method)
+                setOrderToPayId(orderId)
+                setShowPaymentModal(true)
+              }
+            }}
+            onPrintCheck={async () => {
+              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await saveOrderToDatabase()
+              if (orderId) {
+                try {
+                  await fetch('/api/print/receipt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ orderId, type: 'check' }),
+                  })
+                  toast.success('Check sent to printer')
+                } catch {
+                  toast.error('Failed to print check')
+                }
+              }
+            }}
+            isSending={isSendingOrder}
+            viewMode={viewMode === 'floor-plan' ? 'floor-plan' : viewMode === 'bartender' ? 'bartender' : 'legacy'}
+            hasActiveTab={!!(tabCardInfo?.cardLast4 || currentOrder?.tabName)}
+            requireCardForTab={requireCardForTab}
+            tabCardLast4={tabCardInfo?.cardLast4}
+            onStartTab={async () => {
+              // Read fresh state — avoids stale closure issues
+              const store = useOrderStore.getState()
+              const items = store.currentOrder?.items
+              if (!items?.length) return
 
-  if (viewMode === 'floor-plan' && employee.location?.id) {
+              // Get existing order ID from Zustand (always current) or React state
+              const existingOrderId = store.currentOrder?.id || savedOrderId
+
+              // ── Existing tab with saved order → check for card & re-auth ──
+              if (existingOrderId) {
+                setIsSendingOrder(true)
+                try {
+                  // Check server for card on file (source of truth — avoids stale tabCardInfo)
+                  let cardLast4 = ''
+                  try {
+                    const cardsRes = await fetch(`/api/orders/${existingOrderId}/cards`)
+                    if (cardsRes.ok) {
+                      const cardsData = await cardsRes.json()
+                      const activeCard = (cardsData.data || []).find((c: { status: string }) => c.status === 'authorized')
+                      if (activeCard) {
+                        cardLast4 = activeCard.cardLast4 || ''
+                        setTabCardInfo({
+                          cardholderName: activeCard.cardholderName || undefined,
+                          cardLast4: activeCard.cardLast4,
+                          cardType: activeCard.cardType,
+                        })
+                      }
+                    }
+                  } catch { /* fall through to new tab flow */ }
+
+                  if (cardLast4) {
+                    // Card on file → append new items, send to kitchen, auto-increment
+                    // Only POST unsent items (items already sent have sentToKitchen: true)
+                    const newItems = items.filter(i => !i.sentToKitchen)
+                    if (newItems.length > 0) {
+                      const appendRes = await fetch(`/api/orders/${existingOrderId}/items`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          items: newItems.map(item => ({
+                            menuItemId: item.menuItemId,
+                            name: item.name,
+                            price: item.price,
+                            quantity: item.quantity,
+                            modifiers: (item.modifiers || []).map(mod => ({
+                              modifierId: (mod.id || mod.modifierId) ?? '',
+                              name: mod.name,
+                              price: Number(mod.price),
+                              depth: mod.depth ?? 0,
+                              preModifier: mod.preModifier ?? null,
+                              spiritTier: mod.spiritTier ?? null,
+                              linkedBottleProductId: mod.linkedBottleProductId ?? null,
+                              parentModifierId: mod.parentModifierId ?? null,
+                            })),
+                            specialNotes: item.specialNotes,
+                          })),
+                        }),
+                      })
+                      if (!appendRes.ok) {
+                        toast.error('Failed to save new items')
+                        return
+                      }
+                    }
+
+                    // Send unsent items to kitchen
+                    const sendRes = await fetch(`/api/orders/${existingOrderId}/send`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ employeeId: employee?.id }),
+                    })
+                    if (sendRes.ok) {
+                      // Await IncrementalAuthByRecordNo — show approval/decline to user
+                      try {
+                        const authRes = await fetch(`/api/orders/${existingOrderId}/auto-increment`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ employeeId: employee?.id, force: true }),
+                        })
+                        if (authRes.ok) {
+                          const d = await authRes.json()
+                          if (d.data?.incremented) {
+                            toast.success(`Re-auth approved — hold now $${d.data.newAuthorizedTotal.toFixed(2)} •••${cardLast4}`)
+                          } else if (d.data?.action === 'below_threshold') {
+                            toast.success(`Sent to tab •••${cardLast4} — hold $${d.data.totalAuthorized.toFixed(2)} still covers`)
+                          } else if (d.data?.action === 'increment_failed') {
+                            toast.error(`Re-auth DECLINED •••${cardLast4} — hold remains $${d.data.totalAuthorized.toFixed(2)}`)
+                          } else if (d.data?.action === 'no_card') {
+                            toast.warning(`Sent to tab — no card on file for re-auth`)
+                          } else {
+                            toast.success(`Added to tab •••${cardLast4}`)
+                          }
+                        } else {
+                          toast.success(`Added to tab •••${cardLast4}`)
+                        }
+                      } catch {
+                        toast.success(`Added to tab •••${cardLast4}`)
+                      }
+
+                      clearOrder()
+                      setSavedOrderId(null)
+                      setOrderSent(false)
+                      setSelectedOrderType(null)
+                      setOrderCustomFields({})
+                      setTabsRefreshTrigger(prev => prev + 1)
+                    } else {
+                      toast.error('Failed to send to kitchen')
+                    }
+                    return
+                  }
+                  // Card not found on existing order — fall through to new tab flow below
+                } finally {
+                  setIsSendingOrder(false)
+                }
+              }
+
+              // ── New tab (no existing order or no card on file) → card auth flow ──
+              const currentStore = useOrderStore.getState()
+              if (currentStore.currentOrder && currentStore.currentOrder.orderType !== 'bar_tab') {
+                currentStore.updateOrderType('bar_tab')
+              }
+
+              const orderId = existingOrderId || await saveOrderToDatabase()
+              if (orderId) {
+                setSavedOrderId(orderId)
+                setCardTabOrderId(orderId)
+                setShowCardTabFlow(true)
+              } else {
+                toast.error('Failed to save order — please try again')
+              }
+            }}
+            onOtherPayment={async () => {
+              // Open PaymentModal at method selection step (gift card, house account, etc.)
+              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await saveOrderToDatabase()
+              if (orderId) {
+                setInitialPayMethod(undefined)
+                setOrderToPayId(orderId)
+                setShowPaymentModal(true)
+              }
+            }}
+            cashDiscountPct={pricing.cashDiscountRate}
+            taxPct={Math.round(pricing.taxRate * 100)}
+            cashTotal={pricing.cashTotal}
+            cardTotal={pricing.cardTotal}
+            cashDiscountAmount={pricing.isDualPricingEnabled ? pricing.cardTotal - pricing.cashTotal : 0}
+            hasTaxInclusiveItems={taxInclusiveLiquor || taxInclusiveFood}
+            roundingAdjustment={pricing.cashRoundingDelta !== 0 ? pricing.cashRoundingDelta : undefined}
+            hasSentItems={currentOrder?.items?.some(i => i.sentToKitchen) ?? false}
+            onCancelOrder={() => {
+              clearOrder()
+              setSavedOrderId(null)
+              setSelectedOrderType(null)
+              setOrderCustomFields({})
+              setOrderSent(false)
+              setAppliedDiscounts([])
+            }}
+            onHide={() => {
+              // Deselect tab/table in the active view
+              if (viewMode === 'bartender') {
+                bartenderDeselectTabRef.current?.()
+              } else {
+                floorPlanDeselectTableRef.current?.()
+              }
+              setSavedOrderId(null)
+              setSelectedOrderType(null)
+              setOrderCustomFields({})
+              setOrderSent(false)
+            }}
+            selectedItemId={layout.quickPickEnabled ? quickPickSelectedId : undefined}
+            selectedItemIds={layout.quickPickEnabled ? quickPickSelectedIds : undefined}
+            onItemSelect={layout.quickPickEnabled ? selectQuickPickItem : undefined}
+            multiSelectMode={quickPickMultiSelect}
+            onToggleMultiSelect={toggleQuickPickMultiSelect}
+            onSelectAllPending={selectAllPendingQuickPick}
+            pendingDelay={currentOrder?.pendingDelay ?? undefined}
+            delayStartedAt={currentOrder?.delayStartedAt ?? undefined}
+            delayFiredAt={currentOrder?.delayFiredAt ?? undefined}
+            onFireDelayed={async () => {
+              const store = useOrderStore.getState()
+              const orderId = store.currentOrder?.id || savedOrderId
+              if (!orderId) return
+              try {
+                const res = await fetch(`/api/orders/${orderId}/send`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ employeeId: employee?.id }),
+                })
+                if (res.ok) {
+                  store.markDelayFired()
+                  if (store.currentOrder) {
+                    for (const item of store.currentOrder.items) {
+                      if (!item.sentToKitchen) store.updateItem(item.id, { sentToKitchen: true })
+                    }
+                  }
+                }
+              } catch (err) {
+                console.error('[OrdersPage] Failed to fire delayed:', err)
+              }
+            }}
+            onCancelDelay={() => useOrderStore.getState().setPendingDelay(null)}
+            onFireItem={async (itemId) => {
+              const store = useOrderStore.getState()
+              const orderId = store.currentOrder?.id || savedOrderId
+              if (!orderId) return
+              try {
+                const res = await fetch(`/api/orders/${orderId}/send`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ employeeId: employee?.id, itemIds: [itemId] }),
+                })
+                if (res.ok) {
+                  store.markItemDelayFired(itemId)
+                  store.updateItem(itemId, { sentToKitchen: true })
+                }
+              } catch (err) {
+                console.error('[OrdersPage] Failed to fire delayed item:', err)
+              }
+            }}
+            onCancelItemDelay={(itemId) => useOrderStore.getState().setItemDelay([itemId], null)}
+            reopenedAt={currentOrder?.reopenedAt}
+            reopenReason={currentOrder?.reopenReason}
+            hideHeader={viewMode === 'floor-plan'}
+            className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0 !h-auto'}
+          />
+      {/* Quick Pick Strip — right side of order panel */}
+      {layout.quickPickEnabled && (
+        <QuickPickStrip
+          selectedItemId={quickPickSelectedId}
+          selectedItemQty={quickPickSelectedId ? orderPanelItems.find(i => i.id === quickPickSelectedId)?.quantity : undefined}
+          selectedCount={quickPickSelectedIds.size}
+          onNumberTap={handleQuickPickNumber}
+          multiSelectMode={quickPickMultiSelect}
+          onToggleMultiSelect={toggleQuickPickMultiSelect}
+          onHoldToggle={quickPickSelectedId ? () => {
+            const item = currentOrder?.items.find(i => i.id === quickPickSelectedId)
+            if (item) updateItem(quickPickSelectedId, { isHeld: !item.isHeld })
+          } : undefined}
+          isHeld={quickPickSelectedId ? currentOrder?.items.find(i => i.id === quickPickSelectedId)?.isHeld : false}
+          onSetDelay={(minutes) => {
+            const selectedIds = Array.from(quickPickSelectedIds)
+            if (selectedIds.length > 0) {
+              const store = useOrderStore.getState()
+              const allHaveThisDelay = selectedIds.every(id => {
+                const item = store.currentOrder?.items.find(i => i.id === id)
+                return item?.delayMinutes === minutes
+              })
+              store.setItemDelay(selectedIds, allHaveThisDelay ? null : minutes)
+            } else {
+              const current = currentOrder?.pendingDelay
+              useOrderStore.getState().setPendingDelay(current === minutes ? null : minutes)
+            }
+          }}
+          activeDelay={(() => {
+            const selectedIds = Array.from(quickPickSelectedIds)
+            if (selectedIds.length === 0) return currentOrder?.pendingDelay ?? null
+            const firstItem = currentOrder?.items.find(i => i.id === selectedIds[0])
+            return firstItem?.delayMinutes ?? null
+          })()}
+        />
+      )}
+    </div>
+  ) : null
+
+  if ((viewMode === 'floor-plan' || viewMode === 'bartender') && employee.location?.id) {
     return (
       <>
-        <FloorPlanHome
+        {viewMode === 'floor-plan' && (
+          <FloorPlanHome
             locationId={employee.location.id}
             employeeId={employee.id}
             employeeName={employee.displayName}
             employeeRole={employee.role?.name}
             isManager={canAccessAdmin}
             onLogout={logout}
-            onSwitchUser={() => {
-              // Navigate to login for user switch
-              logout()
-            }}
+            onSwitchUser={() => { logout() }}
             onOpenSettings={() => setShowDisplaySettings(true)}
             onOpenAdminNav={() => setShowAdminNav(true)}
-            onSwitchToBartenderView={() => setViewMode('bartender')}
+            onSwitchToBartenderView={() => {
+              // Preserve current order context when switching views
+              const order = useOrderStore.getState().currentOrder
+              if (order?.orderType === 'bar_tab') setMode('bar')
+              setViewMode('bartender')
+            }}
             onOpenPayment={(orderId) => {
-              // T023: Open payment modal for inline ordering
               setOrderToPayId(orderId)
               setShowPaymentModal(true)
             }}
             onOpenModifiers={handleOpenModifiersShared as any}
-            onOpenOrdersPanel={() => {
-              // T023: Open the open orders panel/modal
-              setShowTabsPanel(true)
-            }}
+            onOpenOrdersPanel={() => { setShowTabsPanel(true) }}
             onOpenTimedRental={handleOpenTimedRental}
             onOpenPizzaBuilder={(item, onComplete) => {
-              // T023: Open pizza builder modal for inline ordering
               inlinePizzaCallbackRef.current = onComplete
               setSelectedPizzaItem(item as MenuItem)
               setEditingPizzaItem(null)
@@ -2783,8 +3242,64 @@ export default function OrdersPage() {
             onOrderLoaded={() => setOrderToLoad(null)}
             paidOrderId={paidOrderId}
             onPaidOrderCleared={() => setPaidOrderId(null)}
-          />
-        {/* Admin Nav Sidebar */}
+            onRegisterDeselectTable={(fn) => { floorPlanDeselectTableRef.current = fn }}
+          >
+            {sharedOrderPanel}
+          </FloorPlanHome>
+        )}
+        {viewMode === 'bartender' && (
+          <BartenderView
+            locationId={employee.location.id}
+            employeeId={employee.id}
+            employeeName={employee.displayName}
+            employeePermissions={permissionsArray}
+            onRegisterDeselectTab={(fn) => { bartenderDeselectTabRef.current = fn }}
+            onLogout={logout}
+            onSwitchToFloorPlan={() => {
+              // Preserve current order context when switching views
+              const order = useOrderStore.getState().currentOrder
+              if (order?.id && order.tableId) {
+                setOrderToLoad({ id: order.id, orderNumber: order.orderNumber || 0, orderType: order.orderType })
+              }
+              if (order?.orderType !== 'bar_tab') setMode('food')
+              setViewMode('floor-plan')
+            }}
+            onOpenCompVoid={(item) => {
+              const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId
+              if (!orderId) {
+                console.error('[BartenderView CompVoid] No order ID found')
+                return
+              }
+              setOrderToPayId(orderId)
+              setCompVoidItem({
+                ...item,
+                modifiers: item.modifiers.map(m => ({
+                  id: m.id,
+                  modifierId: m.id,
+                  name: m.name,
+                  price: m.price,
+                  depth: 0,
+                  preModifier: null,
+                  spiritTier: null,
+                  linkedBottleProductId: null,
+                  parentModifierId: null,
+                })),
+              })
+              setShowCompVoidModal(true)
+            }}
+            onOpenPayment={(orderId) => {
+              setOrderToPayId(orderId)
+              setShowPaymentModal(true)
+            }}
+            onOpenModifiers={handleOpenModifiersShared as any}
+            requireNameWithoutCard={false}
+            tapCardBehavior="close"
+          >
+            {sharedOrderPanel}
+          </BartenderView>
+        )}
+
+        {/* Shared Modals — one set for both views */}
         {showAdminNav && (
           <AdminNav
             forceOpen={true}
@@ -2793,7 +3308,6 @@ export default function OrdersPage() {
             onAction={(action) => { if (action === 'tip_adjustments') setShowTipAdjustment(true) }}
           />
         )}
-        {/* Display Settings Modal */}
         <POSDisplaySettingsModal
           isOpen={showDisplaySettings}
           onClose={() => setShowDisplaySettings(false)}
@@ -2801,7 +3315,6 @@ export default function OrdersPage() {
           onUpdate={updateSetting}
           onBatchUpdate={updateSettings}
         />
-        {/* Open Orders Panel */}
         {showTabsPanel && (
           <>
             {!isTabManagerExpanded && (
@@ -2819,7 +3332,6 @@ export default function OrdersPage() {
                 isExpanded={isTabManagerExpanded}
                 onToggleExpand={() => setIsTabManagerExpanded(!isTabManagerExpanded)}
                 onSelectOrder={(order) => {
-                  // Load the order into the order panel (same as View)
                   setOrderToLoad({
                     id: order.id,
                     orderNumber: order.orderNumber,
@@ -2827,6 +3339,15 @@ export default function OrdersPage() {
                     tabName: order.tabName || undefined,
                     orderType: order.orderType,
                   })
+                  // Restore tab card info from pre-auth data
+                  if (order.hasPreAuth && order.preAuth?.last4) {
+                    setTabCardInfo({
+                      cardholderName: order.cardholderName || undefined,
+                      cardLast4: order.preAuth.last4,
+                      cardType: order.preAuth.cardBrand,
+                    })
+                  }
+                  setSavedOrderId(order.id)
                   setShowTabsPanel(false)
                   setIsTabManagerExpanded(false)
                 }}
@@ -2838,6 +3359,15 @@ export default function OrdersPage() {
                     tabName: order.tabName || undefined,
                     orderType: order.orderType,
                   })
+                  // Restore tab card info from pre-auth data
+                  if (order.hasPreAuth && order.preAuth?.last4) {
+                    setTabCardInfo({
+                      cardholderName: order.cardholderName || undefined,
+                      cardLast4: order.preAuth.last4,
+                      cardType: order.preAuth.cardBrand,
+                    })
+                  }
+                  setSavedOrderId(order.id)
                   setShowTabsPanel(false)
                   setIsTabManagerExpanded(false)
                 }}
@@ -2855,7 +3385,6 @@ export default function OrdersPage() {
             </div>
           </>
         )}
-        {/* Modifier Modal - shared with floor plan inline ordering */}
         {showModifierModal && selectedItem && (
           <ModifierModal
             item={selectedItem}
@@ -2874,7 +3403,6 @@ export default function OrdersPage() {
             }}
           />
         )}
-        {/* Pizza Builder Modal - shared with floor plan inline ordering */}
         {showPizzaModal && selectedPizzaItem && (
           <PizzaBuilderModal
             item={selectedPizzaItem}
@@ -2888,7 +3416,6 @@ export default function OrdersPage() {
             }}
           />
         )}
-        {/* Entertainment Session Start Modal */}
         {showEntertainmentStart && entertainmentItem && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <EntertainmentSessionStart
@@ -2917,7 +3444,6 @@ export default function OrdersPage() {
             />
           </div>
         )}
-        {/* Timed Rental Modal - shared with floor plan inline ordering */}
         {showTimedRentalModal && selectedTimedItem && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
@@ -3012,30 +3538,36 @@ export default function OrdersPage() {
             </div>
           </div>
         )}
-        {/* Payment Modal - for floor plan inline ordering */}
         {showPaymentModal && orderToPayId && (
           <PaymentModal
             isOpen={showPaymentModal}
+            initialMethod={initialPayMethod}
             onClose={() => {
               setShowPaymentModal(false)
               setOrderToPayId(null)
+              setInitialPayMethod(undefined)
             }}
             orderId={orderToPayId}
-            orderTotal={0} // Will be fetched by modal
-            remainingBalance={0} // Will be fetched by modal
+            orderTotal={0}
+            remainingBalance={0}
+            tabCards={paymentTabCards}
             dualPricing={dualPricing}
             paymentSettings={paymentSettings}
             onPaymentComplete={async () => {
-              // Store order ID for receipt before closing payment modal
-              const paidOrderId = orderToPayId
+              const paidId = orderToPayId
               setShowPaymentModal(false)
               setOrderToPayId(null)
-              // Show receipt modal
-              if (paidOrderId) {
-                setReceiptOrderId(paidOrderId)
+              setInitialPayMethod(undefined)
+              if (paidId) {
+                setReceiptOrderId(paidId)
                 setShowReceiptModal(true)
               }
-              // Refresh the floor plan to show updated table status
+              // Clear the order panel after payment
+              clearOrder()
+              setSavedOrderId(null)
+              setOrderSent(false)
+              setSelectedOrderType(null)
+              setOrderCustomFields({})
               setTabsRefreshTrigger(prev => prev + 1)
             }}
             employeeId={employee?.id}
@@ -3043,11 +3575,9 @@ export default function OrdersPage() {
             locationId={employee?.location?.id}
           />
         )}
-        {/* Receipt Modal - for floor plan after payment */}
         <ReceiptModal
           isOpen={showReceiptModal}
           onClose={() => {
-            // Set paidOrderId to trigger FloorPlanHome to clear the order
             if (receiptOrderId) {
               setPaidOrderId(receiptOrderId)
             }
@@ -3058,135 +3588,199 @@ export default function OrdersPage() {
           locationId={employee.location?.id || ''}
           receiptSettings={receiptSettings}
         />
-
-        {/* Tip Adjustment Overlay (Floor Plan) */}
         <TipAdjustmentOverlay
           isOpen={showTipAdjustment}
           onClose={() => setShowTipAdjustment(false)}
           locationId={employee?.location?.id}
           employeeId={employee?.id}
         />
-      </>
-    )
-  }
 
-  // Bartender View - Speed-optimized for bar tabs (T024)
-  if (viewMode === 'bartender' && employee.location?.id) {
-    return (
-      <>
-        <BartenderView
-          locationId={employee.location.id}
-          employeeId={employee.id}
-          employeeName={employee.displayName}
-          employeePermissions={permissionsArray}
-          onLogout={logout}
-          onSwitchToFloorPlan={() => setViewMode('floor-plan')}
-          onOpenCompVoid={(item) => {
-            // Ensure order is saved first (BartenderView selected tab = savedOrderId)
-            const orderId = useOrderStore.getState().currentOrder?.id
-            if (orderId) {
-              setOrderToPayId(orderId)
-              setCompVoidItem({
-                ...item,
-                modifiers: item.modifiers.map(m => ({
-                  id: m.id,
-                  modifierId: m.id,
-                  name: m.name,
-                  price: m.price,
-                  depth: 0,
-                  preModifier: null,
-                  spiritTier: null,
-                  linkedBottleProductId: null,
-                  parentModifierId: null,
-                })),
-              })
-              setShowCompVoidModal(true)
-            }
-          }}
-          onOpenPayment={(orderId) => {
-            setOrderToPayId(orderId)
-            setShowPaymentModal(true)
-          }}
-          onOpenModifiers={handleOpenModifiersShared as any}
-          // Settings props (TODO: load from location settings)
-          requireNameWithoutCard={false}
-          tapCardBehavior="close"
-        />
-        {/* Admin Nav Sidebar */}
-        {showAdminNav && (
-          <AdminNav
-            forceOpen={true}
-            onClose={() => setShowAdminNav(false)}
-            permissions={employee?.permissions || []}
-            onAction={(action) => { if (action === 'tip_adjustments') setShowTipAdjustment(true) }}
-          />
+        {/* Card-First Tab Flow Modal */}
+        {showCardTabFlow && cardTabOrderId && employee && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <CardFirstTabFlow
+                orderId={cardTabOrderId}
+                readerId="reader-1"
+                employeeId={employee.id}
+                onComplete={async (result) => {
+                  setShowCardTabFlow(false)
+                  if (result.approved) {
+                    setTabCardInfo({
+                      cardholderName: result.cardholderName,
+                      cardLast4: result.cardLast4,
+                      cardType: result.cardType,
+                    })
+                    const store = useOrderStore.getState()
+                    if (store.currentOrder && result.cardholderName) {
+                      store.currentOrder.tabName = result.cardholderName
+                    }
+                    setTabNameInput(result.cardholderName || '')
+                    setTabNameCallback(() => async () => {
+                      // Direct send — bypass validateBeforeSend since card is already authorized
+                      const store = useOrderStore.getState()
+                      const items = store.currentOrder?.items
+                      if (!items?.length) return
+                      setIsSendingOrder(true)
+                      try {
+                        const orderId = savedOrderId || store.currentOrder?.id || await saveOrderToDatabase()
+                        if (orderId) {
+                          // Update metadata (tab name) on the saved order
+                          await fetch(`/api/orders/${orderId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ tabName: store.currentOrder?.tabName }),
+                          })
+                          const sendRes = await fetch(`/api/orders/${orderId}/send`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ employeeId: employee?.id }),
+                          })
+                          if (sendRes.ok) {
+                            // Fire auto-increment in background
+                            fetch(`/api/orders/${orderId}/auto-increment`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ employeeId: employee?.id }),
+                            }).catch(() => {})
+                            toast.success(`Tab opened — •••${result.cardLast4}`)
+                            clearOrder()
+                            setSavedOrderId(null)
+                            setOrderSent(false)
+                            setSelectedOrderType(null)
+                            setOrderCustomFields({})
+                            setTabsRefreshTrigger(prev => prev + 1)
+                          } else {
+                            toast.error('Failed to send to kitchen')
+                          }
+                        }
+                      } finally {
+                        setIsSendingOrder(false)
+                      }
+                    })
+                    setShowTabNamePrompt(true)
+                  } else {
+                    setCardTabOrderId(null)
+                  }
+                }}
+                onCancel={() => {
+                  setShowCardTabFlow(false)
+                  setCardTabOrderId(null)
+                }}
+              />
+            </div>
+          </div>
         )}
-        {/* Modifier Modal - shared */}
-        {showModifierModal && selectedItem && (
-          <ModifierModal
-            item={selectedItem}
-            modifierGroups={itemModifierGroups}
-            loading={loadingModifiers}
-            editingItem={editingOrderItem}
-            dualPricing={dualPricing}
-            initialNotes={editingOrderItem?.specialNotes}
-            onConfirm={editingOrderItem && !inlineModifierCallbackRef.current ? handleUpdateItemWithModifiers : handleAddItemWithModifiers}
-            onCancel={() => {
-              setShowModifierModal(false)
-              setSelectedItem(null)
-              setItemModifierGroups([])
-              setEditingOrderItem(null)
-              inlineModifierCallbackRef.current = null
-            }}
-          />
-        )}
-        {/* Payment Modal - shared */}
-        {showPaymentModal && orderToPayId && (
-          <PaymentModal
-            isOpen={showPaymentModal}
-            onClose={() => {
-              setShowPaymentModal(false)
-              setOrderToPayId(null)
-            }}
-            orderId={orderToPayId}
-            orderTotal={0}
-            remainingBalance={0}
-            dualPricing={dualPricing}
-            paymentSettings={paymentSettings}
-            onPaymentComplete={async () => {
-              const paidOrderId = orderToPayId
-              setShowPaymentModal(false)
-              setOrderToPayId(null)
-              if (paidOrderId) {
-                setReceiptOrderId(paidOrderId)
-                setShowReceiptModal(true)
-              }
-              setTabsRefreshTrigger(prev => prev + 1)
-            }}
-            employeeId={employee?.id}
-            terminalId="terminal-1"
-            locationId={employee?.location?.id}
-          />
-        )}
-        {/* Receipt Modal - for bartender after payment */}
-        <ReceiptModal
-          isOpen={showReceiptModal}
-          onClose={() => {
-            setShowReceiptModal(false)
-            setReceiptOrderId(null)
-          }}
-          orderId={receiptOrderId}
-          locationId={employee.location?.id || ''}
-          receiptSettings={receiptSettings}
-        />
 
-        {/* Tip Adjustment Overlay (Bartender) */}
-        <TipAdjustmentOverlay
-          isOpen={showTipAdjustment}
-          onClose={() => setShowTipAdjustment(false)}
-          locationId={employee?.location?.id}
-          employeeId={employee?.id}
-        />
+        {/* Tab Name Prompt Modal */}
+        {showTabNamePrompt && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              {tabCardInfo?.cardLast4 ? (
+                <>
+                  <h3 className="text-lg font-bold text-white mb-2">Tab Started</h3>
+                  <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                    <span className="text-green-400 text-sm">✓</span>
+                    <span className="text-green-300 text-sm font-medium">
+                      {tabCardInfo.cardType} •••{tabCardInfo.cardLast4}
+                    </span>
+                    {tabCardInfo.cardholderName && (
+                      <span className="text-green-300 text-sm ml-auto font-medium">{tabCardInfo.cardholderName}</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-400 mb-3">Add a nickname? (shown above cardholder name)</p>
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="e.g. Blue shirt, Patio group..."
+                    value={tabNameInput}
+                    onChange={(e) => setTabNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const store = useOrderStore.getState()
+                        if (store.currentOrder && tabNameInput.trim()) {
+                          store.currentOrder.tabName = `${tabNameInput.trim()} — ${tabCardInfo.cardholderName || ''}`
+                        }
+                        setShowTabNamePrompt(false)
+                        tabNameCallback?.()
+                      }
+                    }}
+                    className="w-full px-4 py-3 rounded-xl text-white text-lg"
+                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
+                  />
+                  <div className="flex gap-3 mt-4">
+                    <button
+                      onClick={() => { setShowTabNamePrompt(false); tabNameCallback?.() }}
+                      className="flex-1 py-3 rounded-xl text-gray-300 font-semibold"
+                      style={{ background: 'rgba(255,255,255,0.08)' }}
+                    >
+                      Skip
+                    </button>
+                    <button
+                      onClick={() => {
+                        const store = useOrderStore.getState()
+                        if (store.currentOrder && tabNameInput.trim()) {
+                          store.currentOrder.tabName = `${tabNameInput.trim()} — ${tabCardInfo.cardholderName || ''}`
+                        }
+                        setShowTabNamePrompt(false)
+                        tabNameCallback?.()
+                      }}
+                      className="flex-1 py-3 rounded-xl text-white font-bold"
+                      style={{ background: tabNameInput.trim() ? '#8b5cf6' : 'rgba(255,255,255,0.1)', opacity: tabNameInput.trim() ? 1 : 0.5 }}
+                    >
+                      Send to Tab
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-lg font-bold text-white mb-1">Tab Name</h3>
+                  <p className="text-sm text-gray-400 mb-4">Enter a name for this tab</p>
+                  <input
+                    autoFocus
+                    type="text"
+                    placeholder="e.g. John, Table 5, etc."
+                    value={tabNameInput}
+                    onChange={(e) => setTabNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && tabNameInput.trim()) {
+                        const store = useOrderStore.getState()
+                        if (store.currentOrder) { store.currentOrder.tabName = tabNameInput.trim() }
+                        setShowTabNamePrompt(false)
+                        tabNameCallback?.()
+                      }
+                    }}
+                    className="w-full px-4 py-3 rounded-xl text-white text-lg"
+                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
+                  />
+                  <div className="flex gap-3 mt-4">
+                    <button
+                      onClick={() => { setShowTabNamePrompt(false); setTabNameCallback(null) }}
+                      className="flex-1 py-3 rounded-xl text-gray-400 font-semibold"
+                      style={{ background: 'rgba(255,255,255,0.05)' }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!tabNameInput.trim()) return
+                        const store = useOrderStore.getState()
+                        if (store.currentOrder) { store.currentOrder.tabName = tabNameInput.trim() }
+                        setShowTabNamePrompt(false)
+                        tabNameCallback?.()
+                      }}
+                      disabled={!tabNameInput.trim()}
+                      className="flex-1 py-3 rounded-xl text-white font-bold"
+                      style={{ background: tabNameInput.trim() ? '#8b5cf6' : 'rgba(255,255,255,0.1)', opacity: tabNameInput.trim() ? 1 : 0.5 }}
+                    >
+                      Start Tab
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </>
     )
   }
@@ -3941,7 +4535,13 @@ export default function OrdersPage() {
                           : 'bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-md shadow-orange-500/25'
                         : 'bg-white/60 hover:bg-white/80 text-gray-700 border border-white/40 hover:shadow-md'
                     }`}
-                    onClick={() => startOrder('takeout')}
+                    onClick={() => {
+                      if (currentOrder?.items.length) {
+                        updateOrderType('takeout')
+                      } else {
+                        startOrder('takeout')
+                      }
+                    }}
                   >
                     Takeout
                   </button>
@@ -4016,6 +4616,15 @@ export default function OrdersPage() {
           onClear={() => {
             clearOrder()
             setSavedOrderId(null)
+            setOrderSent(false)
+            setAppliedDiscounts([])
+          }}
+          hasSentItems={currentOrder?.items?.some(i => i.sentToKitchen) ?? false}
+          onCancelOrder={() => {
+            clearOrder()
+            setSavedOrderId(null)
+            setSelectedOrderType(null)
+            setOrderCustomFields({})
             setOrderSent(false)
             setAppliedDiscounts([])
           }}
@@ -4400,9 +5009,6 @@ export default function OrdersPage() {
         <TablePickerModal
           locationId={employee.location.id}
           onSelect={(tableId, tableName, guestCount) => {
-            // Use selected order type if available, otherwise default to dine_in
-            const orderTypeSlug = selectedOrderType?.slug || 'dine_in'
-            const orderTypeId = selectedOrderType?.id
             // Include any custom fields that were collected
             const cleanFields: Record<string, string> = {}
             if (orderCustomFields) {
@@ -4412,22 +5018,26 @@ export default function OrdersPage() {
                 }
               })
             }
-            // If there's an existing order with items, update order type instead of starting fresh
+            const customFieldsObj = Object.keys(cleanFields).length > 0 ? cleanFields : undefined
+
             if (currentOrder?.items.length) {
-              updateOrderType(orderTypeSlug, {
+              // Existing order with items: only assign table, keep current order type
+              updateOrderType(currentOrder.orderType, {
                 tableId,
                 tableName,
                 guestCount,
-                orderTypeId,
-                customFields: Object.keys(cleanFields).length > 0 ? cleanFields : undefined,
+                orderTypeId: selectedOrderType?.id,
+                customFields: customFieldsObj,
               })
             } else {
+              // No items yet: use selected order type or default to dine_in
+              const orderTypeSlug = selectedOrderType?.slug || 'dine_in'
               startOrder(orderTypeSlug, {
                 tableId,
                 tableName,
                 guestCount,
-                orderTypeId,
-                customFields: Object.keys(cleanFields).length > 0 ? cleanFields : undefined,
+                orderTypeId: selectedOrderType?.id,
+                customFields: customFieldsObj,
               })
             }
             setShowTablePicker(false)
@@ -4479,6 +5089,7 @@ export default function OrdersPage() {
             const tax = taxableAmount * taxRate
             return taxableAmount + tax
           })()}
+          tabCards={paymentTabCards}
           dualPricing={dualPricing}
           paymentSettings={paymentSettings}
           onPaymentComplete={handlePaymentComplete}
@@ -4560,6 +5171,219 @@ export default function OrdersPage() {
           locationId={employee.location?.id || ''}
           onComplete={handleCompVoidComplete}
         />
+      )}
+
+      {/* Card-First Tab Flow Modal */}
+      {showCardTabFlow && cardTabOrderId && employee && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <CardFirstTabFlow
+              orderId={cardTabOrderId}
+              readerId="reader-1"
+              employeeId={employee.id}
+              onComplete={async (result) => {
+                setShowCardTabFlow(false)
+
+                if (result.approved) {
+                  // Card approved — store card info locally
+                  setTabCardInfo({
+                    cardholderName: result.cardholderName,
+                    cardLast4: result.cardLast4,
+                    cardType: result.cardType,
+                  })
+
+                  // Update tabName in store from cardholder name
+                  const store = useOrderStore.getState()
+                  if (store.currentOrder && result.cardholderName) {
+                    store.currentOrder.tabName = result.cardholderName
+                  }
+
+                  // Ask if they want to set a custom tab name
+                  setTabNameInput(result.cardholderName || '')
+                  setTabNameCallback(() => async () => {
+                    // Direct send — bypass validateBeforeSend since card is already authorized
+                    const store = useOrderStore.getState()
+                    const items = store.currentOrder?.items
+                    if (!items?.length) return
+                    setIsSendingOrder(true)
+                    try {
+                      const orderId = savedOrderId || store.currentOrder?.id || await saveOrderToDatabase()
+                      if (orderId) {
+                        // Update metadata (tab name) on the saved order
+                        await fetch(`/api/orders/${orderId}`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ tabName: store.currentOrder?.tabName }),
+                        })
+                        const sendRes = await fetch(`/api/orders/${orderId}/send`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ employeeId: employee?.id }),
+                        })
+                        if (sendRes.ok) {
+                          // Fire auto-increment in background
+                          fetch(`/api/orders/${orderId}/auto-increment`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ employeeId: employee?.id }),
+                          }).catch(() => {})
+                          toast.success(`Tab opened — •••${result.cardLast4}`)
+                          clearOrder()
+                          setSavedOrderId(null)
+                          setOrderSent(false)
+                          setSelectedOrderType(null)
+                          setOrderCustomFields({})
+                          setTabsRefreshTrigger(prev => prev + 1)
+                        } else {
+                          toast.error('Failed to send to kitchen')
+                        }
+                      }
+                    } finally {
+                      setIsSendingOrder(false)
+                    }
+                  })
+                  setShowTabNamePrompt(true)
+                } else {
+                  // Declined — stay on screen, toast already shown by CardFirstTabFlow
+                  setCardTabOrderId(null)
+                }
+              }}
+              onCancel={() => {
+                setShowCardTabFlow(false)
+                setCardTabOrderId(null)
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Tab Name Prompt Modal */}
+      {showTabNamePrompt && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            {tabCardInfo?.cardLast4 ? (
+              <>
+                <h3 className="text-lg font-bold text-white mb-2">Tab Started</h3>
+                {/* Card info — permanent, not editable */}
+                <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                  <span className="text-green-400 text-sm">✓</span>
+                  <span className="text-green-300 text-sm font-medium">
+                    {tabCardInfo.cardType} •••{tabCardInfo.cardLast4}
+                  </span>
+                  {tabCardInfo.cardholderName && (
+                    <span className="text-green-300 text-sm ml-auto font-medium">{tabCardInfo.cardholderName}</span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-400 mb-3">Add a nickname? (shown above cardholder name)</p>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="e.g. Blue shirt, Patio group..."
+                  value={tabNameInput}
+                  onChange={(e) => setTabNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      // Save nickname as tabName (cardholder name stays on the order in DB)
+                      const store = useOrderStore.getState()
+                      if (store.currentOrder && tabNameInput.trim()) {
+                        store.currentOrder.tabName = `${tabNameInput.trim()} — ${tabCardInfo.cardholderName || ''}`
+                      }
+                      setShowTabNamePrompt(false)
+                      tabNameCallback?.()
+                    }
+                  }}
+                  className="w-full px-4 py-3 rounded-xl text-white text-lg"
+                  style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
+                />
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={() => {
+                      // Skip — keep cardholder name only
+                      setShowTabNamePrompt(false)
+                      tabNameCallback?.()
+                    }}
+                    className="flex-1 py-3 rounded-xl text-gray-300 font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.08)' }}
+                  >
+                    Skip
+                  </button>
+                  <button
+                    onClick={() => {
+                      const store = useOrderStore.getState()
+                      if (store.currentOrder && tabNameInput.trim()) {
+                        store.currentOrder.tabName = `${tabNameInput.trim()} — ${tabCardInfo.cardholderName || ''}`
+                      }
+                      setShowTabNamePrompt(false)
+                      tabNameCallback?.()
+                    }}
+                    className="flex-1 py-3 rounded-xl text-white font-bold"
+                    style={{
+                      background: tabNameInput.trim() ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                      opacity: tabNameInput.trim() ? 1 : 0.5,
+                    }}
+                  >
+                    Send to Tab
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-bold text-white mb-1">Tab Name</h3>
+                <p className="text-sm text-gray-400 mb-4">Enter a name for this tab</p>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="e.g. John, Table 5, etc."
+                  value={tabNameInput}
+                  onChange={(e) => setTabNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && tabNameInput.trim()) {
+                      const store = useOrderStore.getState()
+                      if (store.currentOrder) {
+                        store.currentOrder.tabName = tabNameInput.trim()
+                      }
+                      setShowTabNamePrompt(false)
+                      tabNameCallback?.()
+                    }
+                  }}
+                  className="w-full px-4 py-3 rounded-xl text-white text-lg"
+                  style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
+                />
+                <div className="flex gap-3 mt-4">
+                  <button
+                    onClick={() => {
+                      setShowTabNamePrompt(false)
+                      setTabNameCallback(null)
+                    }}
+                    className="flex-1 py-3 rounded-xl text-gray-400 font-semibold"
+                    style={{ background: 'rgba(255,255,255,0.05)' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!tabNameInput.trim()) return
+                      const store = useOrderStore.getState()
+                      if (store.currentOrder) {
+                        store.currentOrder.tabName = tabNameInput.trim()
+                      }
+                      setShowTabNamePrompt(false)
+                      tabNameCallback?.()
+                    }}
+                    disabled={!tabNameInput.trim()}
+                    className="flex-1 py-3 rounded-xl text-white font-bold"
+                    style={{
+                      background: tabNameInput.trim() ? '#8b5cf6' : 'rgba(255,255,255,0.1)',
+                      opacity: tabNameInput.trim() ? 1 : 0.5,
+                    }}
+                  >
+                    Start Tab
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Resend to Kitchen Modal */}

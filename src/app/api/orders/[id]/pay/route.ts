@@ -76,6 +76,7 @@ const PaymentInputSchema = z.object({
 const PaymentRequestSchema = z.object({
   payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
   employeeId: z.string().optional(),
+  idempotencyKey: z.string().optional(),
 })
 
 // POST - Process payment for order
@@ -100,7 +101,41 @@ export async function POST(
       )
     }
 
-    const { payments, employeeId } = validation.data
+    const { payments, employeeId, idempotencyKey } = validation.data
+
+    // Idempotency check: reject duplicate payment requests
+    // In a bar environment, double-taps and browser retries are common
+    if (idempotencyKey) {
+      const existingPayment = await db.payment.findFirst({
+        where: {
+          orderId,
+          idempotencyKey,
+          status: 'completed',
+        },
+        select: { id: true },
+      })
+      if (existingPayment) {
+        // Return success with existing data — don't process again
+        const existingOrder = await db.order.findUnique({
+          where: { id: orderId },
+          include: { payments: { where: { idempotencyKey } } },
+        })
+        return NextResponse.json({
+          success: true,
+          duplicate: true,
+          payments: existingOrder?.payments.map(p => ({
+            id: p.id,
+            method: p.paymentMethod,
+            amount: Number(p.amount),
+            tipAmount: Number(p.tipAmount),
+            totalAmount: Number(p.totalAmount),
+            status: p.status,
+          })) || [],
+          orderStatus: existingOrder?.status || 'unknown',
+          remainingBalance: 0,
+        })
+      }
+    }
 
     // Get the order with customer for loyalty
     const order = await db.order.findUnique({
@@ -260,6 +295,7 @@ export async function POST(
         cashDiscountAmount?: number
         priceBeforeDiscount?: number
         pricingMode?: string
+        idempotencyKey?: string
         status: string
       } = {
         locationId: order.locationId,
@@ -270,6 +306,7 @@ export async function POST(
         totalAmount: payment.amount + (payment.tipAmount || 0),
         paymentMethod: payment.method,
         status: 'completed',
+        ...(idempotencyKey ? { idempotencyKey } : {}),
       }
 
       // Dual pricing: record pricing mode and discount info

@@ -92,7 +92,8 @@
 ### Bar Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
-| 20 | Bar Tabs | PARTIAL | Orders | 02 | Create, view, edit, pay tabs. **NEEDS: Improved UI for bartender workflow, quick tab creation from floor plan** |
+| 20 | Bar Tabs | PARTIAL | Orders | 02 | Create, view, edit, pay tabs. **NEEDS: Improved UI for bartender workflow, quick tab creation from floor plan**. Re-Auth flow done (Skill 247). |
+| 247 | Tab Incremental Auth | DONE | Payments | 120, 21 | Re-Auth button (no card re-tap), IncrementalAuthByRecordNo via Datacap, configurable tip buffer %, admin settings UI, force vs auto modes |
 | 21 | Pre-auth | DONE | Payments | 30 | Card hold on tab open |
 | 22 | Tab Transfer | DONE | Orders | 20 | Move tabs between employees, audit log |
 
@@ -377,6 +378,12 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-09 — Tab Incremental Auth & Re-Auth Flow)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 247 | Tab Incremental Auth | Re-Auth button replaces "Start a Tab" when card on file. IncrementalAuthByRecordNo fires without card re-tap. Configurable tip buffer % (default 25%). Admin settings UI under "Bar Tab / Pre-Auth". Force mode (no minimum, no threshold gate) vs auto mode ($25 min, 80% threshold). Fixed: tab duplication, tabCardInfo race condition, hold not updating, missing tax in calculation, hardcoded 25% buffer. |
 
 ## Recently Completed (2026-02-08 — Pricing Engine Refactor & Tax-Inclusive Pricing)
 
@@ -723,6 +730,7 @@ These skills emerged during development and are now part of the system:
 | 242 | Error Monitoring | DONE | Settings | - | Error capture, monitoring dashboard, alerting, health checks |
 | 243 | Admin Audit Viewer | API Complete | Settings | - | Per-order activity timeline, audit log viewer |
 | 244 | Payroll System | DONE | Employees | 01, 47, 50 | Pay stub generation, tax calculations, payroll processing |
+| 246 | Go-Live & Launch Readiness | DONE | Go-Live | 111, 120 | Domain setup, three location modes (dev/training/production), simulated code cleanup tags, go-live master checklist (8 categories), training mode spec |
 
 ### Routing & Kitchen Display (200-Series)
 | Skill | Name | Status | Domain | Dependencies | Notes |

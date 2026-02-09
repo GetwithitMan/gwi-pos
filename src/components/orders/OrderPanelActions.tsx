@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { roundToCents } from '@/lib/pricing'
 import { useDatacap, type DatacapResult } from '@/hooks/useDatacap'
 import { ReaderStatusIndicator } from '@/components/payment/ReaderStatusIndicator'
+import { toast } from '@/stores/toast-store'
 import { SwapConfirmationModal } from '@/components/payment/SwapConfirmationModal'
 
 export interface OrderPanelActionsItem {
@@ -32,10 +33,20 @@ interface OrderPanelActionsProps {
   cashDiscountPct?: number // Cash discount percentage for display label (e.g. 4)
   taxPct?: number        // Tax percentage for display label (e.g. 8)
   onSend?: () => void
-  onPay?: () => void
+  onPay?: (method?: 'cash' | 'credit') => void
+  onPrintCheck?: () => void
+  onStartTab?: () => void
+  onOtherPayment?: () => void
   onDiscount?: () => void
   onClear?: () => void
+  onCancelOrder?: () => void
+  onHide?: () => void  // Hide the order panel (dismiss empty tab)
+  hasSentItems?: boolean  // Whether any items have been sent to kitchen
   onPaymentModeChange?: (mode: 'cash' | 'card') => void
+  viewMode?: 'floor-plan' | 'bartender' | 'legacy'
+  hasActiveTab?: boolean  // Current order already has a tab started (card on file)
+  requireCardForTab?: boolean  // Setting: must swipe/chip card before tab can be sent
+  tabCardLast4?: string  // Last 4 digits of card on the active tab
   // Datacap payment props
   orderId?: string | null
   terminalId?: string
@@ -68,9 +79,19 @@ export function OrderPanelActions({
   taxPct = 0,
   onSend,
   onPay,
+  onPrintCheck,
+  onStartTab,
+  onOtherPayment,
   onDiscount,
   onClear,
+  onCancelOrder,
+  onHide,
+  hasSentItems = false,
   onPaymentModeChange,
+  viewMode = 'legacy',
+  hasActiveTab = false,
+  requireCardForTab = false,
+  tabCardLast4,
   orderId,
   terminalId,
   employeeId,
@@ -129,7 +150,7 @@ export function OrderPanelActions({
       }, 2000)
     },
     onDeclined: (reason) => {
-      console.log('[OrderPanelActions] Declined:', reason)
+      toast.warning(reason || 'Payment declined')
     },
     onError: (err) => {
       console.error('[OrderPanelActions] Error:', err)
@@ -512,6 +533,140 @@ export function OrderPanelActions({
         flexShrink: 0,
       }}
     >
+      {/* ── TOP ROW: Send / Start Tab ─────────────────────────── */}
+      {viewMode === 'bartender' ? (
+        // Bartender mode: Hide (nothing to send) / Start a Tab / Add to Tab (purple)
+        !hasPendingItems && onHide ? (
+          <button
+            onClick={onHide}
+            style={{
+              width: '100%',
+              padding: '14px',
+              borderRadius: '10px',
+              border: '1px solid rgba(234, 179, 8, 0.4)',
+              background: 'rgba(234, 179, 8, 0.15)',
+              color: '#fbbf24',
+              fontSize: '15px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              marginBottom: '10px',
+            }}
+          >
+            Hide
+          </button>
+        ) : onStartTab && hasItems ? (() => {
+          const needsCard = requireCardForTab && !hasActiveTab
+          const label = isSending
+            ? 'Authorizing...'
+            : hasActiveTab && tabCardLast4
+            ? `Re-Auth •••${tabCardLast4}`
+            : hasActiveTab
+            ? '+ Add to Tab'
+            : needsCard
+            ? '💳 Start a Tab'
+            : 'Start a Tab'
+          return (
+            <>
+              <button
+                onClick={hasPendingItems ? onStartTab : undefined}
+                disabled={!hasPendingItems || isSending}
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: hasPendingItems && !isSending
+                    ? (hasActiveTab ? '#7c3aed' : '#8b5cf6')
+                    : 'rgba(255, 255, 255, 0.08)',
+                  color: hasPendingItems && !isSending ? '#ffffff' : '#64748b',
+                  fontSize: '15px',
+                  fontWeight: 700,
+                  cursor: hasPendingItems && !isSending ? 'pointer' : 'not-allowed',
+                  transition: 'all 0.2s ease',
+                  opacity: !hasPendingItems ? 0.4 : 1,
+                  marginBottom: needsCard && hasPendingItems ? '2px' : '10px',
+                  boxShadow: hasPendingItems && !isSending ? '0 0 20px rgba(139, 92, 246, 0.3)' : 'none',
+                }}
+              >
+                {label}
+              </button>
+              {needsCard && hasPendingItems && (
+                <div style={{ fontSize: '10px', color: '#a78bfa', textAlign: 'center', marginBottom: '8px' }}>
+                  Insert chip to pre-authorize — sends to tab after approved
+                </div>
+              )}
+            </>
+          )
+        })() : null
+      ) : (
+        // Floor plan / legacy: Hide (nothing to send) or Send button (orange)
+        !hasPendingItems && onHide ? (
+          <button
+            onClick={onHide}
+            style={{
+              width: '100%',
+              padding: '14px',
+              borderRadius: '10px',
+              border: '1px solid rgba(234, 179, 8, 0.4)',
+              background: 'rgba(234, 179, 8, 0.15)',
+              color: '#fbbf24',
+              fontSize: '15px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              marginBottom: '10px',
+            }}
+          >
+            Hide
+          </button>
+        ) : onSend && (
+          <button
+            onClick={onSend}
+            disabled={!hasPendingItems || isSending}
+            style={{
+              width: '100%',
+              padding: '14px',
+              borderRadius: '10px',
+              border: 'none',
+              background: hasPendingItems && !isSending ? '#ea580c' : 'rgba(255, 255, 255, 0.08)',
+              color: hasPendingItems && !isSending ? '#ffffff' : '#64748b',
+              fontSize: '15px',
+              fontWeight: 700,
+              cursor: hasPendingItems && !isSending ? 'pointer' : 'not-allowed',
+              transition: 'all 0.2s ease',
+              opacity: !hasPendingItems ? 0.4 : 1,
+              marginBottom: '10px',
+              boxShadow: hasPendingItems && !isSending ? '0 0 20px rgba(234, 88, 12, 0.3)' : 'none',
+            }}
+          >
+            {isSending ? 'Sending...' : 'Send'}
+          </button>
+        )
+      )}
+
+      {/* ── SECOND ROW: Print Check ─────────────────────────── */}
+      {onPrintCheck && hasItems && (
+        <button
+          onClick={onPrintCheck}
+          style={{
+            width: '100%',
+            padding: '10px',
+            borderRadius: '10px',
+            background: 'rgba(234, 179, 8, 0.12)',
+            border: '1px solid rgba(234, 179, 8, 0.3)',
+            color: '#fbbf24',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            marginBottom: '10px',
+          }}
+        >
+          🧾 Print Check
+        </button>
+      )}
+
       {/* Cash/Card Toggle - Compact */}
       {hasItems && hasDualPricing && (
         <div style={{ display: 'flex', gap: '6px', marginBottom: '10px' }}>
@@ -694,32 +849,50 @@ export function OrderPanelActions({
         </>
       )}
 
-      {/* Primary action buttons */}
+      {/* Payment action buttons: Cash / Card / Other */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: hasItems ? '8px' : '0' }}>
-        {onSend && (
+        {onPay && (
           <button
-            onClick={onSend}
-            disabled={!hasPendingItems || isSending}
+            onClick={() => onPay('cash')}
+            disabled={!hasItems}
             style={{
               flex: 1,
               padding: '14px',
               borderRadius: '10px',
-              border: 'none',
-              background: hasPendingItems && !isSending ? '#22c55e' : 'rgba(255, 255, 255, 0.1)',
-              color: hasPendingItems && !isSending ? '#ffffff' : '#64748b',
+              background: hasItems ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+              border: `1px solid ${hasItems ? 'rgba(34, 197, 94, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
+              color: hasItems ? '#86efac' : '#64748b',
               fontSize: '14px',
               fontWeight: 600,
-              cursor: hasPendingItems && !isSending ? 'pointer' : 'not-allowed',
+              cursor: hasItems ? 'pointer' : 'not-allowed',
               transition: 'all 0.2s ease',
-              opacity: !hasPendingItems ? 0.5 : 1,
             }}
           >
-            {isSending ? 'Sending...' : 'Send'}
+            💵 Cash
           </button>
         )}
-        {(onPay || (terminalId && employeeId)) && (
+        {onOtherPayment && hasItems && (
           <button
-            onClick={handlePayClick}
+            onClick={onOtherPayment}
+            style={{
+              flex: 1,
+              padding: '14px',
+              borderRadius: '10px',
+              background: hasItems ? 'rgba(148, 163, 184, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+              border: `1px solid ${hasItems ? 'rgba(148, 163, 184, 0.25)' : 'rgba(255, 255, 255, 0.08)'}`,
+              color: hasItems ? '#94a3b8' : '#64748b',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            Other
+          </button>
+        )}
+        {onPay && (
+          <button
+            onClick={() => onPay('credit')}
             disabled={!hasItems}
             style={{
               flex: 1,
@@ -734,7 +907,7 @@ export function OrderPanelActions({
               transition: 'all 0.2s ease',
             }}
           >
-            💳 Pay
+            💳 Card
           </button>
         )}
         {onCloseOrder && !hasItems && (
@@ -759,8 +932,8 @@ export function OrderPanelActions({
       </div>
 
       {/* Secondary actions */}
-      {hasItems && (onDiscount || onClear) && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+      {hasItems && (onDiscount || onClear || onCancelOrder) && (
+        <div style={{ display: 'grid', gridTemplateColumns: onDiscount ? '1fr 1fr' : '1fr', gap: '8px' }}>
           {onDiscount && (
             <button
               onClick={onDiscount}
@@ -781,7 +954,35 @@ export function OrderPanelActions({
               Discount
             </button>
           )}
-          {onClear && (
+          {/* Cancel Order — only when NO items have been sent to kitchen */}
+          {onCancelOrder && !hasSentItems && (
+            <button
+              onClick={() => {
+                if (!hasItems) {
+                  onCancelOrder()
+                  return
+                }
+                if (window.confirm('Cancel this order? Nothing has been sent to the kitchen.')) {
+                  onCancelOrder()
+                }
+              }}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                background: 'rgba(239, 68, 68, 0.1)',
+                color: '#f87171',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              Cancel Order
+            </button>
+          )}
+          {/* Clear — fallback for when Cancel Order is not wired */}
+          {onClear && !onCancelOrder && (
             <button
               onClick={handleClear}
               disabled={!hasItems}

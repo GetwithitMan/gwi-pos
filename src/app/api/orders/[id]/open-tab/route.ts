@@ -4,6 +4,25 @@ import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 
+/**
+ * Normalize cardholder name from card reader.
+ * Datacap returns "LAST/FIRST" format — convert to "First Last" for display.
+ */
+function normalizeCardholderName(cardholderName: string | undefined): string | undefined {
+  if (!cardholderName) return undefined
+  const trimmed = cardholderName.trim()
+  // Datacap returns "LAST/FIRST" format — convert to "First Last"
+  if (trimmed.includes('/')) {
+    const [last, first] = trimmed.split('/')
+    const firstName = first?.trim() || ''
+    const lastName = last?.trim() || ''
+    if (firstName && lastName) return `${firstName} ${lastName}`
+    return firstName || lastName || trimmed
+  }
+  // Already "FIRST LAST" format
+  return trimmed
+}
+
 // POST - Card-first tab open flow
 // 1. CollectCardData (reads chip for cardholder name)
 // 2. EMVPreAuth for configurable hold amount
@@ -34,9 +53,26 @@ export async function POST(
 
     const locationId = order.locationId
     const settings = parseSettings(order.location.settings)
-    const preAuthAmount = settings.payments.defaultPreAuthAmount || 1
 
-    await validateReader(readerId, locationId)
+    // Pre-auth amount = current order total (first drink), minimum $1
+    // This ensures the hold matches what the customer is actually ordering
+    const orderTotal = Number(order.total) || 0
+    const preAuthAmount = Math.max(orderTotal, 1)
+
+    // Try the given readerId first, fall back to any active reader for this location
+    let resolvedReaderId = readerId
+    try {
+      await validateReader(readerId, locationId)
+    } catch {
+      const fallbackReader = await db.paymentReader.findFirst({
+        where: { locationId, deletedAt: null, isActive: true },
+        select: { id: true },
+      })
+      if (!fallbackReader) {
+        return NextResponse.json({ error: 'No active payment reader found for this location' }, { status: 400 })
+      }
+      resolvedReaderId = fallbackReader.id
+    }
     const client = await requireDatacapClient(locationId)
 
     // Step 1: Set tab status to pending_auth immediately
@@ -51,7 +87,7 @@ export async function POST(
     let cardLast4: string | undefined
 
     try {
-      const collectResponse = await client.collectCardData(readerId, {})
+      const collectResponse = await client.collectCardData(resolvedReaderId, {})
       const collectOk = collectResponse.cmdStatus === 'Success' || collectResponse.cmdStatus === 'Approved'
       if (collectOk) {
         cardholderName = collectResponse.cardholderName || undefined
@@ -63,7 +99,7 @@ export async function POST(
     }
 
     // Step 3: EMVPreAuth for hold amount
-    const preAuthResponse = await client.preAuth(readerId, {
+    const preAuthResponse = await client.preAuth(resolvedReaderId, {
       invoiceNo: orderId,
       amount: preAuthAmount,
       requestRecordNo: true,
@@ -74,11 +110,12 @@ export async function POST(
 
     if (!approved) {
       // Decline — update tab status, don't create OrderCard
+      const declineFirstName = normalizeCardholderName(cardholderName)
       await db.order.update({
         where: { id: orderId },
         data: {
           tabStatus: 'no_card',
-          tabName: cardholderName || order.tabName,
+          tabName: declineFirstName || order.tabName,
         },
       })
 
@@ -88,7 +125,7 @@ export async function POST(
         data: {
           approved: false,
           tabStatus: 'no_card',
-          cardholderName,
+          cardholderName: declineFirstName,
           cardType: cardType || preAuthResponse.cardType,
           cardLast4: cardLast4 || preAuthResponse.cardLast4,
           error: preAuthError
@@ -98,8 +135,9 @@ export async function POST(
       })
     }
 
-    // Step 4: Card approved — use data from PreAuth response if CollectCardData didn't get it
-    const finalCardholderName = cardholderName || preAuthResponse.cardholderName || undefined
+    // Step 4: Card approved — normalize cardholder name for display (LAST/FIRST → First Last)
+    const rawName = cardholderName || preAuthResponse.cardholderName || undefined
+    const finalCardholderName = normalizeCardholderName(rawName)
     const finalCardType = cardType || preAuthResponse.cardType || 'unknown'
     const finalCardLast4 = cardLast4 || preAuthResponse.cardLast4 || '????'
     const recordNo = preAuthResponse.recordNo
@@ -115,7 +153,7 @@ export async function POST(
         data: {
           locationId,
           orderId,
-          readerId,
+          readerId: resolvedReaderId,
           recordNo,
           cardType: finalCardType,
           cardLast4: finalCardLast4,
@@ -135,7 +173,7 @@ export async function POST(
           preAuthLast4: finalCardLast4,
           preAuthCardBrand: finalCardType,
           preAuthRecordNo: recordNo,
-          preAuthReaderId: readerId,
+          preAuthReaderId: resolvedReaderId,
         },
       }),
     ])

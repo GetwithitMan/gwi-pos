@@ -60,6 +60,10 @@ export async function PUT(
         'icon',
         'sortOrder',
         'isActive',
+        'requiredFields',
+        'optionalFields',
+        'fieldDefinitions',
+        'workflowRules',
         'kdsConfig',
         'printConfig',
       ]

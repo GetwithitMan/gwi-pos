@@ -36,15 +36,21 @@ export interface OrderPanelProps {
   onItemRemove?: (itemId: string) => void
   onQuantityChange?: (itemId: string, delta: number) => void
   onSend?: () => void
-  onPay?: () => void
+  onPay?: (method?: 'cash' | 'credit') => void
+  onPrintCheck?: () => void
+  onStartTab?: () => void
+  onOtherPayment?: () => void
   onDiscount?: () => void
   onClear?: () => void
+  onCancelOrder?: () => void
+  onHide?: () => void
+  hasSentItems?: boolean
   onItemHoldToggle?: (itemId: string) => void
   onItemNoteEdit?: (itemId: string, currentNote?: string) => void
   onItemCourseChange?: (itemId: string, course: number | null) => void
   onItemEditModifiers?: (itemId: string) => void
-  onItemCompVoid?: (itemId: string) => void
-  onItemResend?: (itemId: string) => void
+  onItemCompVoid?: (item: OrderPanelItemData) => void
+  onItemResend?: (item: OrderPanelItemData) => void
   onItemSplit?: (itemId: string) => void
   onSessionEnded?: () => void
   onTimerStarted?: () => void
@@ -62,6 +68,10 @@ export interface OrderPanelProps {
   // Seat grouping
   seatGroups?: SeatGroup[]
   // OrderPanelActions pass-through props
+  viewMode?: 'floor-plan' | 'bartender' | 'legacy'
+  hasActiveTab?: boolean
+  requireCardForTab?: boolean
+  tabCardLast4?: string
   cashSubtotal?: number
   cardSubtotal?: number
   cashDiscountPct?: number
@@ -129,8 +139,14 @@ export function OrderPanel({
   onQuantityChange,
   onSend,
   onPay,
+  onPrintCheck,
+  onStartTab,
+  onOtherPayment,
   onDiscount,
   onClear,
+  onCancelOrder,
+  onHide,
+  hasSentItems,
   onItemHoldToggle,
   onItemNoteEdit,
   onItemCourseChange,
@@ -154,6 +170,10 @@ export function OrderPanel({
   // Seat grouping
   seatGroups,
   // OrderPanelActions pass-through
+  viewMode,
+  hasActiveTab,
+  requireCardForTab,
+  tabCardLast4,
   cashSubtotal,
   cardSubtotal,
   cashDiscountPct,
@@ -676,8 +696,18 @@ export function OrderPanel({
           total={total}
           onSend={onSend}
           onPay={onPay}
+          onPrintCheck={onPrintCheck}
+          onStartTab={onStartTab}
+          onOtherPayment={onOtherPayment}
           onDiscount={onDiscount}
+          viewMode={viewMode}
+          hasActiveTab={hasActiveTab}
+          requireCardForTab={requireCardForTab}
+          tabCardLast4={tabCardLast4}
           onClear={onClear}
+          onCancelOrder={onCancelOrder}
+          onHide={onHide}
+          hasSentItems={hasSentItems}
           orderId={orderId}
           terminalId={terminalId}
           employeeId={employeeId}

@@ -13,7 +13,7 @@ export async function POST(
   try {
     const { id: orderId } = await params
     const body = await request.json().catch(() => ({}))
-    const { employeeId } = body
+    const { employeeId, force } = body  // force=true bypasses threshold (user clicked Re-Auth)
 
     // Get order with cards and settings
     const order = await db.order.findFirst({
@@ -36,11 +36,12 @@ export async function POST(
       autoIncrementEnabled,
       incrementThresholdPercent,
       incrementAmount,
+      incrementTipBufferPercent,
       maxTabAlertAmount,
     } = settings.payments
 
-    // Auto-increment disabled
-    if (!autoIncrementEnabled) {
+    // Auto-increment disabled (unless forced by user)
+    if (!autoIncrementEnabled && !force) {
       return NextResponse.json({ data: { action: 'disabled', incremented: false } })
     }
 
@@ -56,12 +57,25 @@ export async function POST(
       0
     )
 
-    // Calculate current tab total (subtotal before tips/tax)
-    const tabTotal = Number(order.subtotal)
+    // Calculate current tab total (WITH tax — hold must cover full amount)
+    const tabTotal = Number(order.total)
     const thresholdAmount = totalAuthorized * (incrementThresholdPercent / 100)
 
-    // Not at threshold yet
-    if (tabTotal < thresholdAmount) {
+    // Not at threshold yet (skip check if forced — user explicitly clicked Re-Auth)
+    if (!force && tabTotal < thresholdAmount) {
+      return NextResponse.json({
+        data: {
+          action: 'below_threshold',
+          incremented: false,
+          tabTotal,
+          totalAuthorized,
+          threshold: thresholdAmount,
+        },
+      })
+    }
+
+    // If tab total is already covered by current auth, nothing to increment
+    if (tabTotal <= totalAuthorized && !force) {
       return NextResponse.json({
         data: {
           action: 'below_threshold',
@@ -83,29 +97,46 @@ export async function POST(
       await validateReader(defaultCard.readerId, locationId)
       const client = await requireDatacapClient(locationId)
 
+      // Target hold = total + tip buffer (e.g. 25% to cover potential tip)
+      // If buffer is 0, hold targets exact tab total
+      const tipBuffer = (incrementTipBufferPercent ?? 25) / 100
+      const targetHold = Math.ceil(tabTotal * (1 + tipBuffer) * 100) / 100
+      const rawIncrement = Math.max(targetHold - totalAuthorized, 0)
+      // Force (Re-Auth): exact amount needed to reach target hold
+      // Auto: enforce minimum (e.g. $25) to avoid frequent small auths
+      const dynamicIncrement = force
+        ? rawIncrement
+        : Math.max(rawIncrement, incrementAmount)
+
       const response = await client.incrementalAuth(defaultCard.readerId, {
         recordNo: defaultCard.recordNo,
-        additionalAmount: incrementAmount,
+        additionalAmount: dynamicIncrement,
       })
 
       const error = parseError(response)
       const approved = response.cmdStatus === 'Approved'
 
       if (approved) {
-        // Update card's authorized amount
-        const newAuthAmount = Number(defaultCard.authAmount) + incrementAmount
-        await db.orderCard.update({
-          where: { id: defaultCard.id },
-          data: { authAmount: newAuthAmount },
-        })
+        // Update card's authorized amount AND order's preAuthAmount (for Open Orders display)
+        const newAuthAmount = Number(defaultCard.authAmount) + dynamicIncrement
+        await db.$transaction([
+          db.orderCard.update({
+            where: { id: defaultCard.id },
+            data: { authAmount: newAuthAmount },
+          }),
+          db.order.update({
+            where: { id: orderId },
+            data: { preAuthAmount: newAuthAmount },
+          }),
+        ])
 
-        console.log(`[Tab Auto-Increment] APPROVED Order=${orderId} Card=...${defaultCard.cardLast4} +$${incrementAmount} NewAuth=$${newAuthAmount} Employee=${employeeId || 'system'}`)
+        console.log(`[Tab Auto-Increment] APPROVED Order=${orderId} Card=...${defaultCard.cardLast4} +$${dynamicIncrement} NewAuth=$${newAuthAmount} Employee=${employeeId || 'system'}`)
 
         return NextResponse.json({
           data: {
             action: 'incremented',
             incremented: true,
-            additionalAmount: incrementAmount,
+            additionalAmount: dynamicIncrement,
             newAuthorizedTotal: newAuthAmount,
             needsManagerAlert,
             tabTotal,
@@ -113,7 +144,7 @@ export async function POST(
         })
       } else {
         // Increment failed — log warning but don't block
-        console.warn(`[Tab Auto-Increment] DECLINED Order=${orderId} Card=...${defaultCard.cardLast4} +$${incrementAmount} Error=${error?.text || 'Unknown'}`)
+        console.warn(`[Tab Auto-Increment] DECLINED Order=${orderId} Card=...${defaultCard.cardLast4} +$${dynamicIncrement} Error=${error?.text || 'Unknown'}`)
 
         return NextResponse.json({
           data: {

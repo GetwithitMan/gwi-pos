@@ -54,8 +54,8 @@ interface OrderPanelItemProps {
   onNoteEdit?: (itemId: string, currentNote?: string) => void
   onCourseChange?: (itemId: string, course: number | null) => void
   onEditModifiers?: (itemId: string) => void
-  onCompVoid?: (itemId: string) => void
-  onResend?: (itemId: string) => void
+  onCompVoid?: (item: OrderPanelItemData) => void
+  onResend?: (item: OrderPanelItemData) => void
   onSplit?: (itemId: string) => void
   // Props for the More expandable section
   isExpanded?: boolean
@@ -122,6 +122,9 @@ export function OrderPanelItem({
 
   const isSent = item.kitchenStatus && item.kitchenStatus !== 'pending'
   const isReady = item.kitchenStatus === 'ready' || item.isCompleted
+
+  // Seat picker state
+  const [showSeatPicker, setShowSeatPicker] = useState(false)
 
   // Per-item delay states
   const hasDelayPreset = !!(item.delayMinutes && item.delayMinutes > 0 && !item.delayStartedAt && !item.delayFiredAt)
@@ -423,19 +426,104 @@ export function OrderPanelItem({
               </span>
             )}
 
-            {/* Seat Badge */}
-            {item.seatNumber && (
-              <span
-                style={{
-                  fontSize: '9px',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  background: 'rgba(168, 85, 247, 0.2)',
-                  color: '#c084fc',
-                  fontWeight: 600,
-                }}
-              >
-                S{item.seatNumber}
+            {/* Seat Badge — clickable when onSeatChange + maxSeats provided */}
+            {(item.seatNumber || (onSeatChange && maxSeats)) && (
+              <span style={{ position: 'relative', display: 'inline-block' }}>
+                {onSeatChange && maxSeats ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setShowSeatPicker(!showSeatPicker) }}
+                    style={{
+                      fontSize: '9px',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background: 'rgba(168, 85, 247, 0.2)',
+                      color: '#c084fc',
+                      fontWeight: 600,
+                      border: '1px solid rgba(168, 85, 247, 0.3)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {item.seatNumber ? `S${item.seatNumber}` : '+S'}
+                  </button>
+                ) : item.seatNumber ? (
+                  <span
+                    style={{
+                      fontSize: '9px',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      background: 'rgba(168, 85, 247, 0.2)',
+                      color: '#c084fc',
+                      fontWeight: 600,
+                    }}
+                  >
+                    S{item.seatNumber}
+                  </span>
+                ) : null}
+                {showSeatPicker && onSeatChange && maxSeats && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      marginTop: '4px',
+                      zIndex: 50,
+                      background: 'rgba(30, 30, 40, 0.95)',
+                      border: '1px solid rgba(168, 85, 247, 0.3)',
+                      borderRadius: '8px',
+                      padding: '6px',
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '4px',
+                      minWidth: '120px',
+                      backdropFilter: 'blur(12px)',
+                    }}
+                  >
+                    {Array.from({ length: maxSeats }, (_, i) => i + 1).map(seat => (
+                      <button
+                        key={seat}
+                        onClick={() => { onSeatChange(item.id, seat); setShowSeatPicker(false) }}
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          border: item.seatNumber === seat ? '2px solid #c084fc' : '1px solid rgba(255,255,255,0.1)',
+                          background: item.seatNumber === seat ? 'rgba(168, 85, 247, 0.3)' : 'rgba(255,255,255,0.05)',
+                          color: item.seatNumber === seat ? '#c084fc' : '#94a3b8',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        {seat}
+                      </button>
+                    ))}
+                    {item.seatNumber && (
+                      <button
+                        onClick={() => { onSeatChange(item.id, null); setShowSeatPicker(false) }}
+                        style={{
+                          width: '28px',
+                          height: '28px',
+                          borderRadius: '6px',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          color: '#f87171',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
               </span>
             )}
 
@@ -789,7 +877,7 @@ export function OrderPanelItem({
               {/* Edit Mods hidden after send — must void and re-ring to change */}
               {onResend && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onResend(item.id) }}
+                  onClick={(e) => { e.stopPropagation(); onResend(item) }}
                   style={{
                     padding: '5px 10px',
                     background: 'rgba(245, 158, 11, 0.15)',
@@ -807,7 +895,7 @@ export function OrderPanelItem({
               )}
               {onCompVoid && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); onCompVoid(item.id) }}
+                  onClick={(e) => { e.stopPropagation(); onCompVoid(item) }}
                   style={{
                     padding: '5px 10px',
                     background: 'rgba(245, 158, 11, 0.1)',

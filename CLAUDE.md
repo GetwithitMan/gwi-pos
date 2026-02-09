@@ -2008,6 +2008,17 @@ toast.error('Connection lost', 8000)
 | 14.7 | Close tab with device tip | Close tab → verify tip buttons on reader → capture includes tip | ⬜ |
 | 14.8 | Close tab with receipt tip | Close tab (PrintBlankLine) → enter tip → verify AdjustByRecordNo | ⬜ |
 | 14.9 | Tab void releases holds | Void unclosed tab → verify all OrderCard records voided | ⬜ |
+| 14.10 | Re-Auth button shows on existing tab | Open tab with card → add items → verify button says "Re-Auth ••••XXXX" | ⬜ |
+| 14.11 | Re-Auth fires IncrementalAuth (no card tap) | Click Re-Auth → verify IncrementalAuthByRecordNo fires, no card modal shown | ⬜ |
+| 14.12 | Re-Auth approval toast + hold update | Re-Auth approved → verify green toast + Open Orders hold amount increases | ⬜ |
+| 14.13 | Re-Auth decline toast | Re-Auth declined → verify red decline toast, tab still usable | ⬜ |
+| 14.14 | Re-Auth includes tax in hold | Add $10 item (+ tax) → Re-Auth → verify hold covers total with tax, not just subtotal | ⬜ |
+| 14.15 | Tip buffer on hold | Set tip buffer to 25% → $50 tab → verify hold is ~$62.50 | ⬜ |
+| 14.16 | Tip buffer 0% holds exact total | Set tip buffer to 0% in settings → Re-Auth → verify hold equals exact tab total | ⬜ |
+| 14.17 | No tab duplication on Re-Auth | Click Re-Auth multiple times → verify only 1 tab in Open Orders (no duplicates) | ⬜ |
+| 14.18 | Add second card to existing tab | Tab has card → add another card → verify both cards, default card used for increment | ⬜ |
+| 14.19 | Settings UI: Bar Tab / Pre-Auth card | /settings → verify Bar Tab card shows tip buffer %, threshold, min increment, manager alert | ⬜ |
+| 14.20 | Settings save and apply | Change tip buffer to 30% → save → Re-Auth → verify hold uses 30% buffer | ⬜ |
 
 ### 15. Quick Pay & Tip Modes
 
@@ -2104,6 +2115,25 @@ toast.error('Connection lost', 8000)
 - ✅ YYYY-MM-DD = Passed (with date)
 - ❌ YYYY-MM-DD = Failed (with date — must resolve before launch)
 - 🔄 = In progress / partially tested
+
+## Go-Live Cleanup: Simulated Payment Defaults
+
+**Search tag:** `SIMULATED_DEFAULTS`
+
+Before deploying to any real location, ALL simulated payment placeholders must be removed.
+
+**Centralized file:** `src/lib/datacap/simulated-defaults.ts`
+
+| Step | Action | How to Verify |
+|------|--------|---------------|
+| 1 | Set real `merchantId` + `operatorId` in each Location's `settings.payments` | `SELECT json_extract(settings, '$.payments.merchantId') FROM Location` — no NULLs |
+| 2 | Set every `PaymentReader.communicationMode` to `'local'` | `SELECT id, communicationMode FROM PaymentReader` — no `'simulated'` rows |
+| 3 | Set `settings.payments.processor` to `'datacap'` (not `'simulated'`) | `SELECT json_extract(settings, '$.payments.processor') FROM Location` — no `'simulated'` |
+| 4 | Delete `src/lib/datacap/simulated-defaults.ts` | File should not exist |
+| 5 | Remove import in `src/lib/datacap/client.ts` | Search: `simulated-defaults` |
+| 6 | Final verification | `grep -r "SIMULATED_DEFAULTS" src/` returns zero matches |
+
+**Runtime safety:** If a production location somehow has `processor: 'simulated'`, the system will use dummy credentials — payments will appear to succeed but NO real charges occur. This is why step 3 is critical.
 
 ## Troubleshooting
 
@@ -2264,6 +2294,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | 20 | Offline & Sync | `PM Mode: Offline & Sync` | 🔄 Active |
 | 21 | Customer Display | `PM Mode: Customer Display` | 🔄 Active |
 | 22 | Scheduling | `PM Mode: Scheduling` | 🔄 Active |
+| 23 | Go-Live | `PM Mode: Go-Live` | 🔄 Active |
 
 ---
 
@@ -2571,6 +2602,28 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | **Admin UI** | Schedule management page | `/src/app/(admin)/scheduling/page.tsx` |
 
 **Related Skills:** 241
+
+---
+
+#### Domain 23: Go-Live & Launch Readiness
+**Trigger:** `PM Mode: Go-Live`
+**Documentation:** `/docs/domains/GO-LIVE-DOMAIN.md`
+**Changelog:** `/docs/changelogs/GO-LIVE-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Simulated Payments** | Remove simulated defaults, configure real credentials | `src/lib/datacap/simulated-defaults.ts`, PaymentReader records |
+| **Training Mode** | Training flag, order tagging, report filtering | Location settings, Order model, report APIs, receipt/KDS UI |
+| **Seed/Demo Data** | Remove demo employees, menu items, tables | `prisma/seed.ts`, Employee/MenuItem/Table records |
+| **Debug/Dev Code** | Remove console.logs, debug divs, dev-only routes | All source files, `/rnd/*`, `/test-floorplan` |
+| **Environment Config** | .env.local to .env.production, PostgreSQL, HTTPS | `.env.*`, Docker Compose, reverse proxy config |
+| **Hardware Verification** | Printers, KDS, payment readers configured and tested | `/settings/hardware`, KDS pairing, reader ping |
+| **Security Hardening** | Default PINs, HTTPS, IP binding, permissions review | Employee records, KDS settings, role/permission audit |
+| **Data Migration** | SQLite to PostgreSQL, locationId/sync field verification | Prisma migration scripts, schema validation |
+| **Monitoring** | Error reporting, health checks, alerting | Domain 16, `/api/monitoring/*` |
+
+**Three Location Modes:** Development, Training, Production
+**Related Skills:** 246, 111, 112, 120
 
 ---
 
