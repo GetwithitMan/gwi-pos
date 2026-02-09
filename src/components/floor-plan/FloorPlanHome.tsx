@@ -4735,8 +4735,10 @@ export function FloorPlanHome({
                 showItemControls={true}
                 showEntertainmentTimers={true}
                 onItemClick={(item) => {
-                  const fullItem = inlineOrderItems.find(i => i.id === item.id)
-                  if (fullItem) handleOrderItemTap(fullItem)
+                  // Check if sent — don't allow editing sent items
+                  const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === item.id)
+                  if (storeItem?.sentToKitchen) return
+                  engine.handleEditItem(item.id)
                 }}
                 onItemRemove={handleRemoveItem}
                 onQuantityChange={handleUpdateQuantity}
