@@ -46,6 +46,8 @@ next-env.d.ts
 # SQLite database
 prisma/*.db
 prisma/*.db-journal
+prisma/*.db-shm
+prisma/*.db-wal
 prisma/backups/
 
 # Large binary files
