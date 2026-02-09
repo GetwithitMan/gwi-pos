@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { deductInventoryForVoidedItem, restorePrepStockForVoid, WASTE_VOID_REASONS } from '@/lib/inventory-calculations'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { calculateOrderTotals } from '@/lib/tax-calculations'
+import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'

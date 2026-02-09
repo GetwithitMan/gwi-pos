@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { calculateOrderTotals } from '@/lib/tax-calculations'
+import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getLocationTaxRate } from '@/lib/tax-calculations'
+import { getLocationTaxRate } from '@/lib/order-calculations'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors'
 import { validateRequest, idSchema } from '@/lib/validations'
 import { z } from 'zod'

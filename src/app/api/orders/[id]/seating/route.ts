@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getLocationTaxRate, calculateTax } from '@/lib/tax-calculations'
+import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 
 /**
  * Atomic Seat Management API (Skill 121)

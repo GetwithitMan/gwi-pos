@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { calculateOrderTotals } from '@/lib/tax-calculations'
+import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 
 interface TransferItemsRequest {
   toOrderId: string

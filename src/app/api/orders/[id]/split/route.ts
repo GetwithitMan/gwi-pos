@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { getLocationTaxRate, calculateTax } from '@/lib/tax-calculations'
+import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 
 interface SplitRequest {
   type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'get_splits'

@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { calculateOrderTotals } from '@/lib/tax-calculations'
+import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 
 // POST - Merge another order into this one
 export async function POST(

@@ -325,3 +325,61 @@ export function calculateSplitTax(
     totalTax: roundToCents(taxFromInclusive + taxFromExclusive),
   }
 }
+
+// ── Legacy helpers (migrated from deprecated tax-calculations.ts) ──
+
+/**
+ * Get the location's default tax rate as a decimal (e.g., 0.08 for 8%).
+ */
+export function getLocationTaxRate(settings: { tax?: { defaultRate?: number } } | null | undefined): number {
+  const rate = settings?.tax?.defaultRate ?? 8
+  return rate / 100
+}
+
+/**
+ * Get the effective tax rate for a specific item.
+ */
+export function getEffectiveTaxRate(
+  itemTaxRate: number | null | undefined,
+  itemTaxExempt: boolean,
+  locationTaxRate: number
+): number {
+  if (itemTaxExempt) return 0
+  if (itemTaxRate != null) return itemTaxRate / 100
+  return locationTaxRate
+}
+
+/**
+ * Calculate tax on a subtotal using a single rate.
+ */
+export function calculateTax(subtotal: number, taxRate: number): number {
+  return roundToCents(subtotal * taxRate)
+}
+
+/**
+ * Simplified order totals (subtotal-only signature).
+ * For full support (tax-inclusive, rounding), use calculateOrderTotals above.
+ */
+export function calculateSimpleOrderTotals(
+  subtotal: number,
+  discountTotal: number,
+  locationSettings: { tax?: { defaultRate?: number } } | null | undefined
+): {
+  subtotal: number
+  discountTotal: number
+  taxTotal: number
+  total: number
+} {
+  const taxRate = getLocationTaxRate(locationSettings)
+  const effectiveDiscount = Math.min(discountTotal, subtotal)
+  const taxableAmount = subtotal - effectiveDiscount
+  const taxTotal = roundToCents(taxableAmount * taxRate)
+  const total = roundToCents(taxableAmount + taxTotal)
+
+  return {
+    subtotal,
+    discountTotal: effectiveDiscount,
+    taxTotal,
+    total,
+  }
+}

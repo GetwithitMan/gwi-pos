@@ -715,7 +715,7 @@ These skills emerged during development and are now part of the system:
 | 217 | Menu Socket Real-Time Updates | DONE | Menu | - | Socket dispatch functions (dispatchMenuItemChanged, dispatchMenuStockChanged, dispatchMenuStructureChanged), broadcast handlers, multi-location safety. Client integration pending. |
 | 239 | Pricing Engine Refactor | DONE | Payments | 31, 36, 88 | Single source of truth: `roundToCents()`, extended `calculateOrderTotals` with rounding/paymentMethod, `usePricing` as thin adapter, removed inline math from components, 29 files |
 | 240 | Tax-Inclusive Pricing | DONE | Settings | 36, 239 | Category-based tax-inclusive rules, `calculateSplitTax()`, item stamping with `isTaxInclusive`, split UI display |
-| 217b | Bottle Service Tiers | DONE | Payments | 120 | BottleServiceTier model, deposit pre-auth, tiered packages, spend progress, re-auth alerts, auto-gratuity |
+| 245 | Bottle Service Tiers | DONE | Payments | 120 | BottleServiceTier model, deposit pre-auth, tiered packages, spend progress, re-auth alerts, auto-gratuity |
 | 218 | Customer-Facing Display (CFD) | DONE | Guest | 120 | /cfd route, state machine (8 states), 5 components, Socket.io event types defined (not yet wired) |
 | 219 | Pay-at-Table | DONE | Guest | 120 | /pay-at-table route, split check (2-6 ways), 3 components, processes via Datacap sale |
 | 220 | Bartender Mobile | DONE | Guest | 120 | /mobile/tabs list + detail, 2 components, 10s polling, Socket.io event stubs (not yet wired) |
