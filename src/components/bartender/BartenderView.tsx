@@ -988,12 +988,20 @@ export function BartenderView({
   }, [])
 
   const handleEditItem = useCallback((item: OrderPanelItemData) => {
-    const menuItem = menuItems.find(mi => mi.id === item.menuItemId)
-    if (!menuItem) return
     const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === item.id)
+    const menuItem = menuItems.find(mi => mi.id === (item.menuItemId || storeItem?.menuItemId))
+    const itemMenuId = item.menuItemId || storeItem?.menuItemId || item.id
+    const engineItem: EngineMenuItem = {
+      id: itemMenuId,
+      name: item.name,
+      price: item.price,
+      categoryId: menuItem?.categoryId || '',
+      categoryType: storeItem?.categoryType,
+      hasModifiers: true,
+    }
     engine.handleEditItemModifiers(
       item.id,
-      menuItem as EngineMenuItem,
+      engineItem,
       (storeItem?.modifiers || []) as EngineModifier[],
       (storeItem?.ingredientModifications || []) as EngineIngredientMod[],
     )
@@ -1024,10 +1032,17 @@ export function BartenderView({
     const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === itemId)
     if (!storeItem) return
     const menuItem = menuItems.find(mi => mi.id === storeItem.menuItemId)
-    if (!menuItem) return
+    const engineItem: EngineMenuItem = {
+      id: storeItem.menuItemId,
+      name: storeItem.name,
+      price: storeItem.price,
+      categoryId: menuItem?.categoryId || '',
+      categoryType: storeItem.categoryType,
+      hasModifiers: true,
+    }
     engine.handleEditItemModifiers(
       itemId,
-      menuItem as EngineMenuItem,
+      engineItem,
       (storeItem.modifiers || []) as EngineModifier[],
       (storeItem.ingredientModifications || []) as EngineIngredientMod[],
     )
