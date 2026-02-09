@@ -13,7 +13,7 @@ import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
-import type { EngineMenuItem } from '@/hooks/useOrderingEngine'
+import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
 import { useQuickPick } from '@/hooks/useQuickPick'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
@@ -988,9 +988,16 @@ export function BartenderView({
   }, [])
 
   const handleEditItem = useCallback((item: OrderPanelItemData) => {
-    // TODO: Open modifier modal for editing
-    toast.info(`Edit ${item.name} (coming soon)`)
-  }, [])
+    const menuItem = menuItems.find(mi => mi.id === item.menuItemId)
+    if (!menuItem) return
+    const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === item.id)
+    engine.handleEditItemModifiers(
+      item.id,
+      menuItem as EngineMenuItem,
+      (storeItem?.modifiers || []) as EngineModifier[],
+      (storeItem?.ingredientModifications || []) as EngineIngredientMod[],
+    )
+  }, [menuItems, engine])
 
   const handleToggleHold = useCallback((itemId: string) => {
     useOrderStore.getState().updateItem(itemId, {
@@ -1014,11 +1021,17 @@ export function BartenderView({
   }, [])
 
   const handleEditItemModifiers = useCallback((itemId: string) => {
-    const editItem = orderItems.find(i => i.id === itemId)
-    if (!editItem) return
-    // TODO: Wire to modifier modal for editing existing item modifiers
-    toast.info(`Edit modifiers for ${editItem.name} (coming soon)`)
-  }, [orderItems])
+    const storeItem = useOrderStore.getState().currentOrder?.items.find(i => i.id === itemId)
+    if (!storeItem) return
+    const menuItem = menuItems.find(mi => mi.id === storeItem.menuItemId)
+    if (!menuItem) return
+    engine.handleEditItemModifiers(
+      itemId,
+      menuItem as EngineMenuItem,
+      (storeItem.modifiers || []) as EngineModifier[],
+      (storeItem.ingredientModifications || []) as EngineIngredientMod[],
+    )
+  }, [menuItems, engine])
 
   const handleCompVoidItem = useCallback((itemId: string) => {
     const voidItem = orderItems.find(i => i.id === itemId)
