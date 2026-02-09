@@ -125,6 +125,10 @@ interface UseActiveOrderReturn {
   // === Per-Item Delay ===
   setItemDelay: (itemIds: string[], minutes: number | null) => void
   handleFireItem: (itemId: string) => Promise<void>
+
+  // === Reopened Order Tracking ===
+  reopenedAt: string | null
+  reopenReason: string | null
 }
 
 export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOrderReturn {
@@ -140,7 +144,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       name: item.name,
       quantity: item.quantity,
       price: item.price,
-      modifiers: item.modifiers.map(m => ({ name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
+      modifiers: item.modifiers.map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
       specialNotes: item.specialNotes,
       kitchenStatus: item.isCompleted ? 'ready' as const
         : item.sentToKitchen ? 'sent' as const

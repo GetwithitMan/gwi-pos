@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
       errorCode: body.errorCode,
       path: body.path,
       action: body.action,
-      groupId: errorLog.groupId,
+      groupId: errorLog.groupId ?? undefined,
       errorLogId: errorLog.id,
     }).catch((err) => {
       // Don't let alert failures crash error logging

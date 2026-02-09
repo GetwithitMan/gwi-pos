@@ -12,6 +12,8 @@ import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
+import { useOrderingEngine } from '@/hooks/useOrderingEngine'
+import type { EngineMenuItem } from '@/hooks/useOrderingEngine'
 import { useQuickPick } from '@/hooks/useQuickPick'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
@@ -73,33 +75,6 @@ const POUR_SIZE_CONFIG: Record<string, { label: string; short: string; color: st
   short: { label: 'Shrt', short: '.75x', color: 'bg-teal-800' },
 }
 
-interface OrderItem {
-  id: string
-  menuItemId: string
-  name: string
-  price: number
-  quantity: number
-  modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]
-  sentToKitchen?: boolean
-  specialNotes?: string
-  isHeld?: boolean
-  isCompleted?: boolean
-  completedAt?: string | null
-  seatNumber?: number | null
-  courseNumber?: number | null
-  courseStatus?: string | null
-  resendCount?: number
-  isTimedRental?: boolean
-  blockTimeMinutes?: number | null
-  blockTimeStartedAt?: string | null
-  blockTimeExpiresAt?: string | null
-  kitchenStatus?: string
-  createdAt?: string
-  // Per-item delay
-  delayMinutes?: number | null
-  delayStartedAt?: string | null
-  delayFiredAt?: string | null
-}
 
 
 interface BartenderViewProps {
@@ -110,8 +85,8 @@ interface BartenderViewProps {
   onOpenPayment?: (orderId: string) => void
   onOpenModifiers?: (
     item: MenuItem,
-    onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void,
-    existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[],
+    onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void,
+    existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[],
     existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
   ) => void
   onSwitchToFloorPlan?: () => void
@@ -315,6 +290,19 @@ export function BartenderView({
     employeeId,
   })
 
+  // === Shared ordering engine (item add, modifier modal coordination) ===
+  const engine = useOrderingEngine({
+    locationId,
+    employeeId,
+    defaultOrderType: 'bar_tab',
+    onOpenModifiers: onOpenModifiers as ((
+      item: EngineMenuItem,
+      onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], ingredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void,
+      existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[],
+      existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
+    ) => void) | undefined,
+  })
+
   // POS Layout personalization (for quickPickEnabled setting)
   const {
     layout: posLayout,
@@ -327,8 +315,8 @@ export function BartenderView({
   // OrderPanel items from shared hook
   const orderPanelItems = useOrderPanelItems(menuItems)
 
-  // DEPRECATED: orderItems now reads from Zustand store via useActiveOrder hook
-  const orderItems: OrderItem[] = useMemo(() => {
+  // orderItems — read-only projection from Zustand store via useActiveOrder hook
+  const orderItems = useMemo(() => {
     const storeItems = useOrderStore.getState().currentOrder?.items || []
     return storeItems.map(item => ({
       id: item.id,
@@ -416,92 +404,6 @@ export function BartenderView({
     barDigitBufferRef.current = ''
     if (barDigitTimerRef.current) clearTimeout(barDigitTimerRef.current)
   }, [quickPickSelectedId])
-
-  // COMPATIBILITY SHIM: bridges old setOrderItems patterns to the Zustand store
-  const setOrderItems = useCallback((
-    action: OrderItem[] | ((prev: OrderItem[]) => OrderItem[])
-  ) => {
-    const store = useOrderStore.getState()
-
-    // Ensure order exists in store
-    if (!store.currentOrder) {
-      store.startOrder('bar_tab', { locationId, guestCount: 1 })
-    }
-
-    const currentItems = store.currentOrder?.items || []
-    const prevAsOrderItems: OrderItem[] = currentItems.map(item => ({
-      id: item.id, menuItemId: item.menuItemId, name: item.name, price: item.price,
-      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth, preModifier: m.preModifier })),
-      specialNotes: item.specialNotes, sentToKitchen: item.sentToKitchen, isHeld: item.isHeld,
-      isCompleted: item.isCompleted, seatNumber: item.seatNumber, courseNumber: item.courseNumber,
-      courseStatus: item.courseStatus, resendCount: item.resendCount,
-      blockTimeMinutes: item.blockTimeMinutes, blockTimeStartedAt: item.blockTimeStartedAt,
-      blockTimeExpiresAt: item.blockTimeExpiresAt,
-      ingredientModifications: item.ingredientModifications,
-    }))
-
-    const newItems = typeof action === 'function' ? action(prevAsOrderItems) : action
-
-    if (newItems.length === 0) {
-      for (const item of [...currentItems]) {
-        store.removeItem(item.id)
-      }
-      return
-    }
-
-    // Diff: remove missing items
-    for (const existing of currentItems) {
-      if (!newItems.find(n => n.id === existing.id)) {
-        store.removeItem(existing.id)
-      }
-    }
-
-    // Diff: add/update items
-    for (const newItem of newItems) {
-      const existing = currentItems.find(e => e.id === newItem.id)
-      if (!existing) {
-        store.addItem({
-          menuItemId: newItem.menuItemId,
-          name: newItem.name,
-          price: newItem.price,
-          quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth || 0, preModifier: m.preModifier })),
-          specialNotes: newItem.specialNotes,
-          sentToKitchen: newItem.sentToKitchen,
-          isHeld: newItem.isHeld,
-          isCompleted: newItem.isCompleted,
-          seatNumber: newItem.seatNumber ?? undefined,
-          courseNumber: newItem.courseNumber ?? undefined,
-          resendCount: newItem.resendCount,
-          blockTimeMinutes: newItem.blockTimeMinutes,
-          blockTimeStartedAt: newItem.blockTimeStartedAt,
-          blockTimeExpiresAt: newItem.blockTimeExpiresAt,
-          ingredientModifications: newItem.ingredientModifications,
-        })
-        const storeNow = useOrderStore.getState().currentOrder?.items || []
-        const justAdded = storeNow[storeNow.length - 1]
-        if (justAdded && justAdded.id !== newItem.id) {
-          store.updateItemId(justAdded.id, newItem.id)
-        }
-      } else {
-        store.updateItem(newItem.id, {
-          quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({ id: m.id, name: m.name, price: m.price, depth: m.depth || 0, preModifier: m.preModifier })),
-          specialNotes: newItem.specialNotes,
-          sentToKitchen: newItem.sentToKitchen,
-          isHeld: newItem.isHeld,
-          isCompleted: newItem.isCompleted,
-          seatNumber: newItem.seatNumber ?? undefined,
-          courseNumber: newItem.courseNumber ?? undefined,
-          resendCount: newItem.resendCount,
-          blockTimeMinutes: newItem.blockTimeMinutes,
-          blockTimeStartedAt: newItem.blockTimeStartedAt,
-          blockTimeExpiresAt: newItem.blockTimeExpiresAt,
-          ingredientModifications: newItem.ingredientModifications,
-        })
-      }
-    }
-  }, [locationId])
 
   const [isSending, setIsSending] = useState(false)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
@@ -1054,94 +956,35 @@ export function BartenderView({
   }, [loadMenuItems])
 
   const handleMenuItemTap = useCallback((item: MenuItem) => {
-    if (item.hasModifiers && onOpenModifiers) {
-      onOpenModifiers(item, (modifiers) => {
-        const newItem: OrderItem = {
-          id: `temp-${crypto.randomUUID()}`,
-          menuItemId: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: 1,
-          modifiers,
-          sentToKitchen: false,
-        }
-        setOrderItems(prev => [...prev, newItem])
-      })
-      return
-    }
-
-    const newItem: OrderItem = {
-      id: `temp-${crypto.randomUUID()}`,
-      menuItemId: item.id,
+    // Convert local MenuItem to EngineMenuItem and delegate to engine
+    const engineItem: EngineMenuItem = {
+      id: item.id,
       name: item.name,
       price: item.price,
-      quantity: 1,
-      modifiers: [],
-      sentToKitchen: false,
+      categoryId: item.categoryId,
+      hasModifiers: item.hasModifiers,
     }
-    setOrderItems(prev => [...prev, newItem])
-
-    if (navigator.vibrate) {
-      navigator.vibrate(10)
-    }
-  }, [onOpenModifiers])
+    engine.handleMenuItemTap(engineItem)
+  }, [engine])
 
   // Handle tapping a favorite item
   const handleFavoriteTap = useCallback((fav: FavoriteItem) => {
-    // Convert favorite to MenuItem format for the handler
-    const menuItem: MenuItem = {
+    const engineItem: EngineMenuItem = {
       id: fav.menuItemId,
       name: fav.name,
       price: fav.price,
       categoryId: '',
       hasModifiers: fav.hasModifiers,
     }
-
-    if (menuItem.hasModifiers && onOpenModifiers) {
-      onOpenModifiers(menuItem, (modifiers) => {
-        const newItem: OrderItem = {
-          id: `temp-${crypto.randomUUID()}`,
-          menuItemId: menuItem.id,
-          name: menuItem.name,
-          price: menuItem.price,
-          quantity: 1,
-          modifiers,
-          sentToKitchen: false,
-        }
-        setOrderItems(prev => [...prev, newItem])
-      })
-      return
-    }
-
-    const newItem: OrderItem = {
-      id: `temp-${crypto.randomUUID()}`,
-      menuItemId: menuItem.id,
-      name: menuItem.name,
-      price: menuItem.price,
-      quantity: 1,
-      modifiers: [],
-      sentToKitchen: false,
-    }
-    setOrderItems(prev => [...prev, newItem])
-
-    if (navigator.vibrate) {
-      navigator.vibrate(10)
-    }
-  }, [onOpenModifiers])
+    engine.handleMenuItemTap(engineItem)
+  }, [engine])
 
   const handleUpdateQuantity = useCallback((itemId: string, delta: number) => {
-    setOrderItems(prev => {
-      return prev.map(item => {
-        if (item.id !== itemId) return item
-        const newQty = item.quantity + delta
-        if (newQty <= 0) return item
-        return { ...item, quantity: newQty }
-      }).filter(item => item.quantity > 0)
-    })
-  }, [])
+    activeOrder.handleQuantityChange(itemId, delta)
+  }, [activeOrder])
 
   const handleRemoveItem = useCallback((itemId: string) => {
-    setOrderItems(prev => prev.filter(item => item.id !== itemId))
+    useOrderStore.getState().removeItem(itemId)
   }, [])
 
   const handleEditItem = useCallback((item: OrderPanelItemData) => {
@@ -1150,9 +993,9 @@ export function BartenderView({
   }, [])
 
   const handleToggleHold = useCallback((itemId: string) => {
-    setOrderItems(prev => prev.map(item =>
-      item.id === itemId ? { ...item, isHeld: !item.isHeld } : item
-    ))
+    useOrderStore.getState().updateItem(itemId, {
+      isHeld: !(useOrderStore.getState().currentOrder?.items.find(i => i.id === itemId)?.isHeld),
+    })
   }, [])
 
   const handleOpenNotesEditor = useCallback((itemId: string, currentNote?: string) => {
@@ -1162,20 +1005,12 @@ export function BartenderView({
   const handleSaveNoteFromModal = useCallback(async (note: string) => {
     if (activeOrder.noteEditTarget?.itemId) {
       await activeOrder.saveNote(activeOrder.noteEditTarget.itemId, note)
-      // Also update the compatibility shim
-      setOrderItems(prev => prev.map(item =>
-        item.id === activeOrder.noteEditTarget?.itemId
-          ? { ...item, specialNotes: note || undefined }
-          : item
-      ))
     }
     activeOrder.closeNoteEditor()
   }, [activeOrder.noteEditTarget, activeOrder.saveNote, activeOrder.closeNoteEditor])
 
   const handleUpdateCourse = useCallback((itemId: string, course: number | null) => {
-    setOrderItems(prev => prev.map(item =>
-      item.id === itemId ? { ...item, courseNumber: course } : item
-    ))
+    useOrderStore.getState().updateItem(itemId, { courseNumber: course ?? undefined })
   }, [])
 
   const handleEditItemModifiers = useCallback((itemId: string) => {
@@ -1204,16 +1039,14 @@ export function BartenderView({
   const handleResendItem = useCallback((itemId: string) => {
     const resendItem = orderItems.find(i => i.id === itemId)
     if (!resendItem) return
-    setOrderItems(prev => prev.map(item =>
-      item.id === itemId ? { ...item, resendCount: (item.resendCount || 0) + 1 } : item
-    ))
+    const store = useOrderStore.getState()
+    const storeItem = store.currentOrder?.items.find(i => i.id === itemId)
+    store.updateItem(itemId, { resendCount: (storeItem?.resendCount || 0) + 1 })
     toast.success(`Resend ${resendItem.name} to kitchen`)
   }, [orderItems])
 
   const handleUpdateSeat = useCallback((itemId: string, seat: number | null) => {
-    setOrderItems(prev => prev.map(item =>
-      item.id === itemId ? { ...item, seatNumber: seat } : item
-    ))
+    useOrderStore.getState().updateItem(itemId, { seatNumber: seat ?? undefined })
   }, [])
 
   // Handle clicking a spirit tier button on a cocktail item
@@ -1224,45 +1057,35 @@ export function BartenderView({
     // If only one option in this tier, add it directly
     if (tierOptions.length === 1) {
       const spirit = tierOptions[0]
-      const newItem: OrderItem = {
-        id: `temp-${crypto.randomUUID()}`,
+      engine.addItemDirectly({
         menuItemId: item.id,
         name: item.name,
         price: item.price,
-        quantity: 1,
         modifiers: [{ id: spirit.id, name: spirit.name, price: spirit.price }],
-        sentToKitchen: false,
-      }
-      setOrderItems(prev => [...prev, newItem])
-      if (navigator.vibrate) navigator.vibrate(10)
+      })
       return
     }
 
     // Multiple options - show popup
     setSpiritPopupItem(item)
     setSelectedSpiritTier(tier)
-  }, [])
+  }, [engine])
 
   // Handle selecting a specific spirit from the popup
   const handleSpiritSelect = useCallback((spirit: SpiritOption) => {
     if (!spiritPopupItem) return
 
-    const newItem: OrderItem = {
-      id: `temp-${crypto.randomUUID()}`,
+    engine.addItemDirectly({
       menuItemId: spiritPopupItem.id,
       name: spiritPopupItem.name,
       price: spiritPopupItem.price,
-      quantity: 1,
       modifiers: [{ id: spirit.id, name: spirit.name, price: spirit.price }],
-      sentToKitchen: false,
-    }
-    setOrderItems(prev => [...prev, newItem])
-    if (navigator.vibrate) navigator.vibrate(10)
+    })
 
     // Close popup
     setSpiritPopupItem(null)
     setSelectedSpiritTier(null)
-  }, [spiritPopupItem])
+  }, [spiritPopupItem, engine])
 
   // Close spirit popup
   const handleCloseSpiritPopup = useCallback(() => {
@@ -2254,32 +2077,20 @@ export function BartenderView({
                                     tabIndex={0}
                                     onClick={(e) => {
                                       e.stopPropagation()
-                                      const newItem: OrderItem = {
-                                        id: `temp-${crypto.randomUUID()}`,
+                                      engine.addItemDirectly({
                                         menuItemId: item.id,
                                         name: `${item.name} (${config.label})`,
                                         price: pourPrice,
-                                        quantity: 1,
-                                        modifiers: [],
-                                        sentToKitchen: false,
-                                      }
-                                      setOrderItems(prev => [...prev, newItem])
-                                      if (navigator.vibrate) navigator.vibrate(10)
+                                      })
                                     }}
                                     onKeyDown={(e) => {
                                       if (e.key === 'Enter' || e.key === ' ') {
                                         e.stopPropagation()
-                                        const newItem: OrderItem = {
-                                          id: `temp-${crypto.randomUUID()}`,
+                                        engine.addItemDirectly({
                                           menuItemId: item.id,
                                           name: `${item.name} (${config.label})`,
                                           price: pourPrice,
-                                          quantity: 1,
-                                          modifiers: [],
-                                          sentToKitchen: false,
-                                        }
-                                        setOrderItems(prev => [...prev, newItem])
-                                        if (navigator.vibrate) navigator.vibrate(10)
+                                        })
                                       }
                                     }}
                                     className={`flex-1 flex flex-col items-center px-1.5 py-1 rounded text-[12px] font-semibold transition-all cursor-pointer min-h-[36px] ${config.color} ${isDefault ? 'ring-1 ring-white/50' : ''} text-white hover:brightness-110`}

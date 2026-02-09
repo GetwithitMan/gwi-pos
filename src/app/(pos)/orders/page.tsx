@@ -55,7 +55,7 @@ import { ReceiptModal } from '@/components/receipt'
 import { SeatCourseHoldControls, ItemBadges } from '@/components/orders/SeatCourseHoldControls'
 import { OrderTypeSelector, OrderTypeBadge } from '@/components/orders/OrderTypeSelector'
 import type { OrderTypeConfig, OrderCustomFields, WorkflowRules } from '@/types/order-types'
-import type { IngredientModification } from '@/types/orders'
+import type { IngredientModification, IngredientModificationType } from '@/types/orders'
 import { EntertainmentSessionControls } from '@/components/orders/EntertainmentSessionControls'
 import { CourseOverviewPanel } from '@/components/orders/CourseOverviewPanel'
 import { ModifierModal } from '@/components/modifiers/ModifierModal'
@@ -78,7 +78,7 @@ import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import { toast } from '@/stores/toast-store'
 import TipAdjustmentOverlay from '@/components/tips/TipAdjustmentOverlay'
-import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig } from '@/types'
+import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
 export default function OrdersPage() {
   const router = useRouter()
@@ -143,7 +143,7 @@ export default function OrdersPage() {
   } | null>(null)
 
   // T023: Inline ordering modifier callback ref
-  const inlineModifierCallbackRef = useRef<((modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void) | null>(null)
+  const inlineModifierCallbackRef = useRef<((modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null; modifierId?: string | null; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void) | null>(null)
   // T023: Inline ordering timed rental callback ref
   const inlineTimedRentalCallbackRef = useRef<((price: number, blockMinutes: number) => void) | null>(null)
   // T023: Inline ordering pizza builder callback ref
@@ -268,10 +268,11 @@ export default function OrdersPage() {
   const [resendLoading, setResendLoading] = useState(false)
   const [compVoidItem, setCompVoidItem] = useState<{
     id: string
+    menuItemId?: string
     name: string
     quantity: number
     price: number
-    modifiers: { name: string; price: number }[]
+    modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null; modifierId?: string | null; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }[]
     status?: string
     voidReason?: string
   } | null>(null)
@@ -1273,7 +1274,7 @@ export default function OrdersPage() {
           isCompleted?: boolean
           seatNumber?: number
           sentToKitchen?: boolean
-          modifiers?: { id: string; modifierId: string; name: string; price: number; preModifier?: string }[]
+          modifiers?: { id: string; modifierId: string; name: string; price: number; preModifier?: string | null; depth?: number; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }[]
         }) => ({
           id: item.id,
           menuItemId: item.menuItemId,
@@ -1425,15 +1426,7 @@ export default function OrdersPage() {
   }
 
   // Comp/Void handlers
-  const handleOpenCompVoid = async (item: {
-    id: string
-    name: string
-    quantity: number
-    price: number
-    modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]
-    status?: string
-    voidReason?: string
-  }) => {
+  const handleOpenCompVoid = async (item: OrderItem) => {
     // If order hasn't been saved yet, save it first
     let orderId = savedOrderId
     if (!orderId) {
@@ -1450,20 +1443,7 @@ export default function OrdersPage() {
 
     if (orderId) {
       setOrderToPayId(orderId)
-      setCompVoidItem({
-        ...item,
-        modifiers: item.modifiers.map(m => ({
-          id: m.id || m.modifierId,
-          modifierId: m.modifierId,
-          name: m.name,
-          price: Number(m.price),
-          depth: m.depth ?? 0,
-          preModifier: m.preModifier ?? null,
-          spiritTier: m.spiritTier ?? null,
-          linkedBottleProductId: m.linkedBottleProductId ?? null,
-          parentModifierId: m.parentModifierId ?? null,
-        })),
-      })
+      setCompVoidItem(item)
       setShowCompVoidModal(true)
     }
   }
@@ -1547,6 +1527,7 @@ export default function OrdersPage() {
     if (!item) return
     await handleOpenCompVoid({
       id: item.id,
+      menuItemId: item.menuItemId || '',
       name: item.name,
       quantity: item.quantity,
       price: Number(item.price),
@@ -1898,7 +1879,7 @@ export default function OrdersPage() {
       ingredientModifications: ingredientModifications?.map(mod => ({
         ingredientId: mod.ingredientId,
         name: mod.name,
-        modificationType: mod.modificationType,
+        modificationType: mod.modificationType as IngredientModificationType,
         priceAdjustment: mod.priceAdjustment,
         swappedTo: mod.swappedTo,
       })),
@@ -2394,6 +2375,49 @@ export default function OrdersPage() {
   }
 
   // Handle opening entertainment session start modal
+  // Shared handler for opening modifier modal from FloorPlanHome/BartenderView inline ordering
+  // Called by useOrderingEngine via onOpenModifiers(item, onComplete, existingModifiers, existingIngredientMods)
+  const handleOpenModifiersShared = useCallback(async (
+    item: MenuItem,
+    onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void,
+    existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[],
+    existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
+  ) => {
+    try {
+      inlineModifierCallbackRef.current = onComplete
+      setLoadingModifiers(true)
+      setSelectedItem(item)
+
+      // If editing (existingModifiers provided), set editingOrderItem so ModifierModal restores selections
+      if ((existingModifiers && existingModifiers.length > 0) || existingIngredientMods) {
+        setEditingOrderItem({
+          id: 'inline-edit',
+          menuItemId: item.id,
+          modifiers: (existingModifiers || []).map((m: Record<string, unknown>) => ({
+            id: String(m.id || ''),
+            name: String(m.name || ''),
+            price: Number(m.price || 0),
+            depth: Number(m.depth ?? 0),
+            parentModifierId: m.parentModifierId ? String(m.parentModifierId) : undefined,
+          })),
+          ingredientModifications: existingIngredientMods as { ingredientId: string; name: string; modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[],
+        })
+      }
+      setShowModifierModal(true)
+
+      const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
+      if (response.ok) {
+        const data = await response.json()
+        setItemModifierGroups(data.data || [])
+      }
+      setLoadingModifiers(false)
+    } catch (error) {
+      console.error('Failed to load modifiers:', error)
+      setLoadingModifiers(false)
+      inlineModifierCallbackRef.current = null
+    }
+  }, [])
+
   const handleOpenTimedRental = (
     item: any,
     onComplete: (price: number, blockMinutes: number) => void
@@ -2599,7 +2623,7 @@ export default function OrdersPage() {
       ingredientModifications: ingredientModifications?.map(mod => ({
         ingredientId: mod.ingredientId,
         name: mod.name,
-        modificationType: mod.modificationType,
+        modificationType: mod.modificationType as IngredientModificationType,
         priceAdjustment: mod.priceAdjustment,
         swappedTo: mod.swappedTo,
       })),
@@ -2742,43 +2766,7 @@ export default function OrdersPage() {
               setOrderToPayId(orderId)
               setShowPaymentModal(true)
             }}
-            onOpenModifiers={async (item, onComplete, existingModifiers, existingIngredientMods) => {
-              // T023: Open modifier modal for inline ordering (new or edit)
-              try {
-                // Store the callback to be called when modifiers are confirmed
-                inlineModifierCallbackRef.current = onComplete
-                setLoadingModifiers(true)
-                setSelectedItem(item as MenuItem)
-
-                // If editing (existingModifiers provided), set editingOrderItem so ModifierModal restores selections
-                if ((existingModifiers && existingModifiers.length > 0) || existingIngredientMods) {
-                  setEditingOrderItem({
-                    id: 'inline-edit',
-                    menuItemId: item.id,
-                    modifiers: existingModifiers.map((m: Record<string, unknown>) => ({
-                      id: String(m.id || ''),
-                      name: String(m.name || ''),
-                      price: Number(m.price || 0),
-                      depth: Number(m.depth ?? 0),
-                      parentModifierId: m.parentModifierId ? String(m.parentModifierId) : undefined,
-                    })),
-                    ingredientModifications: existingIngredientMods as { ingredientId: string; name: string; modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[],
-                  })
-                }
-                setShowModifierModal(true)
-
-                const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
-                if (response.ok) {
-                  const data = await response.json()
-                  setItemModifierGroups(data.data || [])
-                }
-                setLoadingModifiers(false)
-              } catch (error) {
-                console.error('Failed to load modifiers:', error)
-                setLoadingModifiers(false)
-                inlineModifierCallbackRef.current = null
-              }
-            }}
+            onOpenModifiers={handleOpenModifiersShared as any}
             onOpenOrdersPanel={() => {
               // T023: Open the open orders panel/modal
               setShowTabsPanel(true)
@@ -3119,41 +3107,7 @@ export default function OrdersPage() {
             setOrderToPayId(orderId)
             setShowPaymentModal(true)
           }}
-          onOpenModifiers={async (item, onComplete, existingModifiers, existingIngredientMods) => {
-            try {
-              inlineModifierCallbackRef.current = onComplete
-              setLoadingModifiers(true)
-              setSelectedItem(item as MenuItem)
-
-              // If editing (existingModifiers provided), set editingOrderItem so ModifierModal restores selections
-              if ((existingModifiers && existingModifiers.length > 0) || existingIngredientMods) {
-                setEditingOrderItem({
-                  id: 'inline-edit',
-                  menuItemId: item.id,
-                  modifiers: existingModifiers.map((m: Record<string, unknown>) => ({
-                    id: String(m.id || ''),
-                    name: String(m.name || ''),
-                    price: Number(m.price || 0),
-                    depth: Number(m.depth ?? 0),
-                    parentModifierId: m.parentModifierId ? String(m.parentModifierId) : undefined,
-                  })),
-                  ingredientModifications: existingIngredientMods as { ingredientId: string; name: string; modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[],
-                })
-              }
-              setShowModifierModal(true)
-
-              const response = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
-              if (response.ok) {
-                const data = await response.json()
-                setItemModifierGroups(data.data || [])
-              }
-              setLoadingModifiers(false)
-            } catch (error) {
-              console.error('Failed to load modifiers:', error)
-              setLoadingModifiers(false)
-              inlineModifierCallbackRef.current = null
-            }
-          }}
+          onOpenModifiers={handleOpenModifiersShared as any}
           // Settings props (TODO: load from location settings)
           requireNameWithoutCard={false}
           tapCardBehavior="close"
@@ -4601,7 +4555,7 @@ export default function OrdersPage() {
             setCompVoidItem(null)
           }}
           orderId={(savedOrderId || orderToPayId)!}
-          item={compVoidItem}
+          item={compVoidItem as OrderItem}
           employeeId={employee.id}
           locationId={employee.location?.id || ''}
           onComplete={handleCompVoidComplete}

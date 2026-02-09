@@ -92,7 +92,7 @@ interface MenuItem {
   defaultPourSize?: string | null
   applyPourToModifiers?: boolean
   // Entertainment fields
-  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | null
+  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
   currentOrderId?: string | null
   blockTimeMinutes?: number | null
   // Printer routing

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { mapOrderForResponse, mapOrderItemForResponse } from '@/lib/api/order-response-mapper'
-import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive } from '@/lib/order-calculations'
+import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isItemTaxInclusive, type LocationTaxSettings } from '@/lib/order-calculations'
 import { calculateCardPrice } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
@@ -298,7 +298,7 @@ export async function POST(
       // Use centralized calculation function (single source of truth)
       const totals = calculateOrderTotals(
         itemsForCalc,
-        existingOrder.location.settings,
+        existingOrder.location.settings as LocationTaxSettings | null,
         Number(existingOrder.discountTotal) || 0,
         Number(existingOrder.tipTotal) || 0
       )

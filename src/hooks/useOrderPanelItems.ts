@@ -59,7 +59,7 @@ export function useOrderPanelItems(menuItems?: { id: string; itemType?: string }
         sentToKitchen: item.sentToKitchen,
         resendCount: item.resendCount,
         completedAt: item.completedAt,
-        createdAt: item.createdAt,
+        createdAt: (item as unknown as Record<string, unknown>).createdAt as string | undefined,
         delayMinutes: item.delayMinutes,
         delayStartedAt: item.delayStartedAt,
         delayFiredAt: item.delayFiredAt,

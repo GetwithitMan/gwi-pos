@@ -41,7 +41,7 @@ export function calculatePizzaTotal(
   toppingModifiers: UiModifier[]
 ): number {
   const toppingsTotal = toppingModifiers.reduce(
-    (sum, mod) => sum + (mod.price * (mod.quantity || 1)),
+    (sum, mod) => sum + (mod.price * ((mod as UiModifier & { quantity?: number }).quantity || 1)),
     0
   )
   return Math.round((basePrice + toppingsTotal) * 100) / 100

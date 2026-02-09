@@ -1,6 +1,8 @@
 // Shared Types for GWI POS
 // Consolidated type definitions used across the application
 
+import type { IngredientModification } from './orders'
+
 /**
  * Category for menu organization
  */
@@ -29,7 +31,7 @@ export interface MenuItem {
     minimum?: number
   }
   // Entertainment item fields
-  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | null
+  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
   currentOrderId?: string | null
   blockTimeMinutes?: number | null  // Default block time for entertainment items
   // Pour size options for liquor items (can be old or new format)
@@ -51,6 +53,10 @@ export interface Modifier {
   price: number
   upsellPrice?: number | null
   allowedPreModifiers?: string[] | null
+  allowNo?: boolean
+  allowLite?: boolean
+  allowExtra?: boolean
+  allowOnSide?: boolean
   extraPrice?: number | null
   isDefault: boolean
   childModifierGroupId?: string | null
@@ -131,7 +137,7 @@ export interface OrderItem {
   name: string
   quantity: number
   price: number
-  modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]
+  modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null; modifierId?: string | null; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }[]
   specialNotes?: string
   status?: 'pending' | 'sent' | 'preparing' | 'ready' | 'served' | 'voided' | 'comped'
   voidReason?: string
@@ -140,6 +146,7 @@ export interface OrderItem {
   courseNumber?: number
   holdUntil?: Date | null
   firedAt?: Date | null
+  ingredientModifications?: IngredientModification[]
   // Pizza builder configuration (for pizza items)
   pizzaConfig?: PizzaOrderConfig
 }

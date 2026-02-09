@@ -26,6 +26,34 @@ const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
   testMode: true,
   readerTimeoutSeconds: 30,
   autoSwapOnFailure: true,
+  // Bar Tab Pre-Auth
+  incrementThresholdPercent: 80,
+  incrementAmount: 25,
+  autoIncrementEnabled: true,
+  maxTabAlertAmount: 500,
+  // Quick Pay / Tip
+  quickPayEnabled: true,
+  tipDollarAmountThreshold: 15,
+  tipDollarSuggestions: [1, 2, 3],
+  tipPercentSuggestions: [18, 20, 25],
+  requireCustomForZeroTip: true,
+  // Walkout Recovery
+  walkoutRetryEnabled: true,
+  walkoutRetryFrequencyDays: 3,
+  walkoutMaxRetryDays: 30,
+  walkoutAutoDetectMinutes: 120,
+  // Card Recognition
+  cardRecognitionEnabled: true,
+  cardRecognitionToastEnabled: true,
+  // Signature
+  requireSignatureAbove: 25,
+  // Bottle Service
+  bottleServiceEnabled: false,
+  bottleServiceAutoGratuityPercent: 20,
+  bottleServiceReAuthAlertEnabled: true,
+  bottleServiceMinSpendEnforced: false,
+  // Digital Receipts
+  digitalReceiptRetentionDays: 90,
 }
 
 const DEFAULT_PRICE_ROUNDING: PriceRoundingSettings = {

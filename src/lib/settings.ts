@@ -313,6 +313,8 @@ export const DEFAULT_SETTINGS: LocationSettings = {
   tax: {
     defaultRate: 8.0,
     calculateAfterDiscount: true,
+    taxInclusiveLiquor: false,
+    taxInclusiveFood: false,
   },
   dualPricing: {
     enabled: true,

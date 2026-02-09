@@ -83,9 +83,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: orderId } = await params
+  let body: Record<string, unknown> = {}
   try {
-    const { id: orderId } = await params
-    const body = await request.json()
+    body = await request.json()
 
     // Validate request body with Zod
     const validation = PaymentRequestSchema.safeParse(body)

@@ -31,7 +31,7 @@ export interface OrderItemForCalculation {
   }>
   itemTotal?: number // For persisted items from DB
   commissionAmount?: number // For persisted items from DB
-  categoryType?: string // For tax-inclusive pricing split
+  categoryType?: string | null // For tax-inclusive pricing split
   isTaxInclusive?: boolean // Stored on OrderItem — true if item was tax-inclusive at time of sale
 }
 
@@ -268,7 +268,7 @@ export interface TaxInclusiveSettings {
  * Check if an item's category type is tax-inclusive based on settings
  */
 export function isItemTaxInclusive(
-  categoryType: string | undefined,
+  categoryType: string | null | undefined,
   settings: TaxInclusiveSettings
 ): boolean {
   if (!categoryType) return false

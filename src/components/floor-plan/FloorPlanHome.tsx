@@ -42,6 +42,8 @@ import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 import { useEvents } from '@/lib/events'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
+import { useOrderingEngine } from '@/hooks/useOrderingEngine'
+import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
 import './styles/floor-plan.css'
@@ -82,16 +84,19 @@ interface MenuItem {
   reasons86d?: string[]
 }
 
-interface InlineOrderItem {
+// InlineOrderItem: derived type from the inlineOrderItems memo below.
+// Kept as a named type alias for use in function signatures throughout this file.
+// This replaces the old standalone interface — the store is the source of truth.
+type InlineOrderItem = {
   id: string
   menuItemId: string
   name: string
   price: number
   quantity: number
-  modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]
+  modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null; modifierId?: string | null; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }[]
   specialNotes?: string
   seatNumber?: number
-  sourceTableId?: string // For virtual groups - tracks which table this item was ordered from
+  sourceTableId?: string
   courseNumber?: number
   courseStatus?: 'pending' | 'fired' | 'ready' | 'served'
   isHeld?: boolean
@@ -100,22 +105,18 @@ interface InlineOrderItem {
   status?: 'active' | 'voided' | 'comped'
   voidReason?: string
   wasMade?: boolean
-  // Timed rental / entertainment items
   isTimedRental?: boolean
   blockTimeMinutes?: number
   blockTimeStartedAt?: string
   blockTimeExpiresAt?: string
-  // Item lifecycle status
   kitchenStatus?: 'pending' | 'cooking' | 'ready' | 'delivered'
   completedAt?: string
   resendCount?: number
   resendNote?: string
   createdAt?: string
-  // Per-item delay
   delayMinutes?: number | null
   delayStartedAt?: string | null
   delayFiredAt?: string | null
-  // Ingredient modifications
   ingredientModifications?: {
     ingredientId: string
     name: string
@@ -123,7 +124,6 @@ interface InlineOrderItem {
     priceAdjustment: number
     swappedTo?: { modifierId: string; name: string; price: number }
   }[]
-  // Category type for tax-inclusive pricing
   categoryType?: string
 }
 
@@ -158,7 +158,7 @@ interface FloorPlanHomeProps {
   isManager?: boolean
   // Payment and modifier callbacks
   onOpenPayment?: (orderId: string) => void
-  onOpenModifiers?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void, existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[], existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void
+  onOpenModifiers?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void, existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void
   // Open Orders panel
   onOpenOrdersPanel?: () => void
   // Tabs page (for bartenders)
@@ -408,158 +408,59 @@ export function FloorPlanHome({
     }
   }, [activeOrder, inlineOrderItems, quickPickSelectedIds])
 
-  // COMPATIBILITY SHIM: setInlineOrderItems bridges old patterns to the Zustand store
-  // This allows all 31 existing call sites to keep working while store is source of truth
-  // Refs for shim closure (avoids stale state in useCallback)
-  const activeOrderTypeRef = useRef(activeOrderType)
-  activeOrderTypeRef.current = activeOrderType
-  const activeTableIdRef = useRef(activeTableId)
-  activeTableIdRef.current = activeTableId
-  const guestCountRef = useRef(guestCount)
-  guestCountRef.current = guestCount
-
-  const setInlineOrderItems = useCallback((
-    action: InlineOrderItem[] | ((prev: InlineOrderItem[]) => InlineOrderItem[])
-  ) => {
+  // Helper: load items from API response into the store (used by orderToLoad and refreshes)
+  const loadItemsIntoStore = useCallback((apiItems: any[]) => {
     const store = useOrderStore.getState()
-
-    // Ensure order exists in store before mutating items
-    if (!store.currentOrder) {
-      console.log('[FloorPlanHome] startOrder with tableId:', activeTableIdRef.current, 'orderType:', activeOrderTypeRef.current)
-      store.startOrder(activeOrderTypeRef.current || 'dine_in', {
-        locationId,
-        tableId: activeTableIdRef.current || undefined,
-        guestCount: guestCountRef.current || 1,
-      })
-    }
-
+    // Clear existing items
     const currentItems = store.currentOrder?.items || []
-
-    // Resolve new items from action (direct array or callback)
-    const prevAsInline: InlineOrderItem[] = currentItems.map(item => ({
-      id: item.id, menuItemId: item.menuItemId, name: item.name, price: item.price,
-      quantity: item.quantity, modifiers: item.modifiers?.map(m => ({
-        id: (m.id || m.modifierId) ?? '',
-        modifierId: m.modifierId,
-        name: m.name,
-        price: Number(m.price),
-        depth: m.depth ?? 0,
-        preModifier: m.preModifier ?? null,
-        spiritTier: m.spiritTier ?? null,
-        linkedBottleProductId: m.linkedBottleProductId ?? null,
-        parentModifierId: m.parentModifierId ?? null,
-      })),
-      specialNotes: item.specialNotes, seatNumber: item.seatNumber, sourceTableId: item.sourceTableId,
-      courseNumber: item.courseNumber, courseStatus: item.courseStatus, isHeld: item.isHeld,
-      sentToKitchen: item.sentToKitchen, isCompleted: item.isCompleted,
-      blockTimeMinutes: item.blockTimeMinutes ?? undefined, blockTimeStartedAt: item.blockTimeStartedAt ?? undefined,
-      blockTimeExpiresAt: item.blockTimeExpiresAt ?? undefined, completedAt: item.completedAt,
-      resendCount: item.resendCount,
-      ingredientModifications: item.ingredientModifications,
-      status: item.status,
-      voidReason: item.voidReason,
-      wasMade: item.wasMade,
-    }))
-
-    const newItems = typeof action === 'function' ? action(prevAsInline) : action
-
-    if (newItems.length === 0) {
-      // Clear all items — just remove them from the store
-      for (const item of [...currentItems]) {
-        store.removeItem(item.id)
-      }
-      return
+    for (const item of [...currentItems]) {
+      store.removeItem(item.id)
     }
-
-    // Diff: remove items that are no longer present
-    for (const existing of currentItems) {
-      if (!newItems.find(n => n.id === existing.id)) {
-        store.removeItem(existing.id)
-      }
-    }
-
-    // Diff: add new items and update changed items
-    for (const newItem of newItems) {
-      const existing = currentItems.find(e => e.id === newItem.id)
-      if (!existing) {
-        // New item — add to store
-        store.addItem({
-          menuItemId: newItem.menuItemId,
-          name: newItem.name,
-          price: newItem.price,
-          quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({
-            id: (m.id || m.modifierId) ?? '',
-            modifierId: m.modifierId,
-            name: m.name,
-            price: Number(m.price),
-            depth: m.depth ?? 0,
-            preModifier: m.preModifier ?? null,
-            spiritTier: m.spiritTier ?? null,
-            linkedBottleProductId: m.linkedBottleProductId ?? null,
-            parentModifierId: m.parentModifierId ?? null,
-          })),
-          specialNotes: newItem.specialNotes,
-          seatNumber: newItem.seatNumber,
-          sourceTableId: newItem.sourceTableId,
-          courseNumber: newItem.courseNumber,
-          courseStatus: newItem.courseStatus,
-          isHeld: newItem.isHeld,
-          sentToKitchen: newItem.sentToKitchen,
-          isCompleted: newItem.isCompleted,
-          blockTimeMinutes: newItem.blockTimeMinutes,
-          blockTimeStartedAt: newItem.blockTimeStartedAt,
-          blockTimeExpiresAt: newItem.blockTimeExpiresAt,
-          completedAt: newItem.completedAt,
-          resendCount: newItem.resendCount,
-          ingredientModifications: newItem.ingredientModifications,
-          status: newItem.status,
-          voidReason: newItem.voidReason,
-          wasMade: newItem.wasMade,
-          categoryType: newItem.categoryType,
-        })
-        // Override the auto-generated ID with the intended one
-        const storeNow = useOrderStore.getState().currentOrder?.items || []
-        const justAdded = storeNow[storeNow.length - 1]
-        if (justAdded && justAdded.id !== newItem.id) {
-          store.updateItemId(justAdded.id, newItem.id)
-        }
-      } else {
-        // Existing item — update if changed
-        store.updateItem(newItem.id, {
-          quantity: newItem.quantity,
-          modifiers: (newItem.modifiers || []).map(m => ({
-            id: (m.id || m.modifierId) ?? '',
-            modifierId: m.modifierId,
-            name: m.name,
-            price: Number(m.price),
-            depth: m.depth ?? 0,
-            preModifier: m.preModifier ?? null,
-            spiritTier: m.spiritTier ?? null,
-            linkedBottleProductId: m.linkedBottleProductId ?? null,
-            parentModifierId: m.parentModifierId ?? null,
-          })),
-          specialNotes: newItem.specialNotes,
-          seatNumber: newItem.seatNumber,
-          sourceTableId: newItem.sourceTableId,
-          courseNumber: newItem.courseNumber,
-          courseStatus: newItem.courseStatus,
-          isHeld: newItem.isHeld,
-          sentToKitchen: newItem.sentToKitchen,
-          isCompleted: newItem.isCompleted,
-          blockTimeMinutes: newItem.blockTimeMinutes,
-          blockTimeStartedAt: newItem.blockTimeStartedAt,
-          blockTimeExpiresAt: newItem.blockTimeExpiresAt,
-          completedAt: newItem.completedAt,
-          resendCount: newItem.resendCount,
-          ingredientModifications: newItem.ingredientModifications,
-          status: newItem.status,
-          voidReason: newItem.voidReason,
-          wasMade: newItem.wasMade,
-        })
+    // Add each item from API
+    for (const item of apiItems) {
+      store.addItem({
+        menuItemId: item.menuItemId,
+        name: item.name || 'Unknown',
+        price: Number(item.price) || 0,
+        quantity: item.quantity,
+        modifiers: (item.modifiers || []).map((m: any) => ({
+          id: (m.id || m.modifierId) ?? '',
+          modifierId: m.modifierId,
+          name: m.name || '',
+          price: Number(m.price) || 0,
+          depth: m.depth ?? 0,
+          preModifier: m.preModifier ?? null,
+          spiritTier: m.spiritTier ?? null,
+          linkedBottleProductId: m.linkedBottleProductId ?? null,
+          parentModifierId: m.parentModifierId ?? null,
+        })),
+        specialNotes: item.specialNotes,
+        seatNumber: item.seatNumber,
+        sourceTableId: item.sourceTableId,
+        courseNumber: item.courseNumber,
+        courseStatus: item.courseStatus,
+        isHeld: item.isHeld,
+        sentToKitchen: item.sentToKitchen ?? (item.kitchenStatus !== 'pending' && item.kitchenStatus !== undefined),
+        isCompleted: item.isCompleted,
+        blockTimeMinutes: item.blockTimeMinutes,
+        blockTimeStartedAt: item.blockTimeStartedAt,
+        blockTimeExpiresAt: item.blockTimeExpiresAt,
+        completedAt: item.completedAt,
+        resendCount: item.resendCount,
+        ingredientModifications: item.ingredientModifications,
+        status: item.status || 'active',
+        voidReason: item.voidReason,
+        wasMade: item.wasMade,
+        categoryType: item.categoryType,
+      })
+      // Override the auto-generated ID with the real one from the API
+      const storeNow = useOrderStore.getState().currentOrder?.items || []
+      const justAdded = storeNow[storeNow.length - 1]
+      if (justAdded && justAdded.id !== item.id) {
+        store.updateItemId(justAdded.id, item.id)
       }
     }
-  }, [locationId])
+  }, [])
 
   // Notes editing — delegated to useActiveOrder hook (NoteEditModal)
 
@@ -572,8 +473,9 @@ export function FloorPlanHome({
     name: string
     price: number
     quantity: number
-    modifiers: { name: string; price: number }[]
+    modifiers: { id: string; name: string; price: number }[]
     status?: string
+    menuItemId?: string
   } | null>(null)
 
   // Split ticket manager state
@@ -587,6 +489,20 @@ export function FloorPlanHome({
   const [activeSeatNumber, setActiveSeatNumber] = useState<number | null>(null)
   // Source table for seat (for virtual groups - tracks which table the seat belongs to)
   const [activeSourceTableId, setActiveSourceTableId] = useState<string | null>(null)
+
+  // === Ordering Engine (unified item-add, modifier, pizza, timed rental logic) ===
+  const engine = useOrderingEngine({
+    locationId,
+    employeeId,
+    seatNumber: activeSeatNumber ?? undefined,
+    sourceTableId: activeSourceTableId ?? undefined,
+    defaultOrderType: activeOrderType || 'dine_in',
+    tableId: activeTableId ?? undefined,
+    guestCount,
+    onOpenModifiers: onOpenModifiers as any, // MenuItem is compatible with EngineMenuItem
+    onOpenPizzaBuilder: onOpenPizzaBuilder as any,
+    onOpenTimedRental: onOpenTimedRental as any,
+  })
 
   // Context menu state for menu items (right-click)
   const [contextMenu, setContextMenu] = useState<{
@@ -1558,9 +1474,7 @@ export function FloorPlanHome({
           resendNote: item.resendNote,
           createdAt: item.createdAt,
         }))
-        setInlineOrderItems(items)
-
-        // Store is already updated via setInlineOrderItems shim — no separate sync needed
+        loadItemsIntoStore(items)
 
         // Notify parent that order is loaded
         onOrderLoaded?.()
@@ -1605,7 +1519,7 @@ export function FloorPlanHome({
     setActiveOrderNumber(null)
     setActiveTableId(null)
     setActiveOrderType(null)
-    setInlineOrderItems([])
+    // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
     setShowOrderPanel(false)
     setSelectedCategoryId(null)
     setViewMode('tables')
@@ -2008,9 +1922,7 @@ export function FloorPlanHome({
             resendNote: item.resendNote,
             createdAt: item.createdAt,
           }))
-          setInlineOrderItems(items)
-
-          // Store is already updated via setInlineOrderItems shim — no separate sync needed
+          loadItemsIntoStore(items)
         }
       } catch (error) {
         console.error('[FloorPlanHome] Failed to load order:', error)
@@ -2040,176 +1952,13 @@ export function FloorPlanHome({
     setActiveOrderType(orderType)
     setActiveOrderId(null)
     setActiveOrderNumber(null)
-    setInlineOrderItems([])
     useOrderStore.getState().clearOrder()
     setShowOrderPanel(true)
   }, [])
 
   // Handle menu item tap - add to order
-  const handleMenuItemTap = useCallback(async (item: MenuItem) => {
-    // Check for timed rental (entertainment) items - show rate selection modal
-    if (item.itemType === 'timed_rental' && onOpenTimedRental) {
-      onOpenTimedRental(item, (price: number, blockMinutes: number) => {
-        const newItem: InlineOrderItem = {
-          id: `temp-${crypto.randomUUID()}`,
-          menuItemId: item.id,
-          name: item.name,
-          price: price, // Use selected rate price
-          quantity: 1,
-          modifiers: [],
-          seatNumber: activeSeatNumber || undefined,
-          sourceTableId: activeSourceTableId || undefined,
-          sentToKitchen: false,
-          categoryType: item.categoryType,
-          // Store block time info for timed session
-          blockTimeMinutes: blockMinutes,
-        }
-        setInlineOrderItems(prev => [...prev, newItem])
-      })
-      return
-    }
-
-    // Check for pizza items - show pizza builder modal
-    if (item.isPizza && onOpenPizzaBuilder) {
-      onOpenPizzaBuilder(item, (config: PizzaOrderConfig) => {
-        // Build pizza item with selections as modifiers
-        // Use priceBreakdown since the global PizzaOrderConfig structure has that
-        const pizzaModifiers: { id: string; name: string; price: number }[] = []
-
-        // Add size and crust
-        pizzaModifiers.push({ id: config.sizeId, name: `Size`, price: config.priceBreakdown.sizePrice })
-        pizzaModifiers.push({ id: config.crustId, name: `Crust`, price: config.priceBreakdown.crustPrice })
-
-        // Add sauces if present
-        if (config.sauces && config.sauces.length > 0) {
-          config.sauces.forEach(s => {
-            pizzaModifiers.push({ id: s.sauceId, name: `${s.name} (${s.amount})`, price: s.price || 0 })
-          })
-        } else if (config.sauceId) {
-          pizzaModifiers.push({ id: config.sauceId, name: `Sauce (${config.sauceAmount})`, price: config.priceBreakdown.saucePrice })
-        }
-
-        // Add cheeses if present
-        if (config.cheeses && config.cheeses.length > 0) {
-          config.cheeses.forEach(c => {
-            pizzaModifiers.push({ id: c.cheeseId, name: `${c.name} (${c.amount})`, price: c.price || 0 })
-          })
-        } else if (config.cheeseId) {
-          pizzaModifiers.push({ id: config.cheeseId, name: `Cheese (${config.cheeseAmount})`, price: config.priceBreakdown.cheesePrice })
-        }
-
-        // Add toppings
-        config.toppings.forEach(t => {
-          const sectionStr = t.sections ? `sections: ${t.sections.length}` : ''
-          pizzaModifiers.push({ id: t.toppingId, name: `${t.name}${sectionStr ? ` (${sectionStr})` : ''}`, price: t.price })
-        })
-
-        const newItem: InlineOrderItem = {
-          id: `temp-${crypto.randomUUID()}`,
-          menuItemId: item.id,
-          name: item.name,
-          price: config.totalPrice, // Use calculated pizza price
-          quantity: 1,
-          modifiers: pizzaModifiers,
-          seatNumber: activeSeatNumber || undefined,
-          sourceTableId: activeSourceTableId || undefined,
-          sentToKitchen: false,
-          categoryType: item.categoryType,
-        }
-        setInlineOrderItems(prev => [...prev, newItem])
-      })
-      return
-    }
-
-    // If item has modifiers, check if defaults can auto-fill all required groups
-    if (item.hasModifiers && onOpenModifiers) {
-      // Try to auto-add with defaults (no modal needed if defaults satisfy requirements)
-      try {
-        const res = await fetch(`/api/menu/items/${item.id}/modifier-groups`)
-        if (res.ok) {
-          const { data: groups } = await res.json()
-          if (groups && groups.length > 0) {
-            // Collect all default modifiers and check if required groups are satisfied
-            const defaultMods: { id: string; name: string; price: number; depth: number; preModifier?: string }[] = []
-            let allRequiredSatisfied = true
-
-            for (const group of groups) {
-              const defaults = (group.modifiers || []).filter((m: any) => m.isDefault)
-              defaults.forEach((m: any) => {
-                defaultMods.push({ id: m.id, name: m.name, price: Number(m.price || 0), depth: 0 })
-              })
-              // Check if required group has enough defaults
-              if (group.isRequired && group.minSelections > 0 && defaults.length < group.minSelections) {
-                allRequiredSatisfied = false
-              }
-            }
-
-            // If defaults satisfy all requirements, add directly — skip modal
-            if (allRequiredSatisfied && defaultMods.length > 0) {
-              const modPrice = defaultMods.reduce((sum, m) => sum + m.price, 0)
-              const newItem: InlineOrderItem = {
-                id: `temp-${crypto.randomUUID()}`,
-                menuItemId: item.id,
-                name: item.name,
-                price: item.price,
-                quantity: 1,
-                modifiers: defaultMods,
-                seatNumber: activeSeatNumber || undefined,
-                sourceTableId: activeSourceTableId || undefined,
-                sentToKitchen: false,
-                categoryType: item.categoryType,
-              }
-              setInlineOrderItems(prev => [...prev, newItem])
-              if (navigator.vibrate) navigator.vibrate(10)
-              return
-            }
-          }
-        }
-      } catch (e) {
-        // If fetch fails, fall through to open modal
-        console.error('Failed to check defaults:', e)
-      }
-
-      // Defaults don't cover requirements — open modifier modal as usual
-      onOpenModifiers(item, (modifiers, ingredientMods) => {
-        const newItem: InlineOrderItem = {
-          id: `temp-${crypto.randomUUID()}`,
-          menuItemId: item.id,
-          name: item.name,
-          price: item.price,
-          quantity: 1,
-          modifiers,
-          ingredientModifications: ingredientMods as InlineOrderItem['ingredientModifications'],
-          seatNumber: activeSeatNumber || undefined,
-          sourceTableId: activeSourceTableId || undefined,
-          sentToKitchen: false,
-          categoryType: item.categoryType,
-        }
-        setInlineOrderItems(prev => [...prev, newItem])
-      })
-      return
-    }
-
-    // Add item directly
-    const newItem: InlineOrderItem = {
-      id: `temp-${crypto.randomUUID()}`,
-      menuItemId: item.id,
-      name: item.name,
-      price: item.price,
-      quantity: 1,
-      modifiers: [],
-      seatNumber: activeSeatNumber || undefined, // Assign active seat
-      sourceTableId: activeSourceTableId || undefined,
-      sentToKitchen: false,
-      categoryType: item.categoryType,
-    }
-    setInlineOrderItems(prev => [...prev, newItem])
-
-    // Haptic feedback
-    if (navigator.vibrate) {
-      navigator.vibrate(10)
-    }
-  }, [onOpenModifiers, onOpenTimedRental, onOpenPizzaBuilder, activeSeatNumber, activeSourceTableId])
+  // Handle menu item tap — delegates to the ordering engine
+  const handleMenuItemTap = engine.handleMenuItemTap
 
   // Handle search result selection
   const handleSearchSelect = useCallback((item: { id: string; name: string; price: number; categoryId: string }) => {
@@ -2242,10 +1991,7 @@ export function FloorPlanHome({
         hasModifiers: item.modifierGroups?.length > 0,
         itemType: item.itemType,
         isPizza: item.isPizza,
-        entertainmentStatus: item.entertainmentStatus,
-        blockTimeMinutes: item.blockTimeMinutes,
-        timedPricing: item.timedPricing,
-      })
+      } as EngineMenuItem)
     } catch (error) {
       console.error('[FloorPlanHome] Quick bar item load error:', error)
     }
@@ -2269,36 +2015,30 @@ export function FloorPlanHome({
 
   // Update item quantity
   const handleUpdateQuantity = useCallback((itemId: string, quantity: number) => {
+    const store = useOrderStore.getState()
     if (quantity <= 0) {
-      setInlineOrderItems(prev => prev.filter(item => item.id !== itemId))
+      store.removeItem(itemId)
     } else {
-      setInlineOrderItems(prev =>
-        prev.map(item =>
-          item.id === itemId ? { ...item, quantity } : item
-        )
-      )
+      store.updateItem(itemId, { quantity })
     }
   }, [])
 
   // Remove item
   const handleRemoveItem = useCallback((itemId: string) => {
-    setInlineOrderItems(prev => prev.filter(item => item.id !== itemId))
+    useOrderStore.getState().removeItem(itemId)
   }, [])
 
   // Toggle hold on item
   const handleToggleHold = useCallback((itemId: string) => {
-    setInlineOrderItems(prev =>
-      prev.map(item => {
-        if (item.id !== itemId) return item
-        const newHeld = !item.isHeld
-        return {
-          ...item,
-          isHeld: newHeld,
-          // Hold and delay are mutually exclusive
-          ...(newHeld ? { delayMinutes: undefined, delayStartedAt: undefined, delayFiredAt: undefined } : {}),
-        }
-      })
-    )
+    const store = useOrderStore.getState()
+    const item = store.currentOrder?.items.find(i => i.id === itemId)
+    if (!item) return
+    const newHeld = !item.isHeld
+    store.updateItem(itemId, {
+      isHeld: newHeld,
+      // Hold and delay are mutually exclusive
+      ...(newHeld ? { delayMinutes: null, delayStartedAt: null, delayFiredAt: null } : {}),
+    })
   }, [])
 
   // Open notes editor — delegates to useActiveOrder's NoteEditModal state
@@ -2317,48 +2057,27 @@ export function FloorPlanHome({
     const menuItem = menuItems.find(m => m.id === item.menuItemId)
     if (!menuItem) return
 
-    // Open modifier modal in "edit" mode with current modifiers
-    if (onOpenModifiers) {
-      onOpenModifiers(menuItem, (newModifiers, ingredientMods) => {
-        // Update the item's modifiers and ingredient modifications
-        setInlineOrderItems(prev => prev.map(i =>
-          i.id === item.id
-            ? {
-                ...i,
-                modifiers: newModifiers,
-                ingredientModifications: ingredientMods as InlineOrderItem['ingredientModifications'],
-              }
-            : i
-        ))
-      }, item.modifiers, item.ingredientModifications as { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) // Pass existing modifiers + ingredient mods for pre-selection
-    }
-  }, [menuItems, onOpenModifiers])
+    // Delegate to engine's edit handler
+    engine.handleEditItemModifiers(
+      item.id,
+      menuItem as EngineMenuItem,
+      item.modifiers as EngineModifier[],
+      item.ingredientModifications as EngineIngredientMod[],
+    )
+  }, [menuItems, engine])
 
   // Save notes — delegates to useActiveOrder's saveNote (handles API + store update)
   const handleSaveNotes = useCallback(async (note: string) => {
     if (activeOrder.noteEditTarget?.itemId) {
       await activeOrder.saveNote(activeOrder.noteEditTarget.itemId, note)
-      // Also update the compatibility shim
-      setInlineOrderItems(prev =>
-        prev.map(item =>
-          item.id === activeOrder.noteEditTarget?.itemId
-            ? { ...item, specialNotes: note || undefined }
-            : item
-        )
-      )
+      // Store is updated by saveNote — inlineOrderItems memo auto-derives
     }
     activeOrder.closeNoteEditor()
   }, [activeOrder.noteEditTarget, activeOrder.saveNote, activeOrder.closeNoteEditor])
 
   // Update seat number
   const handleUpdateSeat = useCallback((itemId: string, seatNumber: number | null) => {
-    setInlineOrderItems(prev =>
-      prev.map(item =>
-        item.id === itemId
-          ? { ...item, seatNumber: seatNumber || undefined }
-          : item
-      )
-    )
+    useOrderStore.getState().updateItem(itemId, { seatNumber: seatNumber || undefined })
   }, [])
 
   // Add a new seat to the table (Skill 121 - Atomic Seat Management)
@@ -2416,13 +2135,7 @@ export function FloorPlanHome({
 
   // Update course number
   const handleUpdateCourse = useCallback((itemId: string, courseNumber: number | null) => {
-    setInlineOrderItems(prev =>
-      prev.map(item =>
-        item.id === itemId
-          ? { ...item, courseNumber: courseNumber || undefined }
-          : item
-      )
-    )
+    useOrderStore.getState().updateItem(itemId, { courseNumber: courseNumber || undefined })
   }, [])
 
   // Toggle item controls expansion
@@ -2436,17 +2149,13 @@ export function FloorPlanHome({
     const menuItem = menuItems.find(mi => mi.id === item.menuItemId)
     if (!menuItem) return
 
-    if (onOpenModifiers) {
-      onOpenModifiers(menuItem, (newModifiers, ingredientMods) => {
-        setInlineOrderItems(prev =>
-          prev.map(i =>
-            i.id === item.id
-              ? { ...i, modifiers: newModifiers, ingredientModifications: ingredientMods as InlineOrderItem['ingredientModifications'] }
-              : i
-          )
-        )
-      }, item.modifiers, item.ingredientModifications as { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[])
-    }
+    // Delegate to engine's edit handler
+    engine.handleEditItemModifiers(
+      item.id,
+      menuItem as EngineMenuItem,
+      item.modifiers as EngineModifier[],
+      item.ingredientModifications as EngineIngredientMod[],
+    )
   }, [menuItems, onOpenModifiers])
 
   // Save modifier changes to API and update local state
@@ -2469,12 +2178,16 @@ export function FloorPlanHome({
         return
       }
 
-      // Update local state
-      setInlineOrderItems(prev => prev.map(item =>
-        item.id === itemId
-          ? { ...item, modifiers: newModifiers, resendCount: (item.resendCount || 0) + 1 }
-          : item
-      ))
+      // Update store directly
+      const store = useOrderStore.getState()
+      const existingItem = store.currentOrder?.items.find(i => i.id === itemId)
+      store.updateItem(itemId, {
+        modifiers: newModifiers.map(m => ({
+          id: m.id, name: m.name, price: Number(m.price),
+          depth: 0, preModifier: null, spiritTier: null, linkedBottleProductId: null, parentModifierId: null,
+        })),
+        resendCount: (existingItem?.resendCount || 0) + 1,
+      })
 
       setEditingModifiersItemId(null)
       toast.success('Modifiers updated')
@@ -2494,15 +2207,11 @@ export function FloorPlanHome({
     if (onOpenModifiers) {
       onOpenModifiers(menuItem, (newModifiers, ingredientMods) => {
         handleSaveModifierChanges(item.id, newModifiers)
-        // Also update ingredient modifications locally for sent items
+        // Also update ingredient modifications in the store for sent items
         if (ingredientMods) {
-          setInlineOrderItems(prev =>
-            prev.map(i =>
-              i.id === item.id
-                ? { ...i, ingredientModifications: ingredientMods as InlineOrderItem['ingredientModifications'] }
-                : i
-            )
-          )
+          useOrderStore.getState().updateItem(item.id, {
+            ingredientModifications: ingredientMods as any,
+          })
         }
       }, item.modifiers, item.ingredientModifications as { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[])
     }
@@ -2531,12 +2240,12 @@ export function FloorPlanHome({
       })
 
       if (response.ok) {
-        // Update local state to increment resend count
-        setInlineOrderItems(prev => prev.map(item =>
-          item.id === resendModal.itemId
-            ? { ...item, resendCount: (item.resendCount || 0) + 1 }
-            : item
-        ))
+        // Update store to increment resend count
+        const store = useOrderStore.getState()
+        const existingItem = store.currentOrder?.items.find(i => i.id === resendModal.itemId)
+        store.updateItem(resendModal.itemId, {
+          resendCount: (existingItem?.resendCount || 0) + 1,
+        })
 
         setResendModal(null)
         setResendNote('')
@@ -2682,7 +2391,7 @@ export function FloorPlanHome({
       return
     }
     // Clear the panel
-    setInlineOrderItems([])
+    // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
     setActiveOrderId(null)
     setActiveOrderNumber(null)
     setActiveOrderType(null)
@@ -2720,7 +2429,7 @@ export function FloorPlanHome({
     }
 
     // Clear dependent state FIRST
-    setInlineOrderItems([])
+    // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
     setActiveOrderId(null)
     setActiveOrderNumber(null)
     setActiveOrderType(null)
@@ -2834,7 +2543,7 @@ export function FloorPlanHome({
     }
 
     // Clear the order panel (same as handleCloseOrderPanel)
-    setInlineOrderItems([])
+    // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
     setActiveOrderId(null)
     setActiveOrderNumber(null)
     setActiveOrderType(null)
@@ -5355,14 +5064,12 @@ export function FloorPlanHome({
             const voidedItemId = compVoidItem?.id
             setCompVoidItem(null)
 
-            // Immediately update the voided/comped item status in local state
+            // Immediately update the voided/comped item status in the store
             // This ensures totals recalculate without waiting for API refresh
             if (voidedItemId) {
-              setInlineOrderItems(prev => prev.map(item =>
-                item.id === voidedItemId
-                  ? { ...item, status: result.action === 'restore' ? 'active' as const : result.action as 'voided' | 'comped' }
-                  : item
-              ))
+              useOrderStore.getState().updateItem(voidedItemId, {
+                status: result.action === 'restore' ? 'active' as const : result.action as 'voided' | 'comped',
+              })
             }
 
             // Also refresh from server for full data consistency
@@ -5395,7 +5102,7 @@ export function FloorPlanHome({
                     sentToKitchen: true,
                     resendCount: item.resendCount,
                   })) || []
-                  setInlineOrderItems(freshItems)
+                  loadItemsIntoStore(freshItems)
                 }
               } catch (error) {
                 console.error('Failed to refresh order:', error)
@@ -5468,7 +5175,7 @@ export function FloorPlanHome({
                     sentToKitchen: true,
                     resendCount: item.resendCount,
                   })) || []
-                  setInlineOrderItems(freshItems)
+                  loadItemsIntoStore(freshItems)
                 }
               } catch (error) {
                 console.error('Failed to refresh order:', error)

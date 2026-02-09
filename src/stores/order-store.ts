@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import type { IngredientModification } from '@/types/orders'
 import type { UiModifier } from '@/types/orders'
 
 interface OrderItemModifier extends UiModifier {
@@ -315,7 +314,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       isCompleted: item.isCompleted || false,
       completedAt: item.completedAt || undefined,
       resendCount: item.resendCount || 0,
-      status: item.status || 'active',
+      status: (item.status || 'active') as OrderItem['status'],
       voidReason: item.voidReason || undefined,
       wasMade: item.wasMade,
       // Entertainment/timed rental fields
