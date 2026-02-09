@@ -247,17 +247,17 @@
 | Inventory & Menu | 23 | 0 | 0 | 23 | 100% |
 | Menu Builder | 6 | 0 | 0 | 6 | 100% |
 | Reporting | 13 | 0 | 0 | 13 | 100% |
-| Employee Features | 3 | 1 | 0 | 4 | 88% |
+| Employee Features | 5 | 1 | 0 | 6 | 92% |
 | Customer Features | 2 | 0 | 3 | 5 | 40% |
 | Hardware | 0 | 0 | 4 | 4 | 0% |
 | Advanced | 0 | 0 | 1 | 1 | 0% |
-| Admin & Navigation | 1 | 0 | 0 | 1 | 100% |
+| Admin & Navigation | 2 | 1 | 0 | 3 | 83% |
 | Additional (80-105) | 20 | 1 | 0 | 21 | 98% |
 | Canvas/Events (106-123) | 9 | 0 | 5 | 14 | 64% |
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **138** | **7** | **13** | **158** | **92%** |
+| **TOTAL** | **142** | **8** | **13** | **163** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -432,16 +432,6 @@ Skills that can be developed simultaneously:
 | 212 | Per-Modifier Print Routing | 🖨️ button on each modifier row, follow/also/only routing modes, printer checkbox selection, API accepts+returns printerRouting+printerIds, wired dormant Prisma fields to active UI. Print dispatch integration deferred to Hardware domain (Skill 103 Phase 3) |
 | 213 | Real-Time Ingredient Library | DONE — Optimistic local update via onIngredientCreated callback, socket dispatch (dispatchIngredientLibraryUpdate), INGREDIENT_LIBRARY_UPDATE broadcast event, menu page socket listener |
 | 214 | Ingredient Verification Visibility | DONE — ⚠ Unverified badges on ingredient rows, category header warning counts, recursive ingredientToModifiers for child groups, needsVerification in item ingredients API |
-
-## Recently Completed (2026-02-06 PM)
-
-| Skill | Name | What Was Built |
-|-------|------|----------------|
-| 210 | Modifier Cascade Delete & Orphan Cleanup | Cascade delete with preview, orphan auto-cleanup, fluid nesting, collapsed child chips |
-| 211 | Hierarchical Ingredient Picker | Unified picker for ingredients + modifier linking, inline creation, stale expand state fix |
-| 212 | Per-Modifier Print Routing | Admin UI (follow/also/only), printer selection, API wiring. Print dispatch deferred to Hardware |
-| 213 | Real-Time Ingredient Library | Optimistic update + socket dispatch for ingredient creation, cross-terminal sync |
-| 214 | Ingredient Verification Visibility | Unverified badges, category warnings, recursive reverse linking |
 
 ## Recently Completed (2026-02-06 AM)
 
@@ -729,6 +719,10 @@ These skills emerged during development and are now part of the system:
 | 218 | Customer-Facing Display (CFD) | DONE | Guest | 120 | /cfd route, state machine (8 states), 5 components, Socket.io event types defined (not yet wired) |
 | 219 | Pay-at-Table | DONE | Guest | 120 | /pay-at-table route, split check (2-6 ways), 3 components, processes via Datacap sale |
 | 220 | Bartender Mobile | DONE | Guest | 120 | /mobile/tabs list + detail, 2 components, 10s polling, Socket.io event stubs (not yet wired) |
+| 241 | Employee Scheduling | DONE | Employees | 01 | Shift scheduling, availability, schedule templates |
+| 242 | Error Monitoring | DONE | Settings | - | Error capture, monitoring dashboard, alerting, health checks |
+| 243 | Admin Audit Viewer | API Complete | Settings | - | Per-order activity timeline, audit log viewer |
+| 244 | Payroll System | DONE | Employees | 01, 47, 50 | Pay stub generation, tax calculations, payroll processing |
 
 ### Routing & Kitchen Display (200-Series)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -739,7 +733,7 @@ These skills emerged during development and are now part of the system:
 
 ---
 
-## Next Session Priority (2026-02-07+)
+## Next Session Priority (2026-02-09+)
 
 ### Priority 1: Inventory ↔ Menu Sync (BIGGEST TODO)
 Complete the full inventory-to-menu integration:

@@ -1422,8 +1422,8 @@ MenuItem
 - `POST /api/menu/items/[id]/modifier-groups` - New `parentModifierId` field for child groups
 
 **Key Files:**
-- `src/components/menu-builder/ModifiersPanel.tsx` - Full group editor with recursive modifiers
-- `src/components/menu-builder/ItemEditor.tsx` - Compact group display
+- `src/components/menu/ModifiersPanel.tsx` - Full group editor with recursive modifiers
+- `src/components/menu/ItemEditor.tsx` - Compact group display
 - `src/app/api/menu/items/[id]/modifier-groups/route.ts` - Nested group support
 
 **Skill Doc:** `docs/skills/123-MENU-BUILDER-CHILD-MODIFIERS.md`
@@ -2316,7 +2316,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | Items | Menu items | `/api/menu/items`, `/api/menu/items/[id]` |
 | Modifiers | Modifier groups and modifiers | `/api/menu/modifiers` |
 | Item Modifiers | Item-to-modifier links | `/api/menu/items/[id]/modifiers` |
-| UI | Menu builder components | `/src/app/(admin)/menu/`, `/src/components/menu-builder/` |
+| UI | Menu builder components | `/src/app/(admin)/menu/`, `/src/components/menu/` |
 
 ---
 
