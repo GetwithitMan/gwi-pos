@@ -1,11 +1,11 @@
 # GWI POS Domain Map
 ## Mapping Existing Files to Target Domains
 
-**Version:** 1.1
-**Date:** 2026-02-07
+**Version:** 2.0
+**Date:** 2026-02-09
 **Status:** ACTIVE
 
-This document maps every significant file/folder in the current codebase to its target domain architecture (16 domains).
+This document maps every significant file/folder in the current codebase to its target domain architecture (22 domains).
 
 ---
 
@@ -16,7 +16,6 @@ This document maps every significant file/folder in the current codebase to its 
 | `->` | Maps to domain |
 | `[SPLIT]` | File needs to be split across domains |
 | `[SHARED]` | Stays in shared utilities |
-| `[DELETE]` | Can be removed (deprecated, backup, etc.) |
 | `[REVIEW]` | Needs manual review |
 
 ---
@@ -25,22 +24,28 @@ This document maps every significant file/folder in the current codebase to its 
 
 | # | Domain | Code | Trigger | Description |
 |---|--------|------|---------|-------------|
-| 1 | Floor Plan | FP | `PM Mode: Floor Plan` | Tables, seats, groups, waitlist |
-| 2 | Inventory | IN | `PM Mode: Inventory` | Stock, purchasing, waste, counts |
-| 3 | Orders | OM | `PM Mode: Orders` | Tickets, items, kitchen routing |
+| 1 | Floor Plan | FP | `PM Mode: Floor Plan` | Tables, seats, sections, virtual groups, floor plan editor |
+| 2 | Inventory | IN | `PM Mode: Inventory` | Stock, purchasing, waste, counts, ingredients |
+| 3 | Orders | OM | `PM Mode: Orders` | Order lifecycle, items, send to kitchen, void/comp |
 | 4 | Menu | MN | `PM Mode: Menu` | Items, categories, modifiers, combos |
-| 5 | Employees | EM | `PM Mode: Employees` | Profiles, scheduling, time clock, payroll |
-| 6 | KDS | KD | `PM Mode: KDS` | Kitchen display system, stations |
-| 7 | Payments | PM | `PM Mode: Payments` | Payment processing, tips, receipts |
-| 8 | Reports | RP | `PM Mode: Reports` | Sales, labor, trends, exports |
-| 9 | Hardware | HW | `PM Mode: Hardware` | Terminals, printers, card readers |
-| 10 | Settings | ST | `PM Mode: Settings` | Location settings, order types, tax |
-| 11 | Entertainment | EN | `PM Mode: Entertainment` | Timed rentals, sessions, pricing |
-| 12 | Guest | GU | `PM Mode: Guest` | Profiles, loyalty, reservations |
-| 13 | Events | EV | `PM Mode: Events` | Event creation, ticketing, check-in |
-| 14 | Financial | FN | `PM Mode: Financial` | Gift cards, house accounts, discounts |
+| 5 | Employees | EM | `PM Mode: Employees` | Profiles, roles, time clock, shifts, payroll |
+| 6 | KDS | KD | `PM Mode: KDS` | Kitchen display system, stations, bump bar |
+| 7 | Payments | PM | `PM Mode: Payments` | Payment processing, Datacap, tips, receipts |
+| 8 | Reports | RP | `PM Mode: Reports` | Sales, labor, PMIX, daily reports |
+| 9 | Hardware | HW | `PM Mode: Hardware` | Terminals, printers, card readers, KDS screens |
+| 10 | Settings | ST | `PM Mode: Settings` | Location settings, order types, tax rules |
+| 11 | Entertainment | EN | `PM Mode: Entertainment` | Timed rentals, sessions, waitlist |
+| 12 | Guest | GU | `PM Mode: Guest` | Online ordering, order ahead, bartender mobile |
+| 13 | Events | EV | `PM Mode: Events` | Reservations, event ticketing |
+| 14 | Financial | FN | `PM Mode: Financial` | Payroll processing, tip-outs, tip shares |
 | 15 | Development-RnD | RD | `PM Mode: Development-RnD` | Prototypes, research, technical spikes |
 | 16 | Error Reporting | ER | `PM Mode: Error Reporting` | Error tracking, monitoring, alerts |
+| 17 | Tabs & Bottle Service | TB | `PM Mode: Tabs` | Bar tabs, pre-auth, bottle service, multi-card, walkout |
+| 18 | Pizza Builder | PZ | `PM Mode: Pizza Builder` | Pizza config, visual builder, sectional printing |
+| 19 | Liquor Management | LQ | `PM Mode: Liquor Management` | Spirit categories, bottles, cocktail recipes, pour cost |
+| 20 | Offline & Sync | OS | `PM Mode: Offline & Sync` | Offline queue, IndexedDB, cloud sync, health checks |
+| 21 | Customer Display | CD | `PM Mode: Customer Display` | CFD, pay-at-table, tip/signature screens |
+| 22 | Scheduling | SC | `PM Mode: Scheduling` | Employee scheduling, shift planning |
 
 ---
 
@@ -52,15 +57,15 @@ This document maps every significant file/folder in the current codebase to its 
 |--------------|---------------|-------|
 | `86/` | IN | 86'd items status |
 | `combos/` | MN | Combo deals |
-| `coupons/` | FN | Coupon management |
+| `coupons/` | ST | Coupon management |
 | `customers/` | GU | Customer profiles |
-| `discounts/` | FN | Discount rules |
+| `discounts/` | ST | Discount rules |
 | `employees/` | EM | Employee management |
 | `employees/[id]/payment/` | EM | Employee payment details |
 | `events/` | EV | Event management |
 | `floor-plan/` | FP | Floor plan editor |
-| `gift-cards/` | FN | Gift card management |
-| `house-accounts/` | FN | House accounts |
+| `gift-cards/` | PM | Gift card management |
+| `house-accounts/` | PM | House accounts |
 | `ingredients/` | IN | Ingredient library |
 | `inventory/` | IN | Inventory dashboard |
 | `inventory/beverages/` | IN | Beverage inventory |
@@ -73,16 +78,17 @@ This document maps every significant file/folder in the current codebase to its 
 | `inventory/vendors/` | IN | Vendor management |
 | `inventory/waste/` | IN | Waste logging |
 | `links/` | [SHARED] | Admin quick links |
-| `liquor-builder/` | MN | Spirit recipes |
+| `liquor-builder/` | LQ | Spirit recipes / liquor builder |
 | `menu/` | MN | Menu items |
 | `modifiers/` | MN | Modifier groups |
-| `payroll/` | EM | Payroll management |
-| `pizza/` | MN | Pizza builder config |
-| `prep-stations/` | HW | Prep station setup |
-| `reservations/` | GU | Reservation management |
+| `monitoring/` | ER | Error monitoring dashboard |
+| `payroll/` | FN | Payroll management |
+| `pizza/` | PZ | Pizza builder config |
+| `prep-stations/` | KD | Prep station setup |
+| `reservations/` | EV | Reservation management |
 | `roles/` | EM | Role permissions |
-| `scheduling/` | EM | Staff scheduling |
-| `settings/` | [SHARED] | General settings |
+| `scheduling/` | SC | Staff scheduling |
+| `settings/` | ST | General settings |
 | `settings/daily-counts/` | IN | Daily count config |
 | `settings/hardware/` | HW | Hardware overview |
 | `settings/hardware/kds-screens/` | HW | KDS pairing |
@@ -90,10 +96,10 @@ This document maps every significant file/folder in the current codebase to its 
 | `settings/hardware/printers/` | HW | Printer setup |
 | `settings/hardware/routing/` | HW | Print routing |
 | `settings/hardware/terminals/` | HW | Terminal setup |
-| `settings/order-types/` | OM | Order type config |
-| `settings/tip-outs/` | EM | Tip-out rules |
-| `tax-rules/` | FN | Tax configuration |
-| `timed-rentals/` | FP | Entertainment sessions (L8) |
+| `settings/order-types/` | ST | Order type config |
+| `settings/tip-outs/` | FN | Tip-out rules |
+| `tax-rules/` | ST | Tax configuration |
+| `timed-rentals/` | EN | Entertainment item builder |
 | `virtual-groups/` | FP | Virtual table groups |
 
 ### 1.2 Reports Pages (`src/app/(admin)/reports/`)
@@ -120,17 +126,31 @@ This document maps every significant file/folder in the current codebase to its 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
 | `orders/` | OM + FP | [SPLIT] Main POS, uses Floor Plan for tables |
-| `tabs/` | OM | Tab management |
+| `tabs/` | TB | Tab management |
+| `pay-at-table/` | CD | Customer self-pay |
 
 ### 1.4 KDS Pages (`src/app/(kds)/`)
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `kds/` | HW | Kitchen Display |
-| `kds/entertainment/` | HW + FP | Entertainment KDS |
-| `kds/pair/` | HW | KDS pairing |
+| `kds/` | KD | Kitchen Display |
+| `kds/entertainment/` | EN | Entertainment KDS dashboard |
+| `kds/pair/` | HW | KDS device pairing |
 
-### 1.5 Public Pages (`src/app/(public)/`)
+### 1.5 CFD Pages (`src/app/(cfd)/`)
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
+| `cfd/` | CD | Customer-Facing Display |
+
+### 1.6 Mobile Pages (`src/app/(mobile)/`)
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
+| `mobile/tabs/` | GU | Bartender mobile tab list |
+| `mobile/tabs/[id]/` | GU | Mobile tab detail |
+
+### 1.7 Public Pages (`src/app/(public)/`)
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
@@ -161,9 +181,6 @@ This document maps every significant file/folder in the current codebase to its 
 | `sections/` | FP |
 | `sections/[id]/` | FP |
 | `sections/reorder/` | FP |
-| `entertainment/status/` | FP |
-| `entertainment/waitlist/` | FP |
-| `entertainment/waitlist/[id]/` | FP |
 
 ### 2.2 Order Management Domain APIs
 
@@ -173,25 +190,30 @@ This document maps every significant file/folder in the current codebase to its 
 | `orders/[id]/` | OM |
 | `orders/[id]/adjust-tip/` | OM |
 | `orders/[id]/comp-void/` | OM |
+| `orders/[id]/discount/` | OM |
 | `orders/[id]/items/` | OM |
+| `orders/[id]/items/[itemId]/` | OM |
+| `orders/[id]/merge/` | OM |
 | `orders/[id]/pay/` | OM |
 | `orders/[id]/reopen/` | OM |
 | `orders/[id]/seating/` | OM |
 | `orders/[id]/send/` | OM |
 | `orders/[id]/split/` | OM |
+| `orders/[id]/split-tickets/` | OM |
+| `orders/[id]/transfer-items/` | OM |
 | `orders/[id]/void-payment/` | OM |
 | `orders/open/` | OM |
-| `orders/sync/` | OM |
-| `orders/sync-resolution/` | OM |
-| `tabs/` | OM |
+| `orders/sync/` | OS |
+| `orders/sync-resolution/` | OS |
 | `voids/` | OM |
-| `payments/` | OM |
+| `voids/remote-approval/` | OM |
 
 ### 2.3 Menu Domain APIs
 
 | Current Path | Target Domain |
 |--------------|---------------|
 | `menu/` | MN |
+| `menu/search/` | MN |
 | `menu/categories/` | MN |
 | `menu/categories/[id]/` | MN |
 | `menu/items/` | MN |
@@ -201,17 +223,13 @@ This document maps every significant file/folder in the current codebase to its 
 | `menu/items/[id]/inventory-recipe/` | MN |
 | `menu/items/[id]/modifiers/` | MN |
 | `menu/items/[id]/modifier-groups/` | MN |
+| `menu/items/[id]/modifier-groups/[groupId]/` | MN |
+| `menu/items/[id]/modifier-groups/[groupId]/modifiers/` | MN |
+| `menu/items/[id]/recipe/` | MN |
 | `menu/modifiers/` | MN |
 | `menu/modifiers/[id]/` | MN |
 | `modifiers/` | MN |
 | `modifier-templates/` | MN |
-| `pizza/config/` | MN |
-| `liquor/bottles/` | MN |
-| `liquor/bottles/[id]/` | MN |
-| `liquor/bottles/[id]/create-menu-item/` | MN |
-| `liquor/bottles/[id]/restore-menu-item/` | MN |
-| `liquor/bottles/sync-inventory/` | MN |
-| `liquor/menu-items/` | MN |
 
 ### 2.4 Inventory Domain APIs
 
@@ -242,6 +260,7 @@ This document maps every significant file/folder in the current codebase to its 
 | `inventory/vendors/` | IN |
 | `inventory/void-reasons/` | IN |
 | `inventory/waste/` | IN |
+| `stock-alerts/` | IN |
 
 ### 2.5 Employee Domain APIs
 
@@ -249,64 +268,232 @@ This document maps every significant file/folder in the current codebase to its 
 |--------------|---------------|
 | `employees/` | EM |
 | `employees/[id]/` | EM |
+| `employees/[id]/layout/` | EM |
+| `employees/[id]/open-tabs/` | EM |
+| `employees/[id]/payment/` | EM |
 | `employees/[id]/preferences/` | EM |
+| `employees/[id]/tips/` | EM |
 | `employees/roles/` | EM |
-| `auth/` | EM |
+| `roles/` | EM |
+| `roles/[id]/` | EM |
+| `auth/login/` | EM |
 | `auth/verify-pin/` | EM |
+| `time-clock/` | EM |
+| `time-clock/status/` | EM |
+| `breaks/` | EM |
+| `shifts/` | EM |
+| `shifts/[id]/` | EM |
 
-### 2.6 Reporting Domain APIs
+### 2.6 KDS Domain APIs
 
 | Current Path | Target Domain |
 |--------------|---------------|
+| `kds/` | KD |
+| `kds/expo/` | KD |
+| `tickets/` | KD |
+| `tickets/[id]/` | KD |
+| `tickets/[id]/check-in/` | KD |
+| `tickets/[id]/refund/` | KD |
+| `prep-stations/` | KD |
+
+### 2.7 Payments Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `payments/` | PM |
+| `payments/sync/` | PM |
+| `datacap/sale/` | PM |
+| `datacap/preauth/` | PM |
+| `datacap/capture/` | PM |
+| `datacap/void/` | PM |
+| `datacap/return/` | PM |
+| `datacap/adjust/` | PM |
+| `datacap/batch/` | PM |
+| `datacap/collect-card/` | PM |
+| `datacap/device-prompt/` | PM |
+| `datacap/increment/` | PM |
+| `datacap/pad-reset/` | PM |
+| `datacap/param-download/` | PM |
+| `datacap/walkout-retry/` | PM |
+| `gift-cards/` | PM |
+| `gift-cards/[id]/` | PM |
+| `house-accounts/` | PM |
+| `house-accounts/[id]/` | PM |
+
+### 2.8 Reporting Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `reports/commission/` | RP |
+| `reports/coupons/` | RP |
+| `reports/customers/` | RP |
 | `reports/daily/` | RP |
+| `reports/discounts/` | RP |
+| `reports/employee-shift/` | RP |
+| `reports/employees/` | RP |
+| `reports/labor/` | RP |
+| `reports/liquor/` | RP |
 | `reports/order-history/` | RP |
+| `reports/payroll/` | RP |
 | `reports/pmix/` | RP |
+| `reports/product-mix/` | RP |
+| `reports/reservations/` | RP |
+| `reports/sales/` | RP |
+| `reports/tables/` | RP |
 | `reports/theoretical-usage/` | RP |
+| `reports/tip-shares/` | RP |
+| `reports/tips/` | RP |
+| `reports/transfers/` | RP |
 | `reports/variance/` | RP |
-| `eod/` | RP |
+| `reports/voids/` | RP |
+| `eod/reset/` | RP |
 
-### 2.7 Guest Domain APIs
-
-| Current Path | Target Domain |
-|--------------|---------------|
-| `customers/` | GU |
-| `reservations/` | GU |
-
-### 2.8 Hardware Domain APIs
+### 2.9 Hardware Domain APIs
 
 | Current Path | Target Domain |
 |--------------|---------------|
 | `hardware/printers/` | HW |
+| `hardware/printers/[id]/` | HW |
+| `hardware/printers/[id]/ping/` | HW |
+| `hardware/printers/[id]/test/` | HW |
+| `hardware/kds-screens/` | HW |
+| `hardware/kds-screens/[id]/` | HW |
+| `hardware/kds-screens/[id]/generate-code/` | HW |
+| `hardware/kds-screens/[id]/heartbeat/` | HW |
+| `hardware/kds-screens/[id]/unpair/` | HW |
+| `hardware/kds-screens/auth/` | HW |
+| `hardware/kds-screens/pair/` | HW |
 | `hardware/payment-readers/` | HW |
+| `hardware/payment-readers/[id]/` | HW |
+| `hardware/payment-readers/[id]/ping/` | HW |
+| `hardware/payment-readers/[id]/verify/` | HW |
+| `hardware/print-routes/` | HW |
+| `hardware/print-routes/[id]/` | HW |
+| `hardware/print-routes/[id]/test/` | HW |
 | `hardware/terminals/` | HW |
-| `kds/` | HW |
-| `kds/expo/` | HW |
-| `print/kitchen/` | HW |
+| `hardware/terminals/[id]/` | HW |
+| `hardware/terminals/[id]/generate-code/` | HW |
+| `hardware/terminals/[id]/unpair/` | HW |
+| `hardware/terminals/heartbeat/` | HW |
+| `hardware/terminals/pair/` | HW |
 | `print/direct/` | HW |
+| `print/kitchen/` | HW |
 
-### 2.9 Events Domain APIs
+### 2.10 Settings Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `settings/` | ST |
+| `tax-rules/` | ST |
+| `tax-rules/[id]/` | ST |
+| `order-types/` | ST |
+| `order-types/[id]/` | ST |
+| `discounts/` | ST |
+| `coupons/` | ST |
+
+### 2.11 Entertainment Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `entertainment/status/` | EN |
+| `entertainment/block-time/` | EN |
+| `entertainment/waitlist/` | EN |
+| `entertainment/waitlist/[id]/` | EN |
+
+### 2.12 Events Domain APIs
 
 | Current Path | Target Domain |
 |--------------|---------------|
 | `events/` | EV |
 | `events/[id]/` | EV |
+| `events/[id]/availability/` | EV |
+| `events/[id]/conflicts/` | EV |
+| `events/[id]/publish/` | EV |
+| `events/[id]/resolve-conflicts/` | EV |
+| `events/[id]/tables/` | EV |
+| `events/[id]/tables/[tableId]/` | EV |
+| `events/[id]/tickets/` | EV |
+| `events/[id]/tickets/hold/` | EV |
+| `events/[id]/tickets/purchase/` | EV |
+| `events/[id]/tickets/release/` | EV |
+| `events/[id]/tiers/` | EV |
+| `events/[id]/tiers/[tierId]/` | EV |
+| `reservations/` | EV |
+| `reservations/[id]/` | EV |
+| `customers/` | EV |
 
-### 2.10 Financial Domain APIs
+### 2.13 Financial Domain APIs
 
 | Current Path | Target Domain |
 |--------------|---------------|
-| `gift-cards/` | FN |
-| `house-accounts/` | FN |
-| `discounts/` | FN |
-| `coupons/` | FN |
-| `tax-rules/` | FN |
+| `payroll/periods/` | FN |
+| `payroll/periods/[id]/` | FN |
+| `payroll/pay-stubs/[id]/pdf/` | FN |
+| `tip-out-rules/` | FN |
+| `tip-out-rules/[id]/` | FN |
 
-### 2.11 Shared/Internal APIs
+### 2.14 Tabs Domain APIs
 
 | Current Path | Target Domain |
 |--------------|---------------|
-| `admin/sync-audit/` | [SHARED] |
+| `tabs/` | TB |
+
+### 2.15 Pizza Builder Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `pizza/config/` | PZ |
+| `pizza/sizes/` | PZ |
+| `pizza/crusts/` | PZ |
+| `pizza/sauces/` | PZ |
+| `pizza/cheeses/` | PZ |
+| `pizza/toppings/` | PZ |
+| `pizza/specialties/` | PZ |
+
+### 2.16 Liquor Management Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `liquor/categories/` | LQ |
+| `liquor/bottles/` | LQ |
+| `liquor/bottles/[id]/` | LQ |
+| `liquor/bottles/[id]/create-menu-item/` | LQ |
+| `liquor/bottles/[id]/restore-menu-item/` | LQ |
+| `liquor/bottles/sync-inventory/` | LQ |
+| `liquor/menu-items/` | LQ |
+| `liquor/recipes/` | LQ |
+| `liquor/upsells/` | LQ |
+
+### 2.17 Offline & Sync Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `orders/sync/` | OS |
+| `orders/sync-resolution/` | OS |
+| `payments/sync/` | OS |
+| `monitoring/health-check/` | OS |
+
+### 2.18 Error Reporting Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `monitoring/errors/` | ER |
+| `monitoring/error/` | ER |
+| `monitoring/performance/` | ER |
+
+### 2.19 Scheduling Domain APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `schedules/` | SC |
+
+### 2.20 Shared/Internal APIs
+
+| Current Path | Target Domain |
+|--------------|---------------|
+| `admin/sync-audit/` | OS |
 | `internal/` | [SHARED] |
+| `internal/socket/` | [SHARED] |
 | `webhooks/` | [SHARED] |
 
 ---
@@ -317,115 +504,179 @@ This document maps every significant file/folder in the current codebase to its 
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `floor-plan/` | FP | Main floor plan components |
-| `floor-plan/AddEntertainmentPalette.tsx` | FP | L8 |
-| `floor-plan/AddRoomModal.tsx` | FP | L1 |
-| `floor-plan/CategoriesBar.tsx` | FP | |
-| `floor-plan/entertainment-visuals.tsx` | FP | L8 |
+| `floor-plan/FloorPlanHome.tsx` | FP | Main POS floor plan interface |
+| `floor-plan/FloorPlanEditor.tsx` | FP | Admin layout editor |
+| `floor-plan/FloorPlanTable.tsx` | FP | Table rendering |
+| `floor-plan/FloorPlanEntertainment.tsx` | FP | Entertainment elements |
+| `floor-plan/AddEntertainmentPalette.tsx` | FP | Entertainment placement |
+| `floor-plan/AddRoomModal.tsx` | FP | Room management |
+| `floor-plan/CategoriesBar.tsx` | FP | Category bar |
+| `floor-plan/entertainment-visuals.tsx` | FP | 12 SVG visual types |
 | `floor-plan/ExistingOrdersModal.tsx` | FP | |
-| `floor-plan/FloorPlanEntertainment.tsx` | FP | L8 |
-| `floor-plan/FloorPlanHome.tsx` | FP | Main component |
-| `floor-plan/FloorPlanTable.tsx` | FP | L2 |
 | `floor-plan/hooks/` | FP | Floor plan hooks |
 | `floor-plan/panels/` | FP | Sidebar panels |
 | `floor-plan/PropertiesSidebar.tsx` | FP | |
-| `floor-plan/RoomReorderModal.tsx` | FP | L1 |
-| `floor-plan/RoomTabs.tsx` | FP | L1 |
-| `floor-plan/SeatNode.tsx` | FP | L3 |
-| `floor-plan/SeatOrbiter.tsx` | FP | L3 |
-| `floor-plan/SectionSettings.tsx` | FP | L6 |
+| `floor-plan/RoomReorderModal.tsx` | FP | |
+| `floor-plan/RoomTabs.tsx` | FP | |
+| `floor-plan/SeatNode.tsx` | FP | Seat rendering |
+| `floor-plan/SeatOrbiter.tsx` | FP | Seat positioning |
+| `floor-plan/SectionSettings.tsx` | FP | |
 | `floor-plan/styles/` | FP | |
 | `floor-plan/table-positioning.ts` | FP | |
-| `floor-plan/TableNode.tsx` | FP | L2 |
+| `floor-plan/TableNode.tsx` | FP | |
 | `floor-plan/UnifiedFloorPlan.tsx` | FP | |
 | `floor-plan/use-floor-plan.ts` | FP | |
-| `floor-plan/VirtualCombineBar.tsx` | FP | L4 |
-| `floor-plan/VirtualGroupManagerModal.tsx` | FP | L4 |
+| `floor-plan/VirtualCombineBar.tsx` | FP | Virtual combine |
+| `floor-plan/VirtualGroupManagerModal.tsx` | FP | |
 
 ### 3.2 Order Management Domain Components
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `orders/` | OM | Order-related components |
-| `orders/AdjustTipModal.tsx` | OM | |
-| `orders/CompVoidModal.tsx` | OM | |
-| `orders/OpenOrdersPanel.tsx` | OM | |
-| `orders/OrderTypeSelector.tsx` | OM | |
-| `orders/RemoteVoidApprovalModal.tsx` | OM | |
-| `orders/ReopenOrderModal.tsx` | OM | |
-| `orders/VoidPaymentModal.tsx` | OM | |
-| `payment/` | OM | Payment components |
-| `payment/DatacapPaymentProcessor.tsx` | OM | |
-| `payment/GroupSummary.tsx` | OM | |
-| `payment/PaymentModal.tsx` | OM | |
-| `payment/ReaderStatusIndicator.tsx` | HW | [MOVE] To Hardware |
-| `payment/SplitCheckModal.tsx` | OM | |
-| `payment/SwapConfirmationModal.tsx` | OM | |
-| `shifts/` | OM | Shift management |
-| `tabs/` | OM | Tab components |
+| `orders/OrderPanel.tsx` | OM | Order summary panel |
+| `orders/OrderPanelActions.tsx` | OM | Totals, payment buttons |
+| `orders/OrderTypeSelector.tsx` | OM | Order type selection |
+| `orders/OpenOrdersPanel.tsx` | OM | Open orders list |
+| `orders/CompVoidModal.tsx` | OM | Comp/void dialog |
+| `orders/AdjustTipModal.tsx` | OM | Tip adjustment |
+| `orders/RemoteVoidApprovalModal.tsx` | OM | Remote void |
+| `orders/ReopenOrderModal.tsx` | OM | Reopen closed order |
+| `orders/VoidPaymentModal.tsx` | OM | Void payment |
+| `orders/EntertainmentSessionControls.tsx` | OM | Session start/stop/extend |
+| `shifts/ShiftCloseoutModal.tsx` | EM | Shift closeout |
+| `shifts/ShiftStartModal.tsx` | EM | Shift start |
 
-### 3.3 Menu Domain Components
+### 3.3 Payments Domain Components
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `menu/` | MN | Menu builder |
-| `modifiers/` | MN | Modifier components |
-| `modifiers/ModifierModal.tsx` | MN | |
-| `pizza/` | MN | Pizza builder |
-| `pizza/PizzaBuilderModal.tsx` | MN | |
-| `pizza/PizzaQuickBuilder.tsx` | MN | |
-| `pizza/PizzaVisualBuilder.tsx` | MN | |
-| `pizza/use-pizza-order.ts` | MN | |
-| `bartender/` | MN | Bartender views |
+| `payment/PaymentModal.tsx` | PM | Main payment flow |
+| `payment/SplitCheckModal.tsx` | PM | Split check |
+| `payment/GroupSummary.tsx` | PM | Group payment summary |
+| `payment/DatacapPaymentProcessor.tsx` | PM | Datacap processing |
+| `payment/QuickPayButton.tsx` | PM | Quick pay flow |
+| `payment/ReaderStatusIndicator.tsx` | PM | Reader status |
+| `payment/SignatureCapture.tsx` | PM | Signature capture |
+| `payment/SwapConfirmationModal.tsx` | PM | Swap confirmation |
+| `payment/TipPromptSelector.tsx` | PM | Tip prompt |
+| `payment/steps/` | PM | Payment step components |
 
-### 3.4 Inventory Domain Components
+### 3.4 Tabs Domain Components
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `ingredients/` | IN | Ingredient library |
-| `ingredients/BulkActionBar.tsx` | IN | |
-| `ingredients/CategoryCard.tsx` | IN | |
-| `ingredients/CategoryEditorModal.tsx` | IN | |
-| `ingredients/DeletedItemsPanel.tsx` | IN | |
-| `ingredients/IngredientCard.tsx` | IN | |
-| `ingredients/IngredientEditorModal.tsx` | IN | |
-| `ingredients/IngredientLibrary-refactored.tsx` | IN | |
-| `ingredients/PrepItemEditor.tsx` | IN | |
+| `tabs/` | TB | All tab components |
+| `tabs/TabCard.tsx` | TB | Tab card display |
+| `tabs/BottleServiceBanner.tsx` | TB | Bottle service progress |
+| `tabs/CardFirstFlow.tsx` | TB | Card-first tab opening |
+| `tabs/TabTransferModal.tsx` | TB | Tab transfer |
+| `tabs/MultiCardBadges.tsx` | TB | Multi-card display |
+| `tabs/PendingTabShimmer.tsx` | TB | Auth pending animation |
+
+### 3.5 Menu Domain Components
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
+| `menu/ItemEditor.tsx` | MN | Menu item editor |
+| `menu/ItemTreeView.tsx` | MN | Item hierarchy tree |
+| `menu/ModifierFlowEditor.tsx` | MN | Modifier flow editor |
+| `menu/RecipeBuilder.tsx` | MN | Recipe builder |
+| `menu/StockBadge.tsx` | MN | Stock status badge |
+| `modifiers/ModifierModal.tsx` | MN | Modifier selection modal |
+| `bartender/BartenderView.tsx` | MN | Bartender POS interface |
+
+### 3.6 Pizza Builder Domain Components
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
+| `pizza/PizzaBuilder.tsx` | PZ | Visual pizza builder |
+| `pizza/PizzaBuilderModal.tsx` | PZ | Pizza builder modal |
+| `pizza/PizzaQuickBuilder.tsx` | PZ | Quick pizza builder |
+| `pizza/PizzaVisualBuilder.tsx` | PZ | Visual topping placement |
+| `pizza/use-pizza-order.ts` | PZ | Pizza order hook |
+
+### 3.7 Inventory Domain Components
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
+| `ingredients/IngredientLibrary.tsx` | IN | Main ingredient library |
+| `ingredients/IngredientHierarchy.tsx` | IN | Hierarchy view |
+| `ingredients/BulkActionBar.tsx` | IN | Bulk operations |
+| `ingredients/DeletedItemsPanel.tsx` | IN | Restore deleted items |
+| `ingredients/IngredientEditorModal.tsx` | IN | Editor modal |
+| `ingredients/PrepItemEditor.tsx` | IN | Prep item editor |
+| `ingredients/InventoryItemEditor.tsx` | IN | Inventory item editor |
+| `ingredients/CategoryCard.tsx` | IN | Category display |
+| `ingredients/CategoryEditorModal.tsx` | IN | Category editor |
+| `ingredients/IngredientCard.tsx` | IN | Ingredient card |
 | `inventory/` | IN | Inventory components |
 
-### 3.5 Employee Domain Components
+### 3.8 Employee Domain Components
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `auth/` | EM | Authentication |
-| `auth/ManagerPinModal.tsx` | EM | |
-| `time-clock/` | EM | Time clock |
-| `time-clock/TimeClockModal.tsx` | EM | |
+| `auth/ManagerPinModal.tsx` | EM | Manager PIN auth |
+| `time-clock/TimeClockModal.tsx` | EM | Time clock |
 
-### 3.6 Hardware Domain Components
+### 3.9 Customer Display Domain Components
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `hardware/` | HW | Hardware management |
-| `hardware/HardwareHealthWidget.tsx` | HW | |
-| `hardware/ReceiptVisualEditor.tsx` | HW | |
-| `hardware/TerminalFailoverManager.tsx` | HW | |
-| `kds/` | HW | KDS components |
-| `receipt/` | HW | Receipt printing |
-| `receipt/Receipt.tsx` | HW | |
+| `cfd/CFDIdleScreen.tsx` | CD | Idle screen |
+| `cfd/CFDOrderDisplay.tsx` | CD | Live order display |
+| `cfd/CFDTipScreen.tsx` | CD | Tip selection |
+| `cfd/CFDSignatureScreen.tsx` | CD | Signature capture |
+| `cfd/CFDApprovedScreen.tsx` | CD | Approval/decline |
+| `pay-at-table/TablePayment.tsx` | CD | Pay-at-table flow |
+| `pay-at-table/SplitSelector.tsx` | CD | Split check |
+| `pay-at-table/TipScreen.tsx` | CD | Tip entry |
 
-### 3.7 POS Components
+### 3.10 Guest Domain Components
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `pos/` | OM + FP | [SPLIT] POS shared |
+| `mobile/MobileTabCard.tsx` | GU | Mobile tab card |
+| `mobile/MobileTabActions.tsx` | GU | Mobile tab actions |
+
+### 3.11 Hardware Domain Components
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
+| `hardware/HardwareHealthWidget.tsx` | HW | Health monitoring |
+| `hardware/PizzaPrintSettingsEditor.tsx` | HW | Pizza print settings |
+| `hardware/PrinterSettingsEditor.tsx` | HW | Printer settings |
+| `hardware/PrintSettingsEditor.tsx` | HW | Print settings |
+| `hardware/ReceiptVisualEditor.tsx` | HW | Receipt editor |
+| `hardware/TerminalFailoverManager.tsx` | HW | Terminal failover |
+| `kds/ExpoScreen.tsx` | KD | Expo station |
+| `kds/PitBossDashboard.tsx` | KD | Entertainment expo |
+| `receipt/Receipt.tsx` | HW | Receipt template |
+
+### 3.12 Financial Domain Components
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
+| `tips/TipAdjustmentOverlay.tsx` | FN | Tip adjustment |
+| `tips/TipEntryRow.tsx` | FN | Tip entry |
+
+### 3.13 Error Reporting Domain Components
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
+| `monitoring/` | ER | Error monitoring UI |
+
+### 3.14 POS Shared Components
+
+| Current Path | Target Domain | Notes |
+|--------------|---------------|-------|
 | `pos/MenuItemContextMenu.tsx` | OM | |
-| `pos/OfflineSyncIndicator.tsx` | [SHARED] | |
+| `pos/OfflineSyncIndicator.tsx` | OS | Offline indicator |
 | `pos/QuickAccessBar.tsx` | OM | |
-| `pos/SyncStatusIndicator.tsx` | [SHARED] | |
+| `pos/SyncStatusIndicator.tsx` | OS | Sync status |
 | `pos/TerminalPairingOverlay.tsx` | HW | |
+| `search/` | MN | Menu search |
 
-### 3.8 Admin Components
+### 3.15 Admin Shared Components
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
@@ -433,21 +684,13 @@ This document maps every significant file/folder in the current codebase to its 
 | `admin/AdminPageHeader.tsx` | [SHARED] | |
 | `admin/AdminSubNav.tsx` | [SHARED] | |
 | `admin/ManagerGroupDashboard.tsx` | EM | |
-| `admin/SyncAuditLog.tsx` | [SHARED] | |
+| `admin/SyncAuditLog.tsx` | OS | Sync audit log |
 
-### 3.9 Shared UI Components
+### 3.16 Shared UI Components
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `ui/` | [SHARED] | shadcn components |
-| `ui/button.tsx` | [SHARED] | |
-| `ui/card.tsx` | [SHARED] | |
-| `ui/dialog.tsx` | [SHARED] | |
-| `ui/input.tsx` | [SHARED] | |
-| `ui/pin-pad.tsx` | [SHARED] | |
-| `ui/select.tsx` | [SHARED] | |
-| `ui/ToastContainer.tsx` | [SHARED] | |
-| ... | [SHARED] | All ui/* stays shared |
+| `ui/` | [SHARED] | All ui/* stays shared |
 
 ---
 
@@ -457,30 +700,48 @@ This document maps every significant file/folder in the current codebase to its 
 |--------------|---------------|-------|
 | `auth.ts` | EM | Authentication logic |
 | `auth-utils.ts` | EM | |
+| `batch-updates.ts` | OM | Batch order updates |
 | `db.ts` | [SHARED] | Prisma client |
+| `entertainment.ts` | EN | Entertainment utilities |
+| `error-capture.ts` | ER | Error capture |
+| `error-boundary.tsx` | ER | React error boundary |
 | `escpos/` | HW | ESC/POS commands |
 | `events/` | EV | Event utilities |
-| `inventory-calculations.ts` | IN | |
-| `kds.ts` | HW | KDS logic (2,106 lines - SPLIT) |
-| `offline-db.ts` | [SHARED] | |
-| `offline-manager.ts` | [SHARED] | |
+| `inventory-calculations.ts` | IN | Inventory deductions |
+| `kds.ts` | KD | KDS logic |
+| `liquor-inventory.ts` | LQ | Liquor inventory |
+| `location-cache.ts` | ST | Location settings cache |
+| `offline-db.ts` | OS | IndexedDB |
+| `offline-manager.ts` | OS | Offline queue |
+| `order-calculations.ts` | OM | Order totals, tax |
 | `order-router.ts` | HW | Print routing |
-| `payment-intent-manager.ts` | OM | |
-| `print-factory.ts` | HW | |
+| `payment-intent-manager.ts` | PM | Payment intents |
+| `pizza-helpers.ts` | PZ | Pizza calculations |
+| `pricing.ts` | OM | Pricing engine |
+| `print-factory.ts` | HW | Print template factory |
+| `printer-connection.ts` | HW | TCP printer connections |
 | `realtime/` | [SHARED] | WebSocket logic |
-| `scheduling.ts` | EM | (1,931 lines - SPLIT) |
-| `seat-utils.ts` | FP | L3 |
-| `settings.ts` | [SHARED] | |
-| `socket-dispatch.ts` | [SHARED] | |
-| `socket-server.ts` | [SHARED] | |
-| `stock-status.ts` | IN | |
-| `table-utils.ts` | FP | |
-| `timed-rentals.ts` | FP | L8 (3,058 lines - SPLIT) |
+| `scheduling.ts` | SC | Scheduling logic |
+| `seat-generation.ts` | FP | Seat position algorithms |
+| `seat-utils.ts` | FP | Seat utilities |
+| `settings.ts` | ST | Settings helpers |
+| `socket-dispatch.ts` | [SHARED] | Socket event dispatch |
+| `socket-server.ts` | [SHARED] | Socket.io server |
+| `stock-status.ts` | IN | Stock status helpers |
+| `table-utils.ts` | FP | Table utilities |
+| `timed-rentals.ts` | EN | Timed rental logic |
 | `twilio.ts` | [SHARED] | SMS notifications |
-| `unit-conversions.ts` | IN | |
-| `units.ts` | IN | |
-| `utils.ts` | [SHARED] | |
-| `validations.ts` | [SHARED] | |
+| `unit-conversions.ts` | IN | Unit conversions |
+| `units.ts` | IN | Unit definitions |
+| `utils.ts` | [SHARED] | General utilities |
+| `validations.ts` | [SHARED] | Validation helpers |
+| `virtual-group-seats.ts` | FP | Virtual group numbering |
+| `api/error-responses.ts` | OM | Standardized error responses |
+| `datacap/` | PM | Datacap payment gateway |
+| `domain/payment/` | PM | Payment domain logic |
+| `payroll/` | FN | Payroll calculations |
+| `services/payment-service.ts` | PM | Payment service layer |
+| `floorplan/` | FP | Floor plan queries/serializers |
 
 ---
 
@@ -488,17 +749,20 @@ This document maps every significant file/folder in the current codebase to its 
 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
-| `useDatacap.ts` | HW | Payment processing |
+| `useActiveOrder.ts` | OM | Active order management |
+| `useDatacap.ts` | PM | Payment processing |
 | `useDebounce.ts` | [SHARED] | |
 | `useHierarchyCache.ts` | IN | |
 | `useIngredientCost.ts` | IN | |
 | `useIngredientLibrary.ts` | IN | |
-| `useKDSSockets.ts` | HW | |
-| `useOfflineSync.ts` | [SHARED] | |
+| `useKDSSockets.ts` | KD | |
+| `useOfflineSync.ts` | OS | |
+| `useOrderPanelItems.ts` | OM | Shared item mapping |
 | `useOrderSettings.ts` | OM | |
-| `usePaymentLock.ts` | OM | |
+| `usePaymentLock.ts` | PM | |
 | `usePOSLayout.ts` | OM + FP | [SPLIT] |
-| `useSeating.ts` | FP | L3 |
+| `usePricing.ts` | OM | Pricing hook |
+| `useSeating.ts` | FP | |
 
 ---
 
@@ -507,6 +771,7 @@ This document maps every significant file/folder in the current codebase to its 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
 | `auth-store.ts` | EM | |
+| `order-store.ts` | OM | |
 | `toast-store.ts` | [SHARED] | |
 
 ---
@@ -516,83 +781,78 @@ This document maps every significant file/folder in the current codebase to its 
 | Current Path | Target Domain | Notes |
 |--------------|---------------|-------|
 | `index.ts` | [SHARED] | Global types |
-| `payment.ts` | OM | |
-| `print-template-settings.ts` | HW | |
-| `receipt-settings.ts` | HW | |
-| `routing.ts` | HW | |
+| `hardware.ts` | HW | Hardware types |
+| `multi-surface.ts` | CD | Multi-surface state |
+| `order-types.ts` | ST | Order type definitions |
+| `payment.ts` | PM | Payment types |
+| `pizza-print-settings.ts` | PZ | Pizza print settings |
+| `print-template-settings.ts` | HW | Print templates |
+| `printer-settings.ts` | HW | Printer config |
+| `public-menu.ts` | GU | Public menu contracts |
+| `receipt-settings.ts` | HW | Receipt settings |
+| `routing.ts` | HW | Print routing types |
 
 ---
 
-## 8. Contexts (`src/contexts/`)
-
-| Current Path | Target Domain | Notes |
-|--------------|---------------|-------|
-| All contexts | [REVIEW] | Need to examine each |
-
----
-
-## 9. Files to Delete
-
-| Path | Reason |
-|------|--------|
-| `src/app/(admin)/floor-plan-v2/` | Deprecated |
-| `src/components/floor-plan/FloorPlanHomeV2.tsx` | Deprecated |
-| `src/components/floor-plan/FloorPlanTableV2.tsx` | Deprecated |
-| `src/components/floor-plan/MenuSelectorV2.tsx` | Deprecated |
-| `src/components/floor-plan/OrderPanelV2.tsx` | Deprecated |
-| `src/components/floor-plan/VirtualGroupToolbar.tsx` | Deprecated |
-| `src/components/floor-plan/useFloorPlanStore.ts` | Deprecated |
-| `src/app/(admin)/tables/page.tsx` | Deprecated |
-| `src/app/(pos)/orders/page.tsx.bak` | Backup file |
-| `ZZZ just code can be deleted, /` | Temp folder |
-| `txt files i used to verify code, not needed?/` | Temp folder |
-| `*.txt` files in root | Temp exports |
-| `test-results/` | Generated |
-
----
-
-## 10. Files That Need Splitting
+## 8. Files That Need Splitting
 
 These files are over 1000 lines and contain logic for multiple concerns:
 
 | File | Lines | Current Domain | Action |
 |------|-------|----------------|--------|
-| `lib/timed-rentals.ts` | 3,058 | FP L8 | Split into services |
-| `components/floor-plan/floor-plan-editor.tsx` | 2,687 | FP | Split by layer |
-| `lib/kds.ts` | 2,106 | HW | Split into services |
-| `app/admin/employees/page.tsx` | 1,965 | EM | Extract components |
-| `lib/scheduling.ts` | 1,931 | EM | Split into services |
+| `lib/timed-rentals.ts` | 3,058 | EN | Split into services |
+| `components/floor-plan/FloorPlanEditor.tsx` | 2,687 | FP | Split by layer |
+| `lib/kds.ts` | 2,106 | KD | Split into services |
+| `app/(admin)/employees/page.tsx` | 1,965 | EM | Extract components |
+| `lib/scheduling.ts` | 1,931 | SC | Split into services |
+| `components/bartender/BartenderView.tsx` | ~3,000 | MN | Extract sub-components |
 
 ---
 
-## 11. Bridge Dependencies
+## 9. Bridge Dependencies
 
-Files that will need bridge interfaces because they cross domain boundaries:
+Files that cross domain boundaries and need bridge interfaces:
 
 | File | Domains Involved | Bridge Needed |
 |------|------------------|---------------|
 | `app/(pos)/orders/page.tsx` | FP + OM | floor-to-order |
-| `components/payment/PaymentModal.tsx` | OM + FN | order-to-financial |
+| `components/payment/PaymentModal.tsx` | OM + PM | order-to-payment |
 | `lib/order-router.ts` | OM + HW | order-to-hardware |
-| `app/api/orders/[id]/pay/route.ts` | OM + IN | order-to-inventory |
+| `app/api/orders/[id]/pay/route.ts` | OM + IN + PM | order-to-inventory-to-payment |
 | `components/floor-plan/FloorPlanHome.tsx` | FP + OM | floor-to-order |
+| `app/api/orders/[id]/comp-void/route.ts` | OM + IN | order-to-inventory (waste) |
+| `components/bartender/BartenderView.tsx` | MN + TB + OM | bartender cross-domain |
 
 ---
 
-## 12. Migration Priority
+## 10. Migration Priority
 
-Based on dependencies and documentation, suggested migration order:
+Based on dependencies, documentation completeness, and business impact:
 
-1. **Floor Plan** (L1-L9) - Most documented, foundational
-2. **Menu** - Referenced by Order Management
-3. **Order Management** - Core business logic
-4. **Inventory** - Referenced by Menu and Orders
-5. **Hardware** - Referenced by Orders
-6. **Employee** - Referenced by Floor Plan and Orders
-7. **Guest** - Referenced by Floor Plan
-8. **Financial** - Referenced by Orders
-9. **Events** - Standalone domain
-10. **Reporting** - Aggregates from all domains
+| Priority | Domain | Reason |
+|----------|--------|--------|
+| 1 | Floor Plan (FP) | Most documented, foundational |
+| 2 | Menu (MN) | Referenced by Orders |
+| 3 | Orders (OM) | Core business logic |
+| 4 | Payments (PM) | Revenue-critical |
+| 5 | Tabs (TB) | Revenue-critical, depends on Orders + Payments |
+| 6 | Inventory (IN) | Referenced by Menu and Orders |
+| 7 | KDS (KD) | Referenced by Orders |
+| 8 | Hardware (HW) | Referenced by Orders and KDS |
+| 9 | Pizza Builder (PZ) | Specialized Menu extension |
+| 10 | Liquor Management (LQ) | Specialized Menu + Inventory extension |
+| 11 | Entertainment (EN) | Standalone with Floor Plan integration |
+| 12 | Employee (EM) | Referenced by Floor Plan and Orders |
+| 13 | Customer Display (CD) | Customer-facing surface |
+| 14 | Guest (GU) | Future online ordering |
+| 15 | Scheduling (SC) | Extends Employees |
+| 16 | Financial (FN) | Payroll and tip distribution |
+| 17 | Events (EV) | Reservations and ticketing |
+| 18 | Settings (ST) | Cross-domain configuration |
+| 19 | Reports (RP) | Aggregates from all domains |
+| 20 | Offline & Sync (OS) | Infrastructure, touches all domains |
+| 21 | Error Reporting (ER) | Infrastructure, touches all domains |
+| 22 | Development-RnD (RD) | Non-production |
 
 ---
 
