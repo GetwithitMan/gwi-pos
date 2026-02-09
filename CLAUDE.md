@@ -2258,6 +2258,12 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | 14 | Financial | `PM Mode: Financial` | 🔄 Active |
 | 15 | Development-RnD | `PM Mode: Development-RnD` | 🔄 Active |
 | 16 | Error Reporting | `PM Mode: Error Reporting` | ✅ DB Complete |
+| 17 | Tabs & Bottle Service | `PM Mode: Tabs` | 🔄 Active |
+| 18 | Pizza Builder | `PM Mode: Pizza Builder` | 🔄 Active |
+| 19 | Liquor Management | `PM Mode: Liquor Management` | 🔄 Active |
+| 20 | Offline & Sync | `PM Mode: Offline & Sync` | 🔄 Active |
+| 21 | Customer Display | `PM Mode: Customer Display` | 🔄 Active |
+| 22 | Scheduling | `PM Mode: Scheduling` | 🔄 Active |
 
 ---
 
@@ -2461,6 +2467,110 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 - Health checks (critical systems status)
 
 **Status**: ✅ Database Layer Complete, Ready for Phase 2
+
+---
+
+#### Domain 17: Tabs & Bottle Service
+**Trigger:** `PM Mode: Tabs`
+**Documentation:** `/docs/domains/TABS-DOMAIN.md`
+**Changelog:** `/docs/changelogs/TABS-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Tab CRUD** | Tab creation, listing, close | `/api/tabs/`, `/src/app/(pos)/tabs/page.tsx` |
+| **Pre-Auth** | Card pre-authorization flow | `/api/datacap/preauth/`, `/api/datacap/collect-card/` |
+| **Bottle Service** | Tier management, deposits, progress | `/src/components/tabs/BottleServiceBanner.tsx` |
+| **Multi-Card** | Multiple cards per tab | `/src/components/tabs/MultiCardBadges.tsx` |
+| **Tab Transfer** | Transfer between employees | `/src/components/tabs/TabTransferModal.tsx` |
+| **Walkout** | Walkout recovery and retry | `/api/datacap/walkout-retry/` |
+| **UI** | Tab management components | `/src/components/tabs/` |
+
+**Related Skills:** 20, 21, 22, 245
+
+---
+
+#### Domain 18: Pizza Builder
+**Trigger:** `PM Mode: Pizza Builder`
+**Documentation:** `/docs/domains/PIZZA-BUILDER-DOMAIN.md`
+**Changelog:** `/docs/changelogs/PIZZA-BUILDER-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Config** | Pizza sizes, crusts, sauces, cheeses, toppings | `/api/pizza/` |
+| **Builder UI** | Visual pizza builder for ordering | `/src/components/pizza/` |
+| **Pricing** | Size-based pricing and topping tier calculations | `/src/lib/pizza-helpers.ts` |
+| **Print** | Pizza-specific kitchen ticket formatting | `/src/types/pizza-print-settings.ts` |
+| **Admin** | Pizza settings admin page | `/src/app/(admin)/pizza/page.tsx` |
+
+**Related Skills:** 109, 103
+
+---
+
+#### Domain 19: Liquor Management
+**Trigger:** `PM Mode: Liquor Management`
+**Documentation:** `/docs/domains/LIQUOR-MANAGEMENT-DOMAIN.md`
+**Changelog:** `/docs/changelogs/LIQUOR-MANAGEMENT-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Spirit Categories** | Spirit type management | `/api/liquor/categories/` |
+| **Bottle Products** | Individual bottle tracking | `/api/liquor/bottles/` |
+| **Recipes** | Cocktail recipe builder | `/api/liquor/recipes/` |
+| **Upsells** | Spirit tier upselling | `/api/liquor/upsells/` |
+| **Inventory** | Liquor-specific inventory | `/src/lib/liquor-inventory.ts` |
+| **Admin** | Liquor builder admin page | `/src/app/(admin)/liquor-builder/page.tsx` |
+| **Reports** | Liquor-specific reporting | `/api/reports/liquor/` |
+
+**Related Skills:** 118, 141
+
+---
+
+#### Domain 20: Offline & Sync
+**Trigger:** `PM Mode: Offline & Sync`
+**Documentation:** `/docs/domains/OFFLINE-SYNC-DOMAIN.md`
+**Changelog:** `/docs/changelogs/OFFLINE-SYNC-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Offline Manager** | Queue management and offline operation | `/src/lib/offline-manager.ts` |
+| **Local DB** | IndexedDB for offline storage | `/src/lib/offline-db.ts` |
+| **Sync Hook** | React hook for sync state | `/src/hooks/useOfflineSync.ts` |
+| **Health Check** | Connection monitoring | `/api/monitoring/health-check/` |
+| **Audit** | Sync audit logging | `/src/components/admin/SyncAuditLog.tsx` |
+
+**Related Skills:** 60, 59
+
+---
+
+#### Domain 21: Customer Display
+**Trigger:** `PM Mode: Customer Display`
+**Documentation:** `/docs/domains/CUSTOMER-DISPLAY-DOMAIN.md`
+**Changelog:** `/docs/changelogs/CUSTOMER-DISPLAY-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **CFD State Machine** | 8-state display flow | `/src/app/(cfd)/cfd/page.tsx` |
+| **Idle Screen** | Clock + welcome branding | `/src/components/cfd/CFDIdleScreen.tsx` |
+| **Order Display** | Live order view for customer | `/src/components/cfd/CFDOrderDisplay.tsx` |
+| **Tip Screen** | Tip selection buttons | `/src/components/cfd/CFDTipScreen.tsx` |
+| **Signature** | Signature capture canvas | `/src/components/cfd/CFDSignatureScreen.tsx` |
+| **Pay-at-Table** | Guest self-pay interface | `/src/components/pay-at-table/` |
+
+**Related Skills:** 218, 219
+
+---
+
+#### Domain 22: Scheduling
+**Trigger:** `PM Mode: Scheduling`
+**Documentation:** `/docs/domains/SCHEDULING-DOMAIN.md`
+**Changelog:** `/docs/changelogs/SCHEDULING-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Schedules** | Schedule CRUD and publishing | `/api/schedules/` |
+| **Admin UI** | Schedule management page | `/src/app/(admin)/scheduling/page.tsx` |
+
+**Related Skills:** 241
 
 ---
 
