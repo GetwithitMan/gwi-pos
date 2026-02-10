@@ -23,9 +23,13 @@ export async function GET(request: NextRequest) {
 
     // Auth check (locationId may be null when querying by shiftId — resolved after shift lookup)
     if (locationId) {
-      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE, { soft: true })
-      if (!auth.authorized) {
-        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      // Self-access: employees can always view their own shift report
+      const isSelfAccess = employeeId && requestingEmployeeId && employeeId === requestingEmployeeId
+      if (!isSelfAccess) {
+        const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE, { soft: true })
+        if (!auth.authorized) {
+          return NextResponse.json({ error: auth.error }, { status: auth.status })
+        }
       }
     }
 

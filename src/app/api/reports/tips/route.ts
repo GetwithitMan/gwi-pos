@@ -21,9 +21,13 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE, { soft: true })
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    // Self-access: employees can always view their own tips report
+    const isSelfAccess = employeeId && requestingEmployeeId && employeeId === requestingEmployeeId
+    if (!isSelfAccess) {
+      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE, { soft: true })
+      if (!auth.authorized) {
+        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
     }
 
     // Build date filter

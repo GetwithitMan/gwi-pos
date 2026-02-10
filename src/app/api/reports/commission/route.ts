@@ -28,9 +28,13 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       )
     }
-    const auth = await requirePermission(authEmployeeId, locationId, PERMISSIONS.REPORTS_COMMISSION)
-    if (!auth.authorized) {
-      return NextResponse.json({ error: auth.error }, { status: auth.status })
+    // Self-access: employees can always view their own commission report
+    const isSelfAccess = employeeId && requestingEmployeeId && employeeId === requestingEmployeeId
+    if (!isSelfAccess) {
+      const auth = await requirePermission(authEmployeeId, locationId, PERMISSIONS.REPORTS_COMMISSION)
+      if (!auth.authorized) {
+        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
     }
 
     // Build date filter
