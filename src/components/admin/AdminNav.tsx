@@ -237,16 +237,16 @@ const navSections: NavSection[] = [
     permission: null,
     items: [
       { name: 'Floor Plan', href: '/orders', icon: Icons.grid },
-      { name: 'Tip Adjustments', href: '#', icon: Icons.dollar, action: 'tip_adjustments' },
-      { name: 'Kitchen Display', href: '/kds', icon: Icons.monitor },
+      { name: 'Tip Adjustments', href: '#', icon: Icons.dollar, action: 'tip_adjustments', permission: PERMISSIONS.TIPS_VIEW_OWN },
+      { name: 'Kitchen Display', href: '/kds', icon: Icons.monitor, permission: PERMISSIONS.POS_KDS_ACCESS },
     ],
   },
   {
     title: 'Inventory',
     icon: '📦',
-    permission: null, // Visible to all - Food & Liquor inventory
+    permission: PERMISSIONS.INVENTORY_VIEW,
     items: [
-      { name: 'Quick 86', href: '/86', icon: Icons.outOfStock },
+      { name: 'Quick 86', href: '/86', icon: Icons.outOfStock, permission: PERMISSIONS.MENU_86_ITEMS },
       { name: 'Food Inventory', href: '/inventory', icon: Icons.ingredients },
       { name: 'Liquor Inventory', href: '/inventory/beverages', icon: Icons.liquor },
     ],
@@ -259,7 +259,7 @@ const navSections: NavSection[] = [
   {
     title: 'Menu Builder',
     icon: '🍔',
-    permission: null, // Visible to all
+    permission: PERMISSIONS.MENU_VIEW,
     items: [
       { name: 'Menu Items', href: '/menu', icon: Icons.menu },
       { name: 'Combos', href: '/combos', icon: Icons.combo },
@@ -271,10 +271,10 @@ const navSections: NavSection[] = [
   {
     title: 'Floor & Tables',
     icon: '🪑',
-    permission: null,
+    permission: PERMISSIONS.TABLES_VIEW,
     items: [
-      { name: 'Floor Plan Editor', href: '/floorplan/editor', icon: Icons.floorPlan },
-      { name: 'Reservations', href: '/reservations', icon: Icons.calendar },
+      { name: 'Floor Plan Editor', href: '/floorplan/editor', icon: Icons.floorPlan, permission: PERMISSIONS.TABLES_FLOOR_PLAN },
+      { name: 'Reservations', href: '/reservations', icon: Icons.calendar, permission: PERMISSIONS.TABLES_RESERVATIONS },
       { name: 'Timed Rentals', href: '/timed-rentals', icon: Icons.clock },
     ],
     adminItems: [
@@ -312,20 +312,20 @@ const navSections: NavSection[] = [
   {
     title: 'Reports',
     icon: '📊',
-    permission: null, // Some reports available to all
+    permission: null, // "My Shift" available to all — individual items gated
     items: [
-      { name: 'Reports Hub', href: '/reports', icon: Icons.reports },
-      { name: 'Daily Summary', href: '/reports/daily', icon: Icons.calendar },
       { name: 'My Shift', href: '/reports/shift', icon: Icons.clock },
+      { name: 'My Commissions', href: '/reports/commission', icon: Icons.money, permission: PERMISSIONS.REPORTS_COMMISSION },
     ],
     adminItems: [
+      { name: 'Reports Hub', href: '/reports', icon: Icons.reports },
+      { name: 'Daily Summary', href: '/reports/daily', icon: Icons.calendar },
       { name: 'Sales', href: '/reports/sales', icon: Icons.money },
       { name: 'Product Mix', href: '/reports/product-mix', icon: Icons.chart },
       { name: 'Order History', href: '/reports/order-history', icon: Icons.history },
       { name: 'Tips', href: '/reports/tips', icon: Icons.tips },
       { name: 'Employee Reports', href: '/reports/employees', icon: Icons.employee },
       { name: 'Voids & Comps', href: '/reports/voids', icon: Icons.void },
-      { name: 'Commissions', href: '/reports/commission', icon: Icons.money },
       { name: 'Reservations', href: '/reports/reservations', icon: Icons.calendar },
       { name: 'Coupons', href: '/reports/coupons', icon: Icons.coupon },
       { name: 'Liquor', href: '/reports/liquor', icon: Icons.liquor },
@@ -369,6 +369,7 @@ interface AdminNavProps {
 export function AdminNav({ forceOpen, onClose, permissions = [], onAction }: AdminNavProps) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
+
   const [expandedSections, setExpandedSections] = useState<string[]>(['POS', 'Menu & Products', 'Reports'])
   const [expandedSubItems, setExpandedSubItems] = useState<string[]>([])
 
@@ -378,7 +379,6 @@ export function AdminNav({ forceOpen, onClose, permissions = [], onAction }: Adm
   // Check if user has permission to view an item
   const canView = (permission?: string | null) => {
     if (!permission) return true
-    if (permission === 'pos.access') return true
     return hasPermission(permissions, permission)
   }
 

@@ -76,6 +76,7 @@ interface BartenderViewProps {
   employeeId: string
   employeeName: string
   onLogout: () => void
+  onOpenTimeClock?: () => void
   onOpenPayment?: (orderId: string) => void
   onOpenModifiers?: (
     item: MenuItem,
@@ -93,6 +94,8 @@ interface BartenderViewProps {
   children?: React.ReactNode
   // Ref to allow parent to deselect current tab (e.g., "Hide" button)
   onRegisterDeselectTab?: (fn: () => void) => void
+  // External refresh trigger (e.g., parent increments after payment)
+  refreshTrigger?: number
 }
 
 // Menu sections - bar, food, or entertainment (standalone)
@@ -230,6 +233,7 @@ export function BartenderView({
   employeeId,
   employeeName,
   onLogout,
+  onOpenTimeClock,
   onOpenPayment,
   onOpenModifiers,
   onSwitchToFloorPlan,
@@ -238,6 +242,7 @@ export function BartenderView({
   requireNameWithoutCard = false,
   children,
   onRegisterDeselectTab,
+  refreshTrigger: externalRefreshTrigger,
 }: BartenderViewProps) {
   // ---------------------------------------------------------------------------
   // HOOKS
@@ -1234,10 +1239,10 @@ export function BartenderView({
               </button>
             )}
             <button
-              onClick={onLogout}
+              onClick={onOpenTimeClock || onLogout}
               className="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
             >
-              Logout
+              Clock Out
             </button>
           </div>
         </div>
@@ -1264,7 +1269,7 @@ export function BartenderView({
             onViewOrder={(order) => { handleSelectTab(order.id) }}
 
             onClosedOrderAction={() => setTabRefreshTrigger(t => t + 1)}
-            refreshTrigger={tabRefreshTrigger}
+            refreshTrigger={tabRefreshTrigger + (externalRefreshTrigger || 0)}
           />
         </motion.div>
 

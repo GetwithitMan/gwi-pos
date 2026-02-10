@@ -148,6 +148,7 @@ interface FloorPlanHomeProps {
   employeeName: string
   employeeRole?: string
   onLogout: () => void
+  onOpenTimeClock?: () => void
   onSwitchUser?: () => void
   onOpenSettings?: () => void
   onOpenAdminNav?: () => void
@@ -188,6 +189,7 @@ export function FloorPlanHome({
   employeeName,
   employeeRole,
   onLogout,
+  onOpenTimeClock,
   onSwitchUser,
   onOpenSettings,
   onOpenAdminNav,
@@ -2859,7 +2861,11 @@ export function FloorPlanHome({
                     <button
                       onClick={() => {
                         setShowEmployeeDropdown(false)
-                        onLogout()
+                        if (onOpenTimeClock) {
+                          onOpenTimeClock()
+                        } else {
+                          onLogout()
+                        }
                       }}
                       style={{
                         display: 'flex',
