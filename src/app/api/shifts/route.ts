@@ -37,6 +37,9 @@ export async function GET(request: NextRequest) {
             firstName: true,
             lastName: true,
             displayName: true,
+            role: {
+              select: { permissions: true },
+            },
           },
         },
       },
@@ -49,6 +52,7 @@ export async function GET(request: NextRequest) {
         employee: {
           id: shift.employee.id,
           name: shift.employee.displayName || `${shift.employee.firstName} ${shift.employee.lastName}`,
+          permissions: Array.isArray(shift.employee.role?.permissions) ? shift.employee.role.permissions as string[] : [],
         },
         startedAt: shift.startedAt.toISOString(),
         endedAt: shift.endedAt?.toISOString() || null,

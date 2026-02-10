@@ -86,6 +86,7 @@ export async function PUT(
       orderTypeId,
       customerId,
       status,
+      employeeId,
     } = body as {
       tabName?: string
       guestCount?: number
@@ -95,6 +96,7 @@ export async function PUT(
       orderTypeId?: string
       customerId?: string
       status?: string
+      employeeId?: string
     }
 
     // Get existing order
@@ -134,6 +136,7 @@ export async function PUT(
     if (tableId !== undefined) updateData.tableId = tableId
     if (orderTypeId !== undefined) updateData.orderTypeId = orderTypeId
     if (customerId !== undefined) updateData.customerId = customerId
+    if (employeeId !== undefined) updateData.employeeId = employeeId
     if (status !== undefined) {
       updateData.status = status
       if (status === 'cancelled' || status === 'closed') {

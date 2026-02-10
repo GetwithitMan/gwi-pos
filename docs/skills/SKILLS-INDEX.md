@@ -58,8 +58,24 @@
 | 225 | Payment Modal Component Split | DONE | Payments | 224 | Split 927-line monolith into 6 focused components (PaymentMethodStep, TipEntryStep, CashEntryStep, CardProcessingStep, GiftCardStep, HouseAccountStep) |
 | 226 | PaymentService Layer | DONE | Payments | 224, 225 | Type-safe API client with ServiceResult<T> pattern, processPayment(), voidItems(), checkGiftCardBalance(), loadHouseAccounts() |
 | 227 | PaymentDomain Module | DONE | Payments | 226 | Pure business logic functions: tip-calculations.ts (317 lines), loyalty-points.ts (429 lines), dual-pricing.ts (347 lines), validators.ts (294 lines) |
-| 250 | Tip Ledger Foundation | DONE | Payments, Employees | 49, 50 | TipLedger per-employee bank account, TipLedgerEntry immutable entries, TipTransaction, core domain functions, TipBankSettings, 6 new permissions, ledger API, payment+shift integration |
-| 251 | Enhanced Tip-Out Rules & Tip Guide Basis | DONE | Payments, Settings | 250 | basisType on TipOutRule (tips/food/bar/total/net sales), maxPercentage cap, effectiveDate/expiresAt, ShiftSalesData, /settings/tips admin page, CC fee deduction, EOD payout settings |
+| 250 | Tip Ledger Foundation | DONE | Tips | 49, 50 | TipLedger per-employee bank account, TipLedgerEntry immutable entries, TipTransaction, core domain functions, TipBankSettings, 6 new permissions, ledger API, payment+shift integration |
+| 251 | Enhanced Tip-Out Rules & Tip Guide Basis | DONE | Tips | 250 | basisType on TipOutRule (tips/food/bar/total/net sales), maxPercentage cap, effectiveDate/expiresAt, ShiftSalesData, /settings/tips admin page, CC fee deduction, EOD payout settings |
+| 252 | Dynamic Tip Groups | DONE | Tips | 250 | TipGroup/TipGroupMembership/TipGroupSegment, time-segmented pooling, group lifecycle, tip allocation pipeline, socket events |
+| 253 | Shared Table Ownership | DONE | Tips | 250 | OrderOwnership/OrderOwnershipEntry, co-owned orders, split % management, allocation adjustment by ownership |
+| 254 | Manual Transfers & Payouts | DONE | Tips | 250 | Paired DEBIT/CREDIT transfers, cash payouts, batch payroll, manager payout page at /tips/payouts |
+| 255 | Chargeback & Void Tip Handling | DONE | Tips | 250 | Policy-based chargebacks (BUSINESS_ABSORBS/EMPLOYEE_CHARGEBACK), negative balance protection |
+| 256 | Manager Adjustments & Audit Trail | DONE | Tips | 250, 252 | TipAdjustment model, recalculation engine, delta entries, contextJson audit trail, adjustment API |
+| 257 | Employee Tip Bank Dashboard | DONE | Tips | 250, 252 | /crew/tip-bank self-service page, bank-statement view, date/sourceType filters, pagination |
+| 258 | Tip Reporting & Payroll Export | DONE | Tips | 250-257 | Payroll aggregation, CSV export, tip groups report, payroll export API (CSV + JSON) |
+| 259 | Cash Tip Declaration & Compliance | DONE | Tips | 250 | CashTipDeclaration model, IRS 8% rule, tip-out caps, pool eligibility, compliance warnings |
+| 260 | CC Tip Fee Structured Tracking | DONE | Tips | 250 | ccFeeAmountCents on TipTransaction, daily report businessCosts section |
+| 261 | Shift Closeout Printout | DONE | Tips | 250 | ESC/POS shift closeout receipt, print API, ShiftCloseoutModal print button |
+| 262 | Daily Business Summary Printout | DONE | Tips | 260 | ESC/POS daily report receipt, print API, admin daily report print button |
+| 263 | Tip Claims at Clock-Out Only | DONE | Tips | 250 | TimeClockModal informational-only tip notice, payout only at shift closeout |
+| 264 | Merge /crew/tips → Tip Bank | DONE | Tips | 257 | Redirect /crew/tips to /crew/tip-bank, renamed Crew Hub card to "Tip Bank" |
+| 265 | Tip Group UI | DONE | Tips | 252 | /crew/tip-group page, start/join/leave groups, Crew Hub tip group card |
+| 266 | Shared Table Ownership UI | DONE | Tips | 253 | SharedOwnershipModal, FloorPlanHome + OrderPanel integration, transfer ownership, pos.access filter |
+| 267 | Manual Tip Transfer Modal | DONE | Tips | 254 | ManualTipTransferModal, select recipient, amount + memo, paired DEBIT/CREDIT |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -262,7 +278,8 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **147** | **7** | **13** | **167** | **92%** |
+| Tips & Tip Bank | 10 | 0 | 0 | 10 | 100% |
+| **TOTAL** | **155** | **7** | **13** | **175** | **93%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -383,12 +400,33 @@ Skills that can be developed simultaneously:
 
 ---
 
-## Recently Completed (2026-02-10 — Tip Bank Phases 1 & 2)
+## Recently Completed (2026-02-10 — Complete Tip Bank System, Skills 250-267)
 
 | Skill | Name | What Was Built |
 |-------|------|----------------|
-| 250 | Tip Ledger Foundation | TipLedger (per-employee bank account with currentBalanceCents), TipLedgerEntry (immutable CREDIT/DEBIT with sourceType tracing), TipTransaction (order/payment/group/segment linking), core domain functions (getOrCreateLedger, postToTipLedger, getLedgerBalance, getLedgerEntries, recalculateBalance, dollarsToCents/centsToDollars), TipBankSettings interface (allocationMode, chargebackPolicy, tipGuide, CC fee deduction, EOD payout), 6 new permissions (tips.manage_groups/override_splits/manage_settings/perform_adjustments/view_ledger/process_payout), ledger API (self-access + admin), fire-and-forget payment integration (DIRECT_TIP), fire-and-forget shift closeout integration (ROLE_TIPOUT + MANUAL_TRANSFER). |
-| 251 | Enhanced Tip-Out Rules & Tip Guide Basis | 5 new TipOutRule fields (basisType, salesCategoryIds, maxPercentage, effectiveDate, expiresAt), ShiftSalesData interface, extended calculateTipOut/calculateTipShares/calculateTipDistribution with per-rule basisType + cap, shift closeout queries food/bar sales by categoryType, server-side enforcement of sales-based rules, /settings/tips admin page (6 sections: tip guide, tip bank, chargeback, tip shares, CC fee, EOD payout), tip-out admin UI with basisType dropdown + color badges + cap field + date fields, ShiftCloseoutModal sales-based display with cap notes. |
+| 250 | Tip Ledger Foundation | TipLedger (per-employee bank account), TipLedgerEntry (immutable CREDIT/DEBIT), TipTransaction, core domain functions, TipBankSettings (15+ settings), 6 new permissions, ledger API, payment+shift integration |
+| 251 | Enhanced Tip-Out Rules & Tip Guide Basis | 5 new TipOutRule fields (basisType, maxPercentage, effectiveDate, expiresAt), ShiftSalesData, /settings/tips admin page (6 sections), CC fee deduction, EOD payout settings |
+| 252 | Dynamic Tip Groups | TipGroup/TipGroupMembership/TipGroupSegment models, group lifecycle (start, join, leave, transfer, close), time-segmented splits with splitJson, tip allocation pipeline, socket events |
+| 253 | Shared Table Ownership | OrderOwnership/OrderOwnershipEntry models, co-owned orders with auto-rebalancing splits, ownership CRUD API, allocation adjustment by ownership % |
+| 254 | Manual Transfers & Payouts | Paired DEBIT/CREDIT transfers, cash payouts (full or partial), batch payroll payout, CC fee calculation, manager payout page at /tips/payouts |
+| 255 | Chargeback & Void Tip Handling | Policy-based chargebacks (BUSINESS_ABSORBS vs EMPLOYEE_CHARGEBACK), negative balance protection, manager review flagging |
+| 256 | Manager Adjustments & Audit Trail | TipAdjustment model with contextJson (before/after), recalculation engine, delta entries (not replacement), adjustment API with audit trail |
+| 257 | Employee Tip Bank Dashboard | /crew/tip-bank self-service page, balance hero card, bank-statement ledger entries, date/sourceType filters, pagination |
+| 258 | Tip Reporting & Payroll Export | Payroll aggregation by employee/sourceType, CSV export, tip groups report with segment breakdowns, payroll export API |
+| 259 | Cash Tip Declaration & Compliance | CashTipDeclaration model, IRS 8% rule, tip-out cap checks, pool eligibility checks, pure compliance functions (advisory, not blocking) |
+
+### Tip Bank Enhancements (Skills 260-267) — 2026-02-10
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 260 | CC Tip Fee Structured Tracking | ccFeeAmountCents on TipTransaction, daily report businessCosts.ccTipFees |
+| 261 | Shift Closeout Printout | ESC/POS receipt builder, /api/print/shift-closeout, "Print Closeout Receipt" button |
+| 262 | Daily Business Summary Printout | ESC/POS receipt builder, /api/print/daily-report, "Print Daily Report" button |
+| 263 | Tip Claims at Clock-Out Only | TimeClockModal informational-only, payout restricted to ShiftCloseoutModal |
+| 264 | Merge /crew/tips → Tip Bank | /crew/tips redirects to /crew/tip-bank, Crew Hub card renamed |
+| 265 | Tip Group UI | /crew/tip-group page, StartTipGroupModal, TipGroupPanel, Crew Hub card |
+| 266 | Shared Table Ownership UI | SharedOwnershipModal wired into FloorPlanHome + OrderPanel, transfer flow, pos.access filter, order owner auth |
+| 267 | Manual Tip Transfer Modal | ManualTipTransferModal with recipient picker, amount, memo |
 
 ## Recently Completed (2026-02-10 — Phase 6: Multi-Role, Cash Handling & Crew Hub)
 

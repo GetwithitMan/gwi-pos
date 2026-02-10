@@ -32,6 +32,7 @@ import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { logger } from '@/lib/logger'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
+import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
@@ -229,6 +230,7 @@ export function FloorPlanHome({
   // Settings dropdown
   const [showSettingsDropdown, setShowSettingsDropdown] = useState(false)
   const [showTableOptions, setShowTableOptions] = useState(false)
+  const [showShareOwnership, setShowShareOwnership] = useState(false)
 
   // Active order state (for selected table or quick order)
   const [activeTableId, setActiveTableId] = useState<string | null>(null)
@@ -4216,6 +4218,29 @@ export function FloorPlanHome({
                         {getTotalSeats(activeTable)} seats
                       </span>
                     )}
+                    {activeOrderId && (
+                      <button
+                        onClick={() => setShowShareOwnership(true)}
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 500,
+                          color: '#a78bfa',
+                          padding: '2px 8px',
+                          background: 'rgba(167, 139, 250, 0.15)',
+                          border: '1px solid rgba(167, 139, 250, 0.3)',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Share
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -4860,6 +4885,17 @@ export function FloorPlanHome({
             setSplitItemId(null)
             toast.success('Item moved to split check')
           }}
+        />
+      )}
+
+      {/* Shared Ownership Modal */}
+      {activeOrderId && (
+        <SharedOwnershipModal
+          orderId={activeOrderId}
+          locationId={locationId}
+          employeeId={employeeId}
+          isOpen={showShareOwnership}
+          onClose={() => setShowShareOwnership(false)}
         />
       )}
     </div>

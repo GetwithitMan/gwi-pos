@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
+import { toast } from '@/stores/toast-store'
 
 interface ShiftSummary {
   totalSales: number
@@ -1261,6 +1262,33 @@ export function ShiftCloseoutModal({
                       </div>
                     </div>
                   </Card>
+
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch('/api/print/shift-closeout', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            shiftId: shift.id,
+                            locationId: shift.locationId,
+                          }),
+                        })
+                        if (!res.ok) {
+                          const err = await res.json()
+                          toast.error(err.error || 'Failed to print receipt')
+                        } else {
+                          toast.success('Closeout receipt sent to printer')
+                        }
+                      } catch {
+                        toast.error('Failed to print receipt')
+                      }
+                    }}
+                  >
+                    Print Closeout Receipt
+                  </Button>
 
                   <Button
                     variant="primary"

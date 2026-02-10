@@ -234,17 +234,36 @@ export default function CrewHubPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h2 className="text-white font-semibold text-lg">Tip Adjustments</h2>
+              <h2 className="text-white font-semibold text-lg">Tip Bank</h2>
             </div>
-            <p className="text-white/40 text-sm mb-4">View and manage your tip shares.</p>
+            <p className="text-white/40 text-sm mb-4">View your tip bank balance and ledger.</p>
             <button
-              onClick={() => router.push('/crew/tips')}
+              onClick={() => router.push('/crew/tip-bank')}
               className="w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-sm transition-all"
             >
-              View Tips
+              View Tip Bank
             </button>
           </div>
         )}
+
+        {/* Tip Group */}
+        <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-xl bg-indigo-500/20">
+              <svg className="w-6 h-6 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+            <h2 className="text-white font-semibold text-lg">Tip Group</h2>
+          </div>
+          <p className="text-white/40 text-sm mb-4">Start or join a tip group to pool tips with coworkers.</p>
+          <button
+            onClick={() => router.push('/crew/tip-group')}
+            className="w-full py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-sm transition-all"
+          >
+            Manage Tip Groups
+          </button>
+        </div>
 
         {/* My Shift Report - Always visible */}
         <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-6">

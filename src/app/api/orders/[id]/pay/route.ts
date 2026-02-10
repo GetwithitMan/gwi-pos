@@ -860,6 +860,7 @@ export async function POST(
                 sourceType: cardTipCents > 0 ? 'CARD' : 'CASH',
                 collectedAt: new Date(),
                 primaryEmployeeId: order.employeeId,
+                ccFeeAmountCents: feeAmountCents,
               },
             })
 

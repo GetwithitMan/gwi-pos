@@ -108,28 +108,39 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     // ── Auth check ──────────────────────────────────────────────────────
-    // Self-add: the requesting employee is adding themselves
-    // Manager: requires TIPS_MANAGE_GROUPS permission
+    // Allowed: self-add, order owner adding co-owners, or manager with tip permission
     const requestingEmployeeId = request.headers.get('x-employee-id')
-    const isSelfAdd = requestingEmployeeId === employeeId
-
-    if (!isSelfAdd) {
-      const auth = await requireAnyPermission(
-        requestingEmployeeId,
-        locationId,
-        [PERMISSIONS.TIPS_MANAGE_GROUPS]
-      )
-      if (!auth.authorized) {
-        return NextResponse.json(
-          { error: 'Not authorized. Only self-add or a manager with tip management permission can add owners.' },
-          { status: 403 }
-        )
-      }
-    } else if (!requestingEmployeeId) {
+    if (!requestingEmployeeId) {
       return NextResponse.json(
         { error: 'Employee ID is required' },
         { status: 401 }
       )
+    }
+
+    const isSelfAdd = requestingEmployeeId === employeeId
+
+    if (!isSelfAdd) {
+      // Check if the requesting employee owns this order (table/tab creator)
+      const { db: database } = await import('@/lib/db')
+      const order = await database.order.findUnique({
+        where: { id: orderId },
+        select: { employeeId: true },
+      })
+      const isOrderOwner = order?.employeeId === requestingEmployeeId
+
+      if (!isOrderOwner) {
+        const auth = await requireAnyPermission(
+          requestingEmployeeId,
+          locationId,
+          [PERMISSIONS.TIPS_MANAGE_GROUPS]
+        )
+        if (!auth.authorized) {
+          return NextResponse.json(
+            { error: 'Not authorized. Only the table owner or a manager can add co-owners.' },
+            { status: 403 }
+          )
+        }
+      }
     }
 
     // ── Add owner ───────────────────────────────────────────────────────

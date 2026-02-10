@@ -670,6 +670,21 @@ export async function GET(request: NextRequest) {
     const retailAvg = checkCount > 0 ? retailTotal / checkCount : 0
 
     // ============================================
+    // BUSINESS COSTS (CC Tip Fees)
+    // ============================================
+
+    const ccTipFees = await db.tipTransaction.aggregate({
+      _sum: { ccFeeAmountCents: true },
+      _count: true,
+      where: {
+        locationId,
+        collectedAt: { gte: startOfDay, lte: endOfDay },
+        ccFeeAmountCents: { gt: 0 },
+        deletedAt: null,
+      },
+    })
+
+    // ============================================
     // BUILD RESPONSE
     // ============================================
 
@@ -841,6 +856,11 @@ export async function GET(request: NextRequest) {
         foodAvg: round(foodAvg),
         bevAvg: round(bevAvg),
         retailAvg: round(retailAvg),
+      },
+
+      businessCosts: {
+        ccTipFees: round((ccTipFees._sum.ccFeeAmountCents || 0) / 100),
+        ccTipFeeTransactions: ccTipFees._count || 0,
       },
     })
   } catch (error) {

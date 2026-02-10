@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { ManualTipTransferModal } from '@/components/tips/ManualTipTransferModal'
 
 type SourceType =
   | 'DIRECT_TIP'
@@ -111,6 +112,7 @@ export default function CrewTipBankPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [offset, setOffset] = useState(0)
+  const [showTransferModal, setShowTransferModal] = useState(false)
 
   useEffect(() => {
     if (!employee || !isAuthenticated) {
@@ -193,6 +195,12 @@ export default function CrewTipBankPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
           <h1 className="text-2xl font-bold text-white">Tip Bank</h1>
+          <button
+            onClick={() => setShowTransferModal(true)}
+            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-sm font-medium transition-all"
+          >
+            Transfer Tips
+          </button>
         </div>
 
         {/* Balance Hero Card */}
@@ -341,6 +349,18 @@ export default function CrewTipBankPage() {
           </div>
         )}
       </div>
+
+      <ManualTipTransferModal
+        isOpen={showTransferModal}
+        onClose={() => setShowTransferModal(false)}
+        locationId={employee?.location?.id || ''}
+        employeeId={employee?.id || ''}
+        currentBalanceDollars={data?.balance?.currentBalanceDollars || 0}
+        onTransferComplete={() => {
+          setOffset(0)
+          fetchLedger(0, false)
+        }}
+      />
     </div>
   )
 }

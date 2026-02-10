@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
@@ -105,6 +106,11 @@ interface DailyReport {
     netLiability: number
   }
 
+  businessCosts?: {
+    ccTipFees: number
+    ccTipFeeTransactions: number
+  }
+
   stats: {
     checks: number
     avgCheck: number
@@ -123,6 +129,7 @@ export default function DailyReportPage() {
   const [report, setReport] = useState<DailyReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [printingThermal, setPrintingThermal] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -177,6 +184,36 @@ export default function DailyReportPage() {
             />
             <Button variant="outline" onClick={() => window.print()}>
               Print Report
+            </Button>
+            <Button
+              variant="outline"
+              disabled={printingThermal || !report}
+              onClick={async () => {
+                if (!employee?.location?.id) return
+                setPrintingThermal(true)
+                try {
+                  const res = await fetch('/api/print/daily-report', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      locationId: employee.location.id,
+                      date: selectedDate,
+                    }),
+                  })
+                  if (!res.ok) {
+                    const err = await res.json()
+                    toast.error(err.error || 'Failed to print')
+                  } else {
+                    toast.success('Daily report sent to printer')
+                  }
+                } catch {
+                  toast.error('Failed to print daily report')
+                } finally {
+                  setPrintingThermal(false)
+                }
+              }}
+            >
+              {printingThermal ? 'Printing...' : 'Print Thermal'}
             </Button>
           </div>
         }
@@ -541,6 +578,23 @@ export default function DailyReportPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Business Costs */}
+            {report.businessCosts && report.businessCosts.ccTipFees > 0 && (
+              <Card className="print:shadow-none print:border">
+                <CardHeader className="pb-2">
+                  <CardTitle>Business Costs</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-1 font-mono text-sm">
+                    <div className="flex justify-between">
+                      <span>CC Tip Processing Fees ({report.businessCosts.ccTipFeeTransactions} txns)</span>
+                      <span>{formatCurrency(report.businessCosts.ccTipFees)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Gift Cards */}
             {(report.giftCards.loads > 0 || report.giftCards.redemptions > 0) && (

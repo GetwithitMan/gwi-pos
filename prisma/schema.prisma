@@ -2572,6 +2572,7 @@ model TipTransaction {
   sourceType        String   // 'CARD' | 'CASH' | 'ADJUSTMENT'
   collectedAt       DateTime
   primaryEmployeeId String?
+  ccFeeAmountCents  Int       @default(0)
   createdAt         DateTime @default(now())
   deletedAt         DateTime?
   syncedAt          DateTime?

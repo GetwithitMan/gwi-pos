@@ -2310,6 +2310,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | 21 | Customer Display | `PM Mode: Customer Display` | 🔄 Active |
 | 22 | Scheduling | `PM Mode: Scheduling` | 🔄 Active |
 | 23 | Go-Live | `PM Mode: Go-Live` | 🔄 Active |
+| 24 | Tips & Tip Bank | `PM Mode: Tips` | ✅ Complete |
 
 ---
 
@@ -2639,6 +2640,31 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 **Three Location Modes:** Development, Training, Production
 **Related Skills:** 246, 111, 112, 120
+
+---
+
+#### Domain 24: Tips & Tip Bank
+**Trigger:** `PM Mode: Tips`
+**Documentation:** `/docs/domains/TIPS-DOMAIN.md`, `/docs/TIP-BANK-SYSTEM.md`
+**Changelog:** `/docs/changelogs/TIPS-CHANGELOG.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Ledger Core** | TipLedger CRUD, postToTipLedger, recalculate | `src/lib/domain/tips/tip-ledger.ts`, `/api/tips/ledger/`, `/api/tips/ledger/[employeeId]` |
+| **Tip Groups** | Group lifecycle, segments, membership | `src/lib/domain/tips/tip-groups.ts`, `/api/tips/groups/`, `/api/tips/groups/[id]/`, `/api/tips/groups/[id]/members/` |
+| **Allocation** | Order → tip distribution pipeline | `src/lib/domain/tips/tip-allocation.ts` |
+| **Payouts** | Cash out, batch payroll, payable balances | `src/lib/domain/tips/tip-payouts.ts`, `/api/tips/payouts/`, `/api/tips/payouts/batch/` |
+| **Table Ownership** | Co-owned orders, split % management | `src/lib/domain/tips/table-ownership.ts`, `/api/orders/[id]/ownership/` |
+| **Chargebacks** | Policy-based void/chargeback handling | `src/lib/domain/tips/tip-chargebacks.ts` |
+| **Adjustments** | Manager adjustments, recalculation engine | `src/lib/domain/tips/tip-recalculation.ts`, `/api/tips/adjustments/` |
+| **Compliance** | IRS 8% rule, tip-out caps, pool eligibility | `src/lib/domain/tips/tip-compliance.ts`, `/api/tips/cash-declarations/` |
+| **Payroll Export** | Aggregation, CSV generation | `src/lib/domain/tips/tip-payroll-export.ts`, `/api/reports/payroll-export/` |
+| **Reporting** | Group reports, tip reports | `/api/reports/tip-groups/` |
+| **Settings** | Tip configuration admin | `/api/settings/tips/`, `/settings/tips` |
+| **Dashboard** | Employee self-service tip bank | `/crew/tip-bank` |
+
+**Integration Points:** Payments (DIRECT_TIP on pay), Shifts (ROLE_TIPOUT at closeout), Socket.io (group events), Orders (ownership), Auth (6 permissions), Settings (TipBankSettings)
+**Related Skills:** 250, 251, 252, 253, 254, 255, 256, 257, 258, 259
 
 ---
 

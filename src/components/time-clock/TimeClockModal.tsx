@@ -94,7 +94,6 @@ export function TimeClockModal({
   // Pending tips state
   const [pendingTips, setPendingTips] = useState<PendingTipsData | null>(null)
   const [showTipsNotification, setShowTipsNotification] = useState(false)
-  const [isCollectingTips, setIsCollectingTips] = useState(false)
 
   // Check if user can force clock out
   const canForceClockOut = hasPermission(permissions, PERMISSIONS.MGR_FORCE_CLOCK_OUT)
@@ -163,31 +162,6 @@ export function TimeClockModal({
       }
     } catch (err) {
       console.error('Failed to load pending tips:', err)
-    }
-  }
-
-  const handleCollectTips = async () => {
-    setIsCollectingTips(true)
-    setError(null)
-    try {
-      const response = await fetch(`/api/employees/${employeeId}/tips`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'collect_all' }),
-      })
-
-      if (response.ok) {
-        // Refresh pending tips
-        await loadPendingTips()
-        setShowTipsNotification(false)
-      } else {
-        const data = await response.json()
-        setError(data.error || 'Failed to collect tips')
-      }
-    } catch (err) {
-      setError('Failed to collect tips')
-    } finally {
-      setIsCollectingTips(false)
     }
   }
 
@@ -555,7 +529,7 @@ export function TimeClockModal({
                       </svg>
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-green-800">You have tip shares for payroll!</h3>
+                      <h3 className="font-semibold text-green-800">You have tips in your Tip Bank!</h3>
                       <div className="mt-2 space-y-1 text-sm">
                         {/* Show pending tips (direct shares while on shift) */}
                         {pendingTips.pending.tips.slice(0, 3).map(tip => (
@@ -587,7 +561,7 @@ export function TimeClockModal({
                             Dismiss
                           </button>
                         </div>
-                        <p className="text-xs text-green-600 mt-1">Will be added to your next payroll</p>
+                        <p className="text-xs text-green-600 mt-1">Claim at shift closeout or via manager payout</p>
                       </div>
                     </div>
                   </div>
@@ -737,7 +711,7 @@ export function TimeClockModal({
                       </svg>
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-semibold text-green-800">You have tip shares for payroll!</h3>
+                      <h3 className="font-semibold text-green-800">You have tips in your Tip Bank!</h3>
                       <div className="mt-2 space-y-1 text-sm">
                         {pendingTips.pending.tips.slice(0, 3).map(tip => (
                           <div key={tip.id} className="flex justify-between text-green-700">
@@ -762,7 +736,7 @@ export function TimeClockModal({
                             Dismiss
                           </button>
                         </div>
-                        <p className="text-xs text-green-600 mt-1">Will be added to your next payroll</p>
+                        <p className="text-xs text-green-600 mt-1">Claim at shift closeout or via manager payout</p>
                       </div>
                     </div>
                   </div>

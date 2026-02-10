@@ -4,6 +4,7 @@ import { useRef, useState, useEffect, useMemo } from 'react'
 import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
 import { OrderDelayBanner } from './OrderDelayBanner'
+import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
 export type { OrderPanelItemData }
@@ -222,6 +223,9 @@ export function OrderPanel({
   const hasPendingItems = items.some(item =>
     !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
   )
+
+  // Shared ownership modal
+  const [showShareOwnership, setShowShareOwnership] = useState(false)
 
   // Sort direction: 'newest-bottom' (default, newest appended at bottom) or 'newest-top' (newest at top)
   const [sortDirection, setSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
@@ -575,6 +579,31 @@ export function OrderPanel({
                     {orderType.replace('_', ' ')}
                   </p>
                 )}
+                {/* Share Table/Tab button */}
+                {orderId && (
+                  <button
+                    onClick={() => setShowShareOwnership(true)}
+                    style={{
+                      marginTop: '4px',
+                      fontSize: '11px',
+                      fontWeight: 500,
+                      color: '#a78bfa',
+                      padding: '2px 8px',
+                      background: 'rgba(167, 139, 250, 0.15)',
+                      border: '1px solid rgba(167, 139, 250, 0.3)',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Share
+                  </button>
+                )}
                 {/* Card status */}
                 {hasCard !== undefined && (
                   <div style={{ marginTop: '6px' }}>
@@ -727,6 +756,17 @@ export function OrderPanel({
           onAutoShowPaymentHandled={onAutoShowPaymentHandled}
         />
       </div>
+
+      {/* Shared Ownership Modal */}
+      {orderId && locationId && employeeId && (
+        <SharedOwnershipModal
+          orderId={orderId}
+          locationId={locationId}
+          employeeId={employeeId}
+          isOpen={showShareOwnership}
+          onClose={() => setShowShareOwnership(false)}
+        />
+      )}
     </div>
   )
 }

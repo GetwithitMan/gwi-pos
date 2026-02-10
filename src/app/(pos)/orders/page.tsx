@@ -2631,6 +2631,7 @@ export default function OrdersPage() {
             tabName={currentOrder?.tabName}
             tableId={currentOrder?.tableId}
             locationId={employee.location.id}
+            employeeId={employee.id}
             items={orderPanelItems}
             subtotal={pricing.subtotal}
             cashSubtotal={pricing.cashSubtotal}
