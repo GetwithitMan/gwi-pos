@@ -76,6 +76,7 @@
 | 236 | Comp/Void from BartenderView | DONE | Orders | 235 | Added onOpenCompVoid callback prop to BartenderView, wired in orders/page.tsx to open CompVoidModal. Previously showed "coming soon" toast. |
 | 237 | Waste Tracking (Was It Made?) | DONE | Orders | 34 | Added wasMade field to CompVoidModal UI (Yes/No buttons), VoidLog schema, and OrderItem schema. API uses explicit wasMade from UI instead of guessing from reason text. |
 | 238 | VOID/COMP Stamps on Order Panel | PARTIAL | Orders | 237, 234 | VOID/COMP badges, strikethrough name, $0.00 price, waste indicator on OrderPanelItem. Added status/voidReason/wasMade to order store, response mapper, FloorPlanHome shim. Fix applied but needs verification. |
+| 248 | Socket Layer + Fetch Consolidation | DONE | Orders | 217 | Eliminated ~40 req/min: replaced 3s entertainment + open orders polling with useOrderSockets hook, removed 5 redundant post-mutation refetches, debounced tabsRefreshTrigger, wired dispatchOpenOrdersChanged + dispatchEntertainmentStatusChanged into API routes, fixed ORDER_TOTALS_UPDATE silent 400 |
 
 ### Table Management
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -240,7 +241,7 @@
 | Foundation | 3 | 0 | 1 | 4 | 75% |
 | Order Flow | 7 | 1 | 0 | 8 | 94% |
 | Payment | 11 | 0 | 0 | 11 | 100% |
-| Advanced Orders | 12 | 2 | 0 | 14 | 93% |
+| Advanced Orders | 13 | 2 | 0 | 15 | 93% |
 | Table Management | 4 | 0 | 0 | 4 | 100% |
 | Bar Features | 2 | 1 | 0 | 3 | 83% |
 | Kitchen Display | 4 | 1 | 2 | 7 | 71% |
@@ -258,7 +259,7 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **142** | **8** | **13** | **163** | **92%** |
+| **TOTAL** | **143** | **8** | **13** | **164** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 

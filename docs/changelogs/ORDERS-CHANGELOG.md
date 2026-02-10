@@ -1,5 +1,99 @@
 # Orders Domain - Change Log
 
+## Session: February 9, 2026 (Socket Layer + Fetch Consolidation)
+
+### Skills Completed
+| Skill | Name | Status |
+|-------|------|--------|
+| 247 | Tab Incremental Auth & Re-Auth Flow | DONE |
+| 248 | Socket Layer + Fetch Consolidation | DONE |
+
+### Skill 247: Tab Incremental Auth & Re-Auth Flow
+- IncrementalAuthByRecordNo via Datacap (card-not-present, stored RecordNo token)
+- "Re-Auth ••••1234" button replaces "Start a Tab" when card on file
+- Configurable tip buffer (default 25%) in `/settings` under "Bar Tab / Pre-Auth"
+- Force vs Auto increment modes (force bypasses threshold, no minimum floor)
+- Admin settings: `incrementTipBufferPercent`, `incrementThresholdPercent`, `incrementAmount`, `maxTabAlertAmount`
+- Updates both `OrderCard.authAmount` AND `order.preAuthAmount` in transaction
+
+### Skill 248: Socket Layer + Fetch Consolidation
+Full plan implemented across 2 phases to eliminate ~40 req/min of polling and redundant fetches.
+
+**Phase 1 — Quick Wins (No New Socket Infrastructure):**
+- **1A: Removed 5 redundant post-mutation refetches** — `handleHoldToggle`, `handleNoteEdit`, `handleCourseChange`, `handleSeatChange`, `handleResend` now just call shared handlers (which already update Zustand store)
+- **1B: Fixed startEntertainmentTimers** — reads from `useOrderStore.getState().currentOrder?.items` instead of fetching `GET /api/orders/{orderId}`
+- **1C: Debounced loadOpenOrdersCount** — 300ms debounce collapses rapid `tabsRefreshTrigger` bursts (11 call sites) into single fetch
+- **1D: Throttled loadMenu** — leading-edge throttle for post-mutation loadMenu calls; reduced entertainment polling from 3s to 10s
+
+**Phase 2 — Socket Layer:**
+- **2A: Added ORDER_TOTALS_UPDATE + OPEN_ORDERS_CHANGED** to broadcast route (was silently 400ing from 4 API routes)
+- **2B: Added `dispatchOpenOrdersChanged`** function to socket-dispatch.ts
+- **2C: Wired `dispatchOpenOrdersChanged`** into orders create + pay API routes (fire-and-forget)
+- **2D: Wired `dispatchEntertainmentStatusChanged`** into entertainment block-time (POST/PATCH/DELETE), status (PATCH), and send route — function existed but was never called
+- **2E: Created `useOrderSockets` hook** — lightweight client hook following useKDSSockets pattern, `callbacksRef` to avoid reconnects, named handlers with explicit `off()` cleanup
+- **2F: Wired `useOrderSockets` into orders/page.tsx** — `onOpenOrdersChanged` triggers debounced count refresh, `onEntertainmentStatusChanged` patches specific menu item in local state (no full reload). Replaced 10s entertainment polling with socket + visibility-change fallback.
+- **2G: Replaced OpenOrdersPanel 3s polling** — removed `setInterval(() => loadOrders(), 3000)` and `window.focus` listener, replaced with `useOrderSockets` subscription + visibility-change fallback
+
+**Nits Fixed:**
+- Removed `order:created` listener (double-refresh — `orders:list-changed` already covers creates; `order:created` is a KDS event at send time)
+- Added explicit `socket.off()` calls on cleanup for all 7 listeners
+- Reduced `reconnectionAttempts` from 10 to 3, increased delay (less aggressive in dev without socket server)
+- Downgraded `connect_error` from `console.error` to `console.warn`
+
+### Other Work This Session
+- **A++++ Pricing Checklist** (5 items): syncServerTotals Zustand method, removed dead handlePaymentComplete/handlePaymentSuccess (62 lines), fixed PaymentModal orderTotal=0 prop, fixed quick-pick quantity closure drift, tax-inclusive documentation
+- **Cash rounding fix** in PaymentModal (`applyPriceRounding` to cashTotal)
+- **Deleted legacy "order-entry" view** (~1850 lines of dead code)
+- **Dead code cleanup**: 18+ unused imports, 12+ dead state vars, 10+ dead handlers
+
+### Impact
+| Change | Savings |
+|--------|---------|
+| Entertainment polling removed | ~6 req/min → 0 |
+| Open orders polling removed | ~20 req/min → 0 |
+| 5 redundant refetches removed | 5 fewer GETs per user action |
+| Debounced tabs refresh | 2-3 fewer GETs per burst |
+| Dead code removed | ~1,850+ lines deleted |
+| **Total steady-state** | **~40 req/min eliminated** |
+
+### Files Created
+- `src/hooks/useOrderSockets.ts` — Client socket hook (160 lines)
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/app/(pos)/orders/page.tsx` | Removed 5 refetches, fixed entertainment timers, debounce, throttle, wired useOrderSockets, deleted dead code, pricing fixes |
+| `src/components/orders/OpenOrdersPanel.tsx` | Replaced 3s polling with useOrderSockets |
+| `src/stores/order-store.ts` | Added syncServerTotals method |
+| `src/components/payment/PaymentModal.tsx` | Cash rounding fix, orderTotal prop fix |
+| `src/app/api/internal/socket/broadcast/route.ts` | Added ORDER_TOTALS_UPDATE + OPEN_ORDERS_CHANGED cases |
+| `src/lib/socket-dispatch.ts` | Added dispatchOpenOrdersChanged function |
+| `src/app/api/orders/route.ts` | Fire dispatchOpenOrdersChanged on create |
+| `src/app/api/orders/[id]/pay/route.ts` | Fire dispatchOpenOrdersChanged on pay |
+| `src/app/api/entertainment/block-time/route.ts` | Fire dispatchEntertainmentStatusChanged on POST/PATCH/DELETE |
+| `src/app/api/entertainment/status/route.ts` | Fire dispatchEntertainmentStatusChanged on PATCH |
+| `src/app/api/orders/[id]/send/route.ts` | Fire dispatchEntertainmentStatusChanged for entertainment items |
+| `src/app/api/orders/[id]/auto-increment/route.ts` | Tab incremental auth with tip buffer, force mode |
+| `src/components/orders/OrderPanelActions.tsx` | Re-Auth button label |
+| `src/hooks/useOrderSettings.ts` | incrementTipBufferPercent default |
+
+### Bugs Found / Fixed
+1. **ORDER_TOTALS_UPDATE silent 400** — `dispatchOrderTotalsUpdate` was called from 4 API routes but broadcast route had no matching case. All dispatches silently failed.
+2. **dispatchEntertainmentStatusChanged never called** — Function existed in socket-dispatch.ts but zero API routes fired it.
+3. **handleResend double refetch** — sharedResend already calls loadOrder(), then orders/page.tsx refetched again.
+4. **Dead payment handlers** — handlePaymentComplete (26 lines) and handlePaymentSuccess (36 lines) were never called after legacy view deletion.
+5. **order:created double-refresh** — Socket hook listened for both `orders:list-changed` and `order:created`, causing double refresh on send-to-kitchen.
+6. **Socket timeout in dev** — reconnectionAttempts=10 with 1s delay spammed console. Reduced to 3 attempts with 2s delay.
+
+### Next Session Priority
+1. **T-044 (P0)**: Verify VOID/COMP stamps render on FloorPlanHome
+2. **T-038 (P2)**: Fix usePOSLayout Failed to fetch timing
+3. **T-040 (P1)**: Verify per-item delay countdown + auto-fire
+4. Closed Orders Management (Skill 114)
+5. Bar Tabs UI improvements (Skill 20)
+
+---
+
 ## Session: February 7, 2026 (Late Night — BartenderView Unification & Void/Comp)
 
 ### Skills Completed

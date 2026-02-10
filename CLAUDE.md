@@ -2108,6 +2108,21 @@ toast.error('Connection lost', 8000)
 | 20.29 | Rapid updates all propagate | Add 5 items in 500ms → verify all 5 ORDER_TOTALS_UPDATE events fire | ⬜ |
 | 20.30 | Large order totals update | 50-item order total updated → verify correct totals in socket event | ⬜ |
 
+### 21. Socket Layer + Fetch Consolidation (Skill 248)
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 21.1 | No 3s polling in Network tab | Open /orders → Network tab → wait 30s → verify no repeating /api/orders/open or /api/menu requests | ⬜ |
+| 21.2 | Open orders update cross-terminal via socket | Open two browser tabs → create order in tab A → verify tab B's Open Orders panel updates within 1s | ⬜ |
+| 21.3 | Entertainment status via socket | Start entertainment session → verify other terminals see status change without polling | ⬜ |
+| 21.4 | Hold/note/course/seat feel instant | Hold an item → verify no loading flash or flicker (store already updated) | ⬜ |
+| 21.5 | Resend doesn't double-fetch | Resend item → verify only 1 GET /api/orders/[id] in Network tab (not 2) | ⬜ |
+| 21.6 | Visibility-change fallback works | Switch to another app → switch back → verify open orders refresh on return | ⬜ |
+| 21.7 | Socket graceful degradation (no server) | Dev mode (no socket server) → verify no red console errors, only warnings | ⬜ |
+| 21.8 | Payment triggers open orders refresh | Pay order on terminal A → verify terminal B's Open Orders panel removes it within 1s | ⬜ |
+| 21.9 | Debounced tabsRefreshTrigger | Rapid actions (split + void + pay) → verify only 1 /api/orders/open fetch in Network | ⬜ |
+| 21.10 | OPEN_ORDERS_CHANGED broadcast route works | Fire dispatchOpenOrdersChanged → verify broadcast route returns 200 (not 400) | ⬜ |
+
 ---
 
 ### Test Status Legend
