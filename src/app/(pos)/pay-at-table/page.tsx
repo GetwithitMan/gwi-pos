@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import TablePayment from '@/components/pay-at-table/TablePayment'
 import SplitSelector from '@/components/pay-at-table/SplitSelector'
@@ -24,6 +24,14 @@ interface OrderSummary {
 }
 
 export default function PayAtTablePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-950" />}>
+      <PayAtTableContent />
+    </Suspense>
+  )
+}
+
+function PayAtTableContent() {
   const searchParams = useSearchParams()
   const orderId = searchParams.get('orderId')
   const readerId = searchParams.get('readerId')

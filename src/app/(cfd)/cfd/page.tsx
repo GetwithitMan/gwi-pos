@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CFDIdleScreen from '@/components/cfd/CFDIdleScreen'
 import CFDOrderDisplay from '@/components/cfd/CFDOrderDisplay'
@@ -18,6 +18,14 @@ import type {
 import { CFD_EVENTS } from '@/types/multi-surface'
 
 export default function CFDPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+      <CFDContent />
+    </Suspense>
+  )
+}
+
+function CFDContent() {
   const searchParams = useSearchParams()
   const terminalId = searchParams.get('terminalId')
 

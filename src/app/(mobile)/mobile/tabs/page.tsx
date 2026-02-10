@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import MobileTabCard from '@/components/mobile/MobileTabCard'
 
@@ -29,6 +29,14 @@ interface MobileTab {
 }
 
 export default function MobileTabsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-950" />}>
+      <MobileTabsContent />
+    </Suspense>
+  )
+}
+
+function MobileTabsContent() {
   const searchParams = useSearchParams()
   const employeeId = searchParams.get('employeeId')
 

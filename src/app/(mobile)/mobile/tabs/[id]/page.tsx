@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, use, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import MobileTabActions from '@/components/mobile/MobileTabActions'
 
@@ -38,6 +38,14 @@ export default function MobileTabDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id: tabId } = use(params)
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-950" />}>
+      <MobileTabDetailContent tabId={tabId} />
+    </Suspense>
+  )
+}
+
+function MobileTabDetailContent({ tabId }: { tabId: string }) {
   const searchParams = useSearchParams()
   const employeeId = searchParams.get('employeeId')
 
