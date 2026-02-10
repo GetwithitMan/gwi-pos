@@ -98,7 +98,7 @@ export async function processSale(
     paymentMethod: 'card',
   })
 
-  logger.payment('Processing sale with intent tracking', {
+  logger.debug('Processing sale with intent tracking', {
     intentId: intent.id,
     orderId: params.orderId,
     amount: totalAmount,
@@ -132,7 +132,7 @@ export async function processSale(
     // Step 5: Mark as captured if approved
     if (isApproved) {
       await PaymentIntentManager.recordCapture(intent.id)
-      logger.payment('Sale completed successfully', {
+      logger.debug('Sale completed successfully', {
         intentId: intent.id,
         authCode: response.authCode,
       })
@@ -196,7 +196,7 @@ export async function openBarTab(
     paymentMethod: 'card',
   })
 
-  logger.payment('Opening bar tab with pre-auth', {
+  logger.debug('Opening bar tab with pre-auth', {
     intentId: intent.id,
     orderId: params.orderId,
     preAuthAmount: params.preAuthAmount,
@@ -222,7 +222,7 @@ export async function openBarTab(
     })
 
     if (isApproved) {
-      logger.payment('Bar tab opened successfully', {
+      logger.debug('Bar tab opened successfully', {
         intentId: intent.id,
         recordNo: response.recordNo,
       })
@@ -258,7 +258,7 @@ export async function closeBarTab(
   client: DatacapClient,
   params: CloseBarTabParams
 ): Promise<SaleResult> {
-  logger.payment('Closing bar tab', {
+  logger.debug('Closing bar tab', {
     intentId: params.intentId,
     recordNo: params.recordNo,
     finalAmount: params.finalAmount,
@@ -277,7 +277,7 @@ export async function closeBarTab(
 
     if (isApproved) {
       await PaymentIntentManager.recordCapture(params.intentId)
-      logger.payment('Bar tab closed successfully', {
+      logger.debug('Bar tab closed successfully', {
         intentId: params.intentId,
       })
     } else {
@@ -325,7 +325,7 @@ export async function voidPayment(
   client: DatacapClient,
   params: VoidPaymentParams
 ): Promise<SaleResult> {
-  logger.payment('Voiding payment', {
+  logger.debug('Voiding payment', {
     intentId: params.intentId,
     recordNo: params.recordNo,
   })
@@ -345,7 +345,7 @@ export async function voidPayment(
         params.intentId,
         'Payment voided successfully'
       )
-      logger.payment('Payment voided successfully', {
+      logger.debug('Payment voided successfully', {
         intentId: params.intentId,
       })
     }

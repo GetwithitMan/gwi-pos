@@ -384,7 +384,7 @@ class PaymentIntentManagerClass {
       const skippedCount = allPending.length - readyToRetry.length
 
       if (skippedCount > 0) {
-        logger.payment(
+        logger.debug(
           `Skipping ${skippedCount} intents due to backoff delay`,
           { skippedCount, totalPending: allPending.length }
         )
@@ -473,7 +473,7 @@ class PaymentIntentManagerClass {
               await offlineDb.paymentIntents.put(intent)
 
               const nextDelay = calculateBackoffDelay(intent.attempts)
-              logger.payment(
+              logger.debug(
                 `Intent ${intent.id} will retry in ${Math.round(nextDelay / 1000)}s (attempt ${intent.attempts}/${BACKOFF_CONFIG.maxRetries})`,
                 { orderId: intent.orderId, attempts: intent.attempts, nextDelayMs: nextDelay }
               )
@@ -504,7 +504,7 @@ class PaymentIntentManagerClass {
         } else {
           await offlineDb.paymentIntents.put(intent)
           const nextDelay = calculateBackoffDelay(intent.attempts)
-          logger.payment(
+          logger.debug(
             `Intent ${intent.id} will retry after network error in ${Math.round(nextDelay / 1000)}s`,
             { orderId: intent.orderId, attempts: intent.attempts }
           )

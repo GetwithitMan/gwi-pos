@@ -58,8 +58,8 @@ export type {
 } from './types'
 
 // ─── Validation & Helpers ─────────────────────────────────────────────────────
+export { validateDatacapConfig } from './types'
 export {
-  validateDatacapConfig,
   validateRequiredFields,
   validateAmounts,
 } from './xml-builder'

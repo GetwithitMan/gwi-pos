@@ -39,6 +39,8 @@ export interface DatacapResult {
   approved: boolean
   authCode?: string
   refNumber?: string
+  recordNo?: string
+  sequenceNo?: string
   cardBrand?: string
   cardLast4?: string
   entryMethod?: 'Chip' | 'Tap' | 'Swipe' | 'Manual'
@@ -68,6 +70,7 @@ interface DatacapDeviceInfo {
 interface UseDatacapOptions {
   terminalId: string
   employeeId: string
+  locationId?: string
   onSuccess?: (result: DatacapResult) => void
   onDeclined?: (reason: string) => void
   onError?: (error: string) => void
@@ -88,6 +91,7 @@ interface UseDatacapReturn {
     orderId: string
     amount: number
     tipAmount?: number
+    tipMode?: string
     tranType?: 'Sale' | 'Auth'
   }) => Promise<DatacapResult | null>
 
@@ -340,6 +344,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
     orderId: string
     amount: number
     tipAmount?: number
+    tipMode?: string
     tranType?: 'Sale' | 'Auth'
   }): Promise<DatacapResult | null> => {
     if (!reader) {

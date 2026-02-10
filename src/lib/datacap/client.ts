@@ -204,7 +204,7 @@ export class DatacapClient {
     const timer = setTimeout(() => controller.abort(), timeout)
 
     try {
-      logger.datacap('Sending request to local reader', { readerId: reader.id, url, timeout })
+      logger.debug('[datacap] Sending request to local reader', { readerId: reader.id, url, timeout })
 
       const res = await fetch(url, {
         method: 'POST',
@@ -220,7 +220,7 @@ export class DatacapClient {
 
       const responseXml = await res.text()
       const response = parseResponse(responseXml)
-      logger.datacap('Received response from local reader', { readerId: reader.id, cmdStatus: response.cmdStatus })
+      logger.debug('[datacap] Received response from local reader', { readerId: reader.id, cmdStatus: response.cmdStatus })
       return response
     } catch (error: unknown) {
       // Classify and throw network errors with context
@@ -244,7 +244,7 @@ export class DatacapClient {
     const timer = setTimeout(() => controller.abort(), timeout)
 
     try {
-      logger.datacap('Sending request to cloud', { url: this.config.cloudUrl, timeout })
+      logger.debug('[datacap] Sending request to cloud', { url: this.config.cloudUrl, timeout })
 
       const res = await fetch(this.config.cloudUrl, {
         method: 'POST',
@@ -263,7 +263,7 @@ export class DatacapClient {
 
       const responseXml = await res.text()
       const response = parseResponse(responseXml)
-      logger.datacap('Received response from cloud', { cmdStatus: response.cmdStatus })
+      logger.debug('[datacap] Received response from cloud', { cmdStatus: response.cmdStatus })
       return response
     } catch (error: unknown) {
       // Classify and throw network errors

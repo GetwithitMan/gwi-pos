@@ -46,6 +46,12 @@ export interface TipShareSettings {
   showTipSharesOnReceipt: boolean     // Include tip share breakdown on shift receipt
 }
 
+export interface ClockOutSettings {
+  requireSettledBeforeClockOut: boolean   // Check for open tabs/orders before allowing clock-out
+  requireTipsAdjusted: boolean           // Check for unadjusted tips before clock-out
+  allowTransferOnClockOut: boolean       // Allow transferring tabs/orders to another employee
+}
+
 export interface ReceiptSettings {
   headerText: string
   footerText: string
@@ -306,6 +312,7 @@ export interface LocationSettings {
   happyHour: HappyHourSettings
   barTabs: BarTabSettings
   posDisplay: POSDisplaySettings
+  clockOut: ClockOutSettings
   receiptDisplay: GlobalReceiptSettings  // Controls WHAT features are available in the Visual Editor
 }
 
@@ -439,6 +446,11 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     categoryButtonTextColor: null,
     showPriceOnMenuItems: true,
   },
+  clockOut: {
+    requireSettledBeforeClockOut: true,    // On by default (safe default — checks for open tabs/orders)
+    requireTipsAdjusted: false,            // Off by default (not all locations need this)
+    allowTransferOnClockOut: true,         // Allow transfers by default
+  },
   receiptDisplay: DEFAULT_GLOBAL_RECEIPT_SETTINGS,
 }
 
@@ -493,6 +505,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     posDisplay: {
       ...DEFAULT_SETTINGS.posDisplay,
       ...(partial.posDisplay || {}),
+    },
+    clockOut: {
+      ...DEFAULT_SETTINGS.clockOut,
+      ...(partial.clockOut || {}),
     },
     receiptDisplay: mergeGlobalReceiptSettings(partial.receiptDisplay),
   }

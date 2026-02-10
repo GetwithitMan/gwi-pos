@@ -12,10 +12,3 @@ export { CardProcessingStep } from './CardProcessingStep'
 export { GiftCardStep } from './GiftCardStep'
 export { HouseAccountStep } from './HouseAccountStep'
 
-// Re-export types for convenience
-export type { default as PaymentMethodStepProps } from './PaymentMethodStep'
-export type { default as TipEntryStepProps } from './TipEntryStep'
-export type { default as CashEntryStepProps } from './CashEntryStep'
-export type { default as CardProcessingStepProps } from './CardProcessingStep'
-export type { default as GiftCardStepProps } from './GiftCardStep'
-export type { default as HouseAccountStepProps } from './HouseAccountStep'

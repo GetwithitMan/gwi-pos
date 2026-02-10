@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { formatCurrency } from '@/lib/utils'
-import { calculateCardPrice } from '@/lib/pricing'
+import { calculateCardPrice, applyPriceRounding } from '@/lib/pricing'
 import { calculateTip, getQuickCashAmounts, calculateChange, PAYMENT_METHOD_LABELS } from '@/lib/payment'
-import type { DualPricingSettings, TipSettings, PaymentSettings } from '@/lib/settings'
+import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings } from '@/lib/settings'
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
 
@@ -29,6 +29,7 @@ interface PaymentModalProps {
   dualPricing: DualPricingSettings
   tipSettings?: TipSettings
   paymentSettings: PaymentSettings
+  priceRounding?: PriceRoundingSettings
   onPaymentComplete: () => void
   employeeId?: string
   terminalId?: string  // Required for Datacap integration
@@ -92,6 +93,7 @@ export function PaymentModal({
   dualPricing,
   tipSettings = DEFAULT_TIP_SETTINGS,
   paymentSettings,
+  priceRounding,
   onPaymentComplete,
   employeeId,
   terminalId,
@@ -178,8 +180,10 @@ export function PaymentModal({
   const discountPercent = dualPricing.cashDiscountPercent || 4.0
 
   const cashTotal = useMemo(
-    () => remainingBeforeTip, // Original/stored price
-    [remainingBeforeTip]
+    () => priceRounding
+      ? applyPriceRounding(remainingBeforeTip, priceRounding, 'cash')
+      : remainingBeforeTip,
+    [remainingBeforeTip, priceRounding]
   )
 
   const cardTotal = useMemo(

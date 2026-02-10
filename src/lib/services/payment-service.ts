@@ -133,7 +133,7 @@ export class PaymentService {
    */
   async processPayment(request: PaymentRequest): Promise<ServiceResult<PaymentResponse>> {
     try {
-      logger.payment('Processing payment', {
+      logger.debug('Processing payment', {
         orderId: request.orderId,
         paymentCount: request.payments.length,
         employeeId: request.employeeId,
@@ -164,7 +164,7 @@ export class PaymentService {
         }
       }
 
-      logger.payment('Payment successful', {
+      logger.debug('Payment successful', {
         orderId: request.orderId,
         paymentCount: data.payments?.length || 0,
       })
@@ -190,7 +190,7 @@ export class PaymentService {
    */
   async voidItems(request: VoidRequest): Promise<ServiceResult<VoidResponse>> {
     try {
-      logger.payment('Voiding items', {
+      logger.debug('Voiding items', {
         orderId: request.orderId,
         itemCount: request.itemIds?.length || 0,
         reason: request.reason,
