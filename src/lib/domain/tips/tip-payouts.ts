@@ -105,7 +105,8 @@ export async function cashOutTips(params: {
       : `Cash payout (approved by: ${approvedById})`
     : memo || 'Cash payout'
 
-  // Post debit to ledger
+  // Post debit to ledger (with idempotency — Skill 284)
+  const payoutId = crypto.randomUUID()
   const result = await postToTipLedger({
     locationId,
     employeeId,
@@ -114,6 +115,7 @@ export async function cashOutTips(params: {
     sourceType: 'PAYOUT_CASH',
     shiftId,
     memo: entryMemo,
+    idempotencyKey: `payout:${payoutId}`,
   })
 
   return {
@@ -177,8 +179,9 @@ export async function batchPayrollPayout(params: {
   }
 
   const payrollMemo = memo || `Payroll payout (processed by: ${processedById})`
+  const batchId = crypto.randomUUID()
 
-  // Process each employee's payout
+  // Process each employee's payout (with idempotency — Skill 284)
   const entries: BatchPayoutResult['entries'] = []
   let totalPaidOutCents = 0
 
@@ -190,6 +193,7 @@ export async function batchPayrollPayout(params: {
       type: 'DEBIT',
       sourceType: 'PAYOUT_PAYROLL',
       memo: payrollMemo,
+      idempotencyKey: `batch:${batchId}:${ledger.employeeId}`,
     })
 
     const employeeName = ledger.employee.displayName

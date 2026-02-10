@@ -1,14 +1,11 @@
-// Migrated from legacy TipBank/TipShare (Skill 273)
-// Reads now use TipLedgerEntry instead of TipShare/TipBank.
-// Write operations (POST) are legacy-only stubs — will be removed when
-// the payout flow is fully migrated to the ledger system.
+// Reads use TipLedgerEntry (migrated from legacy models in Skill 273).
+// TipBank model removed in Skill 284. TipShare remains for payout lifecycle.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { centsToDollars, getLedgerBalance } from '@/lib/domain/tips'
 
 // GET - Get pending tips for an employee
-// Migrated from legacy TipBank/TipShare (Skill 273)
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -85,7 +82,6 @@ export async function GET(
     }
 
     // ── Banked tips: DIRECT_TIP and TIP_GROUP credits ────────────────────
-    // These replace the old db.tipBank.findMany({ status: 'pending' })
     const bankedCredits = await db.tipLedgerEntry.findMany({
       where: {
         employeeId,
@@ -161,7 +157,7 @@ export async function GET(
 // In the ledger system, tip collection happens via PAYOUT_CASH or PAYOUT_PAYROLL debit
 // entries (see /api/tips/payouts). This legacy endpoint is kept for backward compatibility
 // until the UI is migrated to use the payout flow. Once migrated, remove this handler.
-// Migrated from legacy TipBank/TipShare (Skill 273)
+// POST - Accept/collect tips (updates TipShare status only — TipBank removed in Skill 284)
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -174,8 +170,7 @@ export async function POST(
     const now = new Date()
 
     if (action === 'collect' || action === 'collect_all' || action === 'accept' || action === 'accept_all') {
-      // Legacy: mark old TipShare and TipBank records as accepted.
-      // These writes target the deprecated models for backward compatibility.
+      // Mark TipShare records as accepted (employee acknowledged).
       // New tip flows use TipLedgerEntry exclusively (see /api/tips/payouts).
 
       // Update all pending tip shares to accepted (employee acknowledged)
@@ -202,18 +197,6 @@ export async function POST(
         },
       })
 
-      // Update all pending tip bank entries to accepted
-      const updatedTipBank = await db.tipBank.updateMany({
-        where: {
-          employeeId: employeeId,
-          status: 'pending',
-        },
-        data: {
-          status: 'accepted',
-          collectedAt: now,
-        },
-      })
-
       const totalAccepted = updatedPendingShares.count + updatedBankedShares.count
 
       return NextResponse.json({
@@ -221,7 +204,6 @@ export async function POST(
         acceptedCount: totalAccepted,
         pendingSharesAccepted: updatedPendingShares.count,
         bankedSharesAccepted: updatedBankedShares.count,
-        tipBankEntriesAccepted: updatedTipBank.count,
         acceptedAt: now.toISOString(),
       })
     }

@@ -51,7 +51,6 @@ async function main() {
     { label: 'TipShare', run: () => prisma.tipShare.deleteMany(w) },
     { label: 'TipPoolEntry', run: () => prisma.tipPoolEntry.deleteMany(w) },
     { label: 'TipPool', run: () => prisma.tipPool.deleteMany(w) },
-    { label: 'TipBank', run: () => prisma.tipBank.deleteMany(w) },
     { label: 'TipOutRule', run: () => prisma.tipOutRule.deleteMany(w) },
     { label: 'SpiritModifierGroup', run: () => prisma.spiritModifierGroup.deleteMany(w) },
     { label: 'RecipeIngredient', run: () => prisma.recipeIngredient.deleteMany(w) },

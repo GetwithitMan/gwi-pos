@@ -136,7 +136,10 @@ export async function POST(request: NextRequest) {
     const fromName = fromEmployee.displayName || `${fromEmployee.firstName} ${fromEmployee.lastName}`
     const toName = toEmployee.displayName || `${toEmployee.firstName} ${toEmployee.lastName}`
 
-    // ── Create paired ledger entries ──────────────────────────────────────
+    // ── Create paired ledger entries (with idempotency — Skill 284) ─────
+    // Generate a unique transfer ID for idempotency keys
+    const transferId = crypto.randomUUID()
+
     // DEBIT from sender
     const debitEntry = await postToTipLedger({
       locationId,
@@ -145,6 +148,7 @@ export async function POST(request: NextRequest) {
       type: 'DEBIT',
       sourceType: 'MANUAL_TRANSFER',
       memo: memo || `Transfer to ${toName}`,
+      idempotencyKey: `transfer:${transferId}:DEBIT`,
     })
 
     // CREDIT to receiver
@@ -155,6 +159,7 @@ export async function POST(request: NextRequest) {
       type: 'CREDIT',
       sourceType: 'MANUAL_TRANSFER',
       memo: `Transfer from ${fromName}`,
+      idempotencyKey: `transfer:${transferId}:CREDIT`,
     })
 
     // ── Return success ────────────────────────────────────────────────────

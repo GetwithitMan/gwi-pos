@@ -405,19 +405,6 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      // Also update tip bank entries
-      await db.tipBank.updateMany({
-        where: {
-          employeeId,
-          locationId,
-          status: { in: ['pending', 'accepted'] },
-        },
-        data: {
-          status: 'paid_out',
-          collectedAt: now,
-        },
-      })
-
       return NextResponse.json({
         message: `Marked all tip shares for employee as paid out`,
         updatedCount: updated.count,

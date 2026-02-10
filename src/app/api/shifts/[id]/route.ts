@@ -624,10 +624,9 @@ async function processTipDistribution(
       },
     })
 
-    // Post paired ledger entries (fire-and-forget, outside tx)
-    // Debit giver + Credit receiver
+    // Post paired ledger entries INSIDE the transaction (Skill 284)
     const tipAmountCents = dollarsToCents(effectiveAmount)
-    postToTipLedger({
+    await postToTipLedger({
       locationId,
       employeeId: fromEmployeeId,
       amountCents: tipAmountCents,
@@ -636,9 +635,9 @@ async function processTipDistribution(
       sourceId: tipShare.id,
       shiftId,
       memo: `Role tip-out to ${tipOut.toRoleId}`,
-    }).catch(err => console.error('Tip ledger DEBIT failed (role tipout):', err))
+    }, tx)
 
-    postToTipLedger({
+    await postToTipLedger({
       locationId,
       employeeId: toEmployeeId,
       amountCents: tipAmountCents,
@@ -647,21 +646,7 @@ async function processTipDistribution(
       sourceId: tipShare.id,
       shiftId,
       memo: `Role tip-out from shift close`,
-    }).catch(err => console.error('Tip ledger CREDIT failed (role tipout):', err))
-
-    // If banked, create TipBank entry
-    if (status === 'banked') {
-      await tx.tipBank.create({
-        data: {
-          locationId,
-          employeeId: toEmployeeId,
-          amount: effectiveAmount,
-          source: 'tip_share',
-          sourceId: tipShare.id,
-          status: 'pending',
-        },
-      })
-    }
+    }, tx)
   }
 
   // Process custom shares
@@ -684,9 +669,9 @@ async function processTipDistribution(
       },
     })
 
-    // Post paired ledger entries (fire-and-forget, outside tx)
+    // Post paired ledger entries INSIDE the transaction (Skill 284)
     const shareAmountCents = dollarsToCents(share.amount)
-    postToTipLedger({
+    await postToTipLedger({
       locationId,
       employeeId: fromEmployeeId,
       amountCents: shareAmountCents,
@@ -695,9 +680,9 @@ async function processTipDistribution(
       sourceId: tipShare.id,
       shiftId,
       memo: `Custom tip share`,
-    }).catch(err => console.error('Tip ledger DEBIT failed (custom share):', err))
+    }, tx)
 
-    postToTipLedger({
+    await postToTipLedger({
       locationId,
       employeeId: share.toEmployeeId,
       amountCents: shareAmountCents,
@@ -706,20 +691,6 @@ async function processTipDistribution(
       sourceId: tipShare.id,
       shiftId,
       memo: `Custom tip share received`,
-    }).catch(err => console.error('Tip ledger CREDIT failed (custom share):', err))
-
-    // If banked, create TipBank entry
-    if (status === 'banked') {
-      await tx.tipBank.create({
-        data: {
-          locationId,
-          employeeId: share.toEmployeeId,
-          amount: share.amount,
-          source: 'tip_share',
-          sourceId: tipShare.id,
-          status: 'pending',
-        },
-      })
-    }
+    }, tx)
   }
 }

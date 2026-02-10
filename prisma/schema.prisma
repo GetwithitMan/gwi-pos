@@ -78,7 +78,6 @@ model Location {
   // Tip Sharing
   tipOutRules    TipOutRule[]
   tipShares      TipShare[]
-  tipBank        TipBank[]
   tipPoolEntries TipPoolEntry[]
 
   // Tip Bank Ledger (Skill 250)
@@ -420,8 +419,6 @@ model Employee {
   // Tip sharing relations
   tipSharesGiven    TipShare[] @relation("TipShareFrom")
   tipSharesReceived TipShare[] @relation("TipShareTo")
-  tipBank           TipBank[]
-
   // Tip Bank Ledger (Skill 250)
   tipLedgers       TipLedger[]
   tipLedgerEntries TipLedgerEntry[]
@@ -2354,13 +2351,12 @@ model AuditLog {
 // ============================================
 // TIPPING (Skill 06)
 // ============================================
-// ⚠️ DEPRECATED MODELS (Skill 273): TipPool, TipPoolEntry, TipShare, TipBank
-// These legacy models are superseded by the TipLedger system (TipLedger,
-// TipLedgerEntry, TipTransaction). All new tip flows use the ledger.
-// These models are retained for historical data only. Do NOT write new code
-// that creates records in these models. Report queries should read from
-// TipLedgerEntry instead. These models will be removed in a future migration
-// once all historical data has been migrated to ledger entries.
+// ⚠️ DEPRECATED MODELS (Skill 273): TipPool, TipPoolEntry, TipShare
+// TipBank model REMOVED in Skill 284. These remaining legacy models are
+// superseded by the TipLedger system (TipLedger, TipLedgerEntry, TipTransaction).
+// All new tip flows use the ledger. These models are retained for historical
+// data only. Do NOT write new code that creates records in these models.
+// Report queries should read from TipLedgerEntry instead.
 // ============================================
 
 model TipPool {
@@ -2483,47 +2479,10 @@ model TipShare {
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  tipBankEntry TipBank?
-
   @@index([locationId])
   @@index([shiftId])
   @@index([fromEmployeeId])
   @@index([toEmployeeId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-// @deprecated — Use TipLedger.currentBalanceCents and TipLedgerEntry instead (Skill 273)
-// Tracks uncollected tips for employees not on shift
-// Goes to payroll or future collection
-model TipBank {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id])
-
-  amount   Decimal
-  source   String // 'tip_share' | 'tip_pool'
-  sourceId String? @unique // TipShare.id or TipPoolEntry.id
-
-  tipShare TipShare? @relation(fields: [sourceId], references: [id])
-
-  status      String    @default("pending") // pending, collected, paid_out
-  collectedAt DateTime?
-  paidOutAt   DateTime?
-  payrollId   String? // If paid via payroll
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Sync fields (for cloud sync and soft deletes)
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  @@index([locationId])
-  @@index([employeeId])
   @@index([status])
   @@index([createdAt])
 }

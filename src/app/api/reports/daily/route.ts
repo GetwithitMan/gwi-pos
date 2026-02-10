@@ -844,11 +844,10 @@ export async function GET(request: NextRequest) {
         })).sort((a, b) => b.totalGiven - a.totalGiven),
       },
 
-      // All tip shares go to payroll - house holds the cash
-      // tipBank tracks legacy banked entries (can be removed once migrated)
+      // All tip shares go to payroll — house holds the cash
       tipBank: {
-        total: round(totalTipSharesDistributed),  // Total tip shares for payroll
-        pendingPayroll: round(totalTipSharesDistributed), // All goes to payroll
+        total: round(totalTipSharesDistributed),
+        pendingPayroll: round(totalTipSharesDistributed),
       },
 
       stats: {
