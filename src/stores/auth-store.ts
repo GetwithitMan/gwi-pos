@@ -1,6 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+interface AvailableRole {
+  id: string
+  name: string
+  cashHandlingMode: string
+  isPrimary: boolean
+}
+
 interface Employee {
   id: string
   firstName: string
@@ -16,6 +23,7 @@ interface Employee {
   }
   permissions: string[]
   isDevAccess?: boolean  // Super Admin dev access flag
+  availableRoles?: AvailableRole[]
 }
 
 interface AuthState {
@@ -24,11 +32,13 @@ interface AuthState {
   isAuthenticated: boolean
   clockedIn: boolean
   clockInTime: string | null
+  workingRole: AvailableRole | null
 
   // Actions
   login: (employee: Employee) => void
   logout: () => void
   setLocation: (locationId: string) => void
+  setWorkingRole: (role: AvailableRole) => void
   clockIn: () => void
   clockOut: () => void
 }
@@ -41,12 +51,14 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       clockedIn: false,
       clockInTime: null,
+      workingRole: null,
 
       login: (employee) =>
         set({
           employee,
           locationId: employee.location.id,
           isAuthenticated: true,
+          workingRole: null, // Reset on login — will be set if multi-role
         }),
 
       logout: () =>
@@ -55,10 +67,14 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           clockedIn: false,
           clockInTime: null,
+          workingRole: null,
         }),
 
       setLocation: (locationId) =>
         set({ locationId }),
+
+      setWorkingRole: (role) =>
+        set({ workingRole: role }),
 
       clockIn: () =>
         set({
@@ -70,6 +86,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           clockedIn: false,
           clockInTime: null,
+          workingRole: null, // Reset working role on clock out
         }),
     }),
     {

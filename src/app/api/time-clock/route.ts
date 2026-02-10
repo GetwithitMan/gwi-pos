@@ -84,10 +84,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, employeeId, notes } = body as {
+    const { locationId, employeeId, notes, workingRoleId } = body as {
       locationId: string
       employeeId: string
       notes?: string
+      workingRoleId?: string
     }
 
     if (!locationId || !employeeId) {
@@ -118,6 +119,7 @@ export async function POST(request: NextRequest) {
         employeeId,
         clockIn: new Date(),
         notes,
+        ...(workingRoleId ? { workingRoleId } : {}),
       },
       include: {
         employee: {

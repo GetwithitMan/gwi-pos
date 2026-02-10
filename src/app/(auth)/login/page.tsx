@@ -6,6 +6,7 @@ import { PinPad } from '@/components/ui/pin-pad'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDevStore } from '@/stores/dev-store'
+import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 
 function LoginContent() {
   const router = useRouter()
@@ -13,20 +14,31 @@ function LoginContent() {
   const login = useAuthStore((state) => state.login)
   const clockInStore = useAuthStore((state) => state.clockIn)
   const setHasDevAccess = useDevStore((state) => state.setHasDevAccess)
+  const setWorkingRole = useAuthStore((state) => state.setWorkingRole)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [showClockInPrompt, setShowClockInPrompt] = useState(false)
+  const [showRolePicker, setShowRolePicker] = useState(false)
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null)
   const [pendingEmployee, setPendingEmployee] = useState<{ id: string; locationId: string } | null>(null)
+  const [pendingAvailableRoles, setPendingAvailableRoles] = useState<{ id: string; name: string; cashHandlingMode: string; isPrimary: boolean }[]>([])
   const [clockingIn, setClockingIn] = useState(false)
 
-  const getRedirectPath = useCallback((employee: { defaultScreen?: string }) => {
+  const getRedirectPath = useCallback((employee: { defaultScreen?: string; permissions?: string[] }) => {
     const redirectParam = searchParams.get('redirect')
     if (redirectParam) return redirectParam
+
+    // Non-POS employees go to Crew Hub
+    if (employee.permissions && !hasPermission(employee.permissions, PERMISSIONS.POS_ACCESS)) {
+      return '/crew'
+    }
+
     const defaultScreen = employee.defaultScreen || 'orders'
     switch (defaultScreen) {
       case 'kds':
         return '/kds'
+      case 'crew':
+        return '/crew'
       case 'bar':
       case 'orders':
       default:
@@ -36,6 +48,13 @@ function LoginContent() {
 
   const handleClockInYes = async () => {
     if (!pendingEmployee) return
+    // If multi-role and no role selected yet, show role picker first
+    const workingRole = useAuthStore.getState().workingRole
+    if (pendingAvailableRoles.length > 1 && !workingRole) {
+      setShowClockInPrompt(false)
+      setShowRolePicker(true)
+      return
+    }
     setClockingIn(true)
     try {
       const res = await fetch('/api/time-clock', {
@@ -44,6 +63,7 @@ function LoginContent() {
         body: JSON.stringify({
           locationId: pendingEmployee.locationId,
           employeeId: pendingEmployee.id,
+          ...(workingRole ? { workingRoleId: workingRole.id } : {}),
         }),
       })
       if (res.ok) {
@@ -61,6 +81,13 @@ function LoginContent() {
   const handleClockInNo = () => {
     setShowClockInPrompt(false)
     if (pendingRedirect) router.push(pendingRedirect)
+  }
+
+  const handleRoleSelected = (role: { id: string; name: string; cashHandlingMode: string; isPrimary: boolean }) => {
+    setWorkingRole(role)
+    setShowRolePicker(false)
+    // Now proceed with clock-in using the selected role
+    setShowClockInPrompt(true)
   }
 
   const handlePinSubmit = async (pin: string) => {
@@ -87,6 +114,13 @@ function LoginContent() {
       login(data.employee)
 
       const redirect = getRedirectPath(data.employee)
+      const roles = data.employee.availableRoles || []
+
+      // If single role (or no EmployeeRole records), auto-select it
+      if (roles.length === 1) {
+        setWorkingRole(roles[0])
+      }
+      setPendingAvailableRoles(roles)
 
       // Check clock-in status
       try {
@@ -114,6 +148,37 @@ function LoginContent() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (showRolePicker) {
+    return (
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <CardTitle className="text-2xl">Working As</CardTitle>
+          <CardDescription className="text-base mt-2">
+            Which role are you working today?
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {pendingAvailableRoles.map((role) => (
+            <button
+              key={role.id}
+              onClick={() => handleRoleSelected(role)}
+              className={`w-full py-4 rounded-xl font-semibold text-lg transition-all ${
+                role.isPrimary
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                  : 'bg-gray-700 hover:bg-gray-600 text-white'
+              }`}
+            >
+              {role.name}
+              {role.isPrimary && (
+                <span className="ml-2 text-xs opacity-70">(Primary)</span>
+              )}
+            </button>
+          ))}
+        </CardContent>
+      </Card>
+    )
   }
 
   if (showClockInPrompt) {

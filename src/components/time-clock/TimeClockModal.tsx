@@ -62,6 +62,7 @@ interface TimeClockModalProps {
   employeeName: string
   locationId: string
   permissions?: string[]
+  onClockOut?: () => void
 }
 
 export function TimeClockModal({
@@ -71,6 +72,7 @@ export function TimeClockModal({
   employeeName,
   locationId,
   permissions = [],
+  onClockOut,
 }: TimeClockModalProps) {
   const router = useRouter()
   const [currentEntry, setCurrentEntry] = useState<TimeClockEntry | null>(null)
@@ -85,6 +87,9 @@ export function TimeClockModal({
   const [managers, setManagers] = useState<Manager[]>([])
   const [selectedManagerId, setSelectedManagerId] = useState<string | null>(null)
   const [isTransferring, setIsTransferring] = useState(false)
+
+  // Clock-out confirmation state
+  const [showClockOutConfirm, setShowClockOutConfirm] = useState(false)
 
   // Pending tips state
   const [pendingTips, setPendingTips] = useState<PendingTipsData | null>(null)
@@ -259,17 +264,18 @@ export function TimeClockModal({
 
   const handleClockOutClick = async () => {
     if (!currentEntry) return
+    setShowClockOutConfirm(true)
+  }
 
-    // Check for open tabs first
+  const handleClockOutConfirmed = async () => {
+    setShowClockOutConfirm(false)
+    // Check for open tabs
     const hasOpenTabs = await checkOpenTabs()
     if (hasOpenTabs) {
-      // Load managers for transfer option
       await loadManagers()
       setShowOpenTabsWarning(true)
       return
     }
-
-    // No open tabs - proceed with clock out
     await performClockOut()
   }
 
@@ -410,6 +416,28 @@ export function TimeClockModal({
         <div className="p-6">
           {isLoading ? (
             <div className="text-center py-8 text-gray-500">Loading...</div>
+          ) : showClockOutConfirm ? (
+            // Clock-out confirmation
+            <div className="space-y-4 text-center py-4">
+              <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto">
+                <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Clock Out?</h3>
+              <p className="text-sm text-gray-500">Are you sure you want to clock out?</p>
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <Button variant="outline" onClick={() => setShowClockOutConfirm(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleClockOutConfirmed}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  Yes, Clock Out
+                </Button>
+              </div>
+            </div>
           ) : showOpenTabsWarning ? (
             // Open tabs warning
             <div className="space-y-4">
@@ -678,9 +706,23 @@ export function TimeClockModal({
                 )}
               </div>
 
-              <Button variant="outline" className="w-full" onClick={onClose}>
-                Close
-              </Button>
+              {onClockOut ? (
+                <div className="space-y-2">
+                  <Button className="w-full bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => {
+                    onClose()
+                    onClockOut()
+                  }}>
+                    Close Shift (Drawer Count & Tips)
+                  </Button>
+                  <Button variant="outline" className="w-full" onClick={onClose}>
+                    Skip for Now
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" className="w-full" onClick={onClose}>
+                  Close
+                </Button>
+              )}
             </div>
           ) : (
             // Not clocked in

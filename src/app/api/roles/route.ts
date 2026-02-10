@@ -47,6 +47,8 @@ export async function GET(request: NextRequest) {
         name: role.name,
         permissions: getPermissionsArray(role.permissions),
         isTipped: role.isTipped,
+        cashHandlingMode: role.cashHandlingMode,
+        trackLaborCost: role.trackLaborCost,
         employeeCount: role._count.employees,
         createdAt: role.createdAt.toISOString(),
       })),
@@ -70,10 +72,13 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, name, permissions } = body as {
+    const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped } = body as {
       locationId: string
       name: string
       permissions: string[]
+      cashHandlingMode?: string
+      trackLaborCost?: boolean
+      isTipped?: boolean
     }
 
     if (!locationId || !name) {
@@ -103,6 +108,9 @@ export async function POST(request: NextRequest) {
         locationId,
         name,
         permissions: permissions || [],
+        ...(cashHandlingMode !== undefined ? { cashHandlingMode } : {}),
+        ...(trackLaborCost !== undefined ? { trackLaborCost } : {}),
+        ...(isTipped !== undefined ? { isTipped } : {}),
       },
     })
 
@@ -110,6 +118,9 @@ export async function POST(request: NextRequest) {
       id: role.id,
       name: role.name,
       permissions: getPermissionsArray(role.permissions),
+      isTipped: role.isTipped,
+      cashHandlingMode: role.cashHandlingMode,
+      trackLaborCost: role.trackLaborCost,
       createdAt: role.createdAt.toISOString(),
     })
   } catch (error) {

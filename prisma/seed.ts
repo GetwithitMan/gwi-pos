@@ -172,12 +172,16 @@ async function main() {
     where: { id: 'role-super-admin' },
     update: {
       permissions: superAdminPermissions,
+      cashHandlingMode: 'none',
+      trackLaborCost: false,
     },
     create: {
       id: 'role-super-admin',
       locationId: location.id,
       name: 'Super Admin',
       permissions: superAdminPermissions,
+      cashHandlingMode: 'none',
+      trackLaborCost: false,
     },
   })
 
@@ -218,12 +222,16 @@ async function main() {
     where: { id: 'role-manager' },
     update: {
       permissions: managerPermissions,
+      cashHandlingMode: 'none',
+      trackLaborCost: true,
     },
     create: {
       id: 'role-manager',
       locationId: location.id,
       name: 'Manager',
       permissions: managerPermissions,
+      cashHandlingMode: 'none',
+      trackLaborCost: true,
     },
   })
 
@@ -240,12 +248,16 @@ async function main() {
     where: { id: 'role-server' },
     update: {
       permissions: serverPermissions,
+      cashHandlingMode: 'purse',
+      trackLaborCost: true,
     },
     create: {
       id: 'role-server',
       locationId: location.id,
       name: 'Server',
       permissions: serverPermissions,
+      cashHandlingMode: 'purse',
+      trackLaborCost: true,
     },
   })
 
@@ -261,15 +273,42 @@ async function main() {
     where: { id: 'role-bartender' },
     update: {
       permissions: bartenderPermissions,
+      cashHandlingMode: 'drawer',
+      trackLaborCost: true,
     },
     create: {
       id: 'role-bartender',
       locationId: location.id,
       name: 'Bartender',
       permissions: bartenderPermissions,
+      cashHandlingMode: 'drawer',
+      trackLaborCost: true,
     },
   })
-  console.log('Created/updated roles: Super Admin, Manager, Server, Bartender')
+
+  // Barback gets minimal access - no POS, just tips and commission
+  const barbackPermissions = [
+    'tips.view_own',
+    'reports.commission',
+  ]
+
+  const barbackRole = await prisma.role.upsert({
+    where: { id: 'role-barback' },
+    update: {
+      permissions: barbackPermissions,
+      cashHandlingMode: 'none',
+      trackLaborCost: true,
+    },
+    create: {
+      id: 'role-barback',
+      locationId: location.id,
+      name: 'Barback',
+      permissions: barbackPermissions,
+      cashHandlingMode: 'none',
+      trackLaborCost: true,
+    },
+  })
+  console.log('Created/updated roles: Super Admin, Manager, Server, Bartender, Barback')
 
   // Create Employees
 
@@ -339,7 +378,70 @@ async function main() {
       email: 'mike@demo.com',
     },
   })
-  console.log('Created employees: Dev Admin (PIN: 0000), Demo Manager (PIN: 1234), Sarah S. (PIN: 2345), Mike B. (PIN: 3456)')
+
+  const barback = await prisma.employee.upsert({
+    where: { id: 'emp-barback' },
+    update: {},
+    create: {
+      id: 'emp-barback',
+      locationId: location.id,
+      roleId: barbackRole.id,
+      firstName: 'Barback',
+      lastName: 'Demo',
+      displayName: 'Barback Demo',
+      pin: await hash('9999', 10),
+      hourlyRate: 10.00,
+      email: 'barback@demo.com',
+    },
+  })
+  console.log('Created employees: Dev Admin (PIN: 0000), Demo Manager (PIN: 1234), Sarah S. (PIN: 2345), Mike B. (PIN: 3456), Barback Demo (PIN: 9999)')
+
+  // Create EmployeeRole records (multi-role support)
+  // Each employee gets their primary role, Manager also gets Bartender for multi-role demo
+  const employeeRoleRecords = [
+    { id: 'er-super-admin', employeeId: superAdmin.id, roleId: superAdminRole.id, isPrimary: true },
+    { id: 'er-manager-primary', employeeId: manager.id, roleId: managerRole.id, isPrimary: true },
+    { id: 'er-manager-bartender', employeeId: manager.id, roleId: bartenderRole.id, isPrimary: false }, // Multi-role: Manager can work as Bartender
+    { id: 'er-server', employeeId: server.id, roleId: serverRole.id, isPrimary: true },
+    { id: 'er-bartender', employeeId: bartender.id, roleId: bartenderRole.id, isPrimary: true },
+    { id: 'er-barback', employeeId: barback.id, roleId: barbackRole.id, isPrimary: true },
+  ]
+
+  for (const er of employeeRoleRecords) {
+    await prisma.employeeRole.upsert({
+      where: { id: er.id },
+      update: { isPrimary: er.isPrimary },
+      create: {
+        id: er.id,
+        locationId: location.id,
+        employeeId: er.employeeId,
+        roleId: er.roleId,
+        isPrimary: er.isPrimary,
+      },
+    })
+  }
+  console.log('Created EmployeeRole records (Manager has multi-role: Manager + Bartender)')
+
+  // Create Drawers
+  const drawerRecords = [
+    { id: 'drawer-bar-1', name: 'Bar Drawer 1', deviceId: null },
+    { id: 'drawer-bar-2', name: 'Bar Drawer 2', deviceId: null },
+    { id: 'drawer-register-1', name: 'Register 1', deviceId: null },
+  ]
+  for (const d of drawerRecords) {
+    await prisma.drawer.upsert({
+      where: { id: d.id },
+      update: { name: d.name, deviceId: d.deviceId },
+      create: {
+        id: d.id,
+        locationId: location.id,
+        name: d.name,
+        deviceId: d.deviceId,
+        isActive: true,
+      },
+    })
+  }
+  console.log('Created Drawers (Bar Drawer 1, Bar Drawer 2, Register 1)')
 
   // Create Categories
   const categories = await Promise.all([

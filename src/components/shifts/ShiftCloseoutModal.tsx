@@ -74,6 +74,7 @@ interface ShiftCloseoutModalProps {
     summary: ShiftSummary
   }) => void
   permissions?: string[]
+  cashHandlingMode?: string
 }
 
 // Denomination structure for cash counting
@@ -96,9 +97,11 @@ export function ShiftCloseoutModal({
   shift,
   onCloseoutComplete,
   permissions = [],
+  cashHandlingMode,
 }: ShiftCloseoutModalProps) {
   // Check if user has permission to see expected cash before counting (non-blind mode)
   const canSeeExpectedFirst = hasPermission(permissions, PERMISSIONS.MGR_CASH_DRAWER_FULL)
+  const mode = cashHandlingMode || 'drawer'
 
   // Start at 'count' for blind mode (default), or 'summary' if manager with full access
   const [step, setStep] = useState<'count' | 'summary' | 'reveal' | 'tips' | 'complete'>('count')
@@ -146,7 +149,8 @@ export function ShiftCloseoutModal({
   // Reset state when modal opens
   useEffect(() => {
     if (isOpen) {
-      setStep('count')
+      // 'none' mode skips cash count entirely — go straight to tips
+      setStep(mode === 'none' ? 'tips' : 'count')
       setSummary(null)
       setCounts({})
       setManualTotal('')
@@ -162,7 +166,15 @@ export function ShiftCloseoutModal({
       setEmployees([])
       setNewShareEmployeeId('')
       setNewShareAmount('')
+      // Mode-specific initialization
+      setUseManual(mode === 'purse') // Purse mode forces manual total entry
+      if (mode === 'none') {
+        // Auto-fetch summary and tip data — no cash count needed
+        fetchShiftSummary(false)
+        fetchTipData()
+      }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
   // Fetch shift summary - called after cash is declared (for reveal step) or by manager preview
@@ -320,6 +332,9 @@ export function ShiftCloseoutModal({
     setIsLoading(true)
     setError(null)
     try {
+      // For 'none' mode, no cash was handled
+      const cashToSubmit = mode === 'none' ? 0 : actualCash
+
       // Prepare tip distribution data
       const tipDistribution = {
         grossTips: parseFloat(tipsDeclared) || 0,
@@ -341,11 +356,13 @@ export function ShiftCloseoutModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'close',
-          actualCash,
+          employeeId: shift.employee.id,
+          actualCash: cashToSubmit,
+          cashHandlingMode: mode,
           tipsDeclared: parseFloat(tipsDeclared) || 0,
           notes,
-          blindMode: !viewedSummaryFirst, // Track if closed in blind mode
-          tipDistribution, // Include tip distribution data
+          blindMode: !viewedSummaryFirst,
+          tipDistribution,
         }),
       })
 
@@ -436,7 +453,7 @@ export function ShiftCloseoutModal({
                     </svg>
                     <div className="flex-1">
                       <span className="text-sm font-medium text-blue-800">Blind Count Mode</span>
-                      <p className="text-xs text-blue-600">Count your drawer before seeing the expected amount</p>
+                      <p className="text-xs text-blue-600">Count your {mode === 'purse' ? 'purse' : 'drawer'} before seeing the expected amount</p>
                     </div>
                     {canSeeExpectedFirst && !viewedSummaryFirst && (
                       <button
@@ -449,19 +466,21 @@ export function ShiftCloseoutModal({
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <h3 className="font-semibold text-lg">Count Your Drawer</h3>
-                    <button
-                      className="text-sm text-blue-600 hover:underline"
-                      onClick={() => setUseManual(!useManual)}
-                    >
-                      {useManual ? 'Count by denomination' : 'Enter total manually'}
-                    </button>
+                    <h3 className="font-semibold text-lg">{mode === 'purse' ? 'Count Your Purse' : 'Count Your Drawer'}</h3>
+                    {mode !== 'purse' && (
+                      <button
+                        className="text-sm text-blue-600 hover:underline"
+                        onClick={() => setUseManual(!useManual)}
+                      >
+                        {useManual ? 'Count by denomination' : 'Enter total manually'}
+                      </button>
+                    )}
                   </div>
 
                   {useManual ? (
                     <div>
                       <label className="block text-sm text-gray-600 mb-2">
-                        Enter total cash in drawer
+                        Enter total cash in {mode === 'purse' ? 'purse' : 'drawer'}
                       </label>
                       <div className="relative">
                         <span className="absolute left-3 top-3 text-gray-500 text-xl">$</span>
@@ -646,7 +665,7 @@ export function ShiftCloseoutModal({
               {/* Step 2: Reveal (after blind count submission) */}
               {step === 'reveal' && summary && (
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-lg">Drawer Count Results</h3>
+                  <h3 className="font-semibold text-lg">{mode === 'purse' ? 'Purse Count Results' : 'Drawer Count Results'}</h3>
 
                   <Card className={`p-4 ${variance === 0 ? 'bg-green-50 border-green-200' : variance > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-red-50 border-red-200'}`}>
                     <div className="text-center mb-4">
@@ -655,21 +674,21 @@ export function ShiftCloseoutModal({
                           <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="font-bold text-lg">Drawer is Balanced!</p>
+                          <p className="font-bold text-lg">{mode === 'purse' ? 'Purse' : 'Drawer'} is Balanced!</p>
                         </div>
                       ) : variance > 0 ? (
                         <div className="text-yellow-600">
                           <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                           </svg>
-                          <p className="font-bold text-lg">Drawer is OVER by {formatCurrency(variance)}</p>
+                          <p className="font-bold text-lg">{mode === 'purse' ? 'Purse' : 'Drawer'} is OVER by {formatCurrency(variance)}</p>
                         </div>
                       ) : (
                         <div className="text-red-600">
                           <svg className="w-12 h-12 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          <p className="font-bold text-lg">Drawer is SHORT by {formatCurrency(Math.abs(variance))}</p>
+                          <p className="font-bold text-lg">{mode === 'purse' ? 'Purse' : 'Drawer'} is SHORT by {formatCurrency(Math.abs(variance))}</p>
                         </div>
                       )}
                     </div>
@@ -907,13 +926,15 @@ export function ShiftCloseoutModal({
                   </p>
 
                   <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => setStep('reveal')}
-                    >
-                      ← Back
-                    </Button>
+                    {mode !== 'none' && (
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setStep('reveal')}
+                      >
+                        ← Back
+                      </Button>
+                    )}
                     <Button
                       variant="primary"
                       className="flex-1"

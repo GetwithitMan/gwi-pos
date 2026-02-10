@@ -43,7 +43,8 @@ export async function GET(
       shift.locationId,
       shift.employeeId,
       shift.startedAt,
-      shift.endedAt || new Date()
+      shift.endedAt || new Date(),
+      shift.drawerId || null
     )
 
     return NextResponse.json({
@@ -86,12 +87,13 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { action, actualCash, tipsDeclared, notes, tipDistribution, employeeId: requestingEmployeeId } = body as {
+    const { action, actualCash, tipsDeclared, notes, tipDistribution, employeeId: requestingEmployeeId, cashHandlingMode } = body as {
       action: 'close' | 'update'
       actualCash?: number
       tipsDeclared?: number
       notes?: string
       employeeId?: string
+      cashHandlingMode?: string
       tipDistribution?: {
         grossTips: number
         tipOutTotal: number
@@ -138,25 +140,30 @@ export async function PUT(
         )
       }
 
-      if (actualCash === undefined) {
+      // For 'none' cash handling mode, actual cash is always 0 (no cash handled)
+      const cashMode = cashHandlingMode || 'drawer'
+      const effectiveActualCash = cashMode === 'none' ? 0 : actualCash
+
+      if (effectiveActualCash === undefined) {
         return NextResponse.json(
           { error: 'Actual cash count is required to close shift' },
           { status: 400 }
         )
       }
 
-      // Calculate shift summary
+      // Calculate shift summary (drawer-aware for bartender mode)
       const endTime = new Date()
       const summary = await calculateShiftSummary(
         shift.locationId,
         shift.employeeId,
         shift.startedAt,
-        endTime
+        endTime,
+        shift.drawerId || null
       )
 
       // Expected cash = starting cash + cash received - change given
       const expectedCash = Number(shift.startingCash) + summary.netCashReceived
-      const variance = actualCash - expectedCash
+      const variance = effectiveActualCash - expectedCash
 
       // Update shift + process tip distribution atomically
       const updatedShift = await db.$transaction(async (tx) => {
@@ -166,7 +173,7 @@ export async function PUT(
             endedAt: endTime,
             status: 'closed',
             expectedCash,
-            actualCash,
+            actualCash: effectiveActualCash,
             variance,
             totalSales: summary.totalSales,
             cashSales: summary.cashSales,
@@ -280,7 +287,8 @@ async function calculateShiftSummary(
   locationId: string,
   employeeId: string,
   startTime: Date,
-  endTime: Date
+  endTime: Date,
+  drawerId?: string | null
 ) {
   // Get all completed payments by this employee during the shift
   const payments = await db.payment.findMany({
@@ -354,7 +362,40 @@ async function calculateShiftSummary(
   })
 
   // Net cash received = cash tendered - change given
-  const netCashReceived = cashReceived - changeGiven
+  let netCashReceived = cashReceived - changeGiven
+
+  // DRAWER MODE: Override cash figures with ALL cash to this physical drawer
+  // This ensures expected cash includes cash from other employees (e.g., manager at bartender's terminal)
+  if (drawerId) {
+    const drawerCashPayments = await db.payment.findMany({
+      where: {
+        drawerId,
+        paymentMethod: 'cash',
+        status: 'completed',
+        processedAt: {
+          gte: startTime,
+          lte: endTime,
+        },
+        order: {
+          locationId,
+        },
+      },
+      select: {
+        amountTendered: true,
+        changeGiven: true,
+      },
+    })
+
+    let drawerCashReceived = 0
+    let drawerChangeGiven = 0
+    drawerCashPayments.forEach(p => {
+      drawerCashReceived += Number(p.amountTendered || 0)
+      drawerChangeGiven += Number(p.changeGiven || 0)
+    })
+    cashReceived = drawerCashReceived
+    changeGiven = drawerChangeGiven
+    netCashReceived = drawerCashReceived - drawerChangeGiven
+  }
 
   // Count orders and payments
   const orderCount = orders.length

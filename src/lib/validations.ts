@@ -26,7 +26,7 @@ export const createEmployeeSchema = z.object({
   pin: pinSchema,
   roleId: idSchema,
   hourlyRate: positiveNumber.optional(),
-  hireDate: z.string().datetime().optional(),
+  hireDate: z.string().date().or(z.string().datetime()).optional(),
   color: z.string().max(20).optional(),
 })
 

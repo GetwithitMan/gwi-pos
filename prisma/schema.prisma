@@ -96,6 +96,9 @@ model Location {
   comboComponents       ComboComponent[]
   comboComponentOptions ComboComponentOption[]
 
+  // Multi-role support (multi-tenancy)
+  employeeRoles        EmployeeRole[]
+
   // Operations (multi-tenancy)
   paidInOuts           PaidInOut[]
   sectionAssignments   SectionAssignment[]
@@ -277,17 +280,26 @@ model Role {
   // Tip configuration
   isTipped Boolean @default(false) // Is this a tipped position?
 
+  // Cash handling configuration
+  cashHandlingMode String  @default("drawer") // "drawer" | "purse" | "none"
+  trackLaborCost   Boolean @default(true)      // Include hours in labor cost reports
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   // Sync fields (for cloud sync and soft deletes)
   deletedAt DateTime?
   syncedAt  DateTime?
 
-  employees Employee[]
+  employees     Employee[]
+  employeeRoles EmployeeRole[]
 
   // Tip-out rules (role gives/receives tip-outs)
   tipOutRulesFrom TipOutRule[] @relation("TipOutFrom")
   tipOutRulesTo   TipOutRule[] @relation("TipOutTo")
+
+  // Working-as relations (multi-role support)
+  workingTimeClockEntries TimeClockEntry[] @relation("WorkingRole")
+  workingShifts           Shift[]          @relation("ShiftWorkingRole")
 
   // Scheduled shifts for this role
   scheduledShifts ScheduledShift[]
@@ -411,8 +423,37 @@ model Employee {
   // Error Reporting (Domain 16)
   errorLogs ErrorLog[]
 
+  // Multi-role support
+  employeeRoles EmployeeRole[]
+
   @@unique([locationId, pin])
   @@index([locationId])
+  @@index([roleId])
+}
+
+// ============================================
+// MULTI-ROLE SUPPORT
+// ============================================
+
+model EmployeeRole {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  roleId     String
+  role       Role     @relation(fields: [roleId], references: [id])
+
+  isPrimary Boolean @default(false) // Matches Employee.roleId
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@unique([employeeId, roleId])
+  @@index([locationId])
+  @@index([employeeId])
   @@index([roleId])
 }
 
@@ -444,6 +485,10 @@ model TimeClockEntry {
   drawerCountOut Json?
 
   notes String?
+
+  // Multi-role: which role the employee is working as this entry
+  workingRoleId String?
+  workingRole   Role?   @relation("WorkingRole", fields: [workingRoleId], references: [id])
 
   // Reverse relation
   shifts Shift[]
@@ -497,6 +542,14 @@ model Shift {
   timeClockEntryId String?
   timeClockEntry   TimeClockEntry? @relation(fields: [timeClockEntryId], references: [id])
 
+  // Multi-role: which role employee is working as
+  workingRoleId String?
+  workingRole   Role?   @relation("ShiftWorkingRole", fields: [workingRoleId], references: [id])
+
+  // Physical drawer claimed (null for purse/none cash handling modes)
+  drawerId String?
+  drawer   Drawer? @relation(fields: [drawerId], references: [id])
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -510,6 +563,7 @@ model Shift {
   @@index([employeeId])
   @@index([startedAt])
   @@index([timeClockEntryId])
+  @@index([drawerId])
 }
 
 model Drawer {
@@ -528,6 +582,9 @@ model Drawer {
   syncedAt  DateTime?
 
   paidInOuts PaidInOut[]
+
+  // Shifts that claimed this drawer
+  shifts Shift[]
 
   @@index([locationId])
 }
@@ -1703,6 +1760,11 @@ model Payment {
   orderId    String
   order      Order    @relation(fields: [orderId], references: [id])
   employeeId String? // Who processed the payment
+
+  // Cash drawer attribution (Phase: Role-Based Cash Handling)
+  drawerId   String? // Which physical drawer received cash (null for card/purse)
+  shiftId    String? // Which shift was active (for reconciliation)
+  terminalId String? // Which terminal processed this payment
 
   // Payment details
   amount      Decimal

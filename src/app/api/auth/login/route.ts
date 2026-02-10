@@ -46,6 +46,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Fetch available roles from EmployeeRole junction table
+    const employeeRoles = await db.employeeRole.findMany({
+      where: {
+        employeeId: matchedEmployee.id,
+        deletedAt: null,
+      },
+      include: {
+        role: {
+          select: {
+            id: true,
+            name: true,
+            cashHandlingMode: true,
+          },
+        },
+      },
+      orderBy: { isPrimary: 'desc' }, // Primary role first
+    })
+
+    const availableRoles = employeeRoles.map(er => ({
+      id: er.role.id,
+      name: er.role.name,
+      cashHandlingMode: er.role.cashHandlingMode,
+      isPrimary: er.isPrimary,
+    }))
+
     // Log the login
     await db.auditLog.create({
       data: {
@@ -89,8 +114,10 @@ export async function POST(request: NextRequest) {
           id: matchedEmployee.location.id,
           name: matchedEmployee.location.name,
         },
+        defaultScreen: matchedEmployee.defaultScreen || null,
         permissions,
         isDevAccess,
+        availableRoles,
       },
     })
   } catch (error) {

@@ -16,6 +16,9 @@ interface Role {
   id: string
   name: string
   permissions: string[]
+  isTipped: boolean
+  cashHandlingMode: string
+  trackLaborCost: boolean
   employeeCount: number
   createdAt: string
 }
@@ -35,6 +38,9 @@ export default function RolesPage() {
   // Form state
   const [roleName, setRoleName] = useState('')
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([])
+  const [cashHandlingMode, setCashHandlingMode] = useState<string>('drawer')
+  const [trackLaborCost, setTrackLaborCost] = useState(true)
+  const [isTipped, setIsTipped] = useState(false)
   const [expandedGroups, setExpandedGroups] = useState<string[]>(Object.keys(PERMISSION_GROUPS))
 
   useEffect(() => {
@@ -69,6 +75,9 @@ export default function RolesPage() {
     setEditingRole(null)
     setRoleName('')
     setSelectedPermissions([])
+    setCashHandlingMode('drawer')
+    setTrackLaborCost(true)
+    setIsTipped(false)
     setError(null)
     setExpandedGroups(Object.keys(PERMISSION_GROUPS))
     setShowModal(true)
@@ -78,6 +87,9 @@ export default function RolesPage() {
     setEditingRole(role)
     setRoleName(role.name)
     setSelectedPermissions(role.permissions)
+    setCashHandlingMode(role.cashHandlingMode || 'drawer')
+    setTrackLaborCost(role.trackLaborCost !== false)
+    setIsTipped(role.isTipped || false)
     setError(null)
     setExpandedGroups(Object.keys(PERMISSION_GROUPS))
     setShowModal(true)
@@ -147,6 +159,9 @@ export default function RolesPage() {
           body: JSON.stringify({
             name: roleName.trim(),
             permissions: selectedPermissions,
+            cashHandlingMode,
+            trackLaborCost,
+            isTipped,
           }),
         })
       } else {
@@ -157,6 +172,9 @@ export default function RolesPage() {
             locationId: currentEmployee?.location?.id,
             name: roleName.trim(),
             permissions: selectedPermissions,
+            cashHandlingMode,
+            trackLaborCost,
+            isTipped,
           }),
         })
       }
@@ -274,6 +292,21 @@ export default function RolesPage() {
                     <p className="text-sm text-gray-500">
                       {role.employeeCount} employee{role.employeeCount !== 1 ? 's' : ''}
                     </p>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <span className={`text-xs px-1.5 py-0.5 rounded ${
+                        role.cashHandlingMode === 'drawer' ? 'bg-green-100 text-green-700' :
+                        role.cashHandlingMode === 'purse' ? 'bg-blue-100 text-blue-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {role.cashHandlingMode === 'drawer' ? 'Drawer' : role.cashHandlingMode === 'purse' ? 'Purse' : 'No Cash'}
+                      </span>
+                      {role.isTipped && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tipped</span>
+                      )}
+                      {!role.trackLaborCost && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">No Labor Cost</span>
+                      )}
+                    </div>
                   </div>
                   <div className="flex gap-1">
                     <button
@@ -381,6 +414,61 @@ export default function RolesPage() {
                   {templateName}
                 </Button>
               ))}
+            </div>
+          </div>
+
+          {/* Cash Handling & Labor Settings */}
+          <div className="space-y-3 p-3 bg-gray-50 rounded-lg">
+            <div>
+              <Label>Cash Handling Mode</Label>
+              <div className="flex gap-2 mt-1">
+                {[
+                  { value: 'drawer', label: 'Drawer', desc: 'Uses a physical cash drawer' },
+                  { value: 'purse', label: 'Purse', desc: 'Carries cash on person' },
+                  { value: 'none', label: 'None', desc: 'Does not handle cash' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setCashHandlingMode(opt.value)}
+                    className={`flex-1 p-2 rounded-lg border-2 text-center text-sm transition-all ${
+                      cashHandlingMode === opt.value
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <div className="font-medium">{opt.label}</div>
+                    <div className="text-xs text-gray-500">{opt.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isTipped}
+                  onChange={(e) => setIsTipped(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <div>
+                  <span className="text-sm font-medium">Tipped Role</span>
+                  <p className="text-xs text-gray-500">Eligible for tip-out rules</p>
+                </div>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={trackLaborCost}
+                  onChange={(e) => setTrackLaborCost(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <div>
+                  <span className="text-sm font-medium">Track Labor Cost</span>
+                  <p className="text-xs text-gray-500">Include hours in labor reports</p>
+                </div>
+              </label>
             </div>
           </div>
 

@@ -48,6 +48,9 @@ export default function EmployeesPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Multi-role state
+  const [additionalRoleIds, setAdditionalRoleIds] = useState<string[]>([])
+
   // Form state
   const [formData, setFormData] = useState({
     firstName: '',
@@ -115,11 +118,12 @@ export default function EmployeesPage() {
       hireDate: '',
       color: '#3B82F6',
     })
+    setAdditionalRoleIds([])
     setError(null)
     setShowModal(true)
   }
 
-  const openEditModal = (emp: Employee) => {
+  const openEditModal = async (emp: Employee) => {
     setEditingEmployee(emp)
     setFormData({
       firstName: emp.firstName,
@@ -134,8 +138,22 @@ export default function EmployeesPage() {
       hireDate: emp.hireDate ? emp.hireDate.split('T')[0] : '',
       color: emp.color || '#3B82F6',
     })
+    setAdditionalRoleIds([])
     setError(null)
     setShowModal(true)
+
+    // Fetch employee's additional roles
+    try {
+      const res = await fetch(`/api/employees/${emp.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.additionalRoles) {
+          setAdditionalRoleIds(data.additionalRoles.map((r: { id: string }) => r.id))
+        }
+      }
+    } catch {
+      // Silently fail — additional roles are optional
+    }
   }
 
   const handleSave = async () => {
@@ -184,6 +202,11 @@ export default function EmployeesPage() {
 
       if (formData.pin) {
         payload.pin = formData.pin
+      }
+
+      // Include additional roles when editing
+      if (editingEmployee) {
+        payload.additionalRoleIds = additionalRoleIds
       }
 
       let response: Response
@@ -527,7 +550,11 @@ export default function EmployeesPage() {
             <select
               id="role"
               value={formData.roleId}
-              onChange={(e) => setFormData({ ...formData, roleId: e.target.value })}
+              onChange={(e) => {
+                const newRoleId = e.target.value
+                setFormData({ ...formData, roleId: newRoleId })
+                setAdditionalRoleIds(prev => prev.filter(id => id !== newRoleId))
+              }}
               className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
             >
               <option value="">Select a role...</option>
@@ -538,6 +565,40 @@ export default function EmployeesPage() {
               ))}
             </select>
           </div>
+
+          {/* Additional Roles (multi-role support, edit only) */}
+          {editingEmployee && roles.length > 1 && (
+            <div>
+              <Label>Additional Roles</Label>
+              <p className="text-xs text-gray-500 mb-2">
+                Employee can work as these roles too (selected at clock-in)
+              </p>
+              <div className="space-y-1 p-2 border rounded-lg bg-gray-50">
+                {roles
+                  .filter(r => r.id !== formData.roleId)
+                  .map(role => (
+                    <label key={role.id} className="flex items-center gap-2 py-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={additionalRoleIds.includes(role.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setAdditionalRoleIds(prev => [...prev, role.id])
+                          } else {
+                            setAdditionalRoleIds(prev => prev.filter(id => id !== role.id))
+                          }
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-sm">{role.name}</span>
+                    </label>
+                  ))}
+                {roles.filter(r => r.id !== formData.roleId).length === 0 && (
+                  <p className="text-xs text-gray-400 py-1">No other roles available</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Employment Details */}
           <div className="grid grid-cols-2 gap-4">

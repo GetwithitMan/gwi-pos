@@ -26,6 +26,13 @@ export async function GET(
             name: true,
           },
         },
+        employeeRoles: {
+          where: { deletedAt: null },
+          include: {
+            role: { select: { id: true, name: true } },
+          },
+          orderBy: { isPrimary: 'desc' },
+        },
       },
     })
 
@@ -80,6 +87,9 @@ export async function GET(
       avatarUrl: employee.avatarUrl,
       defaultScreen: employee.defaultScreen,
       defaultOrderType: employee.defaultOrderType,
+      additionalRoles: employee.employeeRoles
+        .filter(er => !er.isPrimary)
+        .map(er => ({ id: er.role.id, name: er.role.name })),
       createdAt: employee.createdAt.toISOString(),
       updatedAt: employee.updatedAt.toISOString(),
       // Stats
@@ -122,6 +132,7 @@ export async function PUT(
       isActive,
       defaultScreen,
       defaultOrderType,
+      additionalRoleIds,
     } = body as {
       firstName?: string
       lastName?: string
@@ -136,6 +147,7 @@ export async function PUT(
       isActive?: boolean
       defaultScreen?: string
       defaultOrderType?: string
+      additionalRoleIds?: string[]
     }
 
     // Check employee exists
@@ -207,6 +219,39 @@ export async function PUT(
         },
       },
     })
+
+    // Sync EmployeeRole junction table (multi-role support)
+    if (additionalRoleIds !== undefined) {
+      const effectiveRoleId = roleId || existing.roleId
+      const allDesiredRoleIds = [...new Set([effectiveRoleId, ...additionalRoleIds])]
+
+      // Soft-delete roles no longer assigned
+      await db.employeeRole.updateMany({
+        where: {
+          employeeId: id,
+          roleId: { notIn: allDesiredRoleIds },
+          deletedAt: null,
+        },
+        data: { deletedAt: new Date() },
+      })
+
+      // Upsert desired roles (creates new or restores soft-deleted)
+      for (const rId of allDesiredRoleIds) {
+        await db.employeeRole.upsert({
+          where: { employeeId_roleId: { employeeId: id, roleId: rId } },
+          create: {
+            locationId: existing.locationId,
+            employeeId: id,
+            roleId: rId,
+            isPrimary: rId === effectiveRoleId,
+          },
+          update: {
+            deletedAt: null,
+            isPrimary: rId === effectiveRoleId,
+          },
+        })
+      }
+    }
 
     return NextResponse.json({
       id: employee.id,

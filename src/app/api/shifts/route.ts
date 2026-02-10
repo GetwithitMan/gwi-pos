@@ -77,11 +77,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, employeeId, startingCash, notes } = body as {
+    const { locationId, employeeId, startingCash, notes, drawerId, workingRoleId, cashHandlingMode } = body as {
       locationId: string
       employeeId: string
-      startingCash: number
+      startingCash?: number
       notes?: string
+      drawerId?: string
+      workingRoleId?: string
+      cashHandlingMode?: string // "drawer" | "purse" | "none"
     }
 
     if (!locationId || !employeeId) {
@@ -91,12 +94,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (startingCash === undefined || startingCash < 0) {
-      return NextResponse.json(
-        { error: 'Starting cash amount is required' },
-        { status: 400 }
-      )
+    const mode = cashHandlingMode || 'drawer'
+
+    // Validate based on cash handling mode
+    if (mode === 'drawer') {
+      if (startingCash === undefined || startingCash < 0) {
+        return NextResponse.json(
+          { error: 'Starting cash amount is required for drawer mode' },
+          { status: 400 }
+        )
+      }
+      if (!drawerId) {
+        return NextResponse.json(
+          { error: 'Drawer selection is required for drawer mode' },
+          { status: 400 }
+        )
+      }
+    } else if (mode === 'purse') {
+      if (startingCash === undefined || startingCash < 0) {
+        return NextResponse.json(
+          { error: 'Starting purse amount is required' },
+          { status: 400 }
+        )
+      }
     }
+    // mode === 'none' — no cash validation needed
 
     // Check if employee already has an open shift
     const existingShift = await db.shift.findFirst({
@@ -114,6 +136,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // If drawer mode, verify drawer isn't already claimed
+    if (drawerId) {
+      const drawerClaimed = await db.shift.findFirst({
+        where: {
+          drawerId,
+          status: 'open',
+          deletedAt: null,
+        },
+        include: {
+          employee: {
+            select: { displayName: true, firstName: true, lastName: true },
+          },
+        },
+      })
+      if (drawerClaimed) {
+        const claimedBy = drawerClaimed.employee.displayName
+          || `${drawerClaimed.employee.firstName} ${drawerClaimed.employee.lastName}`
+        return NextResponse.json(
+          { error: `Drawer already claimed by ${claimedBy}` },
+          { status: 409 }
+        )
+      }
+    }
+
     // Look up active time clock entry to link
     const activeClockEntry = await db.timeClockEntry.findFirst({
       where: {
@@ -129,10 +175,12 @@ export async function POST(request: NextRequest) {
       data: {
         locationId,
         employeeId,
-        startingCash,
+        startingCash: startingCash ?? 0,
         notes,
         status: 'open',
         timeClockEntryId: activeClockEntry?.id || null,
+        ...(drawerId ? { drawerId } : {}),
+        ...(workingRoleId ? { workingRoleId } : {}),
       },
       include: {
         employee: {
