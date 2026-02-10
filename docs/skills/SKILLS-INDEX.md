@@ -177,8 +177,9 @@
 |-------|------|--------|--------|--------------|-------|
 | 47 | Clock In/Out | DONE | Employees | 01 | Clock in/out, breaks, hours, modal UI |
 | 48 | Breaks | DONE | Employees | 47 | Break start/end API, duration tracking |
-| 49 | Cash Drawer | PARTIAL | Employees | 01, 30 | Starting cash tracked via Shift |
-| 50 | Shift Close | DONE | Employees | 49 | Shift start/close, cash count, variance, summary |
+| 49 | Cash Drawer | DONE | Employees | 01, 30 | Physical Drawer model, drawer claiming via Shift.drawerId, drawer-aware expected cash, resolveDrawerForPayment() |
+| 50 | Shift Close | DONE | Employees | 49 | Shift start/close, cash count, variance, summary, three cash handling modes (drawer/purse/none) |
+| 249 | Multi-Role, Cash Handling & Crew Hub | DONE | Employees, Payments | 01, 47, 50 | EmployeeRole junction (multi-role), cash handling modes per role, Drawer management, Crew Hub (/crew), report self-access |
 
 ### Customer Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -249,7 +250,7 @@
 | Inventory & Menu | 23 | 0 | 0 | 23 | 100% |
 | Menu Builder | 6 | 0 | 0 | 6 | 100% |
 | Reporting | 13 | 0 | 0 | 13 | 100% |
-| Employee Features | 5 | 1 | 0 | 6 | 92% |
+| Employee Features | 6 | 0 | 0 | 6 | 100% |
 | Customer Features | 2 | 0 | 3 | 5 | 40% |
 | Hardware | 0 | 0 | 4 | 4 | 0% |
 | Advanced | 0 | 0 | 1 | 1 | 0% |
@@ -259,7 +260,7 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **143** | **8** | **13** | **164** | **92%** |
+| **TOTAL** | **145** | **7** | **13** | **165** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -379,6 +380,14 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-10 — Phase 6: Multi-Role, Cash Handling & Crew Hub)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 249 | Multi-Role, Cash Handling & Crew Hub | EmployeeRole junction table (multi-role with isPrimary), 3 cash handling modes per role (drawer/purse/none), Drawer model with claiming + availability, Crew Hub (/crew with shift/tips/commission sub-pages), report self-access pattern, role picker at login, AdminNav permission gating, clock-out integration. 22+ files across schema, API, UI. |
+| 49 | Cash Drawer (Upgraded to DONE) | Physical Drawer model, drawer seeding (3 per location), Shift.drawerId claiming, drawer-aware expected cash in calculateShiftSummary(), resolveDrawerForPayment() for cash attribution, Payment.drawerId + Payment.shiftId fields. |
+| 248 | Socket Layer + Fetch Consolidation | Committed: useOrderSockets hook, dispatchOpenOrdersChanged + dispatchEntertainmentStatusChanged wired into API routes, eliminated ~40 req/min polling, debounced tabsRefreshTrigger. |
 
 ## Recently Completed (2026-02-09 — Tab Incremental Auth & Re-Auth Flow)
 
@@ -732,6 +741,7 @@ These skills emerged during development and are now part of the system:
 | 243 | Admin Audit Viewer | API Complete | Settings | - | Per-order activity timeline, audit log viewer |
 | 244 | Payroll System | DONE | Employees | 01, 47, 50 | Pay stub generation, tax calculations, payroll processing |
 | 246 | Go-Live & Launch Readiness | DONE | Go-Live | 111, 120 | Domain setup, three location modes (dev/training/production), simulated code cleanup tags, go-live master checklist (8 categories), training mode spec |
+| 249 | Multi-Role, Cash Handling & Crew Hub | DONE | Employees, Payments | 01, 47, 50 | Phase 6 foundational layer: EmployeeRole junction (multi-role), cash handling modes (drawer/purse/none), Drawer model + claiming, Crew Hub (/crew), report self-access, role picker, AdminNav permission gating |
 
 ### Routing & Kitchen Display (200-Series)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -742,31 +752,35 @@ These skills emerged during development and are now part of the system:
 
 ---
 
-## Next Session Priority (2026-02-09+)
+## Next Session Priority (2026-02-10+)
 
-### Priority 1: Inventory ↔ Menu Sync (BIGGEST TODO)
+### Priority 1: Phase 6 Follow-Up (SPEC-05 / SPEC-37 Remaining)
+From Skill 249 "What's NOT Implemented" — future phases:
+- Safe drops, paid in/out, denomination counting, blind count mode
+- Employee photo/avatar, employment type, termination workflow
+- Pay rate per role, admin password, failed attempt lockout
+- Drawer audit trail, cash drop alerts, multi-drawer per employee
+
+### Priority 2: Inventory ↔ Menu Sync
 Complete the full inventory-to-menu integration:
-- Fix ingredient linking stale state bug (Worker W6 prompt ready)
-- Verify Workers W7 + W8 output (real-time ingredient library + verification badges)
 - Test bidirectional ingredient↔modifier linking at all nesting depths
 - Ensure every item sold records correct ingredient usage for reporting/PM mix
 - Cost tracking: ingredient costs flow through to menu item costing
 - Unify liquor + food inventory deduction engines (see CLAUDE.md Priority 5)
 
-### Priority 2: POS Ordering Flow UI
+### Priority 3: POS Ordering Flow UI
 Front-end visual issues with taking orders:
 - Review ModifierModal flow for customer-facing scenarios
-- Test Add Item vs Add Choice (plan exists: `~/.claude/plans/playful-wobbling-gadget.md`)
 - Verify modifier stacking, child group navigation, default selections
 - Review FloorPlanHome inline ordering end-to-end
 
-### Priority 3: Bar Tabs UI (Skill 20 Enhancement)
+### Priority 4: Bar Tabs UI (Skill 20 Enhancement)
 - Improve OpenOrdersPanel tab list UI for bartenders
 - Quick tab creation from floor plan (Bar Tab button)
 - Pre-auth card capture flow
 - Tab transfer/merge within FloorPlanHome
 
-### Priority 4: Closed Order Management (Skill 114)
+### Priority 5: Closed Order Management (Skill 114)
 - Closed orders list view with search/filter by date, server, table
 - View full order details for closed orders
 - Void payments (manager PIN required)
@@ -774,7 +788,7 @@ Front-end visual issues with taking orders:
 - Reprint receipts for closed orders
 - Reopen closed orders with reason tracking
 
-### Priority 5: Kitchen Print Integration
+### Priority 6: Kitchen Print Integration
 - Connect /api/orders/[id]/send to actual print API
 - Route tickets to correct printers based on print routes
 - Handle printer offline gracefully
