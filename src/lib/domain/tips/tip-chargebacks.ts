@@ -29,6 +29,7 @@ export interface ChargebackResult {
   originalTipCents: number
   chargedBackCents: number
   flaggedForReviewCents: number
+  tipDebtIds: string[]
   entries: Array<{
     employeeId: string
     amountCents: number
@@ -108,6 +109,7 @@ async function handleBusinessAbsorbs(
     originalTipCents: primaryTxn.amountCents,
     chargedBackCents: 0,
     flaggedForReviewCents: 0,
+    tipDebtIds: [],
     entries: [],
   }
 }
@@ -207,6 +209,48 @@ async function handleEmployeeChargeback(
     })
   }
 
+  // ── Create TipDebt records for uncollectable remainders ────────────────
+  // Aggregate remainder per employee (one employee may have multiple credits)
+  const tipDebtIds: string[] = []
+  if (totalFlaggedForReview > 0) {
+    const remainderByEmployee = new Map<string, number>()
+    for (const entry of resultEntries) {
+      if (entry.cappedAtBalance) {
+        // Find the original credit for this employee to calculate their remainder
+        const originalCredits = creditEntries.filter(
+          (c) => c.employeeId === entry.employeeId
+        )
+        const totalOriginal = originalCredits.reduce(
+          (sum, c) => sum + c.amountCents,
+          0
+        )
+        const totalDebited = resultEntries
+          .filter((e) => e.employeeId === entry.employeeId)
+          .reduce((sum, e) => sum + e.amountCents, 0)
+        const remainder = totalOriginal - totalDebited
+        if (remainder > 0) {
+          remainderByEmployee.set(entry.employeeId, remainder)
+        }
+      }
+    }
+
+    for (const [empId, remainderCents] of remainderByEmployee) {
+      const tipDebt = await db.tipDebt.create({
+        data: {
+          locationId: primaryTxn.locationId,
+          employeeId: empId,
+          originalAmountCents: remainderCents,
+          remainingCents: remainderCents,
+          sourcePaymentId: primaryTxn.paymentId ?? primaryTxn.id,
+          sourceType: 'CHARGEBACK',
+          memo: `Chargeback remainder from payment ${primaryTxn.paymentId ?? primaryTxn.id}`,
+          status: 'open',
+        },
+      })
+      tipDebtIds.push(tipDebt.id)
+    }
+  }
+
   // ── Soft-delete all TipTransactions for this payment ──────────────────
   await db.tipTransaction.updateMany({
     where: { id: { in: txnIds } },
@@ -219,6 +263,7 @@ async function handleEmployeeChargeback(
     originalTipCents: primaryTxn.amountCents,
     chargedBackCents: totalChargedBack,
     flaggedForReviewCents: totalFlaggedForReview,
+    tipDebtIds,
     entries: resultEntries,
   }
 }

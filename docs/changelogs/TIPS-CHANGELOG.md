@@ -1,5 +1,90 @@
 # Tips & Tip Bank Domain Changelog
 
+## 2026-02-10 — Tip Bank Integration & Enhancements (Skills 281-283)
+
+### Skills Completed
+- **281**: Wire Void Tip Reversal — `handleTipChargeback()` now called from void-payment route (fire-and-forget)
+- **282**: Weighted Tip Splits — `Role.tipWeight` field, `buildWeightedSplitJson()`, `createSegment()` supports `role_weighted` splitMode
+- **283**: Tip Groups Admin Page — `/tip-groups` admin page with status/date filters, AdminNav link
+
+### Files Created
+- `src/app/(admin)/tip-groups/page.tsx` — Tip Groups admin page
+
+### Files Modified
+- `prisma/schema.prisma` — Added `tipWeight Decimal @default(1.0)` to Role model
+- `src/app/api/orders/[id]/void-payment/route.ts` — Fire-and-forget `handleTipChargeback()` call
+- `src/lib/domain/tips/tip-groups.ts` — New `buildWeightedSplitJson()`, updated `createSegment()` + 4 callers
+- `src/app/api/roles/route.ts` — GET returns tipWeight, POST accepts tipWeight
+- `src/app/api/roles/[id]/route.ts` — GET returns tipWeight, PUT accepts tipWeight
+- `src/components/admin/AdminNav.tsx` — Added "Tip Groups" link
+
+### Integration Gaps Closed
+1. **Void tip reversal**: `handleTipChargeback()` existed (Skill 255) but was never called → now wired
+2. **Tip groups UI**: `/api/reports/tip-groups` existed (Skill 258) but had no admin page → now has `/tip-groups`
+3. **Weighted splits**: Schema supported `role_weighted` splitMode but only equal splits were implemented → now functional
+
+---
+
+## 2026-02-10 — Tip Bank Production Hardening Phase 2 (Skills 274-280)
+
+### Skills Completed
+- **274**: Idempotency Guard — `idempotencyKey` on TipLedgerEntry + TipTransaction, dedup in `postToTipLedger()`
+- **275**: Deterministic Splits — Sort memberIds alphabetically in `allocateToGroup()` and `buildEqualSplitJson()`
+- **276**: Wire Ownership into Allocation — `allocateWithOwnership()` splits tip by owner % then routes each slice
+- **277**: Qualified Tips — `kind` field on TipTransaction, IRS separation in payroll export
+- **278**: TipDebt Model — Persistent chargeback remainder tracking with auto-reclaim on future CREDITs
+- **279**: API Permission Hardening — Self-access check on ledger API, self-join validation on group members
+- **280**: Feature Flag — `tipBankSettings.enabled` check at top of allocation
+
+### Files Created
+- `docs/skills/268-283-TIP-BANK-HARDENING.md` — Combined skill doc
+
+### Files Modified
+- `prisma/schema.prisma` — `idempotencyKey` on TipLedgerEntry/TipTransaction, `kind` on TipTransaction, TipDebt model
+- `src/lib/domain/tips/tip-ledger.ts` — Idempotency check, TipDebt auto-reclaim on CREDIT
+- `src/lib/domain/tips/tip-allocation.ts` — Idempotency keys, deterministic sort, ownership wiring, kind passthrough, feature flag
+- `src/lib/domain/tips/tip-groups.ts` — Sort memberIds in `buildEqualSplitJson()`
+- `src/lib/domain/tips/tip-chargebacks.ts` — Create TipDebt on capped chargebacks
+- `src/lib/domain/tips/tip-payroll-export.ts` — Separate qualified tips vs service charges
+- `src/app/api/orders/[id]/pay/route.ts` — Pass `kind` to allocation
+- `src/app/api/tips/ledger/route.ts` — Self-access check
+- `src/app/api/tips/groups/[id]/members/route.ts` — Self-join validation
+
+### Architecture Decisions
+1. **Idempotency key format**: `tip-txn:{orderId}:{paymentId}` for transactions, `tip-ledger:{orderId}:{paymentId}:{employeeId}` for entries
+2. **Deterministic penny rounding**: Sort by employeeId alphabetically → last in sort absorbs remainder
+3. **TipDebt auto-reclaim**: FIFO processing of open debts when new CREDITs arrive
+4. **Feature flag granularity**: Per-location via `tipBankSettings.enabled`, not global
+
+---
+
+## 2026-02-10 — Tip Bank Production Hardening Phase 1 (Skills 268-273)
+
+### Skills Completed
+- **268**: Business Day Boundaries — All tip reports use `getBusinessDayRange()` / `getCurrentBusinessDay()`
+- **269**: Wire Tip Allocation to Payment — `allocateTipsForPayment()` called fire-and-forget from pay route
+- **270**: Cash Declaration Double-Counting Fix — Guard against duplicate declarations per shift
+- **271**: txClient Nested Transaction Guard — `TxClient` type pattern for SQLite compatibility
+- **272**: Tip Integrity Check API — `GET /api/tips/integrity` with balance drift detection + auto-fix
+- **273**: Legacy Report Migration — All 5 tip reports migrated from TipBank/TipShare to TipLedgerEntry
+
+### Files Created
+- `src/lib/business-day.ts` — Business day utilities
+- `src/app/api/tips/integrity/route.ts` — Integrity check endpoint
+
+### Files Modified
+- `src/lib/domain/tips/tip-ledger.ts` — txClient parameter, business day utilities
+- `src/lib/domain/tips/tip-allocation.ts` — txClient passthrough
+- `src/app/api/orders/[id]/pay/route.ts` — Wire `allocateTipsForPayment()`
+- `src/app/api/reports/daily/route.ts` — Business day boundaries + TipLedgerEntry migration
+- `src/app/api/reports/employee-shift/route.ts` — Business day + TipLedgerEntry migration
+- `src/app/api/reports/tips/route.ts` — Business day + TipLedgerEntry migration
+- `src/app/api/reports/payroll-export/route.ts` — Business day + TipLedgerEntry migration
+- `src/app/api/reports/tip-groups/route.ts` — Business day boundaries
+- `src/app/api/tips/cash-declarations/route.ts` — Duplicate guard
+
+---
+
 ## 2026-02-10 — Tip Bank Enhancements (Skills 260-267)
 
 ### Skills Completed

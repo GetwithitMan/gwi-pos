@@ -1,7 +1,21 @@
+// Skill 273 — Legacy TipShare lifecycle report (intentionally NOT migrated to TipLedgerEntry).
+//
+// This file's GET and POST work as a coupled pair:
+//   GET  → reads TipShare records grouped by status (pending/accepted/paid_out)
+//   POST → writes status transitions on TipShare (mark_paid, mark_paid_all)
+//
+// Migrating the GET to TipLedgerEntry would break the payout workflow because
+// ledger entries have no status lifecycle. Once the payout flow is fully migrated
+// to PAYOUT_CASH / PAYOUT_PAYROLL debit entries (see /api/tips/payouts), this
+// entire file can be rewritten against TipLedgerEntry. Until then, the legacy
+// TipShare model is the source of truth for tip-out payout status tracking.
+
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
 
 // GET - Generate tip share report
 export async function GET(request: NextRequest) {
@@ -23,24 +37,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build date range
+    // Get business day settings for proper date boundaries
+    const tipShareLocation = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const locationSettings = parseSettings(tipShareLocation?.settings)
+    const dayStartTime = locationSettings.businessDay.dayStartTime
+
+    // Build date range using business day boundaries
     let startOfRange: Date
     let endOfRange: Date
 
     if (startDate) {
-      startOfRange = new Date(startDate + 'T00:00:00.000Z')
+      const startRange = getBusinessDayRange(startDate, dayStartTime)
+      startOfRange = startRange.start
     } else {
       // Default to start of current pay period or 2 weeks ago
-      startOfRange = new Date()
-      startOfRange.setDate(startOfRange.getDate() - 14)
-      startOfRange.setHours(0, 0, 0, 0)
+      const twoWeeksAgo = new Date()
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14)
+      const twoWeeksAgoStr = twoWeeksAgo.toISOString().split('T')[0]
+      const startRange = getBusinessDayRange(twoWeeksAgoStr, dayStartTime)
+      startOfRange = startRange.start
     }
 
     if (endDate) {
-      endOfRange = new Date(endDate + 'T23:59:59.999Z')
+      const endRange = getBusinessDayRange(endDate, dayStartTime)
+      endOfRange = endRange.end
     } else {
-      endOfRange = new Date()
-      endOfRange.setHours(23, 59, 59, 999)
+      const current = getCurrentBusinessDay(dayStartTime)
+      endOfRange = current.end
     }
 
     // Build where clause

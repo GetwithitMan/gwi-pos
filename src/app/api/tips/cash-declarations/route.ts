@@ -98,6 +98,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── Over-declaration check (Skill 270 — Double-Counting Guard) ──────
+    // Cash tips already flow through the TipLedger as DIRECT_TIP credits.
+    // CashTipDeclaration is for IRS reporting only. Warn if declared amount
+    // exceeds actual cash tip ledger entries for the shift, which suggests
+    // possible over-declaration.
+    if (shiftId) {
+      const cashTipEntries = await db.tipLedgerEntry.aggregate({
+        where: {
+          employeeId,
+          shiftId,
+          sourceType: 'DIRECT_TIP',
+          type: 'CREDIT',
+          deletedAt: null,
+        },
+        _sum: { amountCents: true },
+      })
+      const ledgerCashTipsCents = cashTipEntries._sum.amountCents || 0
+
+      if (amountCents > ledgerCashTipsCents && ledgerCashTipsCents > 0) {
+        if (!complianceWarnings) complianceWarnings = []
+        complianceWarnings.push({
+          code: 'OVER_DECLARATION',
+          level: 'warning',
+          message: `Declared amount ($${(amountCents / 100).toFixed(2)}) exceeds recorded cash tips ($${(ledgerCashTipsCents / 100).toFixed(2)}) for this shift. Cash declarations are for IRS reporting only — they do not add to your tip bank balance.`,
+          details: {
+            declaredCents: amountCents,
+            ledgerCashTipsCents,
+            differenceCents: amountCents - ledgerCashTipsCents,
+          },
+        })
+      }
+    }
+
     // ── Return success ────────────────────────────────────────────────────
     const response: Record<string, unknown> = {
       declaration: {

@@ -76,6 +76,22 @@
 | 265 | Tip Group UI | DONE | Tips | 252 | /crew/tip-group page, start/join/leave groups, Crew Hub tip group card |
 | 266 | Shared Table Ownership UI | DONE | Tips | 253 | SharedOwnershipModal, FloorPlanHome + OrderPanel integration, transfer ownership, pos.access filter |
 | 267 | Manual Tip Transfer Modal | DONE | Tips | 254 | ManualTipTransferModal, select recipient, amount + memo, paired DEBIT/CREDIT |
+| 268 | Business Day Boundaries | DONE | Tips | 250 | All tip reports use business-day boundaries instead of calendar midnight |
+| 269 | Wire Tip Allocation to Payment | DONE | Tips | 252 | `allocateTipsForPayment()` called fire-and-forget from pay route |
+| 270 | Cash Declaration Double-Counting Fix | DONE | Tips | 259 | Guard against duplicate cash declarations per shift |
+| 271 | txClient Nested Transaction Guard | DONE | Tips | 250 | `TxClient` parameter pattern for SQLite nested transaction safety |
+| 272 | Tip Integrity Check API | DONE | Tips | 250 | `GET /api/tips/integrity` diagnostic endpoint, balance drift detection + auto-fix |
+| 273 | Legacy Report Migration to TipLedgerEntry | DONE | Tips | 258 | All 5 tip reports migrated from TipBank/TipShare to TipLedgerEntry |
+| 274 | Idempotency Guard on Tip Allocation | DONE | Tips | 269 | `idempotencyKey` on TipLedgerEntry + TipTransaction, dedup in postToTipLedger |
+| 275 | Deterministic Group Split Ordering | DONE | Tips | 252 | Sort memberIds alphabetically before split distribution |
+| 276 | Wire Shared Table Ownership into Allocation | DONE | Tips | 253, 274 | `allocateWithOwnership()` splits tip by owner % then routes to group or individual |
+| 277 | Qualified Tips vs Service Charges | DONE | Tips | 250 | `kind` field on TipTransaction (tip/service_charge/auto_gratuity), IRS separation in payroll |
+| 278 | TipDebt Model for Chargeback Remainder | DONE | Tips | 255 | TipDebt model with auto-reclaim on future CREDITs, status lifecycle |
+| 279 | API Permission Hardening | DONE | Tips | 250 | Self-access check on ledger API, self-join validation on group members |
+| 280 | Tip Bank Feature Flag + Legacy Guard | DONE | Tips | 250 | `tipBankSettings.enabled` check at top of allocation, no-op when disabled |
+| 281 | Wire Void Tip Reversal | DONE | Tips | 255 | `handleTipChargeback()` called from void-payment route (fire-and-forget) |
+| 282 | Weighted Tip Splits (Role-Based) | DONE | Tips | 252, 275 | `Role.tipWeight`, `buildWeightedSplitJson()`, role_weighted splitMode |
+| 283 | Tip Groups Admin Page | DONE | Tips | 252 | `/tip-groups` admin page, AdminNav link, status/date filters |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -278,8 +294,8 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| Tips & Tip Bank | 10 | 0 | 0 | 10 | 100% |
-| **TOTAL** | **155** | **7** | **13** | **175** | **93%** |
+| Tips & Tip Bank | 34 | 0 | 0 | 34 | 100% |
+| **TOTAL** | **179** | **7** | **13** | **199** | **93%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -427,6 +443,37 @@ Skills that can be developed simultaneously:
 | 265 | Tip Group UI | /crew/tip-group page, StartTipGroupModal, TipGroupPanel, Crew Hub card |
 | 266 | Shared Table Ownership UI | SharedOwnershipModal wired into FloorPlanHome + OrderPanel, transfer flow, pos.access filter, order owner auth |
 | 267 | Manual Tip Transfer Modal | ManualTipTransferModal with recipient picker, amount, memo |
+
+### Tip Bank Production Hardening Phase 1 (Skills 268-273) — 2026-02-10
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 268 | Business Day Boundaries | All tip reports use `getBusinessDayRange()` instead of calendar midnight |
+| 269 | Wire Tip Allocation to Payment | `allocateTipsForPayment()` called fire-and-forget from pay route |
+| 270 | Cash Declaration Double-Counting Fix | Duplicate guard on cash declarations per shift |
+| 271 | txClient Nested Transaction Guard | `TxClient` parameter pattern for SQLite safety |
+| 272 | Tip Integrity Check API | `GET /api/tips/integrity` with drift detection + auto-fix |
+| 273 | Legacy Report Migration to TipLedgerEntry | All 5 tip reports migrated from legacy models |
+
+### Tip Bank Production Hardening Phase 2 (Skills 274-280) — 2026-02-10
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 274 | Idempotency Guard | `idempotencyKey` on TipLedgerEntry + TipTransaction, dedup in `postToTipLedger()` |
+| 275 | Deterministic Group Splits | Sort memberIds alphabetically before distributing remainder pennies |
+| 276 | Wire Ownership into Allocation | `allocateWithOwnership()` — shared table tips split by owner %, then route to group/individual |
+| 277 | Qualified Tips vs Service Charges | `kind` field (tip/service_charge/auto_gratuity), IRS separation in payroll export |
+| 278 | TipDebt Model | Persistent chargeback remainder tracking, auto-reclaim on future CREDITs |
+| 279 | API Permission Hardening | Self-access checks on ledger + group join routes |
+| 280 | Feature Flag + Legacy Guard | `tipBankSettings.enabled` — disable tip allocation per-location |
+
+### Tip Bank Integration & Enhancements (Skills 281-283) — 2026-02-10
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 281 | Wire Void Tip Reversal | `handleTipChargeback()` called from void-payment route (fire-and-forget) |
+| 282 | Weighted Tip Splits | `Role.tipWeight`, `buildWeightedSplitJson()`, role_weighted splitMode for tip groups |
+| 283 | Tip Groups Admin Page | `/tip-groups` admin page with status/date filters, AdminNav link |
 
 ## Recently Completed (2026-02-10 — Phase 6: Multi-Role, Cash Handling & Crew Hub)
 

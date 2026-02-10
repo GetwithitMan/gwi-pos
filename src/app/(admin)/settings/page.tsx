@@ -152,6 +152,13 @@ export default function SettingsPage() {
     }))
   }
 
+  const updateBusinessDay = (updates: Partial<LocationSettings['businessDay']>) => {
+    setSettings(prev => ({
+      ...prev,
+      businessDay: { ...prev.businessDay, ...updates },
+    }))
+  }
+
   const updateHappyHourSchedule = (index: number, updates: Partial<LocationSettings['happyHour']['schedules'][0]>) => {
     setSettings(prev => ({
       ...prev,
@@ -1011,6 +1018,117 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </Card>
+
+        {/* Business Day Boundary */}
+        <Card className="p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Business Day Boundary</h2>
+            <p className="text-sm text-gray-500">
+              Define when a business day starts for reports, shifts, and daily batches.
+              Orders after midnight but before this time count toward the previous business day.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {/* Day Start Time */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Day Start Time
+              </label>
+              <input
+                type="time"
+                value={settings.businessDay?.dayStartTime || '04:00'}
+                onChange={(e) => updateBusinessDay({ dayStartTime: e.target.value })}
+                className="px-3 py-2 border rounded-lg"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Business day starts at this time. Example: 4:00 AM means a 1:30 AM order on Feb 11 counts as Feb 10.
+              </p>
+            </div>
+
+            {/* Enforce Clock-Out */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Enforce Clock-Out at Day Boundary</span>
+                <p className="text-xs text-gray-500">Force employees to clock out when the business day ends</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.businessDay?.enforceClockOut ?? true}
+                  onChange={(e) => updateBusinessDay({ enforceClockOut: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Enforce Tab Close */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Enforce Tab Close at Day Boundary</span>
+                <p className="text-xs text-gray-500">Force open tabs to close when the business day ends</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.businessDay?.enforceTabClose ?? true}
+                  onChange={(e) => updateBusinessDay({ enforceTabClose: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Batch at Day End */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Run Daily Batch at Day End</span>
+                <p className="text-xs text-gray-500">Automatically run daily batch processing when the business day ends</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.businessDay?.batchAtDayEnd ?? true}
+                  onChange={(e) => updateBusinessDay({ batchAtDayEnd: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Grace Period */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Grace Period (minutes)
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="5"
+                  min="0"
+                  max="60"
+                  value={settings.businessDay?.graceMinutes ?? 15}
+                  onChange={(e) => updateBusinessDay({ graceMinutes: parseInt(e.target.value) || 0 })}
+                  className="w-20 px-3 py-2 border rounded-lg"
+                />
+                <span className="text-gray-500">minutes</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Extra time after the day boundary before enforcement kicks in
+              </p>
+            </div>
+
+            {/* Example */}
+            <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+              Business day runs from{' '}
+              <span className="font-semibold">{settings.businessDay?.dayStartTime || '04:00'}</span>
+              {' '}to{' '}
+              <span className="font-semibold">{settings.businessDay?.dayStartTime || '04:00'}</span>
+              {' '}next day. Orders at 2:00 AM count toward the previous business day.
+            </div>
+          </div>
         </Card>
 
         {/* Hardware Health Status */}

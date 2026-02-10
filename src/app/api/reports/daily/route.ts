@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
 
 // GET - Generate comprehensive daily report
 export async function GET(request: NextRequest) {
@@ -20,25 +22,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Parse date range (full 24-hour period in UTC)
-    // For business reports, we typically want a full calendar day
+    // Fetch location to get business day settings
+    const location = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+
+    const locationSettings = parseSettings(location?.settings)
+    const dayStartTime = locationSettings.businessDay.dayStartTime
+
+    // Parse date range using business day boundaries
+    // A business day runs from dayStartTime to dayStartTime next day - 1ms
     let startOfDay: Date
     let endOfDay: Date
     let date: Date
 
     if (dateStr) {
-      // Parse as UTC date to avoid timezone issues
-      startOfDay = new Date(dateStr + 'T00:00:00.000Z')
-      endOfDay = new Date(dateStr + 'T23:59:59.999Z')
-      date = new Date(dateStr + 'T12:00:00.000Z') // Midday for display purposes
+      const range = getBusinessDayRange(dateStr, dayStartTime)
+      startOfDay = range.start
+      endOfDay = range.end
+      date = new Date(dateStr + 'T12:00:00')
     } else {
-      // For "today", use local time boundaries
-      const now = new Date()
-      date = now
-      startOfDay = new Date(now)
-      startOfDay.setHours(0, 0, 0, 0)
-      endOfDay = new Date(now)
-      endOfDay.setHours(23, 59, 59, 999)
+      const current = getCurrentBusinessDay(dayStartTime)
+      startOfDay = current.start
+      endOfDay = current.end
+      date = new Date(current.date + 'T12:00:00')
     }
 
     // Fetch all orders for the day
@@ -138,43 +146,15 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Fetch tip bank transactions for the day
-    // Tips BANKED today = cash servers gave to house (for absent employees)
-    const tipsBankedToday = await db.tipBank.findMany({
+    // Migrated from legacy TipBank/TipShare (Skill 273)
+    // Tips BANKED today = credits from direct tips and tip groups
+    const tipsBankedToday = await db.tipLedgerEntry.findMany({
       where: {
         locationId,
+        type: 'CREDIT',
+        sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
+        deletedAt: null,
         createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-        tipShare: {
-          include: {
-            fromEmployee: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                displayName: true,
-              },
-            },
-          },
-        },
-      },
-    })
-
-    // Tips COLLECTED today = cash house paid out to employees
-    const tipsCollectedToday = await db.tipBank.findMany({
-      where: {
-        locationId,
-        collectedAt: { gte: startOfDay, lte: endOfDay },
-        status: 'collected',
       },
       include: {
         employee: {
@@ -188,14 +168,18 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Fetch ALL tip shares distributed today (for tracking who gave tips)
-    const tipSharesDistributed = await db.tipShare.findMany({
+    // Migrated from legacy TipBank/TipShare (Skill 273)
+    // Tips COLLECTED today = debits from cash payouts or payroll payouts
+    const tipsCollectedToday = await db.tipLedgerEntry.findMany({
       where: {
         locationId,
+        type: 'DEBIT',
+        sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
+        deletedAt: null,
         createdAt: { gte: startOfDay, lte: endOfDay },
       },
       include: {
-        fromEmployee: {
+        employee: {
           select: {
             id: true,
             firstName: true,
@@ -203,19 +187,25 @@ export async function GET(request: NextRequest) {
             displayName: true,
           },
         },
-        toEmployee: {
+      },
+    })
+
+    // Migrated from legacy TipBank/TipShare (Skill 273)
+    // Tip shares distributed today = role tip-out entries (credits = received, debits = given)
+    const tipSharesDistributed = await db.tipLedgerEntry.findMany({
+      where: {
+        locationId,
+        sourceType: 'ROLE_TIPOUT',
+        deletedAt: null,
+        createdAt: { gte: startOfDay, lte: endOfDay },
+      },
+      include: {
+        employee: {
           select: {
             id: true,
             firstName: true,
             lastName: true,
             displayName: true,
-          },
-        },
-        rule: {
-          select: {
-            percentage: true,
-            fromRole: { select: { name: true } },
-            toRole: { select: { name: true } },
           },
         },
       },
@@ -561,16 +551,18 @@ export async function GET(request: NextRequest) {
     // When servers tip out to absent employees, the house holds the cash
     // ============================================
 
-    // Tips banked = cash IN to house (servers gave to house for absent employees)
-    const tipsBankedIn = tipsBankedToday.reduce((sum, tb) => sum + Number(tb.amount), 0)
+    // Migrated from legacy TipBank/TipShare (Skill 273)
+    // Tips banked = credits into employee ledgers (amountCents → dollars)
+    const tipsBankedIn = tipsBankedToday.reduce((sum, entry) => sum + entry.amountCents / 100, 0)
 
-    // Tips collected = cash OUT from house (house paid employees who collected)
-    const tipsCollectedOut = tipsCollectedToday.reduce((sum, tb) => sum + Number(tb.amount), 0)
+    // Tips collected = debits out of employee ledgers (payouts)
+    const tipsCollectedOut = tipsCollectedToday.reduce((sum, entry) => sum + entry.amountCents / 100, 0)
 
     // Net tip bank change for the day
     const tipBankNetChange = tipsBankedIn - tipsCollectedOut
 
-    // Group tip shares by the employee who GAVE them
+    // Group tip shares by employee
+    // DEBIT entries = employee GAVE tips, CREDIT entries = employee RECEIVED tips
     const tipSharesByGiver: Record<string, {
       employeeId: string
       employeeName: string
@@ -585,12 +577,16 @@ export async function GET(request: NextRequest) {
       }>
     }> = {}
 
-    tipSharesDistributed.forEach(share => {
-      const giverId = share.fromEmployee.id
-      const giverName = share.fromEmployee.displayName ||
-        `${share.fromEmployee.firstName} ${share.fromEmployee.lastName}`
-      const toName = share.toEmployee.displayName ||
-        `${share.toEmployee.firstName} ${share.toEmployee.lastName}`
+    // Separate debits (givers) and credits (receivers) for ROLE_TIPOUT
+    const tipoutDebits = tipSharesDistributed.filter(e => e.type === 'DEBIT')
+    const tipoutCredits = tipSharesDistributed.filter(e => e.type === 'CREDIT')
+
+    // Group debits by giver
+    tipoutDebits.forEach(entry => {
+      const giverId = entry.employee.id
+      const giverName = entry.employee.displayName ||
+        `${entry.employee.firstName} ${entry.employee.lastName}`
+      const amount = entry.amountCents / 100
 
       if (!tipSharesByGiver[giverId]) {
         tipSharesByGiver[giverId] = {
@@ -601,21 +597,29 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      tipSharesByGiver[giverId].totalGiven += Number(share.amount)
+      // Find matching credit entry by sourceId to determine recipient
+      const matchingCredit = entry.sourceId
+        ? tipoutCredits.find(c => c.sourceId === entry.sourceId)
+        : null
+      const recipientName = matchingCredit
+        ? (matchingCredit.employee.displayName ||
+          `${matchingCredit.employee.firstName} ${matchingCredit.employee.lastName}`)
+        : 'Unknown'
+
+      tipSharesByGiver[giverId].totalGiven += amount
       tipSharesByGiver[giverId].shares.push({
-        toEmployee: toName,
-        amount: Number(share.amount),
-        shareType: share.shareType,
-        ruleName: share.rule
-          ? `${share.rule.fromRole.name} → ${share.rule.toRole.name}`
-          : null,
-        percentage: share.rule ? Number(share.rule.percentage) : null,
-        status: share.status,
+        toEmployee: recipientName,
+        amount,
+        shareType: 'role_tipout',
+        ruleName: entry.memo || null,
+        percentage: null,
+        status: 'completed',
       })
     })
 
-    const totalTipSharesDistributed = tipSharesDistributed.reduce(
-      (sum, s) => sum + Number(s.amount), 0
+    // Total distributed = sum of DEBIT amounts (what givers gave out)
+    const totalTipSharesDistributed = tipoutDebits.reduce(
+      (sum, entry) => sum + entry.amountCents / 100, 0
     )
 
     // ============================================

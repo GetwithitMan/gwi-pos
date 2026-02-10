@@ -324,6 +324,7 @@ const navSections: NavSection[] = [
       { name: 'Product Mix', href: '/reports/product-mix', icon: Icons.chart },
       { name: 'Order History', href: '/reports/order-history', icon: Icons.history },
       { name: 'Tips', href: '/reports/tips', icon: Icons.tips },
+      { name: 'Tip Groups', href: '/tip-groups', icon: Icons.virtualGroups },
       { name: 'Employee Reports', href: '/reports/employees', icon: Icons.employee },
       { name: 'Voids & Comps', href: '/reports/voids', icon: Icons.void },
       { name: 'Reservations', href: '/reports/reservations', icon: Icons.calendar },

@@ -47,6 +47,7 @@ export async function GET(
         name: role.name,
         permissions: getPermissionsArray(role.permissions),
         isTipped: role.isTipped,
+        tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,
         trackLaborCost: role.trackLaborCost,
         employeeCount: role._count.employees,
@@ -71,12 +72,13 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped } = body as {
+    const { name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight } = body as {
       name?: string
       permissions?: string[]
       cashHandlingMode?: string
       trackLaborCost?: boolean
       isTipped?: boolean
+      tipWeight?: number
     }
 
     // Check role exists
@@ -117,6 +119,7 @@ export async function PUT(
         ...(cashHandlingMode !== undefined && { cashHandlingMode }),
         ...(trackLaborCost !== undefined && { trackLaborCost }),
         ...(isTipped !== undefined && { isTipped }),
+        ...(tipWeight !== undefined && { tipWeight: Number(tipWeight) }),
       },
     })
 
@@ -126,6 +129,7 @@ export async function PUT(
         name: role.name,
         permissions: getPermissionsArray(role.permissions),
         isTipped: role.isTipped,
+        tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,
         trackLaborCost: role.trackLaborCost,
         updatedAt: role.updatedAt.toISOString(),

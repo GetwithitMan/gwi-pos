@@ -68,6 +68,7 @@ export type {
 // ─── Tip Allocation ─────────────────────────────────────────────────────────
 
 export {
+  allocateTipsForPayment,
   allocateTipsForOrder,
   calculateGroupCheckout,
 } from './tip-allocation'

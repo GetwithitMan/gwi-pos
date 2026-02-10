@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
+import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
 
 export async function POST(
   request: NextRequest,
@@ -118,6 +119,21 @@ export async function POST(
         userAgent: request.headers.get('user-agent'),
       },
     })
+
+    // Reverse tip allocations for this voided payment (fire-and-forget)
+    // The chargeback policy (BUSINESS_ABSORBS vs EMPLOYEE_CHARGEBACK) is
+    // determined by location settings automatically.
+    if (Number(payment.tipAmount) > 0) {
+      handleTipChargeback({
+        locationId: order.locationId,
+        paymentId,
+        memo: `Payment voided: ${reason}`,
+      }).catch((err) => {
+        // If no TipTransaction exists for this payment (e.g., cash payment with no
+        // tip allocation, or legacy payment), this is expected. Log but don't fail.
+        console.warn('[void-payment] Tip chargeback skipped or failed:', err.message)
+      })
+    }
 
     return NextResponse.json({
       data: {

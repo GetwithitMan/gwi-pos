@@ -96,6 +96,9 @@ model Location {
   tipAdjustments         TipAdjustment[]
   cashTipDeclarations    CashTipDeclaration[]
 
+  // Tip Debt (Skill 278 - Chargeback Remainder)
+  tipDebts               TipDebt[]
+
   // Order Details (multi-tenancy)
   orderItems         OrderItem[]
   orderItemModifiers OrderItemModifier[]
@@ -293,7 +296,8 @@ model Role {
   permissions Json? // Array of permission strings
 
   // Tip configuration
-  isTipped Boolean @default(false) // Is this a tipped position?
+  isTipped  Boolean @default(false) // Is this a tipped position?
+  tipWeight Decimal @default(1.0)   // Weight for role-weighted tip group splits (e.g., 1.5 for lead bartender)
 
   // Cash handling configuration
   cashHandlingMode String  @default("drawer") // "drawer" | "purse" | "none"
@@ -431,6 +435,9 @@ model Employee {
   // Tip Adjustments & Compliance (Skills 256, 259)
   tipAdjustments       TipAdjustment[]
   cashTipDeclarations  CashTipDeclaration[]
+
+  // Tip Debt (Skill 278 - Chargeback Remainder)
+  tipDebts             TipDebt[]
 
   // Payroll & Scheduling
   payStubs           PayStub[]
@@ -2347,6 +2354,14 @@ model AuditLog {
 // ============================================
 // TIPPING (Skill 06)
 // ============================================
+// ⚠️ DEPRECATED MODELS (Skill 273): TipPool, TipPoolEntry, TipShare, TipBank
+// These legacy models are superseded by the TipLedger system (TipLedger,
+// TipLedgerEntry, TipTransaction). All new tip flows use the ledger.
+// These models are retained for historical data only. Do NOT write new code
+// that creates records in these models. Report queries should read from
+// TipLedgerEntry instead. These models will be removed in a future migration
+// once all historical data has been migrated to ledger entries.
+// ============================================
 
 model TipPool {
   id         String @id @default(cuid())
@@ -2437,6 +2452,7 @@ model TipOutRule {
   @@index([toRoleId])
 }
 
+// @deprecated — Use TipLedgerEntry with sourceType='ROLE_TIPOUT' instead (Skill 273)
 // Records actual tip distributions (both automatic role-based and custom one-off)
 model TipShare {
   id         String   @id @default(cuid())
@@ -2477,6 +2493,7 @@ model TipShare {
   @@index([createdAt])
 }
 
+// @deprecated — Use TipLedger.currentBalanceCents and TipLedgerEntry instead (Skill 273)
 // Tracks uncollected tips for employees not on shift
 // Goes to payroll or future collection
 model TipBank {
@@ -2547,10 +2564,11 @@ model TipLedgerEntry {
   memo          String?
   adjustmentId  String?
   shiftId       String?
-  orderId       String?
-  createdAt     DateTime  @default(now())
-  deletedAt     DateTime?
-  syncedAt      DateTime?
+  orderId        String?
+  idempotencyKey String?   @unique // Skill 274: dedup guard (e.g. "tip-ledger:{orderId}:{paymentId}:{employeeId}")
+  createdAt      DateTime  @default(now())
+  deletedAt      DateTime?
+  syncedAt       DateTime?
 
   @@index([locationId])
   @@index([ledgerId])
@@ -2570,9 +2588,11 @@ model TipTransaction {
   segmentId         String?
   amountCents       Int
   sourceType        String   // 'CARD' | 'CASH' | 'ADJUSTMENT'
+  kind              String   @default("tip") // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
   collectedAt       DateTime
   primaryEmployeeId String?
   ccFeeAmountCents  Int       @default(0)
+  idempotencyKey    String?   @unique // Skill 274: dedup guard (e.g. "tip-txn:{orderId}:{paymentId}")
   createdAt         DateTime @default(now())
   deletedAt         DateTime?
   syncedAt          DateTime?
@@ -2651,6 +2671,35 @@ model TipGroupSegment {
 
   @@index([groupId])
   @@index([startedAt])
+}
+
+// ============================================
+// TIP DEBT (Skill 278 - Chargeback Remainder)
+// ============================================
+
+model TipDebt {
+  id                  String    @id @default(cuid())
+  locationId          String
+  location            Location  @relation(fields: [locationId], references: [id])
+  employeeId          String
+  employee            Employee  @relation(fields: [employeeId], references: [id])
+  originalAmountCents Int       // What was owed at chargeback time
+  remainingCents      Int       // What's still outstanding
+  sourcePaymentId     String    // The payment that triggered chargeback
+  sourceType          String    @default("CHARGEBACK")
+  memo                String?
+  status              String    @default("open") // open | partial | recovered | written_off
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  recoveredAt         DateTime?
+  writtenOffAt        DateTime?
+  writtenOffBy        String?
+  deletedAt           DateTime?
+  syncedAt            DateTime?
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([status])
 }
 
 // ============================================

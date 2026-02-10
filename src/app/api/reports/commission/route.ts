@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getBusinessDayRange } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
 
 // GET commission report
 export async function GET(request: NextRequest) {
@@ -37,13 +39,23 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build date filter
+    // Get business day settings for proper date boundaries
+    const commissionLocation = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const locationSettings = parseSettings(commissionLocation?.settings)
+    const dayStartTime = locationSettings.businessDay.dayStartTime
+
+    // Build date filter using business day boundaries
     const dateFilter: { createdAt?: { gte?: Date; lte?: Date } } = {}
     if (startDate) {
-      dateFilter.createdAt = { ...dateFilter.createdAt, gte: new Date(startDate) }
+      const startRange = getBusinessDayRange(startDate, dayStartTime)
+      dateFilter.createdAt = { ...dateFilter.createdAt, gte: startRange.start }
     }
     if (endDate) {
-      dateFilter.createdAt = { ...dateFilter.createdAt, lte: new Date(endDate + 'T23:59:59') }
+      const endRange = getBusinessDayRange(endDate, dayStartTime)
+      dateFilter.createdAt = { ...dateFilter.createdAt, lte: endRange.end }
     }
 
     // Build employee filter

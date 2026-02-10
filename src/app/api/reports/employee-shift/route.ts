@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
 
 // GET - Generate employee shift report
 export async function GET(request: NextRequest) {
@@ -59,21 +61,25 @@ export async function GET(request: NextRequest) {
       shiftStart = shift.startedAt
       shiftEnd = shift.endedAt || new Date()
     } else {
-      // Find shift by employee and date
+      // Find shift by employee and date using business day boundaries
+      const shiftLocation = await db.location.findUnique({
+        where: { id: locationId! },
+        select: { settings: true },
+      })
+      const locationSettings = parseSettings(shiftLocation?.settings)
+      const dayStartTime = locationSettings.businessDay.dayStartTime
+
       let startOfDay: Date
       let endOfDay: Date
 
       if (dateStr) {
-        // Parse as UTC date to avoid timezone issues
-        startOfDay = new Date(dateStr + 'T00:00:00.000Z')
-        endOfDay = new Date(dateStr + 'T23:59:59.999Z')
+        const range = getBusinessDayRange(dateStr, dayStartTime)
+        startOfDay = range.start
+        endOfDay = range.end
       } else {
-        // For "today", use local time boundaries
-        const now = new Date()
-        startOfDay = new Date(now)
-        startOfDay.setHours(0, 0, 0, 0)
-        endOfDay = new Date(now)
-        endOfDay.setHours(23, 59, 59, 999)
+        const current = getCurrentBusinessDay(dayStartTime)
+        startOfDay = current.start
+        endOfDay = current.end
       }
 
       shift = await db.shift.findFirst({
@@ -183,53 +189,70 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    // Fetch tip shares received by this employee
-    const tipSharesReceived = await db.tipShare.findMany({
+    // Migrated from legacy TipShare (Skill 273)
+    // Fetch tip-out credits received by this employee from TipLedgerEntry
+    const tipOutsReceived = await db.tipLedgerEntry.findMany({
       where: {
+        employeeId: employee.id,
         locationId: locationIdToUse,
-        toEmployeeId: employee.id,
+        sourceType: 'ROLE_TIPOUT',
+        type: 'CREDIT',
+        deletedAt: null,
         createdAt: { gte: shiftStart, lte: shiftEnd },
-      },
-      include: {
-        fromEmployee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-        rule: {
-          select: {
-            percentage: true,
-          },
-        },
       },
     })
 
-    // Fetch tip shares given by this employee (during their shift closeout)
-    const tipSharesGiven = await db.tipShare.findMany({
+    // Migrated from legacy TipShare (Skill 273)
+    // Fetch tip-out debits given by this employee from TipLedgerEntry
+    const tipOutsGiven = await db.tipLedgerEntry.findMany({
       where: {
+        employeeId: employee.id,
         locationId: locationIdToUse,
-        fromEmployeeId: employee.id,
+        sourceType: 'ROLE_TIPOUT',
+        type: 'DEBIT',
+        deletedAt: null,
         createdAt: { gte: shiftStart, lte: shiftEnd },
       },
-      include: {
-        toEmployee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-        rule: {
-          select: {
-            percentage: true,
-          },
-        },
-      },
     })
+
+    // Resolve counterparty employees for the tip-out detail lines.
+    // Each DEBIT has a paired CREDIT (and vice versa) sharing the same sourceId.
+    // Collect all sourceIds, then batch-fetch counterparty entries + employee names.
+    const allSourceIds = [
+      ...tipOutsReceived.map(e => e.sourceId).filter(Boolean),
+      ...tipOutsGiven.map(e => e.sourceId).filter(Boolean),
+    ] as string[]
+
+    // For received (CREDITs), the counterparty is the DEBIT with the same sourceId
+    // For given (DEBITs), the counterparty is the CREDIT with the same sourceId
+    const counterpartyEntries = allSourceIds.length > 0
+      ? await db.tipLedgerEntry.findMany({
+          where: {
+            sourceId: { in: allSourceIds },
+            sourceType: 'ROLE_TIPOUT',
+            deletedAt: null,
+            employeeId: { not: employee.id },
+          },
+          include: {
+            employee: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                displayName: true,
+              },
+            },
+          },
+        })
+      : []
+
+    // Build sourceId -> counterparty employee lookup
+    const counterpartyBySourceId = new Map<string, { id: string; firstName: string; lastName: string; displayName: string | null }>()
+    for (const entry of counterpartyEntries) {
+      if (entry.sourceId) {
+        counterpartyBySourceId.set(entry.sourceId, entry.employee)
+      }
+    }
 
     // Fetch categories
     const categories = await db.category.findMany({
@@ -531,14 +554,16 @@ export async function GET(request: NextRequest) {
     // ============================================
 
     const tipsEarned = totalTips // Tips from orders this employee earned
-    const tipsGivenTotal = tipSharesGiven.reduce((sum, ts) => sum + Number(ts.amount), 0)
-    const tipsReceivedTotal = tipSharesReceived.reduce((sum, ts) => sum + Number(ts.amount), 0)
-    const tipsReceivedPending = tipSharesReceived
-      .filter(ts => ts.status === 'pending')
-      .reduce((sum, ts) => sum + Number(ts.amount), 0)
-    const tipsReceivedCollected = tipSharesReceived
-      .filter(ts => ts.status === 'collected')
-      .reduce((sum, ts) => sum + Number(ts.amount), 0)
+    // Migrated from legacy TipShare (Skill 273)
+    // amountCents is positive for CREDIT, negative for DEBIT in the ledger;
+    // however the query already filters by type, so DEBIT amountCents are stored
+    // as positive magnitude. Use Math.abs to be safe.
+    const tipsGivenTotal = tipOutsGiven.reduce((sum, e) => sum + Math.abs(e.amountCents), 0) / 100
+    const tipsReceivedTotal = tipOutsReceived.reduce((sum, e) => sum + e.amountCents, 0) / 100
+    // TipLedgerEntry doesn't have a pending/collected status distinction;
+    // all posted entries are considered collected (the ledger is the source of truth).
+    const tipsReceivedPending = 0
+    const tipsReceivedCollected = tipsReceivedTotal
 
     // Net tips = earned - given + received (collected)
     const netTipsCalculated = tipsEarned - tipsGivenTotal + tipsReceivedCollected
@@ -709,33 +734,46 @@ export async function GET(request: NextRequest) {
       },
 
       // Tip shares - separates earned tips (subject to tip-out) from received tips (not subject to tip-out)
+      // Migrated from legacy TipShare (Skill 273)
       tipShares: {
         // Tips earned from orders this shift (subject to tip-out calculation)
         earned: round(tipsEarned),
         // Tips given to others (tip-outs)
         given: {
           total: round(tipsGivenTotal),
-          shares: tipSharesGiven.map(ts => ({
-            id: ts.id,
-            to: ts.toEmployee.displayName || `${ts.toEmployee.firstName} ${ts.toEmployee.lastName}`,
-            amount: round(Number(ts.amount)),
-            percentage: ts.rule ? Number(ts.rule.percentage) : null,
-            shareType: ts.shareType,
-          })),
+          shares: tipOutsGiven.map(entry => {
+            const counterparty = entry.sourceId ? counterpartyBySourceId.get(entry.sourceId) : null
+            const toName = counterparty
+              ? (counterparty.displayName || `${counterparty.firstName} ${counterparty.lastName}`)
+              : (entry.memo || 'Unknown')
+            return {
+              id: entry.id,
+              to: toName,
+              amount: round(Math.abs(entry.amountCents) / 100),
+              percentage: null, // TipOutRule percentage not stored on ledger entry
+              shareType: 'role_tipout',
+            }
+          }),
         },
         // Tips received from others (NOT subject to tip-out - already tipped out by the giver)
         received: {
           total: round(tipsReceivedTotal),
           pending: round(tipsReceivedPending),
           collected: round(tipsReceivedCollected),
-          shares: tipSharesReceived.map(ts => ({
-            id: ts.id,
-            from: ts.fromEmployee.displayName || `${ts.fromEmployee.firstName} ${ts.fromEmployee.lastName}`,
-            amount: round(Number(ts.amount)),
-            percentage: ts.rule ? Number(ts.rule.percentage) : null,
-            shareType: ts.shareType,
-            status: ts.status,
-          })),
+          shares: tipOutsReceived.map(entry => {
+            const counterparty = entry.sourceId ? counterpartyBySourceId.get(entry.sourceId) : null
+            const fromName = counterparty
+              ? (counterparty.displayName || `${counterparty.firstName} ${counterparty.lastName}`)
+              : (entry.memo || 'Unknown')
+            return {
+              id: entry.id,
+              from: fromName,
+              amount: round(entry.amountCents / 100),
+              percentage: null, // TipOutRule percentage not stored on ledger entry
+              shareType: 'role_tipout',
+              status: 'collected', // All posted ledger entries are collected
+            }
+          }),
         },
         // Net tips = earned - given + received(collected)
         netTips: round(netTipsCalculated),

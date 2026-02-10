@@ -152,38 +152,44 @@ export async function PUT(
           },
         })
 
-        // Get tip shares
-        const tipSharesGiven = await db.tipShare.findMany({
-          where: {
-            fromEmployeeId: employee.id,
-            createdAt: {
-              gte: period.periodStart,
-              lte: period.periodEnd,
+        // Migrated from legacy TipBank/TipShare (Skill 273) — now uses TipLedgerEntry
+        const [tipOutsGivenAgg, tipOutsReceivedAgg, tipCreditsAgg] = await Promise.all([
+          db.tipLedgerEntry.aggregate({
+            where: {
+              employeeId: employee.id,
+              sourceType: 'ROLE_TIPOUT',
+              type: 'DEBIT',
+              deletedAt: null,
+              createdAt: { gte: period.periodStart, lte: period.periodEnd },
             },
-          },
-        })
+            _sum: { amountCents: true },
+          }),
+          db.tipLedgerEntry.aggregate({
+            where: {
+              employeeId: employee.id,
+              sourceType: 'ROLE_TIPOUT',
+              type: 'CREDIT',
+              deletedAt: null,
+              createdAt: { gte: period.periodStart, lte: period.periodEnd },
+            },
+            _sum: { amountCents: true },
+          }),
+          db.tipLedgerEntry.aggregate({
+            where: {
+              employeeId: employee.id,
+              sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
+              type: 'CREDIT',
+              deletedAt: null,
+              createdAt: { gte: period.periodStart, lte: period.periodEnd },
+            },
+            _sum: { amountCents: true },
+          }),
+        ])
 
-        const tipSharesReceived = await db.tipShare.findMany({
-          where: {
-            toEmployeeId: employee.id,
-            createdAt: {
-              gte: period.periodStart,
-              lte: period.periodEnd,
-            },
-          },
-        })
-
-        // Get banked tips collected
-        const bankedTips = await db.tipBank.findMany({
-          where: {
-            employeeId: employee.id,
-            status: 'collected',
-            collectedAt: {
-              gte: period.periodStart,
-              lte: period.periodEnd,
-            },
-          },
-        })
+        // Convert cents to dollars for downstream calculations
+        const tipSharesGivenTotal = Math.abs(tipOutsGivenAgg._sum.amountCents || 0) / 100
+        const tipSharesReceivedTotal = (tipOutsReceivedAgg._sum.amountCents || 0) / 100
+        const bankedTipsCollected = (tipCreditsAgg._sum.amountCents || 0) / 100
 
         // Get commission from orders
         const orders = await db.order.findMany({
@@ -209,9 +215,7 @@ export async function PUT(
         const totalWagesEmp = regularPay + overtimePay
 
         const declaredTips = shifts.reduce((sum, s) => sum + Number(s.tipsDeclared || 0), 0)
-        const tipSharesGivenTotal = tipSharesGiven.reduce((sum, ts) => sum + Number(ts.amount), 0)
-        const tipSharesReceivedTotal = tipSharesReceived.reduce((sum, ts) => sum + Number(ts.amount), 0)
-        const bankedTipsCollected = bankedTips.reduce((sum, bt) => sum + Number(bt.amount), 0)
+        // tipSharesGivenTotal, tipSharesReceivedTotal, bankedTipsCollected already computed above from TipLedgerEntry
         const netTipsEmp = declaredTips - tipSharesGivenTotal + tipSharesReceivedTotal + bankedTipsCollected
 
         const commissionTotal = orders.reduce((sum, o) => sum + Number(o.commissionTotal), 0)

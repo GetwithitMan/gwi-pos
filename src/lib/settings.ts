@@ -76,6 +76,14 @@ export interface TipBankSettings {
   // check_both = proportional credit split between open-time and close-time groups
 }
 
+export interface BusinessDaySettings {
+  dayStartTime: string         // HH:MM format, default "04:00"
+  enforceClockOut: boolean     // Force clock-out by day boundary (default: true)
+  enforceTabClose: boolean     // Force tab close by day boundary (default: true)
+  batchAtDayEnd: boolean       // Run daily batch at day boundary (default: true)
+  graceMinutes: number         // Grace period after boundary (default: 15)
+}
+
 export interface ClockOutSettings {
   requireSettledBeforeClockOut: boolean   // Check for open tabs/orders before allowing clock-out
   requireTipsAdjusted: boolean           // Check for unadjusted tips before clock-out
@@ -344,6 +352,7 @@ export interface LocationSettings {
   barTabs: BarTabSettings
   posDisplay: POSDisplaySettings
   clockOut: ClockOutSettings
+  businessDay: BusinessDaySettings
   receiptDisplay: GlobalReceiptSettings  // Controls WHAT features are available in the Visual Editor
 }
 
@@ -502,6 +511,13 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     requireTipsAdjusted: false,            // Off by default (not all locations need this)
     allowTransferOnClockOut: true,         // Allow transfers by default
   },
+  businessDay: {
+    dayStartTime: '04:00',
+    enforceClockOut: true,
+    enforceTabClose: true,
+    batchAtDayEnd: true,
+    graceMinutes: 15,
+  },
   receiptDisplay: DEFAULT_GLOBAL_RECEIPT_SETTINGS,
 }
 
@@ -571,6 +587,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     clockOut: {
       ...DEFAULT_SETTINGS.clockOut,
       ...(partial.clockOut || {}),
+    },
+    businessDay: {
+      ...DEFAULT_SETTINGS.businessDay,
+      ...(partial.businessDay || {}),
     },
     receiptDisplay: mergeGlobalReceiptSettings(partial.receiptDisplay),
   }

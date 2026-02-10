@@ -14,11 +14,18 @@
  */
 
 import { db } from '@/lib/db'
-import { postToTipLedger } from '@/lib/domain/tips/tip-ledger'
+import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips/tip-ledger'
+import type { TxClient } from '@/lib/domain/tips/tip-ledger'
 import {
   findActiveGroupForEmployee,
   findSegmentForTimestamp,
 } from '@/lib/domain/tips/tip-groups'
+import {
+  getActiveOwnership,
+  adjustAllocationsByOwnership,
+} from '@/lib/domain/tips/table-ownership'
+import type { OwnershipInfo } from '@/lib/domain/tips/table-ownership'
+import type { TipBankSettings } from '@/lib/settings'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,6 +52,81 @@ export interface GroupCheckoutBreakdown {
   soloTipsCents: number
   groupTipsCents: number
   totalTipsCents: number
+}
+
+// ─── Payment Facade ──────────────────────────────────────────────────────────
+
+/**
+ * Top-level facade for tip allocation at payment time.
+ * Called by the pay route. Handles CC fee deduction, then delegates
+ * to allocateTipsForOrder which handles group detection + splits.
+ *
+ * This is the ONLY function the pay route should call for tips.
+ */
+export async function allocateTipsForPayment(params: {
+  locationId: string
+  orderId: string
+  primaryEmployeeId: string
+  createdPayments: Array<{ id: string; paymentMethod: string; tipAmount: unknown }>
+  totalTipsDollars: number
+  tipBankSettings: TipBankSettings
+  kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
+}): Promise<TipAllocationResult | null> {
+  const {
+    locationId,
+    orderId,
+    primaryEmployeeId,
+    createdPayments,
+    totalTipsDollars,
+    tipBankSettings,
+    kind = 'tip',
+  } = params
+
+  // Skill 280: Feature flag — skip allocation when tip bank is disabled for this location
+  if (!tipBankSettings.enabled) return null
+
+  const tipAmountCents = dollarsToCents(totalTipsDollars)
+  if (tipAmountCents <= 0) return null
+
+  // Determine card vs cash tip amounts
+  const cardTipDollars = createdPayments
+    .filter(p => p.paymentMethod !== 'cash')
+    .reduce((sum, p) => sum + Number(p.tipAmount), 0)
+  const cardTipCents = dollarsToCents(cardTipDollars)
+
+  // CC Fee Deduction: reduce card tips by processing fee before crediting employee
+  let ccFeeAmountCents = 0
+  if (
+    cardTipCents > 0 &&
+    tipBankSettings.deductCCFeeFromTips &&
+    tipBankSettings.ccFeePercent > 0
+  ) {
+    ccFeeAmountCents = Math.round(cardTipCents * tipBankSettings.ccFeePercent / 100)
+  }
+
+  const netTipAmountCents = tipAmountCents - ccFeeAmountCents
+
+  // Determine sourceType based on whether card tips exist
+  const sourceType: 'CARD' | 'CASH' = cardTipCents > 0 ? 'CARD' : 'CASH'
+
+  // Find a paymentId to link (use the first payment with a tip, or the first payment)
+  const paymentWithTip = createdPayments.find(p => Number(p.tipAmount) > 0)
+  const paymentId = paymentWithTip?.id || createdPayments[0]?.id || ''
+
+  // Delegate to the allocation pipeline (handles group detection + splits)
+  const result = await allocateTipsForOrder({
+    locationId,
+    orderId,
+    paymentId,
+    tipAmountCents: netTipAmountCents,
+    primaryEmployeeId,
+    sourceType,
+    collectedAt: new Date(),
+    ccFeeAmountCents,
+    kind,
+  })
+
+  return result
 }
 
 // ─── Core Functions ──────────────────────────────────────────────────────────
@@ -77,6 +159,8 @@ export async function allocateTipsForOrder(params: {
   primaryEmployeeId: string
   sourceType: 'CARD' | 'CASH'
   collectedAt: Date
+  ccFeeAmountCents?: number
+  kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
 }): Promise<TipAllocationResult> {
   const {
     locationId,
@@ -86,6 +170,8 @@ export async function allocateTipsForOrder(params: {
     primaryEmployeeId,
     sourceType,
     collectedAt,
+    ccFeeAmountCents,
+    kind = 'tip',
   } = params
 
   // Zero-tip guard: nothing to allocate
@@ -98,6 +184,7 @@ export async function allocateTipsForOrder(params: {
         paymentId,
         amountCents: 0,
         sourceType,
+        kind,
         collectedAt,
         primaryEmployeeId,
       },
@@ -107,6 +194,50 @@ export async function allocateTipsForOrder(params: {
       tipTransactionId: txn.id,
       allocations: [],
     }
+  }
+
+  // ── Idempotency guard (Skill 274) ──────────────────────────────────────────
+  // If this order+payment combo was already allocated, return the existing data
+  // instead of double-posting. This protects against fire-and-forget retries.
+  const idemKey = `tip-txn:${orderId}:${paymentId}`
+  const existingTxn = await db.tipTransaction.findFirst({
+    where: { idempotencyKey: idemKey, deletedAt: null },
+  })
+  if (existingTxn) {
+    const existingEntries = await db.tipLedgerEntry.findMany({
+      where: { sourceId: existingTxn.id, deletedAt: null },
+      select: { id: true, employeeId: true, amountCents: true, sourceType: true },
+    })
+    return {
+      tipTransactionId: existingTxn.id,
+      allocations: existingEntries.map(e => ({
+        employeeId: e.employeeId,
+        amountCents: e.amountCents,
+        sourceType: e.sourceType as 'DIRECT_TIP' | 'TIP_GROUP',
+        ledgerEntryId: e.id,
+      })),
+    }
+  }
+
+  // ── Skill 276: Check for shared table ownership ─────────────────────────
+  // If multiple servers co-own this order, split the tip by ownership
+  // percentages BEFORE checking for tip groups. Each owner's slice then
+  // independently routes through group-or-individual allocation.
+  const ownership = await getActiveOwnership(orderId)
+
+  if (ownership && ownership.owners.length > 1) {
+    return allocateWithOwnership({
+      locationId,
+      orderId,
+      paymentId,
+      tipAmountCents,
+      primaryEmployeeId,
+      sourceType,
+      collectedAt,
+      ccFeeAmountCents,
+      kind,
+      ownership,
+    })
   }
 
   // Check whether the primary employee is in an active tip group
@@ -122,6 +253,8 @@ export async function allocateTipsForOrder(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      ccFeeAmountCents,
+      kind,
     })
   }
 
@@ -135,6 +268,8 @@ export async function allocateTipsForOrder(params: {
     sourceType,
     collectedAt,
     groupId: activeGroup.id,
+    ccFeeAmountCents,
+    kind,
   })
 }
 
@@ -301,6 +436,175 @@ export async function calculateGroupCheckout(params: {
 // ─── Internal Helpers ────────────────────────────────────────────────────────
 
 /**
+ * Skill 276: Allocate a tip across multiple table co-owners.
+ *
+ * Splits the tip by ownership percentages, then for each owner independently
+ * checks whether they are in a tip group:
+ *   - If in a group -> delegates that owner's slice to group split logic
+ *   - If not in a group -> posts a DIRECT_TIP credit for that owner
+ *
+ * The entire operation is wrapped in a single $transaction for atomicity.
+ * Idempotency keys include the owner suffix to prevent duplicates per owner.
+ */
+async function allocateWithOwnership(params: {
+  locationId: string
+  orderId: string
+  paymentId: string
+  tipAmountCents: number
+  primaryEmployeeId: string
+  sourceType: 'CARD' | 'CASH'
+  collectedAt: Date
+  ccFeeAmountCents?: number
+  kind?: string
+  ownership: OwnershipInfo
+}): Promise<TipAllocationResult> {
+  const {
+    locationId,
+    orderId,
+    paymentId,
+    tipAmountCents,
+    primaryEmployeeId,
+    sourceType,
+    collectedAt,
+    ccFeeAmountCents,
+    kind = 'tip',
+    ownership,
+  } = params
+
+  // Use adjustAllocationsByOwnership to split the tip cents by owner percentages
+  const ownerSlices = adjustAllocationsByOwnership(
+    [{ employeeId: primaryEmployeeId, amountCents: tipAmountCents }],
+    ownership
+  )
+
+  // If adjustment returned nothing (e.g. zero-tip edge case), record an empty transaction
+  if (ownerSlices.length === 0) {
+    const txn = await db.tipTransaction.create({
+      data: {
+        locationId,
+        orderId,
+        paymentId,
+        amountCents: 0,
+        sourceType,
+        kind,
+        collectedAt,
+        primaryEmployeeId,
+        ccFeeAmountCents: ccFeeAmountCents ?? 0,
+        idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
+      },
+    })
+    return { tipTransactionId: txn.id, allocations: [] }
+  }
+
+  // Pre-fetch group membership for each owner outside the transaction to
+  // minimize time spent inside the transaction lock
+  const ownerGroups = new Map<string, { id: string } | null>()
+  for (const slice of ownerSlices) {
+    const group = await findActiveGroupForEmployee(slice.employeeId)
+    ownerGroups.set(slice.employeeId, group)
+  }
+
+  // Wrap everything in a single transaction for atomicity
+  const result = await db.$transaction(async (tx: TxClient) => {
+    // Create a single TipTransaction for the whole order+payment
+    const tipTxn = await tx.tipTransaction.create({
+      data: {
+        locationId,
+        orderId,
+        paymentId,
+        amountCents: tipAmountCents,
+        sourceType,
+        kind,
+        collectedAt,
+        primaryEmployeeId,
+        ccFeeAmountCents: ccFeeAmountCents ?? 0,
+        idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
+      },
+    })
+
+    const allAllocations: TipAllocationResult['allocations'] = []
+
+    for (const slice of ownerSlices) {
+      if (slice.amountCents <= 0) continue
+
+      const ownerGroup = ownerGroups.get(slice.employeeId)
+
+      if (ownerGroup) {
+        // Owner is in a tip group -- find the active segment and split their slice
+        const segment = await findSegmentForTimestamp(ownerGroup.id, collectedAt)
+
+        if (segment) {
+          const splitJson = segment.splitJson
+          const memberIds = Object.keys(splitJson).sort()
+
+          if (memberIds.length > 0) {
+            const shares = calculateShares(slice.amountCents, splitJson, memberIds)
+
+            for (const { employeeId: memberId, amountCents: memberCents } of shares) {
+              if (memberCents <= 0) continue
+
+              const ledgerEntry = await postToTipLedger({
+                locationId,
+                employeeId: memberId,
+                amountCents: memberCents,
+                type: 'CREDIT',
+                sourceType: 'TIP_GROUP',
+                sourceId: tipTxn.id,
+                orderId,
+                memo: `Group tip split (shared table) from order ${orderId} (${sourceType})`,
+                idempotencyKey: `tip-ledger:${orderId}:${paymentId}:owner:${slice.employeeId}:group:${memberId}`,
+              }, tx)
+
+              allAllocations.push({
+                employeeId: memberId,
+                amountCents: memberCents,
+                sourceType: 'TIP_GROUP',
+                ledgerEntryId: ledgerEntry.id,
+              })
+            }
+
+            continue // Done with this owner's slice
+          }
+        }
+
+        // Segment not found or empty -- fall through to direct allocation
+        console.warn(
+          `[tip-allocation] No segment found for group ${ownerGroup.id} at ${collectedAt.toISOString()}. ` +
+            `Falling back to direct allocation for owner ${slice.employeeId}.`
+        )
+      }
+
+      // Owner is NOT in a group (or group had no valid segment) -- direct credit
+      const ledgerEntry = await postToTipLedger({
+        locationId,
+        employeeId: slice.employeeId,
+        amountCents: slice.amountCents,
+        type: 'CREDIT',
+        sourceType: 'DIRECT_TIP',
+        sourceId: tipTxn.id,
+        orderId,
+        memo: `Tip from shared table order ${orderId} (${sourceType})`,
+        idempotencyKey: `tip-ledger:${orderId}:${paymentId}:owner:${slice.employeeId}`,
+      }, tx)
+
+      allAllocations.push({
+        employeeId: slice.employeeId,
+        amountCents: slice.amountCents,
+        sourceType: 'DIRECT_TIP',
+        ledgerEntryId: ledgerEntry.id,
+      })
+    }
+
+    return {
+      tipTransactionId: tipTxn.id,
+      allocations: allAllocations,
+    }
+  })
+
+  return result
+}
+
+/**
  * Allocate a tip to a single employee (not in a group).
  * Creates a TipTransaction and one DIRECT_TIP ledger credit, atomically.
  */
@@ -312,6 +616,8 @@ async function allocateIndividual(params: {
   primaryEmployeeId: string
   sourceType: 'CARD' | 'CASH'
   collectedAt: Date
+  ccFeeAmountCents?: number
+  kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
 }): Promise<TipAllocationResult> {
   const {
     locationId,
@@ -321,9 +627,11 @@ async function allocateIndividual(params: {
     primaryEmployeeId,
     sourceType,
     collectedAt,
+    ccFeeAmountCents,
+    kind = 'tip',
   } = params
 
-  // Create TipTransaction record
+  // Create TipTransaction record (Skill 274: idempotency key)
   const tipTxn = await db.tipTransaction.create({
     data: {
       locationId,
@@ -331,12 +639,15 @@ async function allocateIndividual(params: {
       paymentId,
       amountCents: tipAmountCents,
       sourceType,
+      kind,
       collectedAt,
       primaryEmployeeId,
+      ccFeeAmountCents: ccFeeAmountCents ?? 0,
+      idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
     },
   })
 
-  // Post single credit to the employee's ledger
+  // Post single credit to the employee's ledger (Skill 274: idempotency key)
   const ledgerEntry = await postToTipLedger({
     locationId,
     employeeId: primaryEmployeeId,
@@ -346,6 +657,7 @@ async function allocateIndividual(params: {
     sourceId: tipTxn.id,
     orderId,
     memo: `Tip from order ${orderId} (${sourceType})`,
+    idempotencyKey: `tip-ledger:${orderId}:${paymentId}:${primaryEmployeeId}`,
   })
 
   return {
@@ -377,6 +689,8 @@ async function allocateToGroup(params: {
   sourceType: 'CARD' | 'CASH'
   collectedAt: Date
   groupId: string
+  ccFeeAmountCents?: number
+  kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
 }): Promise<TipAllocationResult> {
   const {
     locationId,
@@ -387,6 +701,8 @@ async function allocateToGroup(params: {
     sourceType,
     collectedAt,
     groupId,
+    ccFeeAmountCents,
+    kind = 'tip',
   } = params
 
   // Find the segment that was active at collectedAt
@@ -407,11 +723,13 @@ async function allocateToGroup(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      ccFeeAmountCents,
+      kind,
     })
   }
 
   const splitJson = segment.splitJson
-  const memberIds = Object.keys(splitJson)
+  const memberIds = Object.keys(splitJson).sort() // Skill 275: deterministic penny allocation
 
   // Edge case: empty segment (should not happen, but be safe)
   if (memberIds.length === 0) {
@@ -427,57 +745,72 @@ async function allocateToGroup(params: {
       primaryEmployeeId,
       sourceType,
       collectedAt,
+      ccFeeAmountCents,
+      kind,
     })
   }
-
-  // Create TipTransaction linked to the group and segment
-  const tipTxn = await db.tipTransaction.create({
-    data: {
-      locationId,
-      orderId,
-      paymentId,
-      amountCents: tipAmountCents,
-      sourceType,
-      collectedAt,
-      primaryEmployeeId,
-      tipGroupId: groupId,
-      segmentId: segment.id,
-    },
-  })
 
   // Calculate each member's share, with last member absorbing rounding
   const shares = calculateShares(tipAmountCents, splitJson, memberIds)
 
-  // Post a ledger credit for each member
-  const allocations: TipAllocationResult['allocations'] = []
-
-  for (const { employeeId, amountCents } of shares) {
-    // Skip zero-cent allocations (can happen with very small tips + many members)
-    if (amountCents <= 0) continue
-
-    const ledgerEntry = await postToTipLedger({
-      locationId,
-      employeeId,
-      amountCents,
-      type: 'CREDIT',
-      sourceType: 'TIP_GROUP',
-      sourceId: tipTxn.id,
-      orderId,
-      memo: `Group tip split from order ${orderId} (${sourceType})`,
+  // ── Single transaction for the entire group allocation (Skill 271) ────
+  // Wrapping TipTransaction creation + all ledger posts in one $transaction
+  // prevents nested transaction failures on SQLite and ensures all member
+  // credits commit or rollback together.
+  const result = await db.$transaction(async (tx: TxClient) => {
+    // Create TipTransaction linked to the group and segment (Skill 274: idempotency key)
+    const tipTxn = await tx.tipTransaction.create({
+      data: {
+        locationId,
+        orderId,
+        paymentId,
+        amountCents: tipAmountCents,
+        sourceType,
+        kind,
+        collectedAt,
+        primaryEmployeeId,
+        tipGroupId: groupId,
+        segmentId: segment.id,
+        ccFeeAmountCents: ccFeeAmountCents ?? 0,
+        idempotencyKey: `tip-txn:${orderId}:${paymentId}`,
+      },
     })
 
-    allocations.push({
-      employeeId,
-      amountCents,
-      sourceType: 'TIP_GROUP',
-      ledgerEntryId: ledgerEntry.id,
-    })
-  }
+    // Post a ledger credit for each member (using caller's transaction)
+    const allocations: TipAllocationResult['allocations'] = []
 
-  return {
-    tipTransactionId: tipTxn.id,
-    allocations,
-  }
+    for (const { employeeId, amountCents } of shares) {
+      // Skip zero-cent allocations (can happen with very small tips + many members)
+      if (amountCents <= 0) continue
+
+      // Skill 274: per-member idempotency key
+      const ledgerEntry = await postToTipLedger({
+        locationId,
+        employeeId,
+        amountCents,
+        type: 'CREDIT',
+        sourceType: 'TIP_GROUP',
+        sourceId: tipTxn.id,
+        orderId,
+        memo: `Group tip split from order ${orderId} (${sourceType})`,
+        idempotencyKey: `tip-ledger:${orderId}:${paymentId}:${employeeId}`,
+      }, tx)  // Pass txClient to avoid nested transactions
+
+      allocations.push({
+        employeeId,
+        amountCents,
+        sourceType: 'TIP_GROUP',
+        ledgerEntryId: ledgerEntry.id,
+      })
+    }
+
+    return {
+      tipTransactionId: tipTxn.id,
+      allocations,
+    }
+  })
+
+  return result
 }
 
 /**

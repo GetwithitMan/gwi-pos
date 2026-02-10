@@ -67,13 +67,15 @@ function buildEqualSplitJson(memberIds: string[]): Record<string, number> {
   const count = memberIds.length
   if (count === 0) return splitJson
 
+  // Skill 275: sort for deterministic remainder allocation
+  const sorted = [...memberIds].sort()
   const perMember = Math.floor((1 / count) * 10000) / 10000
   let allocated = 0
   for (let i = 0; i < count; i++) {
     if (i === count - 1) {
-      splitJson[memberIds[i]] = Math.round((1 - allocated) * 10000) / 10000
+      splitJson[sorted[i]] = Math.round((1 - allocated) * 10000) / 10000
     } else {
-      splitJson[memberIds[i]] = perMember
+      splitJson[sorted[i]] = perMember
       allocated += perMember
     }
   }
@@ -81,18 +83,78 @@ function buildEqualSplitJson(memberIds: string[]): Record<string, number> {
 }
 
 /**
- * Create a new segment with equal splits based on active member IDs.
+ * Build a role-weighted split JSON from member employee IDs and their role weights.
+ * Each member's share = their weight / total weight of all members.
+ * The last member (alphabetically) absorbs rounding remainder.
+ *
+ * Example: weights [1.5, 1.0, 0.5] => total 3.0 => shares [0.5, 0.3333, 0.1667]
+ */
+function buildWeightedSplitJson(
+  members: Array<{ employeeId: string; weight: number }>
+): Record<string, number> {
+  const splitJson: Record<string, number> = {}
+  if (members.length === 0) return splitJson
+
+  // Sort for deterministic remainder allocation (Skill 275)
+  const sorted = [...members].sort((a, b) => a.employeeId.localeCompare(b.employeeId))
+
+  const totalWeight = sorted.reduce((sum, m) => sum + m.weight, 0)
+  if (totalWeight <= 0) {
+    // Fallback to equal split if all weights are zero
+    return buildEqualSplitJson(sorted.map(m => m.employeeId))
+  }
+
+  let allocated = 0
+  for (let i = 0; i < sorted.length; i++) {
+    if (i === sorted.length - 1) {
+      // Last member absorbs rounding remainder
+      splitJson[sorted[i].employeeId] = Math.round((1 - allocated) * 10000) / 10000
+    } else {
+      const share = Math.floor((sorted[i].weight / totalWeight) * 10000) / 10000
+      splitJson[sorted[i].employeeId] = share
+      allocated += share
+    }
+  }
+  return splitJson
+}
+
+/**
+ * Create a new segment with splits based on active member IDs.
+ * When splitMode is 'role_weighted', looks up each member's role tipWeight.
+ * Otherwise falls back to equal splits.
  * Uses the transaction client so it can be called inside $transaction blocks.
  */
 async function createSegment(
   tx: TxClient,
   groupId: string,
   locationId: string,
-  activeMembers: { employeeId: string }[]
+  activeMembers: { employeeId: string }[],
+  splitMode: string = 'equal'
 ): Promise<TipGroupSegmentInfo> {
   const now = new Date()
   const memberIds = activeMembers.map((m) => m.employeeId)
-  const splitJson = buildEqualSplitJson(memberIds)
+
+  let splitJson: Record<string, number>
+
+  if (splitMode === 'role_weighted' && memberIds.length > 0) {
+    // Look up each member's role weight
+    const employees = await tx.employee.findMany({
+      where: { id: { in: memberIds } },
+      select: {
+        id: true,
+        role: { select: { tipWeight: true } },
+      },
+    })
+
+    const weightedMembers = employees.map(emp => ({
+      employeeId: emp.id,
+      weight: Number(emp.role?.tipWeight ?? 1),
+    }))
+
+    splitJson = buildWeightedSplitJson(weightedMembers)
+  } else {
+    splitJson = buildEqualSplitJson(memberIds)
+  }
 
   const segment = await tx.tipGroupSegment.create({
     data: {
@@ -264,12 +326,13 @@ export async function startTipGroup(params: {
       })),
     })
 
-    // 3. Create first segment with equal splits
+    // 3. Create first segment with splits based on mode
     await createSegment(
       tx,
       tipGroup.id,
       locationId,
-      allMemberIds.map((id) => ({ employeeId: id }))
+      allMemberIds.map((id) => ({ employeeId: id })),
+      mode
     )
 
     return tipGroup
@@ -341,8 +404,8 @@ export async function addMemberToGroup(params: {
       select: { employeeId: true },
     })
 
-    // Create new segment with recalculated equal splits
-    await createSegment(tx, groupId, group.locationId, activeMembers)
+    // Create new segment with recalculated splits
+    await createSegment(tx, groupId, group.locationId, activeMembers, group.splitMode)
   })
 
   const info = await getGroupInfo(groupId)
@@ -414,7 +477,7 @@ export async function removeMemberFromGroup(params: {
     }
 
     // Create new segment without the removed member
-    await createSegment(tx, groupId, group.locationId, remainingMembers)
+    await createSegment(tx, groupId, group.locationId, remainingMembers, group.splitMode)
 
     return false // group still active
   })
@@ -533,7 +596,7 @@ export async function approveJoinRequest(params: {
     })
 
     // Create new segment including approved member
-    await createSegment(tx, groupId, group.locationId, activeMembers)
+    await createSegment(tx, groupId, group.locationId, activeMembers, group.splitMode)
   })
 
   const info = await getGroupInfo(groupId)

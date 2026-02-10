@@ -171,19 +171,21 @@ export async function DELETE(
       )
     }
 
-    // Check if rule has been used in any tip shares
-    const usedInShares = await db.tipShare.count({
-      where: { ruleId: id }
-    })
+    // Check if rule has been used in any tip shares or ledger entries (Skill 273)
+    // Check both legacy TipShare and new TipLedgerEntry for historical usage
+    const [usedInShares, usedInLedger] = await Promise.all([
+      db.tipShare.count({ where: { ruleId: id } }),
+      db.tipLedgerEntry.count({ where: { sourceType: 'ROLE_TIPOUT', sourceId: id, deletedAt: null } }),
+    ])
 
-    if (usedInShares > 0) {
+    if (usedInShares > 0 || usedInLedger > 0) {
       // Instead of deleting, deactivate it
       await db.tipOutRule.update({
         where: { id },
         data: { isActive: false }
       })
       return NextResponse.json({
-        message: 'Tip-out rule has been deactivated (it has historical tip shares)'
+        message: 'Tip-out rule has been deactivated (it has historical tip data)'
       })
     }
 

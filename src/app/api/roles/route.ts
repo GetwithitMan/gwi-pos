@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
         name: role.name,
         permissions: getPermissionsArray(role.permissions),
         isTipped: role.isTipped,
+        tipWeight: Number(role.tipWeight),
         cashHandlingMode: role.cashHandlingMode,
         trackLaborCost: role.trackLaborCost,
         employeeCount: role._count.employees,
@@ -72,13 +73,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped } = body as {
+    const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight } = body as {
       locationId: string
       name: string
       permissions: string[]
       cashHandlingMode?: string
       trackLaborCost?: boolean
       isTipped?: boolean
+      tipWeight?: number
     }
 
     if (!locationId || !name) {
@@ -111,6 +113,7 @@ export async function POST(request: NextRequest) {
         ...(cashHandlingMode !== undefined ? { cashHandlingMode } : {}),
         ...(trackLaborCost !== undefined ? { trackLaborCost } : {}),
         ...(isTipped !== undefined ? { isTipped } : {}),
+        ...(tipWeight !== undefined ? { tipWeight: Number(tipWeight) } : {}),
       },
     })
 
@@ -119,6 +122,7 @@ export async function POST(request: NextRequest) {
       name: role.name,
       permissions: getPermissionsArray(role.permissions),
       isTipped: role.isTipped,
+      tipWeight: Number(role.tipWeight),
       cashHandlingMode: role.cashHandlingMode,
       trackLaborCost: role.trackLaborCost,
       createdAt: role.createdAt.toISOString(),

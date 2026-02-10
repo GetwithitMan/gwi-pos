@@ -1,6 +1,6 @@
 # GWI POS — Tip Bank System
 
-**Skills:** 250–267 | **Domain:** Tips & Tip Bank | **Status:** Complete | **Date:** 2026-02-10
+**Skills:** 250–283 | **Domain:** Tips & Tip Bank | **Status:** Complete | **Date:** 2026-02-10
 
 ---
 
@@ -59,7 +59,7 @@ Everything flows through `postToTipLedger()`. Whether it's a direct tip, group p
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       TIP BANK SYSTEM (Skills 250-267)                      │
+│                       TIP BANK SYSTEM (Skills 250-283)                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
@@ -117,13 +117,20 @@ Everything flows through `postToTipLedger()`. Whether it's a direct tip, group p
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │                   INTEGRATION POINTS                                │    │
 │  │                                                                     │    │
+│  │  Payment Route ──→ allocateTipsForPayment() (fire-and-forget)      │    │
 │  │  Payment Route ──→ DIRECT_TIP credit + ccFeeAmountCents tracking   │    │
+│  │  Payment Route ──→ Qualified tip kind (tip/auto_gratuity)          │    │
+│  │  Void Payment ──→ handleTipChargeback() (fire-and-forget)          │    │
+│  │  Shared Tables ──→ allocateWithOwnership() (owner % splits)        │    │
 │  │  Shift Closeout ──→ ROLE_TIPOUT paired debit/credit                │    │
 │  │  Shift Closeout ──→ Printed receipt (ESC/POS thermal)              │    │
 │  │  Daily Report ──→ Printed summary with CC tip fee costs            │    │
 │  │  Time Clock ──→ Informational tip balance (claim at closeout)      │    │
 │  │  Socket Dispatch ──→ Real-time group updates                        │    │
 │  │  Crew Hub ──→ Tip Bank + Tip Group cards                           │    │
+│  │  AdminNav ──→ Tip Groups admin page                                │    │
+│  │  Feature Flag ──→ tipBankSettings.enabled per-location             │    │
+│  │  Integrity ──→ GET /api/tips/integrity drift check                 │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -295,8 +302,8 @@ Each segment stores a `splitJson` with exact percentages. Tips are allocated usi
 
 - `equal` — Even split among all members (default)
 - `custom` — Custom percentages set by owner
-- `role_weighted` — Based on role weights
-- `hours_weighted` — Proportional to hours worked (calculated at checkout)
+- `role_weighted` — Based on `Role.tipWeight` (e.g., Lead Bartender=1.5, Bartender=1.0, Barback=0.5). Uses `buildWeightedSplitJson()` to distribute proportionally. (Skill 282)
+- `hours_weighted` — Proportional to hours worked (calculated at checkout, future)
 
 ### Socket Events
 
@@ -869,13 +876,13 @@ interface TipBankSettings {
 
 ## Database Models
 
-### New Models (10 total)
+### New Models (11 total)
 
 | Model | Purpose | Key Fields |
 |-------|---------|------------|
 | `TipLedger` | Per-employee bank account | `employeeId` (unique), `currentBalanceCents` |
-| `TipLedgerEntry` | Immutable CREDIT/DEBIT entries | `type`, `amountCents`, `sourceType`, `sourceId` |
-| `TipTransaction` | Links tips to orders/payments | `orderId`, `paymentId`, `tipGroupId`, `amountCents`, `ccFeeAmountCents` |
+| `TipLedgerEntry` | Immutable CREDIT/DEBIT entries | `type`, `amountCents`, `sourceType`, `sourceId`, `idempotencyKey` |
+| `TipTransaction` | Links tips to orders/payments | `orderId`, `paymentId`, `tipGroupId`, `amountCents`, `ccFeeAmountCents`, `kind`, `idempotencyKey` |
 | `TipGroup` | Active tip pooling group | `ownerId`, `splitMode`, `status` |
 | `TipGroupMembership` | Member join/leave tracking | `groupId`, `employeeId`, `joinedAt`, `leftAt`, `status` |
 | `TipGroupSegment` | Time-stamped split snapshots | `groupId`, `startedAt`, `endedAt`, `splitJson` |
@@ -883,13 +890,16 @@ interface TipBankSettings {
 | `OrderOwnershipEntry` | Per-employee share percentage | `orderOwnershipId`, `employeeId`, `sharePercent` |
 | `TipAdjustment` | Manager adjustment audit record | `createdById`, `adjustmentType`, `contextJson` |
 | `CashTipDeclaration` | Shift cash tip declarations | `employeeId`, `shiftId`, `amountCents`, `source` |
+| `TipDebt` | Chargeback remainder tracking | `employeeId`, `originalAmountCents`, `remainingCents`, `status` (open/partial/recovered/written_off) |
 
 ### Modified Models
 
 | Model | Changes |
 |-------|---------|
 | `TipOutRule` | +`basisType`, `salesCategoryIds`, `maxPercentage`, `effectiveDate`, `expiresAt` |
-| `TipTransaction` | +`ccFeeAmountCents` (Skill 260 — CC fee tracking) |
+| `TipTransaction` | +`ccFeeAmountCents` (Skill 260), +`kind` (Skill 277), +`idempotencyKey` (Skill 274) |
+| `TipLedgerEntry` | +`idempotencyKey` (Skill 274) |
+| `Role` | +`tipWeight` (Skill 282 — default 1.0, used for role_weighted tip group splits) |
 
 ---
 
@@ -925,12 +935,15 @@ interface TipBankSettings {
 | `tips/adjustments/route.ts` | GET, POST |
 | `tips/cash-declarations/route.ts` | GET, POST |
 
-### Report Routes
+### Other API Routes
 
-| Route | Methods |
-|-------|---------|
-| `reports/tip-groups/route.ts` | GET |
-| `reports/payroll-export/route.ts` | GET |
+| Route | Methods | Description |
+|-------|---------|-------------|
+| `reports/tip-groups/route.ts` | GET | Group report with segments |
+| `reports/payroll-export/route.ts` | GET | CSV/JSON payroll export |
+| `tips/integrity/route.ts` | GET | Integrity check + auto-fix (Skill 272) |
+| `orders/[id]/void-payment/route.ts` | POST | Calls `handleTipChargeback()` (Skill 281) |
+| `orders/[id]/pay/route.ts` | POST | Calls `allocateTipsForPayment()` (Skill 269) |
 
 ### Print Routes (Skills 261, 262)
 
@@ -953,6 +966,7 @@ interface TipBankSettings {
 | `/crew/tip-bank` | Employee self-service dashboard + tip transfers |
 | `/crew/tip-group` | Tip group management (start/join/leave) |
 | `/crew/tips` | Redirect → `/crew/tip-bank` |
+| `/tip-groups` | Admin tip groups overview (Skill 283) |
 | `/settings/tips` | Admin tip configuration |
 | `/settings/tip-outs` | Tip-out rule management |
 | `/tips/payouts` | Manager payout page |
@@ -988,21 +1002,45 @@ interface TipBankSettings {
 | **265** | Tip Group UI | 16 | /crew/tip-group page, start/join/leave flows, Crew Hub card |
 | **266** | Shared Table Ownership UI | 17 | SharedOwnershipModal component, even/custom splits |
 | **267** | Manual Tip Transfer Modal | 18 | ManualTipTransferModal component, "Transfer Tips" on tip bank page |
+| **268** | Business Day Boundaries | 19 | All tip reports use `getBusinessDayRange()` instead of calendar midnight |
+| **269** | Wire Tip Allocation to Payment | 20 | `allocateTipsForPayment()` called fire-and-forget from pay route |
+| **270** | Cash Declaration Double-Counting Fix | 21 | Duplicate guard on cash declarations per shift |
+| **271** | txClient Nested Transaction Guard | 22 | `TxClient` parameter pattern for SQLite nested transaction safety |
+| **272** | Tip Integrity Check API | 23 | `GET /api/tips/integrity` with balance drift detection + auto-fix |
+| **273** | Legacy Report Migration | 24 | All 5 tip reports migrated from TipBank/TipShare to TipLedgerEntry |
+| **274** | Idempotency Guard | 25 | `idempotencyKey` on TipLedgerEntry + TipTransaction, dedup in `postToTipLedger()` |
+| **275** | Deterministic Group Splits | 26 | Sort memberIds alphabetically before distributing remainder pennies |
+| **276** | Wire Ownership into Allocation | 27 | `allocateWithOwnership()` — splits tip by owner %, then routes to group/individual |
+| **277** | Qualified Tips vs Service Charges | 28 | `kind` field (tip/service_charge/auto_gratuity), IRS separation in payroll export |
+| **278** | TipDebt Model | 29 | Persistent chargeback remainder tracking, auto-reclaim on future CREDITs |
+| **279** | API Permission Hardening | 30 | Self-access checks on ledger + group join routes |
+| **280** | Feature Flag + Legacy Guard | 31 | `tipBankSettings.enabled` — disable tip allocation per-location |
+| **281** | Wire Void Tip Reversal | 32 | `handleTipChargeback()` called from void-payment route |
+| **282** | Weighted Tip Splits | 33 | `Role.tipWeight`, `buildWeightedSplitJson()`, role_weighted splitMode |
+| **283** | Tip Groups Admin Page | 34 | `/tip-groups` admin page with status/date filters, AdminNav link |
 
 ### Skill Dependencies
 
 ```
 250 (Ledger Foundation)
  ├── 251 (Tip-Out Rules)
- ├── 252 (Tip Groups) ──→ 256 (Adjustments) ──→ 265 (Tip Group UI)
- ├── 253 (Table Ownership) ──→ 266 (Shared Ownership UI)
+ ├── 252 (Tip Groups) ──→ 256 (Adjustments) ──→ 265 (Tip Group UI) ──→ 283 (Admin Page)
+ │    └──→ 275 (Deterministic Splits) ──→ 282 (Weighted Splits)
+ ├── 253 (Table Ownership) ──→ 266 (Shared Ownership UI) ──→ 276 (Wire into Allocation)
  ├── 254 (Transfers & Payouts) ──→ 267 (Tip Transfer Modal)
- ├── 255 (Chargebacks)
+ ├── 255 (Chargebacks) ──→ 278 (TipDebt) ──→ 281 (Wire Void Reversal)
  ├── 257 (Dashboard) ──→ 264 (Merge /crew/tips)
- ├── 258 (Reports) ──→ 262 (Daily Report Print)
- ├── 259 (Compliance) ──→ 263 (Clock-Out Only)
+ ├── 258 (Reports) ──→ 262 (Daily Report Print) ──→ 273 (Ledger Migration)
+ ├── 259 (Compliance) ──→ 263 (Clock-Out Only) ──→ 270 (Cash Decl Fix)
  ├── 260 (CC Fee Tracking) ──→ 262 (Daily Report Print)
- └── 261 (Shift Closeout Print)
+ ├── 261 (Shift Closeout Print)
+ ├── 268 (Business Day Boundaries)
+ ├── 269 (Wire Allocation to Payment) ──→ 274 (Idempotency Guard)
+ ├── 271 (txClient Guard)
+ ├── 272 (Integrity Check API)
+ ├── 277 (Qualified Tips / IRS)
+ ├── 279 (API Permission Hardening)
+ └── 280 (Feature Flag Guard)
 ```
 
 ---
@@ -1068,6 +1106,17 @@ Check:
 
 ### Known Limitations
 
-- SharedOwnershipModal is not yet wired into FloorPlanHome or BartenderView (future skill)
 - Socket events for tip groups are defined but not all client listeners are implemented
-- Tip allocation pipeline (`allocateTipsForOrder`) is not yet wired to the payment route
+- `hours_weighted` split mode is defined but not yet implemented (future skill)
+- No migration script for backfilling existing TipBank/TipShare data into TipLedgerEntry
+
+### Resolved Limitations (Skills 268-283)
+
+- ~~Tip allocation pipeline not wired to payment route~~ → **DONE** (Skill 269)
+- ~~SharedOwnershipModal not wired into FloorPlanHome~~ → **DONE** (Skill 266)
+- ~~Void/refund tip reversal not connected~~ → **DONE** (Skill 281)
+- ~~No idempotency protection on tip allocation~~ → **DONE** (Skill 274)
+- ~~Reports use calendar midnight instead of business day~~ → **DONE** (Skill 268)
+- ~~Reports read from legacy TipBank/TipShare models~~ → **DONE** (Skill 273)
+- ~~No admin page for viewing tip groups~~ → **DONE** (Skill 283)
+- ~~Only equal splits implemented for tip groups~~ → **DONE** (Skill 282, role_weighted)

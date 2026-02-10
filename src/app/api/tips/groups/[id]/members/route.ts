@@ -48,6 +48,26 @@ export async function POST(
 
     // ── Handle 'request' action (self-service join request) ─────────────
     if (action === 'request') {
+      // Skill 279: Self-join only — prevent spoofing
+      if (requestingEmployeeId && requestingEmployeeId !== employeeId) {
+        const groupInfo = await getGroupInfo(groupId)
+        const groupLocationId = groupInfo?.locationId
+        if (groupLocationId) {
+          const auth = await requireAnyPermission(requestingEmployeeId, groupLocationId, [PERMISSIONS.TIPS_MANAGE_GROUPS])
+          if (!auth.authorized) {
+            return NextResponse.json(
+              { error: 'Can only request to join a group for yourself' },
+              { status: 403 }
+            )
+          }
+        } else {
+          return NextResponse.json(
+            { error: 'Tip group not found' },
+            { status: 404 }
+          )
+        }
+      }
+
       const result = await requestJoinGroup({ groupId, employeeId })
 
       return NextResponse.json({

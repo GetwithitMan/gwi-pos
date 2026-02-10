@@ -3,6 +3,11 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { getBusinessDayRange } from '@/lib/business-day'
+import { parseSettings } from '@/lib/settings'
+
+// Migrated from legacy TipBank/TipShare (Skill 273)
+// All tip data now sourced from TipLedgerEntry instead of TipShare/TipBank models.
 
 // GET - Get tips report data
 export async function GET(request: NextRequest) {
@@ -30,77 +35,40 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Build date filter
+    // Get business day settings for proper date boundaries
+    const tipsLocation = await db.location.findUnique({
+      where: { id: locationId },
+      select: { settings: true },
+    })
+    const locationSettings = parseSettings(tipsLocation?.settings)
+    const dayStartTime = locationSettings.businessDay.dayStartTime
+
+    // Build date filter using business day boundaries
     const dateFilter: { createdAt?: { gte?: Date; lte?: Date } } = {}
     if (startDate) {
-      dateFilter.createdAt = { gte: new Date(startDate) }
+      const startRange = getBusinessDayRange(startDate, dayStartTime)
+      dateFilter.createdAt = { gte: startRange.start }
     }
     if (endDate) {
-      const endDateTime = new Date(endDate)
-      endDateTime.setHours(23, 59, 59, 999)
-      dateFilter.createdAt = { ...dateFilter.createdAt, lte: endDateTime }
+      const endRange = getBusinessDayRange(endDate, dayStartTime)
+      dateFilter.createdAt = { ...dateFilter.createdAt, lte: endRange.end }
     }
 
-    // Get tip shares
-    const tipSharesFilter: Prisma.TipShareWhereInput = {
+    // ── Tip shares: query TipLedgerEntry where sourceType = 'ROLE_TIPOUT' ──
+    // DEBIT entries = tip-outs given, CREDIT entries = tip-outs received.
+    // Paired by sourceId (both DEBIT and CREDIT share the same sourceId = TipShare.id).
+    const tipOutFilter: Prisma.TipLedgerEntryWhereInput = {
       locationId,
+      sourceType: 'ROLE_TIPOUT',
+      deletedAt: null,
       ...dateFilter,
     }
     if (employeeId) {
-      tipSharesFilter.OR = [
-        { fromEmployeeId: employeeId },
-        { toEmployeeId: employeeId },
-      ]
+      tipOutFilter.employeeId = employeeId
     }
 
-    const tipShares = await db.tipShare.findMany({
-      where: tipSharesFilter,
-      include: {
-        fromEmployee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-            role: { select: { name: true } },
-          },
-        },
-        toEmployee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-            role: { select: { name: true } },
-          },
-        },
-        shift: {
-          select: {
-            id: true,
-            startedAt: true,
-            endedAt: true,
-          },
-        },
-        rule: {
-          select: {
-            percentage: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    // Get banked tips
-    const tipBankFilter: Prisma.TipBankWhereInput = {
-      locationId,
-      ...dateFilter,
-    }
-    if (employeeId) {
-      tipBankFilter.employeeId = employeeId
-    }
-
-    const bankedTips = await db.tipBank.findMany({
-      where: tipBankFilter,
+    const tipOutEntries = await db.tipLedgerEntry.findMany({
+      where: tipOutFilter,
       include: {
         employee: {
           select: {
@@ -111,19 +79,124 @@ export async function GET(request: NextRequest) {
             role: { select: { name: true } },
           },
         },
-        tipShare: {
-          include: {
-            fromEmployee: {
-              select: {
-                firstName: true,
-                lastName: true,
-                displayName: true,
-              },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    // When filtering by employeeId, we only get that employee's side of the tip-out.
+    // We need the counterpart entries (paired by sourceId) to show from/to names.
+    const tipOutSourceIds = tipOutEntries
+      .map(e => e.sourceId)
+      .filter((id): id is string => id !== null)
+    const uniqueSourceIds = [...new Set(tipOutSourceIds)]
+
+    // Fetch all ROLE_TIPOUT entries for these sourceIds so we can pair DEBIT <-> CREDIT
+    let allTipOutEntries = tipOutEntries
+    if (employeeId && uniqueSourceIds.length > 0) {
+      const counterparts = await db.tipLedgerEntry.findMany({
+        where: {
+          locationId,
+          sourceType: 'ROLE_TIPOUT',
+          sourceId: { in: uniqueSourceIds },
+          deletedAt: null,
+          employeeId: { not: employeeId },
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+              role: { select: { name: true } },
             },
+          },
+        },
+      })
+      allTipOutEntries = [...tipOutEntries, ...counterparts]
+    }
+
+    // Build lookup maps for pairing
+    const debitsBySourceId = new Map<string, typeof allTipOutEntries[number]>()
+    const creditsBySourceId = new Map<string, typeof allTipOutEntries[number]>()
+    for (const entry of allTipOutEntries) {
+      if (!entry.sourceId) continue
+      if (entry.type === 'DEBIT') {
+        debitsBySourceId.set(entry.sourceId, entry)
+      } else {
+        creditsBySourceId.set(entry.sourceId, entry)
+      }
+    }
+
+    // Build tip share pairs from DEBIT entries (one row per tip-out transaction)
+    const tipSharePairs: Array<{
+      id: string
+      debitEntry: typeof allTipOutEntries[number]
+      creditEntry: typeof allTipOutEntries[number] | null
+    }> = []
+    const seenSourceIds = new Set<string>()
+    for (const entry of allTipOutEntries) {
+      if (entry.type !== 'DEBIT' || !entry.sourceId) continue
+      if (seenSourceIds.has(entry.sourceId)) continue
+      seenSourceIds.add(entry.sourceId)
+      tipSharePairs.push({
+        id: entry.id,
+        debitEntry: entry,
+        creditEntry: creditsBySourceId.get(entry.sourceId) || null,
+      })
+    }
+    // Also add any CREDIT-only entries (employee filtered, giver not in range)
+    for (const entry of allTipOutEntries) {
+      if (entry.type !== 'CREDIT' || !entry.sourceId) continue
+      if (seenSourceIds.has(entry.sourceId)) continue
+      seenSourceIds.add(entry.sourceId)
+      tipSharePairs.push({
+        id: entry.id,
+        debitEntry: debitsBySourceId.get(entry.sourceId) || entry,
+        creditEntry: entry,
+      })
+    }
+
+    // ── Banked tips: query TipLedgerEntry for DIRECT_TIP, TIP_GROUP, and payouts ──
+    // CREDIT entries with DIRECT_TIP/TIP_GROUP = tips earned (banked)
+    // DEBIT entries with PAYOUT_CASH/PAYOUT_PAYROLL = tips collected/paid out
+    const bankedTipFilter: Prisma.TipLedgerEntryWhereInput = {
+      locationId,
+      deletedAt: null,
+      sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP', 'PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
+      ...dateFilter,
+    }
+    if (employeeId) {
+      bankedTipFilter.employeeId = employeeId
+    }
+
+    const bankedEntries = await db.tipLedgerEntry.findMany({
+      where: bankedTipFilter,
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            role: { select: { name: true } },
           },
         },
       },
       orderBy: { createdAt: 'desc' },
+    })
+
+    // Fetch current ledger balances for summary
+    const ledgerBalanceFilter: Prisma.TipLedgerWhereInput = {
+      locationId,
+      deletedAt: null,
+    }
+    if (employeeId) {
+      ledgerBalanceFilter.employeeId = employeeId
+    }
+    const ledgerBalances = await db.tipLedger.findMany({
+      where: ledgerBalanceFilter,
+      select: { employeeId: true, currentBalanceCents: true },
     })
 
     // Get shifts with tip data for summary
@@ -134,11 +207,13 @@ export async function GET(request: NextRequest) {
     }
     if (startDate || endDate) {
       const endedAtFilter: Prisma.DateTimeNullableFilter = {}
-      if (startDate) endedAtFilter.gte = new Date(startDate)
+      if (startDate) {
+        const startRange = getBusinessDayRange(startDate, dayStartTime)
+        endedAtFilter.gte = startRange.start
+      }
       if (endDate) {
-        const endDateTime = new Date(endDate)
-        endDateTime.setHours(23, 59, 59, 999)
-        endedAtFilter.lte = endDateTime
+        const endRange = getBusinessDayRange(endDate, dayStartTime)
+        endedAtFilter.lte = endRange.end
       }
       shiftsFilter.endedAt = endedAtFilter
     }
@@ -199,43 +274,53 @@ export async function GET(request: NextRequest) {
       employeeSummaries.set(empId, existing)
     })
 
-    // Process tip shares received
-    tipShares.forEach(share => {
-      if (share.status === 'collected' || share.status === 'pending') {
-        const empId = share.toEmployee.id
-        const empName = share.toEmployee.displayName ||
-          `${share.toEmployee.firstName} ${share.toEmployee.lastName}`
+    // Process tip-out CREDIT entries for tipOutsReceived
+    const tipOutCredits = tipOutEntries.filter(e => e.type === 'CREDIT')
+    tipOutCredits.forEach(entry => {
+      const empId = entry.employee.id
+      const empName = entry.employee.displayName ||
+        `${entry.employee.firstName} ${entry.employee.lastName}`
 
-        const existing = employeeSummaries.get(empId) || {
-          employeeId: empId,
-          employeeName: empName,
-          roleName: share.toEmployee.role?.name || 'Unknown',
-          grossTips: 0,
-          tipOutsGiven: 0,
-          tipOutsReceived: 0,
-          netTips: 0,
-          shiftCount: 0,
-        }
-
-        existing.tipOutsReceived += Number(share.amount)
-        employeeSummaries.set(empId, existing)
+      const existing = employeeSummaries.get(empId) || {
+        employeeId: empId,
+        employeeName: empName,
+        roleName: entry.employee.role?.name || 'Unknown',
+        grossTips: 0,
+        tipOutsGiven: 0,
+        tipOutsReceived: 0,
+        netTips: 0,
+        shiftCount: 0,
       }
+
+      existing.tipOutsReceived += entry.amountCents / 100
+      employeeSummaries.set(empId, existing)
     })
 
-    // Calculate totals
+    // Derive banked/collected/paidOut totals from ledger entries
+    const payoutEntries = bankedEntries.filter(
+      e => e.type === 'DEBIT' && (e.sourceType === 'PAYOUT_CASH' || e.sourceType === 'PAYOUT_PAYROLL')
+    )
+
+    const totalPayouts = payoutEntries.reduce((sum, e) => sum + Math.abs(e.amountCents), 0) / 100
+    // Current banked = sum of ledger balances (what hasn't been paid out yet)
+    const totalCurrentBanked = ledgerBalances.reduce((sum, l) => sum + Math.max(0, l.currentBalanceCents), 0) / 100
+
+    // Calculate totals — tip-outs use DEBIT amountCents (positive stored values)
+    const totalTipOuts = tipOutEntries
+      .filter(e => e.type === 'DEBIT')
+      .reduce((sum, e) => sum + e.amountCents, 0) / 100
+
     const summary = {
       totalGrossTips: shifts.reduce((sum, s) => sum + Number(s.grossTips || 0), 0),
-      totalTipOuts: tipShares.reduce((sum, s) => sum + Number(s.amount), 0),
-      totalBanked: bankedTips
-        .filter(t => t.status === 'pending')
-        .reduce((sum, t) => sum + Number(t.amount), 0),
-      totalCollected: bankedTips
-        .filter(t => t.status === 'collected')
-        .reduce((sum, t) => sum + Number(t.amount), 0),
-      totalPaidOut: bankedTips
-        .filter(t => t.status === 'paid_out')
-        .reduce((sum, t) => sum + Number(t.amount), 0),
+      totalTipOuts,
+      totalBanked: totalCurrentBanked,
+      totalCollected: totalPayouts, // payouts = collected/distributed
+      totalPaidOut: totalPayouts,   // same — payouts represent final distribution
     }
+
+    // Helper to get employee display name
+    const empName = (emp: { displayName: string | null; firstName: string; lastName: string }) =>
+      emp.displayName || `${emp.firstName} ${emp.lastName}`
 
     return NextResponse.json({
       byEmployee: Array.from(employeeSummaries.values()).map(emp => ({
@@ -245,38 +330,51 @@ export async function GET(request: NextRequest) {
         tipOutsReceived: Math.round(emp.tipOutsReceived * 100) / 100,
         netTips: Math.round(emp.netTips * 100) / 100,
       })),
-      tipShares: tipShares.map(share => ({
-        id: share.id,
-        from: share.fromEmployee.displayName ||
-          `${share.fromEmployee.firstName} ${share.fromEmployee.lastName}`,
-        fromRole: share.fromEmployee.role?.name,
-        to: share.toEmployee.displayName ||
-          `${share.toEmployee.firstName} ${share.toEmployee.lastName}`,
-        toRole: share.toEmployee.role?.name,
-        amount: Number(share.amount),
-        type: share.shareType,
-        percentage: share.rule ? Number(share.rule.percentage) : null,
-        status: share.status,
-        date: share.createdAt.toISOString(),
-        shiftDate: share.shift?.endedAt?.toISOString() || share.shift?.startedAt?.toISOString(),
-      })),
-      bankedTips: bankedTips.map(tip => ({
-        id: tip.id,
-        employeeId: tip.employee.id,
-        employeeName: tip.employee.displayName ||
-          `${tip.employee.firstName} ${tip.employee.lastName}`,
-        roleName: tip.employee.role?.name,
-        amount: Number(tip.amount),
-        status: tip.status,
-        source: tip.source,
-        fromEmployee: tip.tipShare?.fromEmployee
-          ? tip.tipShare.fromEmployee.displayName ||
-            `${tip.tipShare.fromEmployee.firstName} ${tip.tipShare.fromEmployee.lastName}`
-          : null,
-        createdAt: tip.createdAt.toISOString(),
-        collectedAt: tip.collectedAt?.toISOString() || null,
-        paidOutAt: tip.paidOutAt?.toISOString() || null,
-      })),
+      tipShares: tipSharePairs.map(pair => {
+        const fromEmp = pair.debitEntry.employee
+        const toEmp = pair.creditEntry?.employee || pair.debitEntry.employee
+        const amount = pair.debitEntry.amountCents / 100
+        return {
+          id: pair.id,
+          from: empName(fromEmp),
+          fromRole: fromEmp.role?.name,
+          to: empName(toEmp),
+          toRole: toEmp.role?.name,
+          amount,
+          type: 'role_tipout',
+          percentage: null as number | null,
+          status: 'completed',
+          date: pair.debitEntry.createdAt.toISOString(),
+          shiftDate: null as string | null,
+        }
+      }),
+      bankedTips: bankedEntries.map(entry => {
+        const isCreditTip = entry.type === 'CREDIT' && (entry.sourceType === 'DIRECT_TIP' || entry.sourceType === 'TIP_GROUP')
+        const isPayout = entry.type === 'DEBIT' && (entry.sourceType === 'PAYOUT_CASH' || entry.sourceType === 'PAYOUT_PAYROLL')
+        // Map source types to legacy status equivalents
+        let status = 'pending'
+        if (isPayout) {
+          status = entry.sourceType === 'PAYOUT_PAYROLL' ? 'paid_out' : 'collected'
+        }
+        // Map sourceType to legacy source field
+        const source = entry.sourceType === 'TIP_GROUP' ? 'tip_pool'
+          : entry.sourceType === 'DIRECT_TIP' ? 'tip_share'
+          : entry.sourceType
+
+        return {
+          id: entry.id,
+          employeeId: entry.employee.id,
+          employeeName: empName(entry.employee),
+          roleName: entry.employee.role?.name,
+          amount: isCreditTip ? entry.amountCents / 100 : Math.abs(entry.amountCents) / 100,
+          status,
+          source,
+          fromEmployee: entry.memo || null,
+          createdAt: entry.createdAt.toISOString(),
+          collectedAt: isPayout ? entry.createdAt.toISOString() : null,
+          paidOutAt: entry.sourceType === 'PAYOUT_PAYROLL' ? entry.createdAt.toISOString() : null,
+        }
+      }),
       summary: {
         ...summary,
         totalGrossTips: Math.round(summary.totalGrossTips * 100) / 100,

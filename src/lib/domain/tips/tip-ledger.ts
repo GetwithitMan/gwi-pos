@@ -10,6 +10,13 @@
 
 import { db } from '@/lib/db'
 
+// ─── Transaction Client Type ─────────────────────────────────────────────────
+// Prisma transaction client — pass this to avoid nested transactions.
+// When provided, postToTipLedger uses the caller's transaction instead of
+// creating its own. This is critical for SQLite which doesn't support nested
+// transactions, and ensures group allocations commit atomically.
+export type TxClient = Parameters<Parameters<typeof db.$transaction>[0]>[0]
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type LedgerEntryType = 'CREDIT' | 'DEBIT'
@@ -35,6 +42,7 @@ export interface PostToLedgerParams {
   shiftId?: string
   orderId?: string
   adjustmentId?: string
+  idempotencyKey?: string
 }
 
 export interface LedgerEntryResult {
@@ -79,13 +87,18 @@ export interface LedgerBalance {
 /**
  * Get or create a TipLedger for an employee.
  * Lazy-creates on first tip interaction — no upfront migration needed.
+ *
+ * @param txClient - Optional Prisma transaction client to use instead of db
  */
 export async function getOrCreateLedger(
   locationId: string,
-  employeeId: string
+  employeeId: string,
+  txClient?: TxClient
 ): Promise<{ id: string; currentBalanceCents: number }> {
+  const client = txClient ?? db
+
   // Try to find existing ledger
-  const existing = await db.tipLedger.findUnique({
+  const existing = await client.tipLedger.findUnique({
     where: { employeeId },
     select: { id: true, currentBalanceCents: true },
   })
@@ -93,7 +106,7 @@ export async function getOrCreateLedger(
   if (existing) return existing
 
   // Create new ledger with zero balance
-  const ledger = await db.tipLedger.create({
+  const ledger = await client.tipLedger.create({
     data: {
       locationId,
       employeeId,
@@ -108,10 +121,17 @@ export async function getOrCreateLedger(
  * Post a credit or debit entry to an employee's tip ledger.
  * Creates the entry and atomically updates the cached balance.
  *
+ * @param txClient - Optional Prisma transaction client. When provided, uses
+ *   the caller's transaction instead of creating a nested one. This is
+ *   REQUIRED when calling from inside another $transaction (e.g. group
+ *   allocations that post multiple ledger entries atomically).
+ *   When omitted, creates its own $transaction as before (backward compatible).
+ *
  * @returns The created entry and new balance
  */
 export async function postToTipLedger(
-  params: PostToLedgerParams
+  params: PostToLedgerParams,
+  txClient?: TxClient
 ): Promise<LedgerEntryResult> {
   const {
     locationId,
@@ -124,15 +144,94 @@ export async function postToTipLedger(
     shiftId,
     orderId,
     adjustmentId,
+    idempotencyKey,
   } = params
 
-  // Ensure ledger exists
-  const ledger = await getOrCreateLedger(locationId, employeeId)
+  // ── Idempotency guard (Skill 274) ──────────────────────────────────────────
+  // If an idempotency key is provided, check whether this entry was already
+  // posted. If so, return the existing result as a no-op (prevents double-post
+  // when the fire-and-forget allocation pipeline retries).
+  if (idempotencyKey) {
+    const client = txClient ?? db
+    const existing = await client.tipLedgerEntry.findFirst({
+      where: { idempotencyKey, deletedAt: null },
+    })
+    if (existing) {
+      // Read current balance from the ledger for the return value
+      const ledger = await client.tipLedger.findFirst({
+        where: { employeeId },
+        select: { currentBalanceCents: true },
+      })
+      return {
+        id: existing.id,
+        ledgerId: existing.ledgerId,
+        employeeId: existing.employeeId,
+        type: existing.type as LedgerEntryType,
+        amountCents: existing.amountCents,
+        sourceType: existing.sourceType as LedgerSourceType,
+        newBalanceCents: ledger?.currentBalanceCents ?? 0,
+      }
+    }
+  }
 
   // Calculate the signed amount: CREDIT = positive, DEBIT = negative
   const signedAmount = type === 'CREDIT' ? Math.abs(amountCents) : -Math.abs(amountCents)
 
-  // Atomic: create entry + update balance in a transaction
+  if (txClient) {
+    // ── Caller-owned transaction: use their client directly ──────────────
+    const ledger = await getOrCreateLedger(locationId, employeeId, txClient)
+
+    const entry = await txClient.tipLedgerEntry.create({
+      data: {
+        locationId,
+        ledgerId: ledger.id,
+        employeeId,
+        type,
+        amountCents: signedAmount,
+        sourceType,
+        sourceId,
+        memo,
+        shiftId,
+        orderId,
+        adjustmentId,
+        idempotencyKey,
+      },
+    })
+
+    const updatedLedger = await txClient.tipLedger.update({
+      where: { id: ledger.id },
+      data: {
+        currentBalanceCents: {
+          increment: signedAmount,
+        },
+      },
+    })
+
+    // ── Auto-reclaim open TipDebt on CREDIT (Skill 278) ─────────────────
+    if (type === 'CREDIT') {
+      await autoReclaimTipDebts({
+        client: txClient,
+        locationId,
+        employeeId,
+        ledgerId: ledger.id,
+        creditCents: Math.abs(amountCents),
+      })
+    }
+
+    return {
+      id: entry.id,
+      ledgerId: ledger.id,
+      employeeId,
+      type,
+      amountCents: signedAmount,
+      sourceType: sourceType as LedgerSourceType,
+      newBalanceCents: updatedLedger.currentBalanceCents,
+    }
+  }
+
+  // ── Self-owned transaction (backward compatible) ─────────────────────
+  const ledger = await getOrCreateLedger(locationId, employeeId)
+
   const [entry, updatedLedger] = await db.$transaction([
     db.tipLedgerEntry.create({
       data: {
@@ -147,6 +246,7 @@ export async function postToTipLedger(
         shiftId,
         orderId,
         adjustmentId,
+        idempotencyKey,
       },
     }),
     db.tipLedger.update({
@@ -158,6 +258,17 @@ export async function postToTipLedger(
       },
     }),
   ])
+
+  // ── Auto-reclaim open TipDebt on CREDIT (Skill 278) ─────────────────
+  if (type === 'CREDIT') {
+    await autoReclaimTipDebts({
+      client: db,
+      locationId,
+      employeeId,
+      ledgerId: ledger.id,
+      creditCents: Math.abs(amountCents),
+    })
+  }
 
   return {
     id: entry.id,
@@ -290,6 +401,86 @@ export async function recalculateBalance(
   }
 
   return { calculatedCents, cachedCents, fixed: false }
+}
+
+// ─── TipDebt Auto-Reclaim (Skill 278) ────────────────────────────────────────
+
+/**
+ * When a CREDIT is posted, check if the employee has any open TipDebt records.
+ * If so, automatically reclaim by posting DEBIT entries against the credit amount
+ * and reducing TipDebt.remainingCents.
+ *
+ * Debts are processed oldest-first (FIFO). Processing stops when the credit is
+ * fully consumed or all debts are satisfied.
+ */
+async function autoReclaimTipDebts(params: {
+  client: TxClient | typeof db
+  locationId: string
+  employeeId: string
+  ledgerId: string
+  creditCents: number
+}): Promise<void> {
+  const { client, locationId, employeeId, ledgerId, creditCents } = params
+
+  // Find open debts for this employee, oldest first
+  const openDebts = await client.tipDebt.findMany({
+    where: {
+      employeeId,
+      locationId,
+      status: { in: ['open', 'partial'] },
+      deletedAt: null,
+    },
+    orderBy: { createdAt: 'asc' },
+  })
+
+  if (openDebts.length === 0) return
+
+  let remainingCredit = creditCents
+
+  for (const debt of openDebts) {
+    if (remainingCredit <= 0) break
+
+    const reclaimCents = Math.min(remainingCredit, debt.remainingCents)
+    if (reclaimCents <= 0) continue
+
+    const newRemaining = debt.remainingCents - reclaimCents
+    const isFullyRecovered = newRemaining <= 0
+
+    // Post a DEBIT entry to reclaim from the employee's ledger
+    const signedDebit = -Math.abs(reclaimCents)
+    await client.tipLedgerEntry.create({
+      data: {
+        locationId,
+        ledgerId,
+        employeeId,
+        type: 'DEBIT',
+        amountCents: signedDebit,
+        sourceType: 'CHARGEBACK',
+        sourceId: debt.id,
+        memo: `Auto-reclaim TipDebt ${debt.id} (${isFullyRecovered ? 'fully recovered' : 'partial'})`,
+      },
+    })
+
+    // Update the ledger cached balance
+    await client.tipLedger.update({
+      where: { id: ledgerId },
+      data: {
+        currentBalanceCents: { increment: signedDebit },
+      },
+    })
+
+    // Update the TipDebt record
+    await client.tipDebt.update({
+      where: { id: debt.id },
+      data: {
+        remainingCents: newRemaining,
+        status: isFullyRecovered ? 'recovered' : 'partial',
+        ...(isFullyRecovered ? { recoveredAt: new Date() } : {}),
+      },
+    })
+
+    remainingCredit -= reclaimCents
+  }
 }
 
 // ─── Conversion Helpers ──────────────────────────────────────────────────────

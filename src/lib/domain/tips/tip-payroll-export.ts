@@ -1,5 +1,5 @@
 /**
- * Tip Payroll Export Domain Logic (Skill 251)
+ * Tip Payroll Export Domain Logic (Skill 251, updated Skill 270)
  *
  * Functions for aggregating tip data per employee over a date range,
  * broken down by source type, and formatting the result as a CSV
@@ -7,6 +7,26 @@
  *
  * All data is read from TipLedgerEntry (immutable ledger entries) and
  * CashTipDeclaration records. No mutations occur in this module.
+ *
+ * ═══════════════════════════════════════════════════════════════════════
+ * ⚠️  CASH TIP DECLARATION RULE (Skill 270 — Double-Counting Guard)
+ * ═══════════════════════════════════════════════════════════════════════
+ *
+ * The TipLedger is the SINGLE SOURCE OF TRUTH for all tip income.
+ * Cash tips earned from orders flow into the ledger as DIRECT_TIP credits
+ * just like card tips do. The ledger already includes cash tips.
+ *
+ * CashTipDeclaration records exist for IRS 8% compliance reporting ONLY.
+ * They declare what an employee received in cash tips for tax purposes.
+ * They are NOT a separate tip income source.
+ *
+ * Therefore:
+ *   totalCompensation = wages + netTipsCents  (from ledger)
+ *   cashDeclaredCents = informational / IRS field (NOT added to compensation)
+ *
+ * If a payroll processor sums both netTipsCents and cashDeclaredCents,
+ * they WILL double-count cash tips. The CSV column header makes this clear.
+ * ═══════════════════════════════════════════════════════════════════════
  */
 
 import { db } from '@/lib/db'
@@ -31,6 +51,9 @@ export interface PayrollEmployeeData {
   payrollPayoutsCents: number
   netTipsCents: number
   cashDeclaredCents: number
+  // Skill 277: Qualified Tips vs Service Charges
+  qualifiedTipsCents: number    // Voluntary gratuities (kind = 'tip')
+  serviceChargeCents: number    // Mandatory charges (kind = 'service_charge' | 'auto_gratuity')
 }
 
 export interface PayrollExportData {
@@ -44,6 +67,9 @@ export interface PayrollExportData {
     totalGroupTipsCents: number
     totalNetTipsCents: number
     totalCashDeclaredCents: number
+    // Skill 277: Qualified Tips vs Service Charges
+    totalQualifiedTipsCents: number
+    totalServiceChargeCents: number
   }
 }
 
@@ -111,6 +137,43 @@ export async function aggregatePayrollData(params: {
       amountCents: true,
     },
   })
+
+  // Skill 277: Aggregate TipTransaction amounts by employee and kind
+  // This separates voluntary tips from mandatory service charges / auto-gratuities
+  const tipTransactions = await db.tipTransaction.findMany({
+    where: {
+      locationId,
+      deletedAt: null,
+      collectedAt: {
+        gte: periodStart,
+        lte: periodEnd,
+      },
+    },
+    select: {
+      primaryEmployeeId: true,
+      amountCents: true,
+      kind: true,
+    },
+  })
+
+  // Build per-employee qualified-tip vs service-charge maps
+  const qualifiedTipsMap = new Map<string, number>()
+  const serviceChargeMap = new Map<string, number>()
+  for (const txn of tipTransactions) {
+    if (!txn.primaryEmployeeId) continue
+    if (txn.kind === 'service_charge' || txn.kind === 'auto_gratuity') {
+      serviceChargeMap.set(
+        txn.primaryEmployeeId,
+        (serviceChargeMap.get(txn.primaryEmployeeId) || 0) + txn.amountCents,
+      )
+    } else {
+      // 'tip' or null/undefined — treat as qualified tip
+      qualifiedTipsMap.set(
+        txn.primaryEmployeeId,
+        (qualifiedTipsMap.get(txn.primaryEmployeeId) || 0) + txn.amountCents,
+      )
+    }
+  }
 
   // Collect all unique employee IDs from both sources
   const employeeIds = new Set<string>()
@@ -287,6 +350,9 @@ export async function aggregatePayrollData(params: {
       payrollPayoutsCents: bucket.payrollPayoutsCents,
       netTipsCents: bucket.netTipsCents,
       cashDeclaredCents: cashDeclared,
+      // Skill 277: Qualified Tips vs Service Charges
+      qualifiedTipsCents: qualifiedTipsMap.get(empId) || 0,
+      serviceChargeCents: serviceChargeMap.get(empId) || 0,
     })
   }
 
@@ -303,6 +369,9 @@ export async function aggregatePayrollData(params: {
     totalGroupTipsCents: 0,
     totalNetTipsCents: 0,
     totalCashDeclaredCents: 0,
+    // Skill 277: Qualified Tips vs Service Charges
+    totalQualifiedTipsCents: 0,
+    totalServiceChargeCents: 0,
   }
 
   for (const emp of payrollEmployees) {
@@ -310,6 +379,8 @@ export async function aggregatePayrollData(params: {
     totals.totalGroupTipsCents += emp.groupTipsCents
     totals.totalNetTipsCents += emp.netTipsCents
     totals.totalCashDeclaredCents += emp.cashDeclaredCents
+    totals.totalQualifiedTipsCents += emp.qualifiedTipsCents
+    totals.totalServiceChargeCents += emp.serviceChargeCents
   }
 
   return {
@@ -360,8 +431,10 @@ export function formatPayrollCSV(data: PayrollExportData): string {
     'Adjustments',
     'Cash Payouts',
     'Payroll Payouts',
-    'Net Tips',
-    'Cash Declared',
+    'Net Tips (Compensation)',
+    'Qualified Tips (Voluntary)',
+    'Service Charges (Mandatory)',
+    'Cash Declared (IRS Only - DO NOT add to compensation)',
   ].join(','))
 
   // Employee data rows
@@ -383,6 +456,8 @@ export function formatPayrollCSV(data: PayrollExportData): string {
       centsToDollarString(emp.cashPayoutsCents),
       centsToDollarString(emp.payrollPayoutsCents),
       centsToDollarString(emp.netTipsCents),
+      centsToDollarString(emp.qualifiedTipsCents),
+      centsToDollarString(emp.serviceChargeCents),
       centsToDollarString(emp.cashDeclaredCents),
     ].join(','))
   }
@@ -405,6 +480,8 @@ export function formatPayrollCSV(data: PayrollExportData): string {
     '', // cash payouts total not in top-level totals
     '', // payroll payouts total not in top-level totals
     centsToDollarString(data.totals.totalNetTipsCents),
+    centsToDollarString(data.totals.totalQualifiedTipsCents),
+    centsToDollarString(data.totals.totalServiceChargeCents),
     centsToDollarString(data.totals.totalCashDeclaredCents),
   ].join(','))
 

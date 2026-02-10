@@ -16,7 +16,7 @@ import { tableEvents } from '@/lib/realtime/table-events'
 import { errorCapture } from '@/lib/error-capture'
 import { calculateCardPrice, calculateCashDiscount } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
-import { postToTipLedger, dollarsToCents, centsToDollars } from '@/lib/domain/tips'
+import { allocateTipsForPayment } from '@/lib/domain/tips'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -829,57 +829,23 @@ export async function POST(
         console.error('Background inventory deduction failed:', err)
       })
 
-      // Post tips to TipLedger (fire-and-forget to not block payment)
-      // Creates CREDIT entry for each payment's tip + TipTransaction record
-      // CC Fee Deduction: when enabled, card tips are reduced by the CC processing fee %
+      // Allocate tips via the tip bank pipeline (Skill 269)
+      // Handles: CC fee deduction, tip group detection, ownership splits, ledger posting
+      // Fire-and-forget to not block payment response
+      // Skill 277: kind defaults to 'tip' (voluntary gratuity). Future callers
+      // (e.g. bottle service auto-gratuity) should pass 'auto_gratuity' or 'service_charge'.
       if (totalTips > 0 && order.employeeId) {
-        (async () => {
-          try {
-            const tipAmountCents = dollarsToCents(totalTips)
-
-            // Determine how much of the total tips came from card vs cash payments
-            const cardTipDollars = createdPayments
-              .filter(p => p.paymentMethod !== 'cash')
-              .reduce((sum, p) => sum + Number(p.tipAmount), 0)
-            const cardTipCents = dollarsToCents(cardTipDollars)
-
-            // CC Fee Deduction: reduce card tips by processing fee before crediting employee
-            let feeAmountCents = 0
-            if (cardTipCents > 0 && settings.tipBank.deductCCFeeFromTips && settings.tipBank.ccFeePercent > 0) {
-              feeAmountCents = Math.round(cardTipCents * settings.tipBank.ccFeePercent / 100)
-            }
-
-            const netTipAmountCents = tipAmountCents - feeAmountCents
-
-            // Create TipTransaction record with ORIGINAL tip amount (what customer paid)
-            await db.tipTransaction.create({
-              data: {
-                locationId: order.locationId,
-                orderId,
-                amountCents: tipAmountCents,
-                sourceType: cardTipCents > 0 ? 'CARD' : 'CASH',
-                collectedAt: new Date(),
-                primaryEmployeeId: order.employeeId,
-                ccFeeAmountCents: feeAmountCents,
-              },
-            })
-
-            // Post CREDIT to employee's TipLedger with NET amount (after CC fee deduction)
-            await postToTipLedger({
-              locationId: order.locationId,
-              employeeId: order.employeeId!,
-              amountCents: netTipAmountCents,
-              type: 'CREDIT',
-              sourceType: 'DIRECT_TIP',
-              orderId,
-              memo: feeAmountCents > 0
-                ? `Tip from order #${order.orderNumber} (CC fee: $${centsToDollars(feeAmountCents).toFixed(2)})`
-                : undefined,
-            })
-          } catch (err) {
-            console.error('Background tip ledger posting failed:', err)
-          }
-        })()
+        allocateTipsForPayment({
+          locationId: order.locationId,
+          orderId,
+          primaryEmployeeId: order.employeeId,
+          createdPayments,
+          totalTipsDollars: totalTips,
+          tipBankSettings: settings.tipBank,
+          // kind: 'tip' (default — voluntary gratuity from customer)
+        }).catch(err => {
+          console.error('Background tip allocation failed:', err)
+        })
       }
 
       // Clean up virtual group if this order belongs to one

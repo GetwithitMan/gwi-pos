@@ -189,59 +189,116 @@ export async function GET(request: NextRequest) {
     })
 
     // 3. Get tip shares given/received
-    const tipSharesGiven = await db.tipShare.findMany({
+    // Migrated from legacy TipBank/TipShare (Skill 273)
+    // Tip shares GIVEN = ROLE_TIPOUT debits (money leaving employee's ledger)
+    const tipSharesGivenEntries = await db.tipLedgerEntry.findMany({
       where: {
         locationId,
+        sourceType: 'ROLE_TIPOUT',
+        type: 'DEBIT',
+        deletedAt: null,
         createdAt: {
           gte: periodStart,
           lte: periodEnd,
         },
-        ...(employeeId ? { fromEmployeeId: employeeId } : {}),
-      },
-    })
-
-    const tipSharesReceived = await db.tipShare.findMany({
-      where: {
-        locationId,
-        createdAt: {
-          gte: periodStart,
-          lte: periodEnd,
-        },
-        ...(employeeId ? { toEmployeeId: employeeId } : {}),
-      },
-    })
-
-    tipSharesGiven.forEach(share => {
-      if (employeePayroll[share.fromEmployeeId]) {
-        employeePayroll[share.fromEmployeeId].tipSharesGiven += Number(share.amount)
-      }
-    })
-
-    tipSharesReceived.forEach(share => {
-      if (employeePayroll[share.toEmployeeId]) {
-        employeePayroll[share.toEmployeeId].tipSharesReceived += Number(share.amount)
-      }
-    })
-
-    // 4. Get banked tips
-    const bankedTips = await db.tipBank.findMany({
-      where: {
-        locationId,
         ...(employeeId ? { employeeId } : {}),
       },
     })
 
-    bankedTips.forEach(banked => {
-      if (!employeePayroll[banked.employeeId]) return
+    // Migrated from legacy TipBank/TipShare (Skill 273)
+    // Tip shares RECEIVED = ROLE_TIPOUT credits (money entering employee's ledger)
+    const tipSharesReceivedEntries = await db.tipLedgerEntry.findMany({
+      where: {
+        locationId,
+        sourceType: 'ROLE_TIPOUT',
+        type: 'CREDIT',
+        deletedAt: null,
+        createdAt: {
+          gte: periodStart,
+          lte: periodEnd,
+        },
+        ...(employeeId ? { employeeId } : {}),
+      },
+    })
 
-      const amount = Number(banked.amount)
-      if (banked.status === 'pending') {
-        employeePayroll[banked.employeeId].bankedTipsPending += amount
-      } else if (banked.status === 'collected' || banked.status === 'paid_out') {
-        // Only count if collected/paid during this period
-        if (banked.collectedAt && banked.collectedAt >= periodStart && banked.collectedAt <= periodEnd) {
-          employeePayroll[banked.employeeId].bankedTipsCollected += amount
-        }
+    tipSharesGivenEntries.forEach(entry => {
+      if (employeePayroll[entry.employeeId]) {
+        // amountCents is negative for debits, use Math.abs and convert to dollars
+        employeePayroll[entry.employeeId].tipSharesGiven += Math.abs(entry.amountCents) / 100
+      }
+    })
+
+    tipSharesReceivedEntries.forEach(entry => {
+      if (employeePayroll[entry.employeeId]) {
+        // amountCents is positive for credits, convert to dollars
+        employeePayroll[entry.employeeId].tipSharesReceived += entry.amountCents / 100
+      }
+    })
+
+    // 4. Get banked tips
+    // Migrated from legacy TipBank/TipShare (Skill 273)
+    // Banked tips PENDING = credits from direct tips and tip groups (money sitting in ledger)
+    const bankedPendingEntries = await db.tipLedgerEntry.findMany({
+      where: {
+        locationId,
+        sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
+        type: 'CREDIT',
+        deletedAt: null,
+        ...(employeeId ? { employeeId } : {}),
+        // Pending = all time (not date-filtered), represents current balance
+      },
+    })
+
+    // Migrated from legacy TipBank/TipShare (Skill 273)
+    // Banked tips COLLECTED = debits from payouts during this period
+    const bankedCollectedEntries = await db.tipLedgerEntry.findMany({
+      where: {
+        locationId,
+        sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
+        type: 'DEBIT',
+        deletedAt: null,
+        createdAt: {
+          gte: periodStart,
+          lte: periodEnd,
+        },
+        ...(employeeId ? { employeeId } : {}),
+      },
+    })
+
+    // Also get all-time payouts to calculate net pending
+    const allPayoutEntries = await db.tipLedgerEntry.findMany({
+      where: {
+        locationId,
+        sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
+        type: 'DEBIT',
+        deletedAt: null,
+        ...(employeeId ? { employeeId } : {}),
+      },
+    })
+
+    // Calculate pending: total credits - total payouts = still pending
+    const pendingByEmployee: Record<string, number> = {}
+    bankedPendingEntries.forEach(entry => {
+      if (!pendingByEmployee[entry.employeeId]) pendingByEmployee[entry.employeeId] = 0
+      pendingByEmployee[entry.employeeId] += entry.amountCents
+    })
+    allPayoutEntries.forEach(entry => {
+      if (!pendingByEmployee[entry.employeeId]) pendingByEmployee[entry.employeeId] = 0
+      // Debits are negative, so adding them subtracts from balance
+      pendingByEmployee[entry.employeeId] += entry.amountCents
+    })
+
+    Object.entries(pendingByEmployee).forEach(([empId, balanceCents]) => {
+      if (employeePayroll[empId]) {
+        // Only show positive pending balance (negative means overpaid, shouldn't happen)
+        employeePayroll[empId].bankedTipsPending = Math.max(0, balanceCents) / 100
+      }
+    })
+
+    bankedCollectedEntries.forEach(entry => {
+      if (employeePayroll[entry.employeeId]) {
+        // amountCents is negative for debits, use Math.abs and convert to dollars
+        employeePayroll[entry.employeeId].bankedTipsCollected += Math.abs(entry.amountCents) / 100
       }
     })
 
