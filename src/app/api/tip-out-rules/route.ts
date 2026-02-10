@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
+// Valid basisType values
+const VALID_BASIS_TYPES = ['tips_earned', 'food_sales', 'bar_sales', 'total_sales', 'net_sales'] as const
+
 // GET: List all tip-out rules for a location
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
+    const includeExpired = searchParams.get('includeExpired') === 'true'
 
     if (!locationId) {
       return NextResponse.json(
@@ -14,8 +18,17 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Build where clause: filter expired rules by default
+    const where: Record<string, unknown> = { locationId }
+    if (!includeExpired) {
+      where.OR = [
+        { expiresAt: null },
+        { expiresAt: { gte: new Date() } }
+      ]
+    }
+
     const rules = await db.tipOutRule.findMany({
-      where: { locationId },
+      where,
       include: {
         fromRole: {
           select: { id: true, name: true, isTipped: true }
@@ -30,10 +43,13 @@ export async function GET(request: NextRequest) {
       ]
     })
 
-    // Convert Decimal to number for JSON serialization
+    // Convert Decimal to number and DateTime to ISO string for JSON serialization
     const serializedRules = rules.map(rule => ({
       ...rule,
-      percentage: Number(rule.percentage)
+      percentage: Number(rule.percentage),
+      maxPercentage: rule.maxPercentage ? Number(rule.maxPercentage) : null,
+      effectiveDate: rule.effectiveDate?.toISOString() || null,
+      expiresAt: rule.expiresAt?.toISOString() || null,
     }))
 
     return NextResponse.json({ data: serializedRules })
@@ -50,7 +66,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, fromRoleId, toRoleId, percentage } = body
+    const { locationId, fromRoleId, toRoleId, percentage, basisType, salesCategoryIds, maxPercentage, effectiveDate, expiresAt } = body
 
     // Validation
     if (!locationId || !fromRoleId || !toRoleId || percentage === undefined) {
@@ -75,6 +91,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate basisType if provided
+    if (basisType !== undefined && !VALID_BASIS_TYPES.includes(basisType)) {
+      return NextResponse.json(
+        { error: `Invalid basisType. Must be one of: ${VALID_BASIS_TYPES.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // Validate maxPercentage if provided
+    if (maxPercentage !== undefined && maxPercentage !== null) {
+      const maxPctNum = Number(maxPercentage)
+      if (isNaN(maxPctNum) || maxPctNum < 0 || maxPctNum > 100) {
+        return NextResponse.json(
+          { error: 'maxPercentage must be between 0 and 100' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Check if rule already exists
     const existingRule = await db.tipOutRule.findUnique({
       where: {
@@ -93,14 +128,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Build create data with new fields
+    const createData: Record<string, unknown> = {
+      locationId,
+      fromRoleId,
+      toRoleId,
+      percentage: percentageNum,
+    }
+    if (basisType !== undefined) createData.basisType = basisType
+    if (salesCategoryIds !== undefined) createData.salesCategoryIds = salesCategoryIds
+    if (maxPercentage !== undefined && maxPercentage !== null) createData.maxPercentage = Number(maxPercentage)
+    if (effectiveDate !== undefined && effectiveDate !== null) createData.effectiveDate = new Date(effectiveDate)
+    if (expiresAt !== undefined && expiresAt !== null) createData.expiresAt = new Date(expiresAt)
+
     // Create the rule
     const rule = await db.tipOutRule.create({
-      data: {
-        locationId,
-        fromRoleId,
-        toRoleId,
-        percentage: percentageNum
-      },
+      data: createData,
       include: {
         fromRole: {
           select: { id: true, name: true, isTipped: true }
@@ -114,7 +157,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       data: {
         ...rule,
-        percentage: Number(rule.percentage)
+        percentage: Number(rule.percentage),
+        maxPercentage: rule.maxPercentage ? Number(rule.maxPercentage) : null,
+        effectiveDate: rule.effectiveDate?.toISOString() || null,
+        expiresAt: rule.expiresAt?.toISOString() || null,
       }
     }, { status: 201 })
   } catch (error) {

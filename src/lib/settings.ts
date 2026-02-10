@@ -46,6 +46,36 @@ export interface TipShareSettings {
   showTipSharesOnReceipt: boolean     // Include tip share breakdown on shift receipt
 }
 
+export interface TipBankSettings {
+  enabled: boolean
+  allocationMode: 'ITEM_BASED' | 'CHECK_BASED'
+  chargebackPolicy: 'BUSINESS_ABSORBS' | 'EMPLOYEE_CHARGEBACK'
+  allowNegativeBalances: boolean
+  allowManagerInPools: boolean
+  poolCashTips: boolean
+  tipGuide: {
+    basis: 'pre_discount' | 'gross_subtotal' | 'net_total' | 'custom'
+    percentages: number[]
+    showBasisExplanation: boolean
+    roundTo: 'penny' | 'nickel' | 'dime' | 'quarter'
+  }
+
+  // CC Fee Deduction — deduct credit card processing fee from CC tips before crediting employee
+  deductCCFeeFromTips: boolean       // If true, CC tips are reduced by ccFeePercent before ledger credit
+  ccFeePercent: number               // Processing fee % (e.g., 3.0 = 3%). Only applied when deductCCFeeFromTips=true
+
+  // EOD Tip Payout — controls tip cash-out behavior at shift close
+  allowEODCashOut: boolean           // Show "Cash Out Tips" option at shift closeout
+  requireManagerApprovalForCashOut: boolean  // Manager must approve cash payout at EOD
+  defaultPayoutMethod: 'cash' | 'payroll'   // Default selection in closeout (employee can change)
+
+  // Tip Group Attribution — when to credit a check to the active group/segment
+  tipAttributionTiming: 'check_opened' | 'check_closed' | 'check_both'
+  // check_opened = group active when order was created gets credit
+  // check_closed = group active when payment processes gets credit (default, best for bars)
+  // check_both = proportional credit split between open-time and close-time groups
+}
+
 export interface ClockOutSettings {
   requireSettledBeforeClockOut: boolean   // Check for open tabs/orders before allowing clock-out
   requireTipsAdjusted: boolean           // Check for unadjusted tips before clock-out
@@ -306,6 +336,7 @@ export interface LocationSettings {
   priceRounding: PriceRoundingSettings
   tips: TipSettings
   tipShares: TipShareSettings
+  tipBank: TipBankSettings
   receipts: ReceiptSettings
   payments: PaymentSettings
   loyalty: LoyaltySettings
@@ -348,6 +379,26 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     autoTipOutEnabled: true,              // Auto tip-out based on rules
     requireTipOutAcknowledgment: true,    // Server must acknowledge tip-out
     showTipSharesOnReceipt: true,         // Show on shift receipt
+  },
+  tipBank: {
+    enabled: true,
+    allocationMode: 'CHECK_BASED',
+    chargebackPolicy: 'BUSINESS_ABSORBS',
+    allowNegativeBalances: false,
+    allowManagerInPools: false,
+    poolCashTips: true,
+    tipGuide: {
+      basis: 'pre_discount',
+      percentages: [15, 18, 20, 25],
+      showBasisExplanation: true,
+      roundTo: 'quarter',
+    },
+    deductCCFeeFromTips: false,       // Off by default — business absorbs CC fees on tips
+    ccFeePercent: 3.0,                // Common processing fee (only applied if deductCCFeeFromTips=true)
+    allowEODCashOut: true,            // Employees can cash out tips at shift close
+    requireManagerApprovalForCashOut: false,  // No manager approval needed by default
+    defaultPayoutMethod: 'cash',      // Default to cash payout (business doesn't want to hold tips)
+    tipAttributionTiming: 'check_closed', // Credit the group active when payment processes (best for bars)
   },
   receipts: {
     headerText: 'Thank you for your visit!',
@@ -478,6 +529,17 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     tipShares: {
       ...DEFAULT_SETTINGS.tipShares,
       ...(partial.tipShares || {}),
+    },
+    tipBank: {
+      ...DEFAULT_SETTINGS.tipBank,
+      ...(partial.tipBank || {}),
+      tipGuide: {
+        ...DEFAULT_SETTINGS.tipBank.tipGuide,
+        ...(partial.tipBank?.tipGuide || {}),
+        percentages: (partial.tipBank?.tipGuide?.percentages?.length)
+          ? partial.tipBank.tipGuide.percentages
+          : DEFAULT_SETTINGS.tipBank.tipGuide.percentages,
+      },
     },
     receipts: {
       ...DEFAULT_SETTINGS.receipts,

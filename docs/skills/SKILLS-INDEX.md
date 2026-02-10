@@ -58,6 +58,8 @@
 | 225 | Payment Modal Component Split | DONE | Payments | 224 | Split 927-line monolith into 6 focused components (PaymentMethodStep, TipEntryStep, CashEntryStep, CardProcessingStep, GiftCardStep, HouseAccountStep) |
 | 226 | PaymentService Layer | DONE | Payments | 224, 225 | Type-safe API client with ServiceResult<T> pattern, processPayment(), voidItems(), checkGiftCardBalance(), loadHouseAccounts() |
 | 227 | PaymentDomain Module | DONE | Payments | 226 | Pure business logic functions: tip-calculations.ts (317 lines), loyalty-points.ts (429 lines), dual-pricing.ts (347 lines), validators.ts (294 lines) |
+| 250 | Tip Ledger Foundation | DONE | Payments, Employees | 49, 50 | TipLedger per-employee bank account, TipLedgerEntry immutable entries, TipTransaction, core domain functions, TipBankSettings, 6 new permissions, ledger API, payment+shift integration |
+| 251 | Enhanced Tip-Out Rules & Tip Guide Basis | DONE | Payments, Settings | 250 | basisType on TipOutRule (tips/food/bar/total/net sales), maxPercentage cap, effectiveDate/expiresAt, ShiftSalesData, /settings/tips admin page, CC fee deduction, EOD payout settings |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -241,7 +243,7 @@
 |----------|------|---------|------|-------|------------|
 | Foundation | 3 | 0 | 1 | 4 | 75% |
 | Order Flow | 7 | 1 | 0 | 8 | 94% |
-| Payment | 11 | 0 | 0 | 11 | 100% |
+| Payment | 13 | 0 | 0 | 13 | 100% |
 | Advanced Orders | 13 | 2 | 0 | 15 | 93% |
 | Table Management | 4 | 0 | 0 | 4 | 100% |
 | Bar Features | 2 | 1 | 0 | 3 | 83% |
@@ -260,7 +262,7 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **145** | **7** | **13** | **165** | **92%** |
+| **TOTAL** | **147** | **7** | **13** | **167** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -380,6 +382,13 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-10 — Tip Bank Phases 1 & 2)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 250 | Tip Ledger Foundation | TipLedger (per-employee bank account with currentBalanceCents), TipLedgerEntry (immutable CREDIT/DEBIT with sourceType tracing), TipTransaction (order/payment/group/segment linking), core domain functions (getOrCreateLedger, postToTipLedger, getLedgerBalance, getLedgerEntries, recalculateBalance, dollarsToCents/centsToDollars), TipBankSettings interface (allocationMode, chargebackPolicy, tipGuide, CC fee deduction, EOD payout), 6 new permissions (tips.manage_groups/override_splits/manage_settings/perform_adjustments/view_ledger/process_payout), ledger API (self-access + admin), fire-and-forget payment integration (DIRECT_TIP), fire-and-forget shift closeout integration (ROLE_TIPOUT + MANUAL_TRANSFER). |
+| 251 | Enhanced Tip-Out Rules & Tip Guide Basis | 5 new TipOutRule fields (basisType, salesCategoryIds, maxPercentage, effectiveDate, expiresAt), ShiftSalesData interface, extended calculateTipOut/calculateTipShares/calculateTipDistribution with per-rule basisType + cap, shift closeout queries food/bar sales by categoryType, server-side enforcement of sales-based rules, /settings/tips admin page (6 sections: tip guide, tip bank, chargeback, tip shares, CC fee, EOD payout), tip-out admin UI with basisType dropdown + color badges + cap field + date fields, ShiftCloseoutModal sales-based display with cap notes. |
 
 ## Recently Completed (2026-02-10 — Phase 6: Multi-Role, Cash Handling & Crew Hub)
 
@@ -742,6 +751,8 @@ These skills emerged during development and are now part of the system:
 | 244 | Payroll System | DONE | Employees | 01, 47, 50 | Pay stub generation, tax calculations, payroll processing |
 | 246 | Go-Live & Launch Readiness | DONE | Go-Live | 111, 120 | Domain setup, three location modes (dev/training/production), simulated code cleanup tags, go-live master checklist (8 categories), training mode spec |
 | 249 | Multi-Role, Cash Handling & Crew Hub | DONE | Employees, Payments | 01, 47, 50 | Phase 6 foundational layer: EmployeeRole junction (multi-role), cash handling modes (drawer/purse/none), Drawer model + claiming, Crew Hub (/crew), report self-access, role picker, AdminNav permission gating |
+| 250 | Tip Ledger Foundation | DONE | Payments, Employees | 49, 50 | TipLedger (per-employee bank account), TipLedgerEntry (immutable CREDIT/DEBIT), TipTransaction, core functions, TipBankSettings, 6 permissions, ledger API, payment+shift integration |
+| 251 | Enhanced Tip-Out Rules & Tip Guide Basis | DONE | Payments, Settings | 250 | basisType on TipOutRule, maxPercentage cap, effectiveDate/expiresAt, ShiftSalesData, /settings/tips admin, CC fee deduction, EOD payout |
 
 ### Routing & Kitchen Display (200-Series)
 | Skill | Name | Status | Domain | Dependencies | Notes |

@@ -531,3 +531,31 @@ export async function dispatchOpenOrdersChanged(
 
   return promise
 }
+
+/**
+ * Dispatch tip group update event (Skill 252)
+ *
+ * Called when tip group membership changes, group created/closed, etc.
+ * Keeps all bartender terminals in sync with group state.
+ */
+export async function dispatchTipGroupUpdate(
+  locationId: string,
+  payload: {
+    action: 'created' | 'member-joined' | 'member-left' | 'closed' | 'ownership-transferred' | 'tip-received'
+    groupId: string
+    employeeId?: string
+    employeeName?: string
+    newOwnerId?: string
+    tipAmountCents?: number
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('TIP_GROUP_UPDATE', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async tip group dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}

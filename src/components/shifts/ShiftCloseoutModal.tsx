@@ -19,6 +19,12 @@ interface ShiftSummary {
   paymentCount: number
   voidCount: number
   compCount: number
+  salesData?: {
+    totalSales: number
+    foodSales: number
+    barSales: number
+    netSales: number
+  }
 }
 
 interface ShiftData {
@@ -40,6 +46,8 @@ interface TipOutRule {
   toRole: { id: string; name: string }
   percentage: number
   isActive: boolean
+  basisType?: string       // 'tips_earned' | 'food_sales' | 'bar_sales' | 'total_sales' | 'net_sales'
+  maxPercentage?: number | null
 }
 
 interface CalculatedTipOut {
@@ -50,6 +58,12 @@ interface CalculatedTipOut {
   amount: number
   toEmployeeId?: string
   toEmployeeName?: string
+  basisType: string
+  basisLabel: string       // Human-readable: "tips", "food sales", "bar sales", etc.
+  basisAmount: number      // The dollar amount used as basis
+  wasCapped: boolean       // True if maxPercentage cap was applied
+  uncappedAmount?: number  // Original amount before cap (only if capped)
+  maxPercentage?: number   // The cap percentage (only if capped)
 }
 
 interface CustomTipShare {
@@ -104,7 +118,7 @@ export function ShiftCloseoutModal({
   const mode = cashHandlingMode || 'drawer'
 
   // Start at 'count' for blind mode (default), or 'summary' if manager with full access
-  const [step, setStep] = useState<'count' | 'summary' | 'reveal' | 'tips' | 'complete'>('count')
+  const [step, setStep] = useState<'count' | 'summary' | 'reveal' | 'tips' | 'payout' | 'complete'>('count')
   const [isLoading, setIsLoading] = useState(false)
   const [summary, setSummary] = useState<ShiftSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -134,6 +148,17 @@ export function ShiftCloseoutModal({
   const [employees, setEmployees] = useState<Employee[]>([])
   const [newShareEmployeeId, setNewShareEmployeeId] = useState('')
   const [newShareAmount, setNewShareAmount] = useState('')
+
+  // Tip payout state
+  const [tipBankBalance, setTipBankBalance] = useState<number>(0) // cents
+  const [payoutChoice, setPayoutChoice] = useState<'cash' | 'payroll'>('cash')
+  const [payoutProcessing, setPayoutProcessing] = useState(false)
+  const [payoutResult, setPayoutResult] = useState<{ amountDollars: number; newBalanceDollars: number } | null>(null)
+  const [tipBankSettings, setTipBankSettings] = useState<{
+    allowEODCashOut: boolean
+    requireManagerApprovalForCashOut: boolean
+    defaultPayoutMethod: 'cash' | 'payroll'
+  } | null>(null)
 
   // Calculate total from denomination counts
   const countedTotal = Object.entries(counts).reduce(
@@ -166,6 +191,12 @@ export function ShiftCloseoutModal({
       setEmployees([])
       setNewShareEmployeeId('')
       setNewShareAmount('')
+      // Reset payout state
+      setTipBankBalance(0)
+      setPayoutChoice('cash')
+      setPayoutProcessing(false)
+      setPayoutResult(null)
+      setTipBankSettings(null)
       // Mode-specific initialization
       setUseManual(mode === 'purse') // Purse mode forces manual total entry
       if (mode === 'none') {
@@ -232,6 +263,37 @@ export function ShiftCloseoutModal({
     }
   }
 
+  // Fetch tip bank balance and settings for payout step
+  const fetchTipBankInfo = async () => {
+    if (!shift.locationId || !shift.employee.id) return
+    try {
+      const [balanceRes, settingsRes] = await Promise.all([
+        fetch(`/api/tips/ledger?locationId=${shift.locationId}&employeeId=${shift.employee.id}`, {
+          headers: { 'x-employee-id': shift.employee.id }
+        }),
+        fetch(`/api/settings/tips?locationId=${shift.locationId}&employeeId=${shift.employee.id}`)
+      ])
+      if (balanceRes.ok) {
+        const data = await balanceRes.json()
+        setTipBankBalance(data.currentBalanceCents ?? 0)
+      }
+      if (settingsRes.ok) {
+        const data = await settingsRes.json()
+        const tb = data.tipBank
+        if (tb) {
+          setTipBankSettings({
+            allowEODCashOut: tb.allowEODCashOut ?? false,
+            requireManagerApprovalForCashOut: tb.requireManagerApprovalForCashOut ?? false,
+            defaultPayoutMethod: tb.defaultPayoutMethod ?? 'cash',
+          })
+          setPayoutChoice(tb.defaultPayoutMethod ?? 'cash')
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch tip bank info:', err)
+    }
+  }
+
   // Calculate tip-outs when tips are declared and rules are loaded
   const calculateTipOuts = () => {
     const grossTips = parseFloat(tipsDeclared) || 0
@@ -240,21 +302,75 @@ export function ShiftCloseoutModal({
       return
     }
 
-    const calculated = tipOutRules.map(rule => ({
-      ruleId: rule.id,
-      toRoleId: rule.toRoleId,
-      toRoleName: rule.toRole.name,
-      percentage: rule.percentage,
-      amount: Math.round(grossTips * (rule.percentage / 100) * 100) / 100
-    }))
+    const sd = summary?.salesData
+
+    const calculated = tipOutRules.map(rule => {
+      const basisType = rule.basisType || 'tips_earned'
+
+      // Determine basis amount and label based on rule's basisType
+      let basisAmount = grossTips
+      let basisLabel = 'tips'
+
+      if (sd) {
+        switch (basisType) {
+          case 'food_sales':
+            basisAmount = sd.foodSales
+            basisLabel = 'food sales'
+            break
+          case 'bar_sales':
+            basisAmount = sd.barSales
+            basisLabel = 'bar sales'
+            break
+          case 'total_sales':
+            basisAmount = sd.totalSales
+            basisLabel = 'total sales'
+            break
+          case 'net_sales':
+            basisAmount = sd.netSales
+            basisLabel = 'net sales'
+            break
+          default:
+            basisAmount = grossTips
+            basisLabel = 'tips'
+        }
+      }
+
+      let amount = Math.round(basisAmount * (rule.percentage / 100) * 100) / 100
+      let wasCapped = false
+      let uncappedAmount: number | undefined
+
+      // Apply maxPercentage cap if set (caps at % of tips, not sales)
+      if (rule.maxPercentage != null && rule.maxPercentage > 0) {
+        const maxAmount = Math.round(grossTips * (rule.maxPercentage / 100) * 100) / 100
+        if (amount > maxAmount) {
+          uncappedAmount = amount
+          amount = maxAmount
+          wasCapped = true
+        }
+      }
+
+      return {
+        ruleId: rule.id,
+        toRoleId: rule.toRoleId,
+        toRoleName: rule.toRole.name,
+        percentage: rule.percentage,
+        amount,
+        basisType,
+        basisLabel,
+        basisAmount,
+        wasCapped,
+        uncappedAmount,
+        maxPercentage: wasCapped ? (rule.maxPercentage ?? undefined) : undefined,
+      }
+    })
 
     setCalculatedTipOuts(calculated)
   }
 
-  // Update tip-outs when tips declared changes
+  // Update tip-outs when tips declared changes or summary (with salesData) loads
   useEffect(() => {
     calculateTipOuts()
-  }, [tipsDeclared, tipOutRules])
+  }, [tipsDeclared, tipOutRules, summary])
 
   // Calculate net tips (after tip-outs and custom shares)
   const totalTipOuts = calculatedTipOuts.reduce((sum, t) => sum + t.amount, 0)
@@ -805,12 +921,25 @@ export function ShiftCloseoutModal({
                       </h4>
                       <div className="space-y-2">
                         {calculatedTipOuts.map((tipOut, index) => (
-                          <div key={index} className="flex justify-between items-center py-2 border-b last:border-0">
-                            <div>
-                              <span className="font-medium">{tipOut.toRoleName}</span>
-                              <span className="text-sm text-gray-500 ml-2">({tipOut.percentage}%)</span>
+                          <div key={index} className="py-2 border-b last:border-0">
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <span className="font-medium">{tipOut.toRoleName}</span>
+                                {tipOut.basisType === 'tips_earned' ? (
+                                  <span className="text-sm text-gray-500 ml-2">({tipOut.percentage}%)</span>
+                                ) : (
+                                  <span className="text-sm text-gray-500 ml-2">
+                                    ({tipOut.percentage}% of {formatCurrency(tipOut.basisAmount)} {tipOut.basisLabel})
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-red-600 font-medium">-{formatCurrency(tipOut.amount)}</span>
                             </div>
-                            <span className="text-red-600 font-medium">-{formatCurrency(tipOut.amount)}</span>
+                            {tipOut.wasCapped && tipOut.uncappedAmount != null && (
+                              <div className="text-xs text-amber-600 mt-1 ml-1">
+                                Capped at {tipOut.maxPercentage}% of tips (was {formatCurrency(tipOut.uncappedAmount)})
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -938,10 +1067,165 @@ export function ShiftCloseoutModal({
                     <Button
                       variant="primary"
                       className="flex-1"
-                      onClick={handleCloseShift}
+                      onClick={async () => {
+                        await fetchTipBankInfo()
+                        setStep('payout')
+                      }}
                       disabled={isLoading || netTips < 0}
                     >
-                      {isLoading ? 'Closing...' : 'Close Shift'}
+                      {isLoading ? 'Loading...' : 'Continue to Payout \u2192'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step: Tip Payout Choice */}
+              {step === 'payout' && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-lg">Tip Payout</h3>
+
+                  {/* Current Tip Bank Balance */}
+                  <Card className="p-4 bg-green-50">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <span className="text-gray-700 font-medium">Your Tip Bank Balance</span>
+                        <p className="text-xs text-gray-500">Available for payout (includes tonight&apos;s tips after shift close)</p>
+                      </div>
+                      <span className="text-2xl font-bold text-green-600">
+                        {formatCurrency(tipBankBalance / 100)}
+                      </span>
+                    </div>
+                  </Card>
+
+                  {/* Net Tips from this Shift */}
+                  <Card className="p-4 bg-blue-50">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-700">Net Tips This Shift</span>
+                      <span className="text-xl font-bold text-blue-600">
+                        {formatCurrency(netTips)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      This amount will be added to your tip bank when the shift closes.
+                    </p>
+                  </Card>
+
+                  {/* Payout Choice */}
+                  {tipBankSettings?.allowEODCashOut ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">How would you like your tips?</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          onClick={() => setPayoutChoice('cash')}
+                          className={`p-4 rounded-xl border-2 transition-all text-left ${
+                            payoutChoice === 'cash'
+                              ? 'border-green-500 bg-green-50 ring-1 ring-green-200'
+                              : 'border-gray-200 bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className={`text-lg font-semibold ${payoutChoice === 'cash' ? 'text-green-700' : 'text-gray-700'}`}>
+                            Cash Out
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Take your tips in cash now. Balance goes to $0.
+                          </p>
+                          {tipBankSettings.requireManagerApprovalForCashOut && (
+                            <p className="text-xs text-amber-600 mt-1">Requires manager approval</p>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => setPayoutChoice('payroll')}
+                          className={`p-4 rounded-xl border-2 transition-all text-left ${
+                            payoutChoice === 'payroll'
+                              ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200'
+                              : 'border-gray-200 bg-white hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className={`text-lg font-semibold ${payoutChoice === 'payroll' ? 'text-indigo-700' : 'text-gray-700'}`}>
+                            Add to Payroll
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Tips stay in your bank and are paid on your next paycheck.
+                          </p>
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Card className="p-4 bg-indigo-50">
+                      <div className="text-sm text-indigo-700">
+                        <span className="font-medium">Tips will be added to payroll.</span>
+                        <p className="text-xs text-indigo-500 mt-1">Cash out at shift close is not enabled for this location.</p>
+                      </div>
+                    </Card>
+                  )}
+
+                  {/* Payout result (shown after processing) */}
+                  {payoutResult && (
+                    <Card className="p-4 bg-green-50 border-green-200">
+                      <div className="text-center">
+                        <svg className="w-8 h-8 text-green-600 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <p className="font-medium text-green-700">
+                          {formatCurrency(payoutResult.amountDollars)} paid out in cash
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">
+                          Remaining balance: {formatCurrency(payoutResult.newBalanceDollars)}
+                        </p>
+                      </div>
+                    </Card>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setStep('tips')}
+                      disabled={payoutProcessing}
+                    >
+                      &larr; Back
+                    </Button>
+                    <Button
+                      variant="primary"
+                      className="flex-1"
+                      onClick={async () => {
+                        // If they chose cash and EOD cash out is enabled, process payout first
+                        if (payoutChoice === 'cash' && tipBankSettings?.allowEODCashOut && tipBankBalance > 0 && !payoutResult) {
+                          setPayoutProcessing(true)
+                          try {
+                            const res = await fetch('/api/tips/payouts', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'x-employee-id': shift.employee.id,
+                              },
+                              body: JSON.stringify({
+                                locationId: shift.locationId,
+                                employeeId: shift.employee.id,
+                                shiftId: shift.id,
+                                memo: 'EOD cash out',
+                              }),
+                            })
+                            if (res.ok) {
+                              const data = await res.json()
+                              setPayoutResult({
+                                amountDollars: data.payout?.amountDollars ?? 0,
+                                newBalanceDollars: data.payout?.newBalanceDollars ?? 0,
+                              })
+                            }
+                          } catch (err) {
+                            console.error('Failed to cash out tips:', err)
+                            setError('Failed to process tip cash out')
+                          } finally {
+                            setPayoutProcessing(false)
+                          }
+                        }
+                        // Now close the shift
+                        await handleCloseShift()
+                      }}
+                      disabled={isLoading || payoutProcessing}
+                    >
+                      {payoutProcessing ? 'Processing Payout...' : isLoading ? 'Closing...' : 'Close Shift'}
                     </Button>
                   </div>
                 </div>

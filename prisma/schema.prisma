@@ -81,6 +81,21 @@ model Location {
   tipBank        TipBank[]
   tipPoolEntries TipPoolEntry[]
 
+  // Tip Bank Ledger (Skill 250)
+  tipLedgers        TipLedger[]
+  tipLedgerEntries  TipLedgerEntry[]
+  tipTransactions   TipTransaction[]
+
+  // Tip Groups (Skill 252)
+  tipGroups              TipGroup[]
+  tipGroupMemberships    TipGroupMembership[]
+  tipGroupSegments       TipGroupSegment[]
+  orderOwnerships        OrderOwnership[]
+
+  // Tip Adjustments & Compliance (Skills 256, 259)
+  tipAdjustments         TipAdjustment[]
+  cashTipDeclarations    CashTipDeclaration[]
+
   // Order Details (multi-tenancy)
   orderItems         OrderItem[]
   orderItemModifiers OrderItemModifier[]
@@ -403,6 +418,20 @@ model Employee {
   tipSharesReceived TipShare[] @relation("TipShareTo")
   tipBank           TipBank[]
 
+  // Tip Bank Ledger (Skill 250)
+  tipLedgers       TipLedger[]
+  tipLedgerEntries TipLedgerEntry[]
+
+  // Tip Groups (Skill 252)
+  tipGroupMemberships TipGroupMembership[]
+
+  // Order Ownership (Skill 253)
+  orderOwnershipEntries OrderOwnershipEntry[]
+
+  // Tip Adjustments & Compliance (Skills 256, 259)
+  tipAdjustments       TipAdjustment[]
+  cashTipDeclarations  CashTipDeclaration[]
+
   // Payroll & Scheduling
   payStubs           PayStub[]
   scheduledShifts    ScheduledShift[]
@@ -558,6 +587,9 @@ model Shift {
 
   // Tip shares distributed during this shift closeout
   tipShares TipShare[]
+
+  // Cash tip declarations (Skill 259)
+  cashTipDeclarations CashTipDeclaration[]
 
   @@index([locationId])
   @@index([employeeId])
@@ -1607,6 +1639,7 @@ model Order {
   cards     OrderCard[]
   syncAuditEntries SyncAuditEntry[]
   remoteVoidApprovals RemoteVoidApproval[]
+  orderOwnerships     OrderOwnership[]
 
   @@index([locationId])
   @@index([employeeId])
@@ -1687,6 +1720,9 @@ model OrderItem {
 
   // Commission (Skill 29)
   commissionAmount Decimal?
+
+  // Shared Table Ownership (Skill 253) - who added this item
+  addedByEmployeeId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2380,6 +2416,13 @@ model TipOutRule {
   percentage Decimal // e.g., 3.0 for 3%
   isActive   Boolean @default(true)
 
+  // Enhanced tip-out fields (Skill 251)
+  basisType        String   @default("tips_earned") // tips_earned, food_sales, bar_sales, total_sales, net_sales
+  salesCategoryIds Json?    // Optional category filter for sales-based rules
+  maxPercentage    Decimal? // Compliance cap (max % of tips/sales)
+  effectiveDate    DateTime? // Rule becomes active on this date
+  expiresAt        DateTime? // Rule expires after this date
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -2466,6 +2509,230 @@ model TipBank {
   @@index([employeeId])
   @@index([status])
   @@index([createdAt])
+}
+
+// ============================================
+// TIP BANK LEDGER (Skill 250)
+// ============================================
+
+model TipLedger {
+  id                  String   @id @default(cuid())
+  locationId          String
+  location            Location @relation(fields: [locationId], references: [id])
+  employeeId          String   @unique
+  employee            Employee @relation(fields: [employeeId], references: [id])
+  currentBalanceCents Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deletedAt           DateTime?
+  syncedAt            DateTime?
+  entries             TipLedgerEntry[]
+
+  @@index([locationId])
+  @@index([employeeId])
+}
+
+model TipLedgerEntry {
+  id            String    @id @default(cuid())
+  locationId    String
+  location      Location  @relation(fields: [locationId], references: [id])
+  ledgerId      String
+  ledger        TipLedger @relation(fields: [ledgerId], references: [id])
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id])
+  type          String    // 'CREDIT' | 'DEBIT'
+  amountCents   Int
+  sourceType    String    // DIRECT_TIP, TIP_GROUP, ROLE_TIPOUT, MANUAL_TRANSFER, PAYOUT_CASH, PAYOUT_PAYROLL, CHARGEBACK, ADJUSTMENT
+  sourceId      String?
+  memo          String?
+  adjustmentId  String?
+  shiftId       String?
+  orderId       String?
+  createdAt     DateTime  @default(now())
+  deletedAt     DateTime?
+  syncedAt      DateTime?
+
+  @@index([locationId])
+  @@index([ledgerId])
+  @@index([employeeId])
+  @@index([sourceType])
+  @@index([shiftId])
+  @@index([createdAt])
+}
+
+model TipTransaction {
+  id                String   @id @default(cuid())
+  locationId        String
+  location          Location @relation(fields: [locationId], references: [id])
+  orderId           String
+  paymentId         String?
+  tipGroupId        String?
+  segmentId         String?
+  amountCents       Int
+  sourceType        String   // 'CARD' | 'CASH' | 'ADJUSTMENT'
+  collectedAt       DateTime
+  primaryEmployeeId String?
+  createdAt         DateTime @default(now())
+  deletedAt         DateTime?
+  syncedAt          DateTime?
+
+  @@index([locationId])
+  @@index([orderId])
+  @@index([tipGroupId])
+  @@index([collectedAt])
+}
+
+// ============================================
+// TIP GROUPS (Skill 252 - Dynamic Tip Groups)
+// ============================================
+
+model TipGroup {
+  id         String    @id @default(cuid())
+  locationId String
+  location   Location  @relation(fields: [locationId], references: [id])
+  createdBy  String    // Employee who started the group
+  ownerId    String    // Current owner (for approvals)
+  registerId String?   // Terminal/register
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  status     String    @default("active") // active, closed
+  splitMode  String    @default("equal")  // equal, custom, role_weighted, hours_weighted
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  syncedAt   DateTime?
+
+  memberships TipGroupMembership[]
+  segments    TipGroupSegment[]
+
+  @@index([locationId])
+  @@index([status])
+  @@index([startedAt])
+  @@index([ownerId])
+}
+
+model TipGroupMembership {
+  id         String    @id @default(cuid())
+  locationId String
+  location   Location  @relation(fields: [locationId], references: [id])
+  groupId    String
+  group      TipGroup  @relation(fields: [groupId], references: [id])
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  joinedAt   DateTime  @default(now())
+  leftAt     DateTime?
+  role       String?   // For role-weighted splits
+  approvedBy String?   // Owner who approved join
+  status     String    @default("active") // active, left, pending_approval
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  syncedAt   DateTime?
+
+  @@index([groupId])
+  @@index([employeeId])
+  @@index([status])
+}
+
+model TipGroupSegment {
+  id          String    @id @default(cuid())
+  locationId  String
+  location    Location  @relation(fields: [locationId], references: [id])
+  groupId     String
+  group       TipGroup  @relation(fields: [groupId], references: [id])
+  startedAt   DateTime
+  endedAt     DateTime?
+  memberCount Int
+  splitJson   Json      // { "emp1": 0.5, "emp2": 0.5 }
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+  syncedAt    DateTime?
+
+  @@index([groupId])
+  @@index([startedAt])
+}
+
+// ============================================
+// ORDER OWNERSHIP (Skill 253 - Shared Tables)
+// ============================================
+
+model OrderOwnership {
+  id          String   @id @default(cuid())
+  locationId  String
+  location    Location @relation(fields: [locationId], references: [id])
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id])
+  createdById String   // Employee who set the split
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+  syncedAt    DateTime?
+  owners      OrderOwnershipEntry[]
+
+  @@index([orderId])
+  @@index([locationId])
+}
+
+model OrderOwnershipEntry {
+  id               String         @id @default(cuid())
+  orderOwnershipId String
+  ownership        OrderOwnership @relation(fields: [orderOwnershipId], references: [id])
+  employeeId       String
+  employee         Employee       @relation(fields: [employeeId], references: [id])
+  sharePercent     Float          // e.g., 50.0, 33.33
+
+  @@index([orderOwnershipId])
+  @@index([employeeId])
+}
+
+// ============================================
+// TIP ADJUSTMENTS (Skill 256)
+// ============================================
+
+model TipAdjustment {
+  id              String   @id @default(cuid())
+  locationId      String
+  location        Location @relation(fields: [locationId], references: [id])
+  createdById     String
+  createdBy       Employee @relation(fields: [createdById], references: [id])
+  reason          String
+  adjustmentType  String   // 'group_membership' | 'ownership_split' | 'clock_fix' | 'manual_override' | 'tip_amount'
+  contextJson     String   // JSON: before/after state
+  autoRecalcRan   Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  deletedAt       DateTime?
+  syncedAt        DateTime?
+
+  @@index([locationId])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+// ============================================
+// CASH TIP DECLARATIONS (Skill 259)
+// ============================================
+
+model CashTipDeclaration {
+  id             String   @id @default(cuid())
+  locationId     String
+  location       Location @relation(fields: [locationId], references: [id])
+  employeeId     String
+  employee       Employee @relation(fields: [employeeId], references: [id])
+  shiftId        String?
+  shift          Shift?   @relation(fields: [shiftId], references: [id])
+  amountCents    Int
+  declaredAt     DateTime @default(now())
+  source         String   @default("employee") // 'employee' | 'manager_override'
+  overrideReason String?
+  overrideBy     String?
+  createdAt      DateTime @default(now())
+  deletedAt      DateTime?
+  syncedAt       DateTime?
+
+  @@index([locationId])
+  @@index([employeeId])
+  @@index([shiftId])
 }
 
 // ============================================

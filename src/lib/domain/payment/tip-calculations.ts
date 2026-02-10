@@ -22,6 +22,15 @@ export interface TipOutRule {
   toRole: string
   percentage: number
   isActive: boolean
+  basisType?: string   // 'tips_earned' | 'food_sales' | 'bar_sales' | 'total_sales' | 'net_sales'
+  maxPercentage?: number // Compliance cap (caps at % of tipsEarned, not sales)
+}
+
+export interface ShiftSalesData {
+  totalSales: number
+  foodSales: number
+  barSales: number
+  netSales: number // totalSales - discounts
 }
 
 export interface TipDistribution {
@@ -166,35 +175,86 @@ export function validateTipAmount(
 // ─── Tip-Out Calculations ────────────────────────────────────────────────────
 
 /**
+ * Get the basis amount for a tip-out rule based on its basisType.
+ *
+ * @param basisType - What the percentage is applied to
+ * @param tipsEarned - Tips earned by employee
+ * @param salesData - Optional sales breakdown for the shift
+ * @returns The dollar amount to apply the percentage to
+ */
+function getBasisAmount(
+  basisType: string | undefined,
+  tipsEarned: number,
+  salesData?: ShiftSalesData
+): number {
+  switch (basisType) {
+    case 'food_sales':
+      return salesData?.foodSales ?? 0
+    case 'bar_sales':
+      return salesData?.barSales ?? 0
+    case 'total_sales':
+      return salesData?.totalSales ?? 0
+    case 'net_sales':
+      return salesData?.netSales ?? 0
+    case 'tips_earned':
+    default:
+      return tipsEarned
+  }
+}
+
+/**
  * Calculate tip-out amount based on rules
+ *
+ * Supports multiple basis types: tips_earned (default), food_sales, bar_sales,
+ * total_sales, and net_sales. When salesData is not provided, all rules
+ * default to tips_earned for backward compatibility.
  *
  * @param tipsEarned - Tips earned by employee
  * @param employeeRole - Employee's role
  * @param rules - Active tip-out rules
+ * @param salesData - Optional sales breakdown for sales-based tip-outs
  * @returns Total tip-out amount
  *
  * @example
+ * // Tips-based (default):
  * calculateTipOut(100.00, 'server', [
  *   { fromRole: 'server', toRole: 'busser', percentage: 3, isActive: true },
  *   { fromRole: 'server', toRole: 'host', percentage: 2, isActive: true },
  * ])
  * // Returns 5.00 (3% + 2% = 5% of $100)
+ *
+ * @example
+ * // Sales-based:
+ * calculateTipOut(100.00, 'server', [
+ *   { fromRole: 'server', toRole: 'busser', percentage: 1, isActive: true, basisType: 'food_sales' },
+ * ], { totalSales: 1000, foodSales: 600, barSales: 400, netSales: 950 })
+ * // Returns 6.00 (1% of $600 food sales)
  */
 export function calculateTipOut(
   tipsEarned: number,
   employeeRole: string,
-  rules: TipOutRule[]
+  rules: TipOutRule[],
+  salesData?: ShiftSalesData
 ): number {
   const applicableRules = rules.filter(
     (rule) => rule.isActive && rule.fromRole === employeeRole
   )
 
-  const totalTipOutPercent = applicableRules.reduce(
-    (sum, rule) => sum + rule.percentage,
-    0
-  )
+  let totalTipOut = 0
+  for (const rule of applicableRules) {
+    const basisAmount = getBasisAmount(rule.basisType, tipsEarned, salesData)
+    let amount = Math.round(basisAmount * (rule.percentage / 100) * 100) / 100
 
-  return Math.round(tipsEarned * (totalTipOutPercent / 100) * 100) / 100
+    // Apply compliance cap if set (caps at % of tipsEarned, not sales)
+    if (rule.maxPercentage !== undefined && rule.maxPercentage !== null) {
+      const maxAmount = Math.round(tipsEarned * (rule.maxPercentage / 100) * 100) / 100
+      amount = Math.min(amount, maxAmount)
+    }
+
+    totalTipOut += amount
+  }
+
+  return Math.round(totalTipOut * 100) / 100
 }
 
 /**
@@ -204,15 +264,17 @@ export function calculateTipOut(
  * @param tipsReceived - Tips received from tip-outs
  * @param employeeRole - Employee's role
  * @param rules - Active tip-out rules
+ * @param salesData - Optional sales breakdown for sales-based tip-outs
  * @returns Tip distribution breakdown
  */
 export function calculateTipDistribution(
   tipsEarned: number,
   tipsReceived: number,
   employeeRole: string,
-  rules: TipOutRule[]
+  rules: TipOutRule[],
+  salesData?: ShiftSalesData
 ): Omit<TipDistribution, 'employeeId' | 'employeeName'> {
-  const tipOutAmount = calculateTipOut(tipsEarned, employeeRole, rules)
+  const tipOutAmount = calculateTipOut(tipsEarned, employeeRole, rules, salesData)
   const netTips = tipsEarned - tipOutAmount + tipsReceived
 
   return {
@@ -227,9 +289,13 @@ export function calculateTipDistribution(
 /**
  * Calculate tip shares for recipients
  *
+ * Supports multiple basis types per rule. When salesData is not provided,
+ * all rules default to tips_earned for backward compatibility.
+ *
  * @param tipsEarned - Tips earned by the giver
  * @param giverRole - Role of the tip giver
  * @param rules - Active tip-out rules
+ * @param salesData - Optional sales breakdown for sales-based tip-outs
  * @returns Map of recipient roles to tip amounts
  *
  * @example
@@ -239,7 +305,8 @@ export function calculateTipDistribution(
 export function calculateTipShares(
   tipsEarned: number,
   giverRole: string,
-  rules: TipOutRule[]
+  rules: TipOutRule[],
+  salesData?: ShiftSalesData
 ): Record<string, number> {
   const shares: Record<string, number> = {}
 
@@ -248,7 +315,15 @@ export function calculateTipShares(
   )
 
   for (const rule of applicableRules) {
-    const shareAmount = calculateTipAmount(tipsEarned, rule.percentage)
+    const basisAmount = getBasisAmount(rule.basisType, tipsEarned, salesData)
+    let shareAmount = calculateTipAmount(basisAmount, rule.percentage)
+
+    // Apply compliance cap if set (caps at % of tipsEarned, not sales)
+    if (rule.maxPercentage !== undefined && rule.maxPercentage !== null) {
+      const maxAmount = calculateTipAmount(tipsEarned, rule.maxPercentage)
+      shareAmount = Math.min(shareAmount, maxAmount)
+    }
+
     shares[rule.toRole] = (shares[rule.toRole] || 0) + shareAmount
   }
 

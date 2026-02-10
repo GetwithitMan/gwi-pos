@@ -25,6 +25,7 @@ export type {
   TipSettings,
   TipOutRule,
   TipDistribution,
+  ShiftSalesData,
 } from './tip-calculations'
 
 // ─── Loyalty Points ──────────────────────────────────────────────────────────

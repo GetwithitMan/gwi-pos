@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
 
 // GET - Get shift details with sales summary
 export async function GET(
@@ -203,7 +204,8 @@ export async function PUT(
             shift.locationId,
             shift.employeeId,
             closed.id,
-            tipDistribution
+            tipDistribution,
+            summary.salesData
           )
         }
 
@@ -397,6 +399,42 @@ async function calculateShiftSummary(
     netCashReceived = drawerCashReceived - drawerChangeGiven
   }
 
+  // Calculate sales by category type for tip-out basis
+  // Query order items for paid/closed orders and aggregate by categoryType
+  const orderIds = orders.map(o => o.id)
+  let foodSales = 0
+  let barSales = 0
+  let totalDiscounts = 0
+
+  if (orderIds.length > 0) {
+    const orderItems = await db.orderItem.findMany({
+      where: {
+        orderId: { in: orderIds },
+        status: { notIn: ['voided', 'comped'] },
+      },
+      select: {
+        price: true,
+        quantity: true,
+        categoryType: true,
+      },
+    })
+
+    orderItems.forEach(item => {
+      const itemTotal = Number(item.price) * item.quantity
+      const catType = item.categoryType
+
+      if (catType === 'food' || catType === 'combos') {
+        foodSales += itemTotal
+      } else if (catType === 'drinks' || catType === 'liquor') {
+        barSales += itemTotal
+      }
+    })
+
+    totalDiscounts = orders.reduce((sum, order) => sum + Number(order.discountTotal || 0), 0)
+  }
+
+  const netSales = totalSales - totalDiscounts
+
   // Count orders and payments
   const orderCount = orders.length
   const paymentCount = payments.length
@@ -443,6 +481,13 @@ async function calculateShiftSummary(
     paymentCount,
     voidCount: voids,
     compCount: comps,
+    // Sales breakdown by category type (for tip-out basis calculations)
+    salesData: {
+      totalSales: Math.round(totalSales * 100) / 100,
+      foodSales: Math.round(foodSales * 100) / 100,
+      barSales: Math.round(barSales * 100) / 100,
+      netSales: Math.round(netSales * 100) / 100,
+    },
   }
 }
 
@@ -458,7 +503,8 @@ async function processTipDistribution(
     netTips: number
     roleTipOuts: { ruleId: string; toRoleId: string; amount: number }[]
     customShares: { toEmployeeId: string; amount: number }[]
-  }
+  },
+  salesData?: { totalSales: number; foodSales: number; barSales: number; netSales: number }
 ) {
   // Get all currently clocked-in employees to determine if recipients are on shift
   const activeShifts = await tx.shift.findMany({
@@ -491,6 +537,54 @@ async function processTipDistribution(
   for (const tipOut of tipDistribution.roleTipOuts) {
     if (tipOut.amount <= 0) continue
 
+    // Server-side recalculation for sales-based tip-out rules
+    let effectiveAmount = tipOut.amount
+    if (tipOut.ruleId && salesData) {
+      const rule = await tx.tipOutRule.findUnique({
+        where: { id: tipOut.ruleId },
+        select: { basisType: true, percentage: true, maxPercentage: true },
+      })
+
+      if (rule && rule.basisType !== 'tips_earned') {
+        // Determine the basis amount based on the rule's basisType
+        let basisAmount: number
+        switch (rule.basisType) {
+          case 'food_sales':
+            basisAmount = salesData.foodSales
+            break
+          case 'bar_sales':
+            basisAmount = salesData.barSales
+            break
+          case 'total_sales':
+            basisAmount = salesData.totalSales
+            break
+          case 'net_sales':
+            basisAmount = salesData.netSales
+            break
+          default:
+            basisAmount = tipDistribution.grossTips
+        }
+
+        // Recalculate: basisAmount * (percentage / 100)
+        const percentage = Number(rule.percentage)
+        effectiveAmount = Math.round(basisAmount * (percentage / 100) * 100) / 100
+
+        // Apply maxPercentage compliance cap if set
+        if (rule.maxPercentage) {
+          const maxPct = Number(rule.maxPercentage)
+          const maxAmount = Math.round(tipDistribution.grossTips * (maxPct / 100) * 100) / 100
+          if (effectiveAmount > maxAmount) {
+            effectiveAmount = maxAmount
+          }
+        }
+
+        // Don't allow negative tip-outs
+        if (effectiveAmount < 0) effectiveAmount = 0
+      }
+    }
+
+    if (effectiveAmount <= 0) continue
+
     // Find an active employee with this role, or get any employee with this role
     let toEmployeeId = activeEmployeesByRole.get(tipOut.toRoleId)
     let status: 'pending' | 'banked' = 'pending'
@@ -516,19 +610,44 @@ async function processTipDistribution(
       }
     }
 
-    // Create TipShare record
+    // Create TipShare record (using effectiveAmount which may be recalculated for sales-based rules)
     const tipShare = await tx.tipShare.create({
       data: {
         locationId,
         shiftId,
         fromEmployeeId,
         toEmployeeId,
-        amount: tipOut.amount,
+        amount: effectiveAmount,
         shareType: 'role_tipout',
         ruleId: tipOut.ruleId,
         status,
       },
     })
+
+    // Post paired ledger entries (fire-and-forget, outside tx)
+    // Debit giver + Credit receiver
+    const tipAmountCents = dollarsToCents(effectiveAmount)
+    postToTipLedger({
+      locationId,
+      employeeId: fromEmployeeId,
+      amountCents: tipAmountCents,
+      type: 'DEBIT',
+      sourceType: 'ROLE_TIPOUT',
+      sourceId: tipShare.id,
+      shiftId,
+      memo: `Role tip-out to ${tipOut.toRoleId}`,
+    }).catch(err => console.error('Tip ledger DEBIT failed (role tipout):', err))
+
+    postToTipLedger({
+      locationId,
+      employeeId: toEmployeeId,
+      amountCents: tipAmountCents,
+      type: 'CREDIT',
+      sourceType: 'ROLE_TIPOUT',
+      sourceId: tipShare.id,
+      shiftId,
+      memo: `Role tip-out from shift close`,
+    }).catch(err => console.error('Tip ledger CREDIT failed (role tipout):', err))
 
     // If banked, create TipBank entry
     if (status === 'banked') {
@@ -536,7 +655,7 @@ async function processTipDistribution(
         data: {
           locationId,
           employeeId: toEmployeeId,
-          amount: tipOut.amount,
+          amount: effectiveAmount,
           source: 'tip_share',
           sourceId: tipShare.id,
           status: 'pending',
@@ -564,6 +683,30 @@ async function processTipDistribution(
         status,
       },
     })
+
+    // Post paired ledger entries (fire-and-forget, outside tx)
+    const shareAmountCents = dollarsToCents(share.amount)
+    postToTipLedger({
+      locationId,
+      employeeId: fromEmployeeId,
+      amountCents: shareAmountCents,
+      type: 'DEBIT',
+      sourceType: 'MANUAL_TRANSFER',
+      sourceId: tipShare.id,
+      shiftId,
+      memo: `Custom tip share`,
+    }).catch(err => console.error('Tip ledger DEBIT failed (custom share):', err))
+
+    postToTipLedger({
+      locationId,
+      employeeId: share.toEmployeeId,
+      amountCents: shareAmountCents,
+      type: 'CREDIT',
+      sourceType: 'MANUAL_TRANSFER',
+      sourceId: tipShare.id,
+      shiftId,
+      memo: `Custom tip share received`,
+    }).catch(err => console.error('Tip ledger CREDIT failed (custom share):', err))
 
     // If banked, create TipBank entry
     if (status === 'banked') {

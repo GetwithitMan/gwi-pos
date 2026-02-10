@@ -31,7 +31,10 @@ export async function GET(
     return NextResponse.json({
       data: {
         ...rule,
-        percentage: Number(rule.percentage)
+        percentage: Number(rule.percentage),
+        maxPercentage: rule.maxPercentage ? Number(rule.maxPercentage) : null,
+        effectiveDate: rule.effectiveDate?.toISOString() || null,
+        expiresAt: rule.expiresAt?.toISOString() || null,
       }
     })
   } catch (error) {
@@ -51,7 +54,7 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { percentage, isActive } = body
+    const { percentage, isActive, basisType, salesCategoryIds, maxPercentage, effectiveDate, expiresAt } = body
 
     // Check if rule exists
     const existingRule = await db.tipOutRule.findUnique({
@@ -65,8 +68,30 @@ export async function PUT(
       )
     }
 
+    // Valid basisType values
+    const VALID_BASIS_TYPES = ['tips_earned', 'food_sales', 'bar_sales', 'total_sales', 'net_sales']
+
+    // Validate basisType if provided
+    if (basisType !== undefined && !VALID_BASIS_TYPES.includes(basisType)) {
+      return NextResponse.json(
+        { error: `Invalid basisType. Must be one of: ${VALID_BASIS_TYPES.join(', ')}` },
+        { status: 400 }
+      )
+    }
+
+    // Validate maxPercentage if provided
+    if (maxPercentage !== undefined && maxPercentage !== null) {
+      const maxPctNum = Number(maxPercentage)
+      if (isNaN(maxPctNum) || maxPctNum < 0 || maxPctNum > 100) {
+        return NextResponse.json(
+          { error: 'maxPercentage must be between 0 and 100' },
+          { status: 400 }
+        )
+      }
+    }
+
     // Build update data
-    const updateData: { percentage?: number; isActive?: boolean } = {}
+    const updateData: Record<string, unknown> = {}
 
     if (percentage !== undefined) {
       const percentageNum = Number(percentage)
@@ -81,6 +106,18 @@ export async function PUT(
 
     if (isActive !== undefined) {
       updateData.isActive = Boolean(isActive)
+    }
+
+    if (basisType !== undefined) updateData.basisType = basisType
+    if (salesCategoryIds !== undefined) updateData.salesCategoryIds = salesCategoryIds
+    if (maxPercentage !== undefined) {
+      updateData.maxPercentage = maxPercentage !== null ? Number(maxPercentage) : null
+    }
+    if (effectiveDate !== undefined) {
+      updateData.effectiveDate = effectiveDate !== null ? new Date(effectiveDate) : null
+    }
+    if (expiresAt !== undefined) {
+      updateData.expiresAt = expiresAt !== null ? new Date(expiresAt) : null
     }
 
     const rule = await db.tipOutRule.update({
@@ -99,7 +136,10 @@ export async function PUT(
     return NextResponse.json({
       data: {
         ...rule,
-        percentage: Number(rule.percentage)
+        percentage: Number(rule.percentage),
+        maxPercentage: rule.maxPercentage ? Number(rule.maxPercentage) : null,
+        effectiveDate: rule.effectiveDate?.toISOString() || null,
+        expiresAt: rule.expiresAt?.toISOString() || null,
       }
     })
   } catch (error) {

@@ -8,6 +8,30 @@ import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { AdminSubNav, settingsSubNav } from '@/components/admin/AdminSubNav'
 
+const BASIS_TYPE_LABELS: Record<string, string> = {
+  tips_earned: 'Tips Earned',
+  food_sales: 'Food Sales',
+  bar_sales: 'Bar Sales',
+  total_sales: 'Total Sales',
+  net_sales: 'Net Sales',
+}
+
+const BASIS_TYPE_COLORS: Record<string, string> = {
+  tips_earned: 'bg-gray-100 text-gray-600',
+  food_sales: 'bg-orange-100 text-orange-700',
+  bar_sales: 'bg-blue-100 text-blue-700',
+  total_sales: 'bg-purple-100 text-purple-700',
+  net_sales: 'bg-green-100 text-green-700',
+}
+
+const BASIS_TYPE_EXAMPLE_AMOUNTS: Record<string, { label: string; amount: number }> = {
+  tips_earned: { label: 'tips', amount: 100 },
+  food_sales: { label: 'food sales', amount: 500 },
+  bar_sales: { label: 'bar sales', amount: 300 },
+  total_sales: { label: 'total sales', amount: 800 },
+  net_sales: { label: 'net sales', amount: 750 },
+}
+
 interface Role {
   id: string
   name: string
@@ -22,6 +46,10 @@ interface TipOutRule {
   toRoleId: string
   toRole: Role
   percentage: number
+  basisType: string
+  maxPercentage: number | null
+  effectiveDate: string | null
+  expiresAt: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -40,13 +68,19 @@ export default function TipOutsSettingsPage() {
   const [newRule, setNewRule] = useState({
     fromRoleId: '',
     toRoleId: '',
-    percentage: ''
+    percentage: '',
+    basisType: 'tips_earned',
+    maxPercentage: '',
+    effectiveDate: '',
+    expiresAt: '',
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Edit state
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editPercentage, setEditPercentage] = useState('')
+  const [editBasisType, setEditBasisType] = useState('tips_earned')
+  const [editMaxPercentage, setEditMaxPercentage] = useState('')
 
   const locationId = employee?.location?.id
 
@@ -108,21 +142,36 @@ export default function TipOutsSettingsPage() {
     setError('')
 
     try {
+      const body: Record<string, unknown> = {
+        locationId,
+        fromRoleId: newRule.fromRoleId,
+        toRoleId: newRule.toRoleId,
+        percentage,
+        basisType: newRule.basisType,
+      }
+      if (newRule.maxPercentage !== '') {
+        const maxPct = parseFloat(newRule.maxPercentage)
+        if (!isNaN(maxPct) && maxPct > 0 && maxPct <= 100) {
+          body.maxPercentage = maxPct
+        }
+      }
+      if (newRule.effectiveDate) {
+        body.effectiveDate = new Date(newRule.effectiveDate).toISOString()
+      }
+      if (newRule.expiresAt) {
+        body.expiresAt = new Date(newRule.expiresAt).toISOString()
+      }
+
       const response = await fetch('/api/tip-out-rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          fromRoleId: newRule.fromRoleId,
-          toRoleId: newRule.toRoleId,
-          percentage
-        })
+        body: JSON.stringify(body)
       })
 
       if (response.ok) {
         const data = await response.json()
         setRules([...rules, data.data])
-        setNewRule({ fromRoleId: '', toRoleId: '', percentage: '' })
+        setNewRule({ fromRoleId: '', toRoleId: '', percentage: '', basisType: 'tips_earned', maxPercentage: '', effectiveDate: '', expiresAt: '' })
         setShowAddForm(false)
         setSuccessMessage('Tip-out rule created successfully')
         setTimeout(() => setSuccessMessage(''), 3000)
@@ -138,18 +187,33 @@ export default function TipOutsSettingsPage() {
     }
   }
 
-  const handleUpdatePercentage = async (ruleId: string) => {
+  const handleUpdateRule = async (ruleId: string) => {
     const percentage = parseFloat(editPercentage)
     if (isNaN(percentage) || percentage <= 0 || percentage > 100) {
       setError('Percentage must be between 0 and 100')
       return
     }
 
+    const body: Record<string, unknown> = {
+      percentage,
+      basisType: editBasisType,
+    }
+    if (editMaxPercentage !== '') {
+      const maxPct = parseFloat(editMaxPercentage)
+      if (!isNaN(maxPct) && maxPct > 0 && maxPct <= 100) {
+        body.maxPercentage = maxPct
+      } else {
+        body.maxPercentage = null
+      }
+    } else {
+      body.maxPercentage = null
+    }
+
     try {
       const response = await fetch(`/api/tip-out-rules/${ruleId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ percentage })
+        body: JSON.stringify(body)
       })
 
       if (response.ok) {
@@ -157,6 +221,8 @@ export default function TipOutsSettingsPage() {
         setRules(rules.map(r => r.id === ruleId ? data.data : r))
         setEditingId(null)
         setEditPercentage('')
+        setEditBasisType('tips_earned')
+        setEditMaxPercentage('')
         setSuccessMessage('Rule updated successfully')
         setTimeout(() => setSuccessMessage(''), 3000)
       } else {
@@ -224,11 +290,15 @@ export default function TipOutsSettingsPage() {
   const startEdit = (rule: TipOutRule) => {
     setEditingId(rule.id)
     setEditPercentage(rule.percentage.toString())
+    setEditBasisType(rule.basisType || 'tips_earned')
+    setEditMaxPercentage(rule.maxPercentage != null ? rule.maxPercentage.toString() : '')
   }
 
   const cancelEdit = () => {
     setEditingId(null)
     setEditPercentage('')
+    setEditBasisType('tips_earned')
+    setEditMaxPercentage('')
   }
 
   // Get available "to" roles (exclude the selected "from" role)
@@ -341,6 +411,63 @@ export default function TipOutsSettingsPage() {
                   <span className="text-gray-500">%</span>
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Basis Type
+                </label>
+                <select
+                  value={newRule.basisType}
+                  onChange={(e) => setNewRule({ ...newRule, basisType: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  {Object.entries(BASIS_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max % Cap <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="100"
+                    value={newRule.maxPercentage}
+                    onChange={(e) => setNewRule({ ...newRule, maxPercentage: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="e.g., 5"
+                  />
+                  <span className="text-gray-500">%</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Caps tip-out at this % of tips earned</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Effective Date <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="date"
+                  value={newRule.effectiveDate}
+                  onChange={(e) => setNewRule({ ...newRule, effectiveDate: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Expires At <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="date"
+                  value={newRule.expiresAt}
+                  onChange={(e) => setNewRule({ ...newRule, expiresAt: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+              </div>
               <div className="flex items-end gap-2">
                 <Button
                   variant="primary"
@@ -354,7 +481,7 @@ export default function TipOutsSettingsPage() {
                   variant="outline"
                   onClick={() => {
                     setShowAddForm(false)
-                    setNewRule({ fromRoleId: '', toRoleId: '', percentage: '' })
+                    setNewRule({ fromRoleId: '', toRoleId: '', percentage: '', basisType: 'tips_earned', maxPercentage: '', effectiveDate: '', expiresAt: '' })
                   }}
                 >
                   Cancel
@@ -385,6 +512,7 @@ export default function TipOutsSettingsPage() {
                     <th className="text-center py-3 px-2 font-medium text-gray-600"></th>
                     <th className="text-left py-3 px-2 font-medium text-gray-600">To Role</th>
                     <th className="text-right py-3 px-2 font-medium text-gray-600">Percentage</th>
+                    <th className="text-center py-3 px-2 font-medium text-gray-600">Basis</th>
                     <th className="text-center py-3 px-2 font-medium text-gray-600">Status</th>
                     <th className="text-right py-3 px-2 font-medium text-gray-600">Actions</th>
                   </tr>
@@ -405,42 +533,94 @@ export default function TipOutsSettingsPage() {
                       </td>
                       <td className="py-3 px-2 text-right">
                         {editingId === rule.id ? (
-                          <div className="flex items-center justify-end gap-2">
-                            <input
-                              type="number"
-                              step="0.5"
-                              min="0"
-                              max="100"
-                              value={editPercentage}
-                              onChange={(e) => setEditPercentage(e.target.value)}
-                              className="w-20 px-2 py-1 border rounded"
-                              autoFocus
-                            />
-                            <span className="text-gray-500">%</span>
-                            <button
-                              onClick={() => handleUpdatePercentage(rule.id)}
-                              className="text-green-600 hover:text-green-800"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              className="text-gray-500 hover:text-gray-700"
-                            >
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                            </button>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-end gap-2">
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                max="100"
+                                value={editPercentage}
+                                onChange={(e) => setEditPercentage(e.target.value)}
+                                className="w-20 px-2 py-1 border rounded"
+                                autoFocus
+                              />
+                              <span className="text-gray-500">%</span>
+                            </div>
+                            <div className="flex items-center justify-end gap-2">
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                max="100"
+                                value={editMaxPercentage}
+                                onChange={(e) => setEditMaxPercentage(e.target.value)}
+                                className="w-20 px-2 py-1 border rounded text-xs"
+                                placeholder="Cap %"
+                              />
+                            </div>
                           </div>
                         ) : (
-                          <span
-                            className="cursor-pointer hover:text-blue-600"
-                            onClick={() => startEdit(rule)}
-                          >
-                            {rule.percentage}%
-                          </span>
+                          <div>
+                            <span
+                              className="cursor-pointer hover:text-blue-600"
+                              onClick={() => startEdit(rule)}
+                            >
+                              {rule.percentage}%
+                            </span>
+                            {rule.maxPercentage != null && (
+                              <div className="text-xs text-gray-400 mt-0.5">Cap: {rule.maxPercentage}%</div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 text-center">
+                        {editingId === rule.id ? (
+                          <div className="space-y-2">
+                            <select
+                              value={editBasisType}
+                              onChange={(e) => setEditBasisType(e.target.value)}
+                              className="w-full px-2 py-1 border rounded text-xs"
+                            >
+                              {Object.entries(BASIS_TYPE_LABELS).map(([value, label]) => (
+                                <option key={value} value={value}>{label}</option>
+                              ))}
+                            </select>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => handleUpdateRule(rule.id)}
+                                className="text-green-600 hover:text-green-800"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="text-gray-500 hover:text-gray-700"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${BASIS_TYPE_COLORS[(rule.basisType || 'tips_earned')]}`}>
+                              {(rule.basisType || 'tips_earned') === 'tips_earned'
+                                ? 'Tips'
+                                : BASIS_TYPE_LABELS[(rule.basisType || 'tips_earned')] || rule.basisType}
+                            </span>
+                            {(rule.effectiveDate || rule.expiresAt) && (
+                              <div className="text-xs text-gray-400 mt-1">
+                                {rule.effectiveDate && new Date(rule.effectiveDate).toLocaleDateString()}
+                                {rule.effectiveDate && rule.expiresAt && ' - '}
+                                {!rule.effectiveDate && rule.expiresAt && 'Until '}
+                                {rule.expiresAt && new Date(rule.expiresAt).toLocaleDateString()}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td className="py-3 px-2 text-center">
@@ -460,7 +640,7 @@ export default function TipOutsSettingsPage() {
                           <button
                             onClick={() => startEdit(rule)}
                             className="text-blue-600 hover:text-blue-800"
-                            title="Edit percentage"
+                            title="Edit rule"
                           >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -491,20 +671,58 @@ export default function TipOutsSettingsPage() {
             <h3 className="text-lg font-semibold mb-4">Example Calculation</h3>
             <div className="bg-gray-50 p-4 rounded-lg">
               <p className="text-sm text-gray-600 mb-3">
-                If a <span className="font-medium">{rules.find(r => r.isActive)?.fromRole.name || 'Server'}</span> closes their shift with <span className="font-medium">$100.00</span> in tips:
+                If a <span className="font-medium">{rules.find(r => r.isActive)?.fromRole.name || 'Server'}</span> closes their shift with{' '}
+                <span className="font-medium">$100.00</span> in tips, <span className="font-medium">$500</span> food sales,{' '}
+                <span className="font-medium">$300</span> bar sales, <span className="font-medium">$800</span> total sales,{' '}
+                <span className="font-medium">$750</span> net sales:
               </p>
               <div className="space-y-2">
-                {rules.filter(r => r.isActive && r.fromRole.name === (rules.find(r => r.isActive)?.fromRole.name)).map(rule => (
-                  <div key={rule.id} className="flex justify-between text-sm">
-                    <span>{rule.toRole.name} ({rule.percentage}%):</span>
-                    <span className="font-medium">${(100 * rule.percentage / 100).toFixed(2)}</span>
-                  </div>
-                ))}
+                {rules.filter(r => r.isActive && r.fromRole.name === (rules.find(r => r.isActive)?.fromRole.name)).map(rule => {
+                  const basis = rule.basisType || 'tips_earned'
+                  const exampleInfo = BASIS_TYPE_EXAMPLE_AMOUNTS[basis] || BASIS_TYPE_EXAMPLE_AMOUNTS.tips_earned
+                  const rawAmount = exampleInfo.amount * rule.percentage / 100
+                  let cappedAmount = rawAmount
+                  let isCapped = false
+                  if (rule.maxPercentage != null && basis !== 'tips_earned') {
+                    const capAmount = 100 * rule.maxPercentage / 100 // 100 = example tips
+                    if (rawAmount > capAmount) {
+                      cappedAmount = capAmount
+                      isCapped = true
+                    }
+                  }
+                  return (
+                    <div key={rule.id} className="text-sm">
+                      <div className="flex justify-between">
+                        <span>
+                          {rule.toRole.name} ({rule.percentage}% of ${exampleInfo.amount} {exampleInfo.label}):
+                        </span>
+                        <span className="font-medium">
+                          ${cappedAmount.toFixed(2)}
+                          {isCapped && <span className="text-orange-500 ml-1">(capped)</span>}
+                        </span>
+                      </div>
+                      {isCapped && rule.maxPercentage != null && (
+                        <div className="text-xs text-gray-400 text-right">
+                          Raw: ${rawAmount.toFixed(2)}, capped at {rule.maxPercentage}% of tips = ${cappedAmount.toFixed(2)}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
                 <div className="border-t pt-2 flex justify-between text-sm font-medium">
-                  <span>Net Tips:</span>
+                  <span>Total Tip-Outs:</span>
                   <span>
-                    ${(100 - rules.filter(r => r.isActive && r.fromRole.name === (rules.find(r => r.isActive)?.fromRole.name))
-                      .reduce((sum, r) => sum + r.percentage, 0)).toFixed(2)}
+                    ${rules.filter(r => r.isActive && r.fromRole.name === (rules.find(r => r.isActive)?.fromRole.name))
+                      .reduce((sum, r) => {
+                        const basis = r.basisType || 'tips_earned'
+                        const exampleInfo = BASIS_TYPE_EXAMPLE_AMOUNTS[basis] || BASIS_TYPE_EXAMPLE_AMOUNTS.tips_earned
+                        const rawAmount = exampleInfo.amount * r.percentage / 100
+                        if (r.maxPercentage != null && basis !== 'tips_earned') {
+                          const capAmount = 100 * r.maxPercentage / 100
+                          return sum + Math.min(rawAmount, capAmount)
+                        }
+                        return sum + rawAmount
+                      }, 0).toFixed(2)}
                   </span>
                 </div>
               </div>
