@@ -1,0 +1,711 @@
+You’re on the right track splitting “POS workers” vs “support workers” and using permissions + defaultScreen; the main gaps now are consistency, safety, and weird cross‑role combos.[1][2]
+
+## How to organize roles
+
+Instead of top‑to‑bottom by feature, define a **matrix**:
+
+- Axes: authentication (clock in vs POS login), cash handling, order/ticket handling, adjustments/voids, reports, configuration.[2][1]
+- Each role is a row that picks a minimal set in each axis:  
+  - Barback: clock in, own tips, own shift report; no POS login, no cash, no voids, no customer data.[1][2]
+  - Server: POS login, open/close checks, accept payments, adjust own tips, limited reports.[2][1]
+  - Bartender: like Server, possibly drawer access, limited void/discount.[1][2]
+  - Manager: full POS access, overrides, wider reports, some config.[2][1]
+  - Admin/Owner: everything, including backend settings, integrations, accounting.[1][2]
+
+You can still group privileges visually (Security, Access, Function, Discount/Comp, Reports, Events, etc.), but **roles** should be defined business‑logically, not by the UI section they live in.[2][1]
+
+## Edge cases you’re likely missing
+
+### 1) Clock‑in vs POS access
+
+- Users who can clock in but must never see POS (barback, host, expo, kitchen).  
+  - Ensure: `clockin anytime` or time‑clock API allowed, but `POS login allowed` and `pos.access` are off.[1][2]
+  - Double‑check direct URL hits (you already do `/orders` → `/crew`; consider doing the same for other POS routes like `/kds`, `/tabs`, `/payments`).[2][1]
+- Users who need to **clock in at POS only** (fingerprint, no stand‑alone web clock).  
+  - Make sure fingerprint‑only flags don’t block them from the Crew Hub if they’re non‑POS.[1][2]
+
+### 2) Cash handling and drawers
+
+- “Barback never touches cash” must be enforced by removing:  
+  - `open drawer \ no sale`, `assign drawer to other employees`, `open any assigned drawer`, `accept cash transactions`, `reverse cash transactions`, `start bank entry prompt`, `batch close`, and any drawer/till reports.[2][1]
+- Users who accept payments but must be **blind** to totals:  
+  - Use “prevent user from seeing sales/payment info with their drawer” style permissions where available.[2]
+- People with `paid outs` but no other cash permission – decide if that’s allowed or must be manager‑only.[1]
+
+### 3) Tips, comps, voids, and refunds
+
+- Separate “can **enter** tips” vs “can **adjust** tips”, and “own” vs “others”.  
+  - E.g., server can adjust their own tips, manager can adjust anyone’s.[2]
+- Restrict: `delete/void order`, `reverse credit transactions`, `reverse custom tender transactions`, `load / refund gift cards`, and heavy discounts to manager roles, and enforce `void reason required` or `void type required` globally.[1][2]
+- Make sure non‑POS roles that see the Crew Hub **cannot** see tip or commission reports for others unless they are supervisors.[2]
+
+### 4) Reports exposure
+
+- Distinguish:  
+  - “My shift report” vs “employee report (view all)” vs “daily sales / labor / timesheet / customer / event reports”.[1][2]
+- Barbacks/support: only “own” shift/commission.  
+- Servers/bartenders: maybe their own shift + basic daily sales summary (no sensitive breakdown).  
+- Managers: all POS reports.  
+- Admin: full POS + back‑office (inventory, accounting, invoicing, events, integrations).[1][2]
+
+### 5) Backend / settings bleed‑through
+
+There’s a ton of backend/host/config permissions (menu, discounts, events, accounting, payments, host mode, completed tickets, delivery, etc.). Common pitfalls:[2][1]
+
+- Host/Expo roles:
+  - Likely need `Access Host Mode`, `Access Completed Tickets`, but **not** `Access to All Tickets` or “Manage tickets” globally unless intended.[2]
+- Do not give front‑line roles:
+  - Menu editing, disable product (86), global printer settings, delivery/online menu publishing, events/catering setup, accounting setup, gift/local, card processing, integrations, etc., unless they’re managers/admins.[1][2]
+- If you allow `disable product (86'd)` from POS, check if that should be only bartender/manager, not every server.[1]
+
+### 6) Ticket and table handling
+
+From the second system: `Manage tickets`, `Transfer Tickets to Self`, `Transfer Tickets to Others`, `Make Payments`, `Change Item Quantity`, `Resend Printed Items`, etc.[2]
+
+Edge concerns:
+
+- Hosts that can open tables but should not collect payments.  
+- Staff that can transfer tickets to themselves (OK) but not to others (prevents “stealing” tables).[2]
+- Staff that can reprint checks but **not** reprint credit card slips (to avoid abuse).  
+- Limits on `Change Item Quantity` and `Resend Printed Items` so kitchen doesn’t get duplicate or hidden items.[2]
+
+### 7) Authentication / security details
+
+- Fingerprint only vs PIN: ensure combination of `login to POS through fingerprint only`, `clockin/out through fingerprint only`, and `POS login allowed` cannot strand an employee (e.g., allowed to clock in but not to log in anywhere).[1]
+- `auto-logout after sale/send action` + “No Auto-Clockout at Last Known POS Use” interactions – test that support staff are not being auto‑logged or clocked out oddly.[1]
+
+### 8) Special flows and “start shift” behavior
+
+- You added `defaultScreen` plus `pos.access` gating; also check:  
+  - KDS route, delivery/driver screens, payments‑only screens.[1][2]
+- Ensure non‑POS roles never see:  
+  - Floor plan, `Start Your Shift` drawer count, bank entry prompts, batch close, or any cash reconciliations.[1]
+
+## Priority ordering of privileges (for UI and mental model)
+
+Instead of strictly top‑to‑bottom POS vs payments, group by **risk**:
+
+1. High‑risk: cash, refunds, voids, discounts, tip adjustments, gift cards, card processing settings, accounting.[2][1]
+2. Medium: ticket management (transfers, holds), menu 86, reports beyond own shift, delivery/online menu publishing, events management.[2][1]
+3. Low: clock‑in/out, view own shift/tips, access host mode, view completed tickets.[2]
+
+Then decide for each role: what is the **highest risk level** they should ever touch, and never assign privileges above that.
+
+## Concrete checklist for you
+
+When you define or audit a role, walk through:
+
+- Can they log in? Where do they land (Crew vs POS)?  
+- Can they clock in/out? How (PIN, fingerprint)?  
+- Can they see floor plan / tickets / KDS? Which ones?  
+- Can they touch cash or drawers in any way?  
+- Can they make or reverse any payment type?  
+- Can they comp/discount/void, and with what reasoning requirements?  
+- What reports can they see (self vs others vs business)?  
+- Do they change configuration (menu, printers, integrations, events, accounting)?  
+
+If you want, I can take one role at a time (e.g., Barback, Server, Bartender, Manager) and propose a minimal exact permission set using the lists you pasted.
+
+
+
+
+help me think this through, giving the employees the right access based on user roles and privilages,  What edge cases am i missing? SHould I organize the employee roles from top to bottom, SUch as pos privilages, then payment privilages, Can clock in but doesnt have access to the pos to ring up sales view tabs etc?  
+
+Context                                                                                                                                                                      
+
+ Currently ALL employees — including barbacks with only tip/commission permissions — get routed to /orders after login, see the full POS floor plan, and get prompted to
+ "Start Your Shift" with a cash drawer count. Barbacks never touch a cash drawer. They need a simplified landing page with only their relevant options: time clock, tips, and
+  shift report.
+
+ Key Insight
+
+ The pos.access permission cleanly separates POS employees (Server, Bartender, Manager) from support staff (Barback). The hasPermission() utility already handles wildcard
+ matching (admin → all permissions).
+
+ Changes (4 files, 1 new)
+
+ 1. Login API — return defaultScreen (1 line)
+
+ File: src/app/api/auth/login/route.ts
+
+ Add defaultScreen: matchedEmployee.defaultScreen || null to the response object (~line 93). Currently this field exists in the schema but is never returned.
+
+ 2. Login Redirect — check pos.access before routing
+
+ File: src/app/(auth)/login/page.tsx
+
+ Modify getRedirectPath() (~line 23-35):
+ - Accept permissions from the employee object
+ - If employee lacks pos.access → return /crew
+ - Otherwise continue with existing defaultScreen logic (/orders, /kds, etc.)
+ - Add 'crew' as a valid defaultScreen switch case
+ - Import hasPermission, PERMISSIONS from @/lib/auth-utils
+
+ 3. Orders Page — guard redirect for non-POS employees
+
+ File: src/app/(pos)/orders/page.tsx
+
+ Add a useEffect after permissionsArray is computed (~line 98):
+ if employee exists AND has no pos.access → router.replace('/crew')
+ This catches direct URL navigation. Import hasPermission, PERMISSIONS.
+
+ 4. Crew Hub Page — NEW
+
+ File: src/app/(pos)/crew/page.tsx (new ~200 lines)
+
+ Simple glassmorphism page with:
+ - Header: Employee name + role badge, current time, Logout button
+ - Action cards (2-col grid, permission-gated):
+ ┌───────────────────┬───────────────────────────┬────────────────────┬─────────────────────────────────────────┐
+ │       Card        │      Always visible?      │  Permission gate   │                 Action                  │
+ ├───────────────────┼───────────────────────────┼────────────────────┼─────────────────────────────────────────┤
+ │ Time Clock        │ Yes                       │ —                  │ Inline clock in/out via /api/time-clock │
+ ├───────────────────┼───────────────────────────┼────────────────────┼─────────────────────────────────────────┤
+ │ Tip Adjustments   │ If has tips.*             │ tips.view_own      │ Opens inline or navigates               │
+ ├───────────────────┼───────────────────────────┼────────────────────┼─────────────────────────────────────────┤
+ │ My Shift Report   │ Yes                       │ —                  │ Links to /reports/shift                 │
+ ├───────────────────┼───────────────────────────┼────────────────────┼─────────────────────────────────────────┤
+ │ Commission Report │ If has reports.commission │ reports.commission │ Links to /reports/commission            │
+ └───────────────────┴───────────────────────────┴────────────────────┴─────────────────────────────────────────┘
+ - Uses existing useAuthStore for employee data
+ - Uses existing /api/time-clock/status and /api/time-clock endpoints (same as login page)
+ - Glassmorphism styling: dark background, bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl cards
+ - No ShiftStartModal — barbacks don't handle cash drawers
+
+ What Does NOT Change
+
+ - ShiftStartModal — non-POS employees never reach /orders, so they never see it
+ - TimeClockModal — already reusable, may optionally be used from Crew Hub
+ - Auth store — permissions[] already stored
+ - Prisma schema — defaultScreen already exists on Employee
+ - Existing POS flow — all POS employees (pos.access) work exactly as before
+
+ Edge Cases
+ ┌───────────────────────────────────────┬─────────────────────────────────────────────────────────┐
+ │                 Case                  │                        Behavior                         │
+ ├───────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Employee with no permissions at all   │ Goes to /crew (correct — minimal hub)                   │
+ ├───────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Admin/super_admin                     │ hasPermission(['admin'], 'pos.access') = true → /orders │
+ ├───────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ Non-POS employee types /orders in URL │ Guard redirect catches → /crew                          │
+ ├───────────────────────────────────────┼─────────────────────────────────────────────────────────┤
+ │ POS employee navigates to /crew       │ Page renders fine, shows "Go to POS" link               │
+ └───────────────────────────────────────┴─────────────────────────────────────────────────────────┘
+ Verification
+
+ 1. Login as Barback (PIN 9999) → should redirect to /crew, NOT /orders
+ 2. On /crew → verify Time Clock card, Tip Adjustments card, My Shift, Commission cards visible
+ 3. Clock in from /crew → verify works without drawer count
+ 4. Manually navigate to /orders as Barback → verify redirect to /crew
+ 5. Login as Demo Manager (PIN 1234) → should still go to /orders as before
+ 6. Login as Server (PIN 2345) → should still go to /orders as before
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+
+here is one systems roles : 
+Add Role
+
+Add Role
+1
+2
+Privileges
+security
+clockin anytime
+clockin/out through fingerprint only
+login to POS through fingerprint only
+clockout requires all checks settled
+auto-logout after sale/send action
+view cash figures (vs. blind drop)
+No Auto-Clockout at Last Known POS Use
+access
+access lineLeap tabs
+access deliverect tabs
+POS login allowed
+edit all tabs
+open drawer \ no sale
+assign drawer to other employees
+open any assigned drawer
+transfer any tab to any user
+adjust printers settings
+access prior business day
+paid outs
+function
+transfer products / merge tabs
+disable product (86'd)
+add table details req'd
+auto-send orders always
+discount/comp
+gamebar comp quick access bar
+delete/void order
+void type required
+void reason required
+add / delete gratuity
+add / delete surcharge
+adjust tips
+accept cash transactions
+accept credit transactions
+reverse cash transactions
+reverse credit transactions
+accept custom tender transactions
+reverse custom tender transactions
+load / refund gift cards
+modification required for prep: beverage
+modification required for prep: food
+modification required for prep: retail
+display tables after login
+start bank entry prompt
+batch close
+coursing
+seats
+access half modifier
+access double modifier
+repeat last round
+Display Card on file warning
+pos reports
+employee report
+employee report (view all)
+daily sales report
+timesheet: labor report
+email reports
+email meal period report
+email daily sales report
+email weekly report
+email monthly report
+email quarterly & annual report
+events
+Event Management (Ticketing)
+
+here is their back end access roles 
+
+I think i need to make sure the system has these properly assigned:  another system has these : Allowed Settings
+Settings
+Add Settings
+Access Host Mode
+Access Completed Tickets
+Access to All Tickets
+Allow Table/Grid View
+Hold Kitchen Items
+View/Print Shift Report
+
+
+Allows a user to access host mode
+
+Allows a user to view and open recently completed tickets
+
+Job has access to all tickets
+
+Allows a user to use the fast pay buttons
+
+Allow the user to view both the table and grid views, as well as create tickets.
+
+Job has access to manually inputting weight for items sold by weight
+
+Generates a Guest Check that contains customer information when a user transfers a ticket that has a customer attached to it to another user
+
+Prevents a user from seeing any sales or payment information that happens with their cash drawer or personal till
+
+Requires a user to declare their cash tips before clocking out
+
+Allows a user to hold kitchen items on a ticket
+
+Allows a user to ignore required modifier sets on a menu item
+
+Allows a user to modify the dollar limit threshold of a customer's house account
+
+Allows a user to scan a barcode on a receipt to transfer a ticket to themselves
+
+Allows a user to use a personal till
+
+Allows users with this permission to view any Department currently hidden due to Menu Availability configurations
+
+Allows a user to view or print their shift report
+
+Allows a user to unlock tickets with Crypto payments
+
+Permissions
+Permissions
+Add Permission
+Access Table/Reservation Setup
+Cash In
+Manage tickets
+Allow manual gratuity
+Allow remove gratuity
+Resend Printed Items
+Cash Out
+Cash Drawer
+Transfer Tickets to Self
+Transfer Tickets to Others
+Make Payments
+Change Item Quantity
+See Customers
+Edit Customers
+Enter CC Manually
+Reprint Credit Card Slips
+User Tip Adjust
+User Cash Count
+Change Advantage Pricing
+Allow Receipt Reprints
+
+Permissions
+Default permissions are inherited from the job. To add an exception for this employee, create an override. See the Permissions Reference Guide for details.
+
+View restaurant/ group permissions
+
+1 restaurant selected
+The SunTrapp - The SunTrapp LLC
+
+Permission	Override?Allow
+1 POS Access	
+1.1 Table Service Mode	
+1.2 Quick Order Mode	
+1.3 Kitchen Display System Mode	
+1.4 Payment Terminal Mode	
+1.5 Pending Orders Mode / Orders Hub Mode	
+1.6 Apply Cash Payments
+
+Employees can enter cash payments on devices that are configured to allow cash payments.
+
+1.7 Cash Drawer Access	
+1.8 View Other Employees' Orders	
+1.9 Edit Other Employees' Orders	
+1.10 Add / Update Service Charges	
+1.11 My Reports (+ Inventory / Menusphere)
+
+Employees can view their own Sales and Time Entries reports, and record Inventory Worksheet counts for 2 days. Assign with the Menu Reports permission for full Inventory / Menusphere access.
+
+1.12 Shift Review Sales Data
+
+Employees can view their own personal sales and payments data in Shift Review.
+
+1.13 No Sale
+
+Employees can use No Sale to open the cash drawer without having to complete a transaction and use Cash In to undo cash entries.
+
+1.14 Key in Credit Cards
+
+Employees can manually enter a credit card number on a keypad instead of swiping the card.
+
+1.15 Offline/Background Credit Card Processing
+
+Employees can approve card payments above the Offline Transaction Limit without an authorization guarantee when the Toast system experiences payment disruptions.
+
+1.16 Change Table	
+1.17 Change Server	
+1.18 Log Into Toast Tables App (Waitlist & Reservations)
+
+Employees will have full access to the Toast Tables app on Android and iOS.
+
+1.19 Record Excess Food Menu Items
+
+Employees can record excess menu items throughout the day (for example, food waste) using the excess food tracking mode on the POS.
+
+1.20 Split Checks
+
+Employees can split items across multiple checks. Available on POS app version 2.68.3 and newer.
+
+2 Delivery Access	
+2.1 Delivery Mode
+
+Grant employees access to Delivery mode on Toast POS. If Dispatch Driver is permissible, the employee is only allowed to dispatch orders to themselves. Other permissible delivery functions such as Cancel Dispatch and Complete Delivery will only be allowed on orders for which the employee is the assigned driver.
+
+2.2 Update All Delivery Orders
+
+Coming soon. Grant employees the ability to dispatch delivery orders to any delivery driver and update the status of all delivery orders assuming the delivery functions are permissible.
+
+2.3 Dispatch Driver
+
+Coming soon. Grant the ability to Dispatch Driver. Dispatch Driver assigns a driver to an unassigned delivery order and updates it into an en route order.
+
+2.4 Cancel Dispatch
+
+Coming soon. Grant the ability to Cancel Dispatch. Cancel Dispatch reverts an en route delivery order back to an unassigned delivery order.
+
+2.5 Complete Delivery
+
+Coming soon. Grant the ability to Complete Delivery. Complete Delivery updates an en route order into a delivered order.
+
+2.6 Update Driver
+
+Coming soon. Grant the ability to Update Driver. Update Driver will allow the employee to change the driver assigned to a completed delivery order.
+
+3 Manager	
+3.1 Discounts
+
+Employees can apply manager-level item and check discounts to any check.
+
+3.2 Transfer / Rewards Adjustment
+
+Employees can update loyalty accounts by transferring or combining card balances and adjusting rewards points.
+
+3.3 Gift Card Adjustment	
+3.4 Bulk Transfer Checks
+
+Employees can select multiple checks and reassign them to another employee (payment terminal or previous checks screens).
+
+3.5 Bulk Void Open Checks
+
+Employees can select multiple open checks and void them (payment terminal or previous checks screens).
+
+3.6 Bulk Close Paid Checks
+
+Employees can select multiple paid checks and close them (payment terminal or previous checks screens).
+
+3.7 Void Items / Orders	
+3.8 Void / Refund Payments	
+3.9 Unlinked Refunds
+
+Employees can make refunds to a credit card other than the card used for payment. Example: the payment card was lost, refund to a new card.
+
+3.10 Edit Sent Items
+
+Employees can update the modifier options for an item after it is sent to the kitchen.
+
+3.11 Other Payment Types
+
+Employees can select custom payment types (Other Payment Options) to pay a check.
+
+3.12 Shift Review
+
+Employees can view complete shift review data for any active employee in Manager Shift Review.
+
+3.13 Negative Declared Tips
+
+Employees can enter a negative tip amount in shift review if Negative Declared Tips are allowed (UI Options).
+
+3.14 Edit Time Entries
+
+Employees can change the clock in/out times reported by other employees.
+
+3.15 End Breaks Early
+
+Employees can end breaks early when Enforce Minimum Time is set (Breaks).
+
+3.16 Close Out Day	
+3.17 Cash Drawers (Blind)
+
+Employees can open a cash drawer, close out and replace cash drawers at the end of shifts, but do not see the expected cash amount for the drawer.
+
+3.18 Cash Drawers (Full)
+
+Employees can open a cash drawer, close out and replace cash drawers at the end of shifts, and can also view the expected cash amount for the drawer.
+
+3.19 Cash Drawer Lockdown (Override)
+
+Employees can clock in without being forced to choose a cash drawer. This permission can be useful for managers who close out cash drawers.
+
+3.20 Large Cash Over/Under
+
+Employees can close a cash drawer that has an overage or shortage larger than the configured Closeout Over/Under Max (UI Options).
+
+3.21 Adjust Cash Drawer Start Balance	
+3.22 Pay Out
+
+Employees can pay for goods or services by taking a cash payment from the restaurant (house) or any cash drawer that is not locked to another employee.
+
+3.23 Find Checks	
+3.24 Register Swipe Cards
+
+Employees can activate a swipe card and perform manager overrides by swiping the card instead of entering a passcode.
+
+3.25 Open Items
+
+Employees can enter orders for items that are not on the menu. Does not provide access to special requests (UI Options).
+
+3.26 Log Book
+
+Employees can access the Manager Log, a tool for tracking operations, personnel and customer issues.
+
+3.27 Send Notifications
+
+Employees can send notifications from the back-end to the Toast devices.
+
+3.28 Tax Exempt	
+3.29 Throttle Online Orders
+
+Employees can change the amount of time needed for orders made online (Pending Orders screen).
+
+3.30 Team Chat Advanced Controls
+
+Employees have advanced controls over Team Chat and are able to moderate content.
+
+3.31 Configure Auto-Close Orders at End of Day
+
+Allows employees to configure the Toast platform to automatically close orders at the end of the business day. Employees must have this permission at every location in your management group to configure automatic order closing.
+
+4 Restaurant Admin	
+4.1 Sales Reports	
+4.2 Menu Reports (+ Inventory / Menusphere Reporting)
+
+Employees can run Inventory / Menusphere reports and modify Inventory configurations. Assign with the My Reports permission for full access to Inventory / Menusphere.
+
+4.3 Labor Reports	
+4.4 Gift / Rewards Card Reports	
+4.5 Edit Full Menu
+
+Employees can add and edit menus, including Open Items, Pre Modifiers, Price Levels, Sales Categories, Service Prompts, and Item Tags.
+
+4.6 Tables	
+4.7 Configure Toast Tables (Waitlist & Reservations)
+
+Employees can see and make changes to settings for Toast Tables on this website. The settings can be found under "Front of House" in the main menu.
+
+4.8 Marketing Info
+
+Employees can update the location's Restaurant Info, Hours/Services, and printed guest Receipt Setup in the Marketing section, as well as access Toast Loyalty and any third party Loyalty integrations, if enabled.
+
+4.9 Employee Info	
+4.10 Employee Jobs & Wages	
+4.11 House Accounts	
+4.12 Edit Historical Data
+
+Employees can edit values for past dates, including Cash In/Cash Out, Add Cash Drop, and Update Closing Balance in the Cash Drawers report. Employees can also archive test orders.
+
+4.13 Customer Credits & Reports
+
+Employees can issue credits (comps) to guests and view the Customers report.
+
+4.14 Local Menu Edit
+
+Employees have limited access to edit certain parts of the menu, such as adding a menu item to a menu group or rearranging the order of menu items in a menu group.
+
+4.15 New POS experience toggle access
+
+When activated, restaurant employees can enable, or disable, the new POS experience. Requires POS app version 2.67 or newer.
+
+4.16 View Invoicing, Catering & Events
+
+Users can view and print information in the Catering & Events module and Toast Invoicing.
+
+4.17 Edit Invoicing, Catering & Events
+
+Users can edit and create invoices, orders, leads, etc in the Catering & Events module and edit and create invoices in Toast Invoicing.
+
+4.18 Configure Invoicing, Catering & Events
+
+Users can configure the Catering & Events module settings and the Toast Invoicing settings.
+
+4.19 Settings Copy Tool
+
+Users can copy settings from one location to another.
+
+4.20 Benchmarking Access
+
+Users can access Benchmarking Insights
+
+4.21 Benchmarking Restaurant Group Report Access
+
+Users can access the group / multi-unit reporting in Toast Benchmarking. This feature is applicable to Restaurant Management Suite Pro subscribers only.
+
+4.22 Enable Job-Based Access
+
+Gives access to manage employee permissions based on clocked-in job for all locations in a management group if this permission is enabled for all locations.
+
+5 Quick Edit Access	
+5.1 Full Quick Edit
+
+Employees can access every quick edit option on a device. Was "Quick Edit Menu".
+
+5.2 Inventory & Quantity
+
+Employees can mark menu items and modifier options as either in stock, out of stock, or set the current quantity.
+
+5.3 Button Color	
+5.4 Name	
+5.5 POS Name	
+5.6 SKU	
+5.7 Price	
+5.8 Add Existing Items/Mods	
+5.9 Add New Items/Mods	
+5.10 Rearrange Items/Mods	
+5.11 Remove Items/Mods	
+6 Web Setup	
+6.1 Discounts Setup
+
+Employees can update Discounts and Discount Reasons in the Payments section.
+
+6.2 Kitchen / Dining Room Setup
+
+Employees can update pages in the Kitchen/Dining Room section with the exception of Tables.
+
+6.3 Payments Setup
+
+Employees can update the following Payments pages: Payment Options, Other Payment Options, No Sale Reasons, Void Reasons, Service Charges, Gift Cards Setup, Pay Out Reasons.
+
+6.4 Publishing
+
+Employees can push all configuration updates, made by any employee, to all devices in the Toast POS system.
+
+6.5 Restaurant Groups Setup
+
+Employees can update Restaurant Groups in the Other Setup section.
+
+6.6 Restaurant Operations Setup
+
+Employees can update Breaks (Labor), all Display Setup pages, and the following Other Setup pages: UI Options, Revenue Centers, Device Groups, GL Accounts, Takeout / Delivery, Prep / Delivery Times, Online Ordering, Online Ordering Schedule, Online Ordering Audit, Notification Setup, Barcode Config, Guest Feedback.
+
+6.7 Change sets
+
+Employees can create, edit, and delete change sets for scheduled publishing.
+
+6.8 Tax Rates Setup
+
+Employees can update Tax Rates in the Payments section.
+
+6.9 Websites Setup
+
+Employees can update websites and branded online ordering setup functionality.
+
+6.10 Printer and Cash Drawer Setup
+
+Employees can update Printer and Cash Drawer configuration
+
+6.11 Data Extension View
+
+Employees can view data extensions
+
+6.12 Data Extension Edit
+
+Employees can edit data extensions
+
+7 Device Setup	
+7.1 Terminal Setup
+
+Employees can configure fundamental device-specific options: Device Name, Primary Mode, Screen Timeout, Receipt Printer, Primary Service Area, Open Cash Drawer, Device Default Dining Option, Order Screen Menu View, Scale Model, EMV Enabled, and Add New Card Reader.
+
+7.2 Advanced Terminal Setup
+
+Employees can configure restricted device-specific options: Always Print Receipts, Order Auto-Firing, Revenue Center, Allow Cash Payments, Cash Receipt Options, Digital Receipts, Override Blank Tab Name Prompt, Device Group, Order Purge Threshold, Bluetooth easy pairing, Credit Card Pre-Authorization, and Test Mode.
+
+7.3 KDS and Order Screen Setup
+
+Employees can configure all device-specific Kitchen Setup and Order Screen Setup options.
+
+7.4 Order Ready Board Access
+
+Provides access to log in to the Order Ready Board to show on a in-restaurant screen to guests.
+
+8 Account Admin	
+8.1 Financial Accounts	
+8.2 User Permissions
+
+Employees can use the web interface to make changes to employee access permissions and set up email distribution lists.
+
+8.3 Data Export Config	
+8.4 Manage Integrations
+
+Employees can configure integration partner services (My Integrations).
+
+8.5 Toast Shop Purchases
+
+Jobs/Employees with this permission can make purchases in Toast Shop.
+
+8.6 Toast Restaurant Card
+
+Employees can view and manage your Toast Restaurant Card account.
+
+8.7 Instant Deposit
+
+Employees can access the Instant Deposit page.
+
+8.8 Accounting Payroll Setup
+
