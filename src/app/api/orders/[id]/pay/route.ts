@@ -15,6 +15,58 @@ import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { tableEvents } from '@/lib/realtime/table-events'
 import { errorCapture } from '@/lib/error-capture'
 import { calculateCardPrice, calculateCashDiscount } from '@/lib/pricing'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+
+/**
+ * Resolve which drawer and shift should be attributed for a cash payment.
+ *
+ * Priority:
+ * 1. If terminal has a physical drawer, use it (+ the shift that claimed it)
+ * 2. Fall back to the processing employee's own open shift/drawer
+ *
+ * Card payments return nulls (no drawer attribution needed).
+ */
+async function resolveDrawerForPayment(
+  paymentMethod: string,
+  processingEmployeeId: string | null,
+  terminalId?: string,
+): Promise<{ drawerId: string | null; shiftId: string | null }> {
+  // Card payments: no drawer attribution
+  if (paymentMethod !== 'cash') {
+    return { drawerId: null, shiftId: null }
+  }
+
+  // 1. If terminal has a physical drawer, use it
+  if (terminalId) {
+    const drawer = await db.drawer.findFirst({
+      where: { deviceId: terminalId, isActive: true, deletedAt: null },
+      select: { id: true },
+    })
+    if (drawer) {
+      const ownerShift = await db.shift.findFirst({
+        where: { drawerId: drawer.id, status: 'open', deletedAt: null },
+        select: { id: true },
+      })
+      return { drawerId: drawer.id, shiftId: ownerShift?.id ?? null }
+    }
+  }
+
+  // 2. Fall back to the processing employee's own shift
+  if (processingEmployeeId) {
+    const employeeShift = await db.shift.findFirst({
+      where: { employeeId: processingEmployeeId, status: 'open', deletedAt: null },
+      select: { id: true, drawerId: true },
+    })
+    if (employeeShift) {
+      return {
+        drawerId: employeeShift.drawerId ?? null,
+        shiftId: employeeShift.id,
+      }
+    }
+  }
+
+  return { drawerId: null, shiftId: null }
+}
 
 interface PaymentInput {
   method: 'cash' | 'credit' | 'debit' | 'gift_card' | 'house_account' | 'loyalty_points'
@@ -76,6 +128,7 @@ const PaymentInputSchema = z.object({
 const PaymentRequestSchema = z.object({
   payments: z.array(PaymentInputSchema).min(1, 'At least one payment is required'),
   employeeId: z.string().optional(),
+  terminalId: z.string().optional(),
   idempotencyKey: z.string().optional(),
 })
 
@@ -101,7 +154,7 @@ export async function POST(
       )
     }
 
-    const { payments, employeeId, idempotencyKey } = validation.data
+    const { payments, employeeId, terminalId, idempotencyKey } = validation.data
 
     // Idempotency check: reject duplicate payment requests
     // In a bar environment, double-taps and browser retries are common
@@ -270,10 +323,20 @@ export async function POST(
     let totalTips = 0
 
     for (const payment of payments) {
+      // Resolve drawer/shift attribution for this payment
+      const attribution = await resolveDrawerForPayment(
+        payment.method,
+        employeeId || null,
+        terminalId,
+      )
+
       let paymentRecord: {
         locationId: string
         orderId: string
         employeeId: string | null
+        drawerId?: string | null
+        shiftId?: string | null
+        terminalId?: string | null
         amount: number
         tipAmount: number
         totalAmount: number
@@ -301,6 +364,9 @@ export async function POST(
         locationId: order.locationId,
         orderId,
         employeeId: employeeId || null,
+        drawerId: attribution.drawerId,
+        shiftId: attribution.shiftId,
+        terminalId: terminalId || null,
         amount: payment.amount,
         tipAmount: payment.tipAmount || 0,
         totalAmount: payment.amount + (payment.tipAmount || 0),
@@ -830,6 +896,11 @@ export async function POST(
           data: { status: 'available' },
         })
       }
+    }
+
+    // Dispatch open orders list changed when order is fully paid (fire-and-forget)
+    if (updateData.status === 'paid') {
+      dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id }, { async: true }).catch(() => {})
     }
 
     // Award loyalty points if order is fully paid and has a customer

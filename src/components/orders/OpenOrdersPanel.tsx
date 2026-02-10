@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
+import { useOrderSockets } from '@/hooks/useOrderSockets'
 import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
 
 interface OpenOrder {
@@ -190,17 +191,24 @@ export function OpenOrdersPanel({
     if (locationId) loadOrders()
   }, [locationId, refreshTrigger])
 
+  // Socket-based real-time open orders updates (replaces 3s polling)
+  const handleSocketOrdersChanged = useCallback(() => {
+    if (viewMode === 'open') loadOrders()
+  }, [viewMode])
+
+  useOrderSockets({
+    locationId,
+    enabled: viewMode === 'open',
+    onOpenOrdersChanged: handleSocketOrdersChanged,
+  })
+
+  // Visibility-change fallback (tab refocus)
   useEffect(() => {
     if (!locationId || viewMode !== 'open') return
-    const interval = setInterval(() => loadOrders(), 3000)
     const handleVisibilityChange = () => { if (document.visibilityState === 'visible') loadOrders() }
-    const handleFocus = () => loadOrders()
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('focus', handleFocus)
     return () => {
-      clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('focus', handleFocus)
     }
   }, [locationId, viewMode])
 

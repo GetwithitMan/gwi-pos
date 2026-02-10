@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
@@ -277,8 +277,18 @@ export async function PATCH(request: NextRequest) {
       },
     })
 
-    // Dispatch real-time update to all connected clients
+    // Dispatch real-time update to all connected clients (fire-and-forget)
     dispatchFloorPlanUpdate(locationId, { async: true })
+
+    // If element is linked to a menu item, dispatch entertainment status change
+    if (element.linkedMenuItemId && status) {
+      dispatchEntertainmentStatusChanged(locationId, {
+        itemId: element.linkedMenuItemId,
+        entertainmentStatus: status as 'available' | 'in_use' | 'reserved' | 'maintenance',
+        currentOrderId: updatedElement.currentOrderId,
+        expiresAt: updatedElement.sessionExpiresAt?.toISOString() || null,
+      }, { async: true }).catch(() => {})
+    }
 
     return NextResponse.json({
       data: {

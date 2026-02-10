@@ -26,7 +26,7 @@ import type { RoutingResult } from '@/types/routing'
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || 'dev-internal-secret'
 
 interface BroadcastRequest {
-  type: 'NEW_ORDER' | 'ITEM_STATUS' | 'ORDER_BUMPED' | 'ENTERTAINMENT_UPDATE' | 'LOCATION_ALERT' | 'VOID_APPROVAL' | 'FLOOR_PLAN_UPDATE' | 'MENU_UPDATE' | 'INGREDIENT_LIBRARY_UPDATE' | 'INVENTORY_ADJUSTMENT' | 'STOCK_LEVEL_CHANGE' | 'MENU_ITEM_CHANGED' | 'MENU_STOCK_CHANGED' | 'MENU_STRUCTURE_CHANGED' | 'ENTERTAINMENT_STATUS_CHANGED'
+  type: 'NEW_ORDER' | 'ITEM_STATUS' | 'ORDER_BUMPED' | 'ENTERTAINMENT_UPDATE' | 'LOCATION_ALERT' | 'VOID_APPROVAL' | 'FLOOR_PLAN_UPDATE' | 'MENU_UPDATE' | 'INGREDIENT_LIBRARY_UPDATE' | 'INVENTORY_ADJUSTMENT' | 'STOCK_LEVEL_CHANGE' | 'MENU_ITEM_CHANGED' | 'MENU_STOCK_CHANGED' | 'MENU_STRUCTURE_CHANGED' | 'ENTERTAINMENT_STATUS_CHANGED' | 'ORDER_TOTALS_UPDATE' | 'OPEN_ORDERS_CHANGED'
   locationId: string
   routingResult?: RoutingResult
   payload?: unknown
@@ -262,6 +262,19 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
         }
         await emitToLocation(locationId, 'entertainment:status-changed', payload)
+        break
+      }
+
+      case 'ORDER_TOTALS_UPDATE': {
+        if (!payload) {
+          return NextResponse.json({ error: 'Missing payload' }, { status: 400 })
+        }
+        await emitToLocation(locationId, 'order:totals-updated', payload)
+        break
+      }
+
+      case 'OPEN_ORDERS_CHANGED': {
+        await emitToLocation(locationId, 'orders:list-changed', payload || { locationId })
         break
       }
 

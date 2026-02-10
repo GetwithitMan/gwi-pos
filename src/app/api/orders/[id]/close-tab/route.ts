@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -138,7 +139,10 @@ export async function POST(
       db.order.update({
         where: { id: orderId },
         data: {
+          status: 'paid',
           tabStatus: 'closed',
+          paidAt: now,
+          closedAt: now,
           tipTotal: captureResult.tipAmount || Number(order.tipTotal),
           total: purchaseAmount + (captureResult.tipAmount || 0),
         },
@@ -155,6 +159,9 @@ export async function POST(
     ])
 
     console.log(`[Tab Close] CAPTURED Order=${orderId} Card=${capturedCard.cardType} ...${capturedCard.cardLast4} Amount=$${purchaseAmount} Tip=$${captureResult.tipAmount || 0} TipMode=${tipMode}`)
+
+    // Dispatch open orders changed so all terminals refresh (fire-and-forget)
+    dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId }, { async: true }).catch(() => {})
 
     return NextResponse.json({
       data: {

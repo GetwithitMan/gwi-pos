@@ -9,7 +9,7 @@ import { calculateCardPrice } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { getLocationSettings } from '@/lib/location-cache'
-import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 
 // POST - Create a new order
 export async function POST(request: NextRequest) {
@@ -305,6 +305,9 @@ export async function POST(request: NextRequest) {
       total,
       commissionTotal,
     }, { async: true }).catch(console.error)
+
+    // Dispatch open orders list changed (fire-and-forget)
+    dispatchOpenOrdersChanged(locationId, { trigger: 'created', orderId: order.id }, { async: true }).catch(() => {})
 
     return NextResponse.json(response)
   } catch (error) {

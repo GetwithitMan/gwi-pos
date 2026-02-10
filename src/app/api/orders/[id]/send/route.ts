@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
-import { dispatchNewOrder, dispatchEntertainmentUpdate } from '@/lib/socket-dispatch'
+import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 
@@ -127,18 +127,27 @@ export async function POST(
       console.error('[API /orders/[id]/send] Socket dispatch failed:', err)
     })
 
-    // For entertainment items, dispatch session updates
+    // For entertainment items, dispatch session updates and status changes
     for (const item of itemsToProcess) {
       if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
+        const sessionExpiresAt = new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000).toISOString()
+
         dispatchEntertainmentUpdate(order.locationId, {
           sessionId: item.id,
           tableId: order.tableId || '',
           tableName: order.tabName || `Order #${order.orderNumber}`,
           action: 'started',
-          expiresAt: new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000).toISOString(),
+          expiresAt: sessionExpiresAt,
         }, { async: true }).catch((err) => {
           console.error('[API /orders/[id]/send] Entertainment dispatch failed:', err)
         })
+
+        dispatchEntertainmentStatusChanged(order.locationId, {
+          itemId: item.menuItem.id,
+          entertainmentStatus: 'in_use',
+          currentOrderId: order.id,
+          expiresAt: sessionExpiresAt,
+        }, { async: true }).catch(() => {})
       }
     }
 

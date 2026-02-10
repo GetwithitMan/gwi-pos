@@ -509,3 +509,25 @@ export async function dispatchOrderTotalsUpdate(
 
   return promise
 }
+
+/**
+ * Dispatch open orders list changed notification
+ * Fired when orders are created, paid, voided, or transferred
+ */
+export async function dispatchOpenOrdersChanged(
+  locationId: string,
+  payload: {
+    trigger: 'created' | 'paid' | 'voided' | 'transferred' | 'reopened'
+    orderId?: string
+  },
+  options: DispatchOptions = {}
+): Promise<boolean> {
+  const promise = broadcast('OPEN_ORDERS_CHANGED', locationId, { payload }, options)
+
+  if (options.async) {
+    promise.catch((err) => console.error('[SocketDispatch] Async open orders dispatch failed:', err))
+    return true
+  }
+
+  return promise
+}

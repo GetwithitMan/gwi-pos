@@ -225,6 +225,7 @@ interface OrderState {
   // New methods for shared order domain
   updateOrderId: (id: string, orderNumber?: number) => void
   updateItemId: (tempId: string, realId: string) => void
+  syncServerTotals: (totals: { subtotal: number; discountTotal: number; taxTotal: number; tipTotal?: number; total: number; commissionTotal?: number }) => void
   // Coursing
   setCoursingEnabled: (enabled: boolean) => void
   setCourseDelay: (courseNumber: number, delayMinutes: number) => void
@@ -550,6 +551,24 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         items: currentOrder.items.map(item =>
           item.id === tempId ? { ...item, id: realId } : item
         ),
+      },
+    })
+  },
+
+  // Overwrite client-calculated totals with server-calculated values
+  syncServerTotals: (totals) => {
+    const { currentOrder } = get()
+    if (!currentOrder) return
+
+    set({
+      currentOrder: {
+        ...currentOrder,
+        subtotal: totals.subtotal,
+        discountTotal: totals.discountTotal,
+        taxTotal: totals.taxTotal,
+        total: totals.total,
+        ...(totals.tipTotal !== undefined ? { tipTotal: totals.tipTotal } : {}),
+        ...(totals.commissionTotal !== undefined ? { commissionTotal: totals.commissionTotal } : {}),
       },
     })
   },

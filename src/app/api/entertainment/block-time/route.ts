@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
 
 // POST - Start block time for an order item
 export async function POST(request: NextRequest) {
@@ -128,8 +128,14 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Dispatch socket update
+    // Dispatch socket updates (fire-and-forget)
     dispatchFloorPlanUpdate(orderItem.order.locationId, { async: true })
+    dispatchEntertainmentStatusChanged(orderItem.order.locationId, {
+      itemId: orderItem.menuItemId,
+      entertainmentStatus: 'in_use',
+      currentOrderId: orderItem.orderId,
+      expiresAt: expiresAt.toISOString(),
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({
       orderItem: {
@@ -245,8 +251,14 @@ export async function PATCH(request: NextRequest) {
       },
     })
 
-    // Dispatch socket update
+    // Dispatch socket updates (fire-and-forget)
     dispatchFloorPlanUpdate(orderItem.order.locationId, { async: true })
+    dispatchEntertainmentStatusChanged(orderItem.order.locationId, {
+      itemId: orderItem.menuItemId,
+      entertainmentStatus: 'in_use',
+      currentOrderId: orderItem.orderId,
+      expiresAt: newExpiresAt.toISOString(),
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({
       orderItem: {
@@ -369,8 +381,14 @@ export async function DELETE(request: NextRequest) {
       },
     })
 
-    // Dispatch socket update
+    // Dispatch socket updates (fire-and-forget)
     dispatchFloorPlanUpdate(orderItem.order.locationId, { async: true })
+    dispatchEntertainmentStatusChanged(orderItem.order.locationId, {
+      itemId: orderItem.menuItemId,
+      entertainmentStatus: 'available',
+      currentOrderId: null,
+      expiresAt: null,
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({
       success: true,
