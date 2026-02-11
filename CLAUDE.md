@@ -2333,6 +2333,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | 22 | Scheduling | `PM Mode: Scheduling` | 🔄 Active |
 | 23 | Go-Live | `PM Mode: Go-Live` | 🔄 Active |
 | 24 | Tips & Tip Bank | `PM Mode: Tips` | ✅ Complete |
+| 25 | Mission Control | `PM Mode: Mission Control` | 🔄 Active |
 
 ---
 
@@ -2687,6 +2688,30 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 
 **Integration Points:** Payments (DIRECT_TIP on pay), Shifts (ROLE_TIPOUT at closeout), Socket.io (group events), Orders (ownership), Auth (6 permissions), Settings (TipBankSettings)
 **Related Skills:** 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260-284, 286
+
+---
+
+#### Domain 25: Mission Control (Cloud Admin Console)
+**Trigger:** `PM Mode: Mission Control`
+**Documentation:** `/docs/domains/MISSION-CONTROL-DOMAIN.md`
+**Changelog:** `/docs/changelogs/MISSION-CONTROL-CHANGELOG.md`
+**Architecture Plan:** `/docs/plans/MISSION-CONTROL-MODULE-A.md`
+
+| Layer | Scope | Files/API Routes |
+|-------|-------|------------------|
+| **Fleet API** | Server-to-cloud (serverApiKey + HMAC auth) | `/api/fleet/register`, `/api/fleet/heartbeat`, `/api/fleet/sync/*`, `/api/fleet/license/validate`, `/api/fleet/commands/stream` |
+| **Admin API** | Admin console (Clerk B2B + org JWT) | `/api/admin/organizations`, `/api/admin/locations`, `/api/admin/servers/*`, `/api/admin/updates/*`, `/api/admin/audit-log` |
+| **Cloud Schema** | Neon PostgreSQL (tenant-isolated) | `CloudOrganization`, `CloudLocation`, `ServerNode`, `ServerHeartbeat`, `FleetCommand`, `FleetAuditLog` |
+| **Fleet Dashboard** | Real-time monitoring UI | `/app/dashboard/*`, `/components/fleet/*` |
+| **Sync Agent** | Docker sidecar (Node.js) | `/sync-agent/src/*` (separate container) |
+| **Provisioning** | Ubuntu host scripts | `/scripts/provision.sh` |
+| **License Engine** | Validation + grace period | `/lib/license/*` |
+| **Update Pipeline** | Cosign-signed image rollouts | GitHub Actions CI/CD |
+| **Tenant Isolation** | Postgres Schemas + RLS | Migration scripts, DB roles |
+| **Wildcard Routing** | Online ordering subdomains | Edge Middleware, `*.gwipos.com` |
+
+**Integration Points:** Go-Live (provisioning), Offline & Sync (sync algorithm), Hardware (device inventory), Payments (Datacap reader management)
+**Related Skills:** 300-320
 
 ---
 

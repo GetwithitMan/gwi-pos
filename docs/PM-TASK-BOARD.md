@@ -81,6 +81,17 @@
 | T-051 | Clean up ghost seed data in database — Verify all old seed tables (table-1 through table-8) stay soft-deleted. Add deletedAt filter to floor plan API if missing. Consider adding seed.ts cleanup. | PM: Floor Plan | PM: Orders | 2026-02-10 | P2 | Soft-deleted 8 ghost tables this session. T-036 (verify soft delete filters) may cover this. |
 | T-052 | Quick pick bar default setting — Consider defaulting `quickPickEnabled` to `true` for new employees, or adding first-login prompt. Currently defaults to `false` and users don't know how to enable. | PM: Orders | PM: Orders | 2026-02-10 | P3 | User lost setting after auth store changes. File: src/lib/settings.ts line ~335 |
 | T-053 | Auth store persistence — Verify `partialize` in auth-store.ts correctly persists all auth fields across page refreshes. Add hydration guard to all authenticated pages (currently only orders/page.tsx). | PM: Orders | PM: Orders | 2026-02-10 | P1 | Fixed in this session for orders/page.tsx. Other pages (BartenderView, admin pages) may need same guard. |
+| T-054 | Mission Control: Cloud Project Bootstrap — Create separate Next.js project with Neon PostgreSQL, Clerk B2B auth, project structure for fleet management | PM: Mission Control | PM: Mission Control | 2026-02-11 | P1 | Phase 2A. Skill 300. See /docs/plans/MISSION-CONTROL-MODULE-A.md |
+| T-055 | Mission Control: Cloud Prisma Schema — All cloud models (CloudOrganization, CloudLocation, ServerNode, ServerHeartbeat, ServerRegistrationToken, SyncSession, FleetCommand, FleetAuditLog) | PM: Mission Control | PM: Mission Control | 2026-02-11 | P1 | Phase 2A. Skill 301. Includes Postgres Schema isolation + RLS policies |
+| T-056 | Mission Control: Server Registration API — POST /api/fleet/register with one-time token validation, hardware fingerprint, RSA key exchange | PM: Mission Control | PM: Mission Control | 2026-02-11 | P1 | Phase 2A. Skill 302. Blocked by T-055 |
+| T-057 | Mission Control: Heartbeat Ingestion — POST /api/fleet/heartbeat (60s interval), status thresholds (online/degraded/offline) | PM: Mission Control | PM: Mission Control | 2026-02-11 | P1 | Phase 2A. Skill 303. Blocked by T-055 |
+| T-058 | Mission Control: License Validation API — POST /api/fleet/license/validate, local cache (HMAC-signed), 14-day grace period | PM: Mission Control | PM: Mission Control | 2026-02-11 | P1 | Phase 2A. Skill 304. Blocked by T-055 |
+| T-059 | Mission Control: Fleet Dashboard (Basic) — Real-time status cards per location (online/degraded/offline), version info, active orders | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2A. Skill 305. Blocked by T-057 |
+| T-060 | Mission Control: Provisioning Script — Bash script for Ubuntu servers: collect fingerprint, generate RSA keypair, register with cloud, write .env | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2A. Skill 306. Blocked by T-056 |
+| T-061 | Mission Control: SSE Command Stream — GET /api/fleet/commands/stream, command ACK pipeline, serial execution worker | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2B. Skill 307. Blocked by T-055 |
+| T-062 | Mission Control: Sync Agent Sidecar — Docker container with heartbeat client, SSE listener, command ACK, license validator | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2B. Skill 308. Blocked by T-061 |
+| T-063 | Mission Control: Kill Switch — Remote kill via SSE command, branded killBanner, revive from dashboard | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2B. Skill 309. Blocked by T-061 |
+| T-064 | Mission Control: Tenant Isolation — Postgres Schema per org + RLS policies, per-org DB roles, middleware context setting | PM: Mission Control | PM: Mission Control | 2026-02-11 | P1 | Phase 2A. Skill 320. Blocked by T-055 |
 
 ## In Progress
 
@@ -114,6 +125,7 @@ Reference for which PM owns which files. Use this to assign tasks correctly.
 | PM: Entertainment | `/api/entertainment/`, `/src/components/entertainment/`, `/src/app/(kds)/entertainment/` | Timed rentals, sessions, waitlist, KDS dashboard |
 | PM: Employees | `/api/employees/`, `/api/roles/`, `/api/time-clock/` | Employee CRUD, roles, permissions, clock in/out |
 | PM: Settings | `/api/order-types/`, `/api/inventory/settings/`, `/src/app/(admin)/settings/` | Order types, tip settings, system config |
+| PM: Mission Control | `/api/fleet/*`, `/api/admin/*`, cloud Prisma schema, `/sync-agent/*`, `/scripts/provision.sh` | Cloud admin console, fleet management, server registration, license enforcement, data sync, secure updates |
 
 ## Cross-Domain Conflict Rules
 

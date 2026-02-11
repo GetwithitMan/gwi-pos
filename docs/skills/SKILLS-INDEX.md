@@ -101,6 +101,31 @@
 | 290 | Happy Hour Settings Page | DONE | Settings, Menu | - | Dedicated /settings/happy-hour page extracted from main settings, schedules with day/time selection, discount config, live preview, dead code cleanup |
 | 291 | Ingredient Picker Flow Fix | DONE | Menu | 211, 213 | Fix new items going to Uncategorized: normalize POST→GET data shape in handleIngredientCreated, defer loadMenu() race, needsVerification propagation verified |
 
+### Mission Control (Cloud Admin Console — Phase 2)
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 300 | Cloud Project Bootstrap | TODO | Mission Control | - | Separate Next.js project, Neon PostgreSQL, Clerk B2B, project structure |
+| 301 | Cloud Prisma Schema | TODO | Mission Control | 300 | CloudOrganization, CloudLocation, ServerNode, ServerHeartbeat, ServerRegistrationToken, SyncSession, FleetCommand, FleetAuditLog |
+| 302 | Server Registration API | TODO | Mission Control | 301 | POST /api/fleet/register, one-time tokens, hardware fingerprint, RSA key exchange |
+| 303 | Heartbeat Ingestion | TODO | Mission Control | 301 | POST /api/fleet/heartbeat, 60s interval, status thresholds (online/degraded/offline) |
+| 304 | License Validation API | TODO | Mission Control | 301 | POST /api/fleet/license/validate, HMAC-signed local cache, 14-day grace period |
+| 305 | Fleet Dashboard (Basic) | TODO | Mission Control | 303 | Real-time status cards per location, online/degraded/offline, version info |
+| 306 | Provisioning Script | TODO | Mission Control | 302 | Ubuntu host bash script: fingerprint, RSA keypair, register, write .env |
+| 307 | SSE Command Stream | TODO | Mission Control | 301 | GET /api/fleet/commands/stream, exponential backoff reconnect, Last-Event-ID replay |
+| 308 | Sync Agent Sidecar | TODO | Mission Control | 307 | Docker container: heartbeat, SSE listener, command ACK, license validator |
+| 309 | Kill Switch | TODO | Mission Control | 307 | SSE kill_switch command, branded killBanner, revive from dashboard |
+| 310 | License Cache + Grace Period | TODO | Mission Control | 304 | Local HMAC-signed cache, in-memory 60s timer, grace degradation to read-only |
+| 311 | Alerting (Email + SMS) | TODO | Mission Control | 303 | Degraded/offline/disk/license/error spike alerts |
+| 312 | Data Sync Upload | TODO | Mission Control | 308 | POST /api/fleet/sync/upload, batch processing, syncedAt watermark |
+| 313 | Data Sync Download | TODO | Mission Control | 308 | POST /api/fleet/sync/download, cloud → local data push |
+| 314 | Conflict Resolution | TODO | Mission Control | 312, 313 | LWW with field-level merge, financial=local wins, reference=cloud wins |
+| 315 | Sync Health Dashboard | TODO | Mission Control | 312 | Sync status monitoring, gap detection, error forwarding |
+| 316 | Cosign Image Pipeline | TODO | Mission Control | - | GitHub Actions, Cosign keyless OIDC signing, SBOM generation |
+| 317 | Controlled Rollout | TODO | Mission Control | 316, 307 | Canary/rolling/immediate strategies, auto-rollback on health check failure |
+| 318 | Stripe Billing Integration | TODO | Mission Control | 300 | Subscription tiers, license management, maxLocations enforcement |
+| 319 | Wildcard Subdomain Routing | TODO | Mission Control | 300 | Edge Middleware, *.gwipos.com DNS, per-location online ordering URLs |
+| 320 | Tenant Isolation (Schemas + RLS) | TODO | Mission Control | 301 | Postgres Schema per org, RLS policies, per-org DB roles |
+
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
@@ -304,7 +329,8 @@
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| **TOTAL** | **184** | **7** | **13** | **204** | **93%** |
+| Mission Control (Phase 2) | 0 | 0 | 21 | 21 | 0% |
+| **TOTAL** | **184** | **7** | **34** | **225** | **85%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -424,6 +450,12 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-11 — Mission Control Architecture Plan, Skills 300-320)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 300-320 | Mission Control Center (Planning) | Complete architecture plan for Module A: Tenant & Fleet Management. 12 sections + 3 appendices covering: server registration (hardware fingerprint + RSA key exchange), fleet monitoring (heartbeat + status dashboard), license enforcement (HMAC-signed cache + grace period), secure communication (SSE commands + HMAC signing), data sync (batched upload/download + conflict resolution), secure updates (Cosign + canary/rolling rollout), tenant isolation (Postgres Schemas + RLS), admin auth (Clerk B2B), wildcard subdomains, standard hardware kit. 21 skills defined (300-320), 11 tasks added to PM Board (T-054 to T-064). Domain 25 registered. |
 
 ## Recently Completed (2026-02-11 — Edit Item Modal & Happy Hour Settings, Skills 289-290)
 
@@ -876,7 +908,20 @@ These skills emerged during development and are now part of the system:
 
 ---
 
-## Next Session Priority (2026-02-10+)
+## Next Session Priority (2026-02-11+)
+
+### Priority 0: Mission Control — Phase 2A Foundation
+Cloud admin console ("The Mothership") for fleet management.
+- Skill 300: Cloud Project Bootstrap (separate Next.js + Neon PostgreSQL + Clerk B2B)
+- Skill 301: Cloud Prisma Schema (all cloud models + tenant isolation)
+- Skill 302: Server Registration API (one-time tokens, hardware fingerprint, RSA)
+- Skill 303: Heartbeat Ingestion (60s interval, status thresholds)
+- Skill 304: License Validation API (HMAC cache, grace period)
+- Skill 305: Fleet Dashboard (basic status cards)
+- Skill 306: Provisioning Script (Ubuntu host bash script)
+- Skill 320: Tenant Isolation (Postgres Schemas + RLS)
+- **Plan:** `/docs/plans/MISSION-CONTROL-MODULE-A.md`
+- **Domain:** `/docs/domains/MISSION-CONTROL-DOMAIN.md`
 
 ### Priority 1: Phase 6 Follow-Up (SPEC-05 / SPEC-37 Remaining)
 From Skill 249 "What's NOT Implemented" — future phases:
