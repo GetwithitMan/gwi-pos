@@ -1,5 +1,48 @@
 # Menu Domain Changelog
 
+## Session: Feb 11, 2026 — Edit Item Modal & Happy Hour Extraction (Skills 289-290)
+
+### Summary
+Created a comprehensive Edit Item modal to replace the legacy ItemModal removed in Skill 217, and extracted Happy Hour settings into a dedicated page.
+
+### Skills Completed
+| Skill | Name | Status |
+|-------|------|--------|
+| 289 | Edit Item Modal (ItemSettingsModal) | DONE |
+| 290 | Happy Hour Settings Page | DONE |
+
+### Key Changes
+
+**Edit Item Modal (Skill 289):**
+- Created `src/components/menu/ItemSettingsModal.tsx` (~420 lines) with 5 tabs
+- Created `src/app/api/upload/route.ts` for menu item image upload
+- Extended `GET/PUT /api/menu/items/[id]` with all item fields
+- Collapsible ingredient cost breakdown (read-only) with fallback to per-ingredient cost lookups
+- Card price displayed as read-only (auto-calculated from cash discount)
+- Auto-opens for new items, live sync after save
+
+**Happy Hour Settings Page (Skill 290):**
+- Created `src/app/(admin)/settings/happy-hour/page.tsx` (~320 lines)
+- Added "Happy Hour" to SettingsNav Menu section
+- Replaced ~200 lines of inline Happy Hour UI on main settings page with compact link card
+- Removed 5 dead helper functions from main settings page
+
+### Files Created
+- `src/components/menu/ItemSettingsModal.tsx`
+- `src/app/api/upload/route.ts`
+- `src/app/(admin)/settings/happy-hour/page.tsx`
+- `docs/skills/289-EDIT-ITEM-MODAL.md`
+- `docs/skills/290-HAPPY-HOUR-SETTINGS-PAGE.md`
+
+### Files Modified
+- `src/components/menu/ItemEditor.tsx` — Edit Item button + modal
+- `src/app/api/menu/items/[id]/route.ts` — Extended GET/PUT
+- `src/app/(admin)/menu/page.tsx` — selectedItemForEditor sync
+- `src/components/admin/SettingsNav.tsx` — Happy Hour nav link
+- `src/app/(admin)/settings/page.tsx` — Compact link card, dead code removal
+
+---
+
 ## Session: Feb 5, 2026 — Menu Builder Overhaul (Tiered Pricing + Exclusion Rules)
 
 ### Plan

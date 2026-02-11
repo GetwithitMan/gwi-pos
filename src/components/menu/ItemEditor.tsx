@@ -7,6 +7,7 @@ import { toast } from '@/stores/toast-store'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { calculateCardPrice } from '@/lib/pricing'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
+import { ItemSettingsModal } from './ItemSettingsModal'
 
 interface Ingredient {
   id: string
@@ -178,6 +179,9 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   const [draggedModifierId, setDraggedModifierId] = useState<string | null>(null)
   const [dragOverModifierId, setDragOverModifierId] = useState<string | null>(null)
 
+  // Item settings modal state
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
+
   // Printer routing state
   const [printers, setPrinters] = useState<Array<{ id: string; name: string }>>([])
   const [printerRoutingModifier, setPrinterRoutingModifier] = useState<{ groupId: string; modId: string } | null>(null)
@@ -219,6 +223,13 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     }
     loadData(true) // Show spinner only on initial/item-change load
   }, [item?.id, refreshKey])
+
+  // Auto-open settings for new items
+  useEffect(() => {
+    if (item && item.name === 'New Item' && item.price === 0) {
+      setShowSettingsModal(true)
+    }
+  }, [item?.id])
 
   // Load printers for print routing
   useEffect(() => {
@@ -2430,7 +2441,6 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold truncate">{item.name}</h2>
-              {/* Default Selections — on same line as item name, never shifts layout */}
               {!loading && (() => {
                 const seen = new Set<string>()
                 const allDefaults: { id: string; name: string; price: number }[] = []
@@ -2473,6 +2483,13 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
             </div>
           </div>
           <div className="flex gap-2 shrink-0">
+            <button
+              onClick={() => setShowSettingsModal(true)}
+              className="px-3 py-1.5 rounded text-sm font-medium bg-white/20 hover:bg-white/30"
+              title="Edit Item"
+            >
+              Edit Item
+            </button>
             {onToggle86 && (
               <button
                 onClick={() => onToggle86(item)}
@@ -3459,6 +3476,15 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
           </>
         )}
       </div>
+
+      {/* Item Settings Modal */}
+      {showSettingsModal && item && (
+        <ItemSettingsModal
+          itemId={item.id}
+          onClose={() => setShowSettingsModal(false)}
+          onSaved={onItemUpdated}
+        />
+      )}
     </div>
   )
 }

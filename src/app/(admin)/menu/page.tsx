@@ -211,6 +211,16 @@ export default function MenuManagementPage() {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null)
 
+  // Keep selected item in sync when items reload (e.g. after editing name/price)
+  useEffect(() => {
+    if (selectedItemForEditor && items.length > 0) {
+      const fresh = items.find(i => i.id === selectedItemForEditor.id)
+      if (fresh && (fresh.name !== selectedItemForEditor.name || fresh.price !== selectedItemForEditor.price)) {
+        setSelectedItemForEditor(fresh)
+      }
+    }
+  }, [items, selectedItemForEditor])
+
   // Refs for scroll containers
   const categoriesScrollRef = useRef<HTMLDivElement>(null)
   const itemsScrollRef = useRef<HTMLDivElement>(null)

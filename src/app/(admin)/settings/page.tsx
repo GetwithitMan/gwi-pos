@@ -144,61 +144,11 @@ export default function SettingsPage() {
     }))
   }
 
-  const updateHappyHour = (updates: Partial<LocationSettings['happyHour']>) => {
-    setSettings(prev => ({
-      ...prev,
-      happyHour: { ...prev.happyHour, ...updates },
-    }))
-  }
-
   const updateBusinessDay = (updates: Partial<LocationSettings['businessDay']>) => {
     setSettings(prev => ({
       ...prev,
       businessDay: { ...prev.businessDay, ...updates },
     }))
-  }
-
-  const updateHappyHourSchedule = (index: number, updates: Partial<LocationSettings['happyHour']['schedules'][0]>) => {
-    setSettings(prev => ({
-      ...prev,
-      happyHour: {
-        ...prev.happyHour,
-        schedules: prev.happyHour.schedules.map((s, i) =>
-          i === index ? { ...s, ...updates } : s
-        ),
-      },
-    }))
-  }
-
-  const addHappyHourSchedule = () => {
-    setSettings(prev => ({
-      ...prev,
-      happyHour: {
-        ...prev.happyHour,
-        schedules: [
-          ...prev.happyHour.schedules,
-          { dayOfWeek: [1, 2, 3, 4, 5], startTime: '16:00', endTime: '18:00' },
-        ],
-      },
-    }))
-  }
-
-  const removeHappyHourSchedule = (index: number) => {
-    setSettings(prev => ({
-      ...prev,
-      happyHour: {
-        ...prev.happyHour,
-        schedules: prev.happyHour.schedules.filter((_, i) => i !== index),
-      },
-    }))
-  }
-
-  const toggleDayOfWeek = (scheduleIndex: number, day: number) => {
-    const schedule = settings.happyHour.schedules[scheduleIndex]
-    const newDays = schedule.dayOfWeek.includes(day)
-      ? schedule.dayOfWeek.filter(d => d !== day)
-      : [...schedule.dayOfWeek, day].sort()
-    updateHappyHourSchedule(scheduleIndex, { dayOfWeek: newDays })
   }
 
   // Calculate example prices for display
@@ -817,204 +767,21 @@ export default function SettingsPage() {
           )}
         </Card>
 
-        {/* Happy Hour Settings */}
+        {/* Happy Hour — full settings at /settings/happy-hour */}
         <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Happy Hour / Time-Based Pricing</h2>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={settings.happyHour.enabled}
-                onChange={(e) => updateHappyHour({ enabled: e.target.checked })}
-                className="rounded border-gray-300"
-              />
-              <span className="text-sm">Enabled</span>
-            </label>
-          </div>
-
-          {settings.happyHour.enabled && (
-            <div className="space-y-6">
-              {/* Name */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-gray-700 w-28">Display Name:</label>
-                <input
-                  type="text"
-                  value={settings.happyHour.name}
-                  onChange={(e) => updateHappyHour({ name: e.target.value })}
-                  className="flex-1 max-w-xs px-3 py-2 border rounded-lg"
-                  placeholder="Happy Hour"
-                />
-              </div>
-
-              {/* Schedules */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-medium text-gray-900">Schedules</h3>
-                  <Button variant="outline" size="sm" onClick={addHappyHourSchedule}>
-                    Add Schedule
-                  </Button>
-                </div>
-                <div className="space-y-4">
-                  {settings.happyHour.schedules.map((schedule, index) => (
-                    <div key={index} className="p-4 border rounded-lg bg-gray-50">
-                      <div className="flex justify-between items-start mb-3">
-                        <span className="text-sm font-medium">Schedule {index + 1}</span>
-                        {settings.happyHour.schedules.length > 1 && (
-                          <button
-                            onClick={() => removeHappyHourSchedule(index)}
-                            className="text-red-500 hover:text-red-700 text-sm"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Days */}
-                      <div className="mb-3">
-                        <label className="text-xs text-gray-500 block mb-1">Days</label>
-                        <div className="flex gap-1">
-                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, dayIndex) => (
-                            <button
-                              key={day}
-                              onClick={() => toggleDayOfWeek(index, dayIndex)}
-                              className={`px-2 py-1 text-xs rounded ${
-                                schedule.dayOfWeek.includes(dayIndex)
-                                  ? 'bg-blue-500 text-white'
-                                  : 'bg-gray-200 text-gray-600'
-                              }`}
-                            >
-                              {day}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Times */}
-                      <div className="flex items-center gap-3">
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">Start</label>
-                          <input
-                            type="time"
-                            value={schedule.startTime}
-                            onChange={(e) => updateHappyHourSchedule(index, { startTime: e.target.value })}
-                            className="px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                        <span className="mt-5">to</span>
-                        <div>
-                          <label className="text-xs text-gray-500 block mb-1">End</label>
-                          <input
-                            type="time"
-                            value={schedule.endTime}
-                            onChange={(e) => updateHappyHourSchedule(index, { endTime: e.target.value })}
-                            className="px-2 py-1 border rounded text-sm"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Discount Settings */}
-              <div>
-                <h3 className="font-medium text-gray-900 mb-3">Discount</h3>
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-gray-700 w-28">Discount Type:</label>
-                    <select
-                      value={settings.happyHour.discountType}
-                      onChange={(e) => updateHappyHour({ discountType: e.target.value as 'percent' | 'fixed' })}
-                      className="px-3 py-2 border rounded-lg"
-                    >
-                      <option value="percent">Percentage Off</option>
-                      <option value="fixed">Fixed Amount Off</option>
-                    </select>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-gray-700 w-28">Discount Value:</label>
-                    <div className="relative">
-                      {settings.happyHour.discountType === 'fixed' && (
-                        <span className="absolute left-3 top-2 text-gray-500">$</span>
-                      )}
-                      <input
-                        type="number"
-                        min="0"
-                        step={settings.happyHour.discountType === 'percent' ? '1' : '0.01'}
-                        value={settings.happyHour.discountValue}
-                        onChange={(e) => updateHappyHour({ discountValue: parseFloat(e.target.value) || 0 })}
-                        className={`w-24 px-3 py-2 border rounded-lg ${settings.happyHour.discountType === 'fixed' ? 'pl-7' : ''}`}
-                      />
-                    </div>
-                    {settings.happyHour.discountType === 'percent' && (
-                      <span className="text-sm text-gray-500">% off</span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm text-gray-700 w-28">Applies To:</label>
-                    <select
-                      value={settings.happyHour.appliesTo}
-                      onChange={(e) => updateHappyHour({ appliesTo: e.target.value as 'all' | 'categories' | 'items' })}
-                      className="px-3 py-2 border rounded-lg"
-                    >
-                      <option value="all">All Items</option>
-                      <option value="categories">Specific Categories</option>
-                      <option value="items">Specific Items</option>
-                    </select>
-                  </div>
-
-                  {settings.happyHour.appliesTo !== 'all' && (
-                    <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-                      Note: Select specific {settings.happyHour.appliesTo} from the Menu page to include them in happy hour pricing.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Display Options */}
-              <div>
-                <h3 className="font-medium text-gray-900 mb-3">Display</h3>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.happyHour.showBadge}
-                      onChange={(e) => updateHappyHour({ showBadge: e.target.checked })}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm">Show &ldquo;{settings.happyHour.name}&rdquo; badge on items</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.happyHour.showOriginalPrice}
-                      onChange={(e) => updateHappyHour({ showOriginalPrice: e.target.checked })}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm">Show original price (crossed out)</span>
-                  </label>
-                </div>
-              </div>
-
-              {/* Example */}
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <h4 className="font-medium text-blue-900 mb-2">Example</h4>
-                <div className="text-sm text-blue-700">
-                  A $10.00 item during {settings.happyHour.name} would be:
-                  <span className="font-bold ml-1">
-                    {settings.happyHour.discountType === 'percent'
-                      ? formatCurrency(10 * (1 - settings.happyHour.discountValue / 100))
-                      : formatCurrency(Math.max(0, 10 - settings.happyHour.discountValue))}
-                  </span>
-                  {settings.happyHour.showOriginalPrice && (
-                    <span className="line-through ml-2 text-blue-400">$10.00</span>
-                  )}
-                </div>
-              </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Happy Hour / Time-Based Pricing</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                {settings.happyHour.enabled
+                  ? `${settings.happyHour.name} is active — ${settings.happyHour.discountType === 'percent' ? `${settings.happyHour.discountValue}% off` : formatCurrency(settings.happyHour.discountValue) + ' off'}`
+                  : 'Not currently active'}
+              </p>
             </div>
-          )}
+            <Link href="/settings/happy-hour">
+              <Button variant="outline">Configure</Button>
+            </Link>
+          </div>
         </Card>
 
         {/* Business Day Boundary */}

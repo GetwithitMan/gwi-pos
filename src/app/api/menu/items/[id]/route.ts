@@ -39,21 +39,50 @@ export async function GET(
         categoryName: item.category?.name,
         categoryType: item.category?.categoryType,
         name: item.name,
+        displayName: item.displayName,
         price: Number(item.price),
         priceCC: item.priceCC ? Number(item.priceCC) : null,
+        cost: item.cost ? Number(item.cost) : null,
         description: item.description,
+        sku: item.sku,
         isActive: item.isActive,
         isAvailable: item.isAvailable,
+        showOnPOS: item.showOnPOS,
+        showOnline: item.showOnline,
         itemType: item.itemType,
         isPizza: isPizzaItem,
         hasModifiers: item.modifierGroups.length > 0 || isPizzaItem,
         modifierGroups: item.modifierGroups,
+        // Tax
+        taxRate: item.taxRate ? Number(item.taxRate) : null,
+        isTaxExempt: item.isTaxExempt,
+        // Kitchen
+        prepTime: item.prepTime,
+        courseNumber: item.courseNumber,
+        prepStationId: item.prepStationId,
+        // Inventory
+        trackInventory: item.trackInventory,
+        lowStockAlert: item.lowStockAlert,
+        // Commission
+        commissionType: item.commissionType,
+        commissionValue: item.commissionValue ? Number(item.commissionValue) : null,
+        // Availability schedule
+        availableFrom: item.availableFrom,
+        availableTo: item.availableTo,
+        availableDays: item.availableDays,
+        // Happy Hour
+        happyHourEnabled: item.happyHourEnabled,
+        happyHourDiscount: item.happyHourDiscount,
+        happyHourStart: item.happyHourStart,
+        happyHourEnd: item.happyHourEnd,
+        happyHourDays: item.happyHourDays,
         // Entertainment/timed rental fields
         entertainmentStatus: item.itemType === 'timed_rental' ? (item.entertainmentStatus || 'available') : null,
         blockTimeMinutes: item.itemType === 'timed_rental' ? item.blockTimeMinutes : null,
         timedPricing: item.itemType === 'timed_rental' ? item.timedPricing : null,
         pourSizes: item.pourSizes,
         defaultPourSize: item.defaultPourSize,
+        imageUrl: item.imageUrl,
       },
     })
   } catch (error) {
@@ -74,19 +103,42 @@ export async function PUT(
     const body = await request.json()
     const {
       name,
+      displayName,
       price,
       priceCC,
+      cost,
       description,
+      sku,
+      imageUrl,
       isActive,
       isAvailable,
       showOnPOS,
+      showOnline,
       sortOrder,
       deletedAt,
+      // Tax
+      taxRate,
+      isTaxExempt,
+      // Kitchen
+      prepTime,
+      courseNumber,
+      prepStationId,
+      // Inventory
+      trackInventory,
+      lowStockAlert,
+      // Commission
       commissionType,
       commissionValue,
+      // Availability schedule
       availableFrom,
       availableTo,
       availableDays,
+      // Happy Hour
+      happyHourEnabled,
+      happyHourDiscount,
+      happyHourStart,
+      happyHourEnd,
+      happyHourDays,
       // Pour size options
       pourSizes,
       defaultPourSize,
@@ -108,19 +160,42 @@ export async function PUT(
       where: { id },
       data: {
         ...(name !== undefined && { name }),
+        ...(displayName !== undefined && { displayName: displayName || null }),
         ...(price !== undefined && { price }),
         ...(priceCC !== undefined && { priceCC: priceCC || null }),
+        ...(cost !== undefined && { cost: cost ?? null }),
         ...(description !== undefined && { description }),
+        ...(sku !== undefined && { sku: sku || null }),
+        ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
         ...(isActive !== undefined && { isActive }),
         ...(isAvailable !== undefined && { isAvailable }),
         ...(showOnPOS !== undefined && { showOnPOS }),
+        ...(showOnline !== undefined && { showOnline }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(deletedAt !== undefined && { deletedAt: deletedAt ? new Date(deletedAt) : null }),
+        // Tax
+        ...(taxRate !== undefined && { taxRate: taxRate ?? null }),
+        ...(isTaxExempt !== undefined && { isTaxExempt }),
+        // Kitchen
+        ...(prepTime !== undefined && { prepTime: prepTime ?? null }),
+        ...(courseNumber !== undefined && { courseNumber: courseNumber ?? null }),
+        ...(prepStationId !== undefined && { prepStationId: prepStationId || null }),
+        // Inventory
+        ...(trackInventory !== undefined && { trackInventory }),
+        ...(lowStockAlert !== undefined && { lowStockAlert: lowStockAlert ?? null }),
+        // Commission
         ...(commissionType !== undefined && { commissionType: commissionType || null }),
         ...(commissionValue !== undefined && { commissionValue: commissionValue ?? null }),
+        // Availability
         ...(availableFrom !== undefined && { availableFrom: availableFrom || null }),
         ...(availableTo !== undefined && { availableTo: availableTo || null }),
         ...(availableDays !== undefined && { availableDays: availableDays || null }),
+        // Happy Hour
+        ...(happyHourEnabled !== undefined && { happyHourEnabled }),
+        ...(happyHourDiscount !== undefined && { happyHourDiscount: happyHourDiscount ?? null }),
+        ...(happyHourStart !== undefined && { happyHourStart: happyHourStart || null }),
+        ...(happyHourEnd !== undefined && { happyHourEnd: happyHourEnd || null }),
+        ...(happyHourDays !== undefined && { happyHourDays: happyHourDays || null }),
         // Pour size options
         ...(pourSizes !== undefined && { pourSizes: pourSizes || null }),
         ...(defaultPourSize !== undefined && { defaultPourSize: defaultPourSize || null }),

@@ -97,6 +97,8 @@
 | 286 | Tip Bank Team Pools | DONE | Tips | 250, 252, 265 | Admin-defined TipGroupTemplate, clock-in group picker, PRIMARY_SERVER_OWNS_ALL mode, allowStandaloneServers, allowEmployeeCreatedGroups, template CRUD API, eligible API, time-clock integration |
 | 287 | Tip Group Manager Admin UI | DONE | Tips | 252, 256, 283 | ActiveGroupManager component on /settings/tips (Section 9): expandable group cards, member management, add/remove/approve, transfer ownership, close group, stale member detection (>12h), manual adjustment modal |
 | 288 | Group History & Segment Timeline | DONE | Tips | 252, 258 | GroupHistoryTimeline component on /settings/tips (Section 10): group selector, vertical timeline with colored dots (join/leave/segment/close), split % badges, earnings summary table, buildTimeline() merge function |
+| 289 | Edit Item Modal (ItemSettingsModal) | DONE | Menu | 217 | Comprehensive Edit Item modal (5 tabs: Basics, Display, Kitchen, Availability, Tax), image upload, collapsible ingredient cost breakdown, card price read-only, auto-open for new items, live sync |
+| 290 | Happy Hour Settings Page | DONE | Settings, Menu | - | Dedicated /settings/happy-hour page extracted from main settings, schedules with day/time selection, discount config, live preview, dead code cleanup |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -421,6 +423,13 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-11 — Edit Item Modal & Happy Hour Settings, Skills 289-290)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 289 | Edit Item Modal (ItemSettingsModal) | 5-tab modal (Basics, Display & Channels, Kitchen & Print, Availability, Tax & Commission), image upload via /api/upload, collapsible ingredient cost breakdown (fetches from inventory-recipe or ingredients+cost APIs), card price read-only, auto-open for new items, live sync via useEffect. Created ItemSettingsModal.tsx (~420 lines), upload API, extended GET/PUT item API. |
+| 290 | Happy Hour Settings Page | Dedicated /settings/happy-hour page (~320 lines) extracted from main settings page. Master toggle, display name/badge config, multiple schedule blocks (day + time), discount type/value, applies-to scope, live preview. Added to SettingsNav Menu section. Removed ~200 lines of inline UI + 5 dead helper functions from main settings page. |
 
 ## Recently Completed (2026-02-11 — Tip Group Admin UI & Timeline, Skills 287-288)
 

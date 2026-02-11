@@ -44,6 +44,7 @@ const settingsSections: SettingsSection[] = [
       { name: 'Liquor Builder', href: '/settings/liquor-builder' },
       { name: 'Pizza', href: '/settings/pizza' },
       { name: 'Discounts', href: '/settings/discounts' },
+      { name: 'Happy Hour', href: '/settings/happy-hour' },
     ],
   },
   {
