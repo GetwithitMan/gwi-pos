@@ -125,6 +125,9 @@
 | 318 | Stripe Billing Integration | TODO | Mission Control | 300 | Subscription tiers, license management, maxLocations enforcement |
 | 319 | Wildcard Subdomain Routing | TODO | Mission Control | 300 | Edge Middleware, *.gwipos.com DNS, per-location online ordering URLs |
 | 320 | Tenant Isolation (Schemas + RLS) | TODO | Mission Control | 301 | Postgres Schema per org, RLS policies, per-org DB roles |
+| 321 | PayFac Credential Management | TODO | Mission Control | 301, 307 | Cloud-pushed Datacap credentials (AES-256-GCM at rest, RSA-encrypted delivery via SSE), tamper prevention (60s heartbeat overwrite), unregistered reader rejection, per-location processing rate |
+| 322 | Subscription Tiers & Hardware Limits | TODO | Mission Control | 301, 318 | Starter/Pro/Enterprise tiers, device caps (terminals/handhelds/KDS/printers/readers), feature gating, two-level enforcement (cloud + local cache), upgrade/downgrade flows |
+| 323 | Billing & Late Payment Flow | TODO | Mission Control | 318 | Stripe retry schedule, email/banner/read-only/kill escalation (Day 1→45), processing fee deduction from Datacap settlement, billing dashboard |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -329,8 +332,8 @@
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| Mission Control (Phase 2) | 0 | 0 | 21 | 21 | 0% |
-| **TOTAL** | **184** | **7** | **34** | **225** | **85%** |
+| Mission Control (Phase 2) | 0 | 0 | 24 | 24 | 0% |
+| **TOTAL** | **184** | **7** | **37** | **228** | **84%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -450,6 +453,12 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-11 — Mission Control PayFac & Revenue Model, Skills 321-323)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 321-323 | PayFac, Subscription Tiers, Billing (Planning) | Added 3 new sections to Module A plan: **Section 13** (Payment Processing Control — PayFac model, GWI owns master Datacap account, cloud-pushed encrypted credentials, tamper prevention, unregistered reader rejection), **Section 14** (Hardware Limits & Subscription Tiers — Starter $99/Pro $199/Enterprise $399, device caps, feature gating, two-level enforcement), **Section 15** (Revenue & Fee Structure — subscription + processing markup + revenue share, settlement deduction, late payment escalation Day 1→45). Added threat model T11-T14, deliverables 15-17, Appendix A/C updates. 3 new skills (321-323), 3 new tasks (T-065 to T-067). |
 
 ## Recently Completed (2026-02-11 — Mission Control Architecture Plan, Skills 300-320)
 

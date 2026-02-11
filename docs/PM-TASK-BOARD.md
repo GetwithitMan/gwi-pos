@@ -92,6 +92,9 @@
 | T-062 | Mission Control: Sync Agent Sidecar — Docker container with heartbeat client, SSE listener, command ACK, license validator | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2B. Skill 308. Blocked by T-061 |
 | T-063 | Mission Control: Kill Switch — Remote kill via SSE command, branded killBanner, revive from dashboard | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2B. Skill 309. Blocked by T-061 |
 | T-064 | Mission Control: Tenant Isolation — Postgres Schema per org + RLS policies, per-org DB roles, middleware context setting | PM: Mission Control | PM: Mission Control | 2026-02-11 | P1 | Phase 2A. Skill 320. Blocked by T-055 |
+| T-065 | Mission Control: PayFac Credential Management — Cloud-pushed Datacap credentials (AES-256-GCM + RSA delivery), tamper prevention, unregistered reader rejection, per-location processing rate | PM: Mission Control | PM: Mission Control | 2026-02-11 | P1 | Phase 2B. Skill 321. Blocked by T-055, T-061 |
+| T-066 | Mission Control: Subscription Tiers & Hardware Limits — Starter/Pro/Enterprise tiers, device caps, feature gating, upgrade/downgrade, two-level enforcement | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2D. Skill 322. Blocked by T-055 |
+| T-067 | Mission Control: Billing & Late Payment Flow — Stripe retry/escalation (Day 1→45), processing fee deduction from settlement, billing dashboard | PM: Mission Control | PM: Mission Control | 2026-02-11 | P2 | Phase 2D. Skill 323. Blocked by T-066 |
 
 ## In Progress
 
