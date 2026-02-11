@@ -216,6 +216,19 @@ CloudOrganization
 └── CloudLocation[]
     ├── licenseKey (unique), licenseExpiresAt, licenseStatus
     ├── gracePeriodDays (default 14)
+    ├── SubscriptionLimits (JSON — see Section 14)
+    │   ├── maxPOSTerminals, maxHandhelds, maxKDSScreens
+    │   ├── maxPrinters, maxPaymentReaders
+    │   └── featuresEnabled[] (online_ordering, bottle_service, scheduling, etc.)
+    ├── PaymentConfig (JSON — see Section 13, ENCRYPTED AT REST)
+    │   ├── datacapMerchantId, datacapOperatorId
+    │   ├── processingRatePercent, perTransactionFeeCents
+    │   ├── monthlyPlatformFeeCents
+    │   └── readerConfigs[] (secureDeviceId per reader)
+    ├── BillingConfig (JSON — see Section 15)
+    │   ├── monthlySubscriptionCents, billingCycleDay
+    │   ├── processingRatePercent (GWI's cut)
+    │   └── revenueSharePercent (optional)
     ├── ServerNode[]
     │   ├── serverApiKey (64-char hex, unique — like KDS deviceToken)
     │   ├── hardwareFingerprint (SHA-256), fingerprintVersion (Int, default 1)
@@ -363,6 +376,10 @@ If the cloud is down AND a bug has triggered a false kill/suspension, an owner-l
 | T8 | Malicious Docker image push | Cosign-signed images. Sync Agent verifies signature before applying. Auto-rollback on failed health check. |
 | T9 | Cross-tenant data leak | Postgres Schema isolation + RLS policy (two-layer defense). Server API keys scoped to single location. Clerk org-scoped sessions. |
 | T10 | SSE connection hijacking | Bearer token auth on every reconnect. HTTPS only. Outbound-initiated by server. |
+| T11 | Merchant swaps payment processor | POS has no processor settings UI. Credentials are cloud-pushed, read-only locally. Sync Agent overwrites tampering on 60s heartbeat. |
+| T12 | Merchant edits DB to change Datacap creds | Sync Agent detects mismatch on heartbeat, re-pushes cloud values. Hardware fingerprint prevents running modified POS on cloned disk. |
+| T13 | Merchant brings own card reader | Reader requires `secureDeviceId` registered in cloud config. Unregistered readers can't process. |
+| T14 | Merchant requests Datacap creds directly | Credentials are under GWI's master Datacap account. Datacap won't issue to sub-merchants directly. |
 
 ---
 
@@ -562,6 +579,297 @@ Sign-off items before Module A is considered complete:
 | 12 | **Update Pipeline**: Cosign-signed images + canary/rolling rollout + auto-rollback | ⬜ |
 | 13 | **Audit Log**: Every admin action logged with actor, resource, timestamp, IP | ⬜ |
 | 14 | **Alerting**: Email + SMS for critical conditions (offline, disk, license) | ⬜ |
+| 15 | **Payment Processing Lockdown**: Cloud-only Datacap credentials, no local override | ⬜ |
+| 16 | **Hardware Limits**: Subscription tier enforcement for terminals/readers/KDS | ⬜ |
+| 17 | **Billing & Fee Structure**: Processing rates, platform fees, revenue tracking | ⬜ |
+
+---
+
+## 13. Payment Processing Control (PayFac Model)
+
+### Core Principle: GWI Owns the Processing Relationship
+
+**Merchants CANNOT use outside payment processors or bring their own Datacap credentials.** All payment processing flows through GWI's master Datacap account. Each location is a sub-merchant under GWI's umbrella.
+
+This is the same model as Toast, Square, and Clover — the POS company controls the processing relationship.
+
+### Why This Matters
+
+| Benefit | Details |
+|---------|---------|
+| **Revenue lock-in** | Processing fees are your primary recurring revenue stream |
+| **No circumvention** | Merchant can't swap in a cheaper processor and keep using the POS |
+| **Unified reporting** | All transaction data flows through your systems |
+| **Chargeback control** | You manage disputes centrally |
+| **Compliance** | PCI scope is yours, not fragmented across merchants |
+
+### How It Works
+
+#### Cloud Side (Mission Control)
+
+1. **GWI Super Admin** creates location and enters Datacap sub-merchant credentials:
+   - `datacapMerchantId` — assigned by Datacap under GWI's master account
+   - `datacapOperatorId` — GWI-controlled
+   - Per-reader `secureDeviceId` — one per physical card reader at the location
+   - `processingRatePercent` — the rate this location pays (e.g., 4.0%)
+   - `perTransactionFeeCents` — per-swipe fee (e.g., 10 cents)
+
+2. These credentials are **encrypted at rest** in the cloud database (AES-256-GCM, key in environment variable, never in code).
+
+3. On provisioning or credential update, the cloud sends an `update_payment_config` SSE command to the Sync Agent.
+
+#### Sync Agent Side
+
+4. Sync Agent receives the encrypted credential payload.
+5. Decrypts using the server's RSA private key (same key exchange pattern as registration).
+6. Writes to `/etc/gwi-pos/payment-config.json` (root-only, 0600 permissions, LUKS disk).
+7. POS application reads this file at boot and on config change events.
+
+#### POS Side (Enforcement)
+
+8. **The POS has NO settings UI for Datacap credentials.** The `merchantId`, `operatorId`, and `secureDeviceId` fields are **read-only** in the local settings — they come from the cloud and cannot be changed locally.
+
+9. **Hardcoded processor check**: The POS validates on boot that `settings.payments.processor === 'datacap'` and that credentials match the cloud-provided values. If tampered with (e.g., someone edits the DB directly), the Sync Agent detects the mismatch on next heartbeat and re-pushes the correct values.
+
+10. **No "simulated" mode in production**: The `SIMULATED_DEFAULTS` code path is completely removed in production builds. There is no fallback to simulated processing.
+
+### Credential Rotation
+
+When Datacap issues new credentials (e.g., after a security incident):
+1. Super Admin updates credentials in Mission Control
+2. `update_payment_config` command pushed to all affected locations via SSE
+3. Each Sync Agent decrypts, writes new config, notifies POS
+4. POS hot-reloads credentials — no restart needed
+5. Audit log records the rotation with timestamp and admin who initiated
+
+### Per-Reader Management
+
+Each physical card reader at a location is registered in Mission Control:
+
+```
+CloudLocation.PaymentConfig.readerConfigs[]
+├── readerId (matches local PaymentReader.id)
+├── secureDeviceId (Datacap device identifier)
+├── readerModel (e.g., "Ingenico Lane 3000")
+├── serialNumber (physical device serial)
+├── status (active|disabled|replaced)
+├── assignedTerminal (which POS terminal this reader is bound to)
+└── lastTransactionAt (from heartbeat data)
+```
+
+**Adding a new reader**: Admin adds reader in Mission Control → credentials pushed to location → reader is immediately available on the assigned terminal.
+
+**Disabling a reader**: Admin disables in Mission Control → `disable_reader` command pushed → POS removes reader from available list. The reader physically can't process because the `secureDeviceId` is revoked cloud-side.
+
+### Threat: Merchant Tries to Bypass
+
+| Bypass Attempt | Prevention |
+|----------------|------------|
+| Edit DB to change merchantId | Sync Agent overwrites on next heartbeat (60s) |
+| Use a different POS | They can't — the NUC runs our Docker image, no other POS installed |
+| Clone the disk, run modified POS | Hardware fingerprint check fails |
+| Intercept Datacap traffic | Credentials are never in POS source code, only in encrypted config file |
+| Install their own card reader | Reader won't process without a matching `secureDeviceId` in cloud config |
+| Ask Datacap directly for credentials | Datacap credentials are under GWI's master account, not the merchant's |
+
+---
+
+## 14. Hardware Limits & Subscription Tiers
+
+### Subscription Tiers
+
+Each location has a subscription tier that controls what hardware and features are available:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SUBSCRIPTION TIERS                             │
+├─────────────┬──────────────┬──────────────┬─────────────────────┤
+│             │   STARTER    │     PRO      │    ENTERPRISE       │
+├─────────────┼──────────────┼──────────────┼─────────────────────┤
+│ POS Terms   │      2       │      5       │    Unlimited        │
+│ Handhelds   │      0       │      3       │    Unlimited        │
+│ KDS Screens │      1       │      4       │    Unlimited        │
+│ Printers    │      2       │      6       │    Unlimited        │
+│ Card Readers│      1       │      3       │    Unlimited        │
+├─────────────┼──────────────┼──────────────┼─────────────────────┤
+│ Online Order│      ❌       │      ✅       │       ✅             │
+│ Bottle Svc  │      ❌       │      ✅       │       ✅             │
+│ Scheduling  │      ❌       │      ✅       │       ✅             │
+│ Multi-Floor │      ❌       │      ❌       │       ✅             │
+│ API Access  │      ❌       │      ❌       │       ✅             │
+│ White Label │      ❌       │      ❌       │       ✅             │
+└─────────────┴──────────────┴──────────────┴─────────────────────┘
+```
+
+### Enforcement Model
+
+Limits are enforced at **two levels**:
+
+#### Level 1: Cloud-Side (Hard Block)
+When a venue tries to pair a new device (KDS, reader, terminal), the pairing API checks the cloud license:
+```
+POST /api/fleet/license/check-device-limit
+{
+  "locationId": "loc-123",
+  "deviceType": "kds_screen",
+  "currentCount": 4
+}
+
+Response (over limit):
+{
+  "allowed": false,
+  "limit": 4,
+  "current": 4,
+  "tier": "pro",
+  "upgradeUrl": "https://gwipos.com/upgrade"
+}
+```
+
+#### Level 2: Local Enforcement (Sync Agent Cache)
+The Sync Agent caches the subscription limits locally so enforcement works offline:
+```json
+{
+  "tier": "pro",
+  "limits": {
+    "maxPOSTerminals": 5,
+    "maxHandhelds": 3,
+    "maxKDSScreens": 4,
+    "maxPrinters": 6,
+    "maxPaymentReaders": 3
+  },
+  "features": {
+    "onlineOrdering": true,
+    "bottleService": true,
+    "scheduling": true,
+    "multiFloor": false,
+    "apiAccess": false,
+    "whiteLabel": false
+  }
+}
+```
+
+POS checks this cache before allowing device pairing. If the cache is stale (>24h), pairing is **still allowed** but flagged for cloud verification on next sync (grace — don't block a venue mid-rush because the internet is down).
+
+#### Feature Gating
+
+Features not included in the tier are **hidden from the UI entirely** (not grayed out):
+- Starter tier: No "Online Ordering" in settings nav, no "Bottle Service" in tab creation, no "Scheduling" in admin
+- Pro tier: No "Multi-Floor" option in floor plan editor, no "API Access" in settings
+- Enterprise: Everything visible
+
+The POS reads `features` from the Sync Agent status API and conditionally renders UI sections.
+
+### Tier Changes
+
+**Upgrade**: Immediate. Cloud pushes new limits via `update_config` SSE command. Sync Agent updates cache. New devices can be paired instantly.
+
+**Downgrade**: Graceful. If a Pro location (5 terminals) downgrades to Starter (2 terminals), existing devices **continue working** but no new ones can be added. A warning banner shows: "Your plan supports 2 terminals. You have 5 active. Please remove 3 or upgrade." After 30-day grace, excess devices are soft-disabled.
+
+---
+
+## 15. Revenue & Fee Structure
+
+### How GWI Makes Money
+
+Three revenue streams per location:
+
+#### 1. Monthly Platform Subscription
+Fixed monthly fee based on tier:
+
+| Tier | Monthly Fee | Notes |
+|------|------------|-------|
+| Starter | $99/mo | Small bars, food trucks |
+| Pro | $199/mo | Full-service restaurants |
+| Enterprise | $399/mo | Multi-floor, high volume |
+
+Billed via Stripe. Cancellation = 30-day grace → license suspension → read-only mode → kill switch.
+
+#### 2. Payment Processing Fee
+GWI takes a percentage of every card transaction:
+
+```
+Customer pays $100 on card
+├── Interchange + Datacap fee: ~2.6% + $0.10 = $2.70 (goes to card network/Datacap)
+├── GWI processing markup: 1.4% = $1.40 (goes to GWI)
+├── Total merchant rate: 4.0% + $0.10 = $4.10
+└── Merchant receives: $95.90
+```
+
+**Per-location rate is configurable** in Mission Control:
+- `processingRatePercent` — total rate the merchant sees (e.g., 4.0%)
+- `perTransactionFeeCents` — flat per-swipe fee (e.g., 10 cents)
+- GWI's margin = `processingRatePercent` minus interchange/Datacap pass-through costs
+
+**Volume discounts**: Enterprise locations or multi-location orgs can negotiate lower rates. Set per-location in Mission Control.
+
+#### 3. Revenue Share (Optional)
+For locations where GWI provides additional services (menu consulting, marketing):
+- `revenueSharePercent` — % of gross sales (e.g., 1-2%)
+- Calculated from synced order data
+- Billed monthly alongside subscription
+
+### Transaction Tracking
+
+Every payment processed locally is synced to the cloud with:
+```
+TransactionSummary (synced per batch)
+├── transactionId, orderId
+├── grossAmount, tipAmount, taxAmount
+├── processingFee (merchant's rate applied)
+├── gwiMargin (GWI's cut of processing fee)
+├── interchangeEstimate (pass-through cost estimate)
+├── paymentMethod (card_present, card_not_present, contactless)
+├── cardBrand (visa, mastercard, amex, discover)
+├── readerSerialNumber
+├── processedAt
+└── settledAt (from Datacap batch close)
+```
+
+### Billing Dashboard (Mission Control)
+
+Super Admin sees:
+```
+┌──────────────────────────────────────────────────────────────┐
+│  REVENUE DASHBOARD — February 2026                            │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Subscriptions:     $14,850/mo  (75 locations)               │
+│  Processing Margin: $47,230     (1.4% avg on $3.37M volume)  │
+│  Revenue Share:     $2,140      (2 locations w/ rev share)   │
+│  ─────────────────────────────────────────────────────────   │
+│  Total MRR:         $64,220                                  │
+│                                                              │
+│  Per Location Avg:  $856/mo                                  │
+│  Processing Volume: $3,373,571                               │
+│  Transactions:      89,247                                   │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Location owner sees (in their limited dashboard):
+```
+┌──────────────────────────────────────────────────────────────┐
+│  YOUR PROCESSING — February 2026                              │
+├──────────────────────────────────────────────────────────────┤
+│  Card Sales:        $44,980                                  │
+│  Processing Fees:   $1,809.20  (4.0% + $0.10/txn)           │
+│  Net Deposits:      $43,170.80                               │
+│  Transactions:      1,192                                    │
+│  Avg Ticket:        $37.73                                   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Late Payment / Suspension Flow
+
+```
+Day 1:  Stripe charge fails → Retry automatically (3 attempts over 5 days)
+Day 5:  All retries failed → Email: "Payment failed, update card"
+Day 14: Grace period → Warning banner on POS: "Payment past due"
+Day 30: License suspended → POS enters read-only mode
+Day 45: Kill switch → POS locked out, branded support banner
+```
+
+Processing fees are deducted daily from the merchant's Datacap settlement (not billed separately). This means GWI always gets paid on processing — it comes off the top before the merchant sees their deposit.
 
 ---
 
@@ -588,7 +896,24 @@ GET http://sync-agent:8081/status
   "cloudReachable": true,
   "currentVersion": "2.1.0",
   "targetVersion": "2.1.0",
-  "pendingCommands": 0
+  "pendingCommands": 0,
+  "paymentConfig": {
+    "processor": "datacap",
+    "merchantId": "GWI_SUB_00105",
+    "operatorId": "OPR_105_001",
+    "secureDeviceIds": ["DID_AAA111", "DID_BBB222"],
+    "processingRate": 4.0,
+    "lastRotatedAt": "2026-02-01T00:00:00Z"
+  },
+  "subscriptionLimits": {
+    "tier": "pro",
+    "maxTerminals": 8,
+    "maxHandhelds": 4,
+    "maxKdsScreens": 4,
+    "maxPrinters": 6,
+    "maxReaders": 4,
+    "features": ["online_ordering", "bottle_service", "scheduling", "multi_floor"]
+  }
 }
 ```
 
@@ -714,3 +1039,38 @@ Reference table of all configurable intervals, limits, and thresholds with their
 | Disk critical | >95% | Email + SMS |
 | Error spike | >10 errors/min | Dashboard red + email |
 | License expiry warning | <30 days remaining | Email |
+
+### Payment Processing (PayFac)
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Credential encryption | AES-256-GCM | At rest in cloud DB |
+| Credential delivery | RSA-encrypted via SSE | `update_payment_config` command |
+| Credential rotation | Manual (admin-initiated) | Mothership → SSE push → Sync Agent decrypts |
+| Tamper check interval | 60s (heartbeat) | Sync Agent overwrites local DB if mismatch |
+| Unregistered reader block | Immediate | POS rejects any reader not in `secureDeviceIds` |
+| Processing rate field | Per-location | Set in Mothership, read-only on POS |
+
+### Subscription & Hardware Limits
+
+| Parameter | Default (Starter) | Default (Pro) | Default (Enterprise) | Notes |
+|-----------|-------------------|---------------|---------------------|-------|
+| Max terminals | 2 | 8 | Unlimited | Cloud-enforced on pairing API |
+| Max handhelds | 0 | 4 | Unlimited | Cloud-enforced on pairing API |
+| Max KDS screens | 2 | 4 | Unlimited | Cloud-enforced on pairing API |
+| Max printers | 2 | 6 | Unlimited | Cloud-enforced on pairing API |
+| Max payment readers | 1 | 4 | Unlimited | Cloud-enforced on pairing API |
+| Limit cache TTL | 24h | 24h | 24h | Sync Agent local cache for offline grace |
+| Downgrade grace period | 30 days | 30 days | 30 days | Soft-disable excess devices |
+| Upgrade activation | Immediate | Immediate | Immediate | New limits pushed via SSE |
+
+### Billing & Late Payment
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| Stripe retry (failed payment) | Day 1, 3, 5 | Automatic retry |
+| Email warning | Day 5 | "Payment failed" notification |
+| Dashboard warning banner | Day 14 | Yellow banner on POS |
+| Read-only mode | Day 30 | Orders blocked, viewing only |
+| Kill switch | Day 45 | Full lockout with support banner |
+| Processing fee deduction | From settlement | GWI paid off the top, not billed separately |

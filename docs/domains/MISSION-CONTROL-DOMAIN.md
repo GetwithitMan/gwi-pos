@@ -51,6 +51,8 @@ Local Servers (Ubuntu + Docker)
 | **Update Pipeline** | Cosign-signed image rollouts | GitHub Actions, `/api/admin/updates/*` |
 | **Tenant Isolation** | Postgres Schemas + RLS | Migration scripts, DB roles, RLS policies |
 | **Wildcard Routing** | Online ordering subdomains | Edge Middleware, `*.gwipos.com` DNS |
+| **Payment Processing (PayFac)** | Centralized Datacap credential management, processing rate control | `/api/admin/locations/[id]/payment-config`, Sync Agent `update_payment_config` command |
+| **Subscription & Billing** | Tier enforcement, hardware limits, Stripe billing, late payment flow | `/api/admin/billing/*`, `SubscriptionLimits`, `BillingConfig` models |
 
 ---
 
@@ -70,12 +72,17 @@ Local Servers (Ubuntu + Docker)
 - Audit logging (all admin actions)
 - Alerting (email, SMS for critical conditions)
 - Multi-tenant data isolation (Postgres schemas + RLS)
+- **Payment processing control (PayFac model)** — GWI owns master Datacap account, venues are sub-merchants
+- **Datacap credential management** — merchantId, operatorId, secureDeviceIds set in Mothership, pushed via SSE
+- **Processing rate configuration** — per-location rate setting, fee deduction from settlement
+- **Subscription tier enforcement** — hardware limits, feature gating, upgrade/downgrade handling
+- **Billing & late payment flow** — Stripe integration, grace periods, read-only mode, kill switch
 
 ### This Domain is NOT Responsible For:
 - POS application code changes (Module A requires zero POS changes)
 - Local database schema (Prisma/SQLite — owned by respective domains)
 - KDS, printers, card readers (owned by Hardware domain)
-- Payment processing (owned by Payments domain)
+- Payment transaction processing logic (owned by Payments domain — Datacap XML, EMV flows)
 - Menu/inventory management (owned by respective domains)
 - Floor plan or table management (owned by Floor Plan domain)
 

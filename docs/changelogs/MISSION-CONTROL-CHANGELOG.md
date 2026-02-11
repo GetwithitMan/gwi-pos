@@ -26,6 +26,12 @@ Architecture plan for Mission Control Center (Module A: Tenant & Fleet Managemen
 8. **Hardware Fingerprint**: SHA-256 of SMBIOS UUID + MAC + CPU + RAM + disk serial, versioned for future formula updates.
 9. **License Grace Period**: 14-day default, HMAC-signed local cache, in-memory caching with 60s timer.
 10. **Cosign Image Signing**: Keyless OIDC-based Docker image signing for secure update pipeline.
+11. **PayFac Model**: GWI owns master Datacap account. Venues are sub-merchants — cannot bring their own processor or bypass GWI processing.
+12. **Cloud-Pushed Credentials**: Datacap merchantId/operatorId/secureDeviceIds encrypted AES-256-GCM at rest, delivered via RSA-encrypted SSE command. POS has NO settings UI for credentials.
+13. **Tamper Prevention**: Sync Agent overwrites any local DB credential tampering on 60s heartbeat. Unregistered readers rejected.
+14. **Subscription Tiers**: Starter ($99/mo) / Pro ($199/mo) / Enterprise ($399/mo) with hardware device limits and feature gating.
+15. **Processing Fee Deduction**: GWI processing markup deducted from Datacap settlement (off the top), not billed separately to merchant.
+16. **Late Payment Escalation**: Stripe retry (Day 1-5) → email (Day 5) → warning banner (Day 14) → read-only (Day 30) → kill switch (Day 45).
 
 ### Key Documents Created
 - `/docs/plans/MISSION-CONTROL-MODULE-A.md` — Complete architecture plan
