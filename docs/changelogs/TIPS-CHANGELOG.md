@@ -1,5 +1,74 @@
 # Tips & Tip Bank Domain Changelog
 
+## 2026-02-11 — Skill 286: Tip Bank Team Pools (Admin-Defined Templates)
+
+### Skills Completed
+- **286**: Tip Bank Team Pools — Admin-defined tip group templates with clock-in selection, table tip ownership modes, and group control settings
+
+### What Was Done
+
+**Schema:**
+- Added `TipGroupTemplate` model (locationId, name, allowedRoleIds JSON, defaultSplitMode, active, sortOrder, sync fields)
+- Added `templateId` + relation on `TipGroup` (links runtime group to admin template)
+- Added `selectedTipGroupId` on `TimeClockEntry` (tracks group joined at clock-in)
+- Added `tipGroupTemplates` reverse relation on `Location`
+
+**Domain Logic (`src/lib/domain/tips/tip-group-templates.ts`):**
+- `getEligibleTemplates(locationId, roleId)` — Queries templates, filters by role
+- `getOrCreateGroupForTemplate(templateId, locationId)` — Find-or-create runtime TipGroup
+- `assignEmployeeToTemplateGroup()` — Single-group invariant + membership + segment management
+
+**Settings (`src/lib/settings.ts`):**
+- `tableTipOwnershipMode: 'ITEM_BASED' | 'PRIMARY_SERVER_OWNS_ALL'` (default: ITEM_BASED)
+- `allowStandaloneServers: boolean` (default: true)
+- `allowEmployeeCreatedGroups: boolean` (default: true)
+
+**Allocation (`src/lib/domain/tips/tip-allocation.ts`):**
+- Added `PRIMARY_SERVER_OWNS_ALL` mode: skips ownership splits for dine-in orders, primary server gets full tip
+
+**API Routes:**
+- `GET/POST /api/tips/group-templates` — Template list + create (auth: `tips.manage_rules`)
+- `GET/PUT/DELETE /api/tips/group-templates/[id]` — Single template CRUD
+- `GET /api/tips/group-templates/eligible` — Clock-in eligible templates by role
+
+**Time Clock Integration (`src/app/api/time-clock/route.ts`):**
+- POST accepts `selectedTipGroupTemplateId`
+- Calls `assignEmployeeToTemplateGroup()` on clock-in (fire-and-forget)
+- Stores runtime group ID in TimeClockEntry, returns group name in response
+
+**UI:**
+- Settings > Tips: Template CRUD (Section 8) + 3 new toggles (ownership mode, standalone, ad-hoc)
+- Crew Page: Group Picker Dialog at clock-in (dark glassmorphism modal)
+- Tip Group Page: Respects `allowEmployeeCreatedGroups` (hides "Start New Group" when disabled)
+
+### Files Created
+- `src/lib/domain/tips/tip-group-templates.ts` — Domain logic
+- `src/app/api/tips/group-templates/route.ts` — GET + POST
+- `src/app/api/tips/group-templates/[id]/route.ts` — GET + PUT + DELETE
+- `src/app/api/tips/group-templates/eligible/route.ts` — GET eligible
+- `docs/skills/286-TIP-BANK-TEAM-POOLS.md` — Skill documentation
+
+### Files Modified
+- `prisma/schema.prisma` — TipGroupTemplate model + relations
+- `src/lib/settings.ts` — 3 new TipBankSettings fields
+- `src/lib/domain/tips/tip-allocation.ts` — PRIMARY_SERVER_OWNS_ALL mode
+- `src/app/api/time-clock/route.ts` — Template selection + group assignment
+- `src/app/(admin)/settings/tips/page.tsx` — Template CRUD + toggles
+- `src/app/(pos)/crew/page.tsx` — Group Picker Dialog
+- `src/app/(pos)/crew/tip-group/page.tsx` — Ad-hoc group toggle
+
+### Architecture Note
+Team Pools builds on the existing Tip Group system (Skill 252) by adding an admin-managed template layer:
+- **Templates** define the allowed teams and role eligibility (admin configuration)
+- **Runtime Groups** are created on-the-fly when employees clock in (operational)
+- **Segments** track membership changes over time (accounting)
+- The single-group invariant ensures an employee is in at most one group at any time
+
+### TypeScript Status
+- 0 errors after all changes
+
+---
+
 ## 2026-02-10 — Skill 284: TIP BANK Clean (Legacy Model Removal)
 
 ### Skills Completed

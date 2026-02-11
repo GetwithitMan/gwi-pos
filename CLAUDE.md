@@ -2686,7 +2686,7 @@ Each domain has defined paths, layers, and boundaries. When in PM Mode, Claude u
 | **Dashboard** | Employee self-service tip bank | `/crew/tip-bank` |
 
 **Integration Points:** Payments (DIRECT_TIP on pay), Shifts (ROLE_TIPOUT at closeout), Socket.io (group events), Orders (ownership), Auth (6 permissions), Settings (TipBankSettings)
-**Related Skills:** 250, 251, 252, 253, 254, 255, 256, 257, 258, 259
+**Related Skills:** 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260-284, 286
 
 ---
 

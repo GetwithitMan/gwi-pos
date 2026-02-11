@@ -74,6 +74,17 @@ export interface TipBankSettings {
   // check_opened = group active when order was created gets credit
   // check_closed = group active when payment processes gets credit (default, best for bars)
   // check_both = proportional credit split between open-time and close-time groups
+
+  // Table Tip Ownership Mode
+  // ITEM_BASED = each item's tip share goes to whoever rang it (default, helpers get credit)
+  // PRIMARY_SERVER_OWNS_ALL = for dine-in, 100% of tip goes to primary server; helpers paid via tip-out rules
+  tableTipOwnershipMode: 'ITEM_BASED' | 'PRIMARY_SERVER_OWNS_ALL'
+
+  // Stand-alone Servers — allow employees to opt out of group pooling at clock-in
+  allowStandaloneServers: boolean  // If true, "No Group (Keep My Own Tips)" option at clock-in
+
+  // Ad-hoc Groups — whether employees can create their own groups outside admin templates
+  allowEmployeeCreatedGroups: boolean  // If false, only admin-defined templates are used
 }
 
 export interface BusinessDaySettings {
@@ -408,6 +419,9 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     requireManagerApprovalForCashOut: false,  // No manager approval needed by default
     defaultPayoutMethod: 'cash',      // Default to cash payout (business doesn't want to hold tips)
     tipAttributionTiming: 'check_closed', // Credit the group active when payment processes (best for bars)
+    tableTipOwnershipMode: 'ITEM_BASED',   // Default: helpers get per-item credit on server tables
+    allowStandaloneServers: true,            // Allow "No Group" option at clock-in
+    allowEmployeeCreatedGroups: true,        // Allow ad-hoc group creation (legacy behavior)
   },
   receipts: {
     headerText: 'Thank you for your visit!',

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { assignEmployeeToTemplateGroup } from '@/lib/domain/tips/tip-group-templates'
 
 // GET - List time clock entries
 export async function GET(request: NextRequest) {
@@ -84,11 +85,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, employeeId, notes, workingRoleId } = body as {
+    const { locationId, employeeId, notes, workingRoleId, selectedTipGroupTemplateId } = body as {
       locationId: string
       employeeId: string
       notes?: string
       workingRoleId?: string
+      selectedTipGroupTemplateId?: string | null
     }
 
     if (!locationId || !employeeId) {
@@ -132,12 +134,42 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    // If a tip group template was selected, assign the employee to its runtime group.
+    // Wrapped in try/catch so clock-in still succeeds even if group assignment fails.
+    let selectedTipGroup: { id: string; name: string } | null = null
+    if (selectedTipGroupTemplateId) {
+      try {
+        const groupInfo = await assignEmployeeToTemplateGroup({
+          employeeId,
+          templateId: selectedTipGroupTemplateId,
+          locationId,
+        })
+
+        // Update the TimeClockEntry with the actual runtime group ID
+        await db.timeClockEntry.update({
+          where: { id: entry.id },
+          data: { selectedTipGroupId: groupInfo.id },
+        })
+
+        // Look up the template name for the response
+        const template = await db.tipGroupTemplate.findFirst({
+          where: { id: selectedTipGroupTemplateId },
+          select: { name: true },
+        })
+
+        selectedTipGroup = { id: groupInfo.id, name: template?.name ?? 'Tip Group' }
+      } catch (err) {
+        console.warn('[time-clock] Tip group assignment failed (clock-in still succeeds):', err)
+      }
+    }
+
     return NextResponse.json({
       id: entry.id,
       employeeId: entry.employeeId,
       employeeName: entry.employee.displayName || `${entry.employee.firstName} ${entry.employee.lastName}`,
       clockIn: entry.clockIn.toISOString(),
       message: 'Clocked in successfully',
+      ...(selectedTipGroup ? { selectedTipGroup } : {}),
     })
   } catch (error) {
     console.error('Failed to clock in:', error)

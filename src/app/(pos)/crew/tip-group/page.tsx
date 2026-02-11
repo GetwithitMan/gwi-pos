@@ -65,6 +65,8 @@ export default function TipGroupPage() {
   const [employees, setEmployees] = useState<EmployeeOption[]>([])
   const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set())
   const [splitMode, setSplitMode] = useState<'equal' | 'custom'>('equal')
+  const [allowEmployeeCreatedGroups, setAllowEmployeeCreatedGroups] = useState(true)
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
 
   // Hydration guard: wait for Zustand to rehydrate from localStorage
   const [hydrated, setHydrated] = useState(false)
@@ -77,6 +79,26 @@ export default function TipGroupPage() {
       router.push('/login')
     }
   }, [hydrated, employee, isAuthenticated, router])
+
+  // ── Fetch tip bank settings ─────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!employee) return
+    const loadSettings = async () => {
+      try {
+        const res = await fetch(`/api/settings/tips?locationId=${employee.location.id}&employeeId=${employee.id}`)
+        if (res.ok) {
+          const data = await res.json()
+          setAllowEmployeeCreatedGroups(data.tipBank?.allowEmployeeCreatedGroups ?? true)
+        }
+      } catch {
+        // Default to true on failure
+      } finally {
+        setSettingsLoaded(true)
+      }
+    }
+    loadSettings()
+  }, [employee])
 
   // ── Fetch groups ────────────────────────────────────────────────────────
 
@@ -498,25 +520,39 @@ export default function TipGroupPage() {
         {/* No active group: Start or Join */}
         {!loading && !myGroup && (
           <>
-            {/* Start a new group */}
-            <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-6 text-center">
-              <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
+            {/* Start a new group (only if allowed by admin) */}
+            {allowEmployeeCreatedGroups ? (
+              <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-6 text-center">
+                <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                  </svg>
+                </div>
+                <h2 className="text-white font-semibold text-lg mb-2">Start a Tip Group</h2>
+                <p className="text-white/40 text-sm mb-4">
+                  Create a new tip group and invite coworkers to pool tips together.
+                </p>
+                <button
+                  onClick={openStartModal}
+                  disabled={actionLoading}
+                  className="px-6 py-3 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-400 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+                >
+                  Start New Group
+                </button>
               </div>
-              <h2 className="text-white font-semibold text-lg mb-2">Start a Tip Group</h2>
-              <p className="text-white/40 text-sm mb-4">
-                Create a new tip group and invite coworkers to pool tips together.
-              </p>
-              <button
-                onClick={openStartModal}
-                disabled={actionLoading}
-                className="px-6 py-3 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-400 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
-              >
-                Start New Group
-              </button>
-            </div>
+            ) : settingsLoaded ? (
+              <div className="bg-white/5 border border-white/10 backdrop-blur-xl rounded-2xl p-6 text-center">
+                <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-white/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <h2 className="text-white font-semibold text-lg mb-2">Teams Managed by Admin</h2>
+                <p className="text-white/40 text-sm">
+                  Tip groups are managed by your admin. Choose your team at clock-in.
+                </p>
+              </div>
+            ) : null}
 
             {/* Joinable groups */}
             {otherGroups.length > 0 && (

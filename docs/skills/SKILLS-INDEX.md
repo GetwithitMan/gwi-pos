@@ -94,6 +94,7 @@
 | 283 | Tip Groups Admin Page | DONE | Tips | 252 | `/tip-groups` admin page, AdminNav link, status/date filters |
 | 284 | TIP BANK Clean (Legacy Removal) | DONE | Tips | 250-283 | Deleted `TipBank` model, migrated employee tips API to TipLedgerEntry |
 | 285 | KDS Browser Compatibility | DONE | KDS, Hardware | 102 | `@csstools/postcss-oklab-function` transpiles oklch()→rgb() for Chrome 108+ KDS devices, pair page redirect fix |
+| 286 | Tip Bank Team Pools | DONE | Tips | 250, 252, 265 | Admin-defined TipGroupTemplate, clock-in group picker, PRIMARY_SERVER_OWNS_ALL mode, allowStandaloneServers, allowEmployeeCreatedGroups, template CRUD API, eligible API, time-clock integration |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -296,9 +297,9 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| Tips & Tip Bank | 35 | 0 | 0 | 35 | 100% |
+| Tips & Tip Bank | 36 | 0 | 0 | 36 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| **TOTAL** | **181** | **7** | **13** | **201** | **93%** |
+| **TOTAL** | **182** | **7** | **13** | **202** | **93%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -479,6 +480,7 @@ Skills that can be developed simultaneously:
 | 283 | Tip Groups Admin Page | `/tip-groups` admin page with status/date filters, AdminNav link |
 | 284 | TIP BANK Clean | Deleted legacy `TipBank` model, migrated `/api/employees/[id]/tips` to TipLedgerEntry |
 | 285 | KDS Browser Compatibility | PostCSS oklch()→rgb() transpilation for Chrome 108 KDS devices, pair page redirect fix |
+| 286 | Tip Bank Team Pools | Admin-defined TipGroupTemplate model, clock-in group picker, PRIMARY_SERVER_OWNS_ALL ownership mode, standalone server toggle, ad-hoc group toggle, template CRUD + eligible APIs, time-clock integration |
 
 ## Recently Completed (2026-02-10 — Phase 6: Multi-Role, Cash Handling & Crew Hub)
 

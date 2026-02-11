@@ -86,6 +86,7 @@ model Location {
   tipTransactions   TipTransaction[]
 
   // Tip Groups (Skill 252)
+  tipGroupTemplates      TipGroupTemplate[]
   tipGroups              TipGroup[]
   tipGroupMemberships    TipGroupMembership[]
   tipGroupSegments       TipGroupSegment[]
@@ -522,6 +523,9 @@ model TimeClockEntry {
   // Multi-role: which role the employee is working as this entry
   workingRoleId String?
   workingRole   Role?   @relation("WorkingRole", fields: [workingRoleId], references: [id])
+
+  // Tip group selected at clock-in (from TipGroupTemplate system)
+  selectedTipGroupId String?
 
   // Reverse relation
   shifts Shift[]
@@ -2567,6 +2571,30 @@ model TipTransaction {
 }
 
 // ============================================
+// TIP GROUP TEMPLATES (Admin-defined team pools)
+// ===============================================
+
+model TipGroupTemplate {
+  id              String   @id @default(cuid())
+  locationId      String
+  location        Location @relation(fields: [locationId], references: [id])
+  name            String   // "Downstairs Servers", "Bar Team", etc.
+  allowedRoleIds  Json     // Array of role IDs that can join this team
+  defaultSplitMode String  @default("equal") // equal, hours_weighted, role_weighted
+  active          Boolean  @default(true)
+  sortOrder       Int      @default(0)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  tipGroups TipGroup[] // Runtime group instances for this template
+
+  @@index([locationId])
+  @@index([active])
+}
+
 // TIP GROUPS (Skill 252 - Dynamic Tip Groups)
 // ============================================
 
@@ -2577,6 +2605,8 @@ model TipGroup {
   createdBy  String    // Employee who started the group
   ownerId    String    // Current owner (for approvals)
   registerId String?   // Terminal/register
+  templateId String?   // Links to admin-defined TipGroupTemplate (null = ad-hoc group)
+  template   TipGroupTemplate? @relation(fields: [templateId], references: [id])
   startedAt  DateTime  @default(now())
   endedAt    DateTime?
   status     String    @default("active") // active, closed
@@ -2593,6 +2623,7 @@ model TipGroup {
   @@index([status])
   @@index([startedAt])
   @@index([ownerId])
+  @@index([templateId])
 }
 
 model TipGroupMembership {

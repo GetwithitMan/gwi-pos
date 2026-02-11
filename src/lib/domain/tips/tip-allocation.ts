@@ -26,6 +26,8 @@ import {
 } from '@/lib/domain/tips/table-ownership'
 import type { OwnershipInfo } from '@/lib/domain/tips/table-ownership'
 import type { TipBankSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
+import { parseSettings } from '@/lib/settings'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -161,6 +163,7 @@ export async function allocateTipsForOrder(params: {
   collectedAt: Date
   ccFeeAmountCents?: number
   kind?: string  // Skill 277: 'tip' | 'service_charge' | 'auto_gratuity'
+  tipBankSettings?: TipBankSettings  // Optional: pass to avoid re-fetching
 }): Promise<TipAllocationResult> {
   const {
     locationId,
@@ -172,6 +175,7 @@ export async function allocateTipsForOrder(params: {
     collectedAt,
     ccFeeAmountCents,
     kind = 'tip',
+    tipBankSettings: providedSettings,
   } = params
 
   // Zero-tip guard: nothing to allocate
@@ -225,7 +229,35 @@ export async function allocateTipsForOrder(params: {
   // independently routes through group-or-individual allocation.
   const ownership = await getActiveOwnership(orderId)
 
+  // ── Table Tip Ownership Mode check ─────────────────────────────────────
+  // When tableTipOwnershipMode is 'PRIMARY_SERVER_OWNS_ALL' and the order
+  // is a dine-in (has tableId), skip ownership-based splitting entirely.
+  // The primary server gets 100% of the tip; helpers are paid via tip-out rules.
+  let skipOwnership = false
   if (ownership && ownership.owners.length > 1) {
+    // Resolve settings: use provided settings or fetch from cache
+    let tableTipMode: string = 'ITEM_BASED'
+    if (providedSettings) {
+      tableTipMode = providedSettings.tableTipOwnershipMode ?? 'ITEM_BASED'
+    } else {
+      const locationSettings = await getLocationSettings(locationId)
+      const parsed = locationSettings ? parseSettings(locationSettings) : null
+      tableTipMode = parsed?.tipBank?.tableTipOwnershipMode ?? 'ITEM_BASED'
+    }
+
+    if (tableTipMode === 'PRIMARY_SERVER_OWNS_ALL') {
+      // Check if the order is table-based (dine-in)
+      const order = await db.order.findFirst({
+        where: { id: orderId, deletedAt: null },
+        select: { tableId: true },
+      })
+      if (order?.tableId) {
+        skipOwnership = true
+      }
+    }
+  }
+
+  if (ownership && ownership.owners.length > 1 && !skipOwnership) {
     return allocateWithOwnership({
       locationId,
       orderId,

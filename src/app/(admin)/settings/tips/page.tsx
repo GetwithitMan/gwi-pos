@@ -9,6 +9,24 @@ import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import type { TipBankSettings, TipShareSettings } from '@/lib/settings'
 
 // ────────────────────────────────────────────
+// Template Types
+// ────────────────────────────────────────────
+
+interface TipGroupTemplate {
+  id: string
+  locationId: string
+  name: string
+  allowedRoleIds: string[]
+  defaultSplitMode: 'equal' | 'hours_weighted' | 'role_weighted'
+  active: boolean
+}
+
+interface RoleOption {
+  id: string
+  name: string
+}
+
+// ────────────────────────────────────────────
 // Constants
 // ────────────────────────────────────────────
 
@@ -62,6 +80,20 @@ export default function TipSettingsPage() {
   // New percentage input
   const [newPercent, setNewPercent] = useState('')
 
+  // Template management state
+  const [templates, setTemplates] = useState<TipGroupTemplate[]>([])
+  const [roles, setRoles] = useState<RoleOption[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<TipGroupTemplate | null>(null)
+  const [showTemplateForm, setShowTemplateForm] = useState(false)
+  const [templateForm, setTemplateForm] = useState<{
+    name: string
+    allowedRoleIds: string[]
+    defaultSplitMode: 'equal' | 'hours_weighted' | 'role_weighted'
+    active: boolean
+  }>({ name: '', allowedRoleIds: [], defaultSplitMode: 'equal', active: true })
+  const [templateSaving, setTemplateSaving] = useState(false)
+
   useUnsavedWarning(isDirty)
 
   // ──── Load settings ────
@@ -85,9 +117,35 @@ export default function TipSettingsPage() {
     }
   }, [locationId, employee?.id])
 
+  // ──── Load templates + roles ────
+  const loadTemplates = useCallback(async () => {
+    if (!locationId || !employee?.id) return
+    setTemplatesLoading(true)
+    try {
+      const headers: Record<string, string> = { 'x-employee-id': employee.id }
+      const [templatesRes, rolesRes] = await Promise.all([
+        fetch(`/api/tips/group-templates?locationId=${locationId}&includeInactive=true`, { headers }),
+        fetch(`/api/roles?locationId=${locationId}`, { headers }),
+      ])
+      if (templatesRes.ok) {
+        const json = await templatesRes.json()
+        setTemplates(json.data || [])
+      }
+      if (rolesRes.ok) {
+        const json = await rolesRes.json()
+        setRoles(json.roles || json.data || json || [])
+      }
+    } catch {
+      // Silently fail — templates section just shows empty
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }, [locationId, employee?.id])
+
   useEffect(() => {
     loadSettings()
-  }, [loadSettings])
+    loadTemplates()
+  }, [loadSettings, loadTemplates])
 
   // ──── Save settings ────
   const handleSave = async () => {
@@ -161,6 +219,90 @@ export default function TipSettingsPage() {
     }
     updateTipGuide('percentages', updated)
   }
+
+  // ──── Template CRUD helpers ────
+  const openNewTemplate = () => {
+    setEditingTemplate(null)
+    setTemplateForm({ name: '', allowedRoleIds: [], defaultSplitMode: 'equal', active: true })
+    setShowTemplateForm(true)
+  }
+
+  const openEditTemplate = (t: TipGroupTemplate) => {
+    setEditingTemplate(t)
+    setTemplateForm({
+      name: t.name,
+      allowedRoleIds: [...t.allowedRoleIds],
+      defaultSplitMode: t.defaultSplitMode,
+      active: t.active,
+    })
+    setShowTemplateForm(true)
+  }
+
+  const handleSaveTemplate = async () => {
+    if (!locationId) return
+    if (!templateForm.name.trim()) {
+      toast.warning('Template name is required')
+      return
+    }
+    setTemplateSaving(true)
+    try {
+      const url = editingTemplate
+        ? `/api/tips/group-templates/${editingTemplate.id}`
+        : '/api/tips/group-templates'
+      const method = editingTemplate ? 'PUT' : 'POST'
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId, ...templateForm }),
+      })
+      if (res.ok) {
+        toast.success(editingTemplate ? 'Team updated' : 'Team created')
+        setShowTemplateForm(false)
+        setEditingTemplate(null)
+        await loadTemplates()
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to save team')
+      }
+    } catch {
+      toast.error('Failed to save team')
+    } finally {
+      setTemplateSaving(false)
+    }
+  }
+
+  const handleDeleteTemplate = async (id: string) => {
+    if (!confirm('Delete this team template?')) return
+    try {
+      const res = await fetch(`/api/tips/group-templates/${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success('Team deleted')
+        await loadTemplates()
+      } else {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to delete team')
+      }
+    } catch {
+      toast.error('Failed to delete team')
+    }
+  }
+
+  const toggleTemplateRole = (roleId: string) => {
+    setTemplateForm(prev => ({
+      ...prev,
+      allowedRoleIds: prev.allowedRoleIds.includes(roleId)
+        ? prev.allowedRoleIds.filter(r => r !== roleId)
+        : [...prev.allowedRoleIds, roleId],
+    }))
+  }
+
+  const getRoleName = (roleId: string) => roles.find(r => r.id === roleId)?.name ?? roleId
+
+  const SPLIT_MODE_OPTIONS: { value: TipGroupTemplate['defaultSplitMode']; label: string }[] = [
+    { value: 'equal', label: 'Equal' },
+    { value: 'hours_weighted', label: 'Hours Weighted' },
+    { value: 'role_weighted', label: 'Role Weighted' },
+  ]
 
   // ──── Loading state ────
   if (isLoading || !tipBank || !tipShares) {
@@ -383,6 +525,58 @@ export default function TipSettingsPage() {
               description="Allow tip bank balances to go below zero (chargebacks may cause this)"
               checked={tipBank.allowNegativeBalances}
               onChange={v => updateTipBank('allowNegativeBalances', v)}
+              border
+            />
+          </div>
+
+          {/* Table Tip Ownership Mode */}
+          <div className="pt-4 mt-4 border-t border-gray-100">
+            <label className="block text-sm font-medium text-gray-600 mb-2">Table Tip Ownership</label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => updateTipBank('tableTipOwnershipMode', 'ITEM_BASED')}
+                className={`text-left p-3 rounded-xl border transition-all ${
+                  tipBank.tableTipOwnershipMode === 'ITEM_BASED'
+                    ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                    : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                }`}
+              >
+                <div className={`text-sm font-medium ${tipBank.tableTipOwnershipMode === 'ITEM_BASED' ? 'text-indigo-600' : 'text-gray-700'}`}>
+                  Item-Based
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">Helpers earn per-item credit on server tables</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => updateTipBank('tableTipOwnershipMode', 'PRIMARY_SERVER_OWNS_ALL')}
+                className={`text-left p-3 rounded-xl border transition-all ${
+                  tipBank.tableTipOwnershipMode === 'PRIMARY_SERVER_OWNS_ALL'
+                    ? 'border-indigo-500 bg-indigo-500/20 ring-1 ring-indigo-500/40'
+                    : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                }`}
+              >
+                <div className={`text-sm font-medium ${tipBank.tableTipOwnershipMode === 'PRIMARY_SERVER_OWNS_ALL' ? 'text-indigo-600' : 'text-gray-700'}`}>
+                  Primary Server Owns All
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">100% of tip goes to primary server; helpers paid via tip-outs only</div>
+              </button>
+            </div>
+          </div>
+
+          {/* Standalone + Employee Groups toggles */}
+          <div className="space-y-0 mt-4 border-t border-gray-100">
+            <ToggleRow
+              label="Allow Stand-Alone Servers"
+              description="Employees can opt out of team pools at clock-in and keep their own tips"
+              checked={tipBank.allowStandaloneServers}
+              onChange={v => updateTipBank('allowStandaloneServers', v)}
+            />
+            <ToggleRow
+              label="Allow Employee-Created Groups"
+              description="Employees can create ad-hoc tip groups outside of admin-defined teams"
+              checked={tipBank.allowEmployeeCreatedGroups}
+              onChange={v => updateTipBank('allowEmployeeCreatedGroups', v)}
               border
             />
           </div>
@@ -629,6 +823,193 @@ export default function TipSettingsPage() {
             </p>
           </div>
         </section>
+
+        {/* ═══════════════════════════════════════════
+            Section 8: Tip Group Teams (Templates)
+            ═══════════════════════════════════════════ */}
+        <section className="bg-white border border-gray-200 rounded-2xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-lg font-semibold text-gray-900">Tip Group Teams</h2>
+            <button
+              type="button"
+              onClick={openNewTemplate}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-all"
+            >
+              Add Team
+            </button>
+          </div>
+          <p className="text-sm text-gray-500 mb-5">Define team pools for tip sharing (e.g., Upstairs, Downstairs, Bar). Employees choose their team at clock-in.</p>
+
+          {templatesLoading ? (
+            <div className="text-gray-400 text-sm py-4 text-center">Loading teams...</div>
+          ) : templates.length === 0 ? (
+            <div className="text-gray-400 text-sm py-6 text-center border border-dashed border-gray-200 rounded-xl">
+              No teams defined yet. Click &quot;Add Team&quot; to create one.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {templates.map(t => (
+                <div
+                  key={t.id}
+                  className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
+                    t.active ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-100 opacity-60'
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-semibold text-gray-900">{t.name}</span>
+                      {!t.active && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-200 text-gray-500">Inactive</span>
+                      )}
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-600">
+                        {t.defaultSplitMode === 'equal' ? 'Equal' : t.defaultSplitMode === 'hours_weighted' ? 'Hours' : 'Role'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {t.allowedRoleIds.length === 0 ? (
+                        <span className="text-xs text-gray-400">All roles</span>
+                      ) : (
+                        t.allowedRoleIds.map(rid => (
+                          <span key={rid} className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-600 border border-blue-100">
+                            {getRoleName(rid)}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => openEditTemplate(t)}
+                      className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                      aria-label={`Edit ${t.name}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTemplate(t.id)}
+                      className="p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                      aria-label={`Delete ${t.name}`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Template Form Modal ────────────────────────────────────────── */}
+        {showTemplateForm && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                {editingTemplate ? 'Edit Team' : 'New Team'}
+              </h3>
+
+              {/* Name */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-600 mb-1">Team Name</label>
+                <input
+                  type="text"
+                  value={templateForm.name}
+                  onChange={e => setTemplateForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Upstairs, Bar Team"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:border-indigo-500"
+                  aria-label="Team name"
+                />
+              </div>
+
+              {/* Split Mode */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-600 mb-2">Default Split Mode</label>
+                <div className="flex gap-2">
+                  {SPLIT_MODE_OPTIONS.map(opt => (
+                    <button
+                      type="button"
+                      key={opt.value}
+                      onClick={() => setTemplateForm(prev => ({ ...prev, defaultSplitMode: opt.value }))}
+                      className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${
+                        templateForm.defaultSplitMode === opt.value
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-gray-50 border border-gray-200 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Allowed Roles */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-600 mb-2">
+                  Allowed Roles
+                  <span className="text-xs text-gray-400 font-normal ml-1">(leave empty for all roles)</span>
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {roles.map(role => {
+                    const selected = templateForm.allowedRoleIds.includes(role.id)
+                    return (
+                      <button
+                        type="button"
+                        key={role.id}
+                        onClick={() => toggleTemplateRole(role.id)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                          selected
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        }`}
+                      >
+                        {role.name}
+                      </button>
+                    )
+                  })}
+                  {roles.length === 0 && (
+                    <span className="text-xs text-gray-400">Loading roles...</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Active toggle */}
+              <div className="flex items-center justify-between py-3 mb-4 border-t border-gray-100">
+                <div>
+                  <div className="text-sm text-gray-700">Active</div>
+                  <div className="text-xs text-gray-400">Show this team as an option at clock-in</div>
+                </div>
+                <ToggleSwitch
+                  checked={templateForm.active}
+                  onChange={v => setTemplateForm(prev => ({ ...prev, active: v }))}
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setShowTemplateForm(false); setEditingTemplate(null) }}
+                  className="flex-1 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveTemplate}
+                  disabled={templateSaving}
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
+                >
+                  {templateSaving ? 'Saving...' : editingTemplate ? 'Update Team' : 'Create Team'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Bottom save bar (sticky for long pages) */}
         <SettingsSaveBar isDirty={isDirty} isSaving={isSaving} onSave={handleSave} />

@@ -3,7 +3,7 @@
 **Domain ID:** 24
 **Status:** Complete
 **Created:** February 10, 2026
-**Skills:** 250–259
+**Skills:** 250–286
 
 ## Overview
 
@@ -66,6 +66,7 @@ PM Mode: Tips
 | **Payroll Export** | Aggregation, CSV generation | `src/lib/domain/tips/tip-payroll-export.ts`, `/api/reports/payroll-export/` |
 | **Reporting** | Group reports, tip reports | `/api/reports/tip-groups/` |
 | **Settings** | Tip configuration admin | `/api/settings/tips/`, `/settings/tips` |
+| **Team Pools** | Admin-defined templates, clock-in selection, ownership modes | `src/lib/domain/tips/tip-group-templates.ts`, `/api/tips/group-templates/`, `/api/tips/group-templates/[id]/`, `/api/tips/group-templates/eligible/` |
 | **Dashboard** | Employee self-service tip bank | `/crew/tip-bank` |
 
 ## Integration Points
@@ -78,6 +79,7 @@ PM Mode: Tips
 | **Orders** | OrderOwnership for co-owned tables | Orders ↔ Tips |
 | **Auth** | 6 tip-specific permissions in PERMISSIONS constant | Auth → Tips |
 | **Settings** | TipBankSettings in Location.settings JSON | Settings → Tips |
+| **Time Clock** | `assignEmployeeToTemplateGroup()` at clock-in (Skill 286) | Time Clock → Tips |
 
 ## Database Models
 
@@ -93,6 +95,7 @@ PM Mode: Tips
 | `OrderOwnershipEntry` | `orderOwnershipId + employeeId` | Per-employee share % |
 | `TipAdjustment` | `createdById + adjustmentType` | Manager adjustment audit |
 | `CashTipDeclaration` | `employeeId + shiftId` | Shift cash declarations |
+| `TipGroupTemplate` | `locationId + name` | Admin-defined team pool templates (Skill 286) |
 
 ## Permissions
 
@@ -119,6 +122,8 @@ PM Mode: Tips
 | 257 | Employee Tip Bank Dashboard | 8 |
 | 258 | Enhanced Tip Reporting & Payroll Export | 9 |
 | 259 | Cash Tip Declaration & Compliance | 10 |
+| 260-284 | Enhancements, Hardening & Cleanup | 11-35 |
+| 286 | Team Pools (Admin Templates) | 36 |
 
 ## Non-Responsibilities
 

@@ -18,6 +18,10 @@ export default function CrewHubPage() {
   const [clockStatusLoading, setClockStatusLoading] = useState(true)
   const [showClockOutConfirm, setShowClockOutConfirm] = useState(false)
   const [showRolePicker, setShowRolePicker] = useState(false)
+  const [showGroupPicker, setShowGroupPicker] = useState(false)
+  const [eligibleTemplates, setEligibleTemplates] = useState<{ id: string; name: string; defaultSplitMode: string }[]>([])
+  const [allowStandaloneServers, setAllowStandaloneServers] = useState(true)
+  const [pendingClockInRoleId, setPendingClockInRoleId] = useState<string | undefined>(undefined)
 
   // Hydration guard: Zustand persist middleware starts with defaults (isAuthenticated=false)
   // before rehydrating from localStorage. Without this guard, the auth redirect fires
@@ -58,7 +62,7 @@ export default function CrewHubPage() {
     fetchClockStatus()
   }, [fetchClockStatus])
 
-  const performClockIn = async (workingRoleId?: string) => {
+  const performClockIn = async (workingRoleId?: string, selectedTipGroupTemplateId?: string | null) => {
     if (!employee) return
     setClockLoading(true)
     try {
@@ -69,6 +73,7 @@ export default function CrewHubPage() {
           locationId: employee.location.id,
           employeeId: employee.id,
           ...(workingRoleId ? { workingRoleId } : {}),
+          ...(selectedTipGroupTemplateId !== undefined ? { selectedTipGroupTemplateId } : {}),
         }),
       })
       if (res.ok) {
@@ -82,10 +87,38 @@ export default function CrewHubPage() {
     }
   }
 
+  const fetchEligibleTemplates = async (roleId?: string): Promise<boolean> => {
+    if (!employee) return false
+    try {
+      const url = `/api/tips/group-templates/eligible?locationId=${employee.location.id}&employeeId=${employee.id}`
+      const res = await fetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        const tmpls = data.templates || []
+        const standalone = data.allowStandaloneServers ?? true
+        if (tmpls.length > 0) {
+          setEligibleTemplates(tmpls)
+          setAllowStandaloneServers(standalone)
+          setPendingClockInRoleId(roleId)
+          setShowGroupPicker(true)
+          return true // will handle clock-in after group selection
+        }
+      }
+    } catch {
+      // If fetch fails, proceed without group selection
+    }
+    return false
+  }
+
+  const handleGroupSelected = async (templateId: string | null) => {
+    setShowGroupPicker(false)
+    await performClockIn(pendingClockInRoleId, templateId)
+    setPendingClockInRoleId(undefined)
+  }
+
   const handleClockToggle = async () => {
     if (!employee) return
     if (clockStatus.clockedIn && clockStatus.entryId) {
-      // Show confirmation dialog instead of immediately clocking out
       setShowClockOutConfirm(true)
       return
     }
@@ -95,18 +128,24 @@ export default function CrewHubPage() {
       setShowRolePicker(true)
       return
     }
-    // Single role — auto-select and clock in
+    // Single role — auto-select, then check for group templates
     const roleId = availableRoles.length === 1 ? availableRoles[0].id : undefined
     if (availableRoles.length === 1) {
       useAuthStore.getState().setWorkingRole(availableRoles[0])
     }
-    await performClockIn(roleId)
+    const needsGroupPick = await fetchEligibleTemplates(roleId)
+    if (!needsGroupPick) {
+      await performClockIn(roleId)
+    }
   }
 
   const handleRoleSelectedForClockIn = async (role: { id: string; name: string; cashHandlingMode: string; isPrimary: boolean }) => {
     useAuthStore.getState().setWorkingRole(role)
     setShowRolePicker(false)
-    await performClockIn(role.id)
+    const needsGroupPick = await fetchEligibleTemplates(role.id)
+    if (!needsGroupPick) {
+      await performClockIn(role.id)
+    }
   }
 
   const handleConfirmClockOut = async () => {
@@ -398,6 +437,45 @@ export default function CrewHubPage() {
               >
                 {clockLoading ? 'Processing...' : 'Yes, Clock Out'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tip Group Selection Dialog */}
+      {showGroupPicker && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800/90 border border-white/10 backdrop-blur-xl rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
+            <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-white mb-2">Choose Your Tip Team</h3>
+            <p className="text-white/50 text-sm mb-6">Select which team to pool tips with for this shift</p>
+            <div className="flex flex-col gap-3">
+              {eligibleTemplates.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => handleGroupSelected(t.id)}
+                  disabled={clockLoading}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+                >
+                  {t.name}
+                  <span className="block text-xs font-normal text-indigo-200 mt-0.5">
+                    {t.defaultSplitMode === 'equal' ? 'Equal split' : t.defaultSplitMode === 'hours_weighted' ? 'Hours weighted' : 'Role weighted'}
+                  </span>
+                </button>
+              ))}
+              {allowStandaloneServers && (
+                <button
+                  onClick={() => handleGroupSelected(null)}
+                  disabled={clockLoading}
+                  className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/20 text-gray-300 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+                >
+                  No Group (Keep My Own Tips)
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 # GWI POS — Tip Bank System
 
-**Skills:** 250–283 | **Domain:** Tips & Tip Bank | **Status:** Complete | **Date:** 2026-02-10
+**Skills:** 250–286 | **Domain:** Tips & Tip Bank | **Status:** Complete | **Date:** 2026-02-11
 
 ---
 
@@ -11,21 +11,22 @@
 3. [The Ledger Model](#the-ledger-model)
 4. [Tip Flows](#tip-flows)
 5. [Dynamic Tip Groups](#dynamic-tip-groups)
-6. [Shared Table Ownership](#shared-table-ownership)
-7. [Chargebacks & Voids](#chargebacks--voids)
-8. [Manager Adjustments](#manager-adjustments)
-9. [Payouts & Payroll](#payouts--payroll)
-10. [Compliance & Cash Declarations](#compliance--cash-declarations)
-11. [Reporting](#reporting)
-12. [Printed Reports](#printed-reports)
-13. [Front-End UI Components](#front-end-ui-components)
-14. [New Location Setup Guide](#new-location-setup-guide)
-15. [Settings Reference](#settings-reference)
-16. [Permissions Reference](#permissions-reference)
-17. [API Reference](#api-reference)
-18. [Database Models](#database-models)
-19. [File Map](#file-map)
-20. [Skills Map](#skills-map)
+6. [Team Pools (Admin Templates)](#team-pools-admin-templates)
+7. [Shared Table Ownership](#shared-table-ownership)
+8. [Chargebacks & Voids](#chargebacks--voids)
+9. [Manager Adjustments](#manager-adjustments)
+10. [Payouts & Payroll](#payouts--payroll)
+11. [Compliance & Cash Declarations](#compliance--cash-declarations)
+12. [Reporting](#reporting)
+13. [Printed Reports](#printed-reports)
+14. [Front-End UI Components](#front-end-ui-components)
+15. [New Location Setup Guide](#new-location-setup-guide)
+16. [Settings Reference](#settings-reference)
+17. [Permissions Reference](#permissions-reference)
+18. [API Reference](#api-reference)
+19. [Database Models](#database-models)
+20. [File Map](#file-map)
+21. [Skills Map](#skills-map)
 
 ---
 
@@ -131,6 +132,8 @@ Everything flows through `postToTipLedger()`. Whether it's a direct tip, group p
 │  │  AdminNav ──→ Tip Groups admin page                                │    │
 │  │  Feature Flag ──→ tipBankSettings.enabled per-location             │    │
 │  │  Integrity ──→ GET /api/tips/integrity drift check                 │    │
+│  │  Time Clock ──→ assignEmployeeToTemplateGroup() at clock-in       │    │
+│  │  Templates ──→ Admin-defined TipGroupTemplate → runtime groups    │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -311,6 +314,65 @@ Each segment stores a `splitJson` with exact percentages. Tips are allocated usi
 - `tip-group:member-joined` — Member added
 - `tip-group:member-left` — Member left
 - `tip-group:closed` — Group ended
+
+---
+
+## Team Pools (Admin Templates)
+
+Team Pools (Skill 286) add an admin-managed layer on top of Dynamic Tip Groups. Instead of employees creating ad-hoc groups, managers pre-configure team templates that are offered at clock-in.
+
+### How Templates Work
+
+1. **Admin creates templates** in Settings > Tips > "Tip Group Teams"
+   - Each template has a name (e.g., "Bar Team"), allowed roles, and default split mode
+   - Only active templates appear at clock-in
+   - Empty `allowedRoleIds` means all roles are eligible
+
+2. **Employee clocks in** → system fetches eligible templates for their role
+   - If templates exist, a Group Picker Dialog appears
+   - Employee selects a template or "No Group" (if standalone allowed)
+
+3. **Runtime group created/joined** via `assignEmployeeToTemplateGroup()`
+   - Single-group invariant enforced (can only be in one group)
+   - First employee selecting a template creates the runtime TipGroup
+   - Subsequent employees join the existing runtime group
+   - Each join creates a new time segment with recalculated splits
+
+### Template → Runtime Group Relationship
+
+```
+TipGroupTemplate (admin config)
+  ↓ templateId
+TipGroup (runtime, created at first clock-in)
+  ↓
+TipGroupMembership (one per employee)
+  ↓
+TipGroupSegment (new segment on each membership change)
+```
+
+### Table Tip Ownership Modes
+
+| Mode | Behavior |
+|------|----------|
+| `ITEM_BASED` | Co-owners get per-item credit via OrderOwnership splits (default) |
+| `PRIMARY_SERVER_OWNS_ALL` | Primary server gets 100% of dine-in tips; helpers compensated via role tip-outs only |
+
+### Control Settings
+
+| Setting | Default | Effect |
+|---------|---------|--------|
+| `allowStandaloneServers` | `true` | Shows "No Group" option at clock-in |
+| `allowEmployeeCreatedGroups` | `true` | Shows "Start New Group" on `/crew/tip-group` |
+| `tableTipOwnershipMode` | `ITEM_BASED` | How co-owned table tips are split |
+
+### API Endpoints
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/tips/group-templates` | List all templates |
+| POST | `/api/tips/group-templates` | Create template |
+| GET/PUT/DELETE | `/api/tips/group-templates/[id]` | Single template CRUD |
+| GET | `/api/tips/group-templates/eligible` | Eligible templates for clock-in |
 
 ---
 
@@ -738,6 +800,11 @@ interface TipBankSettings {
   requireManagerApprovalForCashOut: boolean  // Default: true
   defaultPayoutMethod: 'cash' | 'payroll'   // Default: 'payroll'
   tipAttributionTiming: 'check_opened' | 'check_closed' | 'check_both'
+  // Team Pools (Skill 286)
+  tableTipOwnershipMode: 'ITEM_BASED' | 'PRIMARY_SERVER_OWNS_ALL'  // Default: 'ITEM_BASED'
+  allowStandaloneServers: boolean     // Default: true
+  allowEmployeeCreatedGroups: boolean // Default: true
+
   tipGuide: {
     basis: 'pre_discount' | 'gross_subtotal' | 'net_total'
     percentages: number[]             // e.g., [15, 18, 20, 25]
@@ -856,6 +923,17 @@ interface TipBankSettings {
 | GET | `/api/reports/tip-groups` | `tips.view_ledger` | Group report with segments |
 | GET | `/api/reports/payroll-export` | `tips.process_payout` | CSV/JSON payroll export |
 
+### Group Templates (Skill 286)
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/api/tips/group-templates` | `tips.manage_rules` | List all templates for location |
+| POST | `/api/tips/group-templates` | `tips.manage_rules` | Create new template |
+| GET | `/api/tips/group-templates/[id]` | `tips.manage_rules` | Get single template |
+| PUT | `/api/tips/group-templates/[id]` | `tips.manage_rules` | Update template |
+| DELETE | `/api/tips/group-templates/[id]` | `tips.manage_rules` | Soft delete template |
+| GET | `/api/tips/group-templates/eligible` | None | Eligible templates for employee at clock-in |
+
 ### Order Ownership
 
 | Method | Endpoint | Auth | Description |
@@ -876,7 +954,7 @@ interface TipBankSettings {
 
 ## Database Models
 
-### New Models (11 total)
+### New Models (12 total)
 
 | Model | Purpose | Key Fields |
 |-------|---------|------------|
@@ -891,6 +969,7 @@ interface TipBankSettings {
 | `TipAdjustment` | Manager adjustment audit record | `createdById`, `adjustmentType`, `contextJson` |
 | `CashTipDeclaration` | Shift cash tip declarations | `employeeId`, `shiftId`, `amountCents`, `source` |
 | `TipDebt` | Chargeback remainder tracking | `employeeId`, `originalAmountCents`, `remainingCents`, `status` (open/partial/recovered/written_off) |
+| `TipGroupTemplate` | Admin-defined team pool templates | `locationId`, `name`, `allowedRoleIds` (Json), `defaultSplitMode`, `active`, `sortOrder` |
 
 ### Modified Models
 
@@ -900,6 +979,8 @@ interface TipBankSettings {
 | `TipTransaction` | +`ccFeeAmountCents` (Skill 260), +`kind` (Skill 277), +`idempotencyKey` (Skill 274) |
 | `TipLedgerEntry` | +`idempotencyKey` (Skill 274) |
 | `Role` | +`tipWeight` (Skill 282 — default 1.0, used for role_weighted tip group splits) |
+| `TipGroup` | +`templateId` (Skill 286 — links runtime group to admin template) |
+| `TimeClockEntry` | +`selectedTipGroupId` (Skill 286 — tracks group joined at clock-in) |
 
 ---
 
@@ -918,6 +999,7 @@ interface TipBankSettings {
 | `tip-recalculation.ts` | ~600 | Adjustments, group/order replay, deltas |
 | `tip-compliance.ts` | ~270 | IRS 8% rule, tip-out caps, pool eligibility |
 | `tip-payroll-export.ts` | ~300 | Payroll aggregation, CSV generation |
+| `tip-group-templates.ts` | ~229 | Admin template domain logic (Skill 286) |
 | `index.ts` | ~155 | Barrel export |
 
 ### API Routes (src/app/api/tips/)
@@ -934,6 +1016,9 @@ interface TipBankSettings {
 | `tips/groups/[id]/members/route.ts` | POST, PUT, DELETE |
 | `tips/adjustments/route.ts` | GET, POST |
 | `tips/cash-declarations/route.ts` | GET, POST |
+| `tips/group-templates/route.ts` | GET, POST |
+| `tips/group-templates/[id]/route.ts` | GET, PUT, DELETE |
+| `tips/group-templates/eligible/route.ts` | GET |
 
 ### Other API Routes
 
@@ -1018,6 +1103,8 @@ interface TipBankSettings {
 | **281** | Wire Void Tip Reversal | 32 | `handleTipChargeback()` called from void-payment route |
 | **282** | Weighted Tip Splits | 33 | `Role.tipWeight`, `buildWeightedSplitJson()`, role_weighted splitMode |
 | **283** | Tip Groups Admin Page | 34 | `/tip-groups` admin page with status/date filters, AdminNav link |
+| **284** | TIP BANK Clean | 35 | Deleted legacy `TipBank` model, migrated employee tips API to TipLedgerEntry |
+| **286** | Team Pools (Admin Templates) | 36 | TipGroupTemplate model, clock-in group picker, PRIMARY_SERVER_OWNS_ALL mode, template CRUD API, time-clock integration |
 
 ### Skill Dependencies
 
@@ -1040,7 +1127,8 @@ interface TipBankSettings {
  ├── 272 (Integrity Check API)
  ├── 277 (Qualified Tips / IRS)
  ├── 279 (API Permission Hardening)
- └── 280 (Feature Flag Guard)
+ ├── 280 (Feature Flag Guard)
+ └── 284 (TIP BANK Clean) ──→ 286 (Team Pools: Templates + Clock-In Picker)
 ```
 
 ---
@@ -1120,3 +1208,6 @@ Check:
 - ~~Reports read from legacy TipBank/TipShare models~~ → **DONE** (Skill 273)
 - ~~No admin page for viewing tip groups~~ → **DONE** (Skill 283)
 - ~~Only equal splits implemented for tip groups~~ → **DONE** (Skill 282, role_weighted)
+- ~~No admin-managed team pool templates~~ → **DONE** (Skill 286, TipGroupTemplate model)
+- ~~No clock-in group selection~~ → **DONE** (Skill 286, Group Picker Dialog)
+- ~~No table tip ownership mode control~~ → **DONE** (Skill 286, PRIMARY_SERVER_OWNS_ALL)
