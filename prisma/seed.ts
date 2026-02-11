@@ -216,6 +216,15 @@ async function main() {
     // Settings
     'settings.view', 'settings.edit', 'settings.tax', 'settings.receipts',
     'settings.payments', 'settings.dual_pricing',
+    'settings.venue', 'settings.menu', 'settings.inventory', 'settings.floor',
+    'settings.customers', 'settings.team', 'settings.tips', 'settings.reports',
+    'settings.hardware', 'settings.security', 'settings.integrations',
+    'settings.automation', 'settings.monitoring',
+    // Tips
+    'tips.view_own', 'tips.view_all', 'tips.share', 'tips.collect',
+    'tips.manage_rules', 'tips.manage_bank', 'tips.manage_groups',
+    'tips.override_splits', 'tips.manage_settings', 'tips.perform_adjustments',
+    'tips.view_ledger', 'tips.process_payout',
   ]
 
   const managerRole = await prisma.role.upsert({

@@ -1,5 +1,73 @@
 # Tips & Tip Bank Domain Changelog
 
+## 2026-02-11 — Skills 287-288: Tip Group Admin UI & Segment Timeline
+
+### Skills Completed
+- **287**: Tip Group Manager Admin UI — Manager dashboard for active tip group lifecycle on `/settings/tips` (Section 9)
+- **288**: Group History & Segment Timeline — Timeline visualization of group split changes on `/settings/tips` (Section 10)
+- **Fix**: Manager Role Permissions — Added 25 missing permissions (13 `settings.*` + 12 `tips.*`) to Manager role in seed.ts and live database
+
+### What Was Done
+
+**ActiveGroupManager Component (Skill 287 — 712 lines):**
+- Expandable group cards showing status, split mode, owner, member count
+- Member rows with name, role, join time, split %, stale badge (>12h active)
+- Add Member modal with employee picker dropdown
+- Remove member, transfer ownership, close group actions
+- Pending join request section with approve/reject
+- Manual tip adjustment modal (employee, amount, reason)
+- All mutations via existing APIs with toast feedback
+
+**GroupHistoryTimeline Component (Skill 288 — 429 lines):**
+- Group selector dropdown (active + recently closed groups)
+- Summary card: status, duration, total members
+- Vertical timeline with colored dots and SVG icons:
+  - Indigo (group_created), Green (member_joined), Red (member_left)
+  - Blue (segment_change), Gray (group_closed)
+- Split percentage badges on segment events
+- Earnings summary table sorted by amount
+
+**Page Integration:**
+- Added 2 imports + 2 conditional renders to `/settings/tips` page after Section 8
+- Components receive `locationId` + `employeeId` props from parent
+
+**Manager Role Permissions Fix:**
+- Discovered Manager role was missing `settings.tips` permission (and 24 others)
+- SettingsNav checks `canView(permission)` — hiding entire Tips section
+- Added to `prisma/seed.ts` managerPermissions array: 13 `settings.*` + 12 `tips.*`
+- Updated live SQLite database via direct SQL
+- Deduplicated any duplicate entries
+
+### Files Created
+- `src/components/tips/ActiveGroupManager.tsx` — Section 9 component
+- `src/components/tips/GroupHistoryTimeline.tsx` — Section 10 component
+- `docs/skills/287-TIP-GROUP-MANAGER-ADMIN-UI.md` — Skill documentation
+- `docs/skills/288-GROUP-HISTORY-SEGMENT-TIMELINE.md` — Skill documentation
+
+### Files Modified
+- `src/app/(admin)/settings/tips/page.tsx` — 2 imports + 2 component renders
+- `prisma/seed.ts` — 25 new permissions added to Manager role
+
+### APIs Used (No New Routes)
+| API | Method | Section | Purpose |
+|-----|--------|---------|---------|
+| `/api/tips/groups?locationId=X&status=active` | GET | 9 | List active groups |
+| `/api/tips/groups/[id]` | PUT | 9 | Transfer ownership |
+| `/api/tips/groups/[id]` | DELETE | 9 | Close group |
+| `/api/tips/groups/[id]/members` | POST | 9 | Add member |
+| `/api/tips/groups/[id]/members` | PUT | 9 | Approve join |
+| `/api/tips/groups/[id]/members?employeeId=X` | DELETE | 9 | Remove member |
+| `/api/tips/adjustments` | POST | 9 | Manual adjustment |
+| `/api/employees?locationId=X` | GET | 9 | Employee picker |
+| `/api/reports/tip-groups?locationId=X` | GET | 10 | Group list |
+| `/api/reports/tip-groups?locationId=X&groupId=X` | GET | 10 | Full segment data |
+
+### TypeScript Status
+- 0 errors after all changes
+- Production build passes cleanly
+
+---
+
 ## 2026-02-11 — Skill 286: Tip Bank Team Pools (Admin-Defined Templates)
 
 ### Skills Completed

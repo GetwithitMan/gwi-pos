@@ -95,6 +95,8 @@
 | 284 | TIP BANK Clean (Legacy Removal) | DONE | Tips | 250-283 | Deleted `TipBank` model, migrated employee tips API to TipLedgerEntry |
 | 285 | KDS Browser Compatibility | DONE | KDS, Hardware | 102 | `@csstools/postcss-oklab-function` transpiles oklch()→rgb() for Chrome 108+ KDS devices, pair page redirect fix |
 | 286 | Tip Bank Team Pools | DONE | Tips | 250, 252, 265 | Admin-defined TipGroupTemplate, clock-in group picker, PRIMARY_SERVER_OWNS_ALL mode, allowStandaloneServers, allowEmployeeCreatedGroups, template CRUD API, eligible API, time-clock integration |
+| 287 | Tip Group Manager Admin UI | DONE | Tips | 252, 256, 283 | ActiveGroupManager component on /settings/tips (Section 9): expandable group cards, member management, add/remove/approve, transfer ownership, close group, stale member detection (>12h), manual adjustment modal |
+| 288 | Group History & Segment Timeline | DONE | Tips | 252, 258 | GroupHistoryTimeline component on /settings/tips (Section 10): group selector, vertical timeline with colored dots (join/leave/segment/close), split % badges, earnings summary table, buildTimeline() merge function |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -297,9 +299,9 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| Tips & Tip Bank | 36 | 0 | 0 | 36 | 100% |
+| Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| **TOTAL** | **182** | **7** | **13** | **202** | **93%** |
+| **TOTAL** | **184** | **7** | **13** | **204** | **93%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -419,6 +421,14 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-11 — Tip Group Admin UI & Timeline, Skills 287-288)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 287 | Tip Group Manager Admin UI | ActiveGroupManager component (712 lines) on /settings/tips Section 9: expandable group cards, member management (add/remove/approve), transfer ownership, close group, stale member detection (>12h badge), manual adjustment modal. Uses all existing tip group APIs. |
+| 288 | Group History & Segment Timeline | GroupHistoryTimeline component (429 lines) on /settings/tips Section 10: group selector dropdown, summary card (status/duration/members), vertical timeline with colored dots and SVG icons (indigo=created, green=joined, red=left, blue=segment, gray=closed), split percentage badges, earnings summary table. Uses existing reports/tip-groups API. |
+| - | Manager Role Permissions Fix | Added 25 missing permissions to Manager role: 13 settings.* permissions + 12 tips.* permissions. Updated both seed.ts and live SQLite database. |
 
 ## Recently Completed (2026-02-10 — Complete Tip Bank System, Skills 250-267)
 

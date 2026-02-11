@@ -7,6 +7,8 @@ import { ToggleSwitch, ToggleRow, SettingsSaveBar } from '@/components/admin/set
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
 import type { TipBankSettings, TipShareSettings } from '@/lib/settings'
+import { ActiveGroupManager } from '@/components/tips/ActiveGroupManager'
+import { GroupHistoryTimeline } from '@/components/tips/GroupHistoryTimeline'
 
 // ────────────────────────────────────────────
 // Template Types
@@ -904,6 +906,20 @@ export default function TipSettingsPage() {
             </div>
           )}
         </section>
+
+        {/* ═══════════════════════════════════════════════════════════════
+            Section 9: Active Tip Group Manager
+            ═══════════════════════════════════════════════════════════════ */}
+        {locationId && employee?.id && (
+          <ActiveGroupManager locationId={locationId} employeeId={employee.id} />
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════════
+            Section 10: Group History & Timeline
+            ═══════════════════════════════════════════════════════════════ */}
+        {locationId && employee?.id && (
+          <GroupHistoryTimeline locationId={locationId} employeeId={employee.id} />
+        )}
 
         {/* ── Template Form Modal ────────────────────────────────────────── */}
         {showTemplateForm && (

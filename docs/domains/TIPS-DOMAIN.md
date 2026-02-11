@@ -3,7 +3,7 @@
 **Domain ID:** 24
 **Status:** Complete
 **Created:** February 10, 2026
-**Skills:** 250–286
+**Skills:** 250–288
 
 ## Overview
 
@@ -67,6 +67,7 @@ PM Mode: Tips
 | **Reporting** | Group reports, tip reports | `/api/reports/tip-groups/` |
 | **Settings** | Tip configuration admin | `/api/settings/tips/`, `/settings/tips` |
 | **Team Pools** | Admin-defined templates, clock-in selection, ownership modes | `src/lib/domain/tips/tip-group-templates.ts`, `/api/tips/group-templates/`, `/api/tips/group-templates/[id]/`, `/api/tips/group-templates/eligible/` |
+| **Admin Management** | Active group manager, segment timeline | `src/components/tips/ActiveGroupManager.tsx`, `src/components/tips/GroupHistoryTimeline.tsx` |
 | **Dashboard** | Employee self-service tip bank | `/crew/tip-bank` |
 
 ## Integration Points
@@ -124,6 +125,8 @@ PM Mode: Tips
 | 259 | Cash Tip Declaration & Compliance | 10 |
 | 260-284 | Enhancements, Hardening & Cleanup | 11-35 |
 | 286 | Team Pools (Admin Templates) | 36 |
+| 287 | Tip Group Manager Admin UI | 37 |
+| 288 | Group History & Segment Timeline | 38 |
 
 ## Non-Responsibilities
 

@@ -1,6 +1,6 @@
 # GWI POS — Tip Bank System
 
-**Skills:** 250–286 | **Domain:** Tips & Tip Bank | **Status:** Complete | **Date:** 2026-02-11
+**Skills:** 250–288 | **Domain:** Tips & Tip Bank | **Status:** Complete | **Date:** 2026-02-11
 
 ---
 
@@ -60,7 +60,7 @@ Everything flows through `postToTipLedger()`. Whether it's a direct tip, group p
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                       TIP BANK SYSTEM (Skills 250-283)                      │
+│                       TIP BANK SYSTEM (Skills 250-288)                      │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
@@ -1062,6 +1062,8 @@ interface TipBankSettings {
 |-----------|------|---------|
 | `SharedOwnershipModal` | `src/components/tips/SharedOwnershipModal.tsx` | Co-server table/tab ownership |
 | `ManualTipTransferModal` | `src/components/tips/ManualTipTransferModal.tsx` | Employee-to-employee tip transfer |
+| `ActiveGroupManager` | `src/components/tips/ActiveGroupManager.tsx` | Manager dashboard for active tip group lifecycle (Skill 287) |
+| `GroupHistoryTimeline` | `src/components/tips/GroupHistoryTimeline.tsx` | Timeline visualization of group segment changes (Skill 288) |
 
 ---
 
@@ -1105,6 +1107,8 @@ interface TipBankSettings {
 | **283** | Tip Groups Admin Page | 34 | `/tip-groups` admin page with status/date filters, AdminNav link |
 | **284** | TIP BANK Clean | 35 | Deleted legacy `TipBank` model, migrated employee tips API to TipLedgerEntry |
 | **286** | Team Pools (Admin Templates) | 36 | TipGroupTemplate model, clock-in group picker, PRIMARY_SERVER_OWNS_ALL mode, template CRUD API, time-clock integration |
+| **287** | Tip Group Manager Admin UI | 37 | ActiveGroupManager component on /settings/tips (Section 9): group cards, member management, stale detection, manual adjustments |
+| **288** | Group History & Segment Timeline | 38 | GroupHistoryTimeline component on /settings/tips (Section 10): vertical timeline, split badges, earnings table |
 
 ### Skill Dependencies
 
@@ -1128,7 +1132,9 @@ interface TipBankSettings {
  ├── 277 (Qualified Tips / IRS)
  ├── 279 (API Permission Hardening)
  ├── 280 (Feature Flag Guard)
- └── 284 (TIP BANK Clean) ──→ 286 (Team Pools: Templates + Clock-In Picker)
+ ├── 284 (TIP BANK Clean) ──→ 286 (Team Pools: Templates + Clock-In Picker)
+ ├── 287 (Tip Group Manager Admin UI) ──→ depends on 252, 256, 283
+ └── 288 (Group History & Segment Timeline) ──→ depends on 252, 258
 ```
 
 ---
@@ -1211,3 +1217,5 @@ Check:
 - ~~No admin-managed team pool templates~~ → **DONE** (Skill 286, TipGroupTemplate model)
 - ~~No clock-in group selection~~ → **DONE** (Skill 286, Group Picker Dialog)
 - ~~No table tip ownership mode control~~ → **DONE** (Skill 286, PRIMARY_SERVER_OWNS_ALL)
+- ~~No admin UI for managing active tip groups~~ → **DONE** (Skill 287, ActiveGroupManager on /settings/tips)
+- ~~No visualization of group segment/split history~~ → **DONE** (Skill 288, GroupHistoryTimeline on /settings/tips)
