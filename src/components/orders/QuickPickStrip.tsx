@@ -1,5 +1,7 @@
 'use client'
 
+import { useState, useCallback, useRef, useEffect, type CSSProperties } from 'react'
+
 interface QuickPickStripProps {
   selectedItemId?: string | null
   selectedItemQty?: number
@@ -50,6 +52,67 @@ export function QuickPickStrip({
 }: QuickPickStripProps) {
   const isDisabled = !selectedItemId
   const courseNumbers = Array.from({ length: courseCount }, (_, i) => i + 1)
+
+  // Custom delay pad state
+  const [showDelayPad, setShowDelayPad] = useState(false)
+  const [delayInput, setDelayInput] = useState('')
+  const padRef = useRef<HTMLDivElement>(null)
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  // Close pad on outside click
+  useEffect(() => {
+    if (!showDelayPad) return
+    const handler = (e: MouseEvent) => {
+      if (padRef.current && !padRef.current.contains(e.target as Node) &&
+          btnRef.current && !btnRef.current.contains(e.target as Node)) {
+        setShowDelayPad(false)
+        setDelayInput('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showDelayPad])
+
+  const handleDelayDigit = useCallback((digit: number) => {
+    setDelayInput(prev => {
+      const next = prev + String(digit)
+      // Cap at 3 digits (max 999 minutes)
+      return next.length <= 3 ? next : prev
+    })
+  }, [])
+
+  const handleDelayBackspace = useCallback(() => {
+    setDelayInput(prev => prev.slice(0, -1))
+  }, [])
+
+  const handleDelayConfirm = useCallback(() => {
+    const mins = parseInt(delayInput, 10)
+    if (mins > 0 && onSetDelay) {
+      onSetDelay(mins)
+    }
+    setShowDelayPad(false)
+    setDelayInput('')
+  }, [delayInput, onSetDelay])
+
+  // Custom delay is active when activeDelay is set but doesn't match a preset
+  const isCustomDelayActive = activeDelay != null && activeDelay !== 5 && activeDelay !== 10
+
+  // Compute fixed position for the pad based on the button's location
+  const [padPosition, setPadPosition] = useState<{ top: number; left: number } | null>(null)
+
+  useEffect(() => {
+    if (showDelayPad && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect()
+      const padWidth = 220
+      // Center the pad vertically on screen, anchored to the left of the button
+      const viewportHeight = window.innerHeight
+      const top = Math.max(10, (viewportHeight - 420) / 2)
+      setPadPosition({
+        top,
+        left: rect.left - padWidth - 12,
+      })
+    }
+  }, [showDelayPad])
 
   return (
     <div
@@ -109,7 +172,7 @@ export function QuickPickStrip({
 
       {/* Delay preset buttons — apply to selected item(s) */}
       {onSetDelay && (
-        <>
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
           <Divider />
           <SectionLabel text="DLY" />
           <GutterButton
@@ -128,7 +191,114 @@ export function QuickPickStrip({
             color="blue"
             fontSize="11px"
           />
-        </>
+          {/* Custom delay button */}
+          <button
+            ref={btnRef}
+            onClick={() => {
+              setShowDelayPad(!showDelayPad)
+              setDelayInput(isCustomDelayActive ? String(activeDelay) : '')
+            }}
+            style={{
+              width: '36px',
+              height: '32px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '8px',
+              border: isCustomDelayActive || showDelayPad
+                ? '2px solid rgba(59, 130, 246, 0.6)'
+                : '1px solid rgba(255, 255, 255, 0.08)',
+              background: isCustomDelayActive
+                ? 'rgba(59, 130, 246, 0.2)'
+                : showDelayPad
+                  ? 'rgba(59, 130, 246, 0.1)'
+                  : 'rgba(255, 255, 255, 0.04)',
+              color: isCustomDelayActive
+                ? '#60a5fa'
+                : showDelayPad
+                  ? '#60a5fa'
+                  : '#94a3b8',
+              fontSize: isCustomDelayActive ? '10px' : '11px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              padding: 0,
+            }}
+          >
+            {isCustomDelayActive ? `${activeDelay}m` : '···'}
+          </button>
+
+          {/* Floating custom delay number pad — fixed position to escape overflow clipping */}
+          {showDelayPad && padPosition && (
+            <div
+              ref={padRef}
+              style={{
+                position: 'fixed',
+                top: `${padPosition.top}px`,
+                left: `${padPosition.left}px`,
+                zIndex: 1000,
+                background: 'rgba(15, 23, 42, 0.97)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                borderRadius: '14px',
+                padding: '14px',
+                backdropFilter: 'blur(20px)',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+                width: '220px',
+              }}
+            >
+              {/* Header */}
+              <div style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                color: '#64748b',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                textAlign: 'center',
+                marginBottom: '6px',
+              }}>
+                Custom Delay
+              </div>
+
+              {/* Display */}
+              <div style={{
+                textAlign: 'center',
+                padding: '10px 12px',
+                marginBottom: '10px',
+                borderRadius: '10px',
+                background: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+                fontSize: '24px',
+                fontWeight: 700,
+                color: delayInput ? '#60a5fa' : '#475569',
+                minHeight: '46px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                {delayInput ? `${delayInput} min` : 'minutes'}
+              </div>
+
+              {/* Number grid: 1-9, then backspace-0-confirm */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '6px',
+              }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => (
+                  <DelayPadButton key={d} label={String(d)} onClick={() => handleDelayDigit(d)} />
+                ))}
+                <DelayPadButton label="⌫" onClick={handleDelayBackspace} color="#f87171" />
+                <DelayPadButton label="0" onClick={() => handleDelayDigit(0)} />
+                <DelayPadButton
+                  label="✓"
+                  onClick={handleDelayConfirm}
+                  color="#34d399"
+                  disabled={!delayInput || parseInt(delayInput, 10) === 0}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Course Section (only when coursing enabled) ── */}
@@ -273,6 +443,51 @@ function GutterButton({ label, isActive, isDisabled, onClick, color, fontSize = 
           e.currentTarget.style.background = 'rgba(255, 255, 255, 0.04)'
           e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.08)'
           e.currentTarget.style.color = '#94a3b8'
+        }
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+function DelayPadButton({ label, onClick, color, disabled }: {
+  label: string
+  onClick: () => void
+  color?: string
+  disabled?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        width: '100%',
+        height: '48px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '8px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        background: 'rgba(255, 255, 255, 0.05)',
+        color: disabled ? '#334155' : color || '#e2e8f0',
+        fontSize: '20px',
+        fontWeight: 600,
+        cursor: disabled ? 'default' : 'pointer',
+        transition: 'all 0.12s ease',
+        opacity: disabled ? 0.4 : 1,
+        padding: 0,
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) {
+          e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)'
+          e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.3)'
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!disabled) {
+          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
+          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)'
         }
       }}
     >
