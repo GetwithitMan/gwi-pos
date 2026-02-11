@@ -116,7 +116,6 @@ Expires in 30 min.`
       to: formatPhoneE164(to),
     })
 
-    console.log(`[Twilio] Void approval SMS sent: ${result.sid}`)
     return { success: true, messageSid: result.sid }
   } catch (error) {
     console.error('[Twilio] Failed to send void approval SMS:', error)
@@ -158,7 +157,6 @@ Give to ${serverName}. Valid 5 min.`
       to: formatPhoneE164(to),
     })
 
-    console.log(`[Twilio] Approval code SMS sent: ${result.sid}`)
     return { success: true, messageSid: result.sid }
   } catch (error) {
     console.error('[Twilio] Failed to send approval code SMS:', error)
@@ -312,7 +310,6 @@ export async function sendSMS(params: SendSMSParams): Promise<SMSResult> {
       to: formatPhoneE164(to),
     })
 
-    console.log(`[Twilio] SMS sent: ${result.sid}`)
     return { success: true, messageSid: result.sid }
   } catch (error) {
     console.error('[Twilio] Failed to send SMS:', error)

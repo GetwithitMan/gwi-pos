@@ -74,7 +74,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Prep station not found' }, { status: 404 })
     }
 
-    await db.prepStation.delete({ where: { id } })
+    await db.prepStation.update({ where: { id }, data: { deletedAt: new Date() } })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Failed to delete prep station:', error)

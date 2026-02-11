@@ -58,8 +58,6 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    console.log(`[Bottle Service] Created tier "${name}" Deposit=$${depositAmount} MinSpend=$${minimumSpend}`)
-
     return NextResponse.json({
       data: {
         id: tier.id,

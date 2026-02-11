@@ -67,7 +67,6 @@ export async function discoverDevice(serialNumber: string): Promise<DiscoveredDe
       })
 
       if (result) {
-        console.log(`[Datacap Discovery] Found ${serialNumber} at ${result.ipAddress} (attempt ${attempt + 1})`)
         return result
       }
     } catch (error) {

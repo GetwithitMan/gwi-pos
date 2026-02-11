@@ -80,7 +80,6 @@ export async function POST(
     const approved = response.cmdStatus === 'Approved'
 
     if (!approved) {
-      console.log(`[Tab AddCard] DECLINED Order=${orderId} Card=${response.cardType || 'unknown'} ...${response.cardLast4 || '????'}`)
       return NextResponse.json({
         data: {
           approved: false,
@@ -118,8 +117,6 @@ export async function POST(
         status: 'authorized',
       },
     })
-
-    console.log(`[Tab AddCard] APPROVED Order=${orderId} Card=${response.cardType} ...${response.cardLast4} Default=${makeDefault} RecordNo=${recordNo}`)
 
     return NextResponse.json({
       data: {

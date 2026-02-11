@@ -9,9 +9,10 @@ interface RouteParams {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId')
 
-    const ingredient = await db.ingredient.findUnique({
-      where: { id },
+    const ingredient = await db.ingredient.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
       include: {
         categoryRelation: {
           select: { id: true, code: true, name: true, icon: true, color: true },
@@ -418,10 +419,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const { searchParams } = new URL(request.url)
     const cascadeChildren = searchParams.get('cascadeChildren') === 'true'
     const permanent = searchParams.get('permanent') === 'true' // Hard delete
+    const locationId = searchParams.get('locationId')
 
     // Check if ingredient exists
-    const existing = await db.ingredient.findUnique({
-      where: { id },
+    const existing = await db.ingredient.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
       include: {
         _count: {
           select: {
@@ -450,42 +452,46 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         )
       }
 
-      // Hard delete - also remove menu item links
-      await db.menuItemIngredient.deleteMany({
+      // Soft delete menu item links
+      await db.menuItemIngredient.updateMany({
         where: { ingredientId: id },
+        data: { deletedAt: new Date() },
       })
 
-      // Hard delete children too
-      await db.ingredient.deleteMany({
+      // Soft delete children too
+      await db.ingredient.updateMany({
         where: { parentIngredientId: id },
+        data: { deletedAt: new Date() },
       })
 
-      // Hard delete the ingredient
-      await db.ingredient.delete({
+      // Soft delete the ingredient
+      await db.ingredient.update({
         where: { id },
+        data: { deletedAt: new Date() },
       })
 
       return NextResponse.json({ data: { message: 'Ingredient permanently deleted' } })
     }
 
-    // DEV MODE: Hard delete everything to avoid soft-delete ghost data issues
-    // TODO: Re-enable soft deletes for production (cloud sync needs them)
+    // Soft delete for production (cloud sync needs them)
 
     // Check if ingredient has child preparations
     if (existing._count.childIngredients > 0) {
       if (cascadeChildren) {
-        // Hard delete all children first — remove their menu item links too
+        // Soft delete all children first — soft delete their menu item links too
         const children = await db.ingredient.findMany({
-          where: { parentIngredientId: id },
+          where: { parentIngredientId: id, deletedAt: null },
           select: { id: true },
         })
         const childIds = children.map(c => c.id)
         if (childIds.length > 0) {
-          await db.menuItemIngredient.deleteMany({
+          await db.menuItemIngredient.updateMany({
             where: { ingredientId: { in: childIds } },
+            data: { deletedAt: new Date() },
           })
-          await db.ingredient.deleteMany({
+          await db.ingredient.updateMany({
             where: { parentIngredientId: id },
+            data: { deletedAt: new Date() },
           })
         }
       } else {
@@ -496,14 +502,16 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Remove menu item links
-    await db.menuItemIngredient.deleteMany({
+    // Soft delete menu item links
+    await db.menuItemIngredient.updateMany({
       where: { ingredientId: id },
+      data: { deletedAt: new Date() },
     })
 
-    // Hard delete the ingredient
-    await db.ingredient.delete({
+    // Soft delete the ingredient
+    await db.ingredient.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
     return NextResponse.json({ data: { message: 'Ingredient deleted' } })
   } catch (error) {

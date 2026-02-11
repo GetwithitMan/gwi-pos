@@ -39,8 +39,6 @@ export async function POST(request: NextRequest) {
 
     const error = parseError(response)
 
-    console.log(`[Datacap Sale] Invoice=${invoiceNo} Employee=${employeeId} Status=${response.cmdStatus} Auth=${response.authCode || 'N/A'}`)
-
     // Fire-and-forget: card recognition (Phase 8)
     if (response.cmdStatus === 'Approved' && response.cardholderIdHash) {
       fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/card-profiles`, {

@@ -73,8 +73,6 @@ export async function POST(request: NextRequest) {
           }),
         ])
 
-        console.log(`[Walkout Retry] COLLECTED RetryId=${walkoutRetryId} Amount=$${retry.amount} Card=...${orderCard.cardLast4}`)
-
         return NextResponse.json({
           data: {
             success: true,
@@ -104,8 +102,6 @@ export async function POST(request: NextRequest) {
             nextRetryAt: exhausted ? retry.nextRetryAt : nextRetry,
           },
         })
-
-        console.log(`[Walkout Retry] DECLINED RetryId=${walkoutRetryId} Attempt=${retry.retryCount + 1} ${exhausted ? '(EXHAUSTED)' : `NextRetry=${nextRetry.toISOString()}`}`)
 
         return NextResponse.json({
           data: {

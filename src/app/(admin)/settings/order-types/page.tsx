@@ -25,11 +25,9 @@ export default function OrderTypesPage() {
   // Load order types
   const loadOrderTypes = async (locationId: string) => {
     try {
-      console.log('Loading order types for location:', locationId)
       const response = await fetch(`/api/order-types?locationId=${locationId}&includeInactive=true`)
       if (response.ok) {
         const data = await response.json()
-        console.log('Loaded order types:', data.orderTypes)
         setOrderTypes(data.orderTypes || [])
       } else {
         console.error('Failed to load order types:', response.status)
@@ -89,8 +87,6 @@ export default function OrderTypesPage() {
 
   const handleSave = async (formData: Partial<OrderTypeConfig>) => {
     try {
-      console.log('Saving order type:', formData, 'editingType:', editingType)
-
       if (editingType?.id) {
         // Update existing
         const response = await fetch(`/api/order-types/${editingType.id}`, {
@@ -113,8 +109,6 @@ export default function OrderTypesPage() {
           ...formData,
           locationId: employee?.location?.id,
         }
-        console.log('Creating new order type with payload:', payload)
-
         const response = await fetch('/api/order-types', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -10,7 +10,6 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    console.log('[API Layout GET] Loading layout for employee:', id)
 
     const employee = await db.employee.findUnique({
       where: { id },
@@ -26,7 +25,6 @@ export async function GET(
     })
 
     if (!employee) {
-      console.log('[API Layout GET] Employee not found:', id)
       return NextResponse.json(
         { error: 'Employee not found' },
         { status: 404 }
@@ -38,16 +36,11 @@ export async function GET(
     const globalLayout = locationSettings?.posLayout as Partial<POSLayoutSettings> | undefined
     const personalLayout = employee.posLayoutSettings as Partial<POSLayoutSettings> | null
 
-    console.log('[API Layout GET] Personal layout from DB:', personalLayout ? 'exists' : 'null')
-
     const mergedLayout: POSLayoutSettings = {
       ...DEFAULT_LAYOUT_SETTINGS,
       ...(globalLayout || {}),
       ...(personalLayout || {}),
     }
-
-    console.log('[API Layout GET] Merged layout has categoryColors:', !!mergedLayout.categoryColors)
-    console.log('[API Layout GET] Merged layout has menuItemColors:', !!mergedLayout.menuItemColors)
 
     return NextResponse.json({
       layout: mergedLayout,
@@ -72,9 +65,6 @@ export async function PUT(
     const body = await request.json()
     const { layout } = body as { layout: Partial<POSLayoutSettings> }
 
-    console.log('[API Layout PUT] Received request for employee:', id)
-    console.log('[API Layout PUT] Layout data keys:', layout ? Object.keys(layout) : 'null')
-
     // Verify employee exists
     const employee = await db.employee.findUnique({
       where: { id },
@@ -90,39 +80,27 @@ export async function PUT(
     })
 
     if (!employee) {
-      console.log('[API Layout PUT] Employee not found:', id)
       return NextResponse.json(
         { error: 'Employee not found' },
         { status: 404 }
       )
     }
 
-    // Check permission - Allow all employees to customize their personal layout
-    // This is a fun personalization feature
-    const permissions = employee.role?.permissions as Record<string, string[]> | null
-    const posLayoutPermissions = permissions?.posLayout || []
-
-    // Skip permission check - all employees can customize their own layout
-    console.log('[API Layout PUT] Employee found, permissions:', posLayoutPermissions)
-
     // Merge with existing settings
     const existingLayout = employee.posLayoutSettings as Partial<POSLayoutSettings> | null
-    console.log('[API Layout PUT] Existing layout:', existingLayout ? 'exists' : 'null')
 
     const updatedLayout = {
       ...(existingLayout || {}),
       ...layout,
     }
-    console.log('[API Layout PUT] Merged layout keys:', Object.keys(updatedLayout))
 
     // Update employee - cast to Prisma.InputJsonValue for JSON field compatibility
-    const result = await db.employee.update({
+    await db.employee.update({
       where: { id },
       data: {
         posLayoutSettings: updatedLayout as Prisma.InputJsonValue,
       },
     })
-    console.log('[API Layout PUT] Update successful, result ID:', result.id)
 
     return NextResponse.json({
       success: true,

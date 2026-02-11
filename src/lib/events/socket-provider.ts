@@ -103,10 +103,6 @@ export class SocketEventProvider implements EventProvider {
       this.setConnectionStatus('connected')
       this.connectionState.reconnectAttempts = 0
 
-      if (this.config.debug) {
-        console.log(`[SocketEvents] Connected to ${serverUrl}`)
-      }
-
       // Re-subscribe to channels after reconnection
       this.subscribedChannels.forEach((channelName) => {
         this.socket?.emit('subscribe', channelName)
@@ -114,10 +110,6 @@ export class SocketEventProvider implements EventProvider {
     })
 
     this.socket.on('disconnect', (reason: string) => {
-      if (this.config.debug) {
-        console.log(`[SocketEvents] Disconnected: ${reason}`)
-      }
-
       if (reason === 'io server disconnect') {
         // Server disconnected us, don't auto-reconnect
         this.setConnectionStatus('disconnected')
@@ -140,9 +132,6 @@ export class SocketEventProvider implements EventProvider {
       this.connectionState.reconnectAttempts = attempt
       this.setConnectionStatus('reconnecting')
 
-      if (this.config.debug) {
-        console.log(`[SocketEvents] Reconnection attempt ${attempt}`)
-      }
     })
 
     this.socket.on('reconnect_failed', () => {
@@ -151,10 +140,6 @@ export class SocketEventProvider implements EventProvider {
 
     // Set up event forwarding from server
     this.socket.onAny((eventName: string, data: EventMap[EventName]) => {
-      if (this.config.debug) {
-        console.log(`[SocketEvents] Received: ${eventName}`, data)
-      }
-
       const listeners = this.eventListeners.get(eventName)
       if (listeners) {
         listeners.forEach((callback) => {
@@ -199,9 +184,6 @@ export class SocketEventProvider implements EventProvider {
     this.locationId = null
     this.setConnectionStatus('disconnected')
 
-    if (this.config.debug) {
-      console.log('[SocketEvents] Disconnected')
-    }
   }
 
   subscribeChannel(channelType: ChannelType, channelId: string): UnsubscribeFn {
@@ -210,10 +192,6 @@ export class SocketEventProvider implements EventProvider {
 
     if (this.socket?.connected) {
       this.socket.emit('subscribe', channelName)
-    }
-
-    if (this.config.debug) {
-      console.log(`[SocketEvents] Subscribed to channel: ${channelName}`)
     }
 
     return () => this.unsubscribeChannel(channelType, channelId)
@@ -227,9 +205,6 @@ export class SocketEventProvider implements EventProvider {
       this.socket.emit('unsubscribe', channelName)
     }
 
-    if (this.config.debug) {
-      console.log(`[SocketEvents] Unsubscribed from channel: ${channelName}`)
-    }
   }
 
   subscribe<T extends EventName>(
@@ -247,10 +222,6 @@ export class SocketEventProvider implements EventProvider {
     }
 
     this.eventListeners.get(eventKey)!.add(callback as EventCallback<EventName>)
-
-    if (this.config.debug) {
-      console.log(`[SocketEvents] Subscribed to event: ${eventKey}`)
-    }
 
     return () => {
       const listeners = this.eventListeners.get(eventKey)
@@ -274,10 +245,6 @@ export class SocketEventProvider implements EventProvider {
 
     const channelName = channel ? buildChannelName(channel.type, channel.id) : null
     const payload = { event, data, channel: channelName }
-
-    if (this.config.debug) {
-      console.log(`[SocketEvents] Emit: ${event}`, payload)
-    }
 
     return new Promise((resolve, reject) => {
       this.socket!.emit('event', payload, (response: { success: boolean; error?: string }) => {

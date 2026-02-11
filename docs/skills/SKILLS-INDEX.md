@@ -99,6 +99,7 @@
 | 288 | Group History & Segment Timeline | DONE | Tips | 252, 258 | GroupHistoryTimeline component on /settings/tips (Section 10): group selector, vertical timeline with colored dots (join/leave/segment/close), split % badges, earnings summary table, buildTimeline() merge function |
 | 289 | Edit Item Modal (ItemSettingsModal) | DONE | Menu | 217 | Comprehensive Edit Item modal (5 tabs: Basics, Display, Kitchen, Availability, Tax), image upload, collapsible ingredient cost breakdown, card price read-only, auto-open for new items, live sync |
 | 290 | Happy Hour Settings Page | DONE | Settings, Menu | - | Dedicated /settings/happy-hour page extracted from main settings, schedules with day/time selection, discount config, live preview, dead code cleanup |
+| 291 | Ingredient Picker Flow Fix | DONE | Menu | 211, 213 | Fix new items going to Uncategorized: normalize POST→GET data shape in handleIngredientCreated, defer loadMenu() race, needsVerification propagation verified |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -430,6 +431,7 @@ Skills that can be developed simultaneously:
 |-------|------|----------------|
 | 289 | Edit Item Modal (ItemSettingsModal) | 5-tab modal (Basics, Display & Channels, Kitchen & Print, Availability, Tax & Commission), image upload via /api/upload, collapsible ingredient cost breakdown (fetches from inventory-recipe or ingredients+cost APIs), card price read-only, auto-open for new items, live sync via useEffect. Created ItemSettingsModal.tsx (~420 lines), upload API, extended GET/PUT item API. |
 | 290 | Happy Hour Settings Page | Dedicated /settings/happy-hour page (~320 lines) extracted from main settings page. Master toggle, display name/badge config, multiple schedule blocks (day + time), discount type/value, applies-to scope, live preview. Added to SettingsNav Menu section. Removed ~200 lines of inline UI + 5 dead helper functions from main settings page. |
+| 291 | Ingredient Picker Flow Fix | Fixed new inventory items appearing under "Uncategorized" when created via "+" in Menu Builder picker. Root cause: POST response data shape mismatch (nested Prisma relations vs flat GET mapping) + race condition between optimistic update and loadMenu(). Fix: normalize POST data in handleIngredientCreated to match GET shape, defer onItemUpdated() 100ms to let optimistic render complete. Verified needsVerification=true propagates to both inventory and prep items. |
 
 ## Recently Completed (2026-02-11 — Tip Group Admin UI & Timeline, Skills 287-288)
 

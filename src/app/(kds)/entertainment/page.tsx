@@ -45,7 +45,6 @@ export default function EntertainmentKDSPage() {
       // Add timestamp to prevent any caching
       const timestamp = Date.now()
       const url = `/api/entertainment/status?locationId=${locationId}&_t=${timestamp}`
-      console.log('Fetching entertainment status:', url)
       const response = await fetch(url, {
         cache: 'no-store',
         headers: {
@@ -55,12 +54,6 @@ export default function EntertainmentKDSPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        console.log('Entertainment status received:', data.items.map((i: EntertainmentItem) => ({
-          id: i.id,
-          name: i.displayName,
-          status: i.status,
-          hasOrder: !!i.currentOrder,
-        })))
         setItems(data.items)
         // Collect all waitlist entries from all items
         const waitlistEntries: WaitlistEntry[] = data.items.flatMap((item: EntertainmentItem) =>
@@ -95,14 +88,12 @@ export default function EntertainmentKDSPage() {
       // Also refresh when page becomes visible (user switches back to tab)
       const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
-          console.log('Page became visible, refreshing entertainment status')
           fetchStatus()
         }
       }
 
       // Refresh when window gets focus
       const handleFocus = () => {
-        console.log('Window focused, refreshing entertainment status')
         fetchStatus()
       }
 
@@ -205,7 +196,6 @@ export default function EntertainmentKDSPage() {
     try {
       // Get the order item ID to properly stop the session
       const orderItemId = item.currentOrderItemId || item.currentOrder?.orderItemId
-      console.log('Stopping session for item:', itemId, 'orderItemId:', orderItemId)
 
       if (orderItemId) {
         // Stop the block time via the proper endpoint (also updates MenuItem status)
@@ -214,8 +204,6 @@ export default function EntertainmentKDSPage() {
         })
 
         if (response.ok) {
-          const result = await response.json()
-          console.log('Block time stopped:', result)
           await fetchStatus() // Refresh and wait for it
         } else {
           const data = await response.json()
@@ -224,7 +212,6 @@ export default function EntertainmentKDSPage() {
         }
       } else {
         // Fallback: just reset the entertainment item status directly
-        console.log('No orderItemId, using fallback PATCH')
         const response = await fetch('/api/entertainment/status', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -235,8 +222,6 @@ export default function EntertainmentKDSPage() {
         })
 
         if (response.ok) {
-          const result = await response.json()
-          console.log('Status updated via fallback:', result)
           await fetchStatus() // Refresh and wait for it
         } else {
           const data = await response.json()

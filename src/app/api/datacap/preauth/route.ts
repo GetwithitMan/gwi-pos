@@ -30,8 +30,6 @@ export async function POST(request: NextRequest) {
 
     const error = parseError(response)
 
-    console.log(`[Datacap PreAuth] Order=${orderId} Employee=${employeeId} Status=${response.cmdStatus} Amount=${amount} RecordNo=${response.recordNo || 'N/A'}`)
-
     return Response.json({
       data: {
         approved: response.cmdStatus === 'Approved',

@@ -5,6 +5,7 @@ import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentSta
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
+import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export async function POST(
@@ -74,11 +75,6 @@ export async function POST(
       })
     }
 
-    console.log('[API /orders/[id]/send] Order has', order.items.length, 'pending items,',
-      'held:', order.items.filter(i => i.isHeld).length, ',',
-      'delayed:', delayedItems.length, ',',
-      'sending:', itemsToProcess.length)
-
     // Short-circuit: if no items to process, return early without dispatching events
     if (itemsToProcess.length === 0) {
       return NextResponse.json({
@@ -147,12 +143,6 @@ export async function POST(
     // Route order to stations using tag-based routing engine
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)
 
-    console.log('[API /orders/[id]/send] Routing result:', {
-      stations: routingResult.manifests.map(m => m.stationName),
-      itemCount: routingResult.routingStats.totalItems,
-      unrouted: routingResult.unroutedItems.length,
-    })
-
     // Dispatch real-time socket events to KDS screens (fire and forget)
     dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {
       console.error('[API /orders/[id]/send] Socket dispatch failed:', err)
@@ -182,10 +172,10 @@ export async function POST(
       }
     }
 
-    // TODO: Trigger kitchen print job for PRINTER type stations
-    // For each manifest where type === 'PRINTER':
-    //   await PrintTemplateFactory.buildBuffer(manifest.template, ...)
-    //   await sendToPrinter(manifest.ipAddress, manifest.port, buffer)
+    // Fire kitchen print jobs for PRINTER-type stations (fire and forget)
+    printKitchenTicketsForManifests(routingResult).catch(err => {
+      console.error('[API /orders/[id]/send] Kitchen print failed:', err)
+    })
 
     // Deduct prep stock for sent items (fire and forget)
     deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {

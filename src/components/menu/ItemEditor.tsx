@@ -1152,7 +1152,6 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
       const { data } = await response.json()
       onIngredientCreated?.(data)  // Optimistic local update + socket event
-      onItemUpdated()  // Refresh parent's ingredient library
       setNewInventoryName('')
       setCreatingInventoryInCategory(null)
 
@@ -1169,6 +1168,9 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       })
       setCreatingPrepUnderParent(data.id)
       toast.success(`Created "${data.name}" — now add a prep item below`)
+
+      // Defer full refresh so optimistic update renders first (prevents race with loadMenu replacing data)
+      setTimeout(() => onItemUpdated(), 100)
     } catch (error) {
       console.error('Error creating inventory item:', error)
       toast.error('Failed to create ingredient')
@@ -1250,15 +1252,13 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
       const { data } = await response.json()
       onIngredientCreated?.(data)  // Optimistic local update + socket event
-      onItemUpdated()
 
       // Auto-link to modifier OR auto-add to ingredients
       if (linkingModifier) {
         await linkIngredient(linkingModifier.groupId, linkingModifier.modId, data.id)
         toast.success(`Created "${data.name}" and linked - pending verification`)
       } else if (showIngredientPicker) {
-        // Auto-add to ingredients when called from ingredient picker
-        // Don't rely on ingredientsLibrary being updated, use the data we got from API
+        // Auto-add to ingredients when called from green ingredient picker
         const newIngredients = [...ingredients, {
           id: '',
           ingredientId: data.id,
@@ -1281,6 +1281,9 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
 
       setNewPrepName('')
       setCreatingPrepUnderParent(null)
+
+      // Defer full refresh so optimistic update renders first
+      setTimeout(() => onItemUpdated(), 100)
     } catch (error) {
       console.error('Error creating prep item:', error)
       toast.error('Failed to create prep item')

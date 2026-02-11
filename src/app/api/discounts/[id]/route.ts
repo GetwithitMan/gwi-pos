@@ -145,8 +145,9 @@ export async function DELETE(
       )
     }
 
-    await db.discountRule.delete({
+    await db.discountRule.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

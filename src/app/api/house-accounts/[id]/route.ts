@@ -8,9 +8,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId')
 
-    const account = await db.houseAccount.findUnique({
-      where: { id },
+    const account = await db.houseAccount.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
       include: {
         customer: { select: { id: true, firstName: true, lastName: true } },
         transactions: { take: 50, orderBy: { createdAt: 'desc' } },
@@ -47,7 +48,10 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
 
-    const existing = await db.houseAccount.findUnique({ where: { id } })
+    const locationId = body.locationId || request.nextUrl.searchParams.get('locationId')
+    const existing = await db.houseAccount.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
+    })
     if (!existing) {
       return NextResponse.json({ error: 'Account not found' }, { status: 404 })
     }
@@ -84,9 +88,10 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId')
 
-    const account = await db.houseAccount.findUnique({
-      where: { id },
+    const account = await db.houseAccount.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
       include: { _count: { select: { transactions: true } } },
     })
 
@@ -111,7 +116,7 @@ export async function DELETE(
       return NextResponse.json({ success: true, message: 'Account closed (has transaction history)' })
     }
 
-    await db.houseAccount.delete({ where: { id } })
+    await db.houseAccount.update({ where: { id }, data: { deletedAt: new Date() } })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Failed to delete account:', error)

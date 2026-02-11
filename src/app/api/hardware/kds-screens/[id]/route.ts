@@ -158,9 +158,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'KDS screen not found' }, { status: 404 })
     }
 
-    // Delete the screen (cascade will remove station links)
-    await db.kDSScreen.delete({
+    // Soft delete the screen
+    await db.kDSScreen.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

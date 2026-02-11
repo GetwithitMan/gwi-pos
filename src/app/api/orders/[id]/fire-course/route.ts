@@ -58,8 +58,6 @@ export async function POST(
       })
     }
 
-    console.log(`[API /fire-course] Firing course ${courseNumber} for order ${id} — ${order.items.length} items`)
-
     const now = new Date()
     const updatedItemIds: string[] = []
 
@@ -123,11 +121,6 @@ export async function POST(
 
     // Route order items to stations using tag-based routing engine
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)
-
-    console.log(`[API /fire-course] Course ${courseNumber} routing:`, {
-      stations: routingResult.manifests.map(m => m.stationName),
-      itemCount: routingResult.routingStats.totalItems,
-    })
 
     // Dispatch real-time socket events to KDS screens (fire and forget)
     dispatchNewOrder(order.locationId, routingResult, { async: true }).catch((err) => {

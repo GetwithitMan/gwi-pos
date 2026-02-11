@@ -10,7 +10,5 @@ export async function POST() {
   const blocked = checkSimulatedReaderAccess()
   if (blocked) return blocked
 
-  console.log('[simulated-reader] Transaction cancelled')
-
   return NextResponse.json({ status: 'cancelled' })
 }

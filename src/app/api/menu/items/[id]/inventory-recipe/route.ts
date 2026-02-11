@@ -252,16 +252,18 @@ export async function DELETE(
       return NextResponse.json({ error: 'Recipe not found' }, { status: 404 })
     }
 
-    // Use transaction for atomic delete
+    // Use transaction for atomic soft delete
     await db.$transaction(async (tx) => {
-      // Delete ingredients first (cascade should handle this, but being explicit)
-      await tx.menuItemRecipeIngredient.deleteMany({
+      // Soft delete ingredients first
+      await tx.menuItemRecipeIngredient.updateMany({
         where: { recipeId: recipe.id },
+        data: { deletedAt: new Date() },
       })
 
-      // Delete recipe
-      await tx.menuItemRecipe.delete({
+      // Soft delete recipe
+      await tx.menuItemRecipe.update({
         where: { id: recipe.id },
+        data: { deletedAt: new Date() },
       })
     })
 

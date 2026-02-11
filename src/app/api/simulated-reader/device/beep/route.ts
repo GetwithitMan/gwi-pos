@@ -10,7 +10,5 @@ export async function POST() {
   const blocked = checkSimulatedReaderAccess()
   if (blocked) return blocked
 
-  console.log('[simulated-reader] Beep triggered')
-
   return NextResponse.json({ status: 'ok', beeped: true })
 }

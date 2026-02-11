@@ -73,8 +73,8 @@ export function DatacapPaymentProcessor({
         onSuccess({ ...result, tipAmount })
       }
     },
-    onDeclined: (reason) => {
-      console.log('[DatacapPaymentProcessor] Declined:', reason)
+    onDeclined: (_reason) => {
+      // Decline handled by parent via onDeclined callback
     },
     onError: (err) => {
       console.error('[DatacapPaymentProcessor] Error:', err)

@@ -10,6 +10,17 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
     const { name, color, categoryType, categoryShow, printerIds } = body
+    const locationId = body.locationId || request.nextUrl.searchParams.get('locationId')
+
+    // Verify the category belongs to this location before updating
+    if (locationId) {
+      const existing = await db.category.findFirst({
+        where: { id, locationId },
+      })
+      if (!existing) {
+        return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+      }
+    }
 
     const category = await db.category.update({
       where: { id },
@@ -58,10 +69,21 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId')
+
+    // Get category info before deletion for socket dispatch and locationId verification
+    const category = await db.category.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
+      select: { locationId: true }
+    })
+
+    if (!category) {
+      return NextResponse.json({ error: 'Category not found' }, { status: 404 })
+    }
 
     // Check if category has items
     const itemCount = await db.menuItem.count({
-      where: { categoryId: id }
+      where: { categoryId: id, deletedAt: null }
     })
 
     if (itemCount > 0) {
@@ -71,13 +93,7 @@ export async function DELETE(
       )
     }
 
-    // Get category info before deletion for socket dispatch
-    const category = await db.category.findUnique({
-      where: { id },
-      select: { locationId: true }
-    })
-
-    await db.category.delete({ where: { id } })
+    await db.category.update({ where: { id }, data: { deletedAt: new Date() } })
 
     // Dispatch socket event for real-time menu structure update
     if (category) {

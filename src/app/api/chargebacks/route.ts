@@ -62,8 +62,6 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    console.log(`[Chargeback] Created case ${chargebackCase.id} Card=...${cardLast4} Amount=$${amount} AutoMatch=${matchedOrderId ? 'Yes' : 'No'}`)
-
     return NextResponse.json({
       data: {
         id: chargebackCase.id,

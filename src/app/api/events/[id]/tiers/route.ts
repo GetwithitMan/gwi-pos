@@ -127,7 +127,6 @@ export async function POST(
 
     if (soldTickets > 0 && event.status === 'on_sale') {
       // Can add new tiers but warn
-      console.log(`Adding tier to event ${id} with ${soldTickets} tickets sold`)
     }
 
     // Get next sort order if not provided

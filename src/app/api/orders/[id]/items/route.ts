@@ -91,9 +91,6 @@ export async function POST(
       return apiError.badRequest('No items provided', ERROR_CODES.ORDER_EMPTY)
     }
 
-    // Debug: Log the incoming items
-    console.log('[API /orders/[id]/items] Received items:', JSON.stringify(items, null, 2))
-
     // Use a transaction to ensure atomic append
     const result = await db.$transaction(async (tx) => {
       // Get existing order with current items

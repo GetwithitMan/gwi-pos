@@ -122,7 +122,6 @@ export async function POST(
     const error = parseError(response)
 
     if (!approved) {
-      console.log(`[Tab Close] DECLINED Order=${orderId} Card=${capturedCard.cardType} ...${capturedCard.cardLast4}`)
       return NextResponse.json({
         data: {
           success: false,
@@ -168,8 +167,6 @@ export async function POST(
           })
         ),
     ])
-
-    console.log(`[Tab Close] CAPTURED Order=${orderId} Card=${capturedCard.cardType} ...${capturedCard.cardLast4} Amount=$${purchaseAmount} Tip=$${captureResult.tipAmount || 0} TipMode=${tipMode}`)
 
     // Dispatch open orders changed so all terminals refresh (fire-and-forget)
     dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId }, { async: true }).catch(() => {})

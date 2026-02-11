@@ -137,7 +137,6 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      console.log(`[GenerateAllSeats] Generated seats for ${results.length} tables (${skipped} skipped)`)
     }
 
     dispatchFloorPlanUpdate(locationId, { async: true })

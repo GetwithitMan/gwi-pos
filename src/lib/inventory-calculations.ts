@@ -1747,7 +1747,14 @@ export async function deductPrepStockForOrder(
               ? toNumber(ingredient.standardQuantity)
               : 1
 
-          const totalQty = baseQty * itemQty
+          let totalQty = baseQty * itemQty
+
+          // Apply unit conversion if link unit differs from ingredient's standard unit
+          const linkUnit = (link as { unit?: string | null }).unit
+          if (linkUnit && ingredient.standardUnit && linkUnit !== ingredient.standardUnit) {
+            const converted = convertUnits(totalQty, linkUnit, ingredient.standardUnit)
+            if (converted !== null) totalQty = converted
+          }
 
           // Add the ingredient itself if it's a daily count item
           if (ingredient.isDailyCountItem) {
@@ -1837,8 +1844,6 @@ export async function deductPrepStockForOrder(
 
     // Execute atomically
     await db.$transaction(operations)
-
-    console.log(`[PrepStock] Deducted ${deductedItems.length} prep items for order ${orderId}`)
 
     return {
       success: true,
@@ -2065,8 +2070,6 @@ export async function restorePrepStockForVoid(
     })
 
     await db.$transaction(operations)
-
-    console.log(`[PrepStock] Restored ${restoredItems.length} prep items for voided order ${orderId}`)
 
     return {
       success: true,

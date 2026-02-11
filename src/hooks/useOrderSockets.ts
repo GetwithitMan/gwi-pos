@@ -53,7 +53,6 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
 
     // Named handlers so we can remove them explicitly on cleanup
     const onConnect = () => {
-      console.log('[Order Socket] Connected')
       setIsConnected(true)
 
       // Join location room via join_station (server joins location:{locationId} room)
@@ -65,7 +64,6 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
     }
 
     const onDisconnect = () => {
-      console.log('[Order Socket] Disconnected')
       setIsConnected(false)
     }
 
@@ -102,8 +100,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       callbacksRef.current.onEntertainmentStatusChanged?.(payload)
     }
 
-    const onJoined = (response: { success: boolean; rooms: number }) => {
-      console.log('[Order Socket] Joined rooms:', response.rooms)
+    const onJoined = (_response: { success: boolean; rooms: number }) => {
     }
 
     async function initSocket() {

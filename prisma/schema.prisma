@@ -78,6 +78,7 @@ model Location {
   // Tip Sharing
   tipOutRules    TipOutRule[]
   tipShares      TipShare[]
+  tipPools       TipPool[]
   tipPoolEntries TipPoolEntry[]
 
   // Tip Bank Ledger (Skill 250)
@@ -133,6 +134,7 @@ model Location {
   eventPricingTiers EventPricingTier[]
   eventTableConfigs EventTableConfig[]
   upsellEvents      UpsellEvent[]
+  upsellConfigs     UpsellConfig[]
 
   // Inventory & Tax (multi-tenancy)
   taxRules              TaxRule[]
@@ -174,13 +176,15 @@ model Location {
   modifierGroupTemplates ModifierGroupTemplate[]
 
   // Hardware Management
-  printers       Printer[]
-  kdsScreens     KDSScreen[]
-  stations       Station[]
-  terminals      Terminal[]
-  printRules     PrintRule[]
-  printJobs      PrintJob[]
-  paymentReaders PaymentReader[]
+  printers          Printer[]
+  kdsScreens        KDSScreen[]
+  kdsScreenStations KDSScreenStation[]
+  stations          Station[]
+  terminals         Terminal[]
+  printRules        PrintRule[]
+  printRoutes       PrintRoute[]
+  printJobs         PrintJob[]
+  paymentReaders    PaymentReader[]
 
   // Order Cards (multi-card tabs)
   orderCards OrderCard[]
@@ -2158,8 +2162,9 @@ model OrderDiscount {
 // ============================================
 
 model UpsellConfig {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   // Trigger
   triggerType       String // item, category, order_condition
@@ -2368,8 +2373,9 @@ model AuditLog {
 // ============================================
 
 model TipPool {
-  id         String @id @default(cuid())
+  id         String   @id @default(cuid())
   locationId String
+  location   Location @relation(fields: [locationId], references: [id])
 
   name        String // "Bar Pool", "Server Pool"
   description String?
@@ -4702,9 +4708,10 @@ model Printer {
   syncedAt  DateTime?
 
   // Relations
-  printJobs  PrintJob[]
-  printRules PrintRule[]
-  terminals  Terminal[] @relation("TerminalReceiptPrinter") // Terminals using this as receipt printer
+  printJobs   PrintJob[]
+  printRules  PrintRule[]
+  printRoutes PrintRoute[]
+  terminals   Terminal[] @relation("TerminalReceiptPrinter") // Terminals using this as receipt printer
 
   @@unique([locationId, name])  // Same IP can be used multiple times with different names/roles
   @@index([locationId])
@@ -4851,6 +4858,8 @@ model KDSScreen {
 
 model KDSScreenStation {
   id          String      @id @default(cuid())
+  locationId  String
+  location    Location    @relation(fields: [locationId], references: [id])
   kdsScreenId String
   kdsScreen   KDSScreen   @relation(fields: [kdsScreenId], references: [id], onDelete: Cascade)
   stationId   String
@@ -4866,6 +4875,7 @@ model KDSScreenStation {
 
 
   @@unique([kdsScreenId, stationId])
+  @@index([locationId])
   @@index([kdsScreenId])
   @@index([stationId])
 }
@@ -5056,6 +5066,48 @@ model PrintRule {
   @@index([menuItemId])
   @@index([modifierId])
   @@index([ruleLevel])
+}
+
+// ============================================
+// PRINT ROUTES (Named Print Routing Configuration)
+// Configurable routes for directing tickets to specific printers
+// with failover support and route-specific settings
+// ============================================
+
+model PrintRoute {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  name       String              // "Pizza Printer 1", "Bar Printer"
+  routeType  String              // "category" | "item_type" | "station" | "custom"
+  isActive   Boolean  @default(true)
+  priority   Int      @default(0)
+
+  // Routing criteria
+  categoryIds    Json?   // Array of category IDs this route handles
+  itemTypes      Json?   // Array of item types (food, liquor, etc.)
+  stationId      String? // Specific station
+
+  // Target printer
+  printerId      String?
+  printer        Printer? @relation(fields: [printerId], references: [id])
+
+  // Backup printer for failover
+  backupPrinterId String?
+  failoverTimeout Int?    @default(5000) // ms before trying backup
+
+  // Settings
+  settings    Json?    // RouteSpecificSettings JSON
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  syncedAt   DateTime?
+
+  @@index([locationId])
+  @@index([routeType])
+  @@index([priority])
 }
 
 model PrintJob {

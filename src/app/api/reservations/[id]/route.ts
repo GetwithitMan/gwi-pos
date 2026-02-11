@@ -92,7 +92,7 @@ export async function DELETE(
       return NextResponse.json({ success: true, message: 'Reservation cancelled' })
     }
 
-    await db.reservation.delete({ where: { id } })
+    await db.reservation.update({ where: { id }, data: { deletedAt: new Date() } })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Failed to delete reservation:', error)

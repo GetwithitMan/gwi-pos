@@ -147,7 +147,6 @@ export function useKDSSockets(options: UseKDSSocketsOptions): UseKDSSocketsRetur
 
         // Connection events
         socket.on('connect', () => {
-          console.log('[KDS Socket] Connected')
           setIsConnected(true)
           setConnectionError(null)
           setReconnectAttempts(0)
@@ -161,8 +160,7 @@ export function useKDSSockets(options: UseKDSSocketsOptions): UseKDSSocketsRetur
           })
         })
 
-        socket.on('disconnect', (reason: unknown) => {
-          console.log('[KDS Socket] Disconnected:', reason)
+        socket.on('disconnect', (_reason: unknown) => {
           setIsConnected(false)
         })
 
@@ -175,7 +173,6 @@ export function useKDSSockets(options: UseKDSSocketsOptions): UseKDSSocketsRetur
         // KDS Events
         socket.on('kds:order-received', (data: unknown) => {
           const orderData = data as KDSOrderReceivedEvent
-          console.log('[KDS Socket] New order received:', orderData.orderNumber)
 
           const newOrder: KDSOrder = {
             ...orderData,
@@ -205,7 +202,6 @@ export function useKDSSockets(options: UseKDSSocketsOptions): UseKDSSocketsRetur
 
         socket.on('kds:item-status', (data: unknown) => {
           const update = data as KDSItemStatusUpdateEvent
-          console.log('[KDS Socket] Item status update:', update.itemId, update.status)
 
           setOrders((prev) =>
             prev.map((order) => {
@@ -223,7 +219,6 @@ export function useKDSSockets(options: UseKDSSocketsOptions): UseKDSSocketsRetur
 
         socket.on('kds:order-bumped', (data: unknown) => {
           const update = data as KDSOrderBumpedEvent
-          console.log('[KDS Socket] Order bumped:', update.orderId)
 
           // Remove order from display if it's fully served
           if (update.allItemsServed) {
@@ -235,14 +230,12 @@ export function useKDSSockets(options: UseKDSSocketsOptions): UseKDSSocketsRetur
 
         socket.on('entertainment:session-update', (data: unknown) => {
           const update = data as EntertainmentSessionUpdateEvent
-          console.log('[KDS Socket] Entertainment update:', update.action, update.tableName)
 
           if (onEntertainmentUpdate) onEntertainmentUpdate(update)
         })
 
         // Confirmation of room join
-        socket.on('joined', (response: { success: boolean; rooms: number }) => {
-          console.log('[KDS Socket] Joined rooms:', response.rooms)
+        socket.on('joined', (_response: { success: boolean; rooms: number }) => {
         })
       } catch (error) {
         console.error('[KDS Socket] Failed to initialize:', error)

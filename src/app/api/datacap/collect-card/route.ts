@@ -24,8 +24,6 @@ export async function POST(request: NextRequest) {
 
     const error = parseError(response)
 
-    console.log(`[Datacap CollectCard] Reader=${readerId} Status=${response.cmdStatus} Name=${response.cardholderName || 'N/A'} Card=${response.cardType || 'N/A'} ...${response.cardLast4 || 'N/A'}`)
-
     return Response.json({
       data: {
         success: response.cmdStatus === 'Success' || response.cmdStatus === 'Approved',

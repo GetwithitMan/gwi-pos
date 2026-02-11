@@ -55,8 +55,6 @@ export async function POST(request: Request) {
     )
   }
 
-  console.log(`[simulated-reader] Processing: $${amount.toFixed(2)} ${tranType} for order ${invoice}${tipAmount > 0 ? ` (tip: $${tipAmount.toFixed(2)})` : ''}`)
-
   // Simulate realistic reader delay (800-1500ms for tap)
   await delay(randomBetween(800, 1500))
 
@@ -71,7 +69,6 @@ export async function POST(request: Request) {
   const refNumber = `SIM-${Date.now().toString(36).toUpperCase()}`
 
   if (card.shouldDecline) {
-    console.log(`[simulated-reader] DECLINED: ${card.cardType} ***${card.lastFour} (${entryMethod})`)
     return NextResponse.json({
       approved: false,
       status: 'DECLINED',
@@ -84,8 +81,6 @@ export async function POST(request: Request) {
       Message: 'DECLINED - Insufficient Funds',
     })
   }
-
-  console.log(`[simulated-reader] APPROVED: ${card.cardType} ***${card.lastFour} (${entryMethod}) $${amount.toFixed(2)} auth=${generateAuthCode()}`)
 
   return NextResponse.json({
     approved: true,

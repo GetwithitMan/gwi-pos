@@ -105,8 +105,9 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    await db.pizzaSpecialty.delete({
-      where: { id }
+    await db.pizzaSpecialty.update({
+      where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

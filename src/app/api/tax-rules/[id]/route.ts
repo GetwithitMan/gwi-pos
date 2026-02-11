@@ -94,7 +94,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Tax rule not found' }, { status: 404 })
     }
 
-    await prisma.taxRule.delete({ where: { id } })
+    await prisma.taxRule.update({ where: { id }, data: { deletedAt: new Date() } })
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Failed to delete tax rule:', error)

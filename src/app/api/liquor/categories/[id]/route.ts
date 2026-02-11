@@ -207,7 +207,7 @@ export async function DELETE(
       )
     }
 
-    await db.spiritCategory.delete({ where: { id } })
+    await db.spiritCategory.update({ where: { id }, data: { deletedAt: new Date() } })
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -183,8 +183,8 @@ export async function DELETE(
       )
     }
 
-    // Cascade delete handles shifts
-    await db.schedule.delete({ where: { id } })
+    // Soft delete the schedule
+    await db.schedule.update({ where: { id }, data: { deletedAt: new Date() } })
 
     return NextResponse.json({ message: 'Schedule deleted' })
   } catch (error) {

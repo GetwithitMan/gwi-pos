@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchLocationAlert } from '@/lib/socket-dispatch'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -77,8 +78,16 @@ export async function POST(req: NextRequest) {
           locationId: body.locationId,
         })
 
-        // TODO Phase 4: Send immediate alert
-        // await sendCriticalSystemAlert(healthCheck)
+        // Dispatch real-time location alert for critical system failure
+        dispatchLocationAlert(body.locationId, {
+          type: 'error',
+          title: `${body.checkType.replace(/_/g, ' ')} DOWN`,
+          message: body.errorMessage || `Critical system ${body.checkType} is not responding`,
+          dismissable: true,
+          duration: 15000,
+        }, { async: true }).catch(err => {
+          console.error('Failed to dispatch location alert:', err)
+        })
       }
     }
 

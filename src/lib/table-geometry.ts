@@ -76,9 +76,6 @@ export function getExposedEdges(
   // Early return for single table (no other tables to check against)
   if (allGroupTables.length === 0) return []
 
-  console.log(`[getExposedEdges] Checking table ${targetTable.id} at (${targetTable.posX}, ${targetTable.posY}) size ${targetTable.width}x${targetTable.height}`)
-  console.log(`[getExposedEdges] Against ${allGroupTables.length} tables in group`)
-
   const localEdges: Omit<Edge, 'tableId'>[] = [
     { start: { x: 0, y: 0 }, end: { x: targetTable.width, y: 0 }, side: 'top' },
     { start: { x: targetTable.width, y: 0 }, end: { x: targetTable.width, y: targetTable.height }, side: 'right' },
@@ -105,7 +102,6 @@ export function getExposedEdges(
         )
       })
       if (isInside) {
-        console.log(`[getExposedEdges] ${edge.side} edge REJECTED (midpoint inside another table)`)
         return false
       }
 
@@ -151,7 +147,6 @@ export function getExposedEdges(
       }
 
       if (isFlush) {
-        console.log(`[getExposedEdges] ${edge.side} edge REJECTED (flush with another table)`)
         return false
       }
 
@@ -159,15 +154,12 @@ export function getExposedEdges(
       // These often appear at small overlaps/rounding; dropping them keeps the perimeter clean
       const length = Math.hypot(edge.end.x - edge.start.x, edge.end.y - edge.start.y)
       if (length < 40) {
-        console.log(`[getExposedEdges] ${edge.side} edge REJECTED (too short: ${length}px)`)
         return false
       }
 
-      console.log(`[getExposedEdges] ${edge.side} edge KEPT (length: ${length}px)`)
       return true
     })
 
-  console.log(`[getExposedEdges] Result: ${result.length} exposed edges for table ${targetTable.id}`)
   return result
 }
 
@@ -328,11 +320,6 @@ export function distributeSeatsOnPerimeter(
   // Start from the top-left most point and follow connected edges clockwise
   const orderedEdges = traceConnectedPerimeter(worldEdges, bounds)
 
-  console.log('[distributeSeatsOnPerimeter] Traced path with', orderedEdges.length, 'edges')
-  console.log('[distributeSeatsOnPerimeter] Path order:', orderedEdges.map(e =>
-    `(${Math.round(e.start.x)},${Math.round(e.start.y)})->(${Math.round(e.end.x)},${Math.round(e.end.y)})`
-  ))
-
   const totalLength = orderedEdges.reduce((sum, e) => sum + e.length, 0)
   if (totalLength < 1) return []
 
@@ -343,14 +330,6 @@ export function distributeSeatsOnPerimeter(
   const spacing = totalLength / seatCount
   const positions: Point[] = []
   let distanceTravelled = spacing / 2 // Start half-spacing in for even distribution
-
-  console.log('[distributeSeatsOnPerimeter] Distribution:', {
-    totalPerimeter: Math.round(totalLength),
-    seatCount,
-    spacing: Math.round(spacing),
-    startOffset: Math.round(spacing / 2),
-    edgeLengths: orderedEdges.map(e => Math.round(e.length)),
-  })
 
   // Walk along the connected path and place seats at regular intervals
   for (let edgeIndex = 0; edgeIndex < orderedEdges.length; edgeIndex++) {
@@ -402,8 +381,6 @@ export function distributeSeatsOnPerimeter(
       distanceTravelled += spacing
     }
 
-    console.log(`[distributeSeatsOnPerimeter] Edge ${edgeIndex}: length=${Math.round(edgeLength)}, seats=[${seatsOnThisEdge.join(',')}], distAfter=${Math.round(distanceTravelled)}`)
-
     distanceTravelled -= edgeLength
   }
 
@@ -437,9 +414,6 @@ function traceConnectedPerimeter(
   // Calculate the centroid of the combined shape
   const centroidX = (bounds.minX + bounds.maxX) / 2
   const centroidY = (bounds.minY + bounds.maxY) / 2
-
-  console.log('[traceConnectedPerimeter] Centroid:', `(${Math.round(centroidX)}, ${Math.round(centroidY)})`)
-  console.log('[traceConnectedPerimeter] Bounds: top-left=(', bounds.minX, ',', bounds.minY, ')')
 
   // For each edge, calculate its midpoint and angle from centroid
   // We need to orient edges so they go in clockwise order around the perimeter
@@ -496,8 +470,6 @@ function traceConnectedPerimeter(
   let startAngle = Math.atan2(topLeftDx, -topLeftDy)
   if (startAngle < 0) startAngle += 2 * Math.PI
 
-  console.log('[traceConnectedPerimeter] Start angle (to top-left):', Math.round(startAngle * 180 / Math.PI), '°')
-
   // Adjust all angles relative to startAngle so we start from top-left
   const adjustedEdges = edgesWithAngles.map(e => {
     let adjustedAngle = e.angle - startAngle
@@ -508,16 +480,8 @@ function traceConnectedPerimeter(
   // Sort by adjusted angle (now 0 = top-left, going clockwise)
   adjustedEdges.sort((a, b) => a.adjustedAngle - b.adjustedAngle)
 
-  console.log('[traceConnectedPerimeter] Sorted edges (from top-left, clockwise):')
-  adjustedEdges.forEach(({ edge, angle, adjustedAngle, midX, midY }, i) => {
-    const degrees = Math.round(angle * 180 / Math.PI)
-    const adjDegrees = Math.round(adjustedAngle * 180 / Math.PI)
-    console.log(`  ${i}: adj=${adjDegrees}° (raw=${degrees}°) mid=(${Math.round(midX)},${Math.round(midY)}) ${edge.side} side`)
-  })
-
   const orderedPath = adjustedEdges.map(({ edge }) => edge)
 
-  console.log('[traceConnectedPerimeter] Final path length:', orderedPath.length, 'of', edges.length, 'edges')
   return orderedPath
 }
 
@@ -585,13 +549,6 @@ export function canPlaceTableAt<T extends TableRect>(
     excludedIds.add(movingTable.combinedWithId)
   }
 
-  console.log('[canPlaceTableAt] Checking placement:', {
-    tableId: movingTable.id,
-    pos: `(${newX}, ${newY})`,
-    size: `${movingTable.width}x${movingTable.height}`,
-    excludedIds: [...excludedIds],
-  })
-
   // Check against each individual table, NOT group bounding boxes
   const hasCollision = allTables.some(other => {
     // Skip collision check for self or group partners
@@ -613,24 +570,9 @@ export function canPlaceTableAt<T extends TableRect>(
       movingRect.top >= otherRect.bottom      // Moving table is below
     )
 
-    if (collides) {
-      console.log('[canPlaceTableAt] COLLISION with:', {
-        otherId: other.id,
-        movingRect,
-        otherRect,
-        gaps: {
-          rightToLeft: movingRect.right - otherRect.left,
-          leftToRight: otherRect.right - movingRect.left,
-          bottomToTop: movingRect.bottom - otherRect.top,
-          topToBottom: otherRect.bottom - movingRect.top,
-        }
-      })
-    }
-
     return collides
   })
 
-  console.log('[canPlaceTableAt] Result:', hasCollision ? 'BLOCKED' : 'OK')
   return !hasCollision
 }
 
@@ -907,29 +849,6 @@ export function calculateMagneticSnap(
   // Sort by score (highest first) and pick the best
   candidates.sort((a, b) => b.score - a.score)
   const best = candidates[0]
-
-  // Debug logging for troubleshooting
-  console.log('[MagneticSnap] Input:', {
-    table: `(${Math.round(draggingTable.x)}, ${Math.round(draggingTable.y)}) ${draggingTable.width}x${draggingTable.height}`,
-    otherTables: otherTables.length,
-    vSnaps: verticalSnaps.length,
-    hSnaps: horizontalSnaps.length,
-    candidates: candidates.length,
-  })
-  if (candidates.length > 1) {
-    console.log('[MagneticSnap] Top candidates:', candidates.slice(0, 5).map(c => ({
-      pos: `(${Math.round(c.x)}, ${Math.round(c.y)})`,
-      snaps: `h:${c.hSnap} v:${c.vSnap}`,
-      score: Math.round(c.score)
-    })))
-  }
-  if (best.score > 0) {
-    console.log('[MagneticSnap] Selected:', {
-      pos: `(${Math.round(best.x)}, ${Math.round(best.y)})`,
-      snaps: `h:${best.hSnap} v:${best.vSnap}`,
-      score: Math.round(best.score)
-    })
-  }
 
   return {
     x: best.x,

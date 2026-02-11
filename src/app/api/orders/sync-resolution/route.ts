@@ -352,15 +352,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Log sync audit entry
-    console.log('[SyncResolution] Batch complete:', {
-      total: transactions.length,
-      synced: successfulSyncs,
-      duplicatesBlocked,
-      voided: voidedCount,
-      failed: failedSyncs,
-    })
-
     return NextResponse.json({
       success: true,
       results,

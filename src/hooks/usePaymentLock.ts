@@ -79,10 +79,6 @@ export function usePaymentLock(options: UsePaymentLockOptions) {
           .toArray()
 
         if (unfinished.length > 0) {
-          console.log(
-            '[usePaymentLock] Found unfinished payment intents:',
-            unfinished.length
-          )
           // The caller can handle this - expose it via a getter
         }
       } catch {

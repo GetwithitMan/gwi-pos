@@ -151,6 +151,13 @@ export default function SettingsPage() {
     }))
   }
 
+  const updateClockOut = (updates: Partial<LocationSettings['clockOut']>) => {
+    setSettings(prev => ({
+      ...prev,
+      clockOut: { ...prev.clockOut, ...updates },
+    }))
+  }
+
   // Calculate example prices for display
   // Cash price is what you enter, card price is calculated (adds the fee)
   const exampleCashPrice = 10.00
@@ -891,6 +898,67 @@ export default function SettingsPage() {
               {' '}to{' '}
               <span className="font-semibold">{settings.businessDay?.dayStartTime || '04:00'}</span>
               {' '}next day. Orders at 2:00 AM count toward the previous business day.
+            </div>
+          </div>
+        </Card>
+
+        {/* Clock-Out Requirements */}
+        <Card className="p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Clock-Out Requirements</h2>
+            <p className="text-sm text-gray-500">Control what employees must complete before ending their shift</p>
+          </div>
+
+          <div className="space-y-4">
+            {/* Require Orders Settled */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Require all orders settled before clock-out</span>
+                <p className="text-xs text-gray-500">Employees must close or transfer all open orders before ending their shift</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.clockOut?.requireSettledBeforeClockOut ?? true}
+                  onChange={(e) => updateClockOut({ requireSettledBeforeClockOut: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Require Tips Adjusted */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Require tips adjusted before clock-out</span>
+                <p className="text-xs text-gray-500">Employees must confirm or adjust all tip amounts before ending their shift</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.clockOut?.requireTipsAdjusted ?? false}
+                  onChange={(e) => updateClockOut({ requireTipsAdjusted: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Allow Transfer on Clock-Out */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Allow order transfer on clock-out</span>
+                <p className="text-xs text-gray-500">When enabled, employees can transfer their open orders to another active employee instead of settling them</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.clockOut?.allowTransferOnClockOut ?? true}
+                  onChange={(e) => updateClockOut({ allowTransferOnClockOut: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
             </div>
           </div>
         </Card>

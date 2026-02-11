@@ -130,8 +130,6 @@ export async function POST(
           }),
         ])
 
-        console.log(`[Tab Auto-Increment] APPROVED Order=${orderId} Card=...${defaultCard.cardLast4} +$${dynamicIncrement} NewAuth=$${newAuthAmount} Employee=${employeeId || 'system'}`)
-
         return NextResponse.json({
           data: {
             action: 'incremented',

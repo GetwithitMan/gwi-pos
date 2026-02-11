@@ -292,9 +292,10 @@ export async function DELETE(
       )
     }
 
-    // Delete the discount
-    await db.orderDiscount.delete({
+    // Soft delete the discount
+    await db.orderDiscount.update({
       where: { id: discountId },
+      data: { deletedAt: new Date() },
     })
 
     // Recalculate order totals

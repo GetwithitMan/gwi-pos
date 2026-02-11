@@ -22,10 +22,6 @@ export default function MobileTabActions({ tabId, employeeId }: MobileTabActions
     setActionState('processing')
 
     // These will emit socket events to the terminal
-    // For now, log the intent
-    console.log(`[Mobile] Action: ${pendingAction} Tab=${tabId} Employee=${employeeId}`)
-    console.log(`[Mobile] Would emit: ${MOBILE_EVENTS.TAB_CLOSE_REQUEST}`)
-
     // Simulate socket event
     try {
       switch (pendingAction) {

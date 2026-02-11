@@ -31,8 +31,6 @@ export async function POST(request: NextRequest) {
 
     const error = parseError(response)
 
-    console.log(`[Datacap Adjust] RecordNo=${recordNo} Employee=${employeeId} Status=${response.cmdStatus} Purchase=${purchaseAmount} Tip=${gratuityAmount}`)
-
     return Response.json({
       data: {
         approved: response.cmdStatus === 'Approved',

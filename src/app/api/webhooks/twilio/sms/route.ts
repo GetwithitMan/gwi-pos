@@ -31,8 +31,6 @@ export async function POST(request: NextRequest) {
     const body = params.Body || ''
     const messageSid = params.MessageSid || ''
 
-    console.log(`[Twilio Webhook] SMS from ${from}: "${body}" (SID: ${messageSid})`)
-
     // Validate Twilio signature (if configured)
     const twilioSignature = request.headers.get('X-Twilio-Signature') || ''
     const webhookUrl = request.url

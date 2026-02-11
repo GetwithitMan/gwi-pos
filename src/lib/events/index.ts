@@ -192,9 +192,6 @@ export async function emitServerEvent<T extends keyof import('./types').EventMap
   data: import('./types').EventMap[T],
   channel?: { type: import('./types').ChannelType; id: string }
 ): Promise<void> {
-  // For now, log the event (useful for debugging)
-  console.log(`[ServerEvent] ${event}`, data, channel)
-
   // In the future, this will:
   // - For Socket.io: Use the server-side socket instance
   // - For Pusher: Call Pusher's REST API to trigger event

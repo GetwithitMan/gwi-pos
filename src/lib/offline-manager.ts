@@ -69,7 +69,6 @@ class OfflineManagerClass {
 
         // If we were degraded but server is now reachable, upgrade to online
         if (this.connectionStatus === 'degraded') {
-          console.log('[OfflineManager] Server reachable again, upgrading to online')
           this.connectionStatus = 'online'
           this.notifyListeners()
           // Process queues now that we're back

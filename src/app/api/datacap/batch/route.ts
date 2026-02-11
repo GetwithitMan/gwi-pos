@@ -51,8 +51,6 @@ export async function POST(request: NextRequest) {
     const response = await client.batchClose(readerId)
     const error = parseError(response)
 
-    console.log(`[Datacap Batch Close] Reader=${readerId} Status=${response.cmdStatus} BatchNo=${response.batchNo || 'N/A'}`)
-
     return Response.json({
       data: {
         success: response.cmdStatus === 'Success',

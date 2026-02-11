@@ -85,8 +85,6 @@ export async function POST(
         },
       })
 
-      console.log(`[Bottle Service] DECLINED Order=${orderId} Tier=${tier.name} Deposit=$${depositAmount}`)
-
       return NextResponse.json({
         data: {
           approved: false,
@@ -146,8 +144,6 @@ export async function POST(
         },
       }),
     ])
-
-    console.log(`[Bottle Service] OPENED Order=${orderId} Tier=${tier.name} Deposit=$${depositAmount} MinSpend=$${Number(tier.minimumSpend)} Card=${finalCardType} ...${finalCardLast4}`)
 
     return NextResponse.json({
       data: {

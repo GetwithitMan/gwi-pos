@@ -273,7 +273,7 @@ export async function DELETE(
       )
     }
 
-    await db.order.delete({ where: { id } })
+    await db.order.update({ where: { id }, data: { deletedAt: new Date() } })
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -8,9 +8,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId')
 
-    const customer = await db.customer.findUnique({
-      where: { id },
+    const customer = await db.customer.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
       include: {
         orders: {
           where: { status: { in: ['completed', 'paid'] } },
@@ -110,9 +111,10 @@ export async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
+    const locationId = body.locationId || request.nextUrl.searchParams.get('locationId')
 
-    const customer = await db.customer.findUnique({
-      where: { id },
+    const customer = await db.customer.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
     })
 
     if (!customer) {
@@ -221,9 +223,10 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
+    const locationId = request.nextUrl.searchParams.get('locationId')
 
-    const customer = await db.customer.findUnique({
-      where: { id },
+    const customer = await db.customer.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
     })
 
     if (!customer) {
@@ -236,7 +239,7 @@ export async function DELETE(
     // Soft delete
     await db.customer.update({
       where: { id },
-      data: { isActive: false },
+      data: { isActive: false, deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

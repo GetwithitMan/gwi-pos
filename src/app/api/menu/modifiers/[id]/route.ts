@@ -321,8 +321,8 @@ export async function DELETE(
   try {
     const { id } = await params
 
-    // Delete modifier group (modifiers cascade delete)
-    await db.modifierGroup.delete({ where: { id } })
+    // Soft delete modifier group
+    await db.modifierGroup.update({ where: { id }, data: { deletedAt: new Date() } })
 
     return NextResponse.json({ success: true })
   } catch (error) {

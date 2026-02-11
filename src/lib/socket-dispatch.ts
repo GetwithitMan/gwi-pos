@@ -57,10 +57,6 @@ async function broadcast(
       return false
     }
 
-    if (debug) {
-      console.log(`[SocketDispatch] Broadcast ${type} to location ${locationId}`)
-    }
-
     return true
   } catch (error) {
     // Socket dispatch failures should not block the main operation

@@ -15,7 +15,7 @@ import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { tableEvents } from '@/lib/realtime/table-events'
 import { errorCapture } from '@/lib/error-capture'
 import { calculateCardPrice, calculateCashDiscount } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 
 /**
@@ -916,6 +916,19 @@ export async function POST(
           data: { status: 'available' },
         })
       }
+    }
+
+    // Dispatch real-time order totals update (tip changed) — fire-and-forget
+    if (totalTips > 0) {
+      dispatchOrderTotalsUpdate(order.locationId, orderId, {
+        subtotal: Number(order.subtotal),
+        taxTotal: Number(order.taxTotal),
+        tipTotal: newTipTotal,
+        discountTotal: Number(order.discountTotal),
+        total: Number(order.total),
+      }, { async: true }).catch(err => {
+        console.error('Failed to dispatch order totals update:', err)
+      })
     }
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)

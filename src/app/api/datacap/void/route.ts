@@ -25,8 +25,6 @@ export async function POST(request: NextRequest) {
 
     const error = parseError(response)
 
-    console.log(`[Datacap Void] RecordNo=${recordNo} Employee=${employeeId} Status=${response.cmdStatus}`)
-
     return Response.json({
       data: {
         approved: response.cmdStatus === 'Approved',

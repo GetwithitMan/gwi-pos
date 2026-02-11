@@ -174,22 +174,6 @@ export function recalculatePizzaPrices(item: PizzaOrderItem): PizzaOrderItem {
  * @param item - Order item to debug
  * @param context - Where this validation is happening (e.g., "create", "append", "load")
  */
-export function debugPizzaPricing(item: PizzaOrderItem, context: string): void {
-  if (!item.pizzaConfig) return
-
-  const validation = validatePizzaItem(item)
-  const basePrice = getPizzaBasePrice(item.pizzaConfig)
-  const toppingsPrice = item.pizzaConfig.priceBreakdown.toppingsPrice
-  const calculatedTotal = calculatePizzaTotal(basePrice, item.modifiers)
-
-  console.log(`[Pizza Pricing Debug - ${context}]`, {
-    itemName: item.name,
-    basePrice,
-    toppingsPrice,
-    calculatedTotal,
-    storedTotal: item.pizzaConfig.totalPrice,
-    itemPrice: item.price,
-    validation,
-    hasDoubleCountIssue: hasPriceDoubleCountingIssue(item),
-  })
+export function debugPizzaPricing(_item: PizzaOrderItem, _context: string): void {
+  // No-op in production - use logger for debug output
 }

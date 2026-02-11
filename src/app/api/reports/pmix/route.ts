@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
-import { getEffectiveCost, toNumber } from '@/lib/inventory-calculations'
+import { getEffectiveCost, toNumber, convertUnits, getModifierMultiplier } from '@/lib/inventory-calculations'
 import { pmixQuerySchema, validateRequest } from '@/lib/validations'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
@@ -117,6 +117,7 @@ export async function GET(request: NextRequest) {
                         id: true,
                         costPerUnit: true,
                         yieldCostPerUnit: true,
+                        storageUnit: true,
                       },
                     },
                   },
@@ -126,11 +127,13 @@ export async function GET(request: NextRequest) {
                   select: {
                     id: true,
                     standardQuantity: true,
+                    standardUnit: true,
                     inventoryItem: {
                       select: {
                         id: true,
                         costPerUnit: true,
                         yieldCostPerUnit: true,
+                        storageUnit: true,
                       },
                     },
                   },
@@ -273,10 +276,23 @@ export async function GET(request: NextRequest) {
       for (const mod of orderItem.modifiers) {
         const modQty = (mod.quantity || 1) * orderItem.quantity
 
+        // Apply pre-modifier multiplier (NO=0, LITE=0.5x, EXTRA=2.0x, etc.)
+        const multiplier = getModifierMultiplier(mod.preModifier)
+        if (multiplier === 0) continue  // "NO" modifier — skip entirely
+
         // Path A: ModifierInventoryLink (takes precedence)
         if (mod.modifier?.inventoryLink?.inventoryItem) {
-          const linkQty = toNumber(mod.modifier.inventoryLink.usageQuantity) * modQty
-          const cost = getEffectiveCost(mod.modifier.inventoryLink.inventoryItem)
+          const link = mod.modifier.inventoryLink
+          const linkItem = link.inventoryItem!
+          let linkQty = toNumber(link.usageQuantity) * modQty * multiplier
+
+          // Apply unit conversion if usage unit differs from storage unit
+          if (link.usageUnit && linkItem.storageUnit && link.usageUnit !== linkItem.storageUnit) {
+            const converted = convertUnits(linkQty, link.usageUnit, linkItem.storageUnit)
+            if (converted !== null) linkQty = converted
+          }
+
+          const cost = getEffectiveCost(linkItem)
           itemFoodCost += linkQty * cost
           continue  // inventoryLink found — skip fallback
         }
@@ -286,7 +302,14 @@ export async function GET(request: NextRequest) {
         const ingredient = (mod.modifier as any)?.ingredient
         if (ingredient?.inventoryItem) {
           const stdQty = toNumber(ingredient.standardQuantity) || 1
-          const ingQty = stdQty * modQty
+          let ingQty = stdQty * modQty * multiplier
+
+          // Apply unit conversion if standard unit differs from storage unit
+          if (ingredient.standardUnit && ingredient.inventoryItem.storageUnit && ingredient.standardUnit !== ingredient.inventoryItem.storageUnit) {
+            const converted = convertUnits(ingQty, ingredient.standardUnit, ingredient.inventoryItem.storageUnit)
+            if (converted !== null) ingQty = converted
+          }
+
           const cost = getEffectiveCost(ingredient.inventoryItem)
           itemFoodCost += ingQty * cost
         }

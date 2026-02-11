@@ -70,9 +70,6 @@ export async function POST(
         },
       })
 
-      console.log(`[Bottle Service Re-Auth] APPROVED Order=${orderId} Increment=$${incrementAmount} NewAuth=$${newAuthAmount} Employee=${employeeId}`)
-    } else {
-      console.log(`[Bottle Service Re-Auth] DECLINED Order=${orderId} Increment=$${incrementAmount} Employee=${employeeId}`)
     }
 
     return NextResponse.json({

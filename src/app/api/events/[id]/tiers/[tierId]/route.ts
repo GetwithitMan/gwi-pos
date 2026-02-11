@@ -243,12 +243,14 @@ export async function DELETE(
     }
 
     if (hardDelete) {
-      // Hard delete - remove tier and any unsold tickets
+      // Soft delete - remove tier and any unsold tickets
+      const now = new Date()
       await db.$transaction([
-        db.ticket.deleteMany({
+        db.ticket.updateMany({
           where: { pricingTierId: tierId, status: { notIn: ['sold', 'checked_in'] } },
+          data: { deletedAt: now },
         }),
-        db.eventPricingTier.delete({ where: { id: tierId } }),
+        db.eventPricingTier.update({ where: { id: tierId }, data: { deletedAt: now } }),
       ])
 
       return NextResponse.json({

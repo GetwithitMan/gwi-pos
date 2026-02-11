@@ -149,7 +149,6 @@ export async function dispatchAlert(payload: AlertPayload): Promise<{
     if (payload.groupId) {
       const throttled = await shouldThrottle(payload.groupId, payload.severity)
       if (throttled) {
-        console.log(`Alert throttled for group ${payload.groupId} (severity: ${payload.severity})`)
         return { sent: false, channels: [], throttled: true }
       }
     }
@@ -253,8 +252,6 @@ async function sendEmailAlert(payload: AlertPayload): Promise<void> {
       html,
     })
 
-    console.log(`✅ Email alert sent for ${payload.severity} error`)
-
   } catch (error) {
     console.error('Failed to send email alert:', error)
     throw error
@@ -311,8 +308,6 @@ async function sendSlackAlert(payload: AlertPayload): Promise<void> {
       throw new Error(`Slack webhook returned ${response.status}`)
     }
 
-    console.log(`✅ Slack alert sent for ${payload.severity} error`)
-
   } catch (error) {
     console.error('Failed to send Slack alert:', error)
     throw error
@@ -355,8 +350,6 @@ ${payload.paymentId ? `Payment: ${payload.paymentId}` : ''}`
       to: toNumber,
       body: message,
     })
-
-    console.log(`✅ SMS alert sent for CRITICAL error`)
 
   } catch (error) {
     console.error('Failed to send SMS alert:', error)

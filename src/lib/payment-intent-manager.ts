@@ -105,11 +105,8 @@ class PaymentIntentManagerClass {
 
     // Listen for online events to trigger immediate sync
     window.addEventListener('online', () => {
-      console.log('[PaymentIntentManager] Connection restored, syncing...')
       this.processPendingIntents()
     })
-
-    console.log('[PaymentIntentManager] Initialized')
   }
 
   /**
@@ -166,7 +163,6 @@ class PaymentIntentManagerClass {
     await offlineDb.paymentIntents.add(intent)
     await this.logSync('payment_intent_created', intent.id, params.amount)
 
-    console.log(`[PaymentIntentManager] Intent created: ${intent.id}`)
     return intent
   }
 
@@ -194,7 +190,6 @@ class PaymentIntentManagerClass {
     await offlineDb.paymentIntents.put(intent)
     await this.logSync('payment_tokenized', intentId, intent.amount)
 
-    console.log(`[PaymentIntentManager] Token received for ${intentId}`)
     return intent
   }
 
@@ -254,7 +249,6 @@ class PaymentIntentManagerClass {
     }
 
     await offlineDb.paymentIntents.put(intent)
-    console.log(`[PaymentIntentManager] Authorization result for ${intentId}: ${intent.status}`)
     return intent
   }
 
@@ -279,7 +273,6 @@ class PaymentIntentManagerClass {
     await offlineDb.paymentIntents.put(intent)
     await this.logSync('payment_offline_queued', intentId, intent.amount)
 
-    console.log(`[PaymentIntentManager] Queued for offline capture: ${intentId}`)
     return intent
   }
 
@@ -308,7 +301,6 @@ class PaymentIntentManagerClass {
     await offlineDb.paymentIntents.put(intent)
     await this.logSync('payment_captured', intentId, intent.amount)
 
-    console.log(`[PaymentIntentManager] Captured: ${intentId}`)
     return intent
   }
 
@@ -331,7 +323,6 @@ class PaymentIntentManagerClass {
     await offlineDb.paymentIntents.put(intent)
     await this.logSync('payment_failed', intentId, intent.amount)
 
-    console.log(`[PaymentIntentManager] Failed: ${intentId} - ${error}`)
     return intent
   }
 
@@ -349,14 +340,12 @@ class PaymentIntentManagerClass {
 
     // Prevent concurrent execution
     if (this.isProcessing) {
-      console.log('[PaymentIntentManager] Already processing, skipping (generation collision)')
       return
     }
 
     if (typeof navigator !== 'undefined' && !navigator.onLine) return
 
     this.isProcessing = true
-    console.log(`[PaymentIntentManager] Processing pending intents (gen ${currentGeneration})...`)
 
     try {
       // Get all intents that need capture
@@ -375,7 +364,6 @@ class PaymentIntentManagerClass {
       const allPending = [...pendingCaptures, ...authorizedNotCaptured]
 
       if (allPending.length === 0) {
-        console.log('[PaymentIntentManager] No pending intents to sync')
         return
       }
 
@@ -391,14 +379,12 @@ class PaymentIntentManagerClass {
       }
 
       if (readyToRetry.length === 0) {
-        console.log('[PaymentIntentManager] All pending intents in backoff delay')
         return
       }
 
       // Use batch sync-resolution endpoint
       await this.batchSyncIntents(readyToRetry)
 
-      console.log(`[PaymentIntentManager] Processed ${allPending.length} intents (gen ${currentGeneration})`)
     } catch (error) {
       console.error('[PaymentIntentManager] Error processing intents:', error)
     } finally {
@@ -443,8 +429,6 @@ class PaymentIntentManagerClass {
 
       if (response.ok) {
         const data = await response.json()
-        console.log('[PaymentIntentManager] Batch sync result:', data.summary)
-
         // Update local intents based on results
         for (const result of data.results) {
           const intent = intents.find((i) => i.id === result.id)

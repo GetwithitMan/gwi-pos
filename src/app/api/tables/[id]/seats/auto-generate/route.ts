@@ -348,8 +348,6 @@ export async function POST(
         },
       })
 
-      console.log(`[Seats] Regenerated ${createdSeats.length} seats for table (deleted ${deletedCount} previous)`)
-
       return createdSeats
     })
 

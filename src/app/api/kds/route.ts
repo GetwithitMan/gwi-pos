@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
 
 // GET - Get orders for KDS display
 export async function GET(request: NextRequest) {
@@ -293,6 +294,42 @@ export async function PUT(request: NextRequest) {
           console.error('Failed to print resend ticket:', printError)
           // Don't fail the resend action if print fails
         }
+      }
+    }
+
+    // Get order info for socket dispatch (locationId, orderId, employeeId)
+    const firstItemForDispatch = await db.orderItem.findUnique({
+      where: { id: itemIds[0] },
+      select: { orderId: true, order: { select: { locationId: true, employeeId: true } } },
+    })
+
+    if (firstItemForDispatch?.order) {
+      const locationId = firstItemForDispatch.order.locationId
+      const orderId = firstItemForDispatch.orderId
+
+      if (action === 'complete' || action === 'uncomplete') {
+        // Dispatch item status change for each item
+        for (const iid of itemIds) {
+          dispatchItemStatus(locationId, {
+            orderId,
+            itemId: iid,
+            status: action === 'complete' ? 'completed' : 'active',
+            stationId: body.stationId || '',
+            updatedBy: body.employeeId || firstItemForDispatch.order.employeeId || '',
+          }, { async: true }).catch(err => {
+            console.error('Failed to dispatch item status:', err)
+          })
+        }
+      } else if (action === 'bump_order') {
+        // Dispatch order bumped event
+        dispatchOrderBumped(locationId, {
+          orderId,
+          stationId: body.stationId || '',
+          bumpedBy: body.employeeId || firstItemForDispatch.order.employeeId || '',
+          allItemsServed: true,
+        }, { async: true }).catch(err => {
+          console.error('Failed to dispatch order bumped:', err)
+        })
       }
     }
 

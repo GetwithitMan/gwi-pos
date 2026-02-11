@@ -10,8 +10,6 @@ export async function GET(request: NextRequest) {
     const locationId = searchParams.get('locationId')
     const includeInactive = searchParams.get('includeInactive') === 'true'
 
-    console.log('[Order Types API] GET request, locationId:', locationId, 'includeInactive:', includeInactive)
-
     if (!locationId) {
       return NextResponse.json(
         { error: 'locationId is required' },
@@ -27,8 +25,6 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { sortOrder: 'asc' },
     })
-
-    console.log('[Order Types API] Found', orderTypes.length, 'order types')
 
     return NextResponse.json({ orderTypes })
   } catch (error) {

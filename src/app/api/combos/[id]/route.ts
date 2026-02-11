@@ -246,25 +246,29 @@ export async function DELETE(
     })
 
     if (template) {
-      // Delete options
-      await db.comboComponentOption.deleteMany({
+      // Soft delete options
+      await db.comboComponentOption.updateMany({
         where: { comboComponentId: { in: template.components.map(c => c.id) } },
+        data: { deletedAt: new Date() },
       })
 
-      // Delete components
-      await db.comboComponent.deleteMany({
+      // Soft delete components
+      await db.comboComponent.updateMany({
         where: { comboTemplateId: template.id },
+        data: { deletedAt: new Date() },
       })
 
-      // Delete template
-      await db.comboTemplate.delete({
+      // Soft delete template
+      await db.comboTemplate.update({
         where: { id: template.id },
+        data: { deletedAt: new Date() },
       })
     }
 
-    // Delete the menu item
-    await db.menuItem.delete({
+    // Soft delete the menu item
+    await db.menuItem.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

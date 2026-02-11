@@ -123,20 +123,18 @@ function LiquorBuilderContent() {
         socketRef.current = socket
 
         socket.on('connect', () => {
-          console.log('[LiquorBuilder] Socket connected')
           // Join location room for updates
           socket.emit('join_location', { locationId: 'default' })
         })
 
         // Listen for menu updates
-        socket.on('menu:updated', (data: any) => {
-          console.log('[LiquorBuilder] Menu update received:', data)
+        socket.on('menu:updated', (_data: unknown) => {
           // Refresh data when menu changes using refs to get latest functions
           loadBottlesRef.current?.()
         })
 
       } catch (error) {
-        console.log('[LiquorBuilder] Socket not available, using polling')
+        // Socket not available, using polling
       }
     }
 

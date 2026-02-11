@@ -1051,9 +1051,6 @@ export function BartenderView({
         })) || [],
       }))
 
-      // Debug: Log the payload being sent
-      console.log('[BartenderView] Sending items payload:', JSON.stringify(itemsPayload, null, 2))
-
       const appendRes = await fetch(`/api/orders/${orderId}/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

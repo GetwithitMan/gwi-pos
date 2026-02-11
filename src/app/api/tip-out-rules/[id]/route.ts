@@ -189,9 +189,10 @@ export async function DELETE(
       })
     }
 
-    // Delete the rule
-    await db.tipOutRule.delete({
-      where: { id }
+    // Soft delete the rule
+    await db.tipOutRule.update({
+      where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({

@@ -56,13 +56,6 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
 
   // Development mode - just log to console
   if (process.env.NODE_ENV === 'development' && !apiKey) {
-    console.log('📧 [DEV] Email would be sent:', {
-      to: options.to,
-      from: options.from || defaultFrom,
-      subject: options.subject,
-      preview: options.html?.slice(0, 100) || options.text?.slice(0, 100),
-    })
-
     return {
       success: true,
       messageId: 'dev-mode-' + Date.now(),
@@ -104,8 +97,6 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
         error: data.message || `HTTP ${response.status}`,
       }
     }
-
-    console.log('✅ Email sent successfully:', data.id)
 
     return {
       success: true,

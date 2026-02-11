@@ -9,8 +9,10 @@ export async function GET(
   try {
     const { id } = await params
 
+    const locationId = request.nextUrl.searchParams.get('locationId')
+
     const item = await db.menuItem.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, deletedAt: null, ...(locationId ? { locationId } : {}) },
       include: {
         category: {
           select: { id: true, name: true, categoryType: true },
@@ -279,12 +281,17 @@ export async function DELETE(
     const { id } = await params
 
     // Get item info before deletion for socket dispatch
-    const item = await db.menuItem.findUnique({
-      where: { id },
+    const locationId = request.nextUrl.searchParams.get('locationId')
+    const item = await db.menuItem.findFirst({
+      where: { id, ...(locationId ? { locationId } : {}) },
       select: { locationId: true }
     })
 
-    await db.menuItem.delete({ where: { id } })
+    if (!item) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+    }
+
+    await db.menuItem.update({ where: { id }, data: { deletedAt: new Date() } })
 
     // Dispatch socket event for real-time update
     if (item) {

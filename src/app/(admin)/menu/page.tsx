@@ -482,12 +482,32 @@ export default function MenuManagementPage() {
     }
   }
 
-  const handleIngredientCreated = useCallback((ingredient: IngredientLibraryItem) => {
+  const handleIngredientCreated = useCallback((ingredient: any) => {
+    // Normalize POST response to match GET mapping shape
+    // POST returns raw Prisma data with nested relations (categoryRelation, parentIngredient)
+    // GET mapping flattens these into categoryName, parentName etc.
+    const normalized: IngredientLibraryItem = {
+      ...ingredient,
+      categoryName: ingredient.categoryRelation?.name || ingredient.category || null,
+      categoryId: ingredient.categoryId || null,
+      parentName: ingredient.parentIngredient?.name || null,
+      parentIngredientId: ingredient.parentIngredientId || null,
+      needsVerification: ingredient.needsVerification ?? true,
+      allowNo: ingredient.allowNo ?? true,
+      allowLite: ingredient.allowLite ?? true,
+      allowExtra: ingredient.allowExtra ?? true,
+      allowOnSide: ingredient.allowOnSide ?? false,
+      allowSwap: ingredient.allowSwap ?? false,
+      extraPrice: ingredient.extraPrice ?? 0,
+      swapModifierGroupId: ingredient.swapGroupId || null,
+      swapUpcharge: ingredient.swapUpcharge ?? 0,
+    }
+
     // Optimistic local update
     setIngredientsLibrary(prev => {
-      const exists = prev.some(ing => ing.id === ingredient.id)
+      const exists = prev.some(ing => ing.id === normalized.id)
       if (exists) return prev
-      return [...prev, ingredient]
+      return [...prev, normalized]
     })
 
     // Dispatch socket event to other terminals
@@ -496,7 +516,7 @@ export default function MenuManagementPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         event: 'ingredient:library-update',
-        data: { ingredient },
+        data: { ingredient: normalized },
       }),
     }).catch(err => {
       console.error('Failed to broadcast ingredient update:', err)

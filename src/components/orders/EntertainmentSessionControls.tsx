@@ -100,8 +100,6 @@ export function EntertainmentSessionControls({
       })
 
       if (response.ok) {
-        const result = await response.json()
-        console.log('Session stopped:', result.message)
         onSessionEnded?.()
       } else {
         const data = await response.json()

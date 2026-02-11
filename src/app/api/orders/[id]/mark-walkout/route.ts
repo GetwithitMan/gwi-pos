@@ -80,8 +80,6 @@ export async function POST(
       }
     }
 
-    console.log(`[Walkout] Order=${orderId} Amount=$${tabAmount} Cards=${order.cards.length} RetryEnabled=${walkoutRetryEnabled} Employee=${employeeId}`)
-
     return NextResponse.json({
       data: {
         success: true,

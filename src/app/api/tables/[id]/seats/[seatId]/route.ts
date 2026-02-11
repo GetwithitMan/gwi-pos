@@ -222,8 +222,6 @@ export async function DELETE(
       })
     })
 
-    console.log(`[Seats] Deleted seat ${existingSeat.seatNumber} from table ${existingSeat.table.name}`)
-
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 
     return NextResponse.json({ success: true })

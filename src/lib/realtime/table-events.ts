@@ -119,85 +119,73 @@ export const tableEvents = {
   /**
    * Emit when a table's status changes
    */
-  statusChanged: (event: TableStatusChangedEvent): void => {
-    // Today: No-op - just log for debugging
-    console.log('[TableEvents] Status changed:', event)
-
-    // Tomorrow: Real-time push
+  statusChanged: (_event: TableStatusChangedEvent): void => {
+    // No-op placeholder for future real-time push
     // pusher.trigger(`tables-${event.locationId}`, 'status-changed', event)
   },
 
   /**
    * Emit when two tables are combined
    */
-  tablesCombined: (event: TablesCombinedEvent): void => {
-    // Today: No-op - just log for debugging
-    console.log('[TableEvents] Tables combined:', event)
-
-    // Tomorrow: Real-time push
+  tablesCombined: (_event: TablesCombinedEvent): void => {
+    // No-op placeholder for future real-time push
     // pusher.trigger(`tables-${event.locationId}`, 'tables-combined', event)
   },
 
   /**
    * Emit when a combined table is split apart
    */
-  tablesSplit: (event: TablesSplitEvent): void => {
-    // Today: No-op - just log for debugging
-    console.log('[TableEvents] Tables split:', event)
-
-    // Tomorrow: Real-time push
+  tablesSplit: (_event: TablesSplitEvent): void => {
+    // No-op placeholder for future real-time push
     // pusher.trigger(`tables-${event.locationId}`, 'tables-split', event)
   },
 
   /**
    * Emit when a table's order is updated (new order, closed, total changed)
    */
-  orderUpdated: (event: TableOrderUpdatedEvent): void => {
-    // Today: No-op - just log for debugging
-    console.log('[TableEvents] Order updated:', event)
-
-    // Tomorrow: Real-time push
+  orderUpdated: (_event: TableOrderUpdatedEvent): void => {
+    // No-op placeholder for future real-time push
     // pusher.trigger(`tables-${event.locationId}`, 'order-updated', event)
   },
 
   /**
    * Emit when a virtual table group is created
    */
-  virtualGroupCreated: (event: VirtualGroupCreatedEvent): void => {
-    console.log('[TableEvents] Virtual group created:', event)
-    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-created', event)
+  virtualGroupCreated: (_event: VirtualGroupCreatedEvent): void => {
+    // No-op placeholder for future real-time push
+    // pusher.trigger(`tables-${event.locationId}`, 'virtual-group-created', event)
   },
 
   /**
    * Emit when a virtual table group is dissolved
    */
-  virtualGroupDissolved: (event: VirtualGroupDissolvedEvent): void => {
-    console.log('[TableEvents] Virtual group dissolved:', event)
-    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-dissolved', event)
+  virtualGroupDissolved: (_event: VirtualGroupDissolvedEvent): void => {
+    // No-op placeholder for future real-time push
+    // pusher.trigger(`tables-${event.locationId}`, 'virtual-group-dissolved', event)
   },
 
   /**
    * Emit when a table is added to a virtual group
    */
-  virtualGroupMemberAdded: (event: VirtualGroupMemberAddedEvent): void => {
-    console.log('[TableEvents] Virtual group member added:', event)
-    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-member-added', event)
+  virtualGroupMemberAdded: (_event: VirtualGroupMemberAddedEvent): void => {
+    // No-op placeholder for future real-time push
+    // pusher.trigger(`tables-${event.locationId}`, 'virtual-group-member-added', event)
   },
 
   /**
    * Emit when a table is removed from a virtual group
    */
-  virtualGroupMemberRemoved: (event: VirtualGroupMemberRemovedEvent): void => {
-    console.log('[TableEvents] Virtual group member removed:', event)
-    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-member-removed', event)
+  virtualGroupMemberRemoved: (_event: VirtualGroupMemberRemovedEvent): void => {
+    // No-op placeholder for future real-time push
+    // pusher.trigger(`tables-${event.locationId}`, 'virtual-group-member-removed', event)
   },
 
   /**
    * Emit when the primary table of a virtual group is changed
    */
-  virtualGroupPrimaryChanged: (event: VirtualGroupPrimaryChangedEvent): void => {
-    console.log('[TableEvents] Virtual group primary changed:', event)
-    // Tomorrow: pusher.trigger(`tables-${event.locationId}`, 'virtual-group-primary-changed', event)
+  virtualGroupPrimaryChanged: (_event: VirtualGroupPrimaryChangedEvent): void => {
+    // No-op placeholder for future real-time push
+    // pusher.trigger(`tables-${event.locationId}`, 'virtual-group-primary-changed', event)
   },
 }
 
@@ -218,27 +206,21 @@ export const tableEventListeners = {
     locationId: string,
     _callback: (event: TableStatusChangedEvent) => void
   ): (() => void) => {
-    // Today: No-op - return empty unsubscribe function
-    console.log('[TableEvents] Subscribed to status changes for location:', locationId)
-
-    // Tomorrow: Pusher subscription
+    // No-op placeholder for future Pusher subscription
     // const channel = pusher.subscribe(`tables-${locationId}`)
     // channel.bind('status-changed', callback)
     // return () => channel.unbind('status-changed', callback)
 
-    return () => {
-      console.log('[TableEvents] Unsubscribed from status changes')
-    }
+    return () => {}
   },
 
   /**
    * Subscribe to table combine events for a location
    */
   onTablesCombined: (
-    locationId: string,
+    _locationId: string,
     _callback: (event: TablesCombinedEvent) => void
   ): (() => void) => {
-    console.log('[TableEvents] Subscribed to combine events for location:', locationId)
     return () => {}
   },
 
@@ -246,10 +228,9 @@ export const tableEventListeners = {
    * Subscribe to table split events for a location
    */
   onTablesSplit: (
-    locationId: string,
+    _locationId: string,
     _callback: (event: TablesSplitEvent) => void
   ): (() => void) => {
-    console.log('[TableEvents] Subscribed to split events for location:', locationId)
     return () => {}
   },
 
@@ -257,10 +238,9 @@ export const tableEventListeners = {
    * Subscribe to table order updates for a location
    */
   onOrderUpdated: (
-    locationId: string,
+    _locationId: string,
     _callback: (event: TableOrderUpdatedEvent) => void
   ): (() => void) => {
-    console.log('[TableEvents] Subscribed to order updates for location:', locationId)
     return () => {}
   },
 }

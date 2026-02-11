@@ -60,7 +60,6 @@ export async function POST(
           error: voided ? undefined : response.textResponse,
         })
 
-        console.log(`[Tab Void] Card=...${card.cardLast4} ${voided ? 'VOIDED' : 'FAILED'} Order=${orderId}`)
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Void failed'
         results.push({ cardLast4: card.cardLast4, voided: false, error: errorMsg })
@@ -79,8 +78,6 @@ export async function POST(
         notes: reason ? `Tab voided: ${reason}` : order.notes,
       },
     })
-
-    console.log(`[Tab Void] Order=${orderId} AllVoided=${allVoided} Employee=${employeeId} Reason=${reason || 'none'}`)
 
     return NextResponse.json({
       data: {

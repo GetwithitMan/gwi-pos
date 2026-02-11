@@ -4,6 +4,7 @@ import { deductInventoryForVoidedItem, restorePrepStockForVoid, WASTE_VOID_REASO
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -221,6 +222,24 @@ export async function POST(
     await db.order.update({
       where: { id: orderId },
       data: totals,
+    })
+
+    // Dispatch real-time updates (fire-and-forget)
+    dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'voided',
+      orderId,
+    }, { async: true }).catch(err => {
+      console.error('Failed to dispatch open orders changed:', err)
+    })
+
+    dispatchOrderTotalsUpdate(order.locationId, orderId, {
+      subtotal: totals.subtotal,
+      taxTotal: totals.taxTotal,
+      tipTotal: Number(order.tipTotal) || 0,
+      discountTotal: totals.discountTotal,
+      total: totals.total,
+    }, { async: true }).catch(err => {
+      console.error('Failed to dispatch order totals update:', err)
     })
 
     return NextResponse.json({

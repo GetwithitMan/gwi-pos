@@ -419,11 +419,11 @@ export async function DELETE(
       )
     }
 
-    // Delete pay stubs first
-    await db.payStub.deleteMany({ where: { payrollPeriodId: id } })
+    // Soft delete pay stubs first
+    await db.payStub.updateMany({ where: { payrollPeriodId: id }, data: { deletedAt: new Date() } })
 
-    // Delete period
-    await db.payrollPeriod.delete({ where: { id } })
+    // Soft delete period
+    await db.payrollPeriod.update({ where: { id }, data: { deletedAt: new Date() } })
 
     return NextResponse.json({ message: 'Payroll period deleted' })
   } catch (error) {

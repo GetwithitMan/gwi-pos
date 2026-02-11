@@ -11,8 +11,6 @@ export async function GET() {
   const blocked = checkSimulatedReaderAccess()
   if (blocked) return blocked
 
-  console.log('[simulated-reader] GET /device/info')
-
   return NextResponse.json({
     serialNumber: 'SIM-001-DEV',
     firmwareVersion: 'SIM-1.0.0',

@@ -20,8 +20,6 @@ export async function POST(request: NextRequest) {
 
     const response = await client.paramDownload(readerId)
 
-    console.log(`[Datacap ParamDownload] Reader=${readerId} Status=${response.cmdStatus}`)
-
     return Response.json({
       data: {
         success: response.cmdStatus === 'Success',

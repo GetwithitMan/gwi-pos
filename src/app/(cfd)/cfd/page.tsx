@@ -43,7 +43,6 @@ function CFDContent() {
 
     // Socket.io connection will be wired when socket infrastructure is in place
     // For now, this page renders all screen states for development/preview
-    console.log(`[CFD] Connecting to terminal: ${terminalId}`)
 
     return () => {
       socket?.close()
@@ -86,9 +85,8 @@ function CFDContent() {
   }, [])
 
   // Send event back to POS terminal
-  const emitEvent = useCallback((event: string, data: unknown) => {
+  const emitEvent = useCallback((_event: string, _data: unknown) => {
     // Will be wired to Socket.io
-    console.log(`[CFD] Emit: ${event}`, data)
   }, [])
 
   const handleTipSelected = (amount: number, isPercent: boolean) => {

@@ -278,7 +278,6 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       }
 
       try {
-        console.log('[useActiveOrder] Creating order with tableId:', order.tableId, 'orderType:', order.orderType)
         const res = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

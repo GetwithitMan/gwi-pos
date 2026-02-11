@@ -44,8 +44,6 @@ export async function POST(request: NextRequest) {
         },
       })
 
-      console.log(`[Card Recognition] Returning customer: ${cardholderName || cardLast4} Visit #${updated.visitCount} Total=$${Number(updated.totalSpend).toFixed(2)}`)
-
       return NextResponse.json({
         data: {
           isNewCustomer: false,
@@ -73,8 +71,6 @@ export async function POST(request: NextRequest) {
         lastSeenAt: now,
       },
     })
-
-    console.log(`[Card Recognition] New customer: ${cardholderName || cardLast4} Card=${cardType}`)
 
     return NextResponse.json({
       data: {

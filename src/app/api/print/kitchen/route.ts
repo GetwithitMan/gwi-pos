@@ -27,8 +27,6 @@ export async function POST(request: NextRequest) {
   try {
     const body: PrintKitchenRequest = await request.json()
     const { orderId, itemIds } = body
-    console.log('[Kitchen Print] Request:', { orderId, itemIds })
-
     // Fetch order with items
     const order = await db.order.findUnique({
       where: { id: orderId },
@@ -91,10 +89,8 @@ export async function POST(request: NextRequest) {
     })
 
     if (itemsToPrint.length === 0) {
-      console.log('[Kitchen Print] No items to print')
       return NextResponse.json({ message: 'No items to print' })
     }
-    console.log('[Kitchen Print] Items to print:', itemsToPrint.length, itemsToPrint.map(i => ({ name: i.name, hasPizzaData: !!i.pizzaData })))
 
     // Get all printers for the location
     const printers = await db.printer.findMany({
@@ -108,16 +104,12 @@ export async function POST(request: NextRequest) {
     // Get default kitchen printer
     const defaultKitchenPrinter = printers.find(p => p.printerRole === 'kitchen' && p.isDefault)
       || printers.find(p => p.printerRole === 'kitchen')
-    console.log('[Kitchen Print] Found printers:', printers.length, 'Default kitchen:', defaultKitchenPrinter?.name || 'NONE')
-
     // Get pizza config for pizza-specific routing and print settings
     const pizzaConfig = await db.pizzaConfig.findUnique({
       where: { locationId: order.locationId },
     })
     const pizzaPrinterIds = (pizzaConfig?.printerIds as unknown as string[]) || []
     const printSettings: PizzaPrintSettings = (pizzaConfig?.printSettings as unknown as PizzaPrintSettings) || DEFAULT_PIZZA_PRINT_SETTINGS
-    console.log('[Kitchen Print] Pizza printer IDs:', pizzaPrinterIds)
-
     // Group items by printer
     const itemsByPrinter: Map<string, typeof itemsToPrint> = new Map()
 
@@ -152,7 +144,7 @@ export async function POST(request: NextRequest) {
 
       // If still no printer, log it
       if (targetPrinterIds.length === 0) {
-        console.log('[Kitchen Print] No printer found for item:', item.name, '(pizzaData:', !!item.pizzaData, ')')
+        console.error('[Kitchen Print] No printer found for item:', item.name)
       }
 
       // Add item to each target printer
@@ -166,16 +158,11 @@ export async function POST(request: NextRequest) {
     // Print to each printer
     const results: { printerId: string; printerName: string; success: boolean; error?: string }[] = []
 
-    console.log('[Kitchen Print] Items grouped by printer:', Array.from(itemsByPrinter.entries()).map(([pid, items]) => ({ printerId: pid, itemCount: items.length })))
-
     for (const [printerId, items] of itemsByPrinter) {
       const printer = printers.find(p => p.id === printerId)
       if (!printer) {
-        console.log('[Kitchen Print] Printer not found:', printerId)
         continue
       }
-
-      console.log('[Kitchen Print] Printing to:', printer.name, printer.ipAddress, printer.printerType)
 
       const width = printer.paperWidth === 58 ? PAPER_WIDTH['58mm'] : PAPER_WIDTH['80mm']
 
@@ -186,17 +173,12 @@ export async function POST(request: NextRequest) {
       // Build the ticket content - pass printer type and settings for formatting
       try {
         const ticketContent = buildKitchenTicket(order, items, width, printer.printerType, printSettings, printerSettings)
-        console.log('[Kitchen Print] Ticket content built, buffers:', ticketContent.length)
-
         // Build document with or without cut
         const document = printer.supportsCut
           ? buildDocument(...ticketContent)
           : buildDocumentNoCut(...ticketContent)
-        console.log('[Kitchen Print] Document size:', document.length, 'bytes')
-
         // Send to printer
         const result = await sendToPrinter(printer.ipAddress, printer.port, document)
-        console.log('[Kitchen Print] Send result:', result)
 
         // Log the print job
         await db.printJob.create({

@@ -286,12 +286,13 @@ export async function DELETE(
     }
 
     if (hardDelete) {
-      // Delete pricing tiers, table configs, and event
+      // Soft delete pricing tiers, table configs, tickets, and event
+      const now = new Date()
       await db.$transaction([
-        db.eventTableConfig.deleteMany({ where: { eventId: id } }),
-        db.eventPricingTier.deleteMany({ where: { eventId: id } }),
-        db.ticket.deleteMany({ where: { eventId: id } }),
-        db.event.delete({ where: { id } }),
+        db.eventTableConfig.updateMany({ where: { eventId: id }, data: { deletedAt: now } }),
+        db.eventPricingTier.updateMany({ where: { eventId: id }, data: { deletedAt: now } }),
+        db.ticket.updateMany({ where: { eventId: id }, data: { deletedAt: now } }),
+        db.event.update({ where: { id }, data: { deletedAt: now } }),
       ])
 
       return NextResponse.json({

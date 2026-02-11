@@ -174,9 +174,10 @@ export async function DELETE(
       })
     }
 
-    // Hard delete if no orders use this type
-    await db.orderType.delete({
+    // Soft delete if no orders use this type
+    await db.orderType.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({

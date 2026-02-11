@@ -78,9 +78,6 @@ export class LocalEventProvider implements EventProvider {
     this.subscribeChannel('location', locationId)
     this.setConnectionStatus('connected')
 
-    if (this.config.debug) {
-      console.log(`[LocalEvents] Connected to location: ${locationId}`)
-    }
   }
 
   async disconnect(): Promise<void> {
@@ -89,18 +86,11 @@ export class LocalEventProvider implements EventProvider {
     this.locationId = null
     this.setConnectionStatus('disconnected')
 
-    if (this.config.debug) {
-      console.log('[LocalEvents] Disconnected')
-    }
   }
 
   subscribeChannel(channelType: ChannelType, channelId: string): UnsubscribeFn {
     const channelName = buildChannelName(channelType, channelId)
     this.subscribedChannels.add(channelName)
-
-    if (this.config.debug) {
-      console.log(`[LocalEvents] Subscribed to channel: ${channelName}`)
-    }
 
     return () => this.unsubscribeChannel(channelType, channelId)
   }
@@ -112,9 +102,6 @@ export class LocalEventProvider implements EventProvider {
     // Remove listeners for this channel
     this.listeners = this.listeners.filter((l) => l.channelFilter !== channelName)
 
-    if (this.config.debug) {
-      console.log(`[LocalEvents] Unsubscribed from channel: ${channelName}`)
-    }
   }
 
   subscribe<T extends EventName>(
@@ -134,10 +121,6 @@ export class LocalEventProvider implements EventProvider {
 
     this.listeners.push(listener)
 
-    if (this.config.debug) {
-      console.log(`[LocalEvents] Subscribed to event: ${event}`, channelFilter || 'all channels')
-    }
-
     return () => {
       const index = this.listeners.indexOf(listener)
       if (index !== -1) {
@@ -152,10 +135,6 @@ export class LocalEventProvider implements EventProvider {
     channel?: { type: ChannelType; id: string }
   ): Promise<void> {
     const channelName = channel ? buildChannelName(channel.type, channel.id) : null
-
-    if (this.config.debug) {
-      console.log(`[LocalEvents] Emit: ${event}`, data, channelName || 'broadcast')
-    }
 
     // Find matching listeners
     const matchingListeners = this.listeners.filter((listener) => {

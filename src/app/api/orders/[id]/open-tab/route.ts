@@ -119,8 +119,6 @@ export async function POST(
         },
       })
 
-      console.log(`[Tab Open] DECLINED Order=${orderId} Card=${cardType || 'unknown'} ...${cardLast4 || '????'}`)
-
       return NextResponse.json({
         data: {
           approved: false,
@@ -177,8 +175,6 @@ export async function POST(
         },
       }),
     ])
-
-    console.log(`[Tab Open] APPROVED Order=${orderId} Card=${finalCardType} ...${finalCardLast4} Name=${finalCardholderName || 'N/A'} Auth=$${preAuthAmount} RecordNo=${recordNo}`)
 
     return NextResponse.json({
       data: {

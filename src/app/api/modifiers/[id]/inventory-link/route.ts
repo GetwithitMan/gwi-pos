@@ -217,8 +217,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Inventory link not found' }, { status: 404 })
     }
 
-    await db.modifierInventoryLink.delete({
+    await db.modifierInventoryLink.update({
       where: { id: link.id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })

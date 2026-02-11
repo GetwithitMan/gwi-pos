@@ -111,9 +111,10 @@ export async function DELETE(
       return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
     }
 
-    // Delete the printer
-    await db.printer.delete({
+    // Soft delete the printer
+    await db.printer.update({
       where: { id },
+      data: { deletedAt: new Date() },
     })
 
     return NextResponse.json({ success: true })
