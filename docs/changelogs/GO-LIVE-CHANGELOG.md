@@ -28,6 +28,32 @@
 - `/docs/skills/SKILLS-INDEX.md` -- added Skill 246
 - `/CLAUDE.md` -- added Domain 23 to registry + domain section
 
+---
+
+## 2026-02-10 — Browser Compatibility Requirement Added
+
+### Discovery
+KDS device (Chrome 108 on Android 10) showed white screen due to Tailwind v4 `oklch()` color incompatibility. Fix applied via PostCSS transpilation plugin.
+
+### Go-Live Implication
+**Browser minimum floor is now Chrome 108** (not Chrome 111 as Tailwind v4 assumes).
+
+Add to go-live hardware verification checklist:
+- [ ] Verify Chrome version on all KDS devices (must be >= 108)
+- [ ] Verify `postcss.config.mjs` includes `@csstools/postcss-oklab-function` plugin
+- [ ] Test KDS pair flow on actual hardware devices
+- [ ] Consider whether to recommend Chrome updates on KDS devices for better performance
+
+### Known Simulated/Dev Items to Clean (Updated)
+- `src/lib/datacap/simulated-defaults.ts` — SIMULATED_DEFAULTS
+- `PaymentReader.communicationMode = 'simulated'` in dev DB
+- `settings.payments.processor = 'simulated'` in dev DB
+- Demo credentials: PIN 1234 (Manager), 2345 (Server), 3456 (Bartender)
+- Debug console.logs throughout codebase
+- Dev-only routes: `/rnd/*`, `/test-floorplan`
+
+---
+
 ### Resume
 1. Say: `PM Mode: Go-Live`
 2. Review this changelog

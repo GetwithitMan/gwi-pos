@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface CommissionOrder {
   orderId: string
@@ -103,7 +102,6 @@ export default function CommissionReportPage() {
         title="Commission Report"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       <div className="max-w-6xl mx-auto">
         {/* Filters */}

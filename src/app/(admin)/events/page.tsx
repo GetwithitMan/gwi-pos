@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, teamSubNav } from '@/components/admin/AdminSubNav'
+import { toast } from '@/stores/toast-store'
 
 interface PricingTier {
   id: string
@@ -105,7 +105,6 @@ export default function EventsPage() {
           </Link>
         }
       />
-      <AdminSubNav items={teamSubNav} basePath="/employees" />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto mt-6">
@@ -180,7 +179,7 @@ function EventCard({ event, onRefresh }: { event: Event; onRefresh: () => void }
       })
       if (!res.ok) {
         const data = await res.json()
-        alert(data.error || 'Failed to publish event')
+        toast.error(data.error || 'Failed to publish event')
         return
       }
       onRefresh()

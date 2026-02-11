@@ -10,6 +10,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { FloorCanvasAPI } from './floorCanvasAPI';
 import type { FloorPlan, Fixture, Point } from '../shared/types';
+import { toast } from '@/stores/toast-store';
 
 // =============================================================================
 // TYPES
@@ -371,7 +372,7 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
 
   const handleAddRoom = () => {
     // TODO: Implement room creation via FloorCanvasAPI
-    alert('Add Room feature coming soon!\nThis will create a new room in the floor plan.');
+    toast.info('Add Room feature coming soon');
   };
 
   const handleStartRename = (room: FloorPlan, event: React.MouseEvent) => {
@@ -383,7 +384,7 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
   const handleRenameSubmit = (roomId: string) => {
     if (editingName.trim()) {
       // TODO: Implement room rename via FloorCanvasAPI
-      alert(`Rename feature coming soon!\nWould rename room to: ${editingName}`);
+      toast.info('Rename feature coming soon');
     }
     setEditingRoomId(null);
     setEditingName('');
@@ -393,7 +394,7 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
     event.stopPropagation();
     if (window.confirm(`Delete room "${room.name}"?\n\nThis will remove all fixtures in this room.`)) {
       // TODO: Implement room deletion via FloorCanvasAPI
-      alert('Delete Room feature coming soon!');
+      toast.info('Delete Room feature coming soon');
     }
   };
 

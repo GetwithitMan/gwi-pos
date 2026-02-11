@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 import {
   CreditCardIcon,
   PlusIcon,
@@ -242,7 +241,6 @@ export default function PaymentReadersPage() {
           </button>
         }
       />
-      <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
 
       {/* Reader Grid */}
       {readers.length === 0 ? (

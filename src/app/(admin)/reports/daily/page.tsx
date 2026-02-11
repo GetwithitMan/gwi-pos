@@ -8,7 +8,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface DailyReport {
   reportDate: string
@@ -218,7 +217,6 @@ export default function DailyReportPage() {
           </div>
         }
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       <div className="max-w-6xl mx-auto print:p-0 print:max-w-none">
         {isLoading ? (

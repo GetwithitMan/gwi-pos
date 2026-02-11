@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
-import { AdminNav } from '@/components/admin/AdminNav'
+import { toast } from '@/stores/toast-store'
+
 import type { EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals'
 import {
   getPricingSummary,
@@ -230,7 +231,7 @@ function TimedRentalsContent() {
   const handleSaveItem = async () => {
     if (!employee?.location?.id) return
     if (!builderForm.name.trim()) {
-      alert('Please enter an item name')
+      toast.warning('Please enter an item name')
       return
     }
 
@@ -277,11 +278,11 @@ function TimedRentalsContent() {
         loadData()
       } else {
         const error = await res.json()
-        alert(`Failed to save: ${error.error || 'Unknown error'}`)
+        toast.error(`Failed to save: ${error.error || 'Unknown error'}`)
       }
     } catch (error) {
       console.error('Failed to save item:', error)
-      alert('Failed to save item')
+      toast.error('Failed to save item')
     } finally {
       setIsSaving(false)
     }
@@ -331,10 +332,7 @@ function TimedRentalsContent() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <AdminNav />
-
-      <div className="lg:ml-64 p-6">
+    <div className="p-6 max-w-7xl mx-auto">
         <div className="mb-6 flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Timed Rentals</h1>
@@ -538,7 +536,6 @@ function TimedRentalsContent() {
             )}
           </CardContent>
         </Card>
-      </div>
 
       {/* Entertainment Builder Modal */}
       {showBuilder && (

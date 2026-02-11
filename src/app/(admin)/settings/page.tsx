@@ -10,7 +10,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { HardwareHealthWidget } from '@/components/hardware/HardwareHealthWidget'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, settingsSubNav } from '@/components/admin/AdminSubNav'
 
 export default function SettingsPage() {
   const { employee } = useAuthStore()
@@ -221,7 +220,6 @@ export default function SettingsPage() {
       <AdminPageHeader
         title="Settings"
         subtitle={locationName}
-        backHref="/orders"
         actions={
           <div className="flex items-center gap-3">
             {saveMessage && (
@@ -235,7 +233,6 @@ export default function SettingsPage() {
           </div>
         }
       />
-      <AdminSubNav items={settingsSubNav} basePath="/settings" />
 
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Cash Discount Program Section */}

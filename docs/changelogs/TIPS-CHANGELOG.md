@@ -1,5 +1,32 @@
 # Tips & Tip Bank Domain Changelog
 
+## 2026-02-10 — Skill 284: TIP BANK Clean (Legacy Model Removal)
+
+### Skills Completed
+- **284**: TIP BANK Clean — Deleted legacy `TipBank` model entirely from schema and all references
+
+### What Was Done
+1. Removed `TipBank` model from `prisma/schema.prisma`
+2. Removed all `TipBank` references from API routes and domain logic
+3. Fixed 4 production gaps discovered during cleanup:
+   - Employee tips GET route (`/api/employees/[id]/tips`) migrated from `TipBank` queries to `TipLedgerEntry`
+   - Employee tips POST route updated to use `TipShare` status transitions only (no `TipBank` writes)
+   - Removed `TipBank` relation from `Employee` model
+   - Cleaned up comments referencing legacy model
+
+### Commit
+- `d377522` — `feat: Skill 284 — TIP BANK Clean`
+
+### Architecture Note
+The Tip Bank system is now fully on the immutable ledger model:
+- `TipLedger` — Per-employee bank account (balance tracking)
+- `TipLedgerEntry` — Immutable CREDIT/DEBIT entries (the source of truth)
+- `TipTransaction` — Links entries to orders/payments
+- `TipShare` — Retained for payout lifecycle (pending → accepted → paid)
+- `TipBank` — **DELETED** (legacy model, fully replaced by ledger)
+
+---
+
 ## 2026-02-10 — Tip Bank Integration & Enhancements (Skills 281-283)
 
 ### Skills Completed

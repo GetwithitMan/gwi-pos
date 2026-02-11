@@ -45,7 +45,6 @@ import { ModifierModal } from '@/components/modifiers/ModifierModal'
 import { PizzaBuilderModal } from '@/components/pizza/PizzaBuilderModal'
 import { EntertainmentSessionStart } from '@/components/entertainment/EntertainmentSessionStart'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
-import { AdminNav } from '@/components/admin/AdminNav'
 import { FloorPlanHome } from '@/components/floor-plan'
 import { BartenderView } from '@/components/bartender'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
@@ -66,6 +65,12 @@ export default function OrdersPage() {
   const { currentOrder, startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore()
   const { hasDevAccess, setHasDevAccess } = useDevStore()
 
+  // Hydration guard: Zustand persist middleware starts with defaults (isAuthenticated=false)
+  // before rehydrating from localStorage. Without this guard, the auth redirect fires
+  // immediately on mount before the real auth state loads, causing unexpected logouts.
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
   // Shared handlers from useActiveOrder hook
   const activeOrderFull = useActiveOrder({
     locationId: employee?.location?.id,
@@ -79,13 +84,13 @@ export default function OrdersPage() {
     handleSeatChange: sharedSeatChange,
     handleResend: sharedResend,
     handleToggleExpand,
+    ensureOrderInDB,
   } = activeOrderFull
 
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [showAdminNav, setShowAdminNav] = useState(false)
 
   // Floor Plan integration (T019)
   // viewMode: 'floor-plan' = default HOME view, 'bartender' = speed-optimized bar view
@@ -197,7 +202,7 @@ export default function OrdersPage() {
 
   // Display settings modal
   const [showDisplaySettings, setShowDisplaySettings] = useState(false)
-  const [showSettingsDropdown, setShowSettingsDropdown] = useState(false)
+
   const [isEditingFavorites, setIsEditingFavorites] = useState(false)
   const [isEditingMenuItems, setIsEditingMenuItems] = useState(false)
 
@@ -507,10 +512,10 @@ export default function OrdersPage() {
   const grandTotal = pricing.total
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (hydrated && !isAuthenticated) {
       router.push('/login')
     }
-  }, [isAuthenticated, router])
+  }, [hydrated, isAuthenticated, router])
 
   // Load menu with cache-busting
   const loadMenu = useCallback(async () => {
@@ -764,164 +769,8 @@ export default function OrdersPage() {
     router.push('/login')
   }
 
-  // Save order to database (create new or update existing)
-  const saveOrderToDatabase = async (): Promise<string | null> => {
-    if (!currentOrder?.items.length || !employee) return null
-
-    try {
-      // If we already have a saved order ID, use POST append for items (prevents race conditions)
-      if (savedOrderId) {
-        // Step 1: Update metadata (if any changed)
-        const metadataChanged = currentOrder.tabName !== undefined ||
-          currentOrder.guestCount !== undefined ||
-          currentOrder.notes !== undefined
-
-        if (metadataChanged) {
-          const metadataResponse = await fetch(`/api/orders/${savedOrderId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              tabName: currentOrder.tabName,
-              guestCount: currentOrder.guestCount,
-              notes: currentOrder.notes,
-            }),
-          })
-
-          if (!metadataResponse.ok) {
-            const err = await metadataResponse.json()
-            throw new Error(err.error || 'Failed to update order metadata')
-          }
-        }
-
-        // Step 2: Append items via POST (atomic, race-safe)
-        // NOTE: This is a simplified migration. In production, you'd track which items
-        // are new vs existing and only POST new items. For now, this maintains backward
-        // compatibility with the old PUT behavior by re-creating all items.
-        // TODO: Implement proper item tracking to only POST new/changed items
-        const itemsResponse = await fetch(`/api/orders/${savedOrderId}/items`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            items: currentOrder.items.map(item => ({
-              menuItemId: item.menuItemId,
-              name: item.name,
-              price: item.price,
-              quantity: item.quantity,
-              modifiers: item.modifiers.map(mod => ({
-                modifierId: (mod.id || mod.modifierId) ?? '',
-                name: mod.name,
-                price: Number(mod.price),
-                depth: mod.depth ?? 0,
-                preModifier: mod.preModifier ?? null,
-                spiritTier: mod.spiritTier ?? null,
-                linkedBottleProductId: mod.linkedBottleProductId ?? null,
-                parentModifierId: mod.parentModifierId ?? null,
-              })),
-              ingredientModifications: item.ingredientModifications?.map(ing => ({
-                ingredientId: ing.ingredientId,
-                name: ing.name,
-                modificationType: ing.modificationType,
-                priceAdjustment: ing.priceAdjustment,
-                swappedTo: ing.swappedTo,
-              })),
-              specialNotes: item.specialNotes,
-              pizzaConfig: item.pizzaConfig,
-            })),
-          }),
-        })
-
-        if (!itemsResponse.ok) {
-          const err = await itemsResponse.json()
-          throw new Error(err.error || 'Failed to update order items')
-        }
-
-        // Sync server-calculated totals back to store
-        const updatedOrder = await itemsResponse.json()
-        if (updatedOrder.subtotal !== undefined) {
-          useOrderStore.getState().syncServerTotals({
-            subtotal: updatedOrder.subtotal,
-            discountTotal: updatedOrder.discountTotal ?? 0,
-            taxTotal: updatedOrder.taxTotal ?? 0,
-            tipTotal: updatedOrder.tipTotal,
-            total: updatedOrder.total,
-          })
-        }
-
-        return savedOrderId
-      }
-
-      // Create new order
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employeeId: employee.id,
-          locationId: employee.location?.id,
-          orderType: currentOrder.orderType,
-          orderTypeId: currentOrder.orderTypeId,
-          tableId: currentOrder.tableId,
-          tabName: currentOrder.tabName || currentOrder.tableName,
-          guestCount: currentOrder.guestCount,
-          items: currentOrder.items.map(item => ({
-            menuItemId: item.menuItemId,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            modifiers: item.modifiers.map(mod => ({
-              id: (mod.id || mod.modifierId) ?? '',
-              modifierId: mod.modifierId,
-              name: mod.name,
-              price: Number(mod.price),
-              depth: mod.depth ?? 0,
-              preModifier: mod.preModifier ?? null,
-              spiritTier: mod.spiritTier ?? null,
-              linkedBottleProductId: mod.linkedBottleProductId ?? null,
-              parentModifierId: mod.parentModifierId ?? null,
-            })),
-            ingredientModifications: item.ingredientModifications?.map(ing => ({
-              ingredientId: ing.ingredientId,
-              name: ing.name,
-              modificationType: ing.modificationType,
-              priceAdjustment: ing.priceAdjustment,
-              swappedTo: ing.swappedTo,
-            })),
-            specialNotes: item.specialNotes,
-            pizzaConfig: item.pizzaConfig, // Include pizza configuration
-          })),
-          notes: currentOrder.notes,
-          customFields: currentOrder.customFields || orderCustomFields,
-        }),
-      })
-
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error || 'Failed to save order')
-      }
-
-      const savedOrder = await response.json()
-
-      // Sync server-assigned ID + order number
-      const store = useOrderStore.getState()
-      store.updateOrderId(savedOrder.id, savedOrder.orderNumber)
-
-      // Sync server-calculated totals back to store (tax, discounts, dual pricing)
-      if (savedOrder.subtotal !== undefined) {
-        store.syncServerTotals({
-          subtotal: savedOrder.subtotal,
-          discountTotal: savedOrder.discountTotal ?? 0,
-          taxTotal: savedOrder.taxTotal ?? 0,
-          tipTotal: savedOrder.tipTotal,
-          total: savedOrder.total,
-        })
-      }
-
-      return savedOrder.id
-    } catch (error) {
-      console.error('Failed to save order:', error)
-      alert(error instanceof Error ? error.message : 'Failed to save order')
-      return null
-    }
-  }
+  // ensureOrderInDB from useActiveOrder handles: create new order, append unsaved items,
+  // correlationId mapping, and syncServerTotals — replaces the old saveOrderToDatabase function
 
   // Handle order type selection
   const handleOrderTypeSelect = (orderType: OrderTypeConfig, customFields?: OrderCustomFields) => {
@@ -1004,11 +853,12 @@ export default function OrdersPage() {
     return { valid: true }
   }
 
-  // Send to Kitchen handler
+  // Send to Kitchen handler — delegates to shared useActiveOrder hook
+  // which handles: ensureOrderInDB, isHeld filtering, per-item delays, coursing, and /send API call
   const handleSendToKitchen = async () => {
     if (!currentOrder?.items.length) return
 
-    // Validate based on workflow rules
+    // Validate based on workflow rules (page-specific logic)
     const validation = validateBeforeSend()
     if (!validation.valid) {
       if (validation.message === 'TABLE_REQUIRED') {
@@ -1037,15 +887,15 @@ export default function OrdersPage() {
 
     setIsSendingOrder(true)
     try {
-      const orderId = await saveOrderToDatabase()
-      if (orderId) {
-        // Start timers for any entertainment/timed rental items
-        await startEntertainmentTimers(orderId)
+      // Use the shared hook — handles ensureOrderInDB, isHeld filtering, delays, coursing, /send
+      await activeOrderFull.handleSendToKitchen(employee?.id)
 
-        // Print kitchen ticket
+      // After hook completes, get the order ID for printing/cleanup
+      const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId
+      if (orderId) {
+        // Print kitchen ticket (only prints non-held items)
         await printKitchenTicket(orderId)
 
-        // Show brief confirmation
         const orderNum = orderId.slice(-6).toUpperCase()
 
         // Clear the order so user can start the next one
@@ -1063,8 +913,8 @@ export default function OrdersPage() {
           setViewMode('floor-plan')
         }
 
-        // Show confirmation with instructions
-        alert(`Order #${orderNum} sent to kitchen!\n\nClick "Open Orders" button to view or add more items.`)
+        // Show confirmation
+        toast.success(`Order #${orderNum} sent to kitchen`)
       }
     } finally {
       setIsSendingOrder(false)
@@ -1197,7 +1047,7 @@ export default function OrdersPage() {
     if (!orderId) {
       setIsSendingOrder(true)
       try {
-        orderId = await saveOrderToDatabase()
+        orderId = await ensureOrderInDB(employee?.id)
         if (orderId) {
           setSavedOrderId(orderId)
         }
@@ -1291,7 +1141,7 @@ export default function OrdersPage() {
       setShowPaymentModal(true)
     } else if (result.type === 'by_item') {
       // Reload the current order to reflect changes
-      alert(`New check #${result.newOrderNumber} created with selected items.\n\nView it in Open Orders.`)
+      toast.success(`New check #${result.newOrderNumber} created with selected items`)
       setTabsRefreshTrigger(prev => prev + 1)
       // Clear current order since items were moved
       clearOrder()
@@ -1299,7 +1149,7 @@ export default function OrdersPage() {
     } else if (result.type === 'by_seat' && result.seatSplits) {
       // Split by seat - multiple checks created
       const seatCount = result.seatSplits.length
-      alert(`${seatCount} separate checks created (one per seat).\n\nView them in Open Orders.`)
+      toast.success(`${seatCount} separate checks created (one per seat)`)
       setTabsRefreshTrigger(prev => prev + 1)
       // Clear current order since items were moved to seat-specific checks
       clearOrder()
@@ -1308,7 +1158,7 @@ export default function OrdersPage() {
       // Split by table - multiple checks created (for virtual combined tables)
       const tableCount = result.tableSplits.length
       const tableNames = result.tableSplits.map(s => s.tableName).join(', ')
-      alert(`${tableCount} separate checks created (one per table: ${tableNames}).\n\nView them in Open Orders.`)
+      toast.success(`${tableCount} separate checks created (one per table: ${tableNames})`)
       setTabsRefreshTrigger(prev => prev + 1)
       // Clear current order since items were moved to table-specific checks
       clearOrder()
@@ -1340,39 +1190,8 @@ export default function OrdersPage() {
         tabName: orderData.tabName || undefined,
         guestCount: orderData.guestCount || 1,
         status: orderData.status,
-        items: orderData.items.map((item: {
-          id: string
-          menuItemId: string
-          name: string
-          price: number
-          quantity: number
-          specialNotes?: string
-          isCompleted?: boolean
-          seatNumber?: number
-          sentToKitchen?: boolean
-          modifiers?: { id: string; modifierId: string; name: string; price: number; preModifier?: string | null; depth?: number; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }[]
-        }) => ({
-          id: item.id,
-          menuItemId: item.menuItemId,
-          name: item.name,
-          price: Number(item.price),
-          quantity: item.quantity,
-          specialNotes: item.specialNotes || '',
-          isCompleted: item.isCompleted || false,
-          seatNumber: item.seatNumber,
-          sentToKitchen: item.sentToKitchen || false,
-          modifiers: (item.modifiers || []).map(mod => ({
-            id: (mod.id || mod.modifierId) ?? '',
-            modifierId: mod.modifierId,
-            name: mod.name,
-            price: Number(mod.price),
-            depth: mod.depth ?? 0,
-            preModifier: mod.preModifier ?? null,
-            spiritTier: mod.spiritTier ?? null,
-            linkedBottleProductId: mod.linkedBottleProductId ?? null,
-            parentModifierId: mod.parentModifierId ?? null,
-          })),
-        })),
+        // store.loadOrder handles all item field mapping — one path, no duplication
+        items: orderData.items || [],
         subtotal: Number(orderData.subtotal) || 0,
         discountTotal: Number(orderData.discountTotal) || 0,
         taxTotal: Number(orderData.taxTotal) || 0,
@@ -1387,7 +1206,7 @@ export default function OrdersPage() {
       setShowTabsPanel(false)
     } catch (error) {
       console.error('Failed to navigate to split order:', error)
-      alert('Failed to load split order')
+      toast.error('Failed to load split order')
     }
   }
 
@@ -1400,7 +1219,7 @@ export default function OrdersPage() {
     if (!orderId) {
       setIsSendingOrder(true)
       try {
-        orderId = await saveOrderToDatabase()
+        orderId = await ensureOrderInDB(employee?.id)
         if (orderId) {
           setSavedOrderId(orderId)
         }
@@ -1424,7 +1243,7 @@ export default function OrdersPage() {
     if (!orderId) {
       setIsSendingOrder(true)
       try {
-        orderId = await saveOrderToDatabase()
+        orderId = await ensureOrderInDB(employee?.id)
         if (orderId) {
           setSavedOrderId(orderId)
         }
@@ -1457,7 +1276,7 @@ export default function OrdersPage() {
     if (!orderId) {
       setIsSendingOrder(true)
       try {
-        orderId = await saveOrderToDatabase()
+        orderId = await ensureOrderInDB(employee?.id)
         if (orderId) {
           setSavedOrderId(orderId)
         }
@@ -1508,7 +1327,7 @@ export default function OrdersPage() {
     if (!orderId) {
       setIsSendingOrder(true)
       try {
-        orderId = await saveOrderToDatabase()
+        orderId = await ensureOrderInDB(employee?.id)
         if (orderId) {
           setSavedOrderId(orderId)
         }
@@ -2187,11 +2006,11 @@ export default function OrdersPage() {
         throttledLoadMenu()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to start session')
+        toast.error(data.error || 'Failed to start session')
       }
     } catch (error) {
       console.error('Failed to start timed session:', error)
-      alert('Failed to start session')
+      toast.error('Failed to start session')
     } finally {
       setLoadingSession(false)
     }
@@ -2245,11 +2064,11 @@ export default function OrdersPage() {
         throttledLoadMenu()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to stop session')
+        toast.error(data.error || 'Failed to stop session')
       }
     } catch (error) {
       console.error('Failed to stop session:', error)
-      alert('Failed to stop session')
+      toast.error('Failed to stop session')
     }
   }
 
@@ -2369,7 +2188,7 @@ export default function OrdersPage() {
       throttledLoadMenu()
     } catch (err) {
       console.error('Failed to start entertainment session:', err)
-      alert('Failed to start session')
+      toast.error('Failed to start session')
     }
   }
 
@@ -2409,7 +2228,7 @@ export default function OrdersPage() {
       throttledLoadMenu()
     } catch (err) {
       console.error('Failed to add entertainment to order:', err)
-      alert('Failed to add to order')
+      toast.error('Failed to add to order')
     }
   }
 
@@ -2616,7 +2435,7 @@ export default function OrdersPage() {
     )
   }
 
-  if (!isAuthenticated || !employee) {
+  if (!hydrated || !isAuthenticated || !employee) {
     return null
   }
 
@@ -2656,7 +2475,7 @@ export default function OrdersPage() {
             onSend={handleSendToKitchen}
             onPay={async (method) => {
               // Ensure order is saved to DB before opening payment
-              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await saveOrderToDatabase()
+              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employee?.id)
               if (orderId) {
                 setInitialPayMethod(method)
                 setOrderToPayId(orderId)
@@ -2664,7 +2483,7 @@ export default function OrdersPage() {
               }
             }}
             onPrintCheck={async () => {
-              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await saveOrderToDatabase()
+              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employee?.id)
               if (orderId) {
                 try {
                   await fetch('/api/print/receipt', {
@@ -2728,6 +2547,7 @@ export default function OrdersPage() {
                             name: item.name,
                             price: item.price,
                             quantity: item.quantity,
+                            isHeld: item.isHeld || false,
                             modifiers: (item.modifiers || []).map(mod => ({
                               modifierId: (mod.id || mod.modifierId) ?? '',
                               name: mod.name,
@@ -2805,7 +2625,7 @@ export default function OrdersPage() {
                 currentStore.updateOrderType('bar_tab')
               }
 
-              const orderId = existingOrderId || await saveOrderToDatabase()
+              const orderId = existingOrderId || await ensureOrderInDB(employee?.id)
               if (orderId) {
                 setSavedOrderId(orderId)
                 setCardTabOrderId(orderId)
@@ -2816,7 +2636,7 @@ export default function OrdersPage() {
             }}
             onOtherPayment={async () => {
               // Open PaymentModal at method selection step (gift card, house account, etc.)
-              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await saveOrderToDatabase()
+              const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employee?.id)
               if (orderId) {
                 setInitialPayMethod(undefined)
                 setOrderToPayId(orderId)
@@ -2860,47 +2680,9 @@ export default function OrdersPage() {
             pendingDelay={currentOrder?.pendingDelay ?? undefined}
             delayStartedAt={currentOrder?.delayStartedAt ?? undefined}
             delayFiredAt={currentOrder?.delayFiredAt ?? undefined}
-            onFireDelayed={async () => {
-              const store = useOrderStore.getState()
-              const orderId = store.currentOrder?.id || savedOrderId
-              if (!orderId) return
-              try {
-                const res = await fetch(`/api/orders/${orderId}/send`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ employeeId: employee?.id }),
-                })
-                if (res.ok) {
-                  store.markDelayFired()
-                  if (store.currentOrder) {
-                    for (const item of store.currentOrder.items) {
-                      if (!item.sentToKitchen) store.updateItem(item.id, { sentToKitchen: true })
-                    }
-                  }
-                }
-              } catch (err) {
-                console.error('[OrdersPage] Failed to fire delayed:', err)
-              }
-            }}
+            onFireDelayed={activeOrderFull.handleFireDelayed}
             onCancelDelay={() => useOrderStore.getState().setPendingDelay(null)}
-            onFireItem={async (itemId) => {
-              const store = useOrderStore.getState()
-              const orderId = store.currentOrder?.id || savedOrderId
-              if (!orderId) return
-              try {
-                const res = await fetch(`/api/orders/${orderId}/send`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ employeeId: employee?.id, itemIds: [itemId] }),
-                })
-                if (res.ok) {
-                  store.markItemDelayFired(itemId)
-                  store.updateItem(itemId, { sentToKitchen: true })
-                }
-              } catch (err) {
-                console.error('[OrdersPage] Failed to fire delayed item:', err)
-              }
-            }}
+            onFireItem={activeOrderFull.handleFireItem}
             onCancelItemDelay={(itemId) => useOrderStore.getState().setItemDelay([itemId], null)}
             reopenedAt={currentOrder?.reopenedAt}
             reopenReason={currentOrder?.reopenReason}
@@ -2960,7 +2742,7 @@ export default function OrdersPage() {
             onOpenTimeClock={() => setShowTimeClockModal(true)}
             onSwitchUser={() => { logout() }}
             onOpenSettings={() => setShowDisplaySettings(true)}
-            onOpenAdminNav={() => setShowAdminNav(true)}
+            onOpenAdminNav={canAccessAdmin ? () => router.push('/settings') : undefined}
             onSwitchToBartenderView={() => {
               // Preserve current order context when switching views
               const order = useOrderStore.getState().currentOrder
@@ -3044,14 +2826,6 @@ export default function OrdersPage() {
         )}
 
         {/* Shared Modals — one set for both views */}
-        {showAdminNav && (
-          <AdminNav
-            forceOpen={true}
-            onClose={() => setShowAdminNav(false)}
-            permissions={employee?.permissions || []}
-            onAction={(action) => { if (action === 'tip_adjustments') setShowTipAdjustment(true) }}
-          />
-        )}
         <POSDisplaySettingsModal
           isOpen={showDisplaySettings}
           onClose={() => setShowDisplaySettings(false)}
@@ -3369,7 +3143,7 @@ export default function OrdersPage() {
                       if (!items?.length) return
                       setIsSendingOrder(true)
                       try {
-                        const orderId = savedOrderId || store.currentOrder?.id || await saveOrderToDatabase()
+                        const orderId = savedOrderId || store.currentOrder?.id || await ensureOrderInDB(employee?.id)
                         if (orderId) {
                           // Update metadata (tab name) on the saved order
                           await fetch(`/api/orders/${orderId}`, {
@@ -3519,20 +3293,8 @@ export default function OrdersPage() {
                 const response = await fetch(`/api/orders/${savedOrderId}`)
                 if (response.ok) {
                   const orderData = await response.json()
-                  loadOrder({
-                    id: orderData.id,
-                    orderNumber: orderData.orderNumber,
-                    orderType: orderData.orderType,
-                    tableId: orderData.tableId || undefined,
-                    tableName: orderData.tableName || undefined,
-                    tabName: orderData.tabName || undefined,
-                    guestCount: orderData.guestCount,
-                    items: orderData.items,
-                    subtotal: orderData.subtotal,
-                    taxTotal: orderData.taxTotal,
-                    total: orderData.total,
-                    notes: orderData.notes,
-                  })
+                  // Pass raw API data — store.loadOrder handles all mapping
+                  loadOrder(orderData)
                 }
               } catch (error) {
                 console.error('Failed to reload order:', error)

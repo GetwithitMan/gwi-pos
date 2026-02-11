@@ -933,11 +933,11 @@ export function FloorPlanEditor({
           }, 50);
         } else {
           console.error('Failed to regenerate seats:', data);
-          alert('Failed to regenerate seats: ' + (data.error || 'Unknown error'));
+          toast.error('Failed to regenerate seats: ' + (data.error || 'Unknown error'));
         }
       } catch (error) {
         console.error('Failed to regenerate seats:', error);
-        alert('Failed to regenerate seats. Check console for details.');
+        toast.error('Failed to regenerate seats');
       }
     },
     [useDatabase, dbTables, fetchTables]
@@ -1043,9 +1043,9 @@ export function FloorPlanEditor({
   // Handle save
   const handleSave = useCallback(() => {
     if (useDatabase) {
-      alert('Floor plan is automatically saved to the database!');
+      toast.success('Floor plan is automatically saved to the database');
     } else {
-      alert('Floor plan saved! (In production, this would save to the database)');
+      toast.success('Floor plan saved');
     }
     if (onSave) onSave();
   }, [onSave, useDatabase]);

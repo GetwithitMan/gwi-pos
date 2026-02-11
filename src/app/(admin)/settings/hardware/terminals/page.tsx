@@ -1,9 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { AdminNav } from '@/components/admin/AdminNav'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 import { TerminalFailoverManager } from '@/components/hardware/TerminalFailoverManager'
 
 interface Printer {
@@ -150,20 +148,14 @@ export default function TerminalsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminNav />
-        <div className="p-6 flex items-center justify-center">
-          <div className="text-gray-600">Loading terminals...</div>
-        </div>
+      <div className="p-6 flex items-center justify-center">
+        <div className="text-gray-600">Loading terminals...</div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AdminNav />
-
-      <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6 max-w-7xl mx-auto">
         <AdminPageHeader
           title="Terminals & Stations"
           subtitle="Manage POS devices and configure print routing rules"
@@ -183,7 +175,6 @@ export default function TerminalsPage() {
             </button>
           }
         />
-        <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
 
         {/* Fixed Stations Section */}
         <div className="mb-8">
@@ -245,7 +236,6 @@ export default function TerminalsPage() {
 
         {/* Failover Configuration */}
         <TerminalFailoverManager terminals={terminals} onUpdate={fetchData} />
-      </div>
 
       {/* Add/Edit Modal */}
       {(showAddModal || editingTerminal) && (

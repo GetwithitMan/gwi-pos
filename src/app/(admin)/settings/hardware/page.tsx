@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 
 interface PrinterStatus {
   id: string
@@ -181,7 +180,6 @@ export default function HardwareDashboard() {
           </button>
         }
       />
-      <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
 
       <div className="mx-auto max-w-6xl">
         {loading ? (

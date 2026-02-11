@@ -20,6 +20,8 @@ export function mapOrderItemForResponse(item: any, correlationId?: string) {
     sentAt: item.sentAt,
     kitchenStatus: item.kitchenStatus,
     isHeld: item.isHeld,
+    delayMinutes: item.delayMinutes ?? null,
+    delayStartedAt: item.delayStartedAt ?? null,
     isCompleted: item.isCompleted,
     completedAt: item.completedAt,
     resendCount: item.resendCount,

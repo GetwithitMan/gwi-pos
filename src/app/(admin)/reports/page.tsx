@@ -9,7 +9,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface TodayStats {
   totalSales: number
@@ -294,9 +293,7 @@ export default function ReportsHubPage() {
       <AdminPageHeader
         title="Reports Hub"
         subtitle={employee?.location?.name}
-        backHref="/orders"
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       <div className="max-w-7xl mx-auto">
         {/* Today's Quick Stats */}

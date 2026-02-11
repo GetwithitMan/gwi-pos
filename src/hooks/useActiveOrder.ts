@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { toast } from '@/stores/toast-store'
+import { isTempId, buildOrderItemPayload } from '@/lib/order-utils'
 import type { OrderPanelItemData } from '@/components/orders/OrderPanelItem'
 
 interface UseActiveOrderOptions {
@@ -181,52 +182,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
       const order = await res.json()
 
-      // Pass API response directly to store — store.loadOrder() handles mapping
-      useOrderStore.getState().loadOrder({
-        id: order.id,
-        orderNumber: order.orderNumber,
-        orderType: order.orderType || 'bar_tab',
-        tableId: order.tableId || undefined,
-        tableName: order.tableName || undefined,
-        tabName: order.tabName || undefined,
-        guestCount: order.guestCount || 1,
-        status: order.status,
-        items: (order.items || []).map((item: any) => ({
-          id: item.id,
-          menuItemId: item.menuItemId,
-          name: item.name,
-          price: Number(item.price ?? item.unitPrice ?? 0),
-          quantity: item.quantity,
-          itemTotal: Number(item.itemTotal || (item.price ?? item.unitPrice ?? 0) * item.quantity),
-          specialNotes: item.specialNotes || null,
-          seatNumber: item.seatNumber || null,
-          courseNumber: item.courseNumber || null,
-          courseStatus: item.courseStatus || null,
-          isHeld: item.isHeld || false,
-          holdUntil: item.holdUntil || null,
-          firedAt: item.firedAt || null,
-          isCompleted: item.isCompleted || false,
-          completedAt: item.completedAt || null,
-          resendCount: item.resendCount || 0,
-          blockTimeMinutes: item.blockTimeMinutes || null,
-          blockTimeStartedAt: item.blockTimeStartedAt || null,
-          blockTimeExpiresAt: item.blockTimeExpiresAt || null,
-          modifiers: (item.modifiers || []).map((mod: any) => ({
-            id: mod.id,
-            modifierId: mod.modifierId || mod.id,
-            name: mod.name,
-            price: Number(mod.price),
-            preModifier: mod.preModifier || null,
-            depth: mod.depth || 0,
-          })),
-        })),
-        subtotal: Number(order.subtotal || 0),
-        discountTotal: Number(order.discountTotal || 0),
-        taxTotal: Number(order.taxTotal || order.tax || 0),
-        tipTotal: Number(order.tipTotal || 0),
-        total: Number(order.total || 0),
-        notes: order.notes || undefined,
-      })
+      // Pass raw API response directly — store.loadOrder() is the SINGLE source of truth for mapping
+      useOrderStore.getState().loadOrder(order)
     } catch (error) {
       console.error('[useActiveOrder] Failed to load order:', error)
       toast.error('Failed to load order')
@@ -289,7 +246,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
   // Computed: any items with temp IDs (not yet in DB)
   const hasUnsavedItems = useMemo(() => {
     if (!currentOrder?.items) return false
-    return currentOrder.items.some(item => item.id.startsWith('item_'))
+    return currentOrder.items.some(item => isTempId(item.id))
   }, [currentOrder?.items])
 
   // Computed: has any order at all
@@ -310,7 +267,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     const resolvedLocationId = order.locationId || options.locationId
 
     // Check if order already has a DB ID (not a temp ID)
-    const hasDbId = order.id && !order.id.startsWith('item_') && !order.id.startsWith('local-')
+    const hasDbId = order.id && !isTempId(order.id)
 
     if (!hasDbId) {
       // === CREATE ORDER IN DB ===
@@ -335,32 +292,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             guestCount: order.guestCount,
             notes: order.notes || null,
             customFields: order.customFields,
-            items: order.items.map(item => ({
-              menuItemId: item.menuItemId,
-              name: item.name,
-              price: item.price,
-              quantity: item.quantity,
-              correlationId: item.id, // Use temp ID as correlation to map back
-              modifiers: item.modifiers.map(m => ({
-                modifierId: m.id,
-                name: m.name,
-                price: m.price,
-                preModifier: m.preModifier,
-                depth: m.depth || 0,
-              })),
-              ingredientModifications: item.ingredientModifications?.map(ing => ({
-                ingredientId: ing.ingredientId,
-                name: ing.name,
-                modificationType: ing.modificationType,
-                priceAdjustment: ing.priceAdjustment,
-                swappedTo: ing.swappedTo,
-              })),
-              specialNotes: item.specialNotes || null,
-              seatNumber: item.seatNumber || null,
-              courseNumber: item.courseNumber || null,
-              blockTimeMinutes: item.blockTimeMinutes || null,
-              pizzaConfig: item.pizzaConfig,
-            })),
+            items: order.items.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
           }),
         })
 
@@ -384,6 +316,17 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           }
         }
 
+        // Sync server-calculated totals (tax, discounts, dual pricing)
+        if (created.subtotal !== undefined) {
+          store.syncServerTotals({
+            subtotal: created.subtotal,
+            discountTotal: created.discountTotal ?? 0,
+            taxTotal: created.taxTotal ?? 0,
+            tipTotal: created.tipTotal,
+            total: created.total,
+          })
+        }
+
         return created.id
       } catch (error) {
         console.error('[useActiveOrder] ensureOrderInDB create failed:', error)
@@ -392,7 +335,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       }
     } else {
       // === ORDER EXISTS — CHECK FOR UNSAVED ITEMS ===
-      const unsavedItems = order.items.filter(item => item.id.startsWith('item_'))
+      const unsavedItems = order.items.filter(item => isTempId(item.id))
 
       if (unsavedItems.length === 0) {
         // All items already in DB
@@ -405,30 +348,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            items: unsavedItems.map(item => ({
-              menuItemId: item.menuItemId,
-              name: item.name,
-              price: item.price,
-              quantity: item.quantity,
-              correlationId: item.id,
-              modifiers: item.modifiers.map(m => ({
-                modifierId: m.id,
-                name: m.name,
-                price: m.price,
-                preModifier: m.preModifier,
-                depth: m.depth || 0,
-              })),
-              ingredientModifications: item.ingredientModifications?.map(ing => ({
-                ingredientId: ing.ingredientId,
-                name: ing.name,
-                modificationType: ing.modificationType,
-                priceAdjustment: ing.priceAdjustment,
-                swappedTo: ing.swappedTo,
-              })),
-              specialNotes: item.specialNotes || null,
-              blockTimeMinutes: item.blockTimeMinutes || null,
-              pizzaConfig: item.pizzaConfig,
-            })),
+            items: unsavedItems.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
           }),
         })
 
@@ -447,6 +367,17 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
               store.updateItemId(added.correlationId, added.id)
             }
           }
+        }
+
+        // Sync server-calculated totals
+        if (result.subtotal !== undefined) {
+          store.syncServerTotals({
+            subtotal: result.subtotal,
+            discountTotal: result.discountTotal ?? 0,
+            taxTotal: result.taxTotal ?? 0,
+            tipTotal: result.tipTotal,
+            total: result.total,
+          })
         }
 
         return order.id!
@@ -724,7 +655,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       if (currentOrder.coursingEnabled) {
         // Determine which courses have delays set
         const courseDelays = currentOrder.courseDelays || {}
-        const pendingItems = currentOrder.items.filter(i => !i.sentToKitchen)
+        const pendingItems = currentOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
 
         // Group pending items by course number
         const courseGroups = new Map<number, typeof pendingItems>()
@@ -811,7 +742,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           for (const cn of coursesToFireNow) {
             for (const item of freshStore.currentOrder.items) {
               const itemCourse = item.courseNumber ?? 1
-              if (itemCourse === cn && !item.sentToKitchen) {
+              if (itemCourse === cn && !item.sentToKitchen && !item.isHeld) {
                 freshStore.updateItem(item.id, { sentToKitchen: true, courseStatus: 'fired' })
               }
             }
@@ -842,19 +773,25 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         const freshOrder = store.currentOrder
         if (!freshOrder) return
 
-        const pendingItems = freshOrder.items.filter(i => !i.sentToKitchen)
+        const pendingItems = freshOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
+        const heldItems = freshOrder.items.filter(i => !i.sentToKitchen && i.isHeld)
         const delayedItems = pendingItems.filter(i => i.delayMinutes && i.delayMinutes > 0 && !i.delayStartedAt)
         const immediateItems = pendingItems.filter(i => !i.delayMinutes || i.delayMinutes <= 0)
 
-        // Fire immediate items via /send
-        if (immediateItems.length > 0) {
+        // ALWAYS call the send route when there are pending items (immediate or delayed).
+        // The send route handles delayed items by stamping delayStartedAt on the server.
+        // Without this call, delayed-only sends would never persist delayStartedAt,
+        // and loadOrder would wipe the client-side timestamp.
+        if (immediateItems.length > 0 || delayedItems.length > 0) {
           const res = await fetch(`/api/orders/${resolvedOrderId}/send`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               employeeId: employeeId || options.employeeId,
               // Only send specific item IDs when we have a mix of delayed and immediate
-              ...(delayedItems.length > 0 ? { itemIds: immediateItems.map(i => i.id) } : {}),
+              ...(delayedItems.length > 0 && immediateItems.length > 0
+                ? { itemIds: immediateItems.map(i => i.id) }
+                : {}),
             }),
           })
 
@@ -865,15 +802,17 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           }
 
           // Mark immediate items as sent in store
-          const storeAfterSend = useOrderStore.getState()
-          if (storeAfterSend.currentOrder) {
-            for (const item of immediateItems) {
-              storeAfterSend.updateItem(item.id, { sentToKitchen: true })
+          if (immediateItems.length > 0) {
+            const storeAfterSend = useOrderStore.getState()
+            if (storeAfterSend.currentOrder) {
+              for (const item of immediateItems) {
+                storeAfterSend.updateItem(item.id, { sentToKitchen: true })
+              }
             }
           }
         }
 
-        // Start delay timers on delayed items
+        // Start delay timers on delayed items (client-side backup, server already stamped)
         if (delayedItems.length > 0) {
           store.startItemDelayTimers(delayedItems.map(i => i.id))
           const delayDesc = delayedItems.map(i => `${i.name} (${i.delayMinutes}m)`).join(', ')
@@ -891,8 +830,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         }
         options.onOrderSent?.(resolvedOrderId)
 
-        // Reload from API for fresh server state (only if we sent something)
-        if (immediateItems.length > 0) {
+        // Reload from API for fresh server state (delayStartedAt now persisted server-side)
+        if (immediateItems.length > 0 || delayedItems.length > 0) {
           await loadOrder(resolvedOrderId)
         }
       }
@@ -934,10 +873,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       const store = useOrderStore.getState()
       store.fireCourse(courseNumber)
 
-      // Mark those items as sent in store
+      // Mark non-held items in this course as sent
       if (store.currentOrder) {
         for (const item of store.currentOrder.items) {
-          if (item.courseNumber === courseNumber && !item.sentToKitchen) {
+          if (item.courseNumber === courseNumber && !item.sentToKitchen && !item.isHeld) {
             store.updateItem(item.id, { sentToKitchen: true, courseStatus: 'fired' })
           }
         }
@@ -979,10 +918,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       const store = useOrderStore.getState()
       store.markDelayFired()
 
-      // Mark items as sent
+      // Mark non-held items as sent (held items stay pending)
       if (store.currentOrder) {
         for (const item of store.currentOrder.items) {
-          if (!item.sentToKitchen) {
+          if (!item.sentToKitchen && !item.isHeld) {
             store.updateItem(item.id, { sentToKitchen: true })
           }
         }
@@ -990,8 +929,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
       toast.success('Delayed items fired to kitchen')
 
-      // Reload from API
-      await loadOrder(orderId)
+      // NOTE: Do NOT reload from API here — loadOrder wipes delayFiredAt (client-only field)
+      // which can cause infinite re-fire loops. The store already has the correct state.
     } catch (error) {
       console.error('[useActiveOrder] Failed to fire delayed items:', error)
       toast.error('Failed to fire delayed items')
@@ -1012,6 +951,21 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     }
 
     try {
+      // Check if item is held — release hold first before firing
+      const item = items.find(i => i.id === itemId)
+      if (item?.isHeld) {
+        const holdRes = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isHeld: false }),
+        })
+        if (!holdRes.ok) {
+          toast.error('Failed to release hold')
+          return
+        }
+        useOrderStore.getState().updateItem(itemId, { isHeld: false })
+      }
+
       // Send this specific item via /send with itemIds filter
       const res = await fetch(`/api/orders/${orderId}/send`, {
         method: 'POST',
@@ -1024,24 +978,26 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
       if (!res.ok) {
         const error = await res.json()
-        toast.error(error.error || 'Failed to fire delayed item')
+        toast.error(error.error || 'Failed to fire item')
         return
       }
 
-      // Mark item as delay-fired and sent in store
+      // Mark item as sent in store
       const store = useOrderStore.getState()
-      store.markItemDelayFired(itemId)
+      if (item?.delayMinutes && item.delayMinutes > 0) {
+        store.markItemDelayFired(itemId)
+      }
       store.updateItem(itemId, { sentToKitchen: true })
 
-      toast.success('Delayed item fired to kitchen')
+      toast.success(item?.isHeld ? 'Held item fired to kitchen' : 'Delayed item fired to kitchen')
 
-      // Reload from API
-      await loadOrder(orderId)
+      // NOTE: Do NOT reload from API here — loadOrder wipes delayFiredAt (client-only field)
+      // which can cause infinite re-fire loops. The store already has the correct state.
     } catch (error) {
-      console.error('[useActiveOrder] Failed to fire delayed item:', error)
-      toast.error('Failed to fire delayed item')
+      console.error('[useActiveOrder] Failed to fire item:', error)
+      toast.error('Failed to fire item')
     }
-  }, [currentOrder?.id, options.employeeId, loadOrder])
+  }, [currentOrder?.id, items, options.employeeId])
 
   return {
     // Order identity

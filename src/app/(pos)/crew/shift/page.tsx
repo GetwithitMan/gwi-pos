@@ -22,11 +22,15 @@ export default function CrewShiftReportPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Hydration guard: wait for Zustand to rehydrate from localStorage
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
   useEffect(() => {
-    if (!employee || !isAuthenticated) {
+    if (hydrated && (!employee || !isAuthenticated)) {
       router.push('/login')
     }
-  }, [employee, isAuthenticated, router])
+  }, [hydrated, employee, isAuthenticated, router])
 
   useEffect(() => {
     if (!employee) return
@@ -42,7 +46,7 @@ export default function CrewShiftReportPage() {
       .finally(() => setLoading(false))
   }, [employee, selectedDate])
 
-  if (!employee || !isAuthenticated) return null
+  if (!hydrated || !employee || !isAuthenticated) return null
 
   const formatShiftTime = (iso: string | null | undefined) => {
     if (!iso) return '--'

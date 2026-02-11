@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, customersSubNav } from '@/components/admin/AdminSubNav'
 
 interface GiftCard {
   id: string
@@ -198,7 +197,6 @@ export default function GiftCardsPage() {
           </Button>
         }
       />
-      <AdminSubNav items={customersSubNav} basePath="/customers" />
 
       {/* Filters */}
       <div className="max-w-7xl mx-auto mt-6">

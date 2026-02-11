@@ -127,9 +127,13 @@ export function OrderPanelItem({
   const [showSeatPicker, setShowSeatPicker] = useState(false)
 
   // Per-item delay states
+  // CRITICAL: hasActiveDelay must also check !sentToKitchen to prevent infinite fire loop
+  // When loadOrder reloads from API, delayFiredAt (client-only) gets wiped, but sentToKitchen
+  // persists via kitchenStatus from the server. Without the sentToKitchen check, the timer
+  // would re-fire items that are already sent to kitchen.
   const hasDelayPreset = !!(item.delayMinutes && item.delayMinutes > 0 && !item.delayStartedAt && !item.delayFiredAt)
-  const hasActiveDelay = !!(item.delayMinutes && item.delayMinutes > 0 && item.delayStartedAt && !item.delayFiredAt)
-  const hasDelayFired = !!(item.delayMinutes && item.delayMinutes > 0 && item.delayFiredAt)
+  const hasActiveDelay = !!(item.delayMinutes && item.delayMinutes > 0 && item.delayStartedAt && !item.delayFiredAt && !item.sentToKitchen)
+  const hasDelayFired = !!(item.delayMinutes && item.delayMinutes > 0 && (item.delayFiredAt || item.sentToKitchen))
   const [delayRemaining, setDelayRemaining] = useState<number | null>(null)
   const delayFiredRef = useRef(false)
 
@@ -139,7 +143,9 @@ export function OrderPanelItem({
       delayFiredRef.current = false
       return
     }
-    delayFiredRef.current = false
+    // NOTE: Do NOT reset delayFiredRef here — it must only reset when hasActiveDelay
+    // becomes false (handled by the early return above). Resetting here caused an
+    // infinite fire loop: fire → store update → effect re-runs → ref reset → fire again.
     const tick = () => {
       const started = new Date(item.delayStartedAt!).getTime()
       const now = Date.now()
@@ -372,7 +378,7 @@ export function OrderPanelItem({
               </span>
             )}
 
-            {/* Held badge */}
+            {/* Held badge with Fire button */}
             {item.isHeld && (
               <span
                 style={{
@@ -382,9 +388,29 @@ export function OrderPanelItem({
                   background: 'rgba(239, 68, 68, 0.2)',
                   color: '#f87171',
                   fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
                 }}
               >
                 HELD
+                {onFireItem && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onFireItem(item.id) }}
+                    style={{
+                      padding: '1px 6px',
+                      fontSize: '10px',
+                      fontWeight: 700,
+                      borderRadius: '3px',
+                      border: 'none',
+                      background: 'rgba(239, 68, 68, 0.35)',
+                      color: '#fca5a5',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Fire
+                  </button>
+                )}
               </span>
             )}
 

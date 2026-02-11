@@ -86,6 +86,10 @@ export async function PUT(request: NextRequest) {
     const body = await request.json()
     const { settings, employeeId } = body as { settings: Partial<LocationSettings>; employeeId?: string }
 
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return NextResponse.json({ error: 'Invalid settings payload' }, { status: 400 })
+    }
+
     const location = await db.location.findFirst()
     if (!location) {
       return NextResponse.json(
@@ -113,20 +117,29 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Get current settings and merge with updates
+    // Get current settings and deep-merge with updates
+    // mergeWithDefaults() handles all nested objects including tipBank.tipGuide,
+    // happyHour.schedules, and receiptDisplay sub-sections
     const currentSettings = parseSettings(location.settings)
     const updatedSettings = mergeWithDefaults({
       ...currentSettings,
       ...settings,
-      // Deep merge for nested objects
+      // Deep merge for nested objects to prevent sibling field loss
       tax: { ...currentSettings.tax, ...(settings.tax || {}) },
       dualPricing: { ...currentSettings.dualPricing, ...(settings.dualPricing || {}) },
       priceRounding: { ...currentSettings.priceRounding, ...(settings.priceRounding || {}) },
       tips: { ...currentSettings.tips, ...(settings.tips || {}) },
       tipShares: { ...currentSettings.tipShares, ...(settings.tipShares || {}) },
+      tipBank: { ...currentSettings.tipBank, ...(settings.tipBank || {}) },
       receipts: { ...currentSettings.receipts, ...(settings.receipts || {}) },
+      payments: { ...currentSettings.payments, ...(settings.payments || {}) },
       loyalty: { ...currentSettings.loyalty, ...(settings.loyalty || {}) },
+      happyHour: { ...currentSettings.happyHour, ...(settings.happyHour || {}) },
       barTabs: { ...currentSettings.barTabs, ...(settings.barTabs || {}) },
+      clockOut: { ...currentSettings.clockOut, ...(settings.clockOut || {}) },
+      businessDay: { ...currentSettings.businessDay, ...(settings.businessDay || {}) },
+      posDisplay: { ...currentSettings.posDisplay, ...(settings.posDisplay || {}) },
+      receiptDisplay: { ...currentSettings.receiptDisplay, ...(settings.receiptDisplay || {}) },
     })
 
     // Update location

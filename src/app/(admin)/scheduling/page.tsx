@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, teamSubNav } from '@/components/admin/AdminSubNav'
+import { toast } from '@/stores/toast-store'
 
 interface Employee {
   id: string
@@ -144,7 +144,7 @@ export default function SchedulingPage() {
         loadSchedules()
       } else {
         const error = await response.json()
-        alert(error.error || 'Failed to create schedule')
+        toast.error(error.error || 'Failed to create schedule')
       }
     } catch (error) {
       console.error('Failed to create schedule:', error)
@@ -178,7 +178,7 @@ export default function SchedulingPage() {
         loadSchedules()
       } else {
         const error = await response.json()
-        alert(error.error || 'Failed to add shift')
+        toast.error(error.error || 'Failed to add shift')
       }
     } catch (error) {
       console.error('Failed to add shift:', error)
@@ -255,7 +255,6 @@ export default function SchedulingPage() {
       <AdminPageHeader
         title="Employee Scheduling"
       />
-      <AdminSubNav items={teamSubNav} basePath="/employees" />
 
       <div className="max-w-7xl mx-auto mt-6">
         {/* Week Navigation */}

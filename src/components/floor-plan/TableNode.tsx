@@ -165,11 +165,18 @@ export const TableNode = memo(function TableNode({
       return
     }
 
+    // POS view (non-editable): longer threshold to prevent accidental combine mode
+    // Editor view (editable): shorter threshold for drag/combine workflows
+    const longPressMs = isEditable ? 500 : 1200
     longPressTimer.current = setTimeout(() => {
       onLongPress()
-    }, 500)
-    onDragStart()
-  }, [onDragStart, onLongPress, isLocked, isVirtualCombineMode])
+    }, longPressMs)
+
+    // Only start drag tracking in editor mode — POS tables don't move
+    if (isEditable) {
+      onDragStart()
+    }
+  }, [onDragStart, onLongPress, isLocked, isVirtualCombineMode, isEditable])
 
   const handlePointerUp = useCallback(() => {
     if (longPressTimer.current) {

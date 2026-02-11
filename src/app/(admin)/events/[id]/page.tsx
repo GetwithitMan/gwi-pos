@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
+import { toast } from '@/stores/toast-store'
 
 interface PricingTier {
   id: string
@@ -118,7 +119,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
       const res = await fetch(`/api/events/${id}/publish`, { method: 'POST' })
       if (!res.ok) {
         const data = await res.json()
-        alert(data.errors?.join('\n') || data.error || 'Failed to publish')
+        toast.error(data.errors?.join(', ') || data.error || 'Failed to publish')
         return
       }
       fetchEvent()
@@ -141,7 +142,7 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
 
       if (!res.ok) {
         const data = await res.json()
-        alert(data.error || 'Failed to resolve conflicts')
+        toast.error(data.error || 'Failed to resolve conflicts')
         return
       }
 

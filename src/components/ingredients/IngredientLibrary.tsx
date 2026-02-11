@@ -359,11 +359,11 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
         setEditingCategory(null)
       } else {
         const errorData = await response.json()
-        alert(errorData.error || 'Failed to save category')
+        toast.error(errorData.error || 'Failed to save category')
       }
     } catch (error) {
       console.error('Failed to save category:', error)
-      alert('Failed to save category')
+      toast.error('Failed to save category')
     }
   }
 
@@ -379,11 +379,11 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
         await loadCategories()
       } else {
         const errorData = await response.json()
-        alert(errorData.error || 'Failed to delete category')
+        toast.error(errorData.error || 'Failed to delete category')
       }
     } catch (error) {
       console.error('Failed to delete category:', error)
-      alert('Failed to delete category')
+      toast.error('Failed to delete category')
     }
   }
 
@@ -406,11 +406,11 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
         setEditingIngredient(null)
       } else {
         const errorData = await response.json()
-        alert(errorData.error || 'Failed to save ingredient')
+        toast.error(errorData.error || 'Failed to save ingredient')
       }
     } catch (error) {
       console.error('Failed to save ingredient:', error)
-      alert('Failed to save ingredient')
+      toast.error('Failed to save ingredient')
     }
   }
 

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { toast } from '@/stores/toast-store'
 
 interface PrepStation {
   id: string
@@ -162,7 +163,7 @@ export default function PrepStationsPage() {
         loadData()
       } else {
         const error = await response.json()
-        alert(error.error || 'Failed to save')
+        toast.error(error.error || 'Failed to save')
       }
     } catch (error) {
       console.error('Failed to save station:', error)

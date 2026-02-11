@@ -102,11 +102,10 @@ function PairContent() {
 
       setSuccess(true)
 
-      // Redirect to KDS with the screen parameter
+      // Redirect to KDS — always include screen slug from API response
       setTimeout(() => {
-        const targetUrl = screenSlug
-          ? `${returnTo}?screen=${data.screen.slug}`
-          : returnTo
+        const slug = data.screen.slug || screenSlug
+        const targetUrl = slug ? `/kds?screen=${slug}` : returnTo
         router.push(targetUrl)
       }, 1500)
     } catch (err) {

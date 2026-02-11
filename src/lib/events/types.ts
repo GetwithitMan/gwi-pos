@@ -174,6 +174,9 @@ export interface EventMap {
   // Floor Plan
   'floor-plan:updated': FloorPlanUpdatedEvent
 
+  // Open Orders (cross-terminal table status updates)
+  'orders:list-changed': OrdersListChangedEvent
+
   // Sync
   'sync:conflict': SyncConflictEvent
   'sync:completed': SyncCompletedEvent
@@ -261,6 +264,13 @@ export interface EntertainmentSessionUpdateEvent {
 // Floor Plan Events
 export interface FloorPlanUpdatedEvent {
   locationId: string
+}
+
+// Open Orders Events
+export interface OrdersListChangedEvent {
+  locationId: string
+  trigger: string
+  orderId?: string
 }
 
 // ==================== Channel Types ====================

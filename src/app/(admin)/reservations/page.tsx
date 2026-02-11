@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, floorSubNav } from '@/components/admin/AdminSubNav'
 
 interface Table {
   id: string
@@ -150,7 +149,6 @@ export default function ReservationsPage() {
           </Button>
         }
       />
-      <AdminSubNav items={floorSubNav} basePath="/reservations" />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto mt-6">

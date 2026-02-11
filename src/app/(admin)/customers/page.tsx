@@ -10,7 +10,6 @@ import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, customersSubNav } from '@/components/admin/AdminSubNav'
 
 // Common customer tags
 const CUSTOMER_TAGS = ['VIP', 'Regular', 'First-Timer', 'Staff', 'Family', 'Business', 'Birthday Club']
@@ -274,7 +273,6 @@ export default function CustomersPage() {
           </Button>
         }
       />
-      <AdminSubNav items={customersSubNav} basePath="/customers" />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto mt-6">

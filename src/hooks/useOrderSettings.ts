@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings } from '@/lib/settings'
+import { useOrderStore } from '@/stores/order-store'
+import { setLocationTaxRate } from '@/lib/seat-utils'
 
 const DEFAULT_DUAL_PRICING: DualPricingSettings = {
   enabled: true,
@@ -69,7 +71,7 @@ export function useOrderSettings() {
   const [dualPricing, setDualPricing] = useState<DualPricingSettings>(DEFAULT_DUAL_PRICING)
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>(DEFAULT_PAYMENT_SETTINGS)
   const [priceRounding, setPriceRounding] = useState<PriceRoundingSettings>(DEFAULT_PRICE_ROUNDING)
-  const [taxRate, setTaxRate] = useState(0.08)
+  const [taxRate, setTaxRate] = useState(0)
   const [taxInclusiveLiquor, setTaxInclusiveLiquor] = useState(false)
   const [taxInclusiveFood, setTaxInclusiveFood] = useState(false)
   const [receiptSettings, setReceiptSettings] = useState<Partial<ReceiptSettings>>({})
@@ -89,8 +91,13 @@ export function useOrderSettings() {
         if (settings.priceRounding) {
           setPriceRounding(settings.priceRounding)
         }
-        if (settings.tax?.defaultRate) {
-          setTaxRate(settings.tax.defaultRate / 100)
+        if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
+          const rate = settings.tax.defaultRate / 100
+          setTaxRate(rate)
+          // Push to order store so calculateTotals() uses real location rate
+          useOrderStore.getState().setEstimatedTaxRate(rate)
+          // Push to seat-utils so seat balance calculations use real rate
+          setLocationTaxRate(rate)
         }
         if (settings.tax?.taxInclusiveLiquor !== undefined) {
           setTaxInclusiveLiquor(settings.tax.taxInclusiveLiquor)

@@ -8,7 +8,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, inventorySubNav } from '@/components/admin/AdminSubNav'
 
 interface InventoryItem {
   id: string
@@ -160,7 +159,6 @@ export default function WastePage() {
           </Button>
         }
       />
-      <AdminSubNav items={inventorySubNav} basePath="/inventory" />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

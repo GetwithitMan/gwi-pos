@@ -129,17 +129,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Build create data with new fields
-    const createData: Record<string, unknown> = {
+    const createData = {
       locationId,
       fromRoleId,
       toRoleId,
       percentage: percentageNum,
+      ...(basisType !== undefined && { basisType }),
+      ...(salesCategoryIds !== undefined && { salesCategoryIds }),
+      ...(maxPercentage !== undefined && maxPercentage !== null && { maxPercentage: Number(maxPercentage) }),
+      ...(effectiveDate !== undefined && effectiveDate !== null && { effectiveDate: new Date(effectiveDate) }),
+      ...(expiresAt !== undefined && expiresAt !== null && { expiresAt: new Date(expiresAt) }),
     }
-    if (basisType !== undefined) createData.basisType = basisType
-    if (salesCategoryIds !== undefined) createData.salesCategoryIds = salesCategoryIds
-    if (maxPercentage !== undefined && maxPercentage !== null) createData.maxPercentage = Number(maxPercentage)
-    if (effectiveDate !== undefined && effectiveDate !== null) createData.effectiveDate = new Date(effectiveDate)
-    if (expiresAt !== undefined && expiresAt !== null) createData.expiresAt = new Date(expiresAt)
 
     // Create the rule
     const rule = await db.tipOutRule.create({

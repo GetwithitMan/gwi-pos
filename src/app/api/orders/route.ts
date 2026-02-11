@@ -9,7 +9,7 @@ import { calculateCardPrice } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { getLocationSettings } from '@/lib/location-cache'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // POST - Create a new order
 export async function POST(request: NextRequest) {
@@ -117,6 +117,8 @@ export async function POST(request: NextRequest) {
         specialNotes: item.specialNotes || null,
         seatNumber: item.seatNumber || null,
         courseNumber: item.courseNumber || null,
+        isHeld: item.isHeld || false,
+        delayMinutes: item.delayMinutes || null,
         // Timed rental / entertainment fields
         blockTimeMinutes: item.blockTimeMinutes || null,
         modifiers: {
@@ -306,8 +308,11 @@ export async function POST(request: NextRequest) {
       commissionTotal,
     }, { async: true }).catch(console.error)
 
-    // Dispatch open orders list changed (fire-and-forget)
+    // Dispatch open orders list changed + floor plan update (fire-and-forget)
     dispatchOpenOrdersChanged(locationId, { trigger: 'created', orderId: order.id }, { async: true }).catch(() => {})
+    if (tableId) {
+      dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+    }
 
     return NextResponse.json(response)
   } catch (error) {

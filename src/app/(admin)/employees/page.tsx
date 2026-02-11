@@ -9,8 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, teamSubNav } from '@/components/admin/AdminSubNav'
 
 interface Role {
   id: string
@@ -256,13 +256,13 @@ export default function EmployeesPage() {
 
         if (!response.ok) {
           const data = await response.json()
-          alert(data.error || 'Failed to deactivate employee')
+          toast.error(data.error || 'Failed to deactivate employee')
           return
         }
 
         loadData()
       } catch (err) {
-        alert('Failed to deactivate employee')
+        toast.error('Failed to deactivate employee')
       }
     } else {
       // Reactivate
@@ -274,13 +274,13 @@ export default function EmployeesPage() {
         })
 
         if (!response.ok) {
-          alert('Failed to reactivate employee')
+          toast.error('Failed to reactivate employee')
           return
         }
 
         loadData()
       } catch (err) {
-        alert('Failed to reactivate employee')
+        toast.error('Failed to reactivate employee')
       }
     }
   }
@@ -314,7 +314,6 @@ export default function EmployeesPage() {
           </div>
         }
       />
-      <AdminSubNav items={teamSubNav} basePath="/employees" />
 
       {/* Content */}
       <div className="mt-6">

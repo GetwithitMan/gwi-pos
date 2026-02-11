@@ -66,13 +66,17 @@ export default function TipGroupPage() {
   const [selectedEmployees, setSelectedEmployees] = useState<Set<string>>(new Set())
   const [splitMode, setSplitMode] = useState<'equal' | 'custom'>('equal')
 
-  // ── Auth guard ──────────────────────────────────────────────────────────
+  // Hydration guard: wait for Zustand to rehydrate from localStorage
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
+  // ── Auth guard (only after hydration) ─────────────────────────────────
 
   useEffect(() => {
-    if (!employee || !isAuthenticated) {
+    if (hydrated && (!employee || !isAuthenticated)) {
       router.push('/login')
     }
-  }, [employee, isAuthenticated, router])
+  }, [hydrated, employee, isAuthenticated, router])
 
   // ── Fetch groups ────────────────────────────────────────────────────────
 
@@ -324,7 +328,7 @@ export default function TipGroupPage() {
 
   // ── Guard ───────────────────────────────────────────────────────────────
 
-  if (!employee || !isAuthenticated) return null
+  if (!hydrated || !employee || !isAuthenticated) return null
 
   const isOwner = myGroup ? myGroup.ownerId === employee.id : false
   const activeMembers = myGroup

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 
 interface Category {
   id: string
@@ -223,7 +222,6 @@ export default function RoutingPage() {
           { label: 'Hardware', href: '/settings/hardware' },
         ]}
       />
-      <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
 
       <div className="max-w-5xl mx-auto">
 

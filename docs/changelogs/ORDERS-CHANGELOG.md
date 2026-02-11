@@ -1,5 +1,158 @@
 # Orders Domain - Change Log
 
+## Session: February 10, 2026 (Per-Item Delay Fix, Held Item Fire, Codebase Cleanup)
+
+### Summary
+Fixed critical bug where per-item delay countdown timers disappeared after Send, added Fire button to held items, and completed several codebase cleanup tasks (saveOrderToDatabase removal, alert→toast migration, kitchen print alignment, tax rate wiring).
+
+### Skills Completed/Updated
+| Skill | Name | Status |
+|-------|------|--------|
+| 231 | Per-Item Delays | DONE (bug fix) |
+| 238 | VOID/COMP Stamps on Order Panel | PARTIAL → needs verification |
+
+### Bug Fix: Per-Item Delay Countdown Timers Disappearing (CRITICAL)
+
+**Problem:** After pressing Send on an order with both immediate and delayed items, countdown timers and Fire buttons appeared for a split second, then vanished. Items reverted to showing "starts on Send" instead of active countdown.
+
+**Root Cause:** In `src/app/api/orders/[id]/send/route.ts`, the delayed items detection had a `(!filterItemIds)` guard:
+```typescript
+// BEFORE (BUG):
+const delayedItems = (!filterItemIds)
+  ? order.items.filter(item => item.delayMinutes && item.delayMinutes > 0 && !item.isHeld && !item.delayStartedAt)
+  : []
+```
+When client sent `itemIds` for immediate items only (the correct behavior for mixed orders), `filterItemIds` was set, so the entire delayed items array evaluated to `[]`. `delayStartedAt` was never stamped in the DB. The client-side `startItemDelayTimers` set it momentarily, but `loadOrder()` fetched from API with null values and overwrote the store.
+
+**Fix:**
+```typescript
+// AFTER (FIXED):
+const delayedItems = order.items.filter(item =>
+  item.delayMinutes && item.delayMinutes > 0 && !item.isHeld && !item.delayStartedAt
+)
+```
+Delayed items are now ALWAYS identified and stamped regardless of whether `filterItemIds` is provided.
+
+**Server log before fix:** `delayed: 0` despite 2 items having `delayMinutes` set
+**Server log after fix:** `delayed: 2` — both delayed items correctly identified
+
+### Feature: Fire Button on Held Items
+
+**Problem:** Held items showed a red "HELD" badge but no way to release and fire in one action.
+
+**Solution:**
+1. Updated `handleFireItem` in `useActiveOrder.ts` to detect held items and release the hold via `PUT /api/orders/{id}/items/{itemId}` (set `isHeld: false`) before firing to kitchen via `/send`
+2. Added inline Fire button to the HELD badge in `OrderPanelItem.tsx` — appears as `HELD [Fire]` on the item row
+3. Toast message distinguishes: "Held item fired to kitchen" vs "Delayed item fired to kitchen"
+
+### Codebase Cleanup (5 Parallel Agents)
+
+| Agent | Task | Files | Impact |
+|-------|------|-------|--------|
+| saveOrderToDatabase removal | Replaced deprecated function with direct order-store calls | `useActiveOrder.ts`, `order-utils.ts` | Eliminated dead code path |
+| Alert→toast admin pages | Replaced alert() calls in admin pages | 9 admin page files | 22 alert() → toast() |
+| Alert→toast POS+components | Replaced alert() calls in POS and shared components | 9 POS/component files | 22 alert() → toast() |
+| Kitchen print alignment | Created shared `kitchen-item-filter.ts` | `send/route.ts`, `print/kitchen/route.ts`, new `kitchen-item-filter.ts` | DRY: shared filter logic |
+| Tax rate wiring | Wire tax rate from location settings to order store | `useActiveOrder.ts`, `order-store.ts` | Tax rate from DB instead of hardcoded |
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/app/api/orders/[id]/send/route.ts` | Removed `(!filterItemIds)` guard on delayed items filter |
+| `src/hooks/useActiveOrder.ts` | `handleFireItem` supports held items (release hold → fire), saveOrderToDatabase removal, tax rate wiring |
+| `src/components/orders/OrderPanelItem.tsx` | Added Fire button to HELD badge |
+| `src/lib/kitchen-item-filter.ts` | NEW: shared `getEligibleKitchenItems()` filter |
+| `src/lib/order-utils.ts` | NEW: utility functions extracted from useActiveOrder |
+| `src/stores/order-store.ts` | TAX_RATE removal, temp ID update |
+| Multiple admin pages (9 files) | alert() → toast() migration |
+| Multiple POS/component files (9 files) | alert() → toast() migration |
+
+### Pre-Launch Tests Updated
+- Test 12.20 (Per-item delay countdown): Ready to verify ✅
+- Test 12.21 (Per-item delay Fire Now): Ready to verify ✅
+
+### Next Session Priority
+1. **T-044 (P0)**: Verify VOID/COMP stamps render on FloorPlanHome
+2. **T-047 (P2)**: Wire dispatchOpenOrdersChanged into void/delete route
+3. **T-038 (P2)**: Fix usePOSLayout Failed to fetch timing
+
+---
+
+## Session: February 10, 2026 (Real-Time Table Updates & Stability Fixes)
+
+### Summary
+Comprehensive session fixing real-time table status updates, auth stability, ghost data cleanup, and accidental virtual combine prevention.
+
+### Changes
+
+#### 1. Auth Hydration Guard (orders/page.tsx)
+- Added `hydrated` state + `useEffect` pattern to prevent Zustand store from redirecting to `/login` before localStorage rehydration completes
+- Auth redirect now checks `hydrated && !isAuthenticated` instead of just `!isAuthenticated`
+- Render guard checks `!hydrated || !isAuthenticated || !employee`
+- **Root cause:** Auth store `partialize` was only persisting `locationId` — fixed in previous session to persist all auth fields, but the hydration race remained
+
+#### 2. Complete Socket Dispatch Coverage (Cross-Terminal Table Updates)
+Added `dispatchFloorPlanUpdate` and `dispatchOpenOrdersChanged` to ALL order lifecycle events. Previously only `POST /api/orders` (create) and `POST /api/orders/[id]/pay` (payment) fired socket events — major gaps existed.
+
+| Route | Event | Floor Plan | Open Orders | Status |
+|-------|-------|------------|-------------|--------|
+| `POST /api/orders` (create) | order created | ✅ existed | ✅ existed | — |
+| `POST /api/orders/[id]/items` (add items) | items added | ✅ **NEW** | ✅ **NEW** | Fixed |
+| `POST /api/orders/[id]/send` (fire to kitchen) | sent | ✅ existed | ✅ existed | — |
+| `POST /api/orders/[id]/pay` (payment) | paid | ✅ **NEW** | ✅ existed | Fixed |
+| `POST /api/orders/[id]/close-tab` (close tab) | tab closed | ✅ **NEW** | ✅ existed | Fixed |
+
+#### 3. Instant Local Table Status Update (FloorPlanHome)
+- Added `useOrderStore()` to FloorPlanHome to watch `currentOrder.items.length`
+- When items are added to a table order, immediately calls `updateTableStatus(activeTableId, 'occupied')` — no server round-trip
+- Cross-terminal updates handled via `orders:list-changed` socket listener (already existed from Skill 248)
+
+#### 4. FloorPlanHome Socket Listener for orders:list-changed
+- Added second socket subscription in FloorPlanHome: `subscribe('orders:list-changed', ...)` alongside existing `floor-plan:updated`
+- Both trigger `loadFloorPlanData(false)` (background refresh, no loading state)
+- Added `OrdersListChangedEvent` interface to `src/lib/events/types.ts` and added to `EventMap`
+
+#### 5. Ghost Tables Cleanup (Database)
+- Identified 8 old seed tables (IDs: `table-1` through `table-8`) with `deletedAt IS NULL`
+- These co-existed with real CUID-based tables, appearing as phantom tables on the floor plan
+- Soft-deleted all 8: `UPDATE "Table" SET deletedAt = datetime('now') WHERE id LIKE 'table-%'`
+
+#### 6. Virtual Combine Long-Press Threshold (TableNode.tsx)
+- **Problem:** 500ms long-press threshold too short — users accidentally entering virtual combine mode on normal taps (especially touchscreens)
+- **Fix:** Split threshold by context:
+  - **POS view (non-editable):** 1200ms — much harder to trigger accidentally
+  - **Editor view (editable):** 500ms — responsive for drag/combine workflows
+- Also skips `onDragStart()` in POS view since tables shouldn't be draggable
+
+### Files Modified
+| File | Changes |
+|------|---------|
+| `src/app/(pos)/orders/page.tsx` | Hydration guard (useState + useEffect) |
+| `src/components/floor-plan/FloorPlanHome.tsx` | Instant table status, orders:list-changed socket listener, item preservation fix |
+| `src/components/floor-plan/TableNode.tsx` | Long-press threshold 500→1200ms for POS view, skip drag in POS |
+| `src/app/api/orders/[id]/pay/route.ts` | Added dispatchFloorPlanUpdate on payment |
+| `src/app/api/orders/[id]/close-tab/route.ts` | Added dispatchFloorPlanUpdate on tab close |
+| `src/app/api/orders/[id]/items/route.ts` | Added dispatchOpenOrdersChanged + dispatchFloorPlanUpdate on item append |
+| `src/app/api/orders/route.ts` | Added dispatchFloorPlanUpdate on order create (when tableId present) |
+| `src/app/api/orders/[id]/send/route.ts` | Added dispatchOpenOrdersChanged + dispatchFloorPlanUpdate on send |
+| `src/lib/events/types.ts` | Added OrdersListChangedEvent interface + EventMap entry |
+
+### Bugs Found / Fixed
+1. **Pay route missing floor plan dispatch** — When table order paid, other terminals never saw table go back to available
+2. **Close-tab route missing floor plan dispatch** — Same issue for bar tab close
+3. **Items append route missing all socket dispatches** — Adding items to existing order triggered zero cross-terminal updates
+4. **Long-press too sensitive (500ms)** — Touchscreen taps frequently exceeded 500ms, triggering accidental virtual combine mode
+5. **Ghost seed tables** — 8 old `table-*` ID tables with null deletedAt appearing as phantom tables
+6. **Auth redirect on page refresh** — Zustand default state triggered `/login` redirect before localStorage rehydration
+
+### Next Session Priority
+1. **T-044 (P0)**: Verify VOID/COMP stamps render on FloorPlanHome
+2. **T-047 (P2)**: Wire dispatchOpenOrdersChanged into void/delete route
+3. **T-038 (P2)**: Fix usePOSLayout Failed to fetch timing
+4. **T-040 (P1)**: Verify per-item delay countdown + auto-fire
+
+---
+
 ## Session: February 9, 2026 (Socket Layer + Fetch Consolidation)
 
 ### Skills Completed

@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import type { OrderTypeConfig, FieldDefinition, WorkflowRules, KDSConfig } from '@/types/order-types'
+import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, settingsSubNav } from '@/components/admin/AdminSubNav'
 
 export default function OrderTypesPage() {
   const router = useRouter()
@@ -105,7 +105,7 @@ export default function OrderTypesPage() {
           setEditingType(null)
         } else {
           const err = await response.json()
-          alert(`Failed to update: ${err.error || 'Unknown error'}`)
+          toast.error(`Failed to update: ${err.error || 'Unknown error'}`)
         }
       } else {
         // Create new
@@ -127,18 +127,18 @@ export default function OrderTypesPage() {
           setEditingType(null)
         } else {
           const err = await response.json()
-          alert(`Failed to create: ${err.error || 'Unknown error'}`)
+          toast.error(`Failed to create: ${err.error || 'Unknown error'}`)
         }
       }
     } catch (error) {
       console.error('Failed to save order type:', error)
-      alert(`Error: ${error}`)
+      toast.error(`Error: ${error}`)
     }
   }
 
   const handleDelete = async (orderType: OrderTypeConfig) => {
     if (orderType.isSystem) {
-      alert('System order types cannot be deleted, only deactivated.')
+      toast.info('System order types cannot be deleted, only deactivated.')
       return
     }
 
@@ -182,7 +182,6 @@ export default function OrderTypesPage() {
           </button>
         }
       />
-      <AdminSubNav items={settingsSubNav} basePath="/settings" />
 
       {/* Order Types List */}
       <div className="max-w-7xl mx-auto">

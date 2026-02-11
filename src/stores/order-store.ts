@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { UiModifier } from '@/types/orders'
+import { generateTempItemId } from '@/lib/order-utils'
 
 interface OrderItemModifier extends UiModifier {
   // Additional fields specific to order store
@@ -174,6 +175,10 @@ interface LoadedOrderData {
     blockTimeMinutes?: number | null
     blockTimeStartedAt?: string | null
     blockTimeExpiresAt?: string | null
+    kitchenStatus?: string | null
+    // Per-item delay
+    delayMinutes?: number | null
+    delayStartedAt?: string | null
     // Virtual group tracking
     sourceTableId?: string | null
     modifiers: {
@@ -239,13 +244,13 @@ interface OrderState {
   setItemDelay: (itemIds: string[], minutes: number | null) => void
   startItemDelayTimers: (itemIds: string[]) => void
   markItemDelayFired: (itemId: string) => void
+  // Tax rate (from location settings)
+  setEstimatedTaxRate: (rate: number) => void
 }
 
-const TAX_RATE = 0.08 // 8% - should come from location settings
-
-function generateItemId(): string {
-  return `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-}
+// Client-side tax rate estimate — overridden by syncServerTotals after API calls.
+// Set via setEstimatedTaxRate when location settings load.
+let estimatedTaxRate = 0.08
 
 export const useOrderStore = create<OrderState>((set, get) => ({
   currentOrder: null,
@@ -310,7 +315,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       isHeld: item.isHeld || false,
       holdUntil: item.holdUntil || undefined,
       firedAt: item.firedAt || undefined,
-      sentToKitchen: true, // Items from database have already been sent
+      sentToKitchen: item.kitchenStatus ? item.kitchenStatus !== 'pending' : true,
       sourceTableId: item.sourceTableId || undefined,
       isCompleted: item.isCompleted || false,
       completedAt: item.completedAt || undefined,
@@ -318,6 +323,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       status: (item.status || 'active') as OrderItem['status'],
       voidReason: item.voidReason || undefined,
       wasMade: item.wasMade,
+      // Per-item delay fields
+      delayMinutes: item.delayMinutes || null,
+      delayStartedAt: item.delayStartedAt || null,
       // Entertainment/timed rental fields
       blockTimeMinutes: item.blockTimeMinutes,
       blockTimeStartedAt: item.blockTimeStartedAt,
@@ -374,7 +382,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
     const newItem: OrderItem = {
       ...item,
-      id: generateItemId(),
+      id: generateTempItemId(),
     }
 
     set({
@@ -498,7 +506,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     })
 
     const afterDiscount = subtotal - currentOrder.discountTotal
-    const taxTotal = Math.round(afterDiscount * TAX_RATE * 100) / 100
+    // Client-side estimate only — server totals via syncServerTotals are authoritative
+    const taxTotal = Math.round(afterDiscount * estimatedTaxRate * 100) / 100
     const total = Math.round((afterDiscount + taxTotal) * 100) / 100
 
     set({
@@ -725,5 +734,10 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         ),
       },
     })
+  },
+
+  // Set estimated tax rate from location settings (for client-side UX before server sync)
+  setEstimatedTaxRate: (rate) => {
+    estimatedTaxRate = rate
   },
 }))

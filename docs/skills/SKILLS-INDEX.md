@@ -92,6 +92,8 @@
 | 281 | Wire Void Tip Reversal | DONE | Tips | 255 | `handleTipChargeback()` called from void-payment route (fire-and-forget) |
 | 282 | Weighted Tip Splits (Role-Based) | DONE | Tips | 252, 275 | `Role.tipWeight`, `buildWeightedSplitJson()`, role_weighted splitMode |
 | 283 | Tip Groups Admin Page | DONE | Tips | 252 | `/tip-groups` admin page, AdminNav link, status/date filters |
+| 284 | TIP BANK Clean (Legacy Removal) | DONE | Tips | 250-283 | Deleted `TipBank` model, migrated employee tips API to TipLedgerEntry |
+| 285 | KDS Browser Compatibility | DONE | KDS, Hardware | 102 | `@csstools/postcss-oklab-function` transpiles oklch()→rgb() for Chrome 108+ KDS devices, pair page redirect fix |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -294,8 +296,9 @@
 | Routing & KDS (200s) | 5 | 0 | 0 | 5 | 100% |
 | Datacap & Multi-Surface (217-220) | 4 | 0 | 0 | 4 | 100% |
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
-| Tips & Tip Bank | 34 | 0 | 0 | 34 | 100% |
-| **TOTAL** | **179** | **7** | **13** | **199** | **93%** |
+| Tips & Tip Bank | 35 | 0 | 0 | 35 | 100% |
+| KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
+| **TOTAL** | **181** | **7** | **13** | **201** | **93%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -467,13 +470,15 @@ Skills that can be developed simultaneously:
 | 279 | API Permission Hardening | Self-access checks on ledger + group join routes |
 | 280 | Feature Flag + Legacy Guard | `tipBankSettings.enabled` — disable tip allocation per-location |
 
-### Tip Bank Integration & Enhancements (Skills 281-283) — 2026-02-10
+### Tip Bank Integration, Cleanup & KDS Fix (Skills 281-285) — 2026-02-10
 
 | Skill | Name | What Was Built |
 |-------|------|----------------|
 | 281 | Wire Void Tip Reversal | `handleTipChargeback()` called from void-payment route (fire-and-forget) |
 | 282 | Weighted Tip Splits | `Role.tipWeight`, `buildWeightedSplitJson()`, role_weighted splitMode for tip groups |
 | 283 | Tip Groups Admin Page | `/tip-groups` admin page with status/date filters, AdminNav link |
+| 284 | TIP BANK Clean | Deleted legacy `TipBank` model, migrated `/api/employees/[id]/tips` to TipLedgerEntry |
+| 285 | KDS Browser Compatibility | PostCSS oklch()→rgb() transpilation for Chrome 108 KDS devices, pair page redirect fix |
 
 ## Recently Completed (2026-02-10 — Phase 6: Multi-Role, Cash Handling & Crew Hub)
 

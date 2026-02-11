@@ -114,11 +114,15 @@ export default function CrewTipBankPage() {
   const [offset, setOffset] = useState(0)
   const [showTransferModal, setShowTransferModal] = useState(false)
 
+  // Hydration guard: wait for Zustand to rehydrate from localStorage
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
   useEffect(() => {
-    if (!employee || !isAuthenticated) {
+    if (hydrated && (!employee || !isAuthenticated)) {
       router.push('/login')
     }
-  }, [employee, isAuthenticated, router])
+  }, [hydrated, employee, isAuthenticated, router])
 
   const fetchLedger = useCallback(async (currentOffset: number, append: boolean) => {
     if (!employee) return
@@ -174,7 +178,7 @@ export default function CrewTipBankPage() {
     fetchLedger(newOffset, true)
   }
 
-  if (!employee || !isAuthenticated) return null
+  if (!hydrated || !employee || !isAuthenticated) return null
 
   const balance = data?.balance
   const entries = data?.entries ?? []

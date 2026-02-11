@@ -4,6 +4,21 @@
  * Per-seat balance calculations and status determination.
  */
 
+// Module-level tax rate, updated by useOrderSettings when location settings load.
+// Starts at 0 (not hardcoded 8%) — if settings fail to load, zero tax is obvious to the user.
+// Callers can pass an explicit taxRate to override; this is the fallback default.
+let _locationTaxRate = 0
+
+/** Update the cached location tax rate (called from useOrderSettings on load). */
+export function setLocationTaxRate(rate: number) {
+  _locationTaxRate = rate
+}
+
+/** Get the current cached location tax rate. */
+export function getLocationTaxRate(): number {
+  return _locationTaxRate
+}
+
 export type SeatStatus = 'empty' | 'stale' | 'active' | 'printed' | 'paid'
 
 export interface SeatInfo {
@@ -72,7 +87,7 @@ export const SEAT_STATUS_GLOW: Record<SeatStatus, string> = {
 export function calculateSeatBalance(
   items: OrderItemForSeat[],
   seatNumber: number,
-  taxRate: number = 0.08
+  taxRate: number = _locationTaxRate
 ): { subtotal: number; taxAmount: number; total: number; itemCount: number } {
   const seatItems = items.filter(item => item.seatNumber === seatNumber)
 
@@ -137,7 +152,7 @@ export function calculateAllSeatBalances(
   items: OrderItemForSeat[],
   totalSeats: number,
   payments: PaymentForSeat[] = [],
-  taxRate: number = 0.08
+  taxRate: number = _locationTaxRate
 ): SeatInfo[] {
   const seats: SeatInfo[] = []
 

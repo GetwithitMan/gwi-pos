@@ -8,7 +8,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, inventorySubNav } from '@/components/admin/AdminSubNav'
 
 interface InventoryItem {
   id: string
@@ -168,7 +167,6 @@ export default function TransactionsPage() {
         subtitle="View all inventory movements and adjustments"
         breadcrumbs={[{ label: 'Inventory', href: '/inventory' }]}
       />
-      <AdminSubNav items={inventorySubNav} basePath="/inventory" />
 
       {/* Filters */}
       <Card className="mb-6">

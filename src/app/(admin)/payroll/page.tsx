@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, teamSubNav } from '@/components/admin/AdminSubNav'
 
 interface PayrollPeriod {
   id: string
@@ -130,7 +130,7 @@ export default function PayrollPage() {
         loadPeriods()
       } else {
         const error = await response.json()
-        alert(error.error || 'Failed to create period')
+        toast.error(error.error || 'Failed to create period')
       }
     } catch (error) {
       console.error('Failed to create period:', error)
@@ -151,7 +151,7 @@ export default function PayrollPage() {
         loadPeriodDetails(periodId)
       } else {
         const error = await response.json()
-        alert(error.error || 'Failed to process payroll')
+        toast.error(error.error || 'Failed to process payroll')
       }
     } catch (error) {
       console.error('Failed to process payroll:', error)
@@ -228,7 +228,6 @@ export default function PayrollPage() {
           </Button>
         }
       />
-      <AdminSubNav items={teamSubNav} basePath="/employees" />
 
       <div className="max-w-7xl mx-auto mt-6">
         <div className="grid lg:grid-cols-3 gap-6">

@@ -118,6 +118,8 @@ const orderItemSchema = z.object({
   specialNotes: z.string().max(500).nullish(),
   seatNumber: z.number().int().positive().nullish(),
   courseNumber: z.number().int().positive().nullish(),
+  isHeld: z.boolean().optional(),
+  delayMinutes: z.number().int().positive().nullish(),
   pizzaConfig: pizzaConfigSchema,
   // Timed rental / entertainment fields
   blockTimeMinutes: z.number().int().positive().nullish(),

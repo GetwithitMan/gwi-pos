@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface EmployeeShiftReport {
   employee: {
@@ -273,7 +272,6 @@ function EmployeeShiftReportContent() {
           </div>
         }
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       <div className="max-w-5xl mx-auto print:p-0 print:max-w-none">
         {isLoading ? (

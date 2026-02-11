@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
 import { SPIRIT_TIERS, BOTTLE_SIZES, LIQUOR_DEFAULTS } from '@/lib/constants'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 import { RecipeBuilder } from '@/components/menu/RecipeBuilder'
 
 interface SpiritCategory {
@@ -949,7 +949,7 @@ function LiquorBuilderContent() {
               setEditingCategory(null)
             } else {
               const err = await res.json()
-              alert(err.error || 'Failed to delete')
+              toast.error(err.error || 'Failed to delete')
             }
           } : undefined}
           onClose={() => { setShowCategoryModal(false); setEditingCategory(null); }}
@@ -984,7 +984,7 @@ function LiquorBuilderContent() {
               setEditingBottle(null)
             } else {
               const err = await res.json()
-              alert(err.error || 'Failed to delete')
+              toast.error(err.error || 'Failed to delete')
             }
           } : undefined}
           onClose={() => { setShowBottleModal(false); setEditingBottle(null); }}
@@ -1011,7 +1011,7 @@ function LiquorBuilderContent() {
               setBottleForMenuItem(null)
             } else {
               const err = await res.json()
-              alert(err.error || 'Failed to create menu item')
+              toast.error(err.error || 'Failed to create menu item')
             }
           }}
           onClose={() => { setShowCreateMenuItemModal(false); setBottleForMenuItem(null); }}

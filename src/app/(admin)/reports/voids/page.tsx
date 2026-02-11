@@ -7,7 +7,6 @@ import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface VoidLog {
   id: string
@@ -139,7 +138,6 @@ export default function VoidReportsPage() {
         title="Void / Comp Report"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       {/* Filters */}
       <div className="max-w-7xl mx-auto">

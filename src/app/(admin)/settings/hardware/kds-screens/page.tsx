@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 
 interface PrepStation {
   id: string
@@ -296,7 +295,6 @@ export default function KDSScreensPage() {
           </button>
         }
       />
-      <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
 
       <div className="mx-auto max-w-4xl">
         {/* Screens List */}

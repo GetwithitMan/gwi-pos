@@ -92,8 +92,12 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'gwi-pos-auth',
       partialize: (state) => ({
+        employee: state.employee,
         locationId: state.locationId,
-        // Don't persist sensitive auth data
+        isAuthenticated: state.isAuthenticated,
+        clockedIn: state.clockedIn,
+        clockInTime: state.clockInTime,
+        workingRole: state.workingRole,
       }),
     }
   )

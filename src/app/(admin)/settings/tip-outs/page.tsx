@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, settingsSubNav } from '@/components/admin/AdminSubNav'
 
 const BASIS_TYPE_LABELS: Record<string, string> = {
   tips_earned: 'Tips Earned',
@@ -326,7 +325,6 @@ export default function TipOutsSettingsPage() {
           </Button>
         }
       />
-      <AdminSubNav items={settingsSubNav} basePath="/settings" />
 
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Messages */}

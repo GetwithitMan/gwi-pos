@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { toast } from '@/stores/toast-store'
 
 interface EntertainmentSessionControlsProps {
   orderItemId: string
@@ -104,11 +105,11 @@ export function EntertainmentSessionControls({
         onSessionEnded?.()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to stop session')
+        toast.error(data.error || 'Failed to stop session')
       }
     } catch (err) {
       console.error('Error stopping session:', err)
-      alert('Failed to stop session')
+      toast.error('Failed to stop session')
     } finally {
       setIsProcessing(false)
     }
@@ -132,11 +133,11 @@ export function EntertainmentSessionControls({
         onTimeExtended?.()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to extend time')
+        toast.error(data.error || 'Failed to extend time')
       }
     } catch (err) {
       console.error('Error extending time:', err)
-      alert('Failed to extend time')
+      toast.error('Failed to extend time')
     } finally {
       setIsProcessing(false)
     }
@@ -160,11 +161,11 @@ export function EntertainmentSessionControls({
         onTimerStarted?.()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to start timer')
+        toast.error(data.error || 'Failed to start timer')
       }
     } catch (err) {
       console.error('Error starting timer:', err)
-      alert('Failed to start timer')
+      toast.error('Failed to start timer')
     } finally {
       setIsProcessing(false)
     }

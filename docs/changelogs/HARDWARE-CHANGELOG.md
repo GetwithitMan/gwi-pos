@@ -81,6 +81,26 @@ Phase 2 remains TODO. Phase 3 now has additional requirement:
 
 ---
 
+## 2026-02-10 — Browser Compatibility: oklch() Transpilation
+
+### Impact on Hardware Domain
+KDS devices with older Chrome versions (< 111) cannot render `oklch()` CSS color values used by Tailwind CSS v4. This was discovered on a KA-15PCAPAIO4 device running Chrome 108.
+
+### Fix Applied (in PostCSS pipeline)
+`@csstools/postcss-oklab-function` with `preserve: false` transpiles all `oklch()` → `rgb()`. This affects ALL pages (not just KDS), ensuring hardware devices with older browsers can render the UI.
+
+### Hardware Considerations
+- KDS devices often run older Android/Chrome versions that don't auto-update
+- The `browserslist` in `package.json` now targets `chrome >= 108` as minimum
+- Any new CSS features should be tested against Chrome 108 as the floor
+- Consider adding browser version to the KDS screen admin page for visibility
+
+### Files Modified (by KDS Domain PM)
+- `postcss.config.mjs` — oklch transpilation plugin
+- `package.json` — browserslist + dependency
+
+---
+
 ### How to Resume
 1. Say: `PM Mode: Hardware`
 2. Review this changelog

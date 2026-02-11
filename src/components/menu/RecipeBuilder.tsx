@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
 
 interface BottleProduct {
   id: string
@@ -140,11 +141,11 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
         await loadData() // Reload to get updated IDs and cost calc
       } else {
         const error = await res.json()
-        alert(`Failed to save recipe: ${error.error}`)
+        toast.error(`Failed to save recipe: ${error.error}`)
       }
     } catch (error) {
       console.error('Failed to save recipe:', error)
-      alert('Failed to save recipe')
+      toast.error('Failed to save recipe')
     } finally {
       setSaving(false)
     }

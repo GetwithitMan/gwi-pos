@@ -50,6 +50,12 @@ export async function GET(request: NextRequest) {
           },
         },
         items: {
+          where: {
+            deletedAt: null,
+            kitchenStatus: { not: 'pending' },  // Only show items that have been sent to kitchen
+            status: { not: 'voided' },           // Hide voided items
+            ...(showAll ? {} : { isCompleted: false }),  // Normal mode: hide completed items
+          },
           include: {
             menuItem: {
               select: {

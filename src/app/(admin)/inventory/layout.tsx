@@ -1,6 +1,5 @@
 'use client'
 
-import { AdminNav } from '@/components/admin/AdminNav'
 import { InventoryNav } from '@/components/inventory/InventoryNav'
 import { usePathname } from 'next/navigation'
 
@@ -16,19 +15,15 @@ export default function InventoryLayout({
   const isQuickStockPage = pathname === '/inventory'
 
   if (isQuickStockPage) {
-    // Return children directly - the Quick Stock page has its own AdminNav
     return <>{children}</>
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <AdminNav />
-      <div className="lg:ml-64">
-        <InventoryNav />
-        <div className="p-6">
-          {children}
-        </div>
+    <>
+      <InventoryNav />
+      <div className="p-6">
+        {children}
       </div>
-    </div>
+    </>
   )
 }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { parseSettings } from '@/lib/settings'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
@@ -47,6 +48,16 @@ export async function POST(
 
     const locationId = order.locationId
 
+    // Load tip percentages from location settings
+    const location = await db.location.findFirst({ where: { id: locationId }, select: { settings: true } })
+    const locSettings = parseSettings(location?.settings)
+    const rawSuggestions = locSettings.tipBank?.tipGuide?.percentages ?? [15, 18, 20, 25]
+    const tipSuggestions = rawSuggestions
+      .map(Number)
+      .filter(pct => Number.isFinite(pct) && pct > 0 && pct <= 100)
+      .slice(0, 4)
+    if (tipSuggestions.length === 0) tipSuggestions.push(15, 18, 20, 25)
+
     // Calculate purchase amount from order total
     const purchaseAmount = Number(order.total) - Number(order.tipTotal)
     const gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
@@ -63,7 +74,7 @@ export async function POST(
         // If device tip mode, fire GetSuggestiveTip first
         if (tipMode === 'device') {
           try {
-            const tipResponse = await client.getSuggestiveTip(card.readerId, [15, 18, 20, 25])
+            const tipResponse = await client.getSuggestiveTip(card.readerId, tipSuggestions)
             if (tipResponse.gratuityAmount) {
               // Use device-selected tip
               const deviceTip = parseFloat(tipResponse.gratuityAmount) || 0
@@ -162,6 +173,7 @@ export async function POST(
 
     // Dispatch open orders changed so all terminals refresh (fire-and-forget)
     dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId }, { async: true }).catch(() => {})
+    dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
 
     return NextResponse.json({
       data: {

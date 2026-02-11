@@ -1896,6 +1896,9 @@ toast.error('Connection lost', 8000)
 | 6.4 | Modifier depth display | Order with nested modifiers → verify KDS shows "- Mod" / "-- Child" | ⬜ |
 | 6.5 | Course firing | Multi-course order → fire courses in sequence → verify KDS updates | ⬜ |
 | 6.6 | Entertainment KDS dashboard | /kds/entertainment → verify active sessions + timers | ⬜ |
+| 6.7 | KDS renders on Chrome 108 device | Open /kds on KDS device (Chrome 108) → verify dark background, text visible, no white screen | ⬜ |
+| 6.8 | KDS pair page renders on older Chrome | Open /kds/pair on Chrome 108 → verify dark background, code inputs visible, submit works | ⬜ |
+| 6.9 | KDS pair redirect includes screen slug | Complete pairing → verify redirect URL is /kds?screen=kitchen (not just /kds) | ⬜ |
 
 ### 7. Tipping & Tip Shares
 
@@ -1905,6 +1908,12 @@ toast.error('Connection lost', 8000)
 | 7.2 | Tip share report shows correct amounts | /reports/tip-shares → verify amounts match rules | ⬜ |
 | 7.3 | Mark tip shares as paid | Tip share report → mark paid → verify status updates | ⬜ |
 | 7.4 | Daily store report includes tips | /reports/daily → verify tip section present | ⬜ |
+| 7.5 | Employee tips API uses ledger (not TipBank) | GET /api/employees/[id]/tips → verify returns ledger entries, no TipBank model references | ⬜ |
+| 7.6 | Tip allocation idempotency | Pay same order twice → verify only 1 TipTransaction + 1 set of ledger entries | ⬜ |
+| 7.7 | Tip bank feature flag | Set tipBank.enabled=false → pay order → verify no tip allocation (payment still succeeds) | ⬜ |
+| 7.8 | Tip ledger self-access check | GET /api/tips/ledger?employeeId=X without matching x-employee-id header → verify 403 | ⬜ |
+| 7.9 | Tip debt auto-reclaim | Trigger chargeback exceeding balance → verify TipDebt created → add new tip → verify auto-reclaim | ⬜ |
+| 7.10 | Weighted tip splits | Create tip group with role_weighted mode → pay order → verify splits by role tipWeight | ⬜ |
 
 ### 8. Employee & Auth
 
@@ -2122,6 +2131,19 @@ toast.error('Connection lost', 8000)
 | 21.8 | Payment triggers open orders refresh | Pay order on terminal A → verify terminal B's Open Orders panel removes it within 1s | ⬜ |
 | 21.9 | Debounced tabsRefreshTrigger | Rapid actions (split + void + pay) → verify only 1 /api/orders/open fetch in Network | ⬜ |
 | 21.10 | OPEN_ORDERS_CHANGED broadcast route works | Fire dispatchOpenOrdersChanged → verify broadcast route returns 200 (not 400) | ⬜ |
+| 21.11 | Floor plan updates on item add (cross-terminal) | Terminal A adds items to table → Terminal B sees table turn green (occupied) within 1s | ⬜ |
+| 21.12 | Floor plan updates on payment (cross-terminal) | Terminal A pays table order → Terminal B sees table go back to available within 1s | ⬜ |
+| 21.13 | Floor plan updates on tab close (cross-terminal) | Terminal A closes tab → Terminal B sees status update within 1s | ⬜ |
+| 21.14 | Local table status instant on item add | Add first item to table order → table turns green immediately (no server round-trip) | ⬜ |
+
+### 22. Auth & Session Stability
+
+| # | Test | How to Verify | Status |
+|---|------|--------------|--------|
+| 22.1 | Page refresh preserves login | Log in → refresh page → verify still logged in (not redirected to /login) | ⬜ |
+| 22.2 | Auth persists across tabs | Log in on tab A → open new tab to /orders → verify logged in (not redirected) | ⬜ |
+| 22.3 | Virtual combine requires intentional long-press | Tap table quickly → verify order panel opens (no combine UI). Hold 1.2s+ → verify combine mode activates | ⬜ |
+| 22.4 | No ghost/phantom tables on floor plan | Refresh /orders → verify only real tables visible, no duplicates or old seed tables | ⬜ |
 
 ---
 

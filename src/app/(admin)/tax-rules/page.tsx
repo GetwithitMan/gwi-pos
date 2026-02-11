@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
-import { AdminNav } from '@/components/admin/AdminNav'
 
 interface TaxRule {
   id: string
@@ -168,10 +167,7 @@ export default function TaxRulesPage() {
   if (!isAuthenticated) return null
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <AdminNav />
-
-      <div className="lg:ml-64 p-6">
+    <div className="p-6 max-w-7xl mx-auto">
         <div className="mb-6 flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Tax Rules</h1>
@@ -291,7 +287,6 @@ export default function TaxRulesPage() {
             )}
           </CardContent>
         </Card>
-      </div>
 
       {/* Add/Edit Modal */}
       {showModal && (

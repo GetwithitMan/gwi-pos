@@ -11,7 +11,6 @@ import { ItemTreeView } from '@/components/menu/ItemTreeView'
 import { ItemEditor, IngredientLibraryItem } from '@/components/menu/ItemEditor'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 import { io, Socket } from 'socket.io-client'
 
 // Category types for reporting and item builder selection
@@ -505,9 +504,7 @@ export default function MenuManagementPage() {
       <div className="bg-white border-b shrink-0 px-4 py-1 [&>div]:!mb-1 [&>.flex]:!mb-1">
         <AdminPageHeader
           title="Menu Items"
-          backHref="/orders"
         />
-        <AdminSubNav items={menuSubNav} basePath="/menu" />
       </div>
 
       {/* Categories Bar - Horizontal Scroll */}

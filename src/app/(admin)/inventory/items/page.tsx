@@ -9,7 +9,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, inventorySubNav } from '@/components/admin/AdminSubNav'
 
 interface InventoryItem {
   id: string
@@ -214,14 +213,12 @@ export default function InventoryItemsPage() {
         title="Inventory Items"
         subtitle="Manage ingredients, bottles, and supplies"
         breadcrumbs={[{ label: 'Inventory', href: '/inventory' }]}
-        backHref="/inventory"
         actions={
           <Button onClick={() => { setEditingItem(null); setShowModal(true) }}>
             + Add Item
           </Button>
         }
       />
-      <AdminSubNav items={inventorySubNav} basePath="/inventory" />
 
       <div className="flex gap-6 h-[calc(100vh-260px)]">
       {/* Left Sidebar - Item List */}

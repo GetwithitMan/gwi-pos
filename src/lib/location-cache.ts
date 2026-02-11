@@ -54,7 +54,7 @@ const CACHE_TTL = 5 * 60 * 1000
  *
  * Example:
  *   const settings = await getLocationSettings(locationId)
- *   const taxRate = (settings?.tax?.defaultRate || 8) / 100
+ *   const taxRate = (settings?.tax?.defaultRate ?? 0) / 100
  */
 export async function getLocationSettings(
   locationId: string

@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface Summary {
   totalReservations: number
@@ -156,7 +155,6 @@ export default function ReservationReportsPage() {
         subtitle="Analyze booking patterns and utilization"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       <div className="max-w-7xl mx-auto">
 

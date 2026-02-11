@@ -25,7 +25,7 @@ async function main() {
       id: 'loc-1',
       organizationId: org.id,
       name: 'Main Bar & Grill',
-      timezone: 'America/New_York',
+      timezone: 'America/Chicago',
       address: '123 Main Street, Austin, TX 78701',
       phone: '512-555-0123',
       settings: {},

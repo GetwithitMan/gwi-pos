@@ -5,7 +5,7 @@ import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isIt
 import { calculateCardPrice } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
@@ -40,6 +40,8 @@ type NewItem = {
     }
   }[]
   specialNotes?: string
+  isHeld?: boolean
+  delayMinutes?: number | null
   // Pizza configuration
   pizzaConfig?: {
     sizeId: string
@@ -194,6 +196,8 @@ export async function POST(
             itemTotal: fullItemTotal,
             commissionAmount: itemCommission,
             specialNotes: item.specialNotes || null,
+            isHeld: item.isHeld || false,
+            delayMinutes: item.delayMinutes || null,
             // Entertainment/timed rental fields
             blockTimeMinutes: item.blockTimeMinutes || null,
             // Modifiers
@@ -386,6 +390,12 @@ export async function POST(
       total: Number(result.updatedOrder.total),
       commissionTotal: Number(result.updatedOrder.commissionTotal || 0),
     }, { async: true }).catch(console.error)
+
+    // Dispatch open orders + floor plan update for cross-terminal table status
+    dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'created', orderId: result.updatedOrder.id }, { async: true }).catch(() => {})
+    if (result.updatedOrder.tableId) {
+      dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(() => {})
+    }
 
     return NextResponse.json({
       ...response,

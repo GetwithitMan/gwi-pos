@@ -2,6 +2,7 @@
 
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
+import { toast } from '@/stores/toast-store'
 
 interface Seat {
   id: string
@@ -136,7 +137,7 @@ export default function SellTicketsPage({ params }: { params: Promise<{ id: stri
 
       const data = await res.json()
       if (!res.ok) {
-        alert(data.error || 'Failed to hold seats')
+        toast.error(data.error || 'Failed to hold seats')
         return
       }
 
@@ -152,7 +153,7 @@ export default function SellTicketsPage({ params }: { params: Promise<{ id: stri
 
   async function completePurchase() {
     if (heldTickets.length === 0 || !customerForm.name) {
-      alert('Please enter customer name')
+      toast.warning('Please enter customer name')
       return
     }
 
@@ -172,11 +173,11 @@ export default function SellTicketsPage({ params }: { params: Promise<{ id: stri
 
       const data = await res.json()
       if (!res.ok) {
-        alert(data.error || 'Failed to complete purchase')
+        toast.error(data.error || 'Failed to complete purchase')
         return
       }
 
-      alert(`Success! ${data.tickets.length} ticket(s) sold to ${customerForm.name}`)
+      toast.success(`${data.tickets.length} ticket(s) sold to ${customerForm.name}`)
 
       // Reset
       setHeldTickets([])

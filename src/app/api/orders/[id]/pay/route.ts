@@ -15,7 +15,7 @@ import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { tableEvents } from '@/lib/realtime/table-events'
 import { errorCapture } from '@/lib/error-capture'
 import { calculateCardPrice, calculateCashDiscount } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 
 /**
@@ -921,6 +921,9 @@ export async function POST(
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     if (updateData.status === 'paid') {
       dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id }, { async: true }).catch(() => {})
+      if (order.tableId) {
+        dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
+      }
     }
 
     // Award loyalty points if order is fully paid and has a customer

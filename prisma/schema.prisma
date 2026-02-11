@@ -1693,6 +1693,10 @@ model OrderItem {
   holdUntil DateTime?
   firedAt   DateTime?
 
+  // Per-item delay (e.g., 5m, 10m — item waits, then fires to kitchen)
+  delayMinutes    Int?      // Delay preset in minutes (null = no delay)
+  delayStartedAt  DateTime? // When the delay timer started (set by send route)
+
   // Kitchen status
   kitchenStatus String @default("pending") // pending, cooking, ready, delivered
 

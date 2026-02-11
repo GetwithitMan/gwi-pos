@@ -117,7 +117,7 @@ export async function GET(request: NextRequest) {
         // Aggregate earnings by employeeId
         let earningsAgg: { employeeId: string; _sum: { amountCents: number | null } }[] = []
         if (memberEmployeeIds.length > 0) {
-          earningsAgg = await db.tipLedgerEntry.groupBy({
+          const result = await db.tipLedgerEntry.groupBy({
             by: ['employeeId'],
             where: {
               locationId,
@@ -130,6 +130,7 @@ export async function GET(request: NextRequest) {
               amountCents: true,
             },
           })
+          earningsAgg = result as typeof earningsAgg
         }
 
         // Build a map of employeeId -> name from memberships

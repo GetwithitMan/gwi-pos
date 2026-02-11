@@ -7,7 +7,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 interface Modifier {
   id: string
@@ -341,8 +340,6 @@ export default function CombosPage() {
         breadcrumbs={[{ label: 'Menu', href: '/menu' }]}
         actions={<Button onClick={() => handleOpenModal()}>+ New Combo</Button>}
       />
-      <AdminSubNav items={menuSubNav} basePath="/menu" />
-
       <div className="max-w-7xl mx-auto mt-6">
 
         {isLoading ? (

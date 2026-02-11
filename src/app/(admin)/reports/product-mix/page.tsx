@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface ProductMixItem {
   menuItemId: string
@@ -121,7 +120,6 @@ export default function ProductMixReportPage() {
         title="Product Mix Report"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       <div className="max-w-7xl mx-auto">
 

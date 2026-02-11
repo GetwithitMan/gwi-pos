@@ -9,7 +9,6 @@ import { formatCurrency } from '@/lib/utils'
 import { PizzaPrintSettings } from '@/types/pizza-print-settings'
 import { PizzaPrintSettingsEditor } from '@/components/hardware/PizzaPrintSettingsEditor'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 // Types
 interface PizzaConfig {
@@ -357,8 +356,6 @@ export default function PizzaAdminPage() {
         subtitle="Configure sizes, crusts, sauces, cheeses, and toppings"
         breadcrumbs={[{ label: 'Menu', href: '/menu' }]}
       />
-      <AdminSubNav items={menuSubNav} basePath="/menu" />
-
       <div className="max-w-6xl mx-auto mt-6">
 
         {/* Tabs */}

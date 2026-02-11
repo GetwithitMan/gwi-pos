@@ -9,6 +9,7 @@ import { WaitlistPanel } from '@/components/entertainment/WaitlistPanel'
 import { AddToWaitlistModal } from '@/components/entertainment/AddToWaitlistModal'
 import { SeatFromWaitlistModal } from '@/components/entertainment/SeatFromWaitlistModal'
 import type { EntertainmentItem, WaitlistEntry } from '@/lib/entertainment'
+import { toast } from '@/stores/toast-store'
 
 const REFRESH_INTERVAL = 3000 // 3 seconds - faster refresh for real-time updates
 
@@ -136,7 +137,7 @@ export default function EntertainmentKDSPage() {
       try {
         const orderResponse = await fetch(`/api/orders/${item.currentOrder.orderId}`)
         if (!orderResponse.ok) {
-          alert('Could not find order details')
+          toast.error('Could not find order details')
           return
         }
         const orderData = await orderResponse.json()
@@ -144,7 +145,7 @@ export default function EntertainmentKDSPage() {
           (i: { menuItemId: string }) => i.menuItemId === itemId
         )
         if (!entertainmentItem?.id) {
-          alert('Could not find entertainment item in order')
+          toast.error('Could not find entertainment item in order')
           return
         }
         // Extend using the found order item ID
@@ -161,12 +162,12 @@ export default function EntertainmentKDSPage() {
           fetchStatus()
         } else {
           const data = await response.json()
-          alert(data.error || 'Failed to extend time')
+          toast.error(data.error || 'Failed to extend time')
         }
         return
       } catch (err) {
         console.error('Error extending time:', err)
-        alert('Failed to extend time')
+        toast.error('Failed to extend time')
         return
       }
     }
@@ -186,11 +187,11 @@ export default function EntertainmentKDSPage() {
         fetchStatus()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to extend time')
+        toast.error(data.error || 'Failed to extend time')
       }
     } catch (err) {
       console.error('Error extending time:', err)
-      alert('Failed to extend time')
+      toast.error('Failed to extend time')
     }
   }
 
@@ -219,7 +220,7 @@ export default function EntertainmentKDSPage() {
         } else {
           const data = await response.json()
           console.error('Failed to stop block time:', data)
-          alert(data.error || 'Failed to stop session')
+          toast.error(data.error || 'Failed to stop session')
         }
       } else {
         // Fallback: just reset the entertainment item status directly
@@ -240,12 +241,12 @@ export default function EntertainmentKDSPage() {
         } else {
           const data = await response.json()
           console.error('Failed to update status:', data)
-          alert(data.error || 'Failed to stop session')
+          toast.error(data.error || 'Failed to stop session')
         }
       }
     } catch (err) {
       console.error('Error stopping session:', err)
-      alert('Failed to stop session')
+      toast.error('Failed to stop session')
     }
   }
 

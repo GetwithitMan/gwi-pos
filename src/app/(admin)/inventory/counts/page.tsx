@@ -9,7 +9,6 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, inventorySubNav } from '@/components/admin/AdminSubNav'
 
 interface StorageLocation {
   id: string
@@ -307,7 +306,6 @@ export default function CountsPage() {
           </Button>
         }
       />
-      <AdminSubNav items={inventorySubNav} basePath="/inventory" />
 
       <div className="flex gap-6 h-[calc(100vh-16rem)]">
         {/* Left Panel - Count List */}

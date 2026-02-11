@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { IngredientLibrary } from '@/components/ingredients'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 export default function IngredientsPage() {
   const router = useRouter()
@@ -28,8 +27,6 @@ export default function IngredientsPage() {
         title="Ingredients"
         breadcrumbs={[{ label: 'Menu', href: '/menu' }]}
       />
-      <AdminSubNav items={menuSubNav} basePath="/menu" />
-
       <div className="max-w-6xl mx-auto mt-6">
         <IngredientLibrary locationId={employee.location.id} />
       </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { sendToPrinter } from '@/lib/printer-connection'
+import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
 
 import {
   buildDocument,
@@ -80,10 +81,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
 
-    // Filter items if specific itemIds provided
-    const itemsToPrint = itemIds
-      ? order.items.filter(item => itemIds.includes(item.id))
-      : order.items.filter(item => item.kitchenStatus === 'pending') // Only items not yet sent
+    // Filter items using shared kitchen eligibility logic (aligned with send route)
+    // Always exclude held items — they should not print until explicitly fired
+    // Fallback: print items that have been sent to kitchen (not pending/delayed/held/completed)
+    const itemsToPrint = getEligibleKitchenItems(order.items, {
+      filterItemIds: itemIds,
+      expectedStatus: 'sent',
+      excludeCompleted: true,
+    })
 
     if (itemsToPrint.length === 0) {
       console.log('[Kitchen Print] No items to print')

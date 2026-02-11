@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
-import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/batch-updates'
+import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
 export async function POST(
@@ -29,7 +30,7 @@ export async function POST(
       where: { id, deletedAt: null },
       include: {
         items: {
-          where: { deletedAt: null, kitchenStatus: 'pending' },
+          where: { deletedAt: null, kitchenStatus: 'pending', isHeld: false },
           include: {
             menuItem: {
               select: { id: true, name: true, itemType: true, blockTimeMinutes: true }
@@ -46,15 +47,48 @@ export async function POST(
       )
     }
 
-    // When itemIds filter is provided, only process those specific items
-    const itemsToProcess = filterItemIds
-      ? order.items.filter(item => filterItemIds!.includes(item.id))
-      : order.items
+    // Filter: only non-held, pending items. isHeld is a hard gate — held items never send.
+    // When filterItemIds is provided: only process those specific items (for selective firing)
+    // When no filterItemIds: process all eligible items EXCEPT those with active delays
+    // Uses shared getEligibleKitchenItems to stay aligned with kitchen print route
+    const itemsToProcess = getEligibleKitchenItems(order.items, {
+      filterItemIds,
+      expectedStatus: 'pending',
+    })
 
-    console.log('[API /orders/[id]/send] Order found with', order.items.length, 'pending items,',
-      filterItemIds ? `filtering to ${itemsToProcess.length} specific items` : 'sending all')
+    // Identify delayed items that need their timer started.
+    // ALWAYS run this regardless of filterItemIds — when a mix of immediate + delayed items
+    // are sent, filterItemIds targets the immediate ones, but delayed items still need
+    // their delayStartedAt stamped so the client can show countdown timers.
+    const delayedItems = order.items.filter(item =>
+      item.delayMinutes && item.delayMinutes > 0 && !item.isHeld && !item.delayStartedAt
+    )
 
     const now = new Date()
+
+    // Stamp delayStartedAt on delayed items so countdown survives page reload
+    if (delayedItems.length > 0) {
+      await db.orderItem.updateMany({
+        where: { id: { in: delayedItems.map(i => i.id) } },
+        data: { delayStartedAt: now },
+      })
+    }
+
+    console.log('[API /orders/[id]/send] Order has', order.items.length, 'pending items,',
+      'held:', order.items.filter(i => i.isHeld).length, ',',
+      'delayed:', delayedItems.length, ',',
+      'sending:', itemsToProcess.length)
+
+    // Short-circuit: if no items to process, return early without dispatching events
+    if (itemsToProcess.length === 0) {
+      return NextResponse.json({
+        success: true,
+        sentItemCount: 0,
+        sentItemIds: [],
+        delayedItemCount: delayedItems.length,
+        routing: { stations: [], unroutedCount: 0 },
+      })
+    }
     const updatedItemIds: string[] = []
 
     // FIX-010: Batch updates to avoid N+1 query problem
@@ -68,9 +102,6 @@ export async function POST(
 
     // Collect items and prepare batch updates
     for (const item of itemsToProcess) {
-      // Skip held items
-      if (item.isHeld) continue
-
       // Track for routing
       updatedItemIds.push(item.id)
 
@@ -176,6 +207,10 @@ export async function POST(
         },
       },
     })
+
+    // Dispatch open orders + floor plan update so all terminals refresh table status instantly
+    dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId: order.id }, { async: true }).catch(() => {})
+    dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
 
     return NextResponse.json({
       success: true,

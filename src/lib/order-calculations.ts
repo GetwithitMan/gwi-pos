@@ -139,7 +139,7 @@ export function calculateOrderTax(
   subtotal: number,
   locationSettings: LocationTaxSettings | null
 ): number {
-  const taxRate = (locationSettings?.tax?.defaultRate || 8) / 100
+  const taxRate = (locationSettings?.tax?.defaultRate ?? 0) / 100
   return roundToCents(subtotal * taxRate)
 }
 
@@ -180,7 +180,7 @@ export function calculateOrderTotals(
   priceRounding?: PriceRoundingSettings,
   paymentMethod: 'cash' | 'card' = 'card'
 ): OrderTotals {
-  const taxRate = (locationSettings?.tax?.defaultRate || 8) / 100
+  const taxRate = (locationSettings?.tax?.defaultRate ?? 0) / 100
   const commissionTotal = calculateOrderCommission(items)
 
   // 1. Split items into tax-inclusive vs tax-exclusive
@@ -332,7 +332,7 @@ export function calculateSplitTax(
  * Get the location's default tax rate as a decimal (e.g., 0.08 for 8%).
  */
 export function getLocationTaxRate(settings: { tax?: { defaultRate?: number } } | null | undefined): number {
-  const rate = settings?.tax?.defaultRate ?? 8
+  const rate = settings?.tax?.defaultRate ?? 0
   return rate / 100
 }
 

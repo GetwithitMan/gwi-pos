@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, customersSubNav } from '@/components/admin/AdminSubNav'
 
 interface Coupon {
   id: string
@@ -129,7 +128,6 @@ export default function CouponsPage() {
           </Button>
         }
       />
-      <AdminSubNav items={customersSubNav} basePath="/customers" />
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto mt-6">

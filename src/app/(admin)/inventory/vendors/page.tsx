@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, inventorySubNav } from '@/components/admin/AdminSubNav'
 
 interface Vendor {
   id: string
@@ -124,7 +123,6 @@ export default function VendorsPage() {
           </Button>
         }
       />
-      <AdminSubNav items={inventorySubNav} basePath="/inventory" />
 
       {/* Filters */}
       <div className="mb-6 flex items-center gap-4">

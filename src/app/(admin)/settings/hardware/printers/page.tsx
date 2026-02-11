@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, hardwareSubNav } from '@/components/admin/AdminSubNav'
 import { PrinterSettingsEditor } from '@/components/hardware/PrinterSettingsEditor'
 import { ReceiptVisualEditor, type PrintTemplateSettings as VisualEditorSettings } from '@/components/hardware/ReceiptVisualEditor'
 import type { PrinterSettings } from '@/types/printer-settings'
@@ -324,7 +323,6 @@ export default function PrintersPage() {
           </button>
         }
       />
-      <AdminSubNav items={hardwareSubNav} basePath="/settings/hardware" />
 
       <div className="mx-auto max-w-4xl">
         {/* Printers List */}

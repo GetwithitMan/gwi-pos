@@ -321,59 +321,8 @@ export function FloorPlanHome({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
 
-  // Helper: load items from API response into the store (used by orderToLoad and refreshes)
-  const loadItemsIntoStore = useCallback((apiItems: any[]) => {
-    const store = useOrderStore.getState()
-    // Clear existing items
-    const currentItems = store.currentOrder?.items || []
-    for (const item of [...currentItems]) {
-      store.removeItem(item.id)
-    }
-    // Add each item from API
-    for (const item of apiItems) {
-      store.addItem({
-        menuItemId: item.menuItemId,
-        name: item.name || 'Unknown',
-        price: Number(item.price) || 0,
-        quantity: item.quantity,
-        modifiers: (item.modifiers || []).map((m: any) => ({
-          id: (m.id || m.modifierId) ?? '',
-          modifierId: m.modifierId,
-          name: m.name || '',
-          price: Number(m.price) || 0,
-          depth: m.depth ?? 0,
-          preModifier: m.preModifier ?? null,
-          spiritTier: m.spiritTier ?? null,
-          linkedBottleProductId: m.linkedBottleProductId ?? null,
-          parentModifierId: m.parentModifierId ?? null,
-        })),
-        specialNotes: item.specialNotes,
-        seatNumber: item.seatNumber,
-        sourceTableId: item.sourceTableId,
-        courseNumber: item.courseNumber,
-        courseStatus: item.courseStatus,
-        isHeld: item.isHeld,
-        sentToKitchen: item.sentToKitchen ?? (item.kitchenStatus !== 'pending' && item.kitchenStatus !== undefined),
-        isCompleted: item.isCompleted,
-        blockTimeMinutes: item.blockTimeMinutes,
-        blockTimeStartedAt: item.blockTimeStartedAt,
-        blockTimeExpiresAt: item.blockTimeExpiresAt,
-        completedAt: item.completedAt,
-        resendCount: item.resendCount,
-        ingredientModifications: item.ingredientModifications,
-        status: item.status || 'active',
-        voidReason: item.voidReason,
-        wasMade: item.wasMade,
-        categoryType: item.categoryType,
-      })
-      // Override the auto-generated ID with the real one from the API
-      const storeNow = useOrderStore.getState().currentOrder?.items || []
-      const justAdded = storeNow[storeNow.length - 1]
-      if (justAdded && justAdded.id !== item.id) {
-        store.updateItemId(justAdded.id, item.id)
-      }
-    }
-  }, [])
+  // REMOVED: loadItemsIntoStore — all order loading now goes through store.loadOrder()
+  // which is the SINGLE source of truth for mapping API items into the store format
 
   // Notes editing — delegated to useActiveOrder hook (NoteEditModal)
 
@@ -489,6 +438,7 @@ export function FloorPlanHome({
     cancelVirtualCombineMode,
     clearVirtualCombineMode,
     updateTablesWithVirtualGroup,
+    updateTableStatus,
   } = useFloorPlanStore()
 
   // Virtual group perimeter seats data - calculated from tables in virtual groups
@@ -1173,7 +1123,7 @@ export function FloorPlanHome({
     return () => clearInterval(heartbeat)
   }, []) // Empty deps - refs keep callbacks fresh
 
-  // Socket.io: Listen for floor plan updates from admin
+  // Socket.io: Listen for floor plan updates + order changes
   const { subscribe, isConnected } = useEvents({ locationId, autoConnect: true })
 
   useEffect(() => {
@@ -1181,14 +1131,31 @@ export function FloorPlanHome({
 
     // Subscribe to floor-plan:updated event for live preview
     // Pass false to skip loading state during background refresh
-    const unsubscribe = subscribe('floor-plan:updated', () => {
+    const unsub1 = subscribe('floor-plan:updated', () => {
       logger.log('[FloorPlanHome] Received floor-plan:updated event, refreshing...')
       loadFloorPlanData(false)
     })
 
-    return unsubscribe
+    // Subscribe to orders:list-changed for instant cross-terminal table updates
+    // When any terminal creates/sends/pays an order, refresh floor plan to show table status
+    const unsub2 = subscribe('orders:list-changed', () => {
+      logger.log('[FloorPlanHome] Received orders:list-changed event, refreshing floor plan...')
+      loadFloorPlanData(false)
+    })
+
+    return () => { unsub1(); unsub2() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, subscribe])
+
+  // Instant local table status: When items are added to a table order,
+  // immediately mark the table as 'occupied' in local state (no server round-trip)
+  const { currentOrder } = useOrderStore()
+  const itemCount = currentOrder?.items?.length ?? 0
+  useEffect(() => {
+    if (activeTableId && itemCount > 0) {
+      updateTableStatus(activeTableId, 'occupied')
+    }
+  }, [activeTableId, itemCount, updateTableStatus])
 
   // Load order when orderToLoad prop is set (from Open Orders panel)
   useEffect(() => {
@@ -1212,43 +1179,7 @@ export function FloorPlanHome({
         setActiveOrderType(orderToLoad.orderType || 'bar_tab')
         setShowOrderPanel(true)
 
-        // Load items
-        const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; voidReason?: string; wasMade?: boolean; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
-          id: item.id,
-          menuItemId: item.menuItemId,
-          name: item.name || 'Unknown',
-          price: Number(item.price) || 0,
-          quantity: item.quantity,
-          modifiers: (item.modifiers || []).map((m: { id: string; modifierId?: string; name: string; price: number; depth?: number; preModifier?: string; spiritTier?: string; linkedBottleProductId?: string; parentModifierId?: string }) => ({
-            id: (m.id || m.modifierId) ?? '',
-            modifierId: m.modifierId,
-            name: m.name || '',
-            price: Number(m.price) || 0,
-            depth: m.depth ?? 0,
-            preModifier: m.preModifier ?? null,
-            spiritTier: m.spiritTier ?? null,
-            linkedBottleProductId: m.linkedBottleProductId ?? null,
-            parentModifierId: m.parentModifierId ?? null,
-          })),
-          specialNotes: item.specialNotes,
-          seatNumber: item.seatNumber,
-          courseNumber: item.courseNumber,
-          courseStatus: item.courseStatus as 'pending' | 'fired' | 'ready' | 'served' | undefined,
-          isHeld: item.isHeld,
-          isCompleted: item.isCompleted,
-          sentToKitchen: item.kitchenStatus !== 'pending' && item.kitchenStatus !== undefined,
-          status: item.status as 'active' | 'voided' | 'comped' | undefined,
-          voidReason: item.voidReason,
-          wasMade: item.wasMade,
-          blockTimeMinutes: item.blockTimeMinutes,
-          // Item lifecycle status
-          kitchenStatus: item.kitchenStatus as 'pending' | 'cooking' | 'ready' | 'delivered' | undefined,
-          completedAt: item.completedAt,
-          resendCount: item.resendCount,
-          resendNote: item.resendNote,
-          createdAt: item.createdAt,
-        }))
-        // Load the full order (with tableId, orderType, etc.) into Zustand store
+        // Load the full order into Zustand store — store.loadOrder handles all item mapping
         const store = useOrderStore.getState()
         store.loadOrder({
           id: orderToLoad.id,
@@ -1257,7 +1188,7 @@ export function FloorPlanHome({
           tableId: data.tableId || orderToLoad.tableId,
           tabName: data.tabName,
           guestCount: data.guestCount || 1,
-          items,
+          items: data.items || [],
           subtotal: Number(data.subtotal) || 0,
           discountTotal: Number(data.discountTotal) || 0,
           taxTotal: Number(data.taxTotal) || 0,
@@ -1678,42 +1609,8 @@ export function FloorPlanHome({
         const res = await fetch(`/api/orders/${primaryTable.currentOrder.id}`)
         if (res.ok) {
           const data = await res.json()
-          const items = (data.items || []).map((item: { id: string; menuItemId: string; name: string; price: number; quantity: number; modifiers?: { id: string; name: string; price: number }[]; specialNotes?: string; seatNumber?: number; courseNumber?: number; courseStatus?: string; isHeld?: boolean; isCompleted?: boolean; kitchenStatus?: string; status?: string; voidReason?: string; wasMade?: boolean; blockTimeMinutes?: number; completedAt?: string; resendCount?: number; resendNote?: string; createdAt?: string }) => ({
-            id: item.id,
-            menuItemId: item.menuItemId,
-            name: item.name || 'Unknown',
-            price: Number(item.price) || 0,
-            quantity: item.quantity,
-            modifiers: (item.modifiers || []).map((m: { id: string; modifierId?: string; name: string; price: number; depth?: number; preModifier?: string; spiritTier?: string; linkedBottleProductId?: string; parentModifierId?: string }) => ({
-              id: (m.id || m.modifierId) ?? '',
-              modifierId: m.modifierId,
-              name: m.name || '',
-              price: Number(m.price) || 0,
-              depth: m.depth ?? 0,
-              preModifier: m.preModifier ?? null,
-              spiritTier: m.spiritTier ?? null,
-              linkedBottleProductId: m.linkedBottleProductId ?? null,
-              parentModifierId: m.parentModifierId ?? null,
-            })),
-            specialNotes: item.specialNotes,
-            seatNumber: item.seatNumber,
-            courseNumber: item.courseNumber,
-            courseStatus: item.courseStatus as 'pending' | 'fired' | 'ready' | 'served' | undefined,
-            isHeld: item.isHeld,
-            isCompleted: item.isCompleted,
-            sentToKitchen: item.kitchenStatus !== 'pending' && item.kitchenStatus !== undefined,
-            status: item.status as 'active' | 'voided' | 'comped' | undefined,
-            blockTimeMinutes: item.blockTimeMinutes,
-            // Item lifecycle status
-            kitchenStatus: item.kitchenStatus as 'pending' | 'cooking' | 'ready' | 'delivered' | undefined,
-            completedAt: item.completedAt,
-            resendCount: item.resendCount,
-            resendNote: item.resendNote,
-            createdAt: item.createdAt,
-          }))
           // Use loadOrder to atomically set tableId + items in Zustand store
-          // (loadItemsIntoStore only adds items without setting tableId, causing
-          // "Please select a table" errors on Send)
+          // store.loadOrder handles ALL item field mapping — one path, no duplication
           const store = useOrderStore.getState()
           store.loadOrder({
             id: primaryTable.currentOrder.id,
@@ -1722,41 +1619,7 @@ export function FloorPlanHome({
             tableId: data.tableId || primaryTable.id,
             tabName: data.tabName,
             guestCount: data.guestCount || totalSeats,
-            items: (data.items || []).map((item: any) => ({
-              id: item.id,
-              menuItemId: item.menuItemId,
-              name: item.name || 'Unknown',
-              price: Number(item.price) || 0,
-              quantity: item.quantity,
-              itemTotal: Number(item.itemTotal) || (Number(item.price) || 0) * (item.quantity || 1),
-              specialNotes: item.specialNotes,
-              seatNumber: item.seatNumber,
-              courseNumber: item.courseNumber,
-              courseStatus: item.courseStatus,
-              isHeld: item.isHeld,
-              holdUntil: item.holdUntil,
-              firedAt: item.firedAt,
-              isCompleted: item.isCompleted,
-              completedAt: item.completedAt,
-              resendCount: item.resendCount,
-              status: item.status || 'active',
-              voidReason: item.voidReason,
-              wasMade: item.wasMade,
-              blockTimeMinutes: item.blockTimeMinutes,
-              blockTimeStartedAt: item.blockTimeStartedAt,
-              blockTimeExpiresAt: item.blockTimeExpiresAt,
-              sourceTableId: item.sourceTableId,
-              modifiers: (item.modifiers || []).map((m: any) => ({
-                id: m.id || m.modifierId || '',
-                modifierId: m.modifierId || m.id || '',
-                name: m.name || '',
-                price: Number(m.price) || 0,
-                depth: m.depth ?? 0,
-                preModifier: m.preModifier ?? null,
-              })),
-              ingredientModifications: item.ingredientModifications,
-              pizzaConfig: item.pizzaConfig,
-            })),
+            items: data.items || [],
             subtotal: Number(data.subtotal) || 0,
             taxTotal: Number(data.taxTotal) || 0,
             tipTotal: Number(data.tipTotal) || 0,
@@ -1770,21 +1633,30 @@ export function FloorPlanHome({
         console.error('[FloorPlanHome] Failed to load order:', error)
       }
     } else {
-      // FIX: Only clear items if we're switching to a DIFFERENT table
-      // If tapping the same table we already have selected, preserve unsaved items
+      // Only clear items if we're switching between two DIFFERENT tables
+      // If tapping the same table, or assigning a table after adding items with no table, preserve items
       const isSameTable = activeTableId === primaryTable.id
-      if (!isSameTable) {
+      const store = useOrderStore.getState()
+      const hasUnsavedItems = (store.currentOrder?.items.length ?? 0) > 0
+      const isAssigningTableToFreeItems = !activeTableId && hasUnsavedItems
+
+      if (isAssigningTableToFreeItems) {
+        // User added items before picking a table — keep items, just assign the table
+        store.updateOrderType('dine_in', {
+          locationId,
+          tableId: primaryTable.id,
+          guestCount: totalSeats,
+        })
+      } else if (!isSameTable) {
         setActiveOrderId(null)
         setActiveOrderNumber(null)
-        useOrderStore.getState().clearOrder()
-        // Start a fresh order with the correct tableId so it's set before items are added
-        useOrderStore.getState().startOrder('dine_in', {
+        store.clearOrder()
+        store.startOrder('dine_in', {
           locationId,
           tableId: primaryTable.id,
           guestCount: totalSeats,
         })
       }
-      // If same table, keep existing items (user may have added items but not sent yet)
     }
   }, [selectedSeat, clearSelectedSeat, getTotalSeats, virtualCombineMode, toggleVirtualCombineSelection, virtualCombineSelectedIds.size, virtualCombinePrimaryId, activeTableId])
 
@@ -2799,6 +2671,76 @@ export function FloorPlanHome({
                       </button>
                     )}
 
+                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+
+                    {/* Crew Hub Links */}
+                    <a
+                      href="/crew"
+                      onClick={() => setShowEmployeeDropdown(false)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                        padding: '10px 16px', background: 'transparent', border: 'none',
+                        color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left', textDecoration: 'none',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      Crew Hub
+                    </a>
+                    <a
+                      href="/crew/shift"
+                      onClick={() => setShowEmployeeDropdown(false)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                        padding: '10px 16px', background: 'transparent', border: 'none',
+                        color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left', textDecoration: 'none',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                      My Shift
+                    </a>
+                    <a
+                      href="/crew/tip-bank"
+                      onClick={() => setShowEmployeeDropdown(false)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                        padding: '10px 16px', background: 'transparent', border: 'none',
+                        color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left', textDecoration: 'none',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Tip Bank
+                    </a>
+                    <a
+                      href="/crew/tip-group"
+                      onClick={() => setShowEmployeeDropdown(false)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                        padding: '10px 16px', background: 'transparent', border: 'none',
+                        color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left', textDecoration: 'none',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    >
+                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Tip Group
+                    </a>
+
+                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
+
                     {onOpenSettings && (
                       <button
                         onClick={() => {
@@ -3342,12 +3284,12 @@ export function FloorPlanHome({
             )}
           </AnimatePresence>
 
-          {/* Admin Menu - Always show if callback provided, permissions control nav content */}
+          {/* Settings - only shown if callback provided (permission-gated) */}
           {onOpenAdminNav && (
             <button
               className="icon-btn"
               onClick={onOpenAdminNav}
-              title="Menu"
+              title="Settings"
               style={{
                 background: 'rgba(59, 130, 246, 0.2)',
                 border: '1px solid rgba(59, 130, 246, 0.4)',
@@ -3356,7 +3298,8 @@ export function FloorPlanHome({
               }}
             >
               <svg width="22" height="22" fill="none" stroke="#3b82f6" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
           )}
@@ -4778,31 +4721,9 @@ export function FloorPlanHome({
                 const response = await fetch(`/api/orders/${activeOrderId}`)
                 if (response.ok) {
                   const orderData = await response.json()
-                  const freshItems = orderData.items?.map((item: any) => ({
-                    id: item.id,
-                    menuItemId: item.menuItemId,
-                    name: item.name,
-                    price: Number(item.price),
-                    quantity: item.quantity,
-                    status: item.status || 'active',
-                    modifiers: item.modifiers?.map((mod: any) => ({
-                      id: (mod.id || mod.modifierId) ?? '',
-                      modifierId: mod.modifierId,
-                      name: mod.name,
-                      price: Number(mod.price),
-                      depth: mod.depth ?? 0,
-                      preModifier: mod.preModifier ?? null,
-                      spiritTier: mod.spiritTier ?? null,
-                      linkedBottleProductId: mod.linkedBottleProductId ?? null,
-                      parentModifierId: mod.parentModifierId ?? null,
-                    })) || [],
-                    seatNumber: item.seatNumber,
-                    courseNumber: item.courseNumber,
-                    specialNotes: item.specialNotes,
-                    sentToKitchen: true,
-                    resendCount: item.resendCount,
-                  })) || []
-                  loadItemsIntoStore(freshItems)
+                  // Reload full order via store.loadOrder — one path, no duplication
+                  const store = useOrderStore.getState()
+                  store.loadOrder(orderData)
                 }
               } catch (error) {
                 console.error('Failed to refresh order:', error)
@@ -4850,32 +4771,9 @@ export function FloorPlanHome({
                 const response = await fetch(`/api/orders/${activeOrderId}`)
                 if (response.ok) {
                   const orderData = await response.json()
-                  // Update inline order items from the fresh order data
-                  const freshItems = orderData.items?.map((item: any) => ({
-                    id: item.id,
-                    menuItemId: item.menuItemId,
-                    name: item.name,
-                    price: Number(item.price),
-                    quantity: item.quantity,
-                    status: item.status || 'active',
-                    modifiers: item.modifiers?.map((mod: any) => ({
-                      id: (mod.id || mod.modifierId) ?? '',
-                      modifierId: mod.modifierId,
-                      name: mod.name,
-                      price: Number(mod.price),
-                      depth: mod.depth ?? 0,
-                      preModifier: mod.preModifier ?? null,
-                      spiritTier: mod.spiritTier ?? null,
-                      linkedBottleProductId: mod.linkedBottleProductId ?? null,
-                      parentModifierId: mod.parentModifierId ?? null,
-                    })) || [],
-                    seatNumber: item.seatNumber,
-                    courseNumber: item.courseNumber,
-                    specialNotes: item.specialNotes,
-                    sentToKitchen: true,
-                    resendCount: item.resendCount,
-                  })) || []
-                  loadItemsIntoStore(freshItems)
+                  // Reload full order via store.loadOrder — one path, no duplication
+                  const store = useOrderStore.getState()
+                  store.loadOrder(orderData)
                 }
               } catch (error) {
                 console.error('Failed to refresh order:', error)

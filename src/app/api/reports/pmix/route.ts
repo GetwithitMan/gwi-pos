@@ -202,7 +202,7 @@ export async function GET(request: NextRequest) {
     // Get tax rate for backing out inclusive tax
     const locationSettings = await getLocationSettings(locationId)
     const parsedSettings = locationSettings ? parseSettings(locationSettings) : null
-    const taxRate = ((parsedSettings as any)?.tax?.defaultRate || 8) / 100
+    const taxRate = ((parsedSettings as any)?.tax?.defaultRate ?? 0) / 100
 
     // Aggregate by menu item
     const itemMap = new Map<string, {

@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, inventorySubNav } from '@/components/admin/AdminSubNav'
 
 interface InventorySettings {
   locationId: string
@@ -126,7 +125,6 @@ export default function InventorySettingsPage() {
           </Button>
         }
       />
-      <AdminSubNav items={inventorySubNav} basePath="/inventory" />
 
       <div className="max-w-4xl">
 

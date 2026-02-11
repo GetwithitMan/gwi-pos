@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, use } from 'react'
 import Link from 'next/link'
+import { toast } from '@/stores/toast-store'
 
 interface Ticket {
   id: string
@@ -155,7 +156,7 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
           setStats(data.stats)
         }
       } else {
-        alert(data.error || 'Check-in failed')
+        toast.error(data.error || 'Check-in failed')
       }
 
       fetchData()

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, settingsSubNav } from '@/components/admin/AdminSubNav'
 import { toast } from '@/stores/toast-store'
 
 interface TrayConfig {
@@ -197,7 +196,6 @@ export default function DailyCountsSettingsPage() {
         subtitle="Configure which prep items are counted each morning"
         breadcrumbs={[{ label: 'Settings', href: '/settings' }]}
       />
-      <AdminSubNav items={settingsSubNav} basePath="/settings" />
 
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Info Card */}

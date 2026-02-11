@@ -7,7 +7,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface EmployeePayroll {
   employeeId: string
@@ -144,7 +143,6 @@ export default function PayrollReportPage() {
         title="Payroll Report"
         breadcrumbs={[{ label: 'Reports', href: '/reports' }]}
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       <div className="max-w-7xl mx-auto">
         {/* Filters */}

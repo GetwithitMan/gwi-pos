@@ -9,8 +9,8 @@ import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { PERMISSION_GROUPS, DEFAULT_ROLES, hasPermission } from '@/lib/auth-utils'
+import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, teamSubNav } from '@/components/admin/AdminSubNav'
 
 interface Role {
   id: string
@@ -195,7 +195,7 @@ export default function RolesPage() {
 
   const handleDelete = async (role: Role) => {
     if (role.employeeCount > 0) {
-      alert(`Cannot delete "${role.name}" - ${role.employeeCount} employee(s) have this role. Reassign them first.`)
+      toast.warning(`Cannot delete "${role.name}" - ${role.employeeCount} employee(s) have this role. Reassign them first.`)
       return
     }
 
@@ -210,13 +210,13 @@ export default function RolesPage() {
 
       if (!response.ok) {
         const data = await response.json()
-        alert(data.error || 'Failed to delete role')
+        toast.error(data.error || 'Failed to delete role')
         return
       }
 
       loadRoles()
     } catch (err) {
-      alert('Failed to delete role')
+      toast.error('Failed to delete role')
     }
   }
 
@@ -259,7 +259,6 @@ export default function RolesPage() {
           </Button>
         }
       />
-      <AdminSubNav items={teamSubNav} basePath="/employees" />
 
       {/* Content */}
       <div className="mt-6">

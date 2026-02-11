@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, menuSubNav } from '@/components/admin/AdminSubNav'
 
 interface DiscountRule {
   id: string
@@ -164,11 +164,11 @@ export default function DiscountsPage() {
         resetForm()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to save discount')
+        toast.error(data.error || 'Failed to save discount')
       }
     } catch (error) {
       console.error('Failed to save discount:', error)
-      alert('Failed to save discount')
+      toast.error('Failed to save discount')
     }
   }
 
@@ -181,11 +181,11 @@ export default function DiscountsPage() {
         loadDiscounts()
       } else {
         const data = await response.json()
-        alert(data.error || 'Failed to delete discount')
+        toast.error(data.error || 'Failed to delete discount')
       }
     } catch (error) {
       console.error('Failed to delete discount:', error)
-      alert('Failed to delete discount')
+      toast.error('Failed to delete discount')
     }
   }
 
@@ -222,8 +222,6 @@ export default function DiscountsPage() {
           </Button>
         }
       />
-      <AdminSubNav items={menuSubNav} basePath="/menu" />
-
       {/* Content */}
       <main className="max-w-7xl mx-auto mt-6">
         {isLoading ? (

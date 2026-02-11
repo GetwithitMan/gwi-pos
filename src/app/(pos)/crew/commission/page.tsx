@@ -45,11 +45,15 @@ export default function CrewCommissionReportPage() {
   const [error, setError] = useState<string | null>(null)
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set())
 
+  // Hydration guard: wait for Zustand to rehydrate from localStorage
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
   useEffect(() => {
-    if (!employee || !isAuthenticated) {
+    if (hydrated && (!employee || !isAuthenticated)) {
       router.push('/login')
     }
-  }, [employee, isAuthenticated, router])
+  }, [hydrated, employee, isAuthenticated, router])
 
   useEffect(() => {
     if (!employee) return
@@ -65,7 +69,7 @@ export default function CrewCommissionReportPage() {
       .finally(() => setLoading(false))
   }, [employee, dateRange])
 
-  if (!employee || !isAuthenticated) return null
+  if (!hydrated || !employee || !isAuthenticated) return null
 
   const myData = report?.report?.[0]
 

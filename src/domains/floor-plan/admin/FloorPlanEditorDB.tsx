@@ -14,6 +14,7 @@ import { FixtureToolbar } from './FixtureToolbar';
 import { FixturePropertiesDB } from './FixturePropertiesDB';
 import type { EditorToolMode, FixtureType } from './types';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
+import { toast } from '@/stores/toast-store';
 
 // =============================================================================
 // TYPES
@@ -266,7 +267,7 @@ export function FloorPlanEditorDB({
       setSelectedSectionId(data.section.id);
     } catch (error) {
       console.error('[FloorPlanEditorDB] Add section error:', error);
-      alert('Failed to create room');
+      toast.error('Failed to create room');
     }
   }, [locationId]);
 
@@ -274,7 +275,7 @@ export function FloorPlanEditorDB({
   const handleSave = useCallback(() => {
     // Dispatch socket event to notify all terminals
     dispatchFloorPlanUpdate(locationId, { async: true });
-    alert('Floor plan saved! All terminals will be updated.');
+    toast.success('Floor plan saved! All terminals will be updated.');
     if (onSave) onSave();
   }, [locationId, onSave]);
 

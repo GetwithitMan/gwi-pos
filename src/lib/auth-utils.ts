@@ -112,6 +112,21 @@ export const PERMISSIONS = {
   SETTINGS_PAYMENTS: 'settings.payments',
   SETTINGS_DUAL_PRICING: 'settings.dual_pricing',
 
+  // === SETTINGS (Granular per-section) ===
+  SETTINGS_VENUE: 'settings.venue',
+  SETTINGS_MENU: 'settings.menu',
+  SETTINGS_INVENTORY: 'settings.inventory',
+  SETTINGS_FLOOR: 'settings.floor',
+  SETTINGS_CUSTOMERS: 'settings.customers',
+  SETTINGS_TEAM: 'settings.team',
+  SETTINGS_TIPS: 'settings.tips',
+  SETTINGS_REPORTS: 'settings.reports',
+  SETTINGS_HARDWARE: 'settings.hardware',
+  SETTINGS_SECURITY: 'settings.security',
+  SETTINGS_INTEGRATIONS: 'settings.integrations',
+  SETTINGS_AUTOMATION: 'settings.automation',
+  SETTINGS_MONITORING: 'settings.monitoring',
+
   // === TIPS ===
   TIPS_VIEW_OWN: 'tips.view_own',
   TIPS_VIEW_ALL: 'tips.view_all',
@@ -267,6 +282,91 @@ export const PERMISSION_GROUPS = {
       { key: 'settings.dual_pricing', label: 'Dual Pricing', description: 'Toggle cash/card pricing' },
     ],
   },
+  'Settings — Venue': {
+    description: 'Business info, tax, order types configuration',
+    permissions: [
+      { key: 'settings.venue', label: 'Venue Settings', description: 'Business name, address, hours, timezone' },
+      { key: 'settings.tax', label: 'Tax Configuration', description: 'Tax rules and rates' },
+    ],
+  },
+  'Settings — Menu': {
+    description: 'Menu builder, ingredients, combos, liquor',
+    permissions: [
+      { key: 'settings.menu', label: 'Menu Settings', description: 'Access menu builder, ingredients, combos, discounts' },
+    ],
+  },
+  'Settings — Inventory': {
+    description: 'Inventory management and tracking configuration',
+    permissions: [
+      { key: 'settings.inventory', label: 'Inventory Settings', description: 'Stock adjust, counts, waste, vendors' },
+    ],
+  },
+  'Settings — Floor & Tables': {
+    description: 'Floor plan, reservations, entertainment, events',
+    permissions: [
+      { key: 'settings.floor', label: 'Floor Settings', description: 'Floor plan editor, reservations, entertainment' },
+    ],
+  },
+  'Settings — Customers': {
+    description: 'Customer management, gift cards, house accounts',
+    permissions: [
+      { key: 'settings.customers', label: 'Customer Settings', description: 'Customer list, gift cards, house accounts, coupons' },
+    ],
+  },
+  'Settings — Team': {
+    description: 'Employee management, roles, scheduling, payroll',
+    permissions: [
+      { key: 'settings.team', label: 'Team Settings', description: 'Employees, roles, scheduling, payroll' },
+    ],
+  },
+  'Settings — Tips': {
+    description: 'Tip configuration, tip-out rules, tip groups',
+    permissions: [
+      { key: 'settings.tips', label: 'Tip Settings', description: 'Tip bank settings, tip-out rules, tip groups, payouts' },
+    ],
+  },
+  'Settings — Payments': {
+    description: 'Payment processing, receipts, tabs',
+    permissions: [
+      { key: 'settings.payments', label: 'Payment Settings', description: 'Payment config, receipts, tab policies' },
+    ],
+  },
+  'Settings — Reports': {
+    description: 'Access reports and analytics',
+    permissions: [
+      { key: 'settings.reports', label: 'Report Settings', description: 'Access all reports' },
+    ],
+  },
+  'Settings — Hardware': {
+    description: 'Printers, KDS screens, terminals, payment readers',
+    permissions: [
+      { key: 'settings.hardware', label: 'Hardware Settings', description: 'Printers, KDS, terminals, payment readers' },
+    ],
+  },
+  'Settings — Security': {
+    description: 'PIN lockout, blocked cards, suspicious alerts',
+    permissions: [
+      { key: 'settings.security', label: 'Security Settings', description: 'PIN policies, blocked cards, tip alerts' },
+    ],
+  },
+  'Settings — Integrations': {
+    description: 'Third-party service connections',
+    permissions: [
+      { key: 'settings.integrations', label: 'Integration Settings', description: 'SMS, email, Slack configuration' },
+    ],
+  },
+  'Settings — Automation': {
+    description: 'Automated processes and scheduling',
+    permissions: [
+      { key: 'settings.automation', label: 'Automation Settings', description: 'EOD batch, report scheduling, walkout recovery' },
+    ],
+  },
+  'Settings — Monitoring': {
+    description: 'System health and error monitoring',
+    permissions: [
+      { key: 'settings.monitoring', label: 'Monitoring', description: 'Error logs, system health dashboard' },
+    ],
+  },
   'Tips': {
     description: 'Tip sharing and management',
     permissions: [
@@ -307,19 +407,42 @@ export const DEFAULT_ROLES: Record<string, string[]> = {
     'tips.view_own', 'tips.share', 'tips.collect',
   ],
   'Bartender': [
-    'pos.access', 'pos.quick_order', 'pos.cash_payments',
-    'pos.card_payments', 'pos.cash_drawer', 'pos.split_checks',
+    'pos.access', 'pos.table_service', 'pos.quick_order',
+    'pos.cash_payments', 'pos.card_payments', 'pos.cash_drawer',
+    'pos.split_checks',
     'manager.cash_drawer_blind',
     'tips.view_own', 'tips.share', 'tips.collect',
+    'menu.86_items',
+  ],
+  'Host': [
+    'pos.access',
+    'tables.view', 'tables.reservations',
+    'customers.view', 'customers.edit',
+  ],
+  'Cook': [
+    'pos.kds',
+    'inventory.view', 'inventory.counts', 'inventory.adjust_prep_stock', 'inventory.waste',
+  ],
+  'Kitchen Manager': [
+    'pos.kds',
+    'inventory.view', 'inventory.manage', 'inventory.counts',
+    'inventory.adjust_prep_stock', 'inventory.waste', 'inventory.vendors',
+    'menu.view', 'menu.86_items',
+    'settings.inventory',
+  ],
+  'Barback': [
+    'pos.kds',
+    'inventory.view', 'inventory.counts', 'inventory.adjust_prep_stock',
   ],
   'Manager': [
     'pos.*', 'manager.*', 'reports.*',
-    'menu.view', 'menu.86_items', 'menu.inventory_qty',
-    'staff.view', 'staff.clock_others',
-    'tables.*',
-    'tips.view_all', 'tips.manage_rules', 'tips.manage_bank',
-    'tips.manage_groups', 'tips.override_splits', 'tips.manage_settings',
-    'tips.perform_adjustments', 'tips.view_ledger', 'tips.process_payout',
+    'menu.view', 'menu.edit_items', 'menu.edit_prices', 'menu.edit_modifiers',
+    'menu.86_items', 'menu.inventory_qty',
+    'staff.*', 'tables.*', 'customers.*',
+    'tips.*',
+    'inventory.*',
+    'settings.*',
+    'events.*', 'scheduling.*', 'payroll.*',
   ],
   'Admin': ['admin'],
   'Owner': ['super_admin'],

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
+import { toast } from '@/stores/toast-store'
 
 interface DiscountRule {
   id: string
@@ -127,7 +128,7 @@ export function DiscountModal({
 
       if (result.requiresApproval) {
         // For now, just warn - in a full implementation, this would prompt for manager PIN
-        alert('Note: This discount may require manager approval.')
+        toast.info('This discount may require manager approval')
       }
 
       onDiscountApplied(result.orderTotals)
@@ -174,7 +175,7 @@ export function DiscountModal({
       const result = await response.json()
 
       if (result.requiresApproval) {
-        alert('Note: This discount may require manager approval.')
+        toast.info('This discount may require manager approval')
       }
 
       onDiscountApplied(result.orderTotals)

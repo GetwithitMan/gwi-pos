@@ -1,6 +1,8 @@
 const config = {
   plugins: {
     "@tailwindcss/postcss": {},
+    // Transpile oklch() → rgb() for older browsers (Chrome < 111)
+    "@csstools/postcss-oklab-function": { preserve: false },
   },
 };
 

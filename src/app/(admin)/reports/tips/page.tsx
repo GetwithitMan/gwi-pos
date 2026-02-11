@@ -8,7 +8,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { AdminSubNav, reportsSubNav } from '@/components/admin/AdminSubNav'
 
 interface EmployeeTipSummary {
   employeeId: string
@@ -152,7 +151,6 @@ export default function TipsReportPage() {
           </Link>
         }
       />
-      <AdminSubNav items={reportsSubNav} basePath="/reports" />
 
       <div className="max-w-6xl mx-auto">
         {/* Filters */}

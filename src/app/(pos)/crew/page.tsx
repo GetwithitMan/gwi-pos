@@ -19,12 +19,18 @@ export default function CrewHubPage() {
   const [showClockOutConfirm, setShowClockOutConfirm] = useState(false)
   const [showRolePicker, setShowRolePicker] = useState(false)
 
-  // Auth guard
+  // Hydration guard: Zustand persist middleware starts with defaults (isAuthenticated=false)
+  // before rehydrating from localStorage. Without this guard, the auth redirect fires
+  // immediately on mount before the real auth state loads.
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
+  // Auth guard (only after hydration)
   useEffect(() => {
-    if (!employee || !isAuthenticated) {
+    if (hydrated && (!employee || !isAuthenticated)) {
       router.push('/login')
     }
-  }, [employee, isAuthenticated, router])
+  }, [hydrated, employee, isAuthenticated, router])
 
   // Live clock
   useEffect(() => {
@@ -129,7 +135,7 @@ export default function CrewHubPage() {
     router.push('/login')
   }
 
-  if (!employee || !isAuthenticated) return null
+  if (!hydrated || !employee || !isAuthenticated) return null
 
   const permissions = employee.permissions || []
 
