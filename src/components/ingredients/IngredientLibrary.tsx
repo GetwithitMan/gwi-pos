@@ -685,16 +685,30 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
 
   // Filter by search and selected category
   const filteredGroups = useMemo(() => {
+    const searchLower = search.toLowerCase()
+
+    // Check if ingredient or any of its children match the search
+    const matchesSearch = (ing: Ingredient): boolean => {
+      if (!search) return true
+      if (ing.name.toLowerCase().includes(searchLower)) return true
+      // Also search child (prep) ingredient names
+      if (ing.childIngredients?.some(child => child.name.toLowerCase().includes(searchLower))) return true
+      return false
+    }
+
     return groupedIngredients
       .filter(group => !selectedCategory || group.category.id === selectedCategory)
       .map(group => ({
         ...group,
-        ingredients: group.ingredients.filter(ing =>
-          !search || ing.name.toLowerCase().includes(search.toLowerCase())
-        ),
+        ingredients: group.ingredients.filter(matchesSearch),
       }))
       .filter(group => group.ingredients.length > 0 || !search)
   }, [groupedIngredients, selectedCategory, search])
+
+  // Filtered ingredients for hierarchy view (applies same search + category filters)
+  const filteredIngredients = useMemo(() => {
+    return filteredGroups.flatMap(group => group.ingredients)
+  }, [filteredGroups])
 
   // Calculate total visible ingredients for "Select All"
   const visibleIngredientIds = useMemo(() => {
@@ -841,7 +855,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
         /* Hierarchy View */
         <GroupedIngredientHierarchy
           categories={categories}
-          ingredients={ingredients}
+          ingredients={filteredIngredients}
           selectedIds={selectedIds}
           onToggleSelect={handleToggleSelect}
           onSelectAllInCategory={handleSelectAllInCategory}
