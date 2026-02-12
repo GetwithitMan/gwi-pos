@@ -161,6 +161,7 @@
 | 206 | Seat Management System | DONE | Floor Plan | 16, 117 | Seat API, generation, positioning, virtual group numbering, reflow on resize |
 | 207 | Table Resize & Rotation | DONE | Floor Plan | 16 | 8 resize handles, rotation handle, grid snap, collision detection, shape-specific minimums |
 | 229 | Table Combine Types | DONE | Floor Plan | 107, 117 | Physical (drag-drop, seats 1..N) vs Virtual (long-hold, per-table seats). **Critical: handleTableCombine must call /api/tables/combine, NOT virtual-combine** |
+| 328 | Seat Management Fixes | DONE | Floor Plan, Orders | 121, 206 | Add seat after send, seatNumber persistence on items, extra seats restore on reopen |
 
 ### Bar Features
 | Skill | Name | Status | Domain | Dependencies | Notes |

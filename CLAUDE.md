@@ -1877,11 +1877,11 @@ toast.error('Connection lost', 8000)
 | 5.1 | Floor plan loads with tables | Navigate to /orders → verify floor plan renders with tables | ⬜ |
 | 5.2 | Tap table to start order | Tap available table → verify order panel opens | ⬜ |
 | 5.3 | Table status colors | Available=green, occupied=blue, reserved=purple, dirty=yellow | ⬜ |
-| 5.4 | Virtual combine tables | Long-press two tables → combine → verify seats renumber | ⬜ |
-| 5.5 | Split combined tables | Combined table → split → verify tables separate | ⬜ |
+| 5.4 | ~~Virtual combine tables~~ | ~~N/A — Combine fully removed (Skill 326)~~ | N/A |
+| 5.5 | ~~Split combined tables~~ | ~~N/A — Combine fully removed (Skill 326)~~ | N/A |
 | 5.6 | Table resize and rotation | Floor Plan Editor → drag handles → verify resize + rotation | ⬜ |
 | 5.7 | Entertainment items on floor plan | Add entertainment → place on floor plan → verify status glow | ⬜ |
-| 5.8 | Seat count correct after combine | Combine 4-top + 5-top → verify 9 seats shown (not stale) | ⬜ |
+| 5.8 | ~~Seat count correct after combine~~ | ~~N/A — Combine fully removed (Skill 326)~~ | N/A |
 | 5.9 | No console spam in production | Build production (npm run build) → drag tables → check console for logs | ⬜ |
 | 5.10 | Deterministic table placement | Reset DB → create 6 tables → verify grid layout (not random) | ⬜ |
 | 5.11 | API failure shows toast | Network offline → drag table → verify error toast + rollback | ⬜ |
@@ -1890,6 +1890,10 @@ toast.error('Connection lost', 8000)
 | 5.14 | Legacy combine endpoint blocked | Call /api/tables/combine → verify 410 Gone response | ✅ 2026-02-11 |
 | 5.15 | Soft deleted tables hidden | Soft delete table (deletedAt) → refresh floor plan → verify hidden | ⬜ |
 | 5.16 | ~~Virtual group border renders~~ | ~~N/A — Combine fully removed (Skill 326)~~ | N/A |
+| 5.17 | Add seat after send to kitchen | Send items → reopen table → tap "+" → verify new seat number appears in strip | ⬜ |
+| 5.18 | Seat number persists on items after send | Assign items to seat 5 → send to kitchen → reopen table → verify items show S5 badge | ⬜ |
+| 5.19 | Extra seats restored on table reopen | Add seats 5+6, send items → close/reopen table → verify seat strip shows 1-6 (not just 1-4) | ⬜ |
+| 5.20 | Course number persists on items after send | Assign items to course 2 → send → reopen → verify course number shown | ⬜ |
 
 ### 6. KDS & Kitchen
 

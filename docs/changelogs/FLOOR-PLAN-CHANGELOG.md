@@ -1,5 +1,25 @@
 # Floor Plan Domain - Change Log
 
+## Session: February 12, 2026 — Seat Management Fixes (Skill 328)
+
+### Summary
+Fixed three bugs preventing seat management from working after items are sent to kitchen: server rejecting seat addition, seat numbers not persisting on items, and extra seats lost on table reopen.
+
+### Bugs Fixed
+1. **Cannot add seat after send** — Server rejected position 8 when order only tracked 4 seats. Fixed by removing strict validation and growing `extraSeatCount` to bridge the gap.
+2. **Seat number not saved** — `POST /api/orders/[id]/items` ignored `seatNumber`/`courseNumber` from client payload. Added to `NewItem` type and `orderItem.create`.
+3. **Extra seats lost on reopen** — `extraSeats` client Map cleared on panel close. Added restoration from highest seat number in order items.
+
+### Files Modified
+- `src/app/api/orders/[id]/seating/route.ts` — Removed strict position validation, grow extraSeatCount
+- `src/app/api/orders/[id]/items/route.ts` — Added seatNumber + courseNumber to type and create
+- `src/components/floor-plan/FloorPlanHome.tsx` — extraSeats update after API add + restore on table reopen
+
+### Skill Doc
+`docs/skills/328-SEAT-MANAGEMENT-FIXES.md`
+
+---
+
 ## Session: February 11, 2026 — Complete Combine Removal (Skill 326)
 
 ### Summary

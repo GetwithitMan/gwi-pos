@@ -112,6 +112,7 @@
 | T-041 | Verify modifier depth indentation visually | PM: Menu | 2026-02-07 | Fixed: `childToParentGroupId` parent-chain walk in useModifierSelections.ts. Depth 0=`•`, depth 1+=`↳` with 20px indent. Committed as `a1ec1c7` |
 | NEW | Cash rounding pipeline fix (Skill 327) | PM: Payments/Reports | 2026-02-11 | Dual rounding system sync, payment validation, artifact detection, daily report tracking |
 | NEW | Complete combine removal (Skill 326) | PM: Floor Plan | 2026-02-11 | ALL virtual + physical combine deleted. 116 files, -16,211 lines. Tables standalone only. |
+| NEW | Seat management fixes (Skill 328) | PM: Floor Plan/Orders | 2026-02-12 | Add seat after send, seatNumber persistence on items, extra seats restore on reopen |
 
 ---
 
