@@ -45,9 +45,6 @@ export async function GET(
         relativeX: seat.relativeX,
         relativeY: seat.relativeY,
         angle: seat.angle,
-        originalRelativeX: seat.originalRelativeX,
-        originalRelativeY: seat.originalRelativeY,
-        originalAngle: seat.originalAngle,
         seatType: seat.seatType,
         isActive: seat.isActive,
         table: seat.table,
@@ -77,9 +74,6 @@ export async function PUT(
       label,
       seatType,
       isActive,
-      originalRelativeX,
-      originalRelativeY,
-      originalAngle,
     } = body;
 
     // Get current seat for locationId
@@ -100,9 +94,6 @@ export async function PUT(
         ...(label !== undefined ? { label } : {}),
         ...(seatType !== undefined ? { seatType } : {}),
         ...(isActive !== undefined ? { isActive } : {}),
-        ...(originalRelativeX !== undefined ? { originalRelativeX } : {}),
-        ...(originalRelativeY !== undefined ? { originalRelativeY } : {}),
-        ...(originalAngle !== undefined ? { originalAngle } : {}),
       },
     });
 

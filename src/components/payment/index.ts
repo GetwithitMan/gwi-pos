@@ -5,8 +5,6 @@
  */
 
 export { PaymentModal } from './PaymentModal'
-export { GroupSummary } from './GroupSummary'
-export type { GroupTableFinancials } from './GroupSummary'
 
 // Datacap Direct Integration
 export { DatacapPaymentProcessor } from './DatacapPaymentProcessor'

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useFloorPlanStore, FloorPlanTable, FloorPlanSection, SeatPattern } from './use-floor-plan'
-import { TableNode, getCombinedGroupColor } from './TableNode'
+import { TableNode } from './TableNode'
 import { TableInfoPanel } from './TableInfoPanel'
 import { TableEditPanel } from './panels/TableEditPanel'
 import { RoomTabs } from './RoomTabs'
@@ -24,8 +24,6 @@ interface UnifiedFloorPlanProps {
   onTableCreate?: () => void
   // POS mode callbacks
   onTableSelect?: (table: FloorPlanTable) => void
-  onTableCombine?: (sourceId: string, targetId: string) => Promise<boolean>
-  onTableSplit?: (tableId: string) => Promise<void>
   // Shared
   showSeatsToggle?: boolean
   hideToolbar?: boolean  // Hide the top toolbar (when parent page provides its own)
@@ -41,8 +39,6 @@ export function UnifiedFloorPlan({
   onTableDelete,
   onTableCreate,
   onTableSelect,
-  onTableCombine,
-  onTableSplit,
   showSeatsToggle = true,
   hideToolbar = false,
   className = '',
@@ -187,46 +183,6 @@ export function UnifiedFloorPlan({
     return { x: offsetX, y: offsetY }
   }, [tableBounds, autoScale, containerSize, mode])
 
-  // Calculate combined group colors
-  const combinedGroupColors = new Map<string, string>()
-  tables.forEach(table => {
-    if (table.combinedTableIds && table.combinedTableIds.length > 0) {
-      const color = getCombinedGroupColor(table.id)
-      combinedGroupColors.set(table.id, color)
-      table.combinedTableIds.forEach(childId => {
-        combinedGroupColors.set(childId, color)
-      })
-    }
-  })
-
-  // Calculate combined seat offsets for sequential numbering
-  // When tables are combined, seats should be numbered 1, 2, 3... across all tables
-  const combinedSeatOffsets = new Map<string, number>()
-  const combinedTotalSeats = new Map<string, number>()
-  tables.forEach(table => {
-    if (table.combinedTableIds && table.combinedTableIds.length > 0) {
-      // This is a primary table with children combined to it
-      const primarySeatCount = table.seats?.length || 0
-      let runningOffset = primarySeatCount
-
-      // Primary table starts at offset 0
-      combinedSeatOffsets.set(table.id, 0)
-
-      // Calculate offset for each child table
-      table.combinedTableIds.forEach(childId => {
-        combinedSeatOffsets.set(childId, runningOffset)
-        const childTable = tables.find(t => t.id === childId)
-        runningOffset += childTable?.seats?.length || 0
-      })
-
-      // Total seats is the final running offset
-      const totalSeats = runningOffset
-      combinedTotalSeats.set(table.id, totalSeats)
-      table.combinedTableIds.forEach(childId => {
-        combinedTotalSeats.set(childId, totalSeats)
-      })
-    }
-  })
 
   // Handle table tap based on mode
   const handleTableTap = useCallback((table: FloorPlanTable) => {
@@ -278,7 +234,7 @@ export function UnifiedFloorPlan({
         await fetch(`/api/tables/${draggedTableId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ posX: Math.round(newPosX), posY: Math.round(newPosY) }),
+          body: JSON.stringify({ locationId, posX: Math.round(newPosX), posY: Math.round(newPosY) }),
         })
 
         setTables(tables.map(t =>
@@ -291,17 +247,9 @@ export function UnifiedFloorPlan({
       }
     }
 
-    // POS mode: check for combine
-    if (mode === 'pos' && dropTargetTableId && onTableCombine) {
-      const success = await onTableCombine(draggedTableId, dropTargetTableId)
-      if (success) {
-        loadFloorPlanData() // Refresh
-      }
-    }
-
     endDrag()
     setLastDropPosition(null)
-  }, [draggedTableId, dropTargetTableId, tables, mode, lastDropPosition, onTableCombine, endDrag, setTables])
+  }, [draggedTableId, dropTargetTableId, tables, mode, lastDropPosition, endDrag, setTables])
 
   // Handle table update from edit panel
   const handleTableUpdate = useCallback(async (tableId: string, updates: Partial<FloorPlanTable>) => {
@@ -313,6 +261,7 @@ export function UnifiedFloorPlan({
       const apiUpdates = {
         ...restUpdates,
         ...(section !== undefined ? { sectionId: section?.id || null } : {}),
+        locationId,
       }
       try {
         const response = await fetch(`/api/tables/${tableId}`, {
@@ -338,7 +287,7 @@ export function UnifiedFloorPlan({
     } else {
       // Default implementation
       try {
-        const response = await fetch(`/api/tables/${tableId}`, {
+        const response = await fetch(`/api/tables/${tableId}?locationId=${locationId}`, {
           method: 'DELETE',
         })
         if (response.ok) {
@@ -388,7 +337,7 @@ export function UnifiedFloorPlan({
       await fetch(`/api/tables/${tableId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ locationId, status }),
       })
       setTables(tables.map(t =>
         t.id === tableId ? { ...t, status: status as FloorPlanTable['status'] } : t
@@ -398,26 +347,6 @@ export function UnifiedFloorPlan({
     }
   }, [tables, setTables])
 
-  // Handle reset to default (split combined tables)
-  const handleResetToDefault = useCallback(async (tableIds: string[]) => {
-    try {
-      const response = await fetch('/api/tables/reset-to-default', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tableIds,
-          locationId,
-          employeeId,
-        }),
-      })
-
-      if (response.ok) {
-        loadFloorPlanData() // Refresh to get updated positions
-      }
-    } catch (error) {
-      console.error('Failed to reset tables:', error)
-    }
-  }, [locationId, employeeId])
 
   // Handle seat drag (reposition) - admin mode only
   const handleSeatDrag = useCallback(async (tableId: string, seatId: string, newRelativeX: number, newRelativeY: number) => {
@@ -530,6 +459,7 @@ export function UnifiedFloorPlan({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          locationId,
           posX: newX,
           posY: newY,
         }),
@@ -621,6 +551,7 @@ export function UnifiedFloorPlan({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          locationId,
           rotation: newRotation,
         }),
       })
@@ -988,17 +919,14 @@ export function UnifiedFloorPlan({
                     isSelected={selectedTableId === table.id || editingTableId === table.id}
                     isDragging={draggedTableId === table.id}
                     isDropTarget={dropTargetTableId === table.id}
-                    combinedGroupColor={combinedGroupColors.get(table.id)}
                     showSeats={showSeats}
                     selectedSeat={selectedSeat}
                     flashMessage={flashMessage}
-                    combinedSeatOffset={combinedSeatOffsets.get(table.id) || 0}
-                    combinedTotalSeats={combinedTotalSeats.get(table.id)}
                     onTap={() => handleTableTap(table)}
                     onDragStart={() => startDrag(table.id)}
                     onDragEnd={endDrag}
                     onLongPress={() => {
-                      if (mode === 'pos' && table.combinedTableIds && table.combinedTableIds.length > 0) {
+                      if (mode === 'pos') {
                         openInfoPanel(table.id)
                       }
                     }}
@@ -1032,7 +960,7 @@ export function UnifiedFloorPlan({
         />
       )}
 
-      {/* POS Info Panel (for combined table management) */}
+      {/* POS Info Panel */}
       {mode === 'pos' && infoPanelTableId && (
         <TableInfoPanel
           table={tables.find(t => t.id === infoPanelTableId) || null}
@@ -1054,11 +982,6 @@ export function UnifiedFloorPlan({
           onMarkAvailable={() => {
             if (infoPanelTableId) handleUpdateStatus(infoPanelTableId, 'available')
           }}
-          onResetToDefault={
-            tables.find(t => t.id === infoPanelTableId)?.combinedTableIds?.length
-              ? () => handleResetToDefault([infoPanelTableId])
-              : undefined
-          }
         />
       )}
     </div>

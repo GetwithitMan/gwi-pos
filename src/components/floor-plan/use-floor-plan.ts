@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { logger } from '@/lib/logger'
 
 // Table status types
 export type TableStatus = 'available' | 'occupied' | 'reserved' | 'dirty' | 'in_use'
@@ -27,18 +26,7 @@ export interface FloorPlanTable {
   seatPattern: SeatPattern  // How seats are distributed around the table
   status: TableStatus
   section: { id: string; name: string; color: string } | null
-  combinedWithId: string | null
-  combinedTableIds: string[] | null
-  originalName: string | null
-  originalPosX: number | null
-  originalPosY: number | null
   isLocked: boolean  // Locked items cannot be moved (bolted down furniture)
-  // Virtual combine fields
-  virtualGroupId: string | null
-  virtualGroupPrimary: boolean
-  virtualGroupColor: string | null
-  virtualGroupOffsetX: number | null  // Visual offset for snapped position in virtual group
-  virtualGroupOffsetY: number | null  // Visual offset for snapped position in virtual group
   sectionId: string | null  // Section ID for filtering by room
   currentOrder: {
     id: string
@@ -114,14 +102,6 @@ export interface FloorPlanElement {
   waitlistCount: number
 }
 
-// Undo action for combines
-interface UndoAction {
-  type: 'combine'
-  sourceTableId: string
-  targetTableId: string
-  timestamp: number
-}
-
 interface FloorPlanState {
   // Data
   tables: FloorPlanTable[]
@@ -136,15 +116,13 @@ interface FloorPlanState {
   // Selection state
   selectedTableId: string | null
   selectedElementId: string | null
-  draggedTableId: string | null
-  dropTargetTableId: string | null
 
   // Info panel
   infoPanelTableId: string | null
 
-  // Combine indicator
-  showCombineIndicator: boolean
-  combinePosition: { x: number; y: number } | null
+  // Drag state (for table repositioning)
+  draggedTableId: string | null
+  dropTargetTableId: string | null
 
   // Seat visualization
   showSeats: boolean
@@ -152,14 +130,6 @@ interface FloorPlanState {
 
   // Flash messages for tables (e.g., "OPEN ORDER" on reset skip)
   flashingTables: Map<string, { message: string; expiresAt: number }>
-
-  // Undo stack (30-second window)
-  undoStack: UndoAction[]
-
-  // Virtual combine mode
-  virtualCombineMode: boolean
-  virtualCombineSelectedIds: Set<string>
-  virtualCombinePrimaryId: string | null
 
   // Loading state
   isLoading: boolean
@@ -184,15 +154,10 @@ interface FloorPlanState {
   openInfoPanel: (tableId: string) => void
   closeInfoPanel: () => void
 
-  // Drag & drop actions
+  // Drag actions (for table repositioning)
   startDrag: (tableId: string) => void
-  updateDragTarget: (targetTableId: string | null, position?: { x: number; y: number }) => void
+  updateDragTarget: (tableId: string | null, position?: { x: number; y: number }) => void
   endDrag: () => void
-
-  // Combine/Split actions
-  addUndoAction: (action: UndoAction) => void
-  popUndoAction: () => UndoAction | null
-  clearExpiredUndos: () => void
 
   // Seat visualization actions
   toggleShowSeats: () => void
@@ -214,14 +179,6 @@ interface FloorPlanState {
   setLoading: (loading: boolean) => void
   setError: (error: string | null) => void
 
-  // Virtual combine actions
-  startVirtualCombineMode: (tableId: string) => void
-  toggleVirtualCombineSelection: (tableId: string) => void
-  cancelVirtualCombineMode: () => void
-  setVirtualCombinePrimary: (tableId: string) => void
-  clearVirtualCombineMode: () => void
-  updateTablesWithVirtualGroup: (updates: Array<{ id: string; virtualGroupId: string | null; virtualGroupPrimary: boolean; virtualGroupColor: string | null }>) => void
-
   // Seat management actions
   removeSeatAt: (tableId: string, index: number) => void
   addSeatToTable: (tableId: string, seat: FloorPlanSeat) => void
@@ -241,8 +198,6 @@ interface FloorPlanState {
   deleteElement: (elementId: string) => void
 }
 
-const UNDO_WINDOW_MS = 300000 // 5 minutes
-
 export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
   // Initial data
   tables: [],
@@ -257,15 +212,13 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
   // Initial selection state
   selectedTableId: null,
   selectedElementId: null,
-  draggedTableId: null,
-  dropTargetTableId: null,
 
   // Info panel
   infoPanelTableId: null,
 
-  // Combine indicator
-  showCombineIndicator: false,
-  combinePosition: null,
+  // Drag state
+  draggedTableId: null,
+  dropTargetTableId: null,
 
   // Seat visualization
   showSeats: false,
@@ -273,14 +226,6 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
 
   // Flash messages
   flashingTables: new Map(),
-
-  // Undo stack
-  undoStack: [],
-
-  // Virtual combine mode
-  virtualCombineMode: false,
-  virtualCombineSelectedIds: new Set(),
-  virtualCombinePrimaryId: null,
 
   // Loading state
   isLoading: false,
@@ -321,73 +266,10 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
   openInfoPanel: (tableId) => set({ infoPanelTableId: tableId, selectedTableId: tableId }),
   closeInfoPanel: () => set({ infoPanelTableId: null }),
 
-  // Drag & drop actions
-  startDrag: (tableId) => {
-    logger.log('[STORE] startDrag called:', tableId)
-    set({
-      draggedTableId: tableId,
-      selectedTableId: tableId,
-    })
-  },
-
-  updateDragTarget: (targetTableId, position) => {
-    const { draggedTableId } = get()
-    // Can't drop on self
-    if (targetTableId === draggedTableId) {
-      set({
-        dropTargetTableId: null,
-        showCombineIndicator: false,
-        combinePosition: null,
-      })
-      return
-    }
-
-    set({
-      dropTargetTableId: targetTableId,
-      showCombineIndicator: targetTableId !== null,
-      combinePosition: position || null,
-    })
-  },
-
-  endDrag: () => set({
-    draggedTableId: null,
-    dropTargetTableId: null,
-    showCombineIndicator: false,
-    combinePosition: null,
-  }),
-
-  // Undo actions
-  addUndoAction: (action) => {
-    const { undoStack } = get()
-    set({ undoStack: [...undoStack, action] })
-  },
-
-  popUndoAction: () => {
-    const { undoStack } = get()
-    if (undoStack.length === 0) return null
-
-    const now = Date.now()
-    // Find the most recent valid undo (within 30 seconds)
-    const validUndos = undoStack.filter(u => now - u.timestamp < UNDO_WINDOW_MS)
-
-    if (validUndos.length === 0) {
-      set({ undoStack: [] })
-      return null
-    }
-
-    const lastUndo = validUndos[validUndos.length - 1]
-    set({ undoStack: validUndos.slice(0, -1) })
-    return lastUndo
-  },
-
-  clearExpiredUndos: () => {
-    const { undoStack } = get()
-    const now = Date.now()
-    const validUndos = undoStack.filter(u => now - u.timestamp < UNDO_WINDOW_MS)
-    if (validUndos.length !== undoStack.length) {
-      set({ undoStack: validUndos })
-    }
-  },
+  // Drag actions (for table repositioning)
+  startDrag: (tableId) => set({ draggedTableId: tableId }),
+  updateDragTarget: (tableId) => set({ dropTargetTableId: tableId }),
+  endDrag: () => set({ draggedTableId: null, dropTargetTableId: null }),
 
   // Seat visualization actions
   toggleShowSeats: () => {
@@ -485,86 +367,6 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
   // Loading
   setLoading: (loading) => set({ isLoading: loading }),
   setError: (error) => set({ error }),
-
-  // Virtual combine actions
-  startVirtualCombineMode: (tableId) => {
-    logger.log('[VirtualCombine Store] startVirtualCombineMode called with tableId:', tableId)
-    set({
-      virtualCombineMode: true,
-      virtualCombineSelectedIds: new Set([tableId]),
-      virtualCombinePrimaryId: tableId,
-      selectedTableId: tableId,
-      // Close any open info panel
-      infoPanelTableId: null,
-    })
-    logger.log('[VirtualCombine Store] Virtual combine mode started, primary table:', tableId)
-  },
-
-  toggleVirtualCombineSelection: (tableId) => {
-    const { virtualCombineSelectedIds, virtualCombinePrimaryId } = get()
-    logger.log('[VirtualCombine Store] toggleVirtualCombineSelection called:', { tableId, currentSelectedIds: Array.from(virtualCombineSelectedIds), primaryId: virtualCombinePrimaryId })
-
-    const newSet = new Set(virtualCombineSelectedIds)
-
-    if (newSet.has(tableId)) {
-      // Don't allow removing the primary table
-      if (tableId === virtualCombinePrimaryId) {
-        logger.log('[VirtualCombine Store] Cannot remove primary table')
-        return
-      }
-      newSet.delete(tableId)
-      logger.log('[VirtualCombine Store] Removed table from selection')
-    } else {
-      newSet.add(tableId)
-      logger.log('[VirtualCombine Store] Added table to selection')
-    }
-
-    logger.log('[VirtualCombine Store] New selected IDs:', Array.from(newSet))
-    set({ virtualCombineSelectedIds: newSet })
-  },
-
-  cancelVirtualCombineMode: () => {
-    set({
-      virtualCombineMode: false,
-      virtualCombineSelectedIds: new Set(),
-      virtualCombinePrimaryId: null,
-    })
-  },
-
-  setVirtualCombinePrimary: (tableId) => {
-    const { virtualCombineSelectedIds } = get()
-    // Can only set primary if table is selected
-    if (!virtualCombineSelectedIds.has(tableId)) return
-    set({ virtualCombinePrimaryId: tableId })
-  },
-
-  clearVirtualCombineMode: () => {
-    set({
-      virtualCombineMode: false,
-      virtualCombineSelectedIds: new Set(),
-      virtualCombinePrimaryId: null,
-    })
-  },
-
-  updateTablesWithVirtualGroup: (updates) => {
-    const { tables } = get()
-    const updateMap = new Map(updates.map(u => [u.id, u]))
-
-    set({
-      tables: tables.map(t => {
-        const update = updateMap.get(t.id)
-        if (update) {
-          return {
-            ...t,
-            virtualGroupId: update.virtualGroupId,
-            virtualGroupPrimary: update.virtualGroupPrimary,
-            virtualGroupColor: update.virtualGroupColor,
-          }
-        }
-        return t
-      }),
-    })
-  },
 
   // Seat management actions
   removeSeatAt: (tableId, index) => {

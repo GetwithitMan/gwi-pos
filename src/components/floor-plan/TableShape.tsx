@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { FloorPlanTable, TableStatus } from './use-floor-plan'
 import { SeatDot } from './SeatDot'
 
@@ -16,67 +16,15 @@ const STATUS_COLORS: Record<TableStatus, { fill: string; stroke: string; text: s
 interface TableShapeProps {
   table: FloorPlanTable
   isSelected: boolean
-  isDragging: boolean
-  isDropTarget: boolean
-  isCombined: boolean
   onSelect: () => void
-  onDragStart: () => void
-  onDragEnd: () => void
-  onLongPress: () => void
 }
 
 export function TableShape({
   table,
   isSelected,
-  isDragging,
-  isDropTarget,
-  isCombined,
   onSelect,
-  onDragStart,
-  onDragEnd,
-  onLongPress,
 }: TableShapeProps) {
   const colors = STATUS_COLORS[table.status] || STATUS_COLORS.available
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null)
-  const [isDragActive, setIsDragActive] = useState(false)
-
-  // Touch handling for drag
-  const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-
-    // Start long press timer for split action
-    longPressTimer.current = setTimeout(() => {
-      onLongPress()
-    }, 500)
-
-    // Mark as potentially dragging
-    setIsDragActive(true)
-    onDragStart()
-  }, [onDragStart, onLongPress])
-
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    e.preventDefault()
-
-    // Clear long press timer
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-
-    if (isDragActive) {
-      setIsDragActive(false)
-      onDragEnd()
-    }
-  }, [isDragActive, onDragEnd])
-
-  const handlePointerMove = useCallback(() => {
-    // Cancel long press if moved
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-  }, [])
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
@@ -91,18 +39,13 @@ export function TableShape({
   const renderShape = () => {
     const baseProps = {
       fill: colors.fill,
-      stroke: isSelected ? '#2563EB' : isDropTarget ? '#22C55E' : colors.stroke,
-      strokeWidth: isSelected ? 3 : isDropTarget ? 4 : 2,
+      stroke: isSelected ? '#2563EB' : colors.stroke,
+      strokeWidth: isSelected ? 3 : 2,
       style: {
-        filter: isDragging
-          ? 'drop-shadow(0 8px 12px rgba(0,0,0,0.25))'
-          : isDropTarget
-          ? 'drop-shadow(0 0 12px rgba(34,197,94,0.5))'
-          : isSelected
+        filter: isSelected
           ? 'drop-shadow(0 4px 8px rgba(37,99,235,0.3))'
           : 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))',
         transition: 'all 0.15s ease-out',
-        transform: isDragging ? 'scale(1.05)' : undefined,
         transformOrigin: `${centerX}px ${centerY}px`,
       },
     }
@@ -165,64 +108,14 @@ export function TableShape({
     }
   }
 
-  // Determine display name (combined tables show "T1+T2")
-  const displayName = table.combinedTableIds && table.combinedTableIds.length > 0
-    ? table.name // Already shows combined name like "T1+T2"
-    : table.name
-
   return (
     <g
-      className={`table-shape cursor-pointer ${isDragging ? 'opacity-90' : ''}`}
+      className="table-shape cursor-pointer"
       onClick={handleClick}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onPointerMove={handlePointerMove}
-      onPointerCancel={handlePointerUp}
       style={{ touchAction: 'none' }}
     >
-      {/* Drop zone indicator */}
-      {isDropTarget && (
-        <rect
-          x={table.posX - 8}
-          y={table.posY - 8}
-          width={table.width + 16}
-          height={table.height + 16}
-          rx={12}
-          fill="none"
-          stroke="#22C55E"
-          strokeWidth={3}
-          strokeDasharray="6 4"
-          className="animate-pulse"
-        />
-      )}
-
       {/* Main table shape */}
       {renderShape()}
-
-      {/* Combined indicator badge */}
-      {isCombined && (
-        <g>
-          <circle
-            cx={table.posX + table.width - 8}
-            cy={table.posY + 8}
-            r={12}
-            fill="#8B5CF6"
-            stroke="#ffffff"
-            strokeWidth={2}
-          />
-          <text
-            x={table.posX + table.width - 8}
-            y={table.posY + 8}
-            textAnchor="middle"
-            dominantBaseline="central"
-            fontSize={10}
-            fontWeight={700}
-            fill="#ffffff"
-          >
-            +
-          </text>
-        </g>
-      )}
 
       {/* Table name */}
       <text
@@ -235,7 +128,7 @@ export function TableShape({
         fill={colors.text}
         className="pointer-events-none select-none"
       >
-        {displayName}
+        {table.name}
       </text>
 
       {/* Order info (if occupied) */}

@@ -4,4 +4,3 @@
 
 export { useFloorPlan } from './useFloorPlan'
 export { useSeating } from './useSeating'
-export { useTableGroups } from './useTableGroups'

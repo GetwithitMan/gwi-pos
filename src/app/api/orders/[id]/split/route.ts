@@ -588,7 +588,7 @@ export async function POST(
     }
 
     if (body.type === 'by_table') {
-      // Split by table - each source table gets its own check (for virtual combined tables)
+      // Split by table - each source table gets its own check
       // Group items by sourceTableId
       const itemsByTable = new Map<string | null, typeof order.items>()
 

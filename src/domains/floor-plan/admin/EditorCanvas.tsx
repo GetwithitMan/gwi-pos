@@ -738,7 +738,7 @@ export function EditorCanvas({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isDraggingSeat, originalSeatPos]);
 
-  // Get canvas dimensions - FIXED size for stable coordinates (no drift on zoom/pan/combine)
+  // Get canvas dimensions - FIXED size for stable coordinates (no drift on zoom/pan)
   const canvasDimensions = {
     widthPx: CANVAS_WIDTH,
     heightPx: CANVAS_HEIGHT,

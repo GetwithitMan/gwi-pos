@@ -204,12 +204,6 @@ export function getStatusDisplay(status: TableStatus): {
       bgColor: 'bg-gray-500',
       textColor: 'text-white',
     },
-    combined: {
-      label: 'Combined',
-      color: '#14b8a6',
-      bgColor: 'bg-teal-500',
-      textColor: 'text-white',
-    },
   }
 
   return statusDisplays[status] || statusDisplays.available

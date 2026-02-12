@@ -133,8 +133,6 @@ export type {
   OrderItemAddedEvent,
   OrderItemUpdatedEvent,
   TableStatusChangedEvent,
-  TableCombinedEvent,
-  TableSplitEvent,
   KDSTicketNewEvent,
   KDSTicketBumpedEvent,
   KDSItemBumpedEvent,

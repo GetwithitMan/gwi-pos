@@ -20,7 +20,6 @@ export { TableEditPanel } from './panels/TableEditPanel'
 export { PropertiesSidebar } from './PropertiesSidebar'
 export { RoomTabs } from './RoomTabs'
 export { AddRoomModal } from './AddRoomModal'
-export { VirtualGroupManagerModal } from './VirtualGroupManagerModal'
 export { SectionSettings } from './SectionSettings'
 export { RoomReorderModal } from './RoomReorderModal'
 

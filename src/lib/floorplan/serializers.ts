@@ -75,16 +75,7 @@ export function serializeTable(table: any, opts: SerializeTableOptions = {}) {
     // Seat count from _count or seats array
     seatCount: table._count?.seats ?? table.seats?.length ?? 0,
     seats: opts.includeSeats ? (table.seats ?? []).map(serializeSeat) : [],
-    // Combine fields
-    combinedWithId: table.combinedWithId,
-    combinedTableIds: table.combinedTableIds,
-    originalName: table.originalName,
-    originalPosX: table.originalPosX,
-    originalPosY: table.originalPosY,
     isLocked: table.isLocked,
-    virtualGroupId: table.virtualGroupId,
-    virtualGroupPrimary: table.virtualGroupPrimary,
-    virtualGroupColor: table.virtualGroupColor,
     // Current order
     currentOrder: serializeCurrentOrder(firstOrder, {
       includeItems: opts.includeOrderItems,

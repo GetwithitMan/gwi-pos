@@ -7,7 +7,6 @@
  * - L1: Floor Canvas (rooms, grid, fixtures)
  * - L2: Tables & Smart Objects (tables, entertainment)
  * - L3: Seats (auto-positioned around objects)
- * - L4: Table Groups (physical merge, virtual combine)
  * - L5: Admin & Persistence (blueprint vs live state)
  * - L6: Staff Roles (sections, assignments)
  * - L7: Status Engine (15-status state machine)
@@ -32,8 +31,6 @@ export type {
   FloorPlan,
   Fixture,
   FixtureType,
-  TableGroup,
-  GroupColor,
   Section,
   SectionAssignment,
   StatusTransition,
@@ -52,7 +49,6 @@ export type {
 
 export { useFloorPlan } from './hooks/useFloorPlan'
 export { useSeating } from './hooks/useSeating'
-export { useTableGroups } from './hooks/useTableGroups'
 
 // =============================================================================
 // PUBLIC SERVICES
@@ -67,11 +63,7 @@ export {
   updateTableStatus,
   toTableRect,
   toTableRectArray,
-  getPrimaryTableId,
-  getPrimaryTable,
-  isPhysicalGroup,
-  isVirtualGroup,
-  isPrimaryTable,
+  getTotalSeats,
 } from './services/table-service'
 
 // Seat Service (L3)
@@ -89,17 +81,6 @@ export {
 } from './services/seat-service'
 
 export type { SeatStatus, SeatInfo, OrderItemForSeat, PaymentForSeat } from './services/seat-service'
-
-// Group Service (L4)
-export {
-  getGroupsForLocation,
-  getGroupById,
-  createVirtualGroup,
-  createPhysicalGroup,
-  dissolveGroup,
-  addTableToGroup,
-  removeTableFromGroup,
-} from './services/group-service'
 
 // Status Engine (L7)
 export {
@@ -142,7 +123,6 @@ export const TABLE_STATUSES = [
   'bussing',
   'reserved',
   'blocked',
-  'combined',
 ] as const
 
 export const ENTERTAINMENT_TYPES = [
@@ -152,17 +132,6 @@ export const ENTERTAINMENT_TYPES = [
   'arcade',
   'bowling',
   'shuffleboard',
-] as const
-
-export const GROUP_COLORS = [
-  'blue',
-  'green',
-  'orange',
-  'purple',
-  'pink',
-  'yellow',
-  'cyan',
-  'red',
 ] as const
 
 export const TABLE_SHAPES = [

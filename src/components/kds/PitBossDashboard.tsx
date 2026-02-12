@@ -7,7 +7,6 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
  *
  * Features:
  * - Timed heatmap: Green -> Yellow -> Pulsing Red as expiration approaches
- * - Groups sessions by virtualGroupId (party spanning multiple tables)
  * - Waitlist integration
  * - "ADD 30 MIN" and "STOP SESSION" quick actions
  */
@@ -22,8 +21,6 @@ interface EntertainmentTable {
     id: string
     orderNumber: number
     tabName?: string
-    virtualGroupId?: string
-    virtualGroupColor?: string
   }
   timeInfo?: {
     startedAt: Date
@@ -36,8 +33,6 @@ interface ActiveSession {
   id: string
   partyName: string
   tables: EntertainmentTable[]
-  isGrouped: boolean
-  virtualGroupColor?: string
   startTime: Date
   totalMinutes: number
 }
@@ -148,33 +143,19 @@ export function PitBossDashboard({
     return () => clearInterval(interval)
   }, [])
 
-  // Group active sessions by virtual group
+  // Build active sessions (one per in-use table)
   const activeSessions = useMemo(() => {
-    const groups: Record<string, ActiveSession> = {}
-
     const inUseItems = entertainmentItems.filter(
       (item) => item.status === 'in_use' && item.currentOrder
     )
 
-    for (const item of inUseItems) {
-      const gid = item.currentOrder?.virtualGroupId || item.id
-
-      if (!groups[gid]) {
-        groups[gid] = {
-          id: gid,
-          partyName: item.currentOrder?.tabName || 'Walk-in',
-          tables: [],
-          isGrouped: !!item.currentOrder?.virtualGroupId,
-          virtualGroupColor: item.currentOrder?.virtualGroupColor,
-          startTime: item.timeInfo?.startedAt || new Date(),
-          totalMinutes: item.timeInfo?.blockMinutes || 60,
-        }
-      }
-
-      groups[gid].tables.push(item)
-    }
-
-    return Object.values(groups).sort(
+    return inUseItems.map((item) => ({
+      id: item.id,
+      partyName: item.currentOrder?.tabName || 'Walk-in',
+      tables: [item],
+      startTime: item.timeInfo?.startedAt || new Date(),
+      totalMinutes: item.timeInfo?.blockMinutes || 60,
+    })).sort(
       (a, b) => a.startTime.getTime() - b.startTime.getTime()
     )
   }, [entertainmentItems])
@@ -386,31 +367,12 @@ function SessionCard({
   return (
     <div
       className="bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden shadow-2xl"
-      style={
-        session.virtualGroupColor
-          ? {
-              boxShadow: `0 0 20px ${session.virtualGroupColor}30`,
-              borderColor: session.virtualGroupColor,
-            }
-          : undefined
-      }
     >
       {/* Header */}
       <div className="p-4 bg-slate-800/50 border-b border-slate-700 flex justify-between items-center">
         <h3 className="font-black text-lg text-white truncate max-w-[200px]">
           {session.partyName}
         </h3>
-        {session.isGrouped && (
-          <span
-            className="text-[10px] px-2 py-1 rounded font-bold uppercase"
-            style={{
-              backgroundColor: `${session.virtualGroupColor}20`,
-              color: session.virtualGroupColor,
-            }}
-          >
-            Linked Group
-          </span>
-        )}
       </div>
 
       {/* Tables in session */}

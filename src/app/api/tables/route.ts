@@ -119,21 +119,8 @@ export async function GET(request: NextRequest) {
         status: table.status,
         section: table.section,
         sectionId: table.sectionId,  // Section ID for filtering
-        // Combine fields (Skill 106/107)
-        combinedWithId: table.combinedWithId,
-        combinedTableIds: table.combinedTableIds as string[] | null,
-        originalName: table.originalName,
-        // Original position for reset-to-default (T017)
-        originalPosX: table.originalPosX,
-        originalPosY: table.originalPosY,
         // Locked status (T019) - bolted down furniture
         isLocked: table.isLocked,
-        // Virtual combine fields
-        virtualGroupId: table.virtualGroupId,
-        virtualGroupPrimary: table.virtualGroupPrimary,
-        virtualGroupColor: table.virtualGroupColor,
-        virtualGroupOffsetX: table.virtualGroupOffsetX,
-        virtualGroupOffsetY: table.virtualGroupOffsetY,
         // Seats (if requested)
         seats: includeSeats && 'seats' in table ? table.seats : [],
         // Current order info (if orders included)
@@ -275,11 +262,6 @@ export async function POST(request: NextRequest) {
         seatPattern: table.seatPattern,
         status: table.status,
         section: table.section,
-        combinedWithId: null,
-        combinedTableIds: null,
-        originalName: null,
-        originalPosX: null,
-        originalPosY: null,
         isLocked: false,
         currentOrder: null,
       },

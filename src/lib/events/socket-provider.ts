@@ -72,9 +72,9 @@ export class SocketEventProvider implements EventProvider {
     let io: (url: string, opts: object) => Socket
 
     try {
-      // Dynamic import - socket.io-client is an optional dependency
+      // Dynamic import - socket.io-client is a listed dependency
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const socketIo = await import(/* webpackIgnore: true */ 'socket.io-client' as any)
+      const socketIo = await import('socket.io-client') as any
       io = socketIo.io || socketIo.default?.io || socketIo.default
     } catch {
       throw new Error(
@@ -140,6 +140,7 @@ export class SocketEventProvider implements EventProvider {
 
     // Set up event forwarding from server
     this.socket.onAny((eventName: string, data: EventMap[EventName]) => {
+      console.log(`[SocketEvents] Received: ${eventName}`, { hasListeners: this.eventListeners.has(eventName), listenerCount: this.eventListeners.get(eventName)?.size ?? 0 })
       const listeners = this.eventListeners.get(eventName)
       if (listeners) {
         listeners.forEach((callback) => {

@@ -1,7 +1,7 @@
 /**
  * useFloorPlanDrag Hook
  *
- * Handles table drag-and-drop for combining tables in the floor plan.
+ * Handles table drag-and-drop in the floor plan.
  *
  * Features:
  * - Pointer move/up handlers for drag operations
@@ -11,7 +11,7 @@
  * - Collision detection with fixtures (walls, bar counters, etc.)
  */
 
-import { useState, useCallback, useMemo, RefObject } from 'react'
+import { useState, useCallback, useMemo, useRef, RefObject } from 'react'
 import { calculateAttachSide, calculateAttachPosition } from '../table-positioning'
 import { checkTableAllFixturesCollision, type FixtureBounds } from '@/domains/floor-plan/shared/collisionDetection'
 import { logger } from '@/lib/logger'
@@ -22,8 +22,6 @@ interface TableLike {
   posY: number
   width: number
   height: number
-  combinedWithId?: string | null
-  combinedTableIds?: string[] | null
 }
 
 interface FixtureLike {
@@ -47,7 +45,6 @@ interface UseFloorPlanDragOptions {
   dropTargetTableId: string | null
   updateDragTarget: (tableId: string | null, position?: { x: number; y: number }) => void
   endDrag: () => void
-  onCombine: (sourceId: string, targetId: string, dropPosition?: { x: number; y: number }) => Promise<boolean>
 }
 
 interface GhostPreview {
@@ -76,13 +73,14 @@ export function useFloorPlanDrag({
   dropTargetTableId,
   updateDragTarget,
   endDrag,
-  onCombine,
 }: UseFloorPlanDragOptions): UseFloorPlanDragResult {
-  // Track drop position for ghost preview and combine API
+  // Track drop position for ghost preview
   const [lastDropPosition, setLastDropPosition] = useState<{ x: number; y: number } | null>(null)
 
   // Track collision state for visual feedback
   const [isColliding, setIsColliding] = useState(false)
+  // Ref to avoid stale closure in handlePointerUp (React may batch setState)
+  const isCollidingRef = useRef(false)
 
   // Handle pointer move during drag
   // Transforms screen coordinates to floor plan coordinates when auto-scaled
@@ -147,8 +145,9 @@ export function useFloorPlanDrag({
       fixtureBounds
     )
 
-    // Update collision state for visual feedback
+    // Update collision state for visual feedback (state for rendering, ref for pointerUp)
     setIsColliding(collisionResult.collides)
+    isCollidingRef.current = collisionResult.collides
 
     // Hit test against all tables except the dragged one
     for (const table of tablesRef.current) {
@@ -167,24 +166,17 @@ export function useFloorPlanDrag({
     updateDragTarget(null)
   }, [draggedTableId, containerRef, autoScaleRef, autoScaleOffsetRef, tablesRef, fixturesRef, updateDragTarget])
 
-  // Handle pointer up - execute combine if dropped on a target
+  // Handle pointer up - end drag operation
   const handlePointerUp = useCallback(async () => {
-    // Prevent combine if colliding with fixtures
-    if (isColliding) {
+    // Prevent placement if colliding with fixtures (use ref to avoid stale closure)
+    if (isCollidingRef.current) {
       logger.warn('[useFloorPlanDrag] Cannot place table - collides with fixture')
-      endDrag()
-      setLastDropPosition(null)
-      setIsColliding(false)
-      return
-    }
-
-    if (draggedTableId && dropTargetTableId) {
-      await onCombine(draggedTableId, dropTargetTableId, lastDropPosition || undefined)
     }
     endDrag()
     setLastDropPosition(null)
     setIsColliding(false)
-  }, [draggedTableId, dropTargetTableId, isColliding, onCombine, endDrag, lastDropPosition])
+    isCollidingRef.current = false
+  }, [endDrag])
 
   // Calculate ghost preview position for visual feedback
   const ghostPreview = useMemo((): GhostPreview | null => {
@@ -195,44 +187,12 @@ export function useFloorPlanDrag({
     const targetTable = tables.find(t => t.id === dropTargetTableId)
     if (!sourceTable || !targetTable) return null
 
-    // If target is part of a combined group, use the combined bounding box
-    // This matches what the API does for positioning
-    let effectiveTargetRect = {
+    const effectiveTargetRect = {
       id: targetTable.id,
       posX: targetTable.posX,
       posY: targetTable.posY,
       width: targetTable.width,
       height: targetTable.height,
-    }
-
-    // Find the primary table if target is combined
-    const primaryTableId = targetTable.combinedWithId ||
-      (targetTable.combinedTableIds?.length ? targetTable.id : null)
-
-    if (primaryTableId) {
-      const primaryTable = tables.find(t => t.id === primaryTableId)
-      if (primaryTable) {
-        // Calculate combined bounding box
-        const combinedIds = primaryTable.combinedTableIds || []
-        const allGroupTables = [primaryTable, ...combinedIds.map(id => tables.find(t => t.id === id)).filter(Boolean)] as TableLike[]
-
-        if (allGroupTables.length > 1) {
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-          for (const t of allGroupTables) {
-            minX = Math.min(minX, t.posX)
-            minY = Math.min(minY, t.posY)
-            maxX = Math.max(maxX, t.posX + t.width)
-            maxY = Math.max(maxY, t.posY + t.height)
-          }
-          effectiveTargetRect = {
-            id: primaryTableId,
-            posX: minX,
-            posY: minY,
-            width: maxX - minX,
-            height: maxY - minY,
-          }
-        }
-      }
     }
 
     const sourceRect = {

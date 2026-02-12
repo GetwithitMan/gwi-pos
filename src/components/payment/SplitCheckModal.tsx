@@ -12,7 +12,7 @@ interface OrderItem {
   price: number
   itemTotal: number
   seatNumber?: number | null
-  sourceTableId?: string | null  // For virtual combined tables - T-S notation
+  sourceTableId?: string | null
   sourceTableName?: string | null  // Display name for the source table
   modifiers?: { name: string; price: number }[]
 }
@@ -39,7 +39,7 @@ interface SplitResult {
   newOrderNumber?: number
   // For by_seat split
   seatSplits?: { seatNumber: number; total: number; splitOrderId: string }[]
-  // For by_table split (virtual combined tables)
+  // For by_table split
   tableSplits?: { tableId: string; tableName: string; total: number; splitOrderId: string }[]
   // For custom amount
   splitAmount?: number
@@ -102,7 +102,7 @@ export function SplitCheckModal({
     unassignedTotal: number
   } | null>(null)
 
-  // Split by table state (for virtual combined tables)
+  // Split by table state
   const [tableSplitResult, setTableSplitResult] = useState<{
     splits: { tableId: string; tableName: string; total: number; splitOrderId: string; displayNumber: string; itemCount: number }[]
     hasUnassignedItems: boolean
@@ -120,7 +120,7 @@ export function SplitCheckModal({
   }, new Set<number>())
   const canSplitBySeat = seatsWithItems.size >= 2
 
-  // Check if items have source table assignments (from virtual combined tables)
+  // Check if items have source table assignments
   const tablesWithItems = items.reduce((acc, item) => {
     if (item.sourceTableId) {
       acc.set(item.sourceTableId, item.sourceTableName || `Table ${item.sourceTableId.slice(0, 4)}`)
@@ -455,7 +455,7 @@ export function SplitCheckModal({
                   <div className="text-sm text-gray-500 font-normal">
                     {canSplitByTable
                       ? `Each table gets its own check (${tablesWithItems.size} tables)`
-                      : 'Only for combined table groups'}
+                      : 'Items must have table assignments'}
                   </div>
                 </div>
               </Button>
@@ -819,7 +819,7 @@ export function SplitCheckModal({
             </div>
           )}
 
-          {/* By Table Mode - for virtual combined table groups */}
+          {/* By Table Mode */}
           {mode === 'by_table' && (
             <div className="space-y-4">
               <h3 className="font-medium">Split by Table</h3>
@@ -827,7 +827,7 @@ export function SplitCheckModal({
               {!tableSplitResult ? (
                 <>
                   <p className="text-sm text-gray-500">
-                    Each table in the group will get its own check with their items.
+                    Each table will get its own check with their items.
                   </p>
 
                   {/* Preview items by table */}

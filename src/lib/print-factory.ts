@@ -7,7 +7,7 @@
  * Templates:
  * - STANDARD_KITCHEN: Compact food prep tickets
  * - PIZZA_STATION: Large fonts, sectional toppings for pizza make line
- * - EXPO_SUMMARY: All items grouped by virtual table for expeditor
+ * - EXPO_SUMMARY: All items grouped by source table for expeditor
  * - ENTERTAINMENT_TICKET: Game rentals with start time and "Return By"
  * - BAR_TICKET: Bar-focused drink formatting
  *
@@ -1126,7 +1126,7 @@ export class PrintTemplateFactory {
   }
 
   /**
-   * EXPO_SUMMARY: All items grouped by virtual table, shows item status
+   * EXPO_SUMMARY: All items grouped by source table, shows item status
    */
   private static buildExpoSummaryTicket(
     data: PrintTemplateData,
@@ -1152,17 +1152,7 @@ export class PrintTemplateFactory {
     content.push(line(`#${data.order.orderNumber}`))
     content.push(NORMAL)
 
-    // Virtual group info
-    if (data.order.virtualGroupId && data.order.memberTables.length > 1) {
-      content.push(TALL)
-      content.push(line(`PRIMARY: ${data.order.primaryTableName || data.order.tableName}`))
-      const linkedNames = data.order.memberTables
-        .filter((t) => t.name !== data.order.primaryTableName)
-        .map((t) => t.name)
-        .join(', ')
-      content.push(line(`LINKED: ${linkedNames}`))
-      content.push(NORMAL)
-    } else if (data.order.tableName) {
+    if (data.order.tableName) {
       content.push(TALL)
       content.push(line(data.order.tableName))
       content.push(NORMAL)
@@ -1172,7 +1162,7 @@ export class PrintTemplateFactory {
     content.push(line(new Date().toLocaleTimeString()))
     content.push(divider(width, '='))
 
-    // Group items by source table for virtual combined orders
+    // Group items by source table for multi-table orders
     const itemsByTable = new Map<string, RoutedItem[]>()
 
     for (const item of data.items) {

@@ -96,8 +96,7 @@ interface OrderItem {
   blockTimeMinutes?: number | null
   blockTimeStartedAt?: string | null
   blockTimeExpiresAt?: string | null
-  // Virtual group seat tracking
-  sourceTableId?: string  // Which table this item was ordered from (for virtual groups)
+  sourceTableId?: string  // Which table this item was ordered from
   // Pizza builder configuration
   pizzaConfig?: PizzaOrderConfigStore
   // Category type for tax-inclusive pricing
@@ -179,7 +178,6 @@ interface LoadedOrderData {
     // Per-item delay
     delayMinutes?: number | null
     delayStartedAt?: string | null
-    // Virtual group tracking
     sourceTableId?: string | null
     modifiers: {
       id: string
@@ -491,6 +489,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     let commissionTotal = 0
 
     currentOrder.items.forEach(item => {
+      // Skip voided and comped items — they don't contribute to totals
+      if (item.status === 'voided' || item.status === 'comped') return
+
       const itemPrice = item.price * item.quantity
       const modifiersPrice = item.modifiers.reduce((modSum, mod) => modSum + mod.price, 0) * item.quantity
       const ingredientModsPrice = (item.ingredientModifications || []).reduce((sum, ing) => sum + (ing.priceAdjustment || 0), 0) * item.quantity

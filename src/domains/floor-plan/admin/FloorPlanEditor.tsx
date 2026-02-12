@@ -789,7 +789,7 @@ export function FloorPlanEditor({
         const response = await fetch(`/api/tables/${tableId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updates),
+          body: JSON.stringify({ ...updates, locationId }),
         });
 
         if (!response.ok) {
@@ -833,7 +833,7 @@ export function FloorPlanEditor({
       });
 
       try {
-        const response = await fetch(`/api/tables/${tableId}`, {
+        const response = await fetch(`/api/tables/${tableId}?locationId=${locationId}`, {
           method: 'DELETE',
         });
 

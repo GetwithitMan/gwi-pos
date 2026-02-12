@@ -3,15 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 
 /**
- * GET /api/floor-plan?locationId=xxx&sectionId=yyy&include=tables,seats,sections,entertainment,elements,virtualGroups
+ * GET /api/floor-plan?locationId=xxx&sectionId=yyy&include=tables,seats,sections,entertainment,elements
  *
  * Returns complete floor plan data in a single call.
- * - tables: Table records with positions and virtual group info
+ * - tables: Table records with positions
  * - seats: Seat positions for all tables
  * - sections: Section/room definitions
  * - entertainment: Entertainment elements (pool tables, dartboards, etc.) with session data
  * - elements: Floor plan elements (walls, bars, etc.)
- * - virtualGroups: Combined table groups
  *
  * Used by FloorPlanHome to load initial data.
  */
@@ -22,7 +21,7 @@ export async function GET(request: NextRequest) {
   const includeParam = searchParams.get('include')
   const include = includeParam
     ? includeParam.split(',').map(s => s.trim())
-    : ['tables', 'seats', 'sections', 'entertainment', 'elements', 'virtualGroups']
+    : ['tables', 'seats', 'sections', 'entertainment', 'elements']
 
   if (!locationId) {
     return NextResponse.json(
@@ -74,11 +73,6 @@ export async function GET(request: NextRequest) {
         height: true,
         status: true,
         capacity: true,
-        combinedWithId: true,
-        combinedTableIds: true,
-        virtualGroupId: true,
-        virtualGroupPrimary: true,
-        virtualGroupColor: true,
         section: {
           select: {
             id: true,
@@ -251,11 +245,6 @@ export async function GET(request: NextRequest) {
       height: t.height,
       status: t.status as 'available' | 'occupied' | 'dirty' | 'reserved',
       capacity: t.capacity,
-      combinedWithId: t.combinedWithId,
-      combinedTableIds: t.combinedTableIds as string[] | null,
-      virtualGroupId: t.virtualGroupId,
-      virtualGroupPrimary: t.virtualGroupPrimary,
-      virtualGroupColor: t.virtualGroupColor,
       currentOrder: ordersByTable.get(t.id) || null,
     }))
 
@@ -270,40 +259,6 @@ export async function GET(request: NextRequest) {
       angle: s.angle,
     }))
 
-    // Extract virtual groups from tables (if requested)
-    interface VirtualGroup {
-      virtualGroupId: string
-      primaryTableId: string | null
-      groupColor: string | null
-      tableIds: string[]
-      tableNames: string[]
-    }
-
-    const virtualGroupsMap = include.includes('virtualGroups')
-      ? tables
-          .filter(t => t.virtualGroupId)
-          .reduce((acc, table) => {
-            const groupId = table.virtualGroupId!
-            if (!acc[groupId]) {
-              acc[groupId] = {
-                virtualGroupId: groupId,
-                primaryTableId: null as string | null,
-                groupColor: table.virtualGroupColor,
-                tableIds: [],
-                tableNames: [],
-              }
-            }
-            acc[groupId].tableIds.push(table.id)
-            acc[groupId].tableNames.push(table.name)
-            if (table.virtualGroupPrimary) {
-              acc[groupId].primaryTableId = table.id
-            }
-            return acc
-          }, {} as Record<string, VirtualGroup>)
-      : {}
-
-    const virtualGroups = Object.values(virtualGroupsMap)
-
     // Build response based on include parameter
     const response: any = { data: {} }
     if (include.includes('tables')) response.data.tables = formattedTables
@@ -311,7 +266,6 @@ export async function GET(request: NextRequest) {
     if (include.includes('sections')) response.data.sections = sections
     if (include.includes('entertainment')) response.data.entertainment = transformedEntertainment
     if (include.includes('elements')) response.data.elements = elements
-    if (include.includes('virtualGroups')) response.data.virtualGroups = virtualGroups
 
     return NextResponse.json(response)
   } catch (error) {

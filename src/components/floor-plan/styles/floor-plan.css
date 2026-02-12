@@ -182,32 +182,6 @@
   touch-action: none;  /* Prevent scrolling during drag operations */
 }
 
-/* Connection Lines Layer (magnetic table connections) */
-.connection-lines-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.connection-line-animated {
-  animation: connectionPulse 2s ease-in-out infinite;
-}
-
-@keyframes connectionPulse {
-  0%, 100% {
-    stroke-dashoffset: 0;
-    opacity: 0.8;
-  }
-  50% {
-    stroke-dashoffset: 12;
-    opacity: 1;
-  }
-}
-
 /* Table Node */
 .table-node {
   position: absolute;
@@ -338,50 +312,6 @@
   border-color: #818cf8;
 }
 
-/* Combined Table Indicator */
-.table-node.combined .table-node-inner {
-  border-style: dashed;
-  border-width: 2px;
-}
-
-.combined-badge {
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 4px;
-  background: #8b5cf6;
-  border: 2px solid var(--fp-bg-primary);
-  border-radius: 11px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
-/* Badge for tables that are combined INTO a primary table */
-.combined-child-badge {
-  position: absolute;
-  top: -6px;
-  left: -6px;
-  width: 18px;
-  height: 18px;
-  background: #8b5cf6;
-  border: 2px solid var(--fp-bg-primary);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  color: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-}
-
 /* Locked Table Indicator (T019) */
 .table-node.locked {
   cursor: not-allowed;
@@ -437,23 +367,6 @@
   /* Booth seats are inside the table, smaller */
   width: 20px !important;
   height: 20px !important;
-}
-
-/* Combined seats group container */
-.combined-seats-group {
-  position: absolute;
-  top: 0;
-  left: 0;
-  pointer-events: none;
-}
-
-.combined-seats-group .seat-indicator {
-  pointer-events: auto;
-}
-
-.seat-indicator.combined-seat {
-  /* Combined group seats have colored border matching the group */
-  transition: all 0.15s ease;
 }
 
 @keyframes seatPulse {
@@ -696,27 +609,6 @@
   z-index: 99;
 }
 
-/* Reset Button */
-.reset-to-default-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  background: rgba(139, 92, 246, 0.15);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 8px;
-  color: #a78bfa;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.reset-to-default-btn:hover {
-  background: rgba(139, 92, 246, 0.25);
-  transform: translateY(-1px);
-}
-
 /* Icon Button */
 .icon-btn {
   width: 40px;
@@ -934,12 +826,6 @@
   background: linear-gradient(145deg, #252530 0%, #1e1e28 100%);
 }
 
-/* Combined Tables in Admin - Clearer indication */
-.unified-floor-plan .table-node.combined .table-node-inner {
-  border-style: dashed;
-  border-width: 3px;
-}
-
 /* Hover state for interactivity feedback */
 .unified-floor-plan .table-node:hover:not(.selected):not(:active) .table-node-inner {
   border-color: rgba(255, 255, 255, 0.35);
@@ -995,105 +881,6 @@
   border-color: #818cf8;
   box-shadow: 0 0 15px rgba(99, 102, 241, 0.6);
   animation: seatPulse 1.5s ease-in-out infinite;
-}
-
-/* ========================================
-   COMBINED TABLES - Enhanced Display
-   ======================================== */
-
-/* Combined table group visual connection */
-.table-node.combined::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: 16px;
-  border: 2px dashed var(--combined-color, #8b5cf6);
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-/* Primary combined table gets a special indicator */
-.table-node.combined .combined-badge {
-  animation: badgePulse 2s ease-in-out infinite;
-}
-
-@keyframes badgePulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  50% {
-    transform: scale(1.1);
-    box-shadow: 0 4px 16px rgba(139, 92, 246, 0.5);
-  }
-}
-
-/* Child table in combined group */
-.table-node .combined-child-badge {
-  animation: childBadgePulse 2s ease-in-out infinite;
-}
-
-@keyframes childBadgePulse {
-  0%, 100% {
-    opacity: 0.8;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* ========================================
-   VIRTUAL COMBINE STYLES
-   ======================================== */
-
-/* Virtual combined table - pulsing glow animation */
-.table-node.virtual-combined .table-node-inner {
-  border: 2px double white !important;
-  border-style: double !important;
-}
-
-/* Virtual combine mode - selection checkmark indicator */
-.table-node.virtual-combine-selected .table-node-inner {
-  border-color: #06b6d4 !important;
-  border-width: 3px !important;
-}
-
-/* Dim non-table elements when in virtual combine mode */
-.floor-plan-home.virtual-combine-mode .categories-bar-container,
-.floor-plan-home.virtual-combine-mode .menu-items-panel,
-.floor-plan-home.virtual-combine-mode .order-panel-container {
-  opacity: 0.3;
-  pointer-events: none;
-}
-
-/* Virtual group pulsing glow keyframes */
-@keyframes virtualPulse {
-  0%, 100% {
-    box-shadow: 0 0 10px var(--virtual-group-color, #06b6d4), 0 0 5px var(--virtual-group-color, #06b6d4);
-  }
-  50% {
-    box-shadow: 0 0 25px var(--virtual-group-color, #06b6d4), 0 0 15px var(--virtual-group-color, #06b6d4);
-  }
-}
-
-.table-node .virtual-group-pulse {
-  animation: virtualPulse 2s infinite ease-in-out;
-}
-
-/* Virtual group badge styling */
-.table-node .virtual-group-badge {
-  animation: virtualBadgePulse 2s ease-in-out infinite;
-}
-
-@keyframes virtualBadgePulse {
-  0%, 100% {
-    transform: scale(1);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-  50% {
-    transform: scale(1.05);
-    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.5);
-  }
 }
 
 /* ========================================

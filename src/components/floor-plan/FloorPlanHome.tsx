@@ -4,23 +4,12 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useFloorPlanStore, FloorPlanTable, FloorPlanElement } from './use-floor-plan'
 import { FloorPlanEntertainment } from './FloorPlanEntertainment'
-import { TableNode, getCombinedGroupColor } from './TableNode'
+import { TableNode } from './TableNode'
 import { TableInfoPanel } from './TableInfoPanel'
 import { CategoriesBar } from './CategoriesBar'
-import { VirtualCombineBar } from './VirtualCombineBar'
-import { ExistingOrdersModal } from './ExistingOrdersModal'
-import { VirtualGroupManagerModal } from './VirtualGroupManagerModal'
 import { RoomTabs } from './RoomTabs'
 import { RoomReorderModal } from './RoomReorderModal'
 import { useFloorPlanAutoScale, useFloorPlanDrag } from './hooks'
-import { calculateAttachSide, calculateAttachPosition } from './table-positioning'
-import { getCombinedGroupTables, calculatePerimeterCapacity } from '@/lib/table-geometry'
-import { toTableRect, toTableRectArray } from '@/lib/table-utils'
-import {
-  generateVirtualSeatPositions,
-  type TableForPerimeter,
-  type VirtualSeatPosition,
-} from '@/domains/floor-plan/groups'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
@@ -181,6 +170,8 @@ interface FloorPlanHomeProps {
   children?: React.ReactNode
   // Ref to allow parent to deselect current table (e.g., "Hide" button)
   onRegisterDeselectTable?: (fn: () => void) => void
+  // Counter that triggers a floor plan refresh when incremented (e.g., after send-to-kitchen)
+  refreshTrigger?: number
 }
 
 // Pizza order configuration (matches what pizza builder produces)
@@ -209,6 +200,7 @@ export function FloorPlanHome({
   onPaidOrderCleared,
   children,
   onRegisterDeselectTable,
+  refreshTrigger,
 }: FloorPlanHomeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -346,7 +338,7 @@ export function FloorPlanHome({
 
   // Active seat for auto-assignment (null = "Shared")
   const [activeSeatNumber, setActiveSeatNumber] = useState<number | null>(null)
-  // Source table for seat (for virtual groups - tracks which table the seat belongs to)
+  // Source table for seat (tracks which table the seat belongs to)
   const [activeSourceTableId, setActiveSourceTableId] = useState<string | null>(null)
 
   // === Ordering Engine (unified item-add, modifier, pizza, timed rental logic) ===
@@ -377,12 +369,6 @@ export function FloorPlanHome({
   const [showRoomReorderModal, setShowRoomReorderModal] = useState(false)
   const [preferredRoomOrder, setPreferredRoomOrder] = useState<string[]>([])
 
-  // Virtual group manager modal state
-  const [virtualGroupManagerTableId, setVirtualGroupManagerTableId] = useState<string | null>(null)
-
-  // Dismissed virtual group banners (auto-dismiss after 5 seconds)
-  const [dismissedBanners, setDismissedBanners] = useState<Set<string>>(new Set())
-
   // Resend to kitchen state
   const [resendModal, setResendModal] = useState<{ itemId: string; itemName: string } | null>(null)
   const [resendNote, setResendNote] = useState('')
@@ -406,7 +392,6 @@ export function FloorPlanHome({
     draggedTableId,
     dropTargetTableId,
     infoPanelTableId,
-    undoStack,
     isLoading,
     showSeats,
     selectedSeat,
@@ -420,40 +405,14 @@ export function FloorPlanHome({
     endDrag,
     openInfoPanel,
     closeInfoPanel,
-    addUndoAction,
-    popUndoAction,
-    clearExpiredUndos,
     toggleShowSeats,
     selectSeat,
     clearSelectedSeat,
     flashTableMessage,
     clearExpiredFlashes,
     setLoading,
-    // Virtual combine mode
-    virtualCombineMode,
-    virtualCombineSelectedIds,
-    virtualCombinePrimaryId,
-    startVirtualCombineMode,
-    toggleVirtualCombineSelection,
-    cancelVirtualCombineMode,
-    clearVirtualCombineMode,
-    updateTablesWithVirtualGroup,
     updateTableStatus,
   } = useFloorPlanStore()
-
-  // Virtual group perimeter seats data - calculated from tables in virtual groups
-  // This enables seats to be distributed around the combined perimeter of grouped tables
-  // Two modes:
-  // - Static (long-hold): Tables stay in place, keep their own seats, just get colored glow
-  // - Snapped (drag-drop): Tables visually snap together, seats redistribute around perimeter
-  interface VirtualGroupSeatData {
-    groupId: string
-    virtualSeats: VirtualSeatPosition[] // Empty for static groups
-    displayName: string
-    tableIds: string[]
-    groupColor: string
-    isStatic?: boolean // True for long-hold groups (tables keep their own seats)
-  }
 
   // No sync functions needed — Zustand store IS the source of truth
   // syncOrderToStore and syncLocalItemsToStore have been removed
@@ -465,250 +424,6 @@ export function FloorPlanHome({
     }
   }, [onSwitchToBartenderView])
 
-  // Helper function to calculate snap position for a secondary table relative to a primary table
-  // Used when tables don't have stored visual offsets
-  const calculateSnapPositionForTable = useCallback((
-    secondary: FloorPlanTable,
-    primary: FloorPlanTable
-  ): { x: number; y: number } => {
-    // Calculate centers
-    const primaryCenterX = primary.posX + primary.width / 2
-    const primaryCenterY = primary.posY + primary.height / 2
-    const secondaryCenterX = secondary.posX + secondary.width / 2
-    const secondaryCenterY = secondary.posY + secondary.height / 2
-
-    // Determine which edge to snap to based on relative position
-    const dx = secondaryCenterX - primaryCenterX
-    const dy = secondaryCenterY - primaryCenterY
-
-    // Determine primary direction (horizontal or vertical)
-    const isHorizontal = Math.abs(dx) > Math.abs(dy)
-
-    let snapX: number
-    let snapY: number
-
-    if (isHorizontal) {
-      if (dx > 0) {
-        // Secondary is to the RIGHT of primary - snap to primary's right edge
-        snapX = primary.posX + primary.width  // Left edge of secondary touches right edge of primary
-      } else {
-        // Secondary is to the LEFT of primary - snap to primary's left edge
-        snapX = primary.posX - secondary.width  // Right edge of secondary touches left edge of primary
-      }
-      // Align centers vertically (with small offset to preserve original offset)
-      const verticalOffset = Math.min(Math.abs(dy), Math.min(primary.height, secondary.height) * 0.3)
-      snapY = primary.posY + (primary.height - secondary.height) / 2 + (dy > 0 ? verticalOffset : -verticalOffset) * 0.5
-    } else {
-      if (dy > 0) {
-        // Secondary is BELOW primary - snap to primary's bottom edge
-        snapY = primary.posY + primary.height  // Top edge of secondary touches bottom edge of primary
-      } else {
-        // Secondary is ABOVE primary - snap to primary's top edge
-        snapY = primary.posY - secondary.height  // Bottom edge of secondary touches top edge of primary
-      }
-      // Align centers horizontally (with small offset to preserve original offset)
-      const horizontalOffset = Math.min(Math.abs(dx), Math.min(primary.width, secondary.width) * 0.3)
-      snapX = primary.posX + (primary.width - secondary.width) / 2 + (dx > 0 ? horizontalOffset : -horizontalOffset) * 0.5
-    }
-
-    return { x: snapX, y: snapY }
-  }, [])
-
-  // Helper function to calculate snap position for a table joining an existing group with multiple tables
-  // Finds the nearest already-positioned table and snaps to it
-  const calculateSnapPositionForTableInGroup = useCallback((
-    newTable: FloorPlanTable,
-    primaryTable: FloorPlanTable,
-    allGroupTables: FloorPlanTable[],
-    currentOffsets: Map<string, { offsetX: number; offsetY: number }>
-  ): { x: number; y: number } => {
-    // Get all tables that already have positions calculated (including primary)
-    const positionedTables = allGroupTables.filter(t =>
-      t.id === primaryTable.id || currentOffsets.has(t.id)
-    )
-
-    if (positionedTables.length === 0) {
-      // Fallback to primary
-      return calculateSnapPositionForTable(newTable, primaryTable)
-    }
-
-    // Find the nearest positioned table to snap to
-    let nearestTable = primaryTable
-    let nearestDistance = Infinity
-
-    for (const table of positionedTables) {
-      const offset = currentOffsets.get(table.id) || { offsetX: 0, offsetY: 0 }
-      const visualX = table.posX + offset.offsetX
-      const visualY = table.posY + offset.offsetY
-
-      // Calculate distance from new table's original position to this positioned table
-      const dx = newTable.posX - visualX
-      const dy = newTable.posY - visualY
-      const distance = Math.sqrt(dx * dx + dy * dy)
-
-      if (distance < nearestDistance) {
-        nearestDistance = distance
-        nearestTable = table
-      }
-    }
-
-    // Create a virtual table with the visual position for snapping
-    const nearestOffset = currentOffsets.get(nearestTable.id) || { offsetX: 0, offsetY: 0 }
-    const virtualNearestTable: FloorPlanTable = {
-      ...nearestTable,
-      posX: nearestTable.posX + nearestOffset.offsetX,
-      posY: nearestTable.posY + nearestOffset.offsetY,
-    }
-
-    return calculateSnapPositionForTable(newTable, virtualNearestTable)
-  }, [calculateSnapPositionForTable])
-
-  // Determine which virtual groups are "snapped" (drag-drop) vs "static" (long-hold)
-  // Snapped groups have non-zero offsets and redistribute seats around perimeter
-  // Static groups keep tables in place with their original seats
-  const snappedGroupIds = useMemo(() => {
-    const snapped = new Set<string>()
-    tables.forEach(t => {
-      if (t.virtualGroupId) {
-        // If any table in the group has non-zero offsets, it's a snapped group
-        if (t.virtualGroupOffsetX != null && t.virtualGroupOffsetY != null &&
-            (t.virtualGroupOffsetX !== 0 || t.virtualGroupOffsetY !== 0)) {
-          snapped.add(t.virtualGroupId)
-        }
-      }
-    })
-    return snapped
-  }, [tables])
-
-  const virtualGroupSeats = useMemo<Map<string, VirtualGroupSeatData>>(() => {
-    const groups = new Map<string, VirtualGroupSeatData>()
-
-    // Find all unique virtual group IDs
-    const groupIds = new Set<string>()
-    tables.forEach(t => {
-      if (t.virtualGroupId) groupIds.add(t.virtualGroupId)
-    })
-
-    // Calculate virtual seats for each group
-    groupIds.forEach(groupId => {
-      const groupTables = tables.filter(t => t.virtualGroupId === groupId)
-      if (groupTables.length < 2) return // Need at least 2 tables for virtual group
-
-      // Find primary table
-      const primaryTable = groupTables.find(t => t.virtualGroupPrimary) || groupTables[0]
-      const groupColor = primaryTable.virtualGroupColor || '#06b6d4'
-
-      // Check if this is a snapped (drag-drop) group or static (long-hold) group
-      const isSnappedGroup = snappedGroupIds.has(groupId)
-
-      // For STATIC groups (long-hold): tables stay in place, no perimeter seat redistribution
-      // Just store group info for coloring/display purposes
-      if (!isSnappedGroup) {
-        // Count total seats across all tables in the group
-        const totalSeats = groupTables.reduce((sum, t) => sum + (t.seats?.length || 0), 0)
-        const names = groupTables.map(t => t.name)
-        const displayName = names.length === 2
-          ? `${names[0]} & ${names[1]} • Party of ${totalSeats}`
-          : `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]} • Party of ${totalSeats}`
-
-        groups.set(groupId, {
-          groupId,
-          virtualSeats: [], // No perimeter seats for static groups
-          displayName,
-          tableIds: groupTables.map(t => t.id),
-          groupColor,
-          isStatic: true, // Flag to indicate tables keep their own seats
-        })
-        return
-      }
-
-      // For SNAPPED groups (drag-drop): calculate perimeter seat redistribution
-      const visualOffsets = new Map<string, { offsetX: number; offsetY: number }>()
-
-      // Primary table stays at its position (no offset)
-      visualOffsets.set(primaryTable.id, { offsetX: 0, offsetY: 0 })
-
-      // Sort secondary tables by distance from primary (closest first)
-      const secondaryTables = groupTables.filter(t => t.id !== primaryTable.id)
-      secondaryTables.sort((a, b) => {
-        const distA = Math.sqrt(
-          Math.pow(a.posX - primaryTable.posX, 2) +
-          Math.pow(a.posY - primaryTable.posY, 2)
-        )
-        const distB = Math.sqrt(
-          Math.pow(b.posX - primaryTable.posX, 2) +
-          Math.pow(b.posY - primaryTable.posY, 2)
-        )
-        return distA - distB
-      })
-
-      // Calculate offset for each secondary table
-      secondaryTables.forEach(table => {
-        // Use DB-stored offsets
-        if (table.virtualGroupOffsetX != null && table.virtualGroupOffsetY != null) {
-          visualOffsets.set(table.id, {
-            offsetX: table.virtualGroupOffsetX,
-            offsetY: table.virtualGroupOffsetY,
-          })
-          return
-        }
-
-        // Fallback: Auto-calculate snap position
-        const snapPos = calculateSnapPositionForTableInGroup(
-          table,
-          primaryTable,
-          groupTables,
-          visualOffsets
-        )
-        visualOffsets.set(table.id, {
-          offsetX: snapPos.x - table.posX,
-          offsetY: snapPos.y - table.posY,
-        })
-      })
-
-      // Build tables for perimeter calculation using visual (snapped) positions
-      const tablesForPerimeter: TableForPerimeter[] = groupTables.map(t => {
-        const offset = visualOffsets.get(t.id) || { offsetX: 0, offsetY: 0 }
-        return {
-          id: t.id,
-          name: t.name,
-          posX: t.posX + offset.offsetX,
-          posY: t.posY + offset.offsetY,
-          width: t.width,
-          height: t.height,
-          rotation: t.rotation,
-          seats: (t.seats || []).map(s => ({
-            id: s.id,
-            seatNumber: s.seatNumber,
-            label: s.label,
-            relativeX: s.relativeX,
-            relativeY: s.relativeY,
-          })),
-        }
-      })
-
-      // Generate perimeter seats around the combined shape
-      const virtualSeats = generateVirtualSeatPositions(tablesForPerimeter, 22)
-
-      // Build display name
-      const names = groupTables.map(t => t.name)
-      const totalSeats = virtualSeats.length
-      const displayName = names.length === 2
-        ? `${names[0]} & ${names[1]} • Party of ${totalSeats}`
-        : `${names.slice(0, -1).join(', ')} & ${names[names.length - 1]} • Party of ${totalSeats}`
-
-      groups.set(groupId, {
-        groupId,
-        virtualSeats,
-        displayName,
-        tableIds: groupTables.map(t => t.id),
-        groupColor,
-        isStatic: false,
-      })
-    })
-
-    return groups
-  }, [tables, snappedGroupIds, calculateSnapPositionForTableInGroup])
 
   // Auto-scaling hook (fits floor plan to container)
   const {
@@ -832,22 +547,10 @@ export function FloorPlanHome({
     }
   }, [employeeId])
 
-  // Virtual combine state
-  const [isCreatingVirtualGroup, setIsCreatingVirtualGroup] = useState(false)
-  const [showExistingOrdersModal, setShowExistingOrdersModal] = useState(false)
-  const [pendingExistingOrders, setPendingExistingOrders] = useState<Array<{
-    tableId: string
-    tableName: string
-    orderId: string
-    orderNumber: number
-    itemCount: number
-    total: number
-  }>>([])
-
   // Seat management refresh trigger (Skill 121)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  // Extra virtual seats per table (for walk-up guests before order exists)
+  // Extra seats per table (for walk-up guests before order exists)
   const [extraSeats, setExtraSeats] = useState<Map<string, number>>(new Map())
 
   // FIX: Ref to always access latest tables data (avoids stale closure issues)
@@ -858,39 +561,13 @@ export function FloorPlanHome({
   const fixturesRef = useRef(elements)
   fixturesRef.current = elements
 
-  // Auto-dismiss virtual group banners after 5 seconds
-  useEffect(() => {
-    const virtualGroupIds = new Set(
-      tables
-        .filter(t => t.virtualGroupId && t.virtualGroupPrimary)
-        .map(t => t.virtualGroupId!)
-    )
-
-    if (virtualGroupIds.size === 0) return
-
-    const timers: NodeJS.Timeout[] = []
-
-    virtualGroupIds.forEach(groupId => {
-      if (!dismissedBanners.has(groupId)) {
-        const timer = setTimeout(() => {
-          setDismissedBanners(prev => new Set([...prev, groupId]))
-        }, 5000)
-        timers.push(timer)
-      }
-    })
-
-    return () => {
-      timers.forEach(timer => clearTimeout(timer))
-    }
-  }, [tables, dismissedBanners])
-
   // FIX: Refs for auto-scale values (needed in handlePointerMove for coordinate transformation)
   const autoScaleRef = useRef(autoScale)
   autoScaleRef.current = autoScale
   const autoScaleOffsetRef = useRef(autoScaleOffset)
   autoScaleOffsetRef.current = autoScaleOffset
 
-  // Helper to get best seat count - use MAX of capacity and actual seats, plus any extra virtual seats
+  // Helper to get best seat count - use MAX of capacity and actual seats, plus any extra seats
   const getTableSeatCount = useCallback((t: FloorPlanTable): number => {
     const seatsLen = t.seats?.length || 0
     const cap = t.capacity || 0
@@ -898,136 +575,11 @@ export function FloorPlanHome({
     return Math.max(seatsLen, cap) + extra
   }, [extraSeats])
 
-  // Get all tables in a virtual group (returns array with primary table first)
-  // FIX: Uses tablesRef.current to always access latest tables data
-  const getVirtualGroupTables = useCallback((table: FloorPlanTable | null): FloorPlanTable[] => {
-    if (!table) return []
-    if (!table.virtualGroupId) return [table]
-
-    // Find all tables in the same virtual group - use ref for latest data
-    const groupTables = tablesRef.current.filter(t => t.virtualGroupId === table.virtualGroupId)
-
-    // Sort so primary table is first
-    return groupTables.sort((a, b) => {
-      if (a.virtualGroupPrimary) return -1
-      if (b.virtualGroupPrimary) return 1
-      return 0
-    })
-  }, [])
-
-  // Calculate total seats for a table (including combined tables or virtual group)
-  // Uses perimeter-based capacity for combined groups to avoid the "8-seat" problem
-  // FIX: Uses tablesRef.current to always access latest tables data (avoids stale closure)
+  // Calculate total seats for a table
   const getTotalSeats = useCallback((table: FloorPlanTable | null): number => {
     if (!table) return 0
-
-    // Always use the ref to get the latest tables data
-    const currentTables = tablesRef.current
-
-    // If this is a virtual group, sum all tables in the group (including extra seats)
-    if (table.virtualGroupId) {
-      const groupTables = getVirtualGroupTables(table)
-      const total = groupTables.reduce((sum, t) => {
-        const tableSeats = getTableSeatCount(t)
-        const tableExtra = extraSeats.get(t.id) || 0
-        return sum + tableSeats + tableExtra
-      }, 0)
-      logger.log(`[getTotalSeats] Virtual group ${table.name}: tables=${groupTables.length}, total=${total}`)
-      return total
-    }
-
-    // FIX: If this is a CHILD of a combined group, redirect to the PRIMARY
-    // This handles the case where user taps on a child table or if activeTableId is stale
-    if (table.combinedWithId) {
-      const primaryTable = currentTables.find(t => t.id === table.combinedWithId)
-      if (primaryTable) {
-        logger.log(`[getTotalSeats] Redirecting from child ${table.name} to primary ${primaryTable.name}`)
-        // Calculate seats from the primary's perspective
-        const combinedIds = primaryTable.combinedTableIds as string[] | null
-        if (combinedIds && Array.isArray(combinedIds) && combinedIds.length > 0) {
-          const primarySeats = primaryTable.seats?.length || 0
-          const primaryExtra = extraSeats.get(primaryTable.id) || 0
-          let totalSeats = primarySeats + primaryExtra
-
-          for (const childId of combinedIds) {
-            const childTable = currentTables.find(t => t.id === childId)
-            if (childTable) {
-              const childSeats = childTable.seats?.length || 0
-              const childExtra = extraSeats.get(childId) || 0
-              totalSeats += childSeats + childExtra
-            }
-          }
-
-          if (totalSeats === 0) {
-            totalSeats = primaryTable.capacity || 0
-          }
-
-          logger.log(`[getTotalSeats] Child ${table.name} -> Primary ${primaryTable.name}: TOTAL=${totalSeats}`)
-          return totalSeats
-        }
-        // Primary doesn't have combinedTableIds - fall back to primary's seat count
-        return getTableSeatCount(primaryTable)
-      }
-      // Primary not found - just return this table's count
-      logger.warn(`[getTotalSeats] Primary table ${table.combinedWithId} not found for child ${table.name}`)
-    }
-
-    // If this is a combined table (primary), sum seats from primary + all children
-    // Use combinedTableIds directly instead of getCombinedGroupTables for reliability
-    const combinedIds = table.combinedTableIds as string[] | null
-    if (combinedIds && Array.isArray(combinedIds) && combinedIds.length > 0) {
-      // Start with primary table's seats
-      const primarySeats = table.seats?.length || 0
-      const primaryExtra = extraSeats.get(table.id) || 0
-      let totalSeats = primarySeats + primaryExtra
-
-      logger.log(`[getTotalSeats] Combined primary ${table.name}: seats.length=${primarySeats}, extra=${primaryExtra}, combinedIds=${combinedIds.length}`)
-
-      // Add seats from each child table listed in combinedTableIds
-      for (const childId of combinedIds) {
-        const childTable = currentTables.find(t => t.id === childId)
-        if (childTable) {
-          const childSeats = childTable.seats?.length || 0
-          const childExtra = extraSeats.get(childId) || 0
-          logger.log(`[getTotalSeats] + Child ${childTable.name}: seats.length=${childSeats}, extra=${childExtra}`)
-          totalSeats += childSeats + childExtra
-        } else {
-          logger.warn(`[getTotalSeats] Child table ${childId} not found in tables array! (tables count: ${currentTables.length})`)
-        }
-      }
-
-      // If no actual seat records exist, fall back to primary's combined capacity
-      if (totalSeats === 0) {
-        totalSeats = table.capacity || 0
-        logger.log(`[getTotalSeats] No seats found, using capacity=${totalSeats}`)
-      }
-
-      logger.log(`[getTotalSeats] Combined table ${table.name}: TOTAL=${totalSeats}`)
-      return totalSeats
-    }
-
-    // Single table - use MAX of capacity and seats array length
-    const seatCount = getTableSeatCount(table)
-    logger.log(`[getTotalSeats] Table ${table.name}: capacity=${table.capacity}, seats.length=${table.seats?.length}, returning=${seatCount}`)
-    return seatCount
-  }, [getTableSeatCount, getVirtualGroupTables, extraSeats])
-
-  // Get combined table count (includes virtual groups)
-  const getCombinedTableCount = useCallback((table: FloorPlanTable | null): number => {
-    if (!table) return 0
-
-    // Check virtual group first
-    if (table.virtualGroupId) {
-      const groupTables = getVirtualGroupTables(table)
-      return groupTables.length
-    }
-
-    // Physical combine
-    if (table.combinedTableIds && table.combinedTableIds.length > 0) {
-      return table.combinedTableIds.length + 1 // +1 for the primary table
-    }
-    return 1
-  }, [getVirtualGroupTables])
+    return getTableSeatCount(table)
+  }, [getTableSeatCount])
 
   // Get the active table object
   const activeTable = activeTableId ? tables.find(t => t.id === activeTableId) || null : null
@@ -1091,9 +643,7 @@ export function FloorPlanHome({
     loadFloorPlanData()
     loadCategories()
     loadOpenOrdersCount()
-    // Clear any leftover virtual combine state from previous sessions
-    cancelVirtualCombineMode()
-  }, [locationId, cancelVirtualCombineMode])
+  }, [locationId])
 
   // Consolidated heartbeat - single interval for all periodic tasks
   // FIX 4: Uses refs for callbacks to prevent interval restart on re-render
@@ -1104,17 +654,16 @@ export function FloorPlanHome({
       tickCount++
 
       // Every tick (1s): Clear expired undos and flashes
-      callbacksRef.current.clearExpiredUndos()
       callbacksRef.current.clearExpiredFlashes()
 
-      // Every 30 ticks (30s): Refresh floor plan data for live preview
-      // This allows admin changes to tables/entertainment to appear on POS
+      // Every 30 ticks (30s): Safety-net polling for floor plan data
+      // Primary updates come via Socket.io (instant), this catches anything missed
       if (tickCount % 30 === 0 && tickCount > 0) {
         callbacksRef.current.loadFloorPlanData?.()
       }
 
-      // Every 60 ticks (60s): Refresh open orders count
-      if (tickCount >= 60) {
+      // Every 30 ticks (30s): Refresh open orders count (also backed by sockets)
+      if (tickCount >= 30) {
         tickCount = 0
         callbacksRef.current.loadOpenOrdersCount?.()
       }
@@ -1122,6 +671,18 @@ export function FloorPlanHome({
 
     return () => clearInterval(heartbeat)
   }, []) // Empty deps - refs keep callbacks fresh
+
+  // Visibility change: instant refresh when user switches back to this tab/app
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        callbacksRef.current.loadFloorPlanData?.()
+        callbacksRef.current.loadOpenOrdersCount?.()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
 
   // Socket.io: Listen for floor plan updates + order changes
   const { subscribe, isConnected } = useEvents({ locationId, autoConnect: true })
@@ -1146,6 +707,15 @@ export function FloorPlanHome({
     return () => { unsub1(); unsub2() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, subscribe])
+
+  // Parent-triggered refresh (e.g., after send-to-kitchen in orders page)
+  useEffect(() => {
+    if (refreshTrigger && refreshTrigger > 0) {
+      loadFloorPlanData(false)
+      loadOpenOrdersCount()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTrigger])
 
   // Instant local table status: When items are added to a table order,
   // immediately mark the table as 'occupied' in local state (no server round-trip)
@@ -1216,22 +786,12 @@ export function FloorPlanHome({
     // (extra seats are temporary and should reset when ticket is closed)
     if (activeTableId) {
       const activeTable = tables.find(t => t.id === activeTableId)
-      if (activeTable?.virtualGroupId) {
-        // Clear extra seats for all tables in the virtual group
-        const groupTables = tables.filter(t => t.virtualGroupId === activeTable.virtualGroupId)
-        setExtraSeats(prev => {
-          const next = new Map(prev)
-          groupTables.forEach(t => next.delete(t.id))
-          return next
-        })
-      } else {
-        // Clear extra seats for just this table
-        setExtraSeats(prev => {
-          const next = new Map(prev)
-          next.delete(activeTableId)
-          return next
-        })
-      }
+      // Clear extra seats for just this table
+      setExtraSeats(prev => {
+        const next = new Map(prev)
+        next.delete(activeTableId)
+        return next
+      })
     }
 
     // Clear the order panel state
@@ -1265,7 +825,6 @@ export function FloorPlanHome({
 
   // FIX 4: Refs for heartbeat callbacks - prevents interval restart on re-render
   const callbacksRef = useRef({
-    clearExpiredUndos,
     clearExpiredFlashes,
     loadFloorPlanData: null as (() => Promise<void>) | null,
     loadOpenOrdersCount: null as (() => Promise<void>) | null,
@@ -1349,7 +908,6 @@ export function FloorPlanHome({
   // FIX 4: Keep refs updated with latest callbacks
   useEffect(() => {
     callbacksRef.current = {
-      clearExpiredUndos,
       clearExpiredFlashes,
       loadFloorPlanData: () => loadFloorPlanData(false),
       loadOpenOrdersCount,
@@ -1397,201 +955,14 @@ export function FloorPlanHome({
   }, [selectedCategoryId])
 
 
-  // Handle confirming virtual combine
-  const handleConfirmVirtualCombine = useCallback(async (existingOrderActions?: Array<{ orderId: string; action: 'merge' | 'close' }>) => {
-    if (virtualCombineSelectedIds.size < 2) return
-
-    // FIX: Use tablesRef.current to get latest table data (avoids stale closure)
-    const currentTables = tablesRef.current
-    const selectedTableIds = Array.from(virtualCombineSelectedIds)
-    const primaryId = virtualCombinePrimaryId || selectedTableIds[0]
-    const primaryTable = currentTables.find(t => t.id === primaryId)
-
-    setIsCreatingVirtualGroup(true)
-
-    try {
-      // Check if primary table is already in a virtual group (ADD mode vs CREATE mode)
-      if (primaryTable?.virtualGroupId) {
-        // ADD mode: Add new tables to existing group
-        const existingGroupId = primaryTable.virtualGroupId
-        const tablesToAdd = selectedTableIds.filter(id => {
-          const table = currentTables.find(t => t.id === id)
-          return !table?.virtualGroupId // Only add tables not already in the group
-        })
-
-        if (tablesToAdd.length === 0) {
-          toast.info('All selected tables are already in this group')
-          clearVirtualCombineMode()
-          return
-        }
-
-        // Add each new table to the group
-        const addedTables: Array<{ id: string; virtualGroupId: string; virtualGroupPrimary: boolean; virtualGroupColor: string }> = []
-
-        for (const tableId of tablesToAdd) {
-          const res = await fetch(`/api/tables/virtual-combine/${existingGroupId}/add`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              tableId,
-              locationId,
-              employeeId,
-              mergeExistingOrder: existingOrderActions?.find(a =>
-                currentTables.find(t => t.id === tableId)?.currentOrder?.id === a.orderId
-              )?.action === 'merge',
-            }),
-          })
-
-          const data = await res.json()
-
-          if (data.requiresAction) {
-            // Show modal to handle this table's existing order
-            setPendingExistingOrders([data.existingOrder])
-            setShowExistingOrdersModal(true)
-            setIsCreatingVirtualGroup(false)
-            return
-          }
-
-          if (!res.ok) {
-            throw new Error(data.error || `Failed to add table to group`)
-          }
-
-          if (data.data?.table) {
-            addedTables.push({
-              id: data.data.table.id,
-              virtualGroupId: data.data.table.virtualGroupId,
-              virtualGroupPrimary: false,
-              virtualGroupColor: data.data.table.virtualGroupColor,
-            })
-          }
-        }
-
-        // Update local state with added tables
-        if (addedTables.length > 0) {
-          updateTablesWithVirtualGroup(addedTables)
-        }
-
-        toast.success(`Added ${tablesToAdd.length} table${tablesToAdd.length > 1 ? 's' : ''} to virtual group`)
-      } else {
-        // CREATE mode: Create a new STATIC virtual group (long-hold)
-        // Tables stay in their original positions - NO visual offsets
-        // This creates a color-linked group where each table keeps its own seats
-        // (Contrast with drag-drop mode which snaps tables together and redistributes seats)
-
-        const res = await fetch('/api/tables/virtual-combine', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            tableIds: selectedTableIds,
-            primaryTableId: primaryId,
-            locationId,
-            employeeId,
-            existingOrderActions,
-            // NO visualOffsets - this creates a STATIC group where tables stay in place
-          }),
-        })
-
-        const data = await res.json()
-
-        if (data.requiresAction) {
-          // Show modal to handle existing orders
-          setPendingExistingOrders(data.existingOrders)
-          setShowExistingOrdersModal(true)
-          setIsCreatingVirtualGroup(false)
-          return
-        }
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Failed to create virtual group')
-        }
-
-        // Update local state with new virtual group info
-        if (data.data?.tables) {
-          updateTablesWithVirtualGroup(
-            data.data.tables.map((t: { id: string; virtualGroupId: string; virtualGroupPrimary: boolean; virtualGroupColor: string }) => ({
-              id: t.id,
-              virtualGroupId: t.virtualGroupId,
-              virtualGroupPrimary: t.virtualGroupPrimary,
-              virtualGroupColor: t.virtualGroupColor,
-            }))
-          )
-        }
-
-        toast.success(`Virtual group created with ${selectedTableIds.length} tables`)
-      }
-
-      clearVirtualCombineMode()
-      setShowExistingOrdersModal(false)
-      setPendingExistingOrders([])
-    } catch (error) {
-      console.error('Failed to create/add to virtual group:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to create virtual group')
-    } finally {
-      setIsCreatingVirtualGroup(false)
-    }
-  }, [virtualCombineSelectedIds, virtualCombinePrimaryId, locationId, employeeId, updateTablesWithVirtualGroup, clearVirtualCombineMode, calculateSnapPositionForTableInGroup])
-  // Note: Using tablesRef.current instead of tables in dependency array
-
   // Handle table tap - open order panel
-  // If tapped table is part of a combined group, redirect to the PRIMARY table
-  // If in virtual combine mode, toggle selection instead
-  // FIX: Uses tablesRef.current to always access latest tables data
   const handleTableTap = useCallback(async (table: FloorPlanTable) => {
-    logger.log('[VirtualCombine] handleTableTap called:', { tableId: table.id, virtualCombineMode, selectedIds: Array.from(virtualCombineSelectedIds) })
-
-    // Always use the ref to get the latest tables data
-    const currentTables = tablesRef.current
-
-    // In virtual combine mode, toggle selection
-    if (virtualCombineMode) {
-      const primaryTable = currentTables.find(t => t.id === virtualCombinePrimaryId)
-      const primaryGroupId = primaryTable?.virtualGroupId
-
-      // Prevent selecting tables that are in a DIFFERENT virtual group
-      if (table.virtualGroupId && table.virtualGroupId !== primaryGroupId && !virtualCombineSelectedIds.has(table.id)) {
-        toast.error(`${table.name} is already in another group. Dissolve that group first.`)
-        return
-      }
-      // Prevent selecting tables that are physically combined
-      if (table.combinedWithId || (table.combinedTableIds && table.combinedTableIds.length > 0)) {
-        toast.error(`${table.name} is physically combined. Split it first.`)
-        return
-      }
-      logger.log('[VirtualCombine] Toggling selection for table:', table.id)
-      toggleVirtualCombineSelection(table.id)
-      return
-    }
-
     if (selectedSeat) {
       clearSelectedSeat()
     }
 
-    // If this table is in a VIRTUAL group, redirect to the PRIMARY virtual table
-    if (table.virtualGroupId && !table.virtualGroupPrimary) {
-      const virtualPrimary = currentTables.find(t => t.virtualGroupId === table.virtualGroupId && t.virtualGroupPrimary)
-      if (virtualPrimary) {
-        table = virtualPrimary
-      }
-    }
-
-    // If this table is combined INTO another (physical), find and use the primary instead
-    // FIX: Also check if the table passed in has stale data - look up fresh from ref
-    let primaryTable = table
-    const freshTable = currentTables.find(t => t.id === table.id)
-    if (freshTable?.combinedWithId) {
-      const foundPrimary = currentTables.find(t => t.id === freshTable.combinedWithId)
-      if (foundPrimary) {
-        primaryTable = foundPrimary
-        logger.log(`[handleTableTap] Redirecting from child ${table.name} to primary ${foundPrimary.name}`)
-      }
-    } else if (table.combinedWithId) {
-      const foundPrimary = currentTables.find(t => t.id === table.combinedWithId)
-      if (foundPrimary) {
-        primaryTable = foundPrimary
-      }
-    }
-
-    const totalSeats = getTotalSeats(primaryTable)
+    const totalSeats = getTotalSeats(table)
+    const primaryTable = table
     logger.log(`[handleTableTap] Setting guest count to ${totalSeats} for table ${primaryTable.name} (capacity=${primaryTable.capacity})`)
 
     setActiveTableId(primaryTable.id)
@@ -1602,7 +973,7 @@ export function FloorPlanHome({
     setGuestCount(totalSeats) // Set guest count based on table capacity
 
     if (primaryTable.currentOrder) {
-      // Load existing order items from PRIMARY table (combined tables share one order)
+      // Load existing order items from this table
       setActiveOrderId(primaryTable.currentOrder.id)
       setActiveOrderNumber(String(primaryTable.currentOrder.orderNumber))
       try {
@@ -1658,7 +1029,7 @@ export function FloorPlanHome({
         })
       }
     }
-  }, [selectedSeat, clearSelectedSeat, getTotalSeats, virtualCombineMode, toggleVirtualCombineSelection, virtualCombineSelectedIds.size, virtualCombinePrimaryId, activeTableId])
+  }, [selectedSeat, clearSelectedSeat, getTotalSeats, activeTableId])
 
   // Handle quick order type (Takeout, Delivery, Bar Tab)
   const handleQuickOrderType = useCallback((orderType: QuickOrderType) => {
@@ -1808,14 +1179,14 @@ export function FloorPlanHome({
         toast.error(err instanceof Error ? err.message : 'Failed to add seat')
       }
     } else {
-      // No active order - add a virtual seat locally
+      // No active order - add an extra seat locally
       setExtraSeats(prev => {
         const next = new Map(prev)
         const current = next.get(targetTableId) || 0
         next.set(targetTableId, current + 1)
         return next
       })
-      // Use getTotalSeats for combined tables (8+5=13, so new seat is 14)
+      // Get next seat number
       const newSeatNum = getTotalSeats(activeTable!) + 1
       toast.success(`Seat ${newSeatNum} added`)
     }
@@ -1972,7 +1343,7 @@ export function FloorPlanHome({
         }
       }
 
-      // Clear extra virtual seats for this table since they're now part of the order
+      // Clear extra seats for this table since they're now part of the order
       if (activeTableId) {
         setExtraSeats(prev => {
           const next = new Map(prev)
@@ -1981,8 +1352,18 @@ export function FloorPlanHome({
         })
       }
 
-      // Refresh floor plan data (without showing loading indicator)
-      await loadFloorPlanData(false)
+      // Return to floor plan view IMMEDIATELY — don't block on background refreshes
+      setActiveOrderId(null)
+      setActiveOrderNumber(null)
+      setActiveOrderType(null)
+      setActiveSeatNumber(null)
+      setActiveSourceTableId(null)
+      useOrderStore.getState().clearOrder()
+      setActiveTableId(null)
+      setShowOrderPanel(false)
+
+      // Refresh floor plan data in background (fire-and-forget — UI already cleared)
+      loadFloorPlanData(false).catch(() => {})
       loadOpenOrdersCount()
     } catch (error) {
       console.error('[FloorPlanHome] Failed to send order:', error)
@@ -2072,22 +1453,12 @@ export function FloorPlanHome({
     // clicks away without ordering anything
     if (inlineOrderItems.length === 0 && !activeOrderId && activeTableId) {
       const currentTable = tablesRef.current.find(t => t.id === activeTableId)
-      if (currentTable?.virtualGroupId) {
-        // Clear extra seats for all tables in the virtual group
-        const groupTables = tablesRef.current.filter(t => t.virtualGroupId === currentTable.virtualGroupId)
-        setExtraSeats(prev => {
-          const next = new Map(prev)
-          groupTables.forEach(t => next.delete(t.id))
-          return next
-        })
-      } else {
-        // Clear extra seats for just this table
-        setExtraSeats(prev => {
-          const next = new Map(prev)
-          next.delete(activeTableId)
-          return next
-        })
-      }
+      // Clear extra seats for just this table
+      setExtraSeats(prev => {
+        const next = new Map(prev)
+        next.delete(activeTableId)
+        return next
+      })
     }
 
     // Clear dependent state FIRST
@@ -2217,204 +1588,7 @@ export function FloorPlanHome({
     loadOpenOrdersCount()
   }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData, loadOpenOrdersCount])
 
-  // Get primary tables for combined groups
-  const primaryTables = tables.filter(
-    t => t.combinedTableIds && t.combinedTableIds.length > 0
-  )
-
-  // Build connection lines between combined tables
-  const connectionLines = primaryTables.flatMap(primary => {
-    const connectedIds = primary.combinedTableIds || []
-    const groupColor = getCombinedGroupColor(primary.id)
-
-    return connectedIds.map(connectedId => {
-      const connected = tables.find(t => t.id === connectedId)
-      if (!connected) return null
-
-      const primaryCenterX = primary.posX + primary.width / 2
-      const primaryCenterY = primary.posY + primary.height / 2
-      const connectedCenterX = connected.posX + connected.width / 2
-      const connectedCenterY = connected.posY + connected.height / 2
-
-      const dx = connectedCenterX - primaryCenterX
-      const dy = connectedCenterY - primaryCenterY
-
-      let x1: number, y1: number, x2: number, y2: number
-
-      if (Math.abs(dx) > Math.abs(dy)) {
-        if (dx > 0) {
-          x1 = primary.posX + primary.width
-          y1 = primary.posY + primary.height / 2
-          x2 = connected.posX
-          y2 = connected.posY + connected.height / 2
-        } else {
-          x1 = primary.posX
-          y1 = primary.posY + primary.height / 2
-          x2 = connected.posX + connected.width
-          y2 = connected.posY + connected.height / 2
-        }
-      } else {
-        if (dy > 0) {
-          x1 = primary.posX + primary.width / 2
-          y1 = primary.posY + primary.height
-          x2 = connected.posX + connected.width / 2
-          y2 = connected.posY
-        } else {
-          x1 = primary.posX + primary.width / 2
-          y1 = primary.posY
-          x2 = connected.posX + connected.width / 2
-          y2 = connected.posY + connected.height
-        }
-      }
-
-      return { id: `${primary.id}-${connectedId}`, x1, y1, x2, y2, color: groupColor }
-    }).filter(Boolean)
-  }) as { id: string; x1: number; y1: number; x2: number; y2: number; color: string }[]
-
-  // Build combined group colors map
-  const combinedGroupColors = new Map<string, string>()
-  for (const primary of primaryTables) {
-    const color = getCombinedGroupColor(primary.id)
-    combinedGroupColors.set(primary.id, color)
-    const childIds = primary.combinedTableIds || []
-    for (const childId of childIds) {
-      combinedGroupColors.set(childId, color)
-    }
-  }
-
   // Note: Ghost preview calculation is now handled by useFloorPlanDrag hook
-
-  // Handle table combine - USES VIRTUAL COMBINE (no permanent DB changes)
-  // Dragging tables together in FOH view creates a temporary visual group only
-  // The backend database positions are NOT modified
-  const handleTableCombine = useCallback(async (
-    sourceId: string,
-    targetId: string,
-    dropPosition?: { x: number; y: number }
-  ) => {
-    try {
-      const currentTables = tablesRef.current
-      const sourceTable = currentTables.find(t => t.id === sourceId)
-      const targetTable = currentTables.find(t => t.id === targetId)
-
-      if (!sourceTable || !targetTable) {
-        toast.error('Could not find tables to combine')
-        return false
-      }
-
-      // Check if either table is already in a virtual group
-      if (sourceTable.virtualGroupId || targetTable.virtualGroupId) {
-        toast.info('One or more tables is already in a virtual group')
-        return false
-      }
-
-      // Use target as primary (the table being dropped onto)
-      const primaryId = targetId
-      const tableIds = [targetId, sourceId]
-
-      // Calculate visual offsets for snap positioning
-      const visualOffsets: Array<{ tableId: string; offsetX: number; offsetY: number }> = []
-      const offsetsMap = new Map<string, { offsetX: number; offsetY: number }>()
-
-      // Primary table stays at its position
-      visualOffsets.push({ tableId: primaryId, offsetX: 0, offsetY: 0 })
-      offsetsMap.set(primaryId, { offsetX: 0, offsetY: 0 })
-
-      // Calculate snap position for source table relative to target
-      const snapPos = calculateSnapPositionForTable(sourceTable, targetTable)
-      const offset = {
-        offsetX: snapPos.x - sourceTable.posX,
-        offsetY: snapPos.y - sourceTable.posY,
-      }
-      visualOffsets.push({ tableId: sourceId, ...offset })
-
-      logger.log('[FloorPlanHome] Virtual combine request:', {
-        sourceId,
-        targetId,
-        primaryId,
-        visualOffsets,
-      })
-
-      const res = await fetch('/api/tables/virtual-combine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tableIds,
-          primaryTableId: primaryId,
-          locationId,
-          employeeId,
-          visualOffsets,
-        }),
-      })
-
-      const data = await res.json()
-
-      if (data.requiresAction) {
-        // Tables have open orders - show modal to handle them
-        setPendingExistingOrders(data.existingOrders)
-        setShowExistingOrdersModal(true)
-        return false
-      }
-
-      if (res.ok) {
-        // Update local state with new virtual group info
-        if (data.data?.tables) {
-          updateTablesWithVirtualGroup(
-            data.data.tables.map((t: { id: string; virtualGroupId: string; virtualGroupPrimary: boolean; virtualGroupColor: string }) => ({
-              id: t.id,
-              virtualGroupId: t.virtualGroupId,
-              virtualGroupPrimary: t.virtualGroupPrimary,
-              virtualGroupColor: t.virtualGroupColor,
-            }))
-          )
-        }
-        toast.success('Tables grouped together')
-        await loadFloorPlanData()
-        return true
-      } else {
-        console.error('[FloorPlanHome] Virtual combine failed:', data.error)
-        toast.error(`Failed to group tables: ${data.error || 'Unknown error'}`)
-      }
-      return false
-    } catch (error) {
-      console.error('[FloorPlanHome] Virtual combine error:', error)
-      toast.error('Failed to group tables. Please try again.')
-      return false
-    }
-  }, [locationId, employeeId, updateTablesWithVirtualGroup, calculateSnapPositionForTable])
-  // Note: Using tablesRef.current instead of tables in dependency array
-
-  // Handle reset to default
-  const handleResetToDefault = useCallback(async (tableIds: string[]) => {
-    try {
-      const res = await fetch('/api/tables/reset-to-default', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tableIds,
-          locationId,
-          employeeId,
-        }),
-      })
-
-      if (res.ok) {
-        const result = await res.json()
-        if (result.data?.skippedTableIds?.length > 0) {
-          for (const tableId of result.data.skippedTableIds) {
-            flashTableMessage(tableId, 'OPEN ORDER', 3000)
-          }
-        }
-        // FIX: Await data refresh to ensure positions are loaded before continuing
-        await loadFloorPlanData()
-        closeInfoPanel()
-        return true
-      }
-      return false
-    } catch (error) {
-      console.error('[FloorPlanHome] Reset error:', error)
-      return false
-    }
-  }, [locationId, employeeId, closeInfoPanel, flashTableMessage])
 
   // Handle status update
   const handleUpdateStatus = useCallback(async (tableId: string, status: string) => {
@@ -2430,63 +1604,20 @@ export function FloorPlanHome({
     }
   }, [])
 
-  // Handle undo - removes the last table added to a combined group
-  const handleUndo = useCallback(async () => {
-    const action = popUndoAction()
-    if (!action) return
-
-    if (action.type === 'combine') {
-      // Remove just the source table (the one that was added) from the group
-      // This is different from split which breaks apart ALL tables
-      const res = await fetch(`/api/tables/${action.sourceTableId}/remove-from-group`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          employeeId,
-        }),
-      })
-
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}))
-        console.error('[Undo] Failed to remove table from group:', error)
-      }
-
-      // Await data refresh to prevent stale table data
-      await loadFloorPlanData()
-    }
-  }, [popUndoAction, locationId, employeeId, loadFloorPlanData])
-
   // Handle seat tap - sync both visual selection and order panel seat
-  // FIX: Uses tablesRef.current to always access latest tables data (avoids stale closure)
   const handleSeatTap = useCallback((tableId: string, seatNumber: number) => {
-    // For combined tables, always use the primary table ID for consistency
-    // This ensures order panel and table visual stay in sync
-    const table = tablesRef.current.find(t => t.id === tableId)
-    const effectiveTableId = table?.combinedWithId || tableId
-    const isCombinedGroup = Boolean(table?.combinedWithId || table?.combinedTableIds?.length)
-    const isVirtualGroup = Boolean(table?.virtualGroupId)
-
-    // For combined groups, just check seatNumber since seats are sequential across tables
-    // For single tables, check both tableId and seatNumber
-    const isAlreadySelected = isCombinedGroup
-      ? selectedSeat?.seatNumber === seatNumber
-      : selectedSeat?.tableId === effectiveTableId && selectedSeat?.seatNumber === seatNumber
+    const isAlreadySelected = selectedSeat?.tableId === tableId && selectedSeat?.seatNumber === seatNumber
 
     if (isAlreadySelected) {
-      // Deselecting - clear both
       clearSelectedSeat()
       setActiveSeatNumber(null)
       setActiveSourceTableId(null)
     } else {
-      // Selecting - update both
-      selectSeat(effectiveTableId, seatNumber)
+      selectSeat(tableId, seatNumber)
       setActiveSeatNumber(seatNumber)
-      // For virtual groups, track which table the seat belongs to
-      setActiveSourceTableId(isVirtualGroup ? tableId : effectiveTableId)
+      setActiveSourceTableId(tableId)
     }
   }, [selectedSeat, selectSeat, clearSelectedSeat])
-  // Note: Using tablesRef.current instead of tables in dependency array
 
   // Drag handlers hook (handles pointer move/up and ghost preview)
   const {
@@ -2504,7 +1635,6 @@ export function FloorPlanHome({
     dropTargetTableId,
     updateDragTarget,
     endDrag,
-    onCombine: handleTableCombine,
   })
 
   // Keyboard shortcuts
@@ -2525,10 +1655,6 @@ export function FloorPlanHome({
           handleCloseOrderPanel()
         }
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault()
-        handleUndo()
-      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         const searchInput = searchContainerRef.current?.querySelector('input')
@@ -2538,7 +1664,7 @@ export function FloorPlanHome({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [viewMode, closeInfoPanel, selectTable, handleUndo, handleCloseOrderPanel, searchQuery, clearSearch])
+  }, [viewMode, closeInfoPanel, selectTable, handleCloseOrderPanel, searchQuery, clearSearch])
 
   // Close search results on click outside
   useEffect(() => {
@@ -2573,7 +1699,7 @@ export function FloorPlanHome({
 
   return (
     <div
-      className={`floor-plan-container floor-plan-home ${virtualCombineMode ? 'virtual-combine-mode' : ''}`}
+      className="floor-plan-container floor-plan-home"
       style={{ height: '100vh', maxHeight: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
     >
       {/* Header */}
@@ -3251,39 +2377,6 @@ export function FloorPlanHome({
             </svg>
           </button>
 
-          {/* Reset Layout (if combined tables exist) */}
-          {primaryTables.length > 0 && (
-            <button
-              className="reset-to-default-btn"
-              onClick={() => handleResetToDefault(primaryTables.map(t => t.id))}
-              title="Reset all combined tables"
-            >
-              <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Reset
-            </button>
-          )}
-
-          {/* Undo Button */}
-          <AnimatePresence>
-            {undoStack.length > 0 && (
-              <motion.button
-                className="icon-btn"
-                onClick={handleUndo}
-                title="Undo"
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0 }}
-                style={{ background: 'rgba(251, 191, 36, 0.15)', borderColor: 'rgba(251, 191, 36, 0.3)' }}
-              >
-                <svg width="18" height="18" fill="none" stroke="#fbbf24" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                </svg>
-              </motion.button>
-            )}
-          </AnimatePresence>
-
           {/* Settings - only shown if callback provided (permission-gated) */}
           {onOpenAdminNav && (
             <button
@@ -3433,35 +2526,6 @@ export function FloorPlanHome({
                       pointerEvents: 'auto',
                     }}
                   >
-                  {/* Connection Lines */}
-                  {connectionLines.length > 0 && (
-                    <svg className="connection-lines-layer">
-                      <defs>
-                        <filter id="connectionGlow" x="-50%" y="-50%" width="200%" height="200%">
-                          <feGaussianBlur stdDeviation="3" result="blur" />
-                          <feMerge>
-                            <feMergeNode in="blur" />
-                            <feMergeNode in="SourceGraphic" />
-                          </feMerge>
-                        </filter>
-                      </defs>
-                      {connectionLines.map(line => (
-                        <g key={line.id}>
-                          <line
-                            x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-                            stroke={`${line.color}66`} strokeWidth="8" strokeLinecap="round"
-                            filter="url(#connectionGlow)"
-                          />
-                          <line
-                            x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-                            stroke={line.color} strokeWidth="3" strokeLinecap="round"
-                            strokeDasharray="8 4" className="connection-line-animated"
-                          />
-                        </g>
-                      ))}
-                    </svg>
-                  )}
-
                   {/* Section Labels - filtered by selected section */}
                   {sections
                     .filter(section => {
@@ -3493,94 +2557,19 @@ export function FloorPlanHome({
                       const flash = flashingTables.get(table.id)
                       const flashMessage = flash && flash.expiresAt > Date.now() ? flash.message : null
 
-                      // Check if this table is part of the active combined group
-                      // A table is selected if:
-                      // 1. It's directly selected (selectedTableId or activeTableId)
-                      // 2. It's a child and its primary is active
-                      // 3. It's a primary and one of its children is somehow active (shouldn't happen with redirect)
-                      const isInActiveGroup = (() => {
-                        if (!activeTableId) return false
-                        // Direct match
-                        if (table.id === activeTableId) return true
-                        // This table is a child of the active table
-                        if (table.combinedWithId === activeTableId) return true
-                        // This table is a primary and has the active table as a child
-                        if (table.combinedTableIds?.includes(activeTableId)) return true
-                        return false
-                      })()
-
-                      // Calculate combinedSeatOffset for sequential seat numbering across combined tables
-                      // Primary table: offset = 0 (but still part of combined group)
-                      // Child tables: offset = primary's seats + preceding siblings' seats
-                      let combinedSeatOffset = 0
-                      let isPartOfCombinedGroup = false
-
-                      if (table.combinedWithId) {
-                        // This is a child table - find the primary and calculate offset
-                        isPartOfCombinedGroup = true
-                        const primaryTable = tables.find(t => t.id === table.combinedWithId)
-                        if (primaryTable && primaryTable.combinedTableIds) {
-                          // Start with primary table's seat count
-                          combinedSeatOffset = primaryTable.seats?.length || primaryTable.capacity || 0
-                          // Add seats from all preceding siblings in the combinedTableIds array
-                          const myIndex = primaryTable.combinedTableIds.indexOf(table.id)
-                          for (let i = 0; i < myIndex; i++) {
-                            const siblingTable = tables.find(t => t.id === primaryTable.combinedTableIds![i])
-                            if (siblingTable) {
-                              combinedSeatOffset += siblingTable.seats?.length || siblingTable.capacity || 0
-                            }
-                          }
-                        }
-                      } else if (table.combinedTableIds && table.combinedTableIds.length > 0) {
-                        // This is the primary table of a combined group
-                        // Offset is 0 but we still mark it as part of a combined group
-                        isPartOfCombinedGroup = true
-                      }
-
-                      // Calculate total seats for the combined group (for selection validation)
-                      const combinedTotalSeats = isPartOfCombinedGroup ? getTotalSeats(table) : undefined
-
-                      // For SNAPPED virtual groups (drag-drop), apply visual offset to table position
-                      // Static groups (long-hold) keep original positions
-                      const isSnappedVirtualGroup = table.virtualGroupId && !virtualGroupSeats.get(table.virtualGroupId)?.isStatic
-                      const visualTable = isSnappedVirtualGroup && (table.virtualGroupOffsetX || table.virtualGroupOffsetY)
-                        ? {
-                            ...table,
-                            posX: table.posX + (table.virtualGroupOffsetX || 0),
-                            posY: table.posY + (table.virtualGroupOffsetY || 0),
-                          }
-                        : table
+                      const isInActiveGroup = table.id === activeTableId
 
                       return (
                         <TableNode
                           key={table.id}
-                          table={visualTable}
+                          table={table}
                           isSelected={selectedTableId === table.id || isInActiveGroup}
                           isDragging={draggedTableId === table.id}
                           isDropTarget={dropTargetTableId === table.id}
                           isColliding={draggedTableId === table.id && isColliding}
-                          combinedGroupColor={combinedGroupColors.get(table.id)}
-                          showSeats={showSeats && (!table.virtualGroupId || Boolean(table.virtualGroupId && virtualGroupSeats.get(table.virtualGroupId)?.isStatic))} // Show seats for: non-grouped tables OR static virtual groups (long-hold). Hide for snapped groups (drag-drop) where we render perimeter seats
+                          showSeats={showSeats}
                           selectedSeat={selectedSeat}
                           flashMessage={flashMessage}
-                          combinedSeatOffset={combinedSeatOffset}
-                          combinedTotalSeats={combinedTotalSeats}
-                          isVirtualCombineMode={virtualCombineMode}
-                          isVirtualCombineSelected={virtualCombineSelectedIds.has(table.id)}
-                          isVirtualCombineUnavailable={virtualCombineMode && !virtualCombineSelectedIds.has(table.id) && (() => {
-                            // Allow tables in same virtual group as primary
-                            const primaryTable = tables.find(t => t.id === virtualCombinePrimaryId)
-                            const primaryGroupId = primaryTable?.virtualGroupId
-                            if (table.virtualGroupId && table.virtualGroupId === primaryGroupId) {
-                              return false // Same group - available
-                            }
-                            return (
-                              Boolean(table.virtualGroupId) || // In different group
-                              Boolean(table.combinedWithId) ||
-                              Boolean(table.combinedTableIds && table.combinedTableIds.length > 0)
-                            )
-                          })()}
-                          virtualGroupColor={table.virtualGroupColor || undefined}
                           orderStatusBadges={table.currentOrder && table.id === activeTableId ? {
                             hasDelay: !!(activeOrder.pendingDelay && activeOrder.pendingDelay > 0),
                             hasHeld: inlineOrderItems.some(i => !i.sentToKitchen && i.isHeld),
@@ -3591,148 +2580,13 @@ export function FloorPlanHome({
                           onDragStart={() => startDrag(table.id)}
                           onDragEnd={endDrag}
                           onLongPress={() => {
-                            // Long press starts virtual combine mode (or opens manager/info panel)
-                            if (virtualCombineMode) {
-                              // Already in virtual combine mode - no action
-                              return
-                            }
-                            if (table.combinedTableIds && table.combinedTableIds.length > 0) {
-                              // Physical combined table - open info panel
-                              openInfoPanel(table.id)
-                            } else if (table.virtualGroupId) {
-                              // Already in a virtual group - open virtual group manager modal
-                              setVirtualGroupManagerTableId(table.id)
-                            } else {
-                              // Start virtual combine mode with this table
-                              startVirtualCombineMode(table.id)
-                            }
+                            openInfoPanel(table.id)
                           }}
                           onSeatTap={(seatNumber) => handleSeatTap(table.id, seatNumber)}
                         />
                       )
                     })}
                   </AnimatePresence>
-
-                  {/* Virtual Group Perimeter Seats - distributed around combined table shapes */}
-                  {/* Only rendered for SNAPPED groups (drag-drop). Static groups (long-hold) keep their own seats. */}
-                  {showSeats && Array.from(virtualGroupSeats.entries()).map(([groupId, groupData]) => {
-                    // Skip static groups - they keep their individual table seats
-                    if (groupData.isStatic) return null
-
-                    // Only show seats for tables in the currently selected section
-                    const groupTablesInSection = tables.filter(t =>
-                      t.virtualGroupId === groupId &&
-                      (selectedSectionId === null || t.sectionId === selectedSectionId || t.sectionId === null)
-                    )
-                    if (groupTablesInSection.length === 0) return null
-
-                    const SEAT_SIZE = 24
-                    const SEAT_HALF = SEAT_SIZE / 2
-
-                    return (
-                      <div key={`virtual-group-seats-${groupId}`}>
-                        {/* Group display name label */}
-                        {groupData.virtualSeats.length > 0 && (() => {
-                          // Calculate center of the group for label placement
-                          const minX = Math.min(...groupData.virtualSeats.map(s => s.absoluteX))
-                          const maxX = Math.max(...groupData.virtualSeats.map(s => s.absoluteX))
-                          const minY = Math.min(...groupData.virtualSeats.map(s => s.absoluteY))
-                          const labelX = (minX + maxX) / 2
-                          const labelY = minY - 50
-
-                          // Check if this banner is dismissed
-                          const isDismissed = dismissedBanners.has(groupId)
-
-                          return (
-                            <AnimatePresence>
-                              {!isDismissed && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: -10 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -10 }}
-                                  transition={{ duration: 0.3 }}
-                                  onClick={() => {
-                                    setDismissedBanners(prev => new Set([...prev, groupId]))
-                                  }}
-                                  style={{
-                                    position: 'absolute',
-                                    left: labelX,
-                                    top: labelY,
-                                    transform: 'translateX(-50%)',
-                                    background: `${groupData.groupColor}dd`,
-                                    color: 'white',
-                                    padding: '6px 12px',
-                                    borderRadius: '16px',
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    whiteSpace: 'nowrap',
-                                    zIndex: 25,
-                                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  {groupData.displayName}
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
-                          )
-                        })()}
-
-                        {/* Virtual seats around perimeter */}
-                        {groupData.virtualSeats.map((seat) => {
-                          const isSelected = selectedSeat?.tableId === groupData.tableIds[0] &&
-                            selectedSeat?.seatNumber === seat.perimeterNumber
-
-                          return (
-                            <motion.div
-                              key={seat.id}
-                              initial={{ scale: 0, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              exit={{ scale: 0, opacity: 0 }}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                // Find the primary table for this group
-                                const primaryTable = tables.find(t =>
-                                  t.virtualGroupId === groupId && t.virtualGroupPrimary
-                                )
-                                if (primaryTable) {
-                                  handleSeatTap(primaryTable.id, seat.perimeterNumber)
-                                }
-                              }}
-                              style={{
-                                position: 'absolute',
-                                left: seat.absoluteX - SEAT_HALF,
-                                top: seat.absoluteY - SEAT_HALF,
-                                width: SEAT_SIZE,
-                                height: SEAT_SIZE,
-                                backgroundColor: isSelected
-                                  ? groupData.groupColor
-                                  : `${groupData.groupColor}30`,
-                                border: `2px solid ${groupData.groupColor}`,
-                                borderRadius: '50%',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '10px',
-                                fontWeight: 600,
-                                color: isSelected ? 'white' : groupData.groupColor,
-                                cursor: 'pointer',
-                                zIndex: isSelected ? 30 : 20,
-                                boxShadow: isSelected
-                                  ? `0 0 12px ${groupData.groupColor}`
-                                  : '0 2px 4px rgba(0,0,0,0.2)',
-                                transition: 'all 0.2s ease',
-                              }}
-                              whileHover={{ scale: 1.1 }}
-                              whileTap={{ scale: 0.95 }}
-                            >
-                              {seat.perimeterNumber}
-                            </motion.div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })}
 
                   {/* Floor Plan Elements - filtered by selected section */}
                   {elements
@@ -4088,11 +2942,7 @@ export function FloorPlanHome({
                     }}
                   >
                     {activeTable
-                      ? activeTable.virtualGroupId
-                        ? 'Virtual Group'
-                        : getCombinedTableCount(activeTable) > 1
-                          ? `Combined ${getCombinedTableCount(activeTable)} Tables`
-                          : activeTable.name
+                      ? activeTable.name
                       : activeOrderType === 'bar_tab' ? 'Bar Tab'
                       : activeOrderType === 'takeout' ? 'Takeout'
                       : activeOrderType === 'delivery' ? 'Delivery'
@@ -4113,43 +2963,6 @@ export function FloorPlanHome({
                     guestCount={guestCount}
                     onGuestCountChange={setGuestCount}
                   />
-                  {/* Virtual group: Show table list with primary indicator + Ungroup button */}
-                  {activeTable?.virtualGroupId && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
-                      {getVirtualGroupTables(activeTable).map((t, i) => (
-                        <span
-                          key={t.id}
-                          style={{
-                            fontSize: '11px',
-                            fontWeight: t.virtualGroupPrimary ? 600 : 400,
-                            color: t.virtualGroupPrimary ? '#06b6d4' : '#94a3b8',
-                            padding: '2px 6px',
-                            background: t.virtualGroupPrimary ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                            borderRadius: '4px',
-                          }}
-                        >
-                          {t.abbreviation || t.name}{t.virtualGroupPrimary ? ' ★' : ''}
-                        </span>
-                      ))}
-                      {/* Ungroup button - opens VirtualGroupManagerModal */}
-                      <button
-                        onClick={() => setVirtualGroupManagerTableId(activeTable.id)}
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 500,
-                          color: '#f87171',
-                          padding: '2px 8px',
-                          background: 'rgba(248, 113, 113, 0.15)',
-                          border: '1px solid rgba(248, 113, 113, 0.3)',
-                          borderRadius: '4px',
-                          cursor: 'pointer',
-                          marginLeft: '4px',
-                        }}
-                      >
-                        Ungroup
-                      </button>
-                    </div>
-                  )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                     {activeOrderNumber && (
                       <span style={{ fontSize: '12px', color: '#64748b' }}>
@@ -4247,15 +3060,13 @@ export function FloorPlanHome({
                     <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>Assign to seat:</span>
                     {activeSeatNumber && (
                       <span style={{ fontSize: '10px', color: '#c084fc' }}>
-                        New items → {activeSourceTableId && activeTable.virtualGroupId
-                          ? `${tables.find(t => t.id === activeSourceTableId)?.abbreviation || tables.find(t => t.id === activeSourceTableId)?.name || 'Table'}-S${activeSeatNumber}`
-                          : `Seat ${activeSeatNumber}`}
+                        New items → Seat {activeSeatNumber}
                       </span>
                     )}
                   </div>
 
                   {/* "Shared" button */}
-                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: activeTable.virtualGroupId ? '12px' : '0' }}>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '0' }}>
                     <button
                       onClick={() => {
                         setActiveSeatNumber(null)
@@ -4278,104 +3089,8 @@ export function FloorPlanHome({
                     </button>
                   </div>
 
-                  {/* Long-hold virtual group (static, no offsets): Show seats grouped by table */}
-                  {/* Drag-combined virtual group (has offsets) + single/physical: Show flat 1..N */}
-                  {activeTable.virtualGroupId && (() => {
-                    // Check if ANY non-primary table has offsets — if so, it's a drag-combined group
-                    const groupTables = getVirtualGroupTables(activeTable)
-                    const hasDragOffsets = groupTables.some(t => !t.virtualGroupPrimary && (t.virtualGroupOffsetX || t.virtualGroupOffsetY))
-                    return !hasDragOffsets // true = long-hold (static), false = drag-combined
-                  })() ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      {getVirtualGroupTables(activeTable).map((groupTable) => (
-                        <div key={groupTable.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          {/* Table label */}
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: groupTable.virtualGroupPrimary ? '#06b6d4' : '#94a3b8',
-                              padding: '4px 8px',
-                              background: groupTable.virtualGroupPrimary ? 'rgba(6, 182, 212, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                              borderRadius: '4px',
-                              minWidth: '50px',
-                              textAlign: 'center',
-                            }}
-                          >
-                            {groupTable.abbreviation || groupTable.name}
-                            {groupTable.virtualGroupPrimary && ' ★'}
-                          </span>
-
-                          {/* Seat buttons for this table */}
-                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                            {Array.from({ length: getTableSeatCount(groupTable) }, (_, i) => i + 1).map(seatNum => {
-                              const isSelected = activeSeatNumber === seatNum && activeSourceTableId === groupTable.id
-                              return (
-                                <button
-                                  key={`${groupTable.id}-${seatNum}`}
-                                  onClick={() => {
-                                    setActiveSeatNumber(seatNum)
-                                    setActiveSourceTableId(groupTable.id)
-                                    selectSeat(groupTable.id, seatNum)
-                                  }}
-                                  style={{
-                                    width: '28px',
-                                    height: '28px',
-                                    borderRadius: '5px',
-                                    border: `1px solid ${isSelected ? 'rgba(168, 85, 247, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
-                                    background: isSelected ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                                    color: isSelected ? '#c084fc' : '#94a3b8',
-                                    fontSize: '11px',
-                                    fontWeight: isSelected ? 600 : 400,
-                                    cursor: 'pointer',
-                                    transition: 'all 0.15s ease',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                  }}
-                                >
-                                  {seatNum}
-                                </button>
-                              )
-                            })}
-
-                            {/* Add Seat Button for this table in virtual group */}
-                            <button
-                              onClick={() => handleAddSeat(groupTable.id)}
-                              title={`Add a seat to ${groupTable.name}`}
-                              style={{
-                                width: '28px',
-                                height: '28px',
-                                borderRadius: '5px',
-                                border: '2px dashed rgba(34, 197, 94, 0.4)',
-                                background: 'rgba(34, 197, 94, 0.1)',
-                                color: '#22c55e',
-                                fontSize: '14px',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'all 0.15s ease',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.2)'
-                                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.6)'
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = 'rgba(34, 197, 94, 0.1)'
-                                e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)'
-                              }}
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    /* Drag-combined virtual group, single table, or physical combine: Flat seat list 1..N */
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {/* Flat seat list 1..N */}
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                       {Array.from({ length: getTotalSeats(activeTable) }, (_, i) => i + 1).map(seatNum => (
                         <button
                           key={seatNum}
@@ -4438,7 +3153,6 @@ export function FloorPlanHome({
                           +
                         </button>
                     </div>
-                  )}
                 </div>
               )}
 
@@ -4446,64 +3160,10 @@ export function FloorPlanHome({
         </div>
       </div>
 
-      {/* Virtual Combine Bar */}
-      <VirtualCombineBar
-        tables={tables}
-        onConfirm={() => handleConfirmVirtualCombine()}
-        onCancel={cancelVirtualCombineMode}
-        isConfirming={isCreatingVirtualGroup}
-      />
 
-      {/* Existing Orders Modal (for virtual combine) */}
-      <ExistingOrdersModal
-        isOpen={showExistingOrdersModal}
-        existingOrders={pendingExistingOrders}
-        primaryTableName={tables.find(t => t.id === virtualCombinePrimaryId)?.name || 'Primary'}
-        onConfirm={(actions) => handleConfirmVirtualCombine(actions)}
-        onCancel={() => {
-          setShowExistingOrdersModal(false)
-          setPendingExistingOrders([])
-        }}
-        onCloseOrder={(orderId) => {
-          // Redirect to payment for this order
-          if (onOpenPayment) {
-            onOpenPayment(orderId)
-          }
-        }}
-        isProcessing={isCreatingVirtualGroup}
-      />
 
-      {/* Virtual Group Manager Modal (for managing/dissolving virtual groups) */}
-      {virtualGroupManagerTableId && (() => {
-        const managerTable = tables.find(t => t.id === virtualGroupManagerTableId)
-        if (!managerTable?.virtualGroupId) return null
-        const groupTables = tables.filter(t => t.virtualGroupId === managerTable.virtualGroupId)
-        const primaryTable = groupTables.find(t => t.virtualGroupPrimary) || groupTables[0]
-        return (
-          <VirtualGroupManagerModal
-            isOpen={true}
-            onClose={() => setVirtualGroupManagerTableId(null)}
-            groupTables={groupTables}
-            primaryTableId={primaryTable?.id || managerTable.id}
-            virtualGroupId={managerTable.virtualGroupId}
-            locationId={locationId}
-            employeeId={employeeId}
-            onGroupUpdated={() => {
-              // Clear extra seats for all tables in this group (they were virtual/temporary)
-              const tableIdsInGroup = groupTables.map(t => t.id)
-              setExtraSeats(prev => {
-                const next = new Map(prev)
-                tableIdsInGroup.forEach(id => next.delete(id))
-                return next
-              })
-              loadFloorPlanData(false)
-              setVirtualGroupManagerTableId(null)
-            }}
-          />
-        )
-      })()}
 
-      {/* Table Info Panel (for combined table management) */}
+      {/* Table Info Panel */}
       {infoPanelTableId && (
         <TableInfoPanel
           table={tables.find(t => t.id === infoPanelTableId) || null}
@@ -4525,11 +3185,6 @@ export function FloorPlanHome({
           onMarkAvailable={() => {
             if (infoPanelTableId) handleUpdateStatus(infoPanelTableId, 'available')
           }}
-          onResetToDefault={
-            tables.find(t => t.id === infoPanelTableId)?.combinedTableIds?.length
-              ? () => handleResetToDefault([infoPanelTableId])
-              : undefined
-          }
         />
       )}
 
@@ -4706,6 +3361,14 @@ export function FloorPlanHome({
           onComplete={async (result) => {
             const voidedItemId = compVoidItem?.id
             setCompVoidItem(null)
+
+            // If all items were voided/comped and order was auto-closed, clear it
+            if (result.orderAutoClosed) {
+              useOrderStore.getState().clearOrder()
+              setActiveOrderId(null)
+              toast.success('Order cancelled — all items voided')
+              return
+            }
 
             // Immediately update the voided/comped item status in the store
             // This ensures totals recalculate without waiting for API refresh

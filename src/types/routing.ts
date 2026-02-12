@@ -131,11 +131,6 @@ export interface OrderContext {
   tabName: string | null
   employeeName: string
   createdAt: Date
-  // Virtual group info
-  virtualGroupId: string | null
-  virtualGroupColor: string | null
-  primaryTableName: string | null
-  memberTables: Array<{ id: string; name: string; abbreviation: string | null }>
 }
 
 // Complete routing result
@@ -266,7 +261,6 @@ export interface AtomicPrintConfig {
   // Footer elements
   footer: {
     itemCount?: PrintElementConfig      // "Items: 5"
-    virtualGroupInfo?: PrintElementConfig // "Linked: T5, T6"
     resendIndicator?: PrintElementConfig  // "*** RESEND #2 ***"
   }
 }
@@ -303,7 +297,6 @@ export const DEFAULT_ATOMIC_PRINT_CONFIG: AtomicPrintConfig = {
   },
   footer: {
     itemCount: { enabled: false, align: 'left', size: 'small', reverse: false },
-    virtualGroupInfo: { enabled: true, align: 'center', size: 'small', reverse: false },
     resendIndicator: { enabled: true, align: 'center', size: 'large', reverse: true, prefix: '*** RESEND #', suffix: ' ***' },
   },
 }

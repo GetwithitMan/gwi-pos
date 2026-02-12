@@ -46,9 +46,6 @@ export class OrderRouter {
             id: true,
             name: true,
             abbreviation: true,
-            virtualGroupId: true,
-            virtualGroupPrimary: true,
-            virtualGroupColor: true,
           },
         },
         employee: {
@@ -125,35 +122,7 @@ export class OrderRouter {
       },
     })
 
-    // 3. Get virtual group info if applicable
-    let memberTables: Array<{ id: string; name: string; abbreviation: string | null }> = []
-    let primaryTableName: string | null = null
-
-    if (order.table?.virtualGroupId) {
-      const groupTables = await db.table.findMany({
-        where: {
-          virtualGroupId: order.table.virtualGroupId,
-          deletedAt: null,
-        },
-        select: {
-          id: true,
-          name: true,
-          abbreviation: true,
-          virtualGroupPrimary: true,
-        },
-      })
-
-      memberTables = groupTables.map((t) => ({
-        id: t.id,
-        name: t.name,
-        abbreviation: t.abbreviation,
-      }))
-
-      const primary = groupTables.find((t) => t.virtualGroupPrimary)
-      primaryTableName = primary?.name || null
-    }
-
-    // 4. Build order context
+    // 3. Build order context
     const orderContext: OrderContext = {
       orderId: order.id,
       orderNumber: order.orderNumber,
@@ -165,24 +134,20 @@ export class OrderRouter {
         `${order.employee?.firstName || ''} ${order.employee?.lastName || ''}`.trim() ||
         'Unknown',
       createdAt: order.createdAt,
-      virtualGroupId: order.table?.virtualGroupId || null,
-      virtualGroupColor: order.table?.virtualGroupColor || null,
-      primaryTableName,
-      memberTables,
     }
 
-    // 5. Transform items with resolved tags
+    // 4. Transform items with resolved tags
     const routedItems: RoutedItem[] = order.items.map((item) =>
       this.transformItem(item)
     )
 
-    // 6. Route items to stations
+    // 5. Route items to stations
     const { manifests, unroutedItems } = this.routeItemsToStations(
       routedItems,
       stations
     )
 
-    // 7. Calculate stats
+    // 6. Calculate stats
     const routingStats = {
       totalItems: routedItems.length,
       routedItems: routedItems.length - unroutedItems.length,

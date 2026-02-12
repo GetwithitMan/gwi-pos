@@ -426,8 +426,8 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
-    delete: (id: string) =>
-      fetchApi<void>(`/api/tables/${id}`, { method: 'DELETE' }),
+    delete: (id: string, locationId: string) =>
+      fetchApi<void>(`/api/tables/${id}?locationId=${locationId}`, { method: 'DELETE' }),
 
     // Seats
     seats: {

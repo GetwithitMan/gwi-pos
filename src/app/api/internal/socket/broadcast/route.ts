@@ -87,10 +87,6 @@ export async function POST(request: NextRequest) {
             tabName: routingResult.order.tabName,
             employeeName: routingResult.order.employeeName,
             createdAt: routingResult.order.createdAt.toISOString(),
-            virtualGroupId: routingResult.order.virtualGroupId,
-            virtualGroupColor: routingResult.order.virtualGroupColor,
-            primaryTableName: routingResult.order.primaryTableName,
-            memberTables: routingResult.order.memberTables,
             primaryItems: manifest.primaryItems.map((item) => ({
               id: item.id,
               name: item.name,

@@ -43,9 +43,6 @@ export async function GET(
         relativeX: seat.relativeX,
         relativeY: seat.relativeY,
         angle: seat.angle,
-        originalRelativeX: seat.originalRelativeX,
-        originalRelativeY: seat.originalRelativeY,
-        originalAngle: seat.originalAngle,
         seatType: seat.seatType,
         isActive: seat.isActive,
       })),
@@ -136,10 +133,6 @@ export async function POST(
         relativeY: finalRelativeY,
         angle: finalAngle,
         seatType: seatType ?? 'standard',
-        // Save initial position as the "builder default" for restore after combine/split
-        originalRelativeX: finalRelativeX,
-        originalRelativeY: finalRelativeY,
-        originalAngle: finalAngle,
       },
     })
 

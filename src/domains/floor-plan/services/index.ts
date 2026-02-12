@@ -10,9 +10,6 @@ export * from './table-service'
 // L3: Seats
 export * from './seat-service'
 
-// L4: Table Groups
-export * from './group-service'
-
 // L7: Status Engine
 export * from './status-engine'
 

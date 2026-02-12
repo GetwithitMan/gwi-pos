@@ -71,14 +71,6 @@ export async function POST(
             relativeY: Math.round(pos.relativeY),
             angle: Math.round(pos.angle),
             seatType: 'standard',
-            // If saveAsDefault, set original positions for restore capability
-            ...(saveAsDefault
-              ? {
-                  originalRelativeX: Math.round(pos.relativeX),
-                  originalRelativeY: Math.round(pos.relativeY),
-                  originalAngle: Math.round(pos.angle),
-                }
-              : {}),
           },
         })
       )

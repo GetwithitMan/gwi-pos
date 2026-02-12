@@ -6,12 +6,8 @@ import { db } from '@/lib/db'
  *
  * End of Day (EOD) reset for a location.
  * This should be called during the EOD closeout process to:
- * 1. Reset orphaned virtual groups (tables left linked after order payment)
- * 2. Reset all table statuses to 'available'
- * 3. Clear any stale session data
- *
- * This is a "self-healing" mechanism to prevent abandoned virtual groups
- * from persisting across business days.
+ * 1. Reset all table statuses to 'available'
+ * 2. Clear any stale session data
  */
 export async function POST(request: NextRequest) {
   try {
@@ -27,29 +23,9 @@ export async function POST(request: NextRequest) {
 
     // Collect stats for the reset
     const stats = {
-      virtualGroupsCleared: 0,
       tablesReset: 0,
       orphanedOrdersClosed: 0,
     }
-
-    // Find all tables in virtual groups
-    const virtualGroupedTables = await db.table.findMany({
-      where: {
-        locationId,
-        virtualGroupId: { not: null },
-        deletedAt: null,
-      },
-      select: {
-        id: true,
-        name: true,
-        virtualGroupId: true,
-        virtualGroupPrimary: true,
-      },
-    })
-
-    // Group by virtualGroupId to count unique groups
-    const uniqueGroups = new Set(virtualGroupedTables.map(t => t.virtualGroupId))
-    stats.virtualGroupsCleared = uniqueGroups.size
 
     // Find tables with occupied status but no open orders (orphaned status)
     const orphanedOccupiedTables = await db.table.findMany({
@@ -93,15 +69,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         dryRun: true,
         wouldReset: {
-          virtualGroups: {
-            count: stats.virtualGroupsCleared,
-            tables: virtualGroupedTables.map(t => ({
-              id: t.id,
-              name: t.name,
-              groupId: t.virtualGroupId,
-              isPrimary: t.virtualGroupPrimary,
-            })),
-          },
           orphanedTables: {
             count: orphanedOccupiedTables.length,
             tables: orphanedOccupiedTables.map(t => ({ id: t.id, name: t.name })),
@@ -122,23 +89,7 @@ export async function POST(request: NextRequest) {
 
     // Execute the reset in a transaction
     await db.$transaction(async (tx) => {
-      // 1. Reset all virtual group fields on tables
-      if (virtualGroupedTables.length > 0) {
-        await tx.table.updateMany({
-          where: {
-            locationId,
-            virtualGroupId: { not: null },
-          },
-          data: {
-            virtualGroupId: null,
-            virtualGroupPrimary: false,
-            virtualGroupColor: null,
-            virtualGroupCreatedAt: null,
-          },
-        })
-      }
-
-      // 2. Reset all tables to 'available' status (except those with open orders)
+      // 1. Reset all tables to 'available' status (except those with open orders)
       const tablesWithOpenOrders = await tx.table.findMany({
         where: {
           locationId,
@@ -177,7 +128,7 @@ export async function POST(request: NextRequest) {
         stats.tablesReset = tablesToReset.length
       }
 
-      // 3. Log stale orders but don't auto-close (requires manual review)
+      // 2. Log stale orders but don't auto-close (requires manual review)
       // This is intentional - we don't want to lose revenue data
       if (staleOpenOrders.length > 0) {
         // Create audit log for each stale order
@@ -201,7 +152,7 @@ export async function POST(request: NextRequest) {
         stats.orphanedOrdersClosed = staleOpenOrders.length
       }
 
-      // 4. Create master audit log for EOD reset
+      // 3. Create master audit log for EOD reset
       await tx.auditLog.create({
         data: {
           locationId,
@@ -210,7 +161,6 @@ export async function POST(request: NextRequest) {
           entityType: 'location',
           entityId: locationId,
           details: {
-            virtualGroupsCleared: stats.virtualGroupsCleared,
             tablesReset: stats.tablesReset,
             staleOrdersDetected: stats.orphanedOrdersClosed,
             timestamp: new Date().toISOString(),
@@ -222,7 +172,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       stats: {
-        virtualGroupsCleared: stats.virtualGroupsCleared,
         tablesReset: stats.tablesReset,
         staleOrdersDetected: stats.orphanedOrdersClosed,
       },
@@ -258,14 +207,6 @@ export async function GET(request: NextRequest) {
     }
 
     // Check for items that would be reset
-    const virtualGroupedTables = await db.table.count({
-      where: {
-        locationId,
-        virtualGroupId: { not: null },
-        deletedAt: null,
-      },
-    })
-
     const occupiedTablesWithoutOrders = await db.table.count({
       where: {
         locationId,
@@ -298,12 +239,11 @@ export async function GET(request: NextRequest) {
       },
     })
 
-    const needsReset = virtualGroupedTables > 0 || occupiedTablesWithoutOrders > 0 || staleOrderCount > 0
+    const needsReset = occupiedTablesWithoutOrders > 0 || staleOrderCount > 0
 
     return NextResponse.json({
       needsReset,
       summary: {
-        virtualGroupedTables,
         occupiedTablesWithoutOrders,
         staleOrders: staleOrderCount,
         currentOpenOrders: openOrderCount,

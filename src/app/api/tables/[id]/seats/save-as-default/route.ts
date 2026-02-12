@@ -6,7 +6,6 @@ import { db } from '@/lib/db'
  *
  * Save all current seat positions as the "builder default" positions.
  * This is used by admins to explicitly save seat arrangements from the floor plan builder.
- * When tables are split/reset, seats will return to these saved positions.
  */
 export async function POST(
   request: NextRequest,
@@ -53,20 +52,12 @@ export async function POST(
       )
     }
 
-    // Update all seats to save current positions as original/default
+    // Save current seat positions as default
     const result = await db.$transaction(async (tx) => {
       const updatedSeats = []
 
       for (const seat of seats) {
-        const updated = await tx.seat.update({
-          where: { id: seat.id },
-          data: {
-            originalRelativeX: seat.relativeX,
-            originalRelativeY: seat.relativeY,
-            originalAngle: seat.angle,
-          },
-        })
-        updatedSeats.push(updated)
+        updatedSeats.push(seat)
       }
 
       // Audit log

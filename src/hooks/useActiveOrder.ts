@@ -829,9 +829,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         }
         options.onOrderSent?.(resolvedOrderId)
 
-        // Reload from API for fresh server state (delayStartedAt now persisted server-side)
+        // Reload from API for fresh server state (fire-and-forget — don't block the UI)
         if (immediateItems.length > 0 || delayedItems.length > 0) {
-          await loadOrder(resolvedOrderId)
+          loadOrder(resolvedOrderId).catch(() => {})
         }
       }
     } catch (error) {

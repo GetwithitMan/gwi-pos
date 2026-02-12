@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "dotenv -e .env.local -- tsx server.ts",
+    "dev:next": "next dev --webpack",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "NODE_ENV=production node -r tsx/cjs server.ts",
+    "start:next": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
     "setup": "prisma generate && prisma db push && npm run db:seed",

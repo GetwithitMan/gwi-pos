@@ -8,7 +8,6 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const locationId = searchParams.get('locationId');
     const tableId = searchParams.get('tableId');
-    const virtualGroupId = searchParams.get('virtualGroupId');
     const status = searchParams.get('status');
 
     if (!locationId) {
@@ -31,7 +30,6 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             shape: true,
-            virtualGroupId: true,
           },
         },
       },
@@ -41,13 +39,8 @@ export async function GET(request: NextRequest) {
       ],
     });
 
-    // Filter by virtualGroupId if provided (on related table)
-    const filteredSeats = virtualGroupId
-      ? seats.filter((s) => s.table.virtualGroupId === virtualGroupId)
-      : seats;
-
     return NextResponse.json({
-      seats: filteredSeats.map((seat) => ({
+      seats: seats.map((seat) => ({
         id: seat.id,
         locationId: seat.locationId,
         tableId: seat.tableId,

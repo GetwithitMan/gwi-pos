@@ -156,7 +156,6 @@ export async function dispatchEntertainmentUpdate(
     expiresAt: string | null
     addedMinutes?: number
     partyName?: string
-    virtualGroupId?: string
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {

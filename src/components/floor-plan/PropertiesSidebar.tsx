@@ -10,7 +10,6 @@ import {
   DocumentDuplicateIcon,
   XMarkIcon,
   Squares2X2Icon,
-  ScissorsIcon,
 } from '@heroicons/react/24/outline'
 import { FloorPlanTable, FloorPlanSection } from './use-floor-plan'
 
@@ -25,7 +24,6 @@ interface PropertiesSidebarProps {
   onAddSeat: (tableId: string) => void
   onRemoveSeat: (tableId: string) => void
   onResetSeats?: (tableId: string) => void
-  onSplit?: (tableId: string) => void
 }
 
 const SHAPES = [
@@ -56,7 +54,6 @@ export function PropertiesSidebar({
   onAddSeat,
   onRemoveSeat,
   onResetSeats,
-  onSplit,
 }: PropertiesSidebarProps) {
   const [localName, setLocalName] = useState(table?.name || '')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -403,31 +400,6 @@ export function PropertiesSidebar({
             </div>
 
           </div>
-
-          {/* Split Combined Tables - Only show for combined groups */}
-          {onSplit && table.combinedTableIds && table.combinedTableIds.length > 0 && (
-            <div className="p-4 border-t border-white/10">
-              <p className="text-[10px] text-amber-400/70 font-medium mb-2 uppercase tracking-wider">
-                Combined Table ({table.combinedTableIds.length + 1} tables)
-              </p>
-              <button
-                onClick={() => onSplit(table.id)}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all"
-                style={{
-                  background: 'rgba(251, 191, 36, 0.1)',
-                  border: '1px solid rgba(251, 191, 36, 0.3)',
-                  color: '#fbbf24',
-                }}
-                title="Split combined tables back to individual tables"
-              >
-                <ScissorsIcon className="w-4 h-4" />
-                Split Tables
-              </button>
-              <p className="text-[9px] text-slate-500 mt-2 text-center">
-                Tables will be scattered near current position
-              </p>
-            </div>
-          )}
 
           {/* Footer with keyboard shortcuts */}
           <div className="p-4 border-t border-white/10 space-y-2">

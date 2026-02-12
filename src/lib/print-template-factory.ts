@@ -162,18 +162,8 @@ function buildTicketBuffer(order: OrderContext, manifest: RoutingManifest): Buff
 
   // --- ITEMS ---
   for (const item of items) {
-    // Position prefix for combined tables / seats
-    let positionPrefix = ''
-    if (item.sourceTableAbbrev || item.sourceTableName) {
-      const tablePrefix = item.sourceTableAbbrev || (item.sourceTableName || '').slice(0, 4)
-      if (item.seatNumber) {
-        positionPrefix = `${tablePrefix}-S${item.seatNumber}: `
-      } else {
-        positionPrefix = `${tablePrefix}: `
-      }
-    } else if (item.seatNumber) {
-      positionPrefix = `S${item.seatNumber}: `
-    }
+    // Seat number prefix
+    const positionPrefix = item.seatNumber ? `S${item.seatNumber}: ` : ''
 
     const itemName = `${positionPrefix}${item.quantity}x ${item.name}`.toUpperCase()
     content.push(TALL)

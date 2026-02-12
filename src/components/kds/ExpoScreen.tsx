@@ -1,11 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 /**
  * ExpoScreen - Expeditor view for food orders
  *
- * Groups orders by virtualGroupId (Virtual Table Combine integration)
  * Shows ALL items from all prep stations
  * Displays item status: pending -> cooking -> ready -> served
  * Uses T-S notation: "T4-S2: Burger"
@@ -47,10 +46,6 @@ interface ExpoOrder {
   orderId: string
   orderNumber: number
   orderType: string
-  virtualGroupId?: string
-  virtualGroupColor?: string
-  primaryTableName?: string
-  memberTables: Array<{ id: string; name: string; abbreviation?: string }>
   tableName?: string
   tabName?: string
   items: ExpoItem[]
@@ -90,7 +85,6 @@ export function ExpoScreen({
       const params = new URLSearchParams({
         locationId,
         showAll: 'true',
-        includeVirtualGroups: 'true',
       })
 
       const headers: Record<string, string> = {}
@@ -102,8 +96,8 @@ export function ExpoScreen({
 
       if (response.ok) {
         const data = await response.json()
-        const groupedOrders = groupOrdersByVirtualTable(data.orders || [])
-        setOrders(groupedOrders)
+        const mappedOrders = mapOrders(data.orders || [])
+        setOrders(mappedOrders)
         setLastUpdate(new Date())
       }
     } catch (error) {
@@ -124,81 +118,21 @@ export function ExpoScreen({
     return () => clearInterval(interval)
   }, [loadOrders])
 
-  // Group orders by virtualGroupId
-  function groupOrdersByVirtualTable(rawOrders: any[]): ExpoOrder[] {
-    const virtualGroups = new Map<string, ExpoOrder>()
-    const standaloneOrders: ExpoOrder[] = []
-
-    for (const order of rawOrders) {
-      const virtualGroupId = order.table?.virtualGroupId
-
-      if (virtualGroupId) {
-        if (!virtualGroups.has(virtualGroupId)) {
-          virtualGroups.set(virtualGroupId, {
-            id: virtualGroupId,
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            orderType: order.orderType,
-            virtualGroupId,
-            virtualGroupColor: order.table?.virtualGroupColor,
-            primaryTableName: order.table?.virtualGroupPrimary
-              ? order.table.name
-              : undefined,
-            memberTables: [],
-            items: [],
-            createdAt: order.createdAt,
-            elapsedMinutes: order.elapsedMinutes || 0,
-            timeStatus: order.timeStatus || 'fresh',
-            serverName: order.employeeName || 'Unknown',
-          })
-        }
-
-        const group = virtualGroups.get(virtualGroupId)!
-
-        if (
-          order.table &&
-          !group.memberTables.find((t) => t.id === order.table.id)
-        ) {
-          group.memberTables.push({
-            id: order.table.id,
-            name: order.table.name,
-            abbreviation: order.table.abbreviation,
-          })
-        }
-
-        if (order.table?.virtualGroupPrimary) {
-          group.primaryTableName = order.table.name
-        }
-
-        for (const item of order.items || []) {
-          group.items.push({
-            ...transformItem(item),
-            sourceTableLabel:
-              item.sourceTable?.abbreviation ||
-              item.sourceTable?.name?.slice(0, 4),
-          })
-        }
-      } else {
-        standaloneOrders.push({
-          id: order.id,
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          orderType: order.orderType,
-          tableName: order.table?.name,
-          tabName: order.tabName,
-          memberTables: order.table
-            ? [{ id: order.table.id, name: order.table.name }]
-            : [],
-          items: (order.items || []).map(transformItem),
-          createdAt: order.createdAt,
-          elapsedMinutes: order.elapsedMinutes || 0,
-          timeStatus: order.timeStatus || 'fresh',
-          serverName: order.employeeName || 'Unknown',
-        })
-      }
-    }
-
-    return [...virtualGroups.values(), ...standaloneOrders].sort(
+  // Map raw orders to ExpoOrder format
+  function mapOrders(rawOrders: any[]): ExpoOrder[] {
+    return rawOrders.map((order) => ({
+      id: order.id,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      orderType: order.orderType,
+      tableName: order.table?.name,
+      tabName: order.tabName,
+      items: (order.items || []).map(transformItem),
+      createdAt: order.createdAt,
+      elapsedMinutes: order.elapsedMinutes || 0,
+      timeStatus: order.timeStatus || 'fresh',
+      serverName: order.employeeName || 'Unknown',
+    })).sort(
       (a, b) =>
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     )
@@ -381,20 +315,11 @@ export function ExpoScreen({
           >
             {orders.map((order) => {
               const allReady = canRunTable(order)
-              const hasVirtualGroup = !!order.virtualGroupId
 
               return (
                 <div
                   key={order.id}
                   className={`bg-slate-800 rounded-lg border-t-4 overflow-hidden ${getTimeStatusColor(order.timeStatus)}`}
-                  style={
-                    hasVirtualGroup
-                      ? {
-                          boxShadow: `0 0 15px ${order.virtualGroupColor}40`,
-                          borderColor: order.virtualGroupColor,
-                        }
-                      : undefined
-                  }
                 >
                   {/* Order Header */}
                   <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
@@ -402,13 +327,6 @@ export function ExpoScreen({
                       <span className="text-2xl font-bold">
                         #{order.orderNumber}
                       </span>
-                      {hasVirtualGroup && (
-                        <span
-                          className="w-3 h-3 rounded-full animate-pulse"
-                          style={{ backgroundColor: order.virtualGroupColor }}
-                          title="Virtual Group"
-                        />
-                      )}
                     </div>
                     <div
                       className={`text-lg font-mono font-bold ${getTimeStatusColor(order.timeStatus)}`}
@@ -420,20 +338,10 @@ export function ExpoScreen({
                   {/* Table Info */}
                   <div className="px-4 py-2 bg-slate-900/50 border-b border-slate-700">
                     <div className="font-bold text-lg">
-                      {order.primaryTableName ||
-                        order.tableName ||
+                      {order.tableName ||
                         order.tabName ||
                         'Bar'}
                     </div>
-                    {hasVirtualGroup && order.memberTables.length > 1 && (
-                      <div className="text-sm text-purple-400">
-                        Linked:{' '}
-                        {order.memberTables
-                          .filter((t) => t.name !== order.primaryTableName)
-                          .map((t) => t.name)
-                          .join(', ')}
-                      </div>
-                    )}
                     <div className="text-sm text-slate-400">
                       Server: {order.serverName}
                     </div>

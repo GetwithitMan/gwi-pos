@@ -1,7 +1,7 @@
 /**
  * Floor Plan ↔ Order Management Bridge
  *
- * This bridge connects the Floor Plan domain (tables, seats, groups)
+ * This bridge connects the Floor Plan domain (tables, seats)
  * with the Order Management domain (orders, payments).
  *
  * Use cases:
@@ -32,11 +32,6 @@ export interface FloorToOrderBridge {
   getActiveOrdersForTable(tableId: string): Promise<Order[]>
 
   /**
-   * Get the combined total for a table group
-   */
-  getOrderTotalForGroup(groupId: string): Promise<number>
-
-  /**
    * Check if a table has any unpaid orders
    */
   hasUnpaidOrders(tableId: string): Promise<boolean>
@@ -65,16 +60,6 @@ export interface FloorPlanEvents {
    * Fired when seats are cleared
    */
   onSeatsCleared(tableId: string, seatIds: string[]): void
-
-  /**
-   * Fired when tables are grouped together
-   */
-  onGroupCreated(groupId: string, tableIds: string[], isVirtual: boolean): void
-
-  /**
-   * Fired when a group is dissolved
-   */
-  onGroupDissolved(groupId: string, tableIds: string[]): void
 
   /**
    * Fired when a table is moved to a different server's section
@@ -118,15 +103,6 @@ export interface OrderToFloorBridge {
     lastName: string
   } | null>
 
-  /**
-   * Get all tables in a group
-   */
-  getTablesInGroup(groupId: string): Promise<string[]>
-
-  /**
-   * Check if a table is part of a group
-   */
-  isTableInGroup(tableId: string): Promise<{ inGroup: boolean; groupId?: string }>
 }
 
 /**
@@ -176,7 +152,6 @@ export interface OrderManagementEvents {
 export const floorToOrderBridge: FloorToOrderBridge = {
   getActiveOrderForSeat: async () => null,
   getActiveOrdersForTable: async () => [],
-  getOrderTotalForGroup: async () => 0,
   hasUnpaidOrders: async () => false,
   getOrderCountForTable: async () => 0,
 }
@@ -185,6 +160,4 @@ export const orderToFloorBridge: OrderToFloorBridge = {
   getTableForOrder: async () => null,
   getSeatsForTable: async () => [],
   getServerForTable: async () => null,
-  getTablesInGroup: async () => [],
-  isTableInGroup: async () => ({ inGroup: false }),
 }

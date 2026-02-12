@@ -62,7 +62,6 @@ interface EntertainmentUpdatePayload {
   expiresAt: string | null
   addedMinutes?: number
   partyName?: string
-  virtualGroupId?: string
   locationId: string
 }
 
@@ -97,6 +96,21 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   socketServer.on('connection', (socket: Socket) => {
     const clientIp = socket.handshake.address
     console.log(`[Socket] New connection from ${clientIp} (${socket.id})`)
+
+    // Auto-join location room from handshake query (used by SocketEventProvider)
+    const queryLocationId = socket.handshake.query?.locationId as string | undefined
+    if (queryLocationId) {
+      socket.join(`location:${queryLocationId}`)
+      console.log(`[Socket] Auto-joined location:${queryLocationId} from query`)
+    }
+
+    // Handle channel subscribe/unsubscribe from SocketEventProvider
+    socket.on('subscribe', (channelName: string) => {
+      socket.join(channelName)
+    })
+    socket.on('unsubscribe', (channelName: string) => {
+      socket.leave(channelName)
+    })
 
     // ==================== Room Management ====================
 
@@ -291,33 +305,38 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     }
   }, 60000) // Every minute
 
-  console.log('[Socket] Server initialized')
+  // Store in global so API routes can emit events (survives HMR)
+  setSocketServer(socketServer)
+  console.log('[Socket] Server initialized and stored in globalThis')
   return socketServer
 }
 
 /**
  * Get socket server instance (for API routes to emit events)
+ * Uses globalThis to survive Next.js HMR in development (same pattern as Prisma client)
  */
-let socketServerInstance: SocketServer | null = null
+const globalForSocket = globalThis as unknown as {
+  socketServer: SocketServer | undefined
+}
 
 export function setSocketServer(server: SocketServer): void {
-  socketServerInstance = server
+  globalForSocket.socketServer = server
 }
 
 export function getSocketServer(): SocketServer | null {
-  return socketServerInstance
+  return globalForSocket.socketServer ?? null
 }
 
 /**
  * Emit event from API route (helper function)
  */
 export async function emitToRoom(room: string, event: string, data: unknown): Promise<boolean> {
-  if (!socketServerInstance) {
+  if (!globalForSocket.socketServer) {
     console.warn('[Socket] Server not initialized, cannot emit')
     return false
   }
 
-  socketServerInstance.to(room).emit(event, data)
+  globalForSocket.socketServer.to(room).emit(event, data)
   return true
 }
 
@@ -325,13 +344,13 @@ export async function emitToRoom(room: string, event: string, data: unknown): Pr
  * Emit to multiple tag rooms (for order routing)
  */
 export async function emitToTags(tags: string[], event: string, data: unknown): Promise<boolean> {
-  if (!socketServerInstance) {
+  if (!globalForSocket.socketServer) {
     console.warn('[Socket] Server not initialized, cannot emit')
     return false
   }
 
   tags.forEach((tag) => {
-    socketServerInstance!.to(`tag:${tag}`).emit(event, data)
+    globalForSocket.socketServer!.to(`tag:${tag}`).emit(event, data)
   })
   return true
 }
@@ -340,12 +359,15 @@ export async function emitToTags(tags: string[], event: string, data: unknown): 
  * Emit to location room (global alerts)
  */
 export async function emitToLocation(locationId: string, event: string, data: unknown): Promise<boolean> {
-  if (!socketServerInstance) {
+  if (!globalForSocket.socketServer) {
     console.warn('[Socket] Server not initialized, cannot emit')
     return false
   }
 
-  socketServerInstance.to(`location:${locationId}`).emit(event, data)
+  const room = `location:${locationId}`
+  const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
+  console.log(`[Socket] emitToLocation: ${event} → ${room} (${roomSockets?.size ?? 0} clients)`)
+  globalForSocket.socketServer.to(room).emit(event, data)
   return true
 }
 

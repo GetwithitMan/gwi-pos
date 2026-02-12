@@ -2,7 +2,7 @@
 
 import { useRef, useCallback, useMemo, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FloorPlanTable, FloorPlanSeat, TableStatus } from './use-floor-plan'
+import { FloorPlanTable, TableStatus } from './use-floor-plan'
 
 interface TableNodeProps {
   table: FloorPlanTable
@@ -10,18 +10,10 @@ interface TableNodeProps {
   isDragging: boolean
   isDropTarget: boolean
   isColliding?: boolean  // Whether the table collides with fixtures during drag
-  combinedGroupColor?: string  // Color shared by all tables in a combined group
   showSeats?: boolean  // Whether to display seat indicators
   selectedSeat?: { tableId: string; seatNumber: number } | null
   flashMessage?: string | null  // Flash message to display (e.g., "OPEN ORDER")
   isEditable?: boolean  // Admin mode - allow seat dragging
-  combinedSeatOffset?: number  // For combined tables: offset to add to seat numbers for sequential display
-  combinedTotalSeats?: number  // Total seats across all combined tables
-  // Virtual combine mode props
-  isVirtualCombineMode?: boolean  // Whether virtual combine mode is active
-  isVirtualCombineSelected?: boolean  // Whether this table is selected for virtual combine
-  isVirtualCombineUnavailable?: boolean  // Whether this table cannot be selected (already in another group)
-  virtualGroupColor?: string  // Color for virtual group pulsing glow
   // Order status badges
   orderStatusBadges?: {
     hasDelay?: boolean     // ⏱ items delayed
@@ -36,34 +28,6 @@ interface TableNodeProps {
   onSeatTap?: (seatNumber: number) => void
   onSeatDrag?: (seatId: string, newRelativeX: number, newRelativeY: number) => void
   onSeatDelete?: (seatId: string) => void
-}
-
-// Colors for combined table groups (consistent matching)
-const COMBINED_GROUP_COLORS = [
-  '#8b5cf6', // violet
-  '#ec4899', // pink
-  '#f97316', // orange
-  '#14b8a6', // teal
-  '#eab308', // yellow
-  '#6366f1', // indigo
-  '#10b981', // emerald
-  '#f43f5e', // rose
-]
-
-// Generate consistent color from table ID hash
-function hashCode(str: string): number {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i)
-    hash = ((hash << 5) - hash) + char
-    hash = hash & hash // Convert to 32bit integer
-  }
-  return Math.abs(hash)
-}
-
-export function getCombinedGroupColor(primaryTableId: string): string {
-  const colorIndex = hashCode(primaryTableId) % COMBINED_GROUP_COLORS.length
-  return COMBINED_GROUP_COLORS[colorIndex]
 }
 
 // Status to glow color mapping
@@ -81,17 +45,10 @@ export const TableNode = memo(function TableNode({
   isDragging,
   isDropTarget,
   isColliding = false,
-  combinedGroupColor,
   showSeats = false,
   selectedSeat,
   flashMessage,
   isEditable = false,
-  combinedSeatOffset = 0,
-  combinedTotalSeats,
-  isVirtualCombineMode = false,
-  isVirtualCombineSelected = false,
-  isVirtualCombineUnavailable = false,
-  virtualGroupColor,
   orderStatusBadges,
   onTap,
   onDragStart,
@@ -102,15 +59,11 @@ export const TableNode = memo(function TableNode({
   onSeatDelete,
 }: TableNodeProps) {
   const longPressTimer = useRef<NodeJS.Timeout | null>(null)
-  const isCombined = Boolean(table.combinedTableIds && table.combinedTableIds.length > 0)
-  const isPartOfCombinedGroup = Boolean(table.combinedWithId) // This table is combined INTO another
+  const pointerStartPos = useRef<{ x: number; y: number } | null>(null)
+  const dragStartedRef = useRef(false)
+  const longPressFiredRef = useRef(false)
   const isLocked = table.isLocked
   const isBooth = table.shape === 'booth'
-
-  // Virtual group state
-  const isInVirtualGroup = Boolean(table.virtualGroupId)
-  const isVirtualGroupPrimary = table.virtualGroupPrimary
-  const effectiveVirtualGroupColor = virtualGroupColor || table.virtualGroupColor || (isInVirtualGroup ? '#06b6d4' : null)
 
   // Calculate dynamic font sizes based on table dimensions
   const minDimension = Math.min(table.width, table.height)
@@ -126,13 +79,10 @@ export const TableNode = memo(function TableNode({
 
   // Use database seats instead of calculating positions
   // Each seat has relativeX/relativeY (relative to table center) stored in DB
-  // This ensures seat 1 is ALWAYS seat 1, regardless of table position/combine state
   const databaseSeats = useMemo(() => {
     // Don't show seats if showSeats is false
     if (!showSeats) return []
 
-    // Always use the table's database seats - they belong to THIS table permanently
-    // Even in combined groups, each table's seats render relative to their own table
     const seats = table.seats || []
 
     // Sort seats by seatNumber - this is the intended visual order around the table
@@ -155,58 +105,78 @@ export const TableNode = memo(function TableNode({
   }, [showSeats, table.seats, table.width, table.height])
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    // In virtual combine mode, we're just selecting tables - handle tap directly
-    if (isVirtualCombineMode) {
-      return
-    }
-
     // Locked tables cannot be dragged
     if (isLocked) {
       return
     }
 
-    // POS view (non-editable): longer threshold to prevent accidental combine mode
-    // Editor view (editable): shorter threshold for drag/combine workflows
+    // Record initial pointer position for movement threshold check
+    pointerStartPos.current = { x: e.clientX, y: e.clientY }
+    dragStartedRef.current = false
+    longPressFiredRef.current = false
+
+    // Capture pointer so move/up events continue even if finger drifts off table
+    ;(e.target as Element).setPointerCapture(e.pointerId)
+
+    // POS view (non-editable): longer threshold for long-press
+    // Editor view (editable): shorter threshold for drag workflows
     const longPressMs = isEditable ? 500 : 1200
     longPressTimer.current = setTimeout(() => {
+      longPressFiredRef.current = true
+      pointerStartPos.current = null // Prevent subsequent drag initiation
       onLongPress()
     }, longPressMs)
 
-    // Only start drag tracking in editor mode — POS tables don't move
+    // Drag tracking starts on pointer MOVE (after 8px threshold), not here
+    // Editor mode: also start drag immediately for responsive feel
     if (isEditable) {
       onDragStart()
     }
-  }, [onDragStart, onLongPress, isLocked, isVirtualCombineMode, isEditable])
+  }, [onDragStart, onLongPress, isLocked, isEditable])
 
   const handlePointerUp = useCallback(() => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current)
       longPressTimer.current = null
     }
-    // In virtual combine mode, handle as a tap to toggle selection
-    if (isVirtualCombineMode) {
-      onTap()
-      return
-    }
+    pointerStartPos.current = null
+    const wasDragging = dragStartedRef.current
+    // Don't clear dragStartedRef/longPressFiredRef immediately - onClick fires AFTER pointerUp
+    // Clear them after a short delay so the onClick guard can check them
+    setTimeout(() => {
+      dragStartedRef.current = false
+      longPressFiredRef.current = false
+    }, 50)
     // Only call onDragEnd if THIS table was being dragged
     // This prevents clearing draggedTableId when releasing over a different table (drop target)
-    if (isDragging) {
+    if (isDragging || wasDragging) {
       onDragEnd()
     }
-  }, [onDragEnd, isDragging, isVirtualCombineMode, onTap])
+  }, [onDragEnd, isDragging, onTap])
 
-  const handlePointerMove = useCallback(() => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (pointerStartPos.current) {
+      const dx = e.clientX - pointerStartPos.current.x
+      const dy = e.clientY - pointerStartPos.current.y
+      const distance = Math.sqrt(dx * dx + dy * dy)
+      // Only cancel long-press and start drag if finger moves more than 8px from start
+      // (touchscreens have natural finger drift during a press)
+      if (distance > 8) {
+        if (longPressTimer.current) {
+          clearTimeout(longPressTimer.current)
+          longPressTimer.current = null
+        }
+        // Start drag in POS view (non-editable)
+        // Editor mode already started drag on pointer down
+        if (!isEditable && !dragStartedRef.current) {
+          dragStartedRef.current = true
+          onDragStart()
+        }
+      }
     }
-  }, [])
+  }, [isEditable, onDragStart])
 
-  // Use combined group color for glow if table is part of a combined group
-  const hasCombinedColor = combinedGroupColor && (isCombined || isPartOfCombinedGroup)
-  const glowColor = hasCombinedColor
-    ? `${combinedGroupColor}99` // Add alpha for glow effect
-    : statusGlowColors[table.status]
+  const glowColor = statusGlowColors[table.status]
   const isReserved = table.status === 'reserved'
 
   // Calculate table dimensions based on shape
@@ -225,19 +195,13 @@ export const TableNode = memo(function TableNode({
 
   return (
     <motion.div
-      className={`table-node status-${table.status} ${isSelected ? 'selected' : ''} ${isDropTarget ? 'drop-target' : ''} ${isColliding ? 'colliding' : ''} ${isCombined ? 'combined' : ''} ${isLocked ? 'locked' : ''} ${isInVirtualGroup ? 'virtual-combined' : ''} ${isVirtualCombineSelected ? 'virtual-combine-selected' : ''} ${isVirtualCombineUnavailable ? 'virtual-combine-unavailable' : ''}`}
+      className={`table-node status-${table.status} ${isSelected ? 'selected' : ''} ${isDropTarget ? 'drop-target' : ''} ${isColliding ? 'colliding' : ''} ${isLocked ? 'locked' : ''}`}
       style={{
         left: table.posX,
         top: table.posY,
         width: table.width,
         height: table.height,
         zIndex: isDragging ? 100 : isSelected ? 50 : 1,
-        // Dim and disable unavailable tables during virtual combine mode
-        ...(isVirtualCombineUnavailable ? {
-          opacity: 0.4,
-          filter: 'grayscale(0.7)',
-          pointerEvents: 'none' as const,
-        } : {}),
       }}
       initial={{ opacity: 0, scale: 0.9, rotate: 0 }}
       animate={{
@@ -248,12 +212,10 @@ export const TableNode = memo(function TableNode({
       exit={{ opacity: 0, scale: 0.9 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
       onClick={(e) => {
-        // Only handle click when NOT in virtual combine mode
-        // (virtual combine mode uses pointerUp to avoid double-toggle)
-        if (!isVirtualCombineMode) {
-          e.stopPropagation()
-          onTap()
-        }
+        // Skip click if a drag or long-press just occurred (browser synthesizes click after pointerUp)
+        if (dragStartedRef.current || longPressFiredRef.current) return
+        e.stopPropagation()
+        onTap()
       }}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
@@ -261,35 +223,6 @@ export const TableNode = memo(function TableNode({
       onPointerCancel={handlePointerUp}
       whileTap={{ scale: 0.98 }}
     >
-      {/* Static subtle glow for virtual combined tables - OUTSIDE table-node-inner to avoid overflow:hidden clipping */}
-      {isInVirtualGroup && (
-        <div
-          className="absolute virtual-group-glow"
-          style={{
-            inset: -4,
-            borderRadius: 'inherit',
-            pointerEvents: 'none',
-            zIndex: 0,
-            boxShadow: `0 0 8px ${effectiveVirtualGroupColor || '#06b6d4'}50, 0 0 16px ${effectiveVirtualGroupColor || '#06b6d4'}25`,
-          }}
-        />
-      )}
-
-      {/* Soft border indicator for virtual groups - OUTSIDE table-node-inner to avoid overflow:hidden clipping */}
-      {isInVirtualGroup && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: -3,
-            borderRadius: 12,
-            border: `2px solid ${effectiveVirtualGroupColor || '#06b6d4'}`,
-            opacity: 0.8,
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        />
-      )}
-
       <motion.div
         className="table-node-inner"
         style={{
@@ -309,21 +242,17 @@ export const TableNode = memo(function TableNode({
                 `inset 0 1px 1px rgba(255, 255, 255, 0.05)`,
                 `0 4px 12px rgba(0, 0, 0, 0.3)`,
                 `0 0 ${isSelected ? '30px' : '20px'} ${glowColor}`,
-                `0 0 ${isSelected ? '50px' : '40px'} ${hasCombinedColor ? `${combinedGroupColor}4D` : glowColor.replace(/[\d.]+\)$/, '0.3)')}`,
+                `0 0 ${isSelected ? '50px' : '40px'} ${glowColor.replace(/[\d.]+\)$/, '0.3)')}`,
               ].join(', '),
           borderColor: isColliding
             ? '#ef4444'
             : isDropTarget
               ? '#22c55e'
-              : hasCombinedColor
-                ? combinedGroupColor
-                : isInVirtualGroup
-                  ? (effectiveVirtualGroupColor || '#06b6d4')
-                  : isSelected
-                    ? '#6366f1'
-                    : 'rgba(255, 255, 255, 0.1)',
-          borderWidth: isColliding || isDropTarget || isSelected || hasCombinedColor || isInVirtualGroup ? '3px' : '1px',
-          borderStyle: isColliding ? 'solid' : isDropTarget || isCombined || isPartOfCombinedGroup ? 'dashed' : 'solid',
+              : isSelected
+                ? '#6366f1'
+                : 'rgba(255, 255, 255, 0.1)',
+          borderWidth: isColliding || isDropTarget || isSelected ? '3px' : '1px',
+          borderStyle: 'solid',
         }}
         transition={{ duration: 0.3 }}
       >
@@ -367,19 +296,6 @@ export const TableNode = memo(function TableNode({
             </motion.div>
           )}
         </AnimatePresence>
-
-        {/* Selection checkmark for virtual combine mode */}
-        {isVirtualCombineMode && isVirtualCombineSelected && (
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="absolute -top-2 -right-2 w-6 h-6 bg-cyan-500 rounded-full flex items-center justify-center shadow-lg z-20"
-          >
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          </motion.div>
-        )}
 
         {/* Table Content - Counter-rotate text so it stays readable */}
         <div
@@ -462,44 +378,10 @@ export const TableNode = memo(function TableNode({
             </>
           ) : (
             <div className="table-node-info" style={{ fontSize: `${infoFontSize}px` }}>
-              {/* For combined tables, show total seats across group */}
-              {combinedTotalSeats
-                ? `${combinedTotalSeats} seat${combinedTotalSeats !== 1 ? 's' : ''}`
-                : `${table.seats?.length || table.capacity} seat${(table.seats?.length || table.capacity) !== 1 ? 's' : ''}`
-              }
+              {`${table.seats?.length || table.capacity} seat${(table.seats?.length || table.capacity) !== 1 ? 's' : ''}`}
             </div>
           )}
         </div>
-
-        {/* Combined badge - shows on primary table that has others combined to it */}
-        <AnimatePresence>
-          {isCombined && (
-            <motion.div
-              className="combined-badge"
-              style={combinedGroupColor ? { backgroundColor: combinedGroupColor } : undefined}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0 }}
-            >
-              +{table.combinedTableIds?.length}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Combined indicator - shows on tables that are combined INTO a primary */}
-        <AnimatePresence>
-          {isPartOfCombinedGroup && !isCombined && (
-            <motion.div
-              className="combined-child-badge"
-              style={combinedGroupColor ? { backgroundColor: combinedGroupColor } : undefined}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0 }}
-            >
-              ↔
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Lock icon for locked tables */}
         {isLocked && (
@@ -510,37 +392,6 @@ export const TableNode = memo(function TableNode({
           </div>
         )}
 
-        {/* Virtual group chain link badge */}
-        <AnimatePresence>
-          {isInVirtualGroup && (
-            <motion.div
-              className="virtual-group-badge"
-              style={{
-                backgroundColor: effectiveVirtualGroupColor || '#06b6d4',
-                position: 'absolute',
-                top: -6,
-                left: -6,
-                width: 26,
-                height: 26,
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '3px solid white',
-                boxShadow: `0 0 10px ${effectiveVirtualGroupColor || '#06b6d4'}`,
-                zIndex: 15,
-              }}
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0 }}
-              title={isVirtualGroupPrimary ? 'Primary table of virtual group' : 'Part of virtual group'}
-            >
-              <svg width="12" height="12" fill="white" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clipRule="evenodd" />
-              </svg>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </motion.div>
 
       {/* Drop target indicator */}
@@ -559,32 +410,13 @@ export const TableNode = memo(function TableNode({
       {showSeats && databaseSeats.length > 0 && (
         <>
           {databaseSeats.map((seat, index) => {
-            // Check if this table is part of a combined group (either primary or child)
-            // combinedTotalSeats is set for any table in a combined group
-            const isInCombinedGroup = Boolean(combinedTotalSeats)
-
-            // For combined tables, use seat.label from database - it was set to the correct
-            // sequential number (1, 2, 3...) based on clockwise position during combine.
-            // For single tables, use seatNumber.
-            // Parse label as number for selection matching
-            const displayNumber = isInCombinedGroup
-              ? parseInt(seat.label, 10) || seat.seatNumber
-              : seat.seatNumber
-
-            // For combined groups, check tableId matches the primary (or this table if it IS primary)
-            // Child tables: selectedSeat.tableId should match table.combinedWithId (the primary)
-            // Primary tables: selectedSeat.tableId should match table.id
-            const expectedTableId = table.combinedWithId || table.id
-            const isSelectedSeat = isInCombinedGroup
-              ? selectedSeat?.tableId === expectedTableId && selectedSeat?.seatNumber === displayNumber
-              : selectedSeat?.tableId === table.id && selectedSeat?.seatNumber === seat.seatNumber
-            const seatColor = combinedGroupColor || '#6366f1'
+            const displayNumber = seat.seatNumber
+            const isSelectedSeat = selectedSeat?.tableId === table.id && selectedSeat?.seatNumber === seat.seatNumber
+            const seatColor = '#6366f1'
             // Calculate position relative to table center for drag calculations
             const seatRelativeX = seat.x - table.width / 2
             const seatRelativeY = seat.y - table.height / 2
 
-            // Display the label - for combined tables this is the clockwise sequential number
-            // For single tables this is the original label
             const displayLabel = seat.label
 
             return (
@@ -652,7 +484,6 @@ export const TableNode = memo(function TableNode({
                 whileDrag={{ scale: 1.2, cursor: 'grabbing' }}
                 onClick={(e) => {
                   e.stopPropagation()
-                  // Use the display number (from seat.label for combined, seatNumber for single)
                   onSeatTap?.(displayNumber)
                 }}
                 title={

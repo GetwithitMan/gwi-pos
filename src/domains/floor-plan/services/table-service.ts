@@ -12,11 +12,7 @@ import type { Table, TableShape, TableStatus } from '../types'
 export {
   toTableRect,
   toTableRectArray,
-  getPrimaryTableId,
-  getPrimaryTable,
-  isPhysicalGroup,
-  isVirtualGroup,
-  isPrimaryTable,
+  getTotalSeats,
 } from '@/lib/table-utils'
 
 /**

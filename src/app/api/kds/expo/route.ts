@@ -6,7 +6,6 @@ import { db } from '@/lib/db'
  *
  * Features:
  * - Returns ALL items regardless of station assignment
- * - Includes virtualGroupId, virtualGroupColor, memberTables for grouped orders
  * - Tracks item status across all prep stations
  */
 
@@ -23,7 +22,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get all open orders with full item and virtual group data
+    // Get all open orders with full item data
     const orders = await db.order.findMany({
       where: {
         locationId,
@@ -36,9 +35,6 @@ export async function GET(request: NextRequest) {
             id: true,
             name: true,
             abbreviation: true,
-            virtualGroupId: true,
-            virtualGroupPrimary: true,
-            virtualGroupColor: true,
           },
         },
         employee: {

@@ -64,11 +64,9 @@ export async function PUT(
       relativeY,
       angle,
       seatType,
-      updateOriginal = false, // If true, also update the "builder default" position
     } = body
 
     // Verify seat exists and belongs to this table
-    // Also check if table is part of a combined group
     const existingSeat = await db.seat.findFirst({
       where: {
         id: seatId,
@@ -80,8 +78,6 @@ export async function PUT(
         table: {
           select: {
             locationId: true,
-            combinedWithId: true,
-            combinedTableIds: true,
           },
         },
       },
@@ -94,32 +90,14 @@ export async function PUT(
       )
     }
 
-    // Determine if we should update original positions
-    // Update originals if:
-    // 1. Explicitly requested (updateOriginal = true)
-    // 2. OR if the table is NOT combined (we're in the floor plan builder)
-    const isTableCombined = existingSeat.table.combinedWithId ||
-      (existingSeat.table.combinedTableIds && (existingSeat.table.combinedTableIds as string[]).length > 0)
-
-    const shouldUpdateOriginal = updateOriginal || !isTableCombined
-
     // Build type-safe update data
     const updateData: Prisma.SeatUpdateInput = {}
 
     if (label !== undefined) updateData.label = label
     if (seatNumber !== undefined) updateData.seatNumber = seatNumber
-    if (relativeX !== undefined) {
-      updateData.relativeX = relativeX
-      if (shouldUpdateOriginal) updateData.originalRelativeX = relativeX
-    }
-    if (relativeY !== undefined) {
-      updateData.relativeY = relativeY
-      if (shouldUpdateOriginal) updateData.originalRelativeY = relativeY
-    }
-    if (angle !== undefined) {
-      updateData.angle = angle
-      if (shouldUpdateOriginal) updateData.originalAngle = angle
-    }
+    if (relativeX !== undefined) updateData.relativeX = relativeX
+    if (relativeY !== undefined) updateData.relativeY = relativeY
+    if (angle !== undefined) updateData.angle = angle
     if (seatType !== undefined) updateData.seatType = seatType
 
     const seat = await db.seat.update({

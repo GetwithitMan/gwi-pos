@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FloorPlanTable as TableType, FloorPlanSeat } from './use-floor-plan'
 import { SeatInfo, determineSeatStatus, SEAT_STATUS_COLORS } from '@/lib/seat-utils'
-import { distributeSeatsOnPerimeter, type TableRect, type Point } from '@/lib/table-geometry'
+import { type TableRect, type Point } from '@/lib/table-geometry'
 
 interface FloorPlanTableProps {
   table: TableType
@@ -12,12 +12,9 @@ interface FloorPlanTableProps {
   isSelected: boolean
   isDragging?: boolean
   isDropTarget?: boolean
-  combinedGroupColor?: string
   showSeats?: boolean
   selectedSeatNumber?: number | null
   tableRotation?: number
-  /** All tables in the combined group (for perimeter-based seating) */
-  groupTables?: TableRect[]
   onSeatTap?: (seatNumber: number) => void
   onSeatRemove?: (seatIndex: number) => void
   onSeatSelect?: (seatIndex: number | null) => void
@@ -31,7 +28,6 @@ interface FloorPlanTableProps {
  * This component handles:
  * - Table shape rendering (circle, square, rectangle, booth, bar)
  * - Visual states (selected, dragging, drop target)
- * - Combined table grouping colors
  * - Automatic orbital seat spacing with layout animations
  * - Counter-rotation for upright seat labels
  * - Interactive seat rendering with status colors in service mode
@@ -42,11 +38,9 @@ export function FloorPlanTable({
   isSelected,
   isDragging = false,
   isDropTarget = false,
-  combinedGroupColor,
   showSeats = false,
   selectedSeatNumber,
   tableRotation = 0,
-  groupTables,
   onSeatTap,
   onSeatRemove,
   onSeatSelect,
@@ -124,9 +118,7 @@ export function FloorPlanTable({
               ? 'rgba(99, 102, 241, 0.8)'
               : isSelected
                 ? 'rgba(99, 102, 241, 0.6)'
-                : combinedGroupColor
-                  ? combinedGroupColor
-                  : statusStyles.borderColor
+                : statusStyles.borderColor
           }`,
           background: isDropTarget
             ? 'rgba(99, 102, 241, 0.2)'
@@ -173,7 +165,7 @@ export function FloorPlanTable({
         )}
       </motion.div>
 
-      {/* 2. Orbital Seat Rendering with Auto-Spacing (or Perimeter for combined groups) */}
+      {/* 2. Orbital Seat Rendering with Auto-Spacing */}
       {showSeats && (
         <OrbitalSeats
           seats={table.seats || []}
@@ -183,7 +175,6 @@ export function FloorPlanTable({
           tablePosX={table.posX}
           tablePosY={table.posY}
           tableRotation={tableRotation}
-          groupTables={groupTables}
           mode={mode}
           selectedSeatNumber={selectedSeatNumber}
           onSeatTap={onSeatTap}
@@ -200,15 +191,6 @@ export function FloorPlanTable({
         </div>
       )}
 
-      {/* 4. Combined Group Indicator */}
-      {combinedGroupColor && (
-        <div
-          className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-full text-[8px] font-bold text-white"
-          style={{ backgroundColor: combinedGroupColor }}
-        >
-          COMBINED
-        </div>
-      )}
     </div>
   )
 }
@@ -230,8 +212,6 @@ interface OrbitalSeatsProps {
   tablePosX: number
   tablePosY: number
   tableRotation: number
-  /** All tables in combined group for perimeter-based seating */
-  groupTables?: TableRect[]
   mode: 'admin' | 'service'
   selectedSeatNumber?: number | null
   onSeatTap?: (seatNumber: number) => void
@@ -248,7 +228,6 @@ function OrbitalSeats({
   tablePosX,
   tablePosY,
   tableRotation,
-  groupTables,
   mode,
   selectedSeatNumber,
   onSeatTap,
@@ -273,30 +252,9 @@ function OrbitalSeats({
   const centerY = tableHeight / 2
   const orbitRadius = Math.max(tableWidth, tableHeight) / 2 + 20
 
-  // Check if this table is part of a combined group
-  const isInCombinedGroup = groupTables && groupTables.length > 1
-
-  // For combined groups: seats use their DATABASE positions (relativeX/Y) which are
-  // calculated by the combine API using the true L/T/U shape perimeter.
-  // We don't recalculate in frontend because each table renders independently and
-  // would produce incorrect overlapping positions.
-  //
-  // For single tables: use orbital auto-spacing around the table.
-  const perimeterPositions = useMemo(() => {
-    // Combined groups: use database positions (don't recalculate)
-    if (isInCombinedGroup) return null
-
-    // Single table: no perimeter calculation needed, use orbital spacing
-    return null
-  }, [isInCombinedGroup])
-
   // Calculate auto-spaced orbital position for a seat
   const getAutoSpacedPosition = useCallback(
     (index: number, total: number) => {
-      // If we have perimeter positions for combined groups, use those
-      if (perimeterPositions && perimeterPositions[index]) {
-        return perimeterPositions[index]
-      }
       // Evenly distribute seats around the orbit
       // Start from top (-90°) and go clockwise
       const angle = (index * 2 * Math.PI) / total - Math.PI / 2
@@ -305,7 +263,7 @@ function OrbitalSeats({
         y: centerY + Math.sin(angle) * orbitRadius,
       }
     },
-    [centerX, centerY, orbitRadius, perimeterPositions]
+    [centerX, centerY, orbitRadius]
   )
 
   // Orbit constraints for manual positioning
@@ -429,11 +387,10 @@ function OrbitalSeats({
           const seatNumber = seat.seatNumber
 
           // Seat positioning logic:
-          // 1. Combined groups: ALWAYS use database positions (set by combine API)
-          // 2. Single tables with custom position: use database position
-          // 3. Single tables without custom position: use orbital auto-spacing
+          // 1. Tables with custom position: use database position
+          // 2. Tables without custom position: use orbital auto-spacing
           const hasCustomPosition = seat.relativeX !== 0 || seat.relativeY !== 0
-          const useDbPosition = isInCombinedGroup || hasCustomPosition
+          const useDbPosition = hasCustomPosition
           const autoPos = getAutoSpacedPosition(index, currentCapacity)
           const x = useDbPosition ? (centerX + seat.relativeX) : autoPos.x
           const y = useDbPosition ? (centerY + seat.relativeY) : autoPos.y

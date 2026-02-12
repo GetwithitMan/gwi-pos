@@ -102,6 +102,7 @@ export async function PUT(
     const { id } = await params
     const body = await request.json()
     const {
+      locationId,
       name,
       abbreviation,
       sectionId,
@@ -115,6 +116,23 @@ export async function PUT(
       seatPattern,
       status,
     } = body
+
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'locationId is required' },
+        { status: 400 }
+      )
+    }
+
+    // Verify table belongs to this location
+    const existing = await db.table.findFirst({
+      where: { id, locationId, deletedAt: null },
+      select: { id: true },
+    })
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+    }
 
     // Build type-safe update data
     const updateData: Prisma.TableUpdateInput = {}
@@ -134,7 +152,7 @@ export async function PUT(
     if (seatPattern !== undefined) updateData.seatPattern = seatPattern
     if (status !== undefined) updateData.status = status
 
-    // Update table (will throw P2025 if not found)
+    // Update table
     const table = await db.table.update({
       where: { id },
       data: updateData,
@@ -191,10 +209,29 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
+    const { searchParams } = new URL(request.url)
+    const locationId = searchParams.get('locationId')
+
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'locationId is required' },
+        { status: 400 }
+      )
+    }
+
+    // Verify table belongs to this location
+    const existing = await db.table.findFirst({
+      where: { id, locationId, deletedAt: null },
+      select: { id: true },
+    })
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+    }
 
     // Check for open orders
     const openOrders = await db.order.count({
-      where: { tableId: id, status: 'open' },
+      where: { tableId: id, locationId, status: 'open' },
     })
 
     if (openOrders > 0) {

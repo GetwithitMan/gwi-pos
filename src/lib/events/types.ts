@@ -59,17 +59,6 @@ export interface TableStatusChangedEvent {
   guestCount?: number
 }
 
-export interface TableCombinedEvent {
-  primaryTableId: string
-  secondaryTableId: string
-  combinedName: string
-}
-
-export interface TableSplitEvent {
-  tableId: string
-  restoredTableIds: string[]
-}
-
 // KDS Events
 export interface KDSTicketNewEvent {
   ticketId: string
@@ -155,8 +144,6 @@ export interface EventMap {
 
   // Tables
   'table:status-changed': TableStatusChangedEvent
-  'table:combined': TableCombinedEvent
-  'table:split': TableSplitEvent
 
   // KDS (Legacy)
   'kds:ticket-new': KDSTicketNewEvent
@@ -202,11 +189,6 @@ export interface KDSOrderReceivedEvent {
   tabName: string | null
   employeeName: string
   createdAt: string
-  // Virtual group info
-  virtualGroupId: string | null
-  virtualGroupColor: string | null
-  primaryTableName: string | null
-  memberTables: Array<{ id: string; name: string; abbreviation: string | null }>
   // Items for this station
   primaryItems: Array<{
     id: string
@@ -258,7 +240,6 @@ export interface EntertainmentSessionUpdateEvent {
   expiresAt: string | null
   addedMinutes?: number
   partyName?: string
-  virtualGroupId?: string
 }
 
 // Floor Plan Events

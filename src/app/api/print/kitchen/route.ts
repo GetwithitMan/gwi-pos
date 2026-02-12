@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
           include: {
             modifiers: true,
             ingredientModifications: true,
-            // Source table for T-S notation (virtual combined tables)
+            // Source table for seat tracking
             sourceTable: {
               select: {
                 id: true,
@@ -242,8 +242,8 @@ function buildKitchenTicket(
     name: string
     quantity: number
     seatNumber: number | null  // T023: Seat assignment
-    sourceTableId: string | null  // For virtual combined tables - T-S notation
-    sourceTable: { id: string; name: string; abbreviation: string | null } | null  // Source table for T-S prefix
+    sourceTableId: string | null
+    sourceTable: { id: string; name: string; abbreviation: string | null } | null
     specialNotes: string | null
     resendCount: number
     modifiers: Array<{
@@ -422,11 +422,10 @@ function buildKitchenTicket(
 
   // ITEMS
   for (const item of items) {
-    // Item name with quantity and T-S (Table-Seat) notation for virtual combined tables
-    // Format: T2-S3 = Table 2, Seat 3 | S3 = Seat 3 only (no source table)
+    // Item name with quantity and seat notation
+    // Format: S3 = Seat 3
     let positionPrefix = ''
     if (item.sourceTable) {
-      // Virtual combined table - use T-S notation
       const tablePrefix = item.sourceTable.abbreviation || item.sourceTable.name.slice(0, 4)
       if (item.seatNumber) {
         positionPrefix = `${tablePrefix}-S${item.seatNumber}: `

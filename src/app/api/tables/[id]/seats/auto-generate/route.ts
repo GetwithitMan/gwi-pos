@@ -308,7 +308,7 @@ export async function POST(
         })
       }
 
-      // Create new seats with original positions saved as "builder defaults"
+      // Create new seats
       const createdSeats = await Promise.all(
         seatPositions.map(pos =>
           tx.seat.create({
@@ -321,10 +321,6 @@ export async function POST(
               relativeY: Math.round(pos.relativeY),
               angle: Math.round(pos.angle),
               seatType: 'standard',
-              // Save as "builder default" for restore after combine/split
-              originalRelativeX: Math.round(pos.relativeX),
-              originalRelativeY: Math.round(pos.relativeY),
-              originalAngle: Math.round(pos.angle),
             },
           })
         )

@@ -176,12 +176,8 @@ export interface Table {
   isReservable: boolean;
   sortOrder: number;
 
-  // Group membership
-  groupId: string | null;
-  combinedTableIds: string[]; // If merged
-
   // Visual
-  color: string | null; // Override color (from groups/status)
+  color: string | null; // Override color (from status)
 
   // Entertainment-specific
   entertainmentConfig: EntertainmentConfig | null;
@@ -212,43 +208,6 @@ export interface Seat {
 
   isActive: boolean;
 }
-
-// =============================================================================
-// LAYER 4: TABLE GROUPS
-// =============================================================================
-
-export interface TableGroup {
-  id: string;
-  locationId: string;
-
-  tableIds: string[];
-  primaryTableId: string; // The "anchor" table
-
-  isVirtual: boolean; // Virtual = cross-room, no movement
-
-  // Visual
-  color: string;
-  identifier: string; // "Smith-8PM", "Party of 12"
-
-  // Capacity
-  combinedCapacity: number;
-
-  // State
-  isActive: boolean;
-  createdAt: Date;
-  createdBy: string; // Staff ID
-}
-
-export const GROUP_COLOR_PALETTE = [
-  '#E74C3C', // Red
-  '#3498DB', // Blue
-  '#2ECC71', // Green
-  '#9B59B6', // Purple
-  '#F39C12', // Orange
-  '#1ABC9C', // Teal
-  '#E91E63', // Pink
-  '#00BCD4', // Cyan
-] as const;
 
 // =============================================================================
 // LAYER 6: STAFF

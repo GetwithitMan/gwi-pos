@@ -12,7 +12,6 @@ export interface ReceiptItem {
   specialNotes?: string | null
   status?: string
   seatNumber?: number | null  // For seat assignment
-  sourceTableName?: string | null  // For virtual combined tables (T-S notation)
   modifiers?: {
     id: string
     name: string
@@ -168,19 +167,8 @@ export function Receipt({ data, settings, showPrices = true }: ReceiptProps) {
       {/* Items */}
       <div className="border-b border-dashed border-gray-400 pb-3 mb-3">
         {activeItems.map(item => {
-          // Build T-S notation prefix for virtual combined tables
-          let positionPrefix = ''
-          if (item.sourceTableName) {
-            // Virtual combined table - use T-S notation
-            if (item.seatNumber) {
-              positionPrefix = `${item.sourceTableName}-S${item.seatNumber}: `
-            } else {
-              positionPrefix = `${item.sourceTableName}: `
-            }
-          } else if (item.seatNumber) {
-            // Regular seat number only
-            positionPrefix = `S${item.seatNumber}: `
-          }
+          // Build seat number prefix
+          const positionPrefix = item.seatNumber ? `S${item.seatNumber}: ` : ''
 
           return (
           <div key={item.id} className="mb-2">

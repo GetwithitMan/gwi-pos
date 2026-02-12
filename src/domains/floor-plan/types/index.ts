@@ -99,7 +99,6 @@ export type TableStatus =
   | 'bussing'
   | 'reserved'
   | 'blocked'
-  | 'combined'
 
 // =============================================================================
 // L3: SEATS
@@ -122,32 +121,6 @@ export interface SeatPosition {
   x: number          // Computed X position
   y: number          // Computed Y position
 }
-
-// =============================================================================
-// L4: TABLE GROUPS
-// =============================================================================
-
-export interface TableGroup {
-  id: string
-  locationId: string
-  name?: string
-  color: GroupColor
-  isVirtual: boolean  // true = virtual combine, false = physical merge
-  tableIds: string[]
-  primaryTableId: string
-  createdAt: Date
-  createdBy: string
-}
-
-export type GroupColor =
-  | 'blue'
-  | 'green'
-  | 'orange'
-  | 'purple'
-  | 'pink'
-  | 'yellow'
-  | 'cyan'
-  | 'red'
 
 // =============================================================================
 // L6: STAFF ROLES
