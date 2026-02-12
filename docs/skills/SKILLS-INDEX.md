@@ -128,6 +128,8 @@
 | 321 | PayFac Credential Management | TODO | Mission Control | 301, 307 | Cloud-pushed Datacap credentials (AES-256-GCM at rest, RSA-encrypted delivery via SSE), tamper prevention (60s heartbeat overwrite), unregistered reader rejection, per-location processing rate |
 | 322 | Subscription Tiers & Hardware Limits | TODO | Mission Control | 301, 318 | Starter/Pro/Enterprise tiers, device caps (terminals/handhelds/KDS/printers/readers), feature gating, two-level enforcement (cloud + local cache), upgrade/downgrade flows |
 | 323 | Billing & Late Payment Flow | TODO | Mission Control | 318 | Stripe retry schedule, email/banner/read-only/kill escalation (Day 1→45), processing fee deduction from Datacap settlement, billing dashboard |
+| 324 | Ingredient Category Delete | DONE | Inventory | - | Category delete with cascade soft-delete. Empty categories delete freely; categories with items show warning + require typing DELETE. Both list and hierarchy views. |
+| 325 | Prep Item Cost Cascade Fix | DONE | Inventory | 126 | Rewrote /api/ingredients/[id]/cost to use direct DB queries (was fragile HTTP self-fetch). Fixed 11 missing fields in list API. Cost now cascades: recipe→parent→prep item. |
 
 ### Advanced Order Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -453,6 +455,13 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-11 — Ingredient Category Delete & Cost Fix, Skills 324-325)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 324 | Ingredient Category Delete | Category delete with cascade soft-delete in `/ingredients`. Empty categories delete freely. Categories with items show warning modal listing inventory/prep counts and require typing "DELETE" to confirm. All items cascade soft-deleted (restorable from Deleted section). Delete buttons added to both List view (CategorySection) and Hierarchy view (IngredientHierarchy). API returns `requiresConfirmation: true` with counts when items exist. |
+| 325 | Prep Item Cost Cascade Fix | Rewrote `/api/ingredients/[id]/cost` endpoint — replaced fragile recursive HTTP `fetch()` calls with direct DB queries via `calculateIngredientCost()` function. Fixed 11 missing fields (`inputQuantity`, `inputUnit`, `outputQuantity`, `outputUnit`, etc.) stripped by list API formatting functions. Added proper `Number()` conversions for Prisma Decimal fields in GET/PUT responses. Cost now cascades correctly: vendor purchase → recipe components → recipe yield → prep item cost. |
 
 ## Recently Completed (2026-02-11 — Mission Control PayFac & Revenue Model, Skills 321-323)
 
