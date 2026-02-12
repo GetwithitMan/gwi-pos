@@ -12,9 +12,8 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { processLiquorInventory } from '@/lib/liquor-inventory'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
-import { tableEvents } from '@/lib/realtime/table-events'
 import { errorCapture } from '@/lib/error-capture'
-import { calculateCardPrice, calculateCashDiscount } from '@/lib/pricing'
+import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 
@@ -143,6 +142,30 @@ export async function POST(
   try {
     body = await request.json()
 
+    // Check for $0 order BEFORE Zod validation (Zod requires amount > 0,
+    // but voided orders legitimately have $0 total and need to be closed)
+    const zeroCheckOrder = await db.order.findUnique({
+      where: { id: orderId },
+      select: { total: true, status: true, payments: { where: { status: 'completed' }, select: { totalAmount: true } } },
+    })
+    if (zeroCheckOrder && zeroCheckOrder.status !== 'paid' && zeroCheckOrder.status !== 'closed') {
+      const zeroAlreadyPaid = zeroCheckOrder.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0)
+      const zeroRemaining = Number(zeroCheckOrder.total) - zeroAlreadyPaid
+      if (zeroRemaining <= 0 && zeroAlreadyPaid === 0) {
+        await db.order.update({
+          where: { id: orderId },
+          data: { status: 'paid', paidAt: new Date() },
+        })
+        return NextResponse.json({
+          success: true,
+          orderId,
+          orderStatus: 'paid',
+          message: 'Order closed with $0 balance (all items voided/comped)',
+          totals: { subtotal: 0, tax: 0, total: 0, tip: 0 },
+        })
+      }
+    }
+
     // Validate request body with Zod
     const validation = PaymentRequestSchema.safeParse(body)
     if (!validation.success) {
@@ -252,10 +275,30 @@ export async function POST(
     // Calculate total being paid now
     const paymentTotal = payments.reduce((sum, p) => sum + p.amount + (p.tipAmount || 0), 0)
 
-    if (paymentTotal < remaining - 0.01) {
-      // Allow small rounding differences
+    // When cash rounding is enabled, the client sends the ROUNDED amount
+    // (e.g., $3.29 rounded to $3.25 with quarter rounding). The tolerance
+    // must account for the rounding increment to avoid false rejections.
+    // Two rounding systems exist:
+    //   1. priceRounding (Skill 88) — increment-based ('0.05', '0.25', etc.)
+    //   2. cashRounding (legacy) — named modes ('nickel', 'quarter', etc.)
+    // priceRounding takes precedence when enabled.
+    const hasCashPayment = payments.some(p => p.method === 'cash')
+    let validationRemaining = remaining
+    if (hasCashPayment) {
+      if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
+        validationRemaining = applyPriceRounding(remaining, settings.priceRounding, 'cash')
+      } else if (settings.payments.cashRounding !== 'none') {
+        validationRemaining = roundAmount(
+          remaining,
+          settings.payments.cashRounding,
+          settings.payments.roundingDirection
+        )
+      }
+    }
+
+    if (paymentTotal < validationRemaining - 0.01) {
       return NextResponse.json(
-        { error: `Payment amount ($${paymentTotal.toFixed(2)}) is less than remaining balance ($${remaining.toFixed(2)})` },
+        { error: `Payment amount ($${paymentTotal.toFixed(2)}) is less than remaining balance ($${validationRemaining.toFixed(2)})` },
         { status: 400 }
       )
     }
@@ -322,6 +365,7 @@ export async function POST(
     const createdPayments: Awaited<ReturnType<typeof db.payment.create>>[] = []
     const pendingDefaultRecords: Record<string, unknown>[] = []
     let totalTips = 0
+    let alreadyPaidInLoop = 0
 
     for (const payment of payments) {
       // Resolve drawer/shift attribution for this payment
@@ -400,18 +444,25 @@ export async function POST(
       }
 
       if (payment.method === 'cash') {
-        // Apply rounding if enabled
+        // Apply rounding if enabled (priceRounding takes precedence over legacy cashRounding)
         let finalAmount = payment.amount
         let roundingAdjustment = 0
 
-        if (settings.payments.cashRounding !== 'none') {
+        // The client already sends the rounded amount (e.g. $3.25 from $3.29).
+        // To compute the adjustment, compare against the raw remaining balance.
+        const rawRemaining = remaining - alreadyPaidInLoop
+        if (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) {
+          const rounded = applyPriceRounding(rawRemaining, settings.priceRounding, 'cash')
+          roundingAdjustment = Math.round((rounded - rawRemaining) * 100) / 100
+          finalAmount = payment.amount // already rounded by client
+        } else if (settings.payments.cashRounding !== 'none') {
           roundingAdjustment = calculateRoundingAdjustment(
-            payment.amount,
+            rawRemaining,
             settings.payments.cashRounding,
             settings.payments.roundingDirection
           )
           finalAmount = roundAmount(
-            payment.amount,
+            rawRemaining,
             settings.payments.cashRounding,
             settings.payments.roundingDirection
           )
@@ -428,8 +479,10 @@ export async function POST(
           paymentRecord.cashDiscountAmount = discountAmount
 
           // Validate: cash amount should match expected cash price (warn, don't reject)
+          // When priceRounding is active, the rounded amount will differ from order.total — that's expected
           const expectedCashAmount = Number(order.total)
-          if (Math.abs(finalAmount - expectedCashAmount) > 0.01) {
+          const roundingTolerance = (settings.priceRounding?.enabled && settings.priceRounding.applyToCash) ? 0.50 : 0.01
+          if (Math.abs(finalAmount - expectedCashAmount) > roundingTolerance) {
             console.warn(`[DualPricing] Cash payment amount $${finalAmount} differs from total $${expectedCashAmount} for order ${orderId}`)
           }
         }
@@ -727,11 +780,20 @@ export async function POST(
 
       pendingDefaultRecords.push(paymentRecord)
       totalTips += payment.tipAmount || 0
+      alreadyPaidInLoop += payment.amount
     }
 
     // Update order status and tip total
     const newTipTotal = Number(order.tipTotal) + totalTips
     const newPaidTotal = alreadyPaid + paymentTotal
+
+    // When price rounding is active for cash, the paid amount may be less than orderTotal
+    // by up to the rounding increment (e.g., $3.25 paid for $3.29 order with quarter rounding).
+    // The tolerance must cover this gap so the order is marked fully paid.
+    const hasCash = payments.some(p => p.method === 'cash')
+    const paidTolerance = (hasCash && settings.priceRounding?.enabled && settings.priceRounding.applyToCash)
+      ? parseFloat(settings.priceRounding.increment) / 2  // Half the increment covers rounding in either direction
+      : 0.01
 
     const updateData: {
       tipTotal: number
@@ -750,7 +812,7 @@ export async function POST(
     }
 
     // Mark as paid if fully paid
-    if (newPaidTotal >= orderTotal - 0.01) {
+    if (newPaidTotal >= orderTotal - paidTolerance) {
       updateData.status = 'paid'
       updateData.paidAt = new Date()
       updateData.closedAt = new Date()
@@ -805,7 +867,7 @@ export async function POST(
       }
     })
 
-    // If order is fully paid, reset entertainment items and cleanup virtual groups
+    // If order is fully paid, reset entertainment items and table status
     if (updateData.status === 'paid') {
       await db.menuItem.updateMany({
         where: {
@@ -848,69 +910,8 @@ export async function POST(
         })
       }
 
-      // Clean up virtual group if this order belongs to one
-      // Find the table associated with this order
-      const orderTable = await db.table.findFirst({
-        where: {
-          orders: {
-            some: { id: orderId },
-          },
-        },
-      })
-
-      if (orderTable?.virtualGroupId) {
-        const virtualGroupId = orderTable.virtualGroupId
-
-        // Find all tables in the group before clearing
-        const groupTables = await db.table.findMany({
-          where: {
-            virtualGroupId,
-            locationId: order.locationId,
-          },
-          select: { id: true },
-        })
-
-        // Dissolve the virtual group when the order is paid
-        await db.table.updateMany({
-          where: {
-            virtualGroupId,
-            locationId: order.locationId,
-          },
-          data: {
-            virtualGroupId: null,
-            virtualGroupPrimary: false,
-            virtualGroupColor: null,
-            virtualGroupCreatedAt: null,
-            status: 'available',
-          },
-        })
-
-        // Create audit log for virtual group dissolution
-        await db.auditLog.create({
-          data: {
-            locationId: order.locationId,
-            employeeId: employeeId || null,
-            action: 'virtual_group_dissolved',
-            entityType: 'order',
-            entityId: orderId,
-            details: {
-              virtualGroupId,
-              reason: 'Order paid',
-              primaryTableId: orderTable.id,
-            },
-          },
-        })
-
-        // Emit real-time event for UI updates
-        tableEvents.virtualGroupDissolved?.({
-          virtualGroupId,
-          tableIds: groupTables.map(t => t.id),
-          locationId: order.locationId,
-          timestamp: new Date().toISOString(),
-          triggeredBy: employeeId,
-        })
-      } else if (order.tableId) {
-        // Regular table (not virtual group) - just reset status
+      // Reset table status to available
+      if (order.tableId) {
         await db.table.update({
           where: { id: order.tableId },
           data: { status: 'available' },
@@ -1022,8 +1023,8 @@ export async function POST(
         authCode: p.authCode,
         status: p.status,
       })),
-      orderStatus: newPaidTotal >= orderTotal - 0.01 ? 'paid' : 'partial',
-      remainingBalance: Math.max(0, orderTotal - newPaidTotal),
+      orderStatus: newPaidTotal >= orderTotal - paidTolerance ? 'paid' : 'partial',
+      remainingBalance: newPaidTotal >= orderTotal - paidTolerance ? 0 : Math.max(0, orderTotal - newPaidTotal),
       // Loyalty info
       loyaltyPointsEarned: pointsEarned,
       customerId: order.customer?.id || null,

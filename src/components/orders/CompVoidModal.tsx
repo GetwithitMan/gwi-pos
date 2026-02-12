@@ -26,6 +26,7 @@ interface CompVoidModalProps {
   terminalId?: string
   onComplete: (result: {
     action: 'comp' | 'void' | 'restore'
+    orderAutoClosed?: boolean
     orderTotals: {
       subtotal: number
       discountTotal: number
@@ -125,6 +126,7 @@ export function CompVoidModal({
       const result = await response.json()
       onComplete({
         action,
+        orderAutoClosed: result.orderAutoClosed,
         orderTotals: result.orderTotals,
       })
       onClose()

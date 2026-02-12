@@ -24,6 +24,7 @@ interface DailyReport {
     gratuity: number
     refunds: number
     giftCardLoads: number
+    roundingAdjustments: number
     totalCollected: number
     commission: number
   }
@@ -53,6 +54,7 @@ interface DailyReport {
     cashIn: number
     cashOut: number
     tipsOut: number
+    roundingAdjustments: number
     cashDue: number
   }
 
@@ -285,6 +287,12 @@ export default function DailyReportPage() {
                     <span>+ Gift Card Load</span>
                     <span>{formatCurrency(report.revenue.giftCardLoads)}</span>
                   </div>
+                  {report.revenue.roundingAdjustments !== 0 && (
+                    <div className="flex justify-between text-yellow-600">
+                      <span>{report.revenue.roundingAdjustments > 0 ? '+' : '–'} Cash Rounding</span>
+                      <span>{formatCurrency(Math.abs(report.revenue.roundingAdjustments))}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2">
                     <span>= Total Collected</span>
                     <span>{formatCurrency(report.revenue.totalCollected)}</span>
@@ -382,6 +390,12 @@ export default function DailyReportPage() {
                     <span>– Tips Paid Out</span>
                     <span>{formatCurrency(report.cash.tipsOut)}</span>
                   </div>
+                  {report.cash.roundingAdjustments !== 0 && (
+                    <div className="flex justify-between text-yellow-600 font-semibold">
+                      <span>{report.cash.roundingAdjustments > 0 ? '+' : '–'} Cash Rounding</span>
+                      <span>{formatCurrency(Math.abs(report.cash.roundingAdjustments))}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between font-bold border-t pt-1 mt-1">
                     <span>= Cash Due</span>
                     <span>{formatCurrency(report.cash.cashDue)}</span>

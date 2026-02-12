@@ -50,15 +50,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch all orders for the day
-    // NOTE: 'merged' status is intentionally excluded to prevent double-counting revenue.
-    // When tables are virtually combined, secondary table orders are marked as 'merged'
-    // and their items are moved to the primary table's order. Only the primary order
-    // (with status 'paid') should count toward revenue.
     const orders = await db.order.findMany({
       where: {
         locationId,
         createdAt: { gte: startOfDay, lte: endOfDay },
-        status: { in: ['completed', 'closed', 'paid'] }, // Excludes 'merged', 'open', 'voided'
+        status: { in: ['completed', 'closed', 'paid'] },
       },
       include: {
         items: {
@@ -344,6 +340,8 @@ export async function GET(request: NextRequest) {
     // CALCULATE PAYMENTS
     // ============================================
 
+    let totalRoundingAdjustments = 0
+
     const paymentsByType: Record<string, {
       count: number
       amount: number
@@ -369,6 +367,12 @@ export async function GET(request: NextRequest) {
         const paymentType = (payment.paymentMethod || 'other').toLowerCase()
         const amount = Number(payment.amount) || 0
         const tip = Number(payment.tipAmount) || 0
+
+        // Track rounding adjustments from cash payments
+        const rounding = Number(payment.roundingAdjustment) || 0
+        if (rounding !== 0) {
+          totalRoundingAdjustments += rounding
+        }
 
         if (paymentType === 'cash') {
           paymentsByType.cash.count++
@@ -709,6 +713,7 @@ export async function GET(request: NextRequest) {
         gratuity: 0, // Auto-gratuity not tracked separately
         refunds: round(totalRefunds),
         giftCardLoads: round(giftCardLoads),
+        roundingAdjustments: round(totalRoundingAdjustments),
         totalCollected: round(totalCollected),
         commission: round(totalCommission),
       },
@@ -751,10 +756,11 @@ export async function GET(request: NextRequest) {
         cashIn: round(cashIn),
         cashOut: round(cashOut),
         tipsOut: round(cashTipsOut),
+        roundingAdjustments: round(totalRoundingAdjustments),
         // Tip shares - ALL go to payroll, house keeps the cash
         tipSharesIn: round(totalTipSharesDistributed),        // Cash IN: servers give ALL tip-outs to house
-        // Cash due = sales cash + ALL tip shares (house holds for payroll)
-        cashDue: round(cashDue + totalTipSharesDistributed),
+        // Cash due = sales cash + ALL tip shares (house holds for payroll) + rounding adjustments
+        cashDue: round(cashDue + totalTipSharesDistributed + totalRoundingAdjustments),
       },
 
       paidInOut: {

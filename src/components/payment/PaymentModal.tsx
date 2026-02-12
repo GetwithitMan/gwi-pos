@@ -171,10 +171,17 @@ export function PaymentModal({
     [pendingPayments]
   )
 
-  const remainingBeforeTip = useMemo(
-    () => effectiveOrderTotal - alreadyPaid - pendingTotal,
-    [effectiveOrderTotal, alreadyPaid, pendingTotal]
-  )
+  const remainingBeforeTip = useMemo(() => {
+    const raw = effectiveOrderTotal - alreadyPaid - pendingTotal
+    if (raw <= 0) return 0
+    // When price rounding is active, a tiny leftover (e.g., $0.04 from quarter rounding)
+    // is a rounding artifact — not a real balance. If it rounds to $0, treat as paid in full.
+    if (priceRounding?.enabled && priceRounding.applyToCash) {
+      const rounded = applyPriceRounding(raw, priceRounding, 'cash')
+      if (rounded <= 0) return 0
+    }
+    return raw
+  }, [effectiveOrderTotal, alreadyPaid, pendingTotal, priceRounding])
 
   // Apply dual pricing - card price is displayed, cash gets discount (memoized)
   const discountPercent = dualPricing.cashDiscountPercent || 4.0
@@ -196,6 +203,12 @@ export function PaymentModal({
   const currentTotal = useMemo(
     () => selectedMethod === 'cash' ? cashTotal : cardTotal,
     [selectedMethod, cashTotal, cardTotal]
+  )
+
+  // Rounding adjustment for display (e.g., $3.29 → $3.25 = -$0.04)
+  const cashRoundingAdjustment = useMemo(
+    () => Math.round((cashTotal - remainingBeforeTip) * 100) / 100,
+    [cashTotal, remainingBeforeTip]
   )
 
   const totalWithTip = useMemo(
@@ -338,7 +351,6 @@ export function PaymentModal({
       giftCardId: giftCardInfo.id,
       giftCardNumber: giftCardInfo.cardNumber,
     }
-    setPendingPayments([...pendingPayments, payment])
     processPayments([...pendingPayments, payment])
   }
 
@@ -351,7 +363,6 @@ export function PaymentModal({
       tipAmount,
       houseAccountId: selectedHouseAccount.id,
     }
-    setPendingPayments([...pendingPayments, payment])
     processPayments([...pendingPayments, payment])
   }
 
@@ -409,7 +420,8 @@ export function PaymentModal({
       tipAmount,
       amountTendered: cashTendered,
     }
-    setPendingPayments([...pendingPayments, payment])
+    // Don't add to pendingPayments yet — wait for API success
+    // (adding before API call corrupts totals if the call fails)
     processPayments([...pendingPayments, payment])
   }
 
@@ -437,7 +449,6 @@ export function PaymentModal({
       signatureData: result.signatureData,
       amountAuthorized: result.amountAuthorized,
     }
-    setPendingPayments([...pendingPayments, payment])
     processPayments([...pendingPayments, payment])
   }
 
@@ -489,6 +500,9 @@ export function PaymentModal({
 
       const result = await response.json()
 
+      // Payment succeeded — now update pending payments state
+      setPendingPayments(payments)
+
       if (result.orderStatus === 'paid') {
         onPaymentComplete()
       } else {
@@ -499,6 +513,9 @@ export function PaymentModal({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Payment failed')
+      // Reset cash state so user can retry
+      setCashComplete(false)
+      setCashTendered(0)
     } finally {
       setIsProcessing(false)
     }
@@ -649,9 +666,15 @@ export function PaymentModal({
                 <span>-{formatCurrency(pendingTotal)}</span>
               </div>
             )}
+            {selectedMethod === 'cash' && cashRoundingAdjustment !== 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#fbbf24', marginTop: 2 }}>
+                <span>Rounding</span>
+                <span>{cashRoundingAdjustment > 0 ? '+' : ''}{formatCurrency(cashRoundingAdjustment)}</span>
+              </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255, 255, 255, 0.08)', color: '#ffffff', fontSize: 18, fontFamily: 'ui-monospace, monospace' }}>
               <span>Remaining</span>
-              <span>{formatCurrency(remainingBeforeTip)}</span>
+              <span>{formatCurrency(selectedMethod === 'cash' ? currentTotal : remainingBeforeTip)}</span>
             </div>
           </div>
 

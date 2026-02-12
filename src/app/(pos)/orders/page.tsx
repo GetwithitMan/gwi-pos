@@ -236,6 +236,9 @@ export default function OrdersPage() {
   // Order that was just paid - triggers FloorPlanHome to clear its state
   const [paidOrderId, setPaidOrderId] = useState<string | null>(null)
 
+  // Floor plan refresh trigger - increment to force FloorPlanHome to refresh
+  const [floorPlanRefreshTrigger, setFloorPlanRefreshTrigger] = useState(0)
+
   // Split check modal state
   const [showSplitModal, setShowSplitModal] = useState(false)
   const [splitPaymentAmount, setSplitPaymentAmount] = useState<number | null>(null)
@@ -893,28 +896,25 @@ export default function OrdersPage() {
       // After hook completes, get the order ID for printing/cleanup
       const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId
       if (orderId) {
-        // Print kitchen ticket (only prints non-held items)
-        await printKitchenTicket(orderId)
-
         const orderNum = orderId.slice(-6).toUpperCase()
 
-        // Clear the order so user can start the next one
+        // Clear UI IMMEDIATELY — don't block on print
         clearOrder()
         setSavedOrderId(null)
         setOrderSent(false)
         setSelectedOrderType(null)
         setOrderCustomFields({})
-
-        // Refresh the open orders panel and count
         setTabsRefreshTrigger(prev => prev + 1)
+        setFloorPlanRefreshTrigger(prev => prev + 1)
+        toast.success(`Order #${orderNum} sent to kitchen`)
 
         // Return to floor plan (if not bartender)
         if (!isBartender) {
           setViewMode('floor-plan')
         }
 
-        // Show confirmation
-        toast.success(`Order #${orderNum} sent to kitchen`)
+        // Print kitchen ticket in background (fire-and-forget)
+        printKitchenTicket(orderId).catch(() => {})
       }
     } finally {
       setIsSendingOrder(false)
@@ -1155,7 +1155,7 @@ export default function OrdersPage() {
       clearOrder()
       setSavedOrderId(null)
     } else if (result.type === 'by_table' && result.tableSplits) {
-      // Split by table - multiple checks created (for virtual combined tables)
+      // Split by table - multiple checks created
       const tableCount = result.tableSplits.length
       const tableNames = result.tableSplits.map(s => s.tableName).join(', ')
       toast.success(`${tableCount} separate checks created (one per table: ${tableNames})`)
@@ -1346,6 +1346,7 @@ export default function OrdersPage() {
   const handleCompVoidComplete = async (result: {
     action: 'comp' | 'void' | 'restore'
     item?: { id: string }
+    orderAutoClosed?: boolean
     orderTotals: {
       subtotal: number
       discountTotal: number
@@ -1357,7 +1358,24 @@ export default function OrdersPage() {
     setTabsRefreshTrigger(prev => prev + 1)
     setShowCompVoidModal(false)
 
-    // Reload full order from API so voided/comped items show updated status
+    // If all items were voided/comped and order was auto-closed, clear it
+    if (result.orderAutoClosed) {
+      clearOrder()
+      setSavedOrderId(null)
+      setCompVoidItem(null)
+      return
+    }
+
+    // Immediately update totals from comp-void response (prevents stale total in PaymentModal)
+    const { syncServerTotals } = useOrderStore.getState()
+    syncServerTotals(result.orderTotals)
+
+    // Also update the item status in the store for instant UI feedback
+    if (result.item?.id && result.action !== 'restore') {
+      updateItem(result.item.id, { status: result.action === 'void' ? 'voided' : 'comped' })
+    }
+
+    // Reload full order from API so voided/comped items show complete updated status
     const orderId = savedOrderId || orderToPayId
     if (orderId) {
       try {
@@ -2767,6 +2785,7 @@ export default function OrdersPage() {
             paidOrderId={paidOrderId}
             onPaidOrderCleared={() => setPaidOrderId(null)}
             onRegisterDeselectTable={(fn) => { floorPlanDeselectTableRef.current = fn }}
+            refreshTrigger={floorPlanRefreshTrigger}
           >
             {sharedOrderPanel}
           </FloorPlanHome>
@@ -3089,6 +3108,7 @@ export default function OrdersPage() {
               setSelectedOrderType(null)
               setOrderCustomFields({})
               setTabsRefreshTrigger(prev => prev + 1)
+              setFloorPlanRefreshTrigger(prev => prev + 1)
             }}
             employeeId={employee?.id}
             terminalId="terminal-1"

@@ -218,10 +218,14 @@ export async function POST(
     // Recalculate order totals using centralized tax engine
     const totals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
 
-    // Update order totals
+    // If all items are voided/comped (total is $0 with no active items), auto-close the order
+    const shouldAutoClose = activeItems.length === 0
     await db.order.update({
       where: { id: orderId },
-      data: totals,
+      data: {
+        ...totals,
+        ...(shouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
+      },
     })
 
     // Dispatch real-time updates (fire-and-forget)
@@ -245,6 +249,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       action,
+      orderAutoClosed: shouldAutoClose,
       item: {
         id: item.id,
         name: item.name,
