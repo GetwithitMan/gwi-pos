@@ -143,8 +143,8 @@ export function PrepItemEditor({
     return OUTPUT_UNITS
   }, [parent?.standardUnit])
 
-  // Use derived yield from hook if available, otherwise calculate locally
-  const derivedYield = hookDerivedYield !== null ? hookDerivedYield : useMemo(() => {
+  // Calculate local yield (always called — hooks must not be conditional)
+  const localDerivedYield = useMemo(() => {
     const inputQty = parseFloat(formData.inputQuantity) || 0
     const outputQty = parseFloat(formData.outputQuantity) || 0
 
@@ -152,6 +152,9 @@ export function PrepItemEditor({
 
     return calculateYield(inputQty, formData.inputUnit, outputQty, formData.outputUnit)
   }, [formData.inputQuantity, formData.inputUnit, formData.outputQuantity, formData.outputUnit])
+
+  // Use derived yield from hook if available, otherwise use local calculation
+  const derivedYield = hookDerivedYield !== null ? hookDerivedYield : localDerivedYield
 
   // Validation
   useEffect(() => {
