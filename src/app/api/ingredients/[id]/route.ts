@@ -107,6 +107,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         batchYield: ingredient.batchYield ? Number(ingredient.batchYield) : null,
         portionSize: ingredient.portionSize ? Number(ingredient.portionSize) : null,
         portionUnit: ingredient.portionUnit,
+        // Input/Output transformation
+        inputQuantity: ingredient.inputQuantity ? Number(ingredient.inputQuantity) : null,
+        inputUnit: ingredient.inputUnit || null,
+        outputQuantity: ingredient.outputQuantity ? Number(ingredient.outputQuantity) : null,
+        outputUnit: ingredient.outputUnit || null,
+        // Source type
+        sourceType: ingredient.sourceType || 'delivered',
+        showOnQuick86: ingredient.showOnQuick86 || false,
         currentPrepStock: ingredient.currentPrepStock ? Number(ingredient.currentPrepStock) : 0,
         lowStockThreshold: ingredient.lowStockThreshold ? Number(ingredient.lowStockThreshold) : null,
         criticalStockThreshold: ingredient.criticalStockThreshold ? Number(ingredient.criticalStockThreshold) : null,
@@ -393,6 +401,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         batchYield: ingredient.batchYield ? Number(ingredient.batchYield) : null,
         portionSize: ingredient.portionSize ? Number(ingredient.portionSize) : null,
         portionUnit: ingredient.portionUnit,
+        // Input/Output transformation
+        inputQuantity: ingredient.inputQuantity ? Number(ingredient.inputQuantity) : null,
+        inputUnit: ingredient.inputUnit || null,
+        outputQuantity: ingredient.outputQuantity ? Number(ingredient.outputQuantity) : null,
+        outputUnit: ingredient.outputUnit || null,
+        // Source type
+        sourceType: ingredient.sourceType || 'delivered',
+        showOnQuick86: ingredient.showOnQuick86 || false,
         currentPrepStock: ingredient.currentPrepStock ? Number(ingredient.currentPrepStock) : 0,
         lowStockThreshold: ingredient.lowStockThreshold ? Number(ingredient.lowStockThreshold) : null,
         criticalStockThreshold: ingredient.criticalStockThreshold ? Number(ingredient.criticalStockThreshold) : null,

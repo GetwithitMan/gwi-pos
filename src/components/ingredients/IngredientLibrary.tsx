@@ -109,6 +109,15 @@ export interface Ingredient {
 
   // Linked modifier count (from Modifier.ingredientId)
   linkedModifierCount?: number
+
+  // Source type: delivered vs made in-house
+  sourceType?: string
+
+  // Purchase info (for delivered items)
+  purchaseUnit?: string | null
+  purchaseCost?: number | null
+  unitsPerPurchase?: number | null
+  showOnQuick86?: boolean
 }
 
 interface IngredientLibraryProps {
@@ -367,16 +376,64 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
     }
   }
 
-  const handleDeleteCategory = async (category: IngredientCategory) => {
-    if (!confirm(`Are you sure you want to delete "${category.name}"?`)) return
+  // Delete category state
+  const [deletingCategory, setDeletingCategory] = useState<IngredientCategory | null>(null)
+  const [deleteCategoryInfo, setDeleteCategoryInfo] = useState<{ ingredientCount: number; childCount: number; totalCount: number } | null>(null)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
+  const handleDeleteCategory = async (category: IngredientCategory) => {
+    // First, probe the API to check if items exist
     try {
       const response = await fetch(`/api/ingredient-categories/${category.id}`, {
         method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
       })
 
       if (response.ok) {
-        await loadCategories()
+        // No items — deleted directly
+        toast.success(`Category "${category.name}" deleted`)
+        await Promise.all([loadCategories(), loadIngredients(), loadDeletedIngredients()])
+        return
+      }
+
+      const data = await response.json()
+      if (data.requiresConfirmation) {
+        // Has items — show confirmation modal
+        setDeletingCategory(category)
+        setDeleteCategoryInfo({
+          ingredientCount: data.ingredientCount,
+          childCount: data.childCount,
+          totalCount: data.totalCount,
+        })
+        setDeleteConfirmText('')
+      } else {
+        toast.error(data.error || 'Failed to delete category')
+      }
+    } catch (error) {
+      console.error('Failed to delete category:', error)
+      toast.error('Failed to delete category')
+    }
+  }
+
+  const handleConfirmDeleteCategory = async () => {
+    if (!deletingCategory || deleteConfirmText !== 'DELETE') return
+    setDeleteLoading(true)
+    try {
+      const response = await fetch(`/api/ingredient-categories/${deletingCategory.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmDelete: 'DELETE' }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        toast.success(data.data?.message || `Category "${deletingCategory.name}" deleted`)
+        setDeletingCategory(null)
+        setDeleteCategoryInfo(null)
+        setDeleteConfirmText('')
+        await Promise.all([loadCategories(), loadIngredients(), loadDeletedIngredients()])
       } else {
         const errorData = await response.json()
         toast.error(errorData.error || 'Failed to delete category')
@@ -384,6 +441,8 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
     } catch (error) {
       console.error('Failed to delete category:', error)
       toast.error('Failed to delete category')
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
@@ -792,6 +851,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
           onToggleActive={handleToggleActive}
           onVerify={handleVerifyIngredient}
           onEditCategory={(cat) => handleEditCategory(cat as IngredientCategory)}
+          onDeleteCategory={(cat) => handleDeleteCategory(cat as IngredientCategory)}
         />
       ) : (
         /* Flat List View */
@@ -1274,6 +1334,73 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
           onSave={handleSavePreparation}
           onClose={() => { setShowPreparationModal(false); setPreparationParent(null) }}
         />
+      )}
+
+      {/* Delete Category Confirmation Modal */}
+      {deletingCategory && deleteCategoryInfo && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            <div className="p-6 border-b bg-red-50">
+              <h2 className="text-xl font-bold text-red-800">
+                Delete &ldquo;{deletingCategory.name}&rdquo;?
+              </h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                <p className="font-semibold text-amber-900 mb-2">
+                  This category contains:
+                </p>
+                <ul className="text-sm text-amber-800 space-y-1">
+                  {deleteCategoryInfo.ingredientCount > 0 && (
+                    <li>
+                      {deleteCategoryInfo.ingredientCount} inventory item{deleteCategoryInfo.ingredientCount !== 1 ? 's' : ''}
+                    </li>
+                  )}
+                  {deleteCategoryInfo.childCount > 0 && (
+                    <li>
+                      {deleteCategoryInfo.childCount} prep item{deleteCategoryInfo.childCount !== 1 ? 's' : ''}
+                    </li>
+                  )}
+                </ul>
+                <p className="text-sm text-red-700 font-medium mt-3">
+                  All {deleteCategoryInfo.totalCount} item{deleteCategoryInfo.totalCount !== 1 ? 's' : ''} will be moved to the Deleted section.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Type <span className="font-bold text-red-600">DELETE</span> to confirm
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  className="w-full px-3 py-2 border-2 border-red-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                  placeholder="Type DELETE here"
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDeletingCategory(null)
+                    setDeleteCategoryInfo(null)
+                    setDeleteConfirmText('')
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleConfirmDeleteCategory}
+                  disabled={deleteConfirmText !== 'DELETE' || deleteLoading}
+                  className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                >
+                  {deleteLoading ? 'Deleting...' : `Delete Category + ${deleteCategoryInfo.totalCount} Item${deleteCategoryInfo.totalCount !== 1 ? 's' : ''}`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

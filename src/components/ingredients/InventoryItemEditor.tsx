@@ -49,18 +49,18 @@ export function InventoryItemEditor({
     name: ingredient?.name || '',
     description: ingredient?.description || '',
     categoryId: ingredient?.categoryId || '',
-    // Source type: delivered vs made
-    sourceType: (ingredient as any)?.sourceType || 'delivered',
+    // Source type: delivered vs made (persist selection)
+    sourceType: ingredient?.sourceType || 'delivered',
     // Purchase info (for delivered items)
-    purchaseUnit: (ingredient as any)?.purchaseUnit || 'case',
-    purchaseCost: (ingredient as any)?.purchaseCost?.toString() || '',
-    unitsPerPurchase: (ingredient as any)?.unitsPerPurchase?.toString() || '',
+    purchaseUnit: ingredient?.purchaseUnit || 'case',
+    purchaseCost: ingredient?.purchaseCost?.toString() || '',
+    unitsPerPurchase: ingredient?.unitsPerPurchase?.toString() || '',
     // Storage unit (what you count/use)
     standardQuantity: ingredient?.standardQuantity?.toString() || '',  // Deprecated - use unitsPerPurchase
     standardUnit: ingredient?.standardUnit || 'lb',
     // Recipe batch yield (for items made from recipes)
-    recipeYieldQuantity: (ingredient as any)?.recipeYieldQuantity?.toString() || '',
-    recipeYieldUnit: (ingredient as any)?.recipeYieldUnit || 'lb',
+    recipeYieldQuantity: ingredient?.recipeYieldQuantity?.toString() || '',
+    recipeYieldUnit: ingredient?.recipeYieldUnit || 'lb',
     // Inventory link
     inventoryLinkType: ingredient?.inventoryItemId ? 'inventory' : ingredient?.prepItemId ? 'prep' : 'none' as 'none' | 'inventory' | 'prep',
     inventoryItemId: ingredient?.inventoryItemId || '',
@@ -69,7 +69,7 @@ export function InventoryItemEditor({
     visibility: ingredient?.visibility || 'visible',
     isActive: ingredient?.isActive ?? true,
     // Quick 86
-    showOnQuick86: (ingredient as any)?.showOnQuick86 || false,
+    showOnQuick86: ingredient?.showOnQuick86 || false,
   })
 
   // Recipe state
@@ -91,12 +91,15 @@ export function InventoryItemEditor({
   // Load recipe components when editing
   useEffect(() => {
     if (ingredient) {
-      // Load recipe components
+      // Load recipe components — if any exist, auto-set sourceType to "made"
       fetch(`/api/ingredients/${ingredient.id}/recipe`)
         .then(res => res.json())
         .then(data => {
           if (data.data) {
             setRecipeComponents(data.data)
+            if (data.data.length > 0 && ingredient.sourceType !== 'made') {
+              setFormData(prev => ({ ...prev, sourceType: 'made' }))
+            }
           }
         })
         .catch(err => console.error('Failed to load recipe:', err))
@@ -456,9 +459,45 @@ export function InventoryItemEditor({
             <h3 className="font-bold text-orange-900 text-lg">
               Recipe - What makes this item?
             </h3>
-            <p className="text-sm text-orange-800">
-              Add the ingredients that make up this item. The cost will be calculated automatically from the recipe.
-            </p>
+
+            {/* Recipe cost summary — always visible at top when recipe has components */}
+            {recipeComponents.length > 0 && recipeTotalCost !== null ? (
+              recipeTotalCost > 0 ? (
+                <div className="p-4 bg-green-100 rounded-xl border-2 border-green-400 space-y-1">
+                  <div className="text-green-900 font-bold text-xl">
+                    This recipe costs ${recipeTotalCost.toFixed(2)} to make
+                  </div>
+                  {previewCostPerUnit !== null && formData.recipeYieldQuantity && (
+                    <div className="text-green-800 text-sm">
+                      ${previewCostPerUnit.toFixed(4)} per {formData.recipeYieldUnit}
+                      {formData.recipeYieldUnit === 'lb' && (
+                        <span className="ml-2 text-green-700">
+                          (${(previewCostPerUnit / 16).toFixed(4)}/oz)
+                        </span>
+                      )}
+                      {formData.recipeYieldUnit === 'gallons' && (
+                        <span className="ml-2 text-green-700">
+                          (${(previewCostPerUnit / 128).toFixed(4)}/oz)
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 bg-yellow-100 rounded-xl border-2 border-yellow-400 space-y-1">
+                  <div className="text-yellow-900 font-bold text-lg">
+                    Recipe cost: $0.00
+                  </div>
+                  <div className="text-yellow-800 text-sm">
+                    Add purchase costs to your ingredients (Flour, Yeast, etc.) to calculate the recipe cost automatically.
+                  </div>
+                </div>
+              )
+            ) : (
+              <p className="text-sm text-orange-800">
+                Add the ingredients that make up this item. The cost will be calculated automatically from the recipe.
+              </p>
+            )}
 
               {/* Current recipe components */}
               {recipeComponents.length > 0 && (
@@ -690,37 +729,18 @@ export function InventoryItemEditor({
                         </optgroup>
                       ))}
                     </select>
+                    {/* Inline cost per unit next to yield */}
+                    {recipeTotalCost !== null && recipeTotalCost > 0 && previewCostPerUnit !== null && formData.recipeYieldQuantity && (
+                      <span className="text-green-700 font-bold text-sm bg-green-100 px-3 py-2 rounded-lg border border-green-300">
+                        = ${previewCostPerUnit.toFixed(4)}/{formData.recipeYieldUnit}
+                      </span>
+                    )}
+                    {recipeTotalCost !== null && recipeTotalCost === 0 && recipeComponents.length > 0 && (
+                      <span className="text-yellow-700 font-medium text-sm bg-yellow-100 px-3 py-2 rounded-lg border border-yellow-300">
+                        Add costs to ingredients
+                      </span>
+                    )}
                   </div>
-
-                  {/* Cost breakdown */}
-                  {recipeTotalCost !== null && recipeTotalCost > 0 && (
-                    <div className="p-4 bg-green-100 rounded-lg border border-green-300 mt-2 space-y-2">
-                      <div className="text-green-800 font-bold text-lg">
-                        💰 Recipe cost: ${recipeTotalCost.toFixed(2)}
-                      </div>
-                      {previewCostPerUnit !== null && formData.recipeYieldQuantity && (
-                        <>
-                          <div className="text-green-800">
-                            Cost per {formData.recipeYieldUnit}: <strong>${previewCostPerUnit.toFixed(4)}</strong>
-                          </div>
-                          {/* Show cost per oz if yield is in lb */}
-                          {formData.recipeYieldUnit === 'lb' && (
-                            <div className="text-green-700 text-sm">
-                              Cost per oz: <strong>${(previewCostPerUnit / 16).toFixed(4)}</strong>
-                              <span className="text-green-600 ml-2">(for prep item costing)</span>
-                            </div>
-                          )}
-                          {/* Show cost per oz if yield is in gallons */}
-                          {formData.recipeYieldUnit === 'gallons' && (
-                            <div className="text-green-700 text-sm">
-                              Cost per oz: <strong>${(previewCostPerUnit / 128).toFixed(4)}</strong>
-                              <span className="text-green-600 ml-2">(for prep item costing)</span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  )}
 
                   {/* Hint about prep items */}
                   <p className="text-xs text-gray-500 mt-2">

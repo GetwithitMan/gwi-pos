@@ -637,6 +637,7 @@ interface GroupedHierarchyProps {
   onToggleActive: (ingredient: Ingredient) => void
   onVerify?: (ingredient: Ingredient) => void
   onEditCategory?: (category: { id: string; name: string }) => void
+  onDeleteCategory?: (category: { id: string; name: string }) => void
 }
 
 // Zoom levels with corresponding scale
@@ -660,6 +661,7 @@ export function GroupedIngredientHierarchy({
   onToggleActive,
   onVerify,
   onEditCategory,
+  onDeleteCategory,
 }: GroupedHierarchyProps) {
   // Zoom state - default to Medium (index 2)
   const [zoomIndex, setZoomIndex] = useState(2)
@@ -736,6 +738,7 @@ export function GroupedIngredientHierarchy({
               onToggleActive={onToggleActive}
               onVerify={onVerify}
               onEditCategory={onEditCategory}
+              onDeleteCategory={onDeleteCategory}
             />
           )
         })}
@@ -785,6 +788,7 @@ interface CategoryHierarchySectionProps {
   onToggleActive: (ingredient: Ingredient) => void
   onVerify?: (ingredient: Ingredient) => void
   onEditCategory?: (category: { id: string; name: string }) => void
+  onDeleteCategory?: (category: { id: string; name: string }) => void
 }
 
 function CategoryHierarchySection({
@@ -799,6 +803,7 @@ function CategoryHierarchySection({
   onToggleActive,
   onVerify,
   onEditCategory,
+  onDeleteCategory,
 }: CategoryHierarchySectionProps) {
   // Default to collapsed - less overwhelming when opening the page
   const [isExpanded, setIsExpanded] = useState(false)
@@ -886,6 +891,19 @@ function CategoryHierarchySection({
               className="h-6 px-2 text-xs"
             >
               Edit
+            </Button>
+          )}
+          {onDeleteCategory && category.id !== 'uncategorized' && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDeleteCategory(category)
+              }}
+              className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+            >
+              Delete
             </Button>
           )}
           <span className="text-gray-400 text-sm">

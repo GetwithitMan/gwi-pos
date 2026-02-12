@@ -122,19 +122,33 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/ingredient-categories/[id] - Soft delete a category
-// Only allowed if no active ingredients
+// If category has items, requires confirmDelete: "DELETE" in body to cascade soft-delete them
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
-    // Check if category exists
+    // Parse optional body for confirmation
+    let confirmDelete = ''
+    try {
+      const body = await request.json()
+      confirmDelete = body.confirmDelete || ''
+    } catch {
+      // No body = no confirmation (fine for empty categories)
+    }
+
+    // Check if category exists and count its ingredients (including children)
     const existing = await db.ingredientCategory.findUnique({
       where: { id },
       include: {
-        _count: {
+        ingredients: {
+          where: { deletedAt: null },
           select: {
-            ingredients: {
-              where: { deletedAt: null, isActive: true },
+            id: true,
+            name: true,
+            parentIngredientId: true,
+            childIngredients: {
+              where: { deletedAt: null },
+              select: { id: true, name: true },
             },
           },
         },
@@ -144,21 +158,62 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: 'Category not found' }, { status: 404 })
     }
 
-    // Check if category has active ingredients
-    if (existing._count.ingredients > 0) {
-      return NextResponse.json(
-        { error: `Cannot delete category with ${existing._count.ingredients} active ingredients. Deactivate or reassign them first.` },
-        { status: 400 }
-      )
+    const ingredientCount = existing.ingredients.length
+    const childCount = existing.ingredients.reduce(
+      (sum, ing) => sum + (ing.childIngredients?.length || 0), 0
+    )
+    const totalCount = ingredientCount + childCount
+
+    // If category has items, require typed confirmation
+    if (totalCount > 0 && confirmDelete !== 'DELETE') {
+      return NextResponse.json({
+        error: `Category "${existing.name}" has ${ingredientCount} inventory item${ingredientCount !== 1 ? 's' : ''} and ${childCount} prep item${childCount !== 1 ? 's' : ''}. Type DELETE to confirm.`,
+        ingredientCount,
+        childCount,
+        totalCount,
+        requiresConfirmation: true,
+      }, { status: 400 })
     }
 
-    // Soft delete
+    const now = new Date()
+
+    // If items exist and confirmed, cascade soft-delete all ingredients + children
+    if (totalCount > 0) {
+      const allIngredientIds = existing.ingredients.map(i => i.id)
+      const allChildIds = existing.ingredients.flatMap(
+        i => (i.childIngredients || []).map(c => c.id)
+      )
+
+      // Soft-delete children first, then parents
+      if (allChildIds.length > 0) {
+        await db.ingredient.updateMany({
+          where: { id: { in: allChildIds } },
+          data: { deletedAt: now },
+        })
+      }
+      if (allIngredientIds.length > 0) {
+        await db.ingredient.updateMany({
+          where: { id: { in: allIngredientIds } },
+          data: { deletedAt: now },
+        })
+      }
+    }
+
+    // Soft delete the category itself
     await db.ingredientCategory.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: { deletedAt: now },
     })
 
-    return NextResponse.json({ data: { message: 'Category deleted' } })
+    return NextResponse.json({
+      data: {
+        message: totalCount > 0
+          ? `Category "${existing.name}" deleted with ${totalCount} item${totalCount !== 1 ? 's' : ''}`
+          : `Category "${existing.name}" deleted`,
+        deletedIngredients: ingredientCount,
+        deletedChildren: childCount,
+      },
+    })
   } catch (error) {
     console.error('Error deleting ingredient category:', error)
     return NextResponse.json({ error: 'Failed to delete ingredient category' }, { status: 500 })

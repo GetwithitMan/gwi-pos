@@ -128,6 +128,16 @@ export async function GET(request: NextRequest) {
                   onlineStockThreshold: true,
                   parentIngredientId: true,
                   needsVerification: true,
+                  // Input/Output transformation
+                  inputQuantity: true,
+                  inputUnit: true,
+                  outputQuantity: true,
+                  outputUnit: true,
+                  sourceType: true,
+                  purchaseCost: true,
+                  unitsPerPurchase: true,
+                  purchaseUnit: true,
+                  showOnQuick86: true,
                 },
               },
             },
@@ -172,6 +182,17 @@ export async function GET(request: NextRequest) {
       lowStockThreshold: child.lowStockThreshold ? Number(child.lowStockThreshold) : null,
       criticalStockThreshold: child.criticalStockThreshold ? Number(child.criticalStockThreshold) : null,
       onlineStockThreshold: child.onlineStockThreshold ? Number(child.onlineStockThreshold) : null,
+      // Source type
+      sourceType: child.sourceType || 'delivered',
+      // Input/Output transformation (for prep items)
+      inputQuantity: child.inputQuantity ? Number(child.inputQuantity) : null,
+      inputUnit: child.inputUnit || null,
+      outputQuantity: child.outputQuantity ? Number(child.outputQuantity) : null,
+      outputUnit: child.outputUnit || null,
+      // Purchase info
+      purchaseCost: child.purchaseCost ? Number(child.purchaseCost) : null,
+      unitsPerPurchase: child.unitsPerPurchase ? Number(child.unitsPerPurchase) : null,
+      purchaseUnit: child.purchaseUnit || null,
       inventoryItem: child.inventoryItem,
       prepItem: child.prepItem,
       // Critical: include parent info so modal knows this is a prep item
@@ -229,6 +250,21 @@ export async function GET(request: NextRequest) {
       isBaseIngredient: ing.isBaseIngredient,
       isDailyCountItem: ing.isDailyCountItem || false,
       countPrecision: ing.countPrecision || 'whole',
+      // Source type
+      sourceType: ing.sourceType || 'delivered',
+      // Input/Output transformation
+      inputQuantity: ing.inputQuantity ? Number(ing.inputQuantity) : null,
+      inputUnit: ing.inputUnit || null,
+      outputQuantity: ing.outputQuantity ? Number(ing.outputQuantity) : null,
+      outputUnit: ing.outputUnit || null,
+      // Purchase info
+      purchaseCost: ing.purchaseCost ? Number(ing.purchaseCost) : null,
+      unitsPerPurchase: ing.unitsPerPurchase ? Number(ing.unitsPerPurchase) : null,
+      purchaseUnit: ing.purchaseUnit || null,
+      // Recipe yield
+      recipeYieldQuantity: ing.recipeYieldQuantity ? Number(ing.recipeYieldQuantity) : null,
+      recipeYieldUnit: ing.recipeYieldUnit || null,
+      showOnQuick86: ing.showOnQuick86 || false,
       childIngredients: (ing as any).childIngredients?.map((c: any) => formatChildIngredient(c, ing)) || [],
       childCount: ing._count.childIngredients,
       createdAt: ing.createdAt,

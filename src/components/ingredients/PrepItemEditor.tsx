@@ -60,27 +60,27 @@ export function PrepItemEditor({
     description: ingredient?.description || '',
     categoryId: ingredient?.categoryId || '',
     // Explicit Input → Output model
-    inputQuantity: (ingredient as any)?.inputQuantity?.toString() ||
-                   (ingredient as any)?.portionSize?.toString() || '', // Fallback to legacy
-    inputUnit: (ingredient as any)?.inputUnit ||
-               (ingredient as any)?.portionUnit || 'oz',
-    outputQuantity: (ingredient as any)?.outputQuantity?.toString() || '1',
-    outputUnit: (ingredient as any)?.outputUnit || 'each',
+    inputQuantity: ingredient?.inputQuantity?.toString() ||
+                   ingredient?.portionSize?.toString() || '', // Fallback to legacy
+    inputUnit: ingredient?.inputUnit ||
+               ingredient?.portionUnit || 'oz',
+    outputQuantity: ingredient?.outputQuantity?.toString() || '1',
+    outputUnit: ingredient?.outputUnit || 'each',
     // Yield
     yieldPercent: ingredient?.yieldPercent
       ? (Number(ingredient.yieldPercent) * 100).toString()
       : '100',
     yieldMode: 'manual' as 'auto' | 'manual', // 'auto' calculates from input/output
     // Daily count settings
-    isDailyCountItem: (ingredient as any)?.isDailyCountItem || false,
-    countPrecision: (ingredient as any)?.countPrecision || 'whole',
-    lowStockThreshold: (ingredient as any)?.lowStockThreshold?.toString() || '',
-    criticalStockThreshold: (ingredient as any)?.criticalStockThreshold?.toString() || '',
+    isDailyCountItem: ingredient?.isDailyCountItem || false,
+    countPrecision: ingredient?.countPrecision || 'whole',
+    lowStockThreshold: ingredient?.lowStockThreshold?.toString() || '',
+    criticalStockThreshold: ingredient?.criticalStockThreshold?.toString() || '',
     // Visibility
     visibility: ingredient?.visibility || 'visible',
     isActive: ingredient?.isActive ?? true,
     // Quick 86
-    showOnQuick86: (ingredient as any)?.showOnQuick86 || false,
+    showOnQuick86: ingredient?.showOnQuick86 || false,
   })
 
   // Validation state
@@ -430,7 +430,7 @@ export function PrepItemEditor({
           )}
 
           {/* Cost Preview */}
-          {previewCost !== null && (
+          {previewCost !== null ? (
             <div className="text-sm text-green-800 bg-white px-3 py-2 rounded-lg border border-green-200">
               <span className="font-semibold">Estimated cost:</span>{' '}
               <span className="text-lg font-bold">${previewCost.toFixed(2)}</span>{' '}
@@ -441,7 +441,14 @@ export function PrepItemEditor({
                 </span>
               )}
             </div>
-          )}
+          ) : selectedParentId && formData.inputQuantity && !costLoading ? (
+            <div className="text-sm text-amber-800 bg-amber-50 px-3 py-2 rounded-lg border border-amber-300">
+              <span className="font-semibold">Cost unavailable</span>
+              <span className="text-amber-600 ml-1">
+                — Add purchase costs to {parentName}&apos;s recipe ingredients to calculate cost automatically
+              </span>
+            </div>
+          ) : null}
         </div>
 
         {/* ========== Yield % (Cooking/Prep Loss) ========== */}

@@ -105,6 +105,16 @@ export function CategorySection({
               Edit
             </Button>
           )}
+          {onDeleteCategory && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); onDeleteCategory() }}
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+            >
+              Delete
+            </Button>
+          )}
           <span className="text-gray-400 text-xl">
             {isExpanded ? '▼' : '▶'}
           </span>
