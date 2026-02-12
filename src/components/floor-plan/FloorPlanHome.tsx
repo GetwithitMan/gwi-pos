@@ -999,6 +999,25 @@ export function FloorPlanHome({
             reopenedAt: data.reopenedAt,
             reopenReason: data.reopenReason,
           })
+
+          // Restore extra seats: if order items use higher seat numbers than the
+          // table's physical seats, grow the seat strip to include them
+          const maxSeatInItems = (data.items || []).reduce(
+            (max: number, item: { seatNumber?: number | null }) =>
+              Math.max(max, item.seatNumber || 0),
+            0
+          )
+          const orderSeatCount = Math.max(
+            maxSeatInItems,
+            data.baseSeatCount ? (data.baseSeatCount + (data.extraSeatCount || 0)) : 0
+          )
+          if (orderSeatCount > totalSeats) {
+            setExtraSeats(prev => {
+              const next = new Map(prev)
+              next.set(primaryTable.id, orderSeatCount - totalSeats)
+              return next
+            })
+          }
         }
       } catch (error) {
         console.error('[FloorPlanHome] Failed to load order:', error)
@@ -1168,12 +1187,13 @@ export function FloorPlanHome({
         const result = await response.json()
         toast.success(`Seat ${result.position} added`)
 
-        // Refresh the order to get updated seat count
-        const orderResponse = await fetch(`/api/orders/${activeOrderId}`)
-        if (orderResponse.ok) {
-          // Force a refresh by updating the state
-          setRefreshKey(prev => prev + 1)
-        }
+        // Update extraSeats so the seat strip UI shows the new seat immediately
+        setExtraSeats(prev => {
+          const next = new Map(prev)
+          const current = next.get(targetTableId) || 0
+          next.set(targetTableId, current + 1)
+          return next
+        })
       } catch (err) {
         console.error('[FloorPlanHome] Failed to add seat:', err)
         toast.error(err instanceof Error ? err.message : 'Failed to add seat')

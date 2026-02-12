@@ -40,6 +40,8 @@ type NewItem = {
     }
   }[]
   specialNotes?: string
+  seatNumber?: number | null
+  courseNumber?: number | null
   isHeld?: boolean
   delayMinutes?: number | null
   // Pizza configuration
@@ -193,6 +195,8 @@ export async function POST(
             itemTotal: fullItemTotal,
             commissionAmount: itemCommission,
             specialNotes: item.specialNotes || null,
+            seatNumber: item.seatNumber || null,
+            courseNumber: item.courseNumber || null,
             isHeld: item.isHeld || false,
             delayMinutes: item.delayMinutes || null,
             // Entertainment/timed rental fields

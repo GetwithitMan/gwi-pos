@@ -222,10 +222,11 @@ export async function POST(
       const seatTimestamps = (order.seatTimestamps as SeatTimestamps) || {}
 
       if (action === 'INSERT') {
-        // Validate position for insert (can insert at end + 1)
-        if (position > currentTotalSeats + 1) {
-          throw new Error(`Cannot insert at position ${position}. Current seats: ${currentTotalSeats}`)
-        }
+        // Allow inserting beyond the order's tracked seat count.
+        // The table may have more physical seats than the order was created with
+        // (e.g., table has 8 seats but order was started with guestCount 4).
+        // We grow extraSeatCount to cover the gap.
+        const seatsToAdd = Math.max(1, position - currentTotalSeats)
 
         // Shift all items with seatNumber >= position up by 1
         const itemsToShift = order.items.filter(
@@ -257,12 +258,14 @@ export async function POST(
         // Add timestamp for new seat
         newTimestamps[position.toString()] = new Date().toISOString()
 
+        const newTotalSeats = currentTotalSeats + seatsToAdd
+
         // Update order
         const updatedOrder = await tx.order.update({
           where: { id: orderId },
           data: {
-            extraSeatCount: order.extraSeatCount + 1,
-            guestCount: currentTotalSeats + 1,
+            extraSeatCount: order.extraSeatCount + seatsToAdd,
+            guestCount: newTotalSeats,
             seatVersion: order.seatVersion + 1,
             seatTimestamps: newTimestamps,
           },
@@ -271,7 +274,7 @@ export async function POST(
         return {
           action: 'INSERT',
           position,
-          newTotalSeats: currentTotalSeats + 1,
+          newTotalSeats,
           seatVersion: updatedOrder.seatVersion,
           itemsShifted: itemsToShift.length,
         }
