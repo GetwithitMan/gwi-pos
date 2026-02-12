@@ -1,5 +1,31 @@
 # Floor Plan Domain - Change Log
 
+## Session: February 11, 2026 — Complete Combine Removal (Skill 326)
+
+### Summary
+Removed ALL combine functionality (both physical and virtual) from the entire codebase. Tables are now standalone — no combining, no grouping, no perimeter seats.
+
+### What Changed
+- **8 API route directories deleted** (virtual-combine/*, combine, virtual-group, bulk-operations, reflow — all return 410 Gone)
+- **5 components deleted** (VirtualCombineBar, VirtualGroupManagerModal, ExistingOrdersModal, ManagerGroupDashboard, GroupSummary)
+- **14 domain files deleted** (entire `groups/` directory, group-service, useTableGroups, virtual-group helpers)
+- **5 scripts deleted** (backfill-virtual-group-colors, test-perimeter-*)
+- **~40 files cleaned** of combine references (FloorPlanHome, TableNode, table-geometry, etc.)
+
+### Impact
+- 116 files changed, -16,211 lines, +643 lines
+- `table-geometry.ts` reduced from 1,014 to ~350 lines
+- `FloorPlanHome.tsx` lost ~1,200 lines of combine logic
+- Zero TypeScript errors
+
+### DB Note
+`combinedWithId` / `combinedTableIds` columns remain in schema (always null). Not worth a migration.
+
+### Skill Doc
+`docs/skills/326-COMBINE-REMOVAL.md`
+
+---
+
 ## Session: February 7, 2026 - Pre-Deployment Audit & Critical Fixes
 
 ### 🚨 DEPLOYMENT READINESS REVIEW

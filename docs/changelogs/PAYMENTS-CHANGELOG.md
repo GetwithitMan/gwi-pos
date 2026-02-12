@@ -1,5 +1,29 @@
 # Payments Domain Changelog
 
+## Session: Feb 11, 2026 — Cash Rounding Pipeline Fix (Skill 327)
+
+### Summary
+Fixed the complete cash payment rounding pipeline. Two separate rounding systems (`priceRounding` from Skill 88 and legacy `cashRounding`) were not synchronized, causing payment failures, $0.04 phantom remaining balances, missing `roundingAdjustment` on payment records, and no rounding data in daily reports.
+
+### Bugs Fixed
+1. **Payment validation rejection** — Server only checked `cashRounding` ('none'), rejected client's rounded amount
+2. **Stale totals after void** — PaymentModal showed pre-void totals, causing false "insufficient payment"
+3. **$0.04 phantom remaining** — Rounding artifact not detected as "fully paid"
+4. **roundingAdjustment always null** — Server re-rounded already-rounded amount (0 adjustment). Fixed to compute from raw order balance
+5. **No rounding in daily report** — `payment.roundingAdjustment` stored but never queried
+
+### Files Modified
+- `src/app/api/orders/[id]/pay/route.ts` — priceRounding priority, rawRemaining adjustment, paidTolerance
+- `src/components/payment/PaymentModal.tsx` — Rounding line, artifact detection, rounded remaining
+- `src/app/(pos)/orders/page.tsx` — Immediate syncServerTotals on comp/void
+- `src/app/api/reports/daily/route.ts` — Cumulative rounding in revenue + cash sections
+- `src/app/(admin)/reports/daily/page.tsx` — Yellow "Cash Rounding" display line
+
+### Skill Doc
+`docs/skills/327-CASH-ROUNDING-PIPELINE.md`
+
+---
+
 ## Session: Feb 6, 2026 — Datacap Direct Integration (Full Stack)
 
 ### Summary

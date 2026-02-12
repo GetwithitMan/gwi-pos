@@ -924,6 +924,12 @@ These skills emerged during development and are now part of the system:
 | 202 | Socket.io Real-Time KDS | DONE | KDS | 201 | WebSocket-based KDS updates replacing polling, room architecture (location/tag/terminal) |
 | 203 | Reference Items & Atomic Print | DONE | KDS | 201 | Context items on tickets, per-element print formatting (size/align/reverse/dividers) |
 
+### Cleanup & Fixes (326+)
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 326 | Complete Combine Removal | DONE | Floor Plan | - | Removed ALL combine/virtual-group code. 116 files, -16,211 lines. Tables standalone only. API routes return 410 Gone. |
+| 327 | Cash Rounding Pipeline Fix | DONE | Payments, Reports | 88 | Fixed dual rounding system sync (priceRounding vs cashRounding). Payment validation, artifact detection, roundingAdjustment storage, daily report tracking. |
+
 ---
 
 ## Next Session Priority (2026-02-11+)
