@@ -1810,6 +1810,11 @@ toast.error('Connection lost', 8000)
 | 1.14 | Add tip on payment | Pay → add tip amount → verify tip recorded | ⬜ |
 | 1.15 | Receipt displays correctly | Pay → view receipt → verify items, totals, tip, tax | ⬜ |
 | 1.16 | Order auto-clears after payment | Pay → close receipt → verify floor plan returns to clean state | ⬜ |
+| 1.23 | Cash rounding accepted by server | Add item ($3.29 total) → Pay Cash ($3.25 rounded) → verify payment succeeds, no rejection | ⬜ |
+| 1.24 | Cash rounding shows on PaymentModal | Select Cash → verify "Rounding" line shows adjustment, remaining shows rounded total | ⬜ |
+| 1.25 | Cash rounding stored on payment record | After cash payment → check DB Payment.roundingAdjustment is non-null | ⬜ |
+| 1.26 | Cash rounding on daily report | /reports/daily → verify yellow "Cash Rounding" line with cumulative day total | ⬜ |
+| 1.27 | Void then pay doesn't show stale total | Void item → open Pay → verify total reflects voided item (not pre-void amount) | ⬜ |
 
 ### 2. Modifiers & Menu Builder
 
@@ -1882,9 +1887,9 @@ toast.error('Connection lost', 8000)
 | 5.11 | API failure shows toast | Network offline → drag table → verify error toast + rollback | ⬜ |
 | 5.12 | Table property save failure rollback | Network offline → edit table properties → save → verify rollback + toast | ⬜ |
 | 5.13 | NaN coordinate error logged | Pass invalid coord in dev → verify throw with context, log in prod | ⬜ |
-| 5.14 | Legacy combine endpoint blocked | Call /api/tables/combine → verify 410 Gone response | ⬜ |
+| 5.14 | Legacy combine endpoint blocked | Call /api/tables/combine → verify 410 Gone response | ✅ 2026-02-11 |
 | 5.15 | Soft deleted tables hidden | Soft delete table (deletedAt) → refresh floor plan → verify hidden | ⬜ |
-| 5.16 | Virtual group border renders | Combine 3 tables → verify perimeter polygon closes correctly | ⬜ |
+| 5.16 | ~~Virtual group border renders~~ | ~~N/A — Combine fully removed (Skill 326)~~ | N/A |
 
 ### 6. KDS & Kitchen
 
