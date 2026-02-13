@@ -1,5 +1,368 @@
 # Mission Control Changelog
 
+## Session: February 12, 2026 (Production Deploy + Domain Setup)
+
+### Summary
+Pushed Mission Control to GitHub, deployed to Vercel production, set up Neon database, and configured custom domains. Both `app.thepasspos.com` (admin fleet dashboard) and `ordercontrolcenter.com` (venue portal) are live and serving Clerk sign-in pages.
+
+### Wave 1: GitHub + Vercel Deployment
+- **GitHub**: Created private repo `GetwithitMan/gwi-mission-control`, pushed 3 commits
+- **Vercel**: Linked project `prj_koiBu5uQFTYZVl4ufrPteGzQGj7w` under `team_mkG1PbPLq8cgRvXzX6jkyUxS`
+- **Neon**: Created `mission_control` database on existing `ep-withered-forest-ahcqgqj7` project, pushed Prisma schema
+- **Environment Variables**: Set 8 vars across all environments (DATABASE_URL, DIRECT_URL, CLERK keys x2, CLERK URLs x2, HMAC_SECRET, ENCRYPTION_KEY)
+
+### Deploy Fixes
+- `.gitignore` — Changed `/node_modules` to `node_modules/` (catches sync-agent/node_modules)
+- `tsconfig.json` — Added `"sync-agent"` to exclude (Next.js was scanning sync-agent TypeScript files)
+- Both committed and pushed; auto-deploy succeeded on second attempt
+
+### Wave 1C: Custom Domains
+All three domains added to Vercel project and verified serving 200 OK:
+- `app.thepasspos.com` — CNAME via Vercel DNS (thepasspos.com is Vercel-registered)
+- `ordercontrolcenter.com` — Vercel DNS (purchased today, $11.25/yr)
+- `www.ordercontrolcenter.com` — Wildcard ALIAS already covers it
+
+### Verified Live URLs
+| URL | Status | Response |
+|-----|--------|----------|
+| `https://app.thepasspos.com` | 200 OK | Clerk sign-in page ("GWI Mission Control") |
+| `https://ordercontrolcenter.com` | 200 OK | Clerk sign-in page ("GWI Mission Control") |
+| `https://gwi-mission-control.vercel.app` | 200 OK | Clerk sign-in page ("GWI Mission Control") |
+
+### Pending: Wave 1D-1E + Wave 5
+- Configure Clerk allowed origins for both custom domains
+- End-to-end NUC test with provision.sh
+
+### Risk: SSE on Vercel
+Vercel Hobby = 10s function timeout (SSE connections cut). Sync agent reconnects automatically but commands may be delayed. Mitigations: upgrade to Pro (60s), add polling fallback, or move SSE to separate long-running service.
+
+---
+
+## Session: February 12, 2026 (Production Deploy Prep + Venue Portal)
+
+### Summary
+Completed Waves 0-4 of the production deployment plan: pre-deploy fixes, domain-based routing, venue-facing portal UI, and operational runbooks. Single Next.js app serves two domains — `app.thepasspos.com` (admin fleet dashboard) and `ordercontrolcenter.com` (venue portal). Zero TypeScript errors.
+
+### Wave 0: Pre-Deploy Fixes
+- `package.json` — Added `prisma generate` to build script + `postinstall` hook for Vercel
+- `scripts/provision.sh` — Updated default URL from `mission-control.gwipos.com` to `app.thepasspos.com`
+- `.env.example` — Added `PORTAL_MODE` env var for localhost/preview domain selection
+
+### Wave 2: Domain-Based Routing
+- **NEW** `src/lib/domain.ts` — `getPortalFromHost(host)` returns `'admin'` or `'venue'` based on hostname
+  - `ordercontrolcenter.com` → venue
+  - `*.thepasspos.com` → admin
+  - Localhost/preview → `PORTAL_MODE` env var (default: admin)
+- **MODIFIED** `src/middleware.ts` — Domain detection after `auth.protect()`:
+  - Venue domain + `/dashboard*` → redirect to `/portal`
+  - Admin domain + `/portal*` → redirect to `/dashboard`
+- **MODIFIED** `src/app/page.tsx` — Root redirect reads Host header for domain-aware redirect
+
+### Wave 3: Venue Portal UI (7 new files)
+Light theme (`bg-gray-50`) distinct from dark admin dashboard. All server components reuse existing Prisma patterns.
+
+| File | Description |
+|------|-------------|
+| `src/app/portal/layout.tsx` | Light header with "Control Center" branding + `<UserButton />` |
+| `src/app/portal/page.tsx` | Locations grid — scoped by Clerk org, shows status dots, version, last seen |
+| `src/app/portal/servers/page.tsx` | Read-only server table — no kill/revive buttons |
+| `src/app/portal/billing/page.tsx` | Plan tier, monthly cost, billing history — requires `org_admin` |
+| `src/components/portal/PortalNav.tsx` | Tab navigation: Locations / Servers / Billing |
+| `src/components/portal/LocationCard.tsx` | Light-themed card with status, address, version, heartbeat |
+| `src/components/portal/PortalServerList.tsx` | Simplified ServerList — location, hostname, status, CPU, memory |
+
+**Data reuse**: All portal pages use `getAuthenticatedAdmin()`, `computeFleetStatus()`, `calculateMonthlyBill()`, `parseBillingConfig()` — zero new data logic.
+
+### Wave 4: Operational Runbooks
+- **NEW** `docs/runbooks/provisioning.md` — 8-step guide: Create org → Create location → Generate token → Run provision.sh → Start Docker → Verify → Set up Clerk users → Verify portal
+- **NEW** `docs/runbooks/suspension.md` — Escalation timeline (Day 0 past_due → Day 14 suspended → Day 30 cancelled), emergency kill, revival procedure, audit trail queries
+
+---
+
+## Session: February 12, 2026 (Sync Agent Sidecar — T-062)
+
+### Summary
+Built the complete Sync Agent sidecar — a standalone Node.js Docker service that runs alongside the POS container. 3 parallel agents created 15 files total (11 TypeScript source + Dockerfile + package.json + tsconfig.json + .env.example). All reviewed and accepted. Zero TypeScript errors. TODOs in index.ts wired to integrate SSE consumer + license validator.
+
+### Sync Agent Architecture
+```
+┌─────────────────────────────────────────────┐
+│  Docker Bridge Network                       │
+│  ┌──────────────┐    ┌──────────────────┐   │
+│  │  Sync Agent   │    │  GWI POS         │   │
+│  │  :8081        │←───│  :3000           │   │
+│  │  (heartbeat,  │    │  (reads /status) │   │
+│  │   SSE, license│    └──────────────────┘   │
+│  │   commands)   │                           │
+│  └──────┬───────┘                           │
+│         │                                    │
+└─────────┼────────────────────────────────────┘
+          │ HMAC-signed HTTPS
+          ▼
+    Mission Control Cloud
+```
+
+### Tasks
+| Task | Agent | Status | Files Created |
+|------|-------|--------|---------------|
+| SA-CORE: Scaffold + HMAC + Heartbeat + Status API | sa-core | ACCEPTED | 10 files |
+| SA-SSE: SSE Consumer + Command Worker + Handlers | sa-sse | ACCEPTED | 3 files |
+| SA-LICENSE: License Validator + Signed Cache | sa-license | ACCEPTED | 2 files |
+
+### Files Created (15 total)
+
+**Core (sa-core):**
+- `sync-agent/package.json` — ESM (`"type": "module"`), express + eventsource deps
+- `sync-agent/tsconfig.json` — ES2022 target, Node16 module resolution
+- `sync-agent/Dockerfile` — Multi-stage build, `/data` volume, `node` user, EXPOSE 8081
+- `sync-agent/.env.example` — All config vars documented
+- `sync-agent/src/config.ts` — `SyncAgentConfig` interface, `loadConfig()` with env validation
+- `sync-agent/src/hmac-client.ts` — HMAC-SHA256 signed HTTP client (post/get/getSSEHeaders)
+- `sync-agent/src/state.ts` — Mutable `AgentState` with atomic persistence (temp+rename)
+- `sync-agent/src/heartbeat.ts` — CPU/memory/disk metrics, payment config hash, 60s interval
+- `sync-agent/src/status-api.ts` — Express on 0.0.0.0:8081, GET /status + GET /health
+- `sync-agent/src/index.ts` — Entry point: config → state → API → license → SSE → heartbeat → graceful shutdown
+
+**SSE (sa-sse):**
+- `sync-agent/src/sse-consumer.ts` — Persistent SSE connection with exponential backoff (1s→60s, 2x, ±30% jitter)
+- `sync-agent/src/command-worker.ts` — FIFO queue, serial execution, KILL_SWITCH priority, deduplication, expiry check
+- `sync-agent/src/command-handlers.ts` — 5 handlers: FORCE_SYNC, KILL_SWITCH, UPDATE_CONFIG (revive + limits), UPDATE_PAYMENT_CONFIG (RSA-OAEP decrypt), FORCE_UPDATE
+
+**License (sa-license):**
+- `sync-agent/src/license-validator.ts` — Cloud-first with cache fallback, fail-closed on fresh boot, fail-open on transient failure, grace period logic
+- `sync-agent/src/license-cache.ts` — Atomic file cache, HMAC-SHA256 signature verification, timing-safe comparison
+
+### Key Design Decisions
+1. **Shared mutable state**: All modules read/write the same `AgentState` object, persisted to disk every 30s + after each command
+2. **HMAC auth matching cloud**: Same signing algorithm as fleet API `verifySignature()`
+3. **Type→commandType normalization**: Cloud SSE sends `type`, agent normalizes to `commandType` at ingestion
+4. **RSA-OAEP+SHA256**: Payment config decryption uses private key at `/data/server.key`
+5. **License fail-closed**: No cache + no cloud on boot = suspended (security-first)
+6. **License fail-open**: Transient cloud failure during runtime keeps last known good state (availability)
+7. **Graceful shutdown**: SIGTERM/SIGINT stops SSE → commands → license → heartbeat → saves state → exits
+
+### Build Verification
+```
+✓ TypeScript clean (zero errors, 11 source files)
+✓ All imports use .js extensions (ESM requirement)
+✓ All TODO placeholders wired in index.ts
+```
+
+---
+
+## Session: February 12, 2026 (Phase 2D: Wave 4C — Billing & Late Payment)
+
+### Summary
+Completed Wave 4C: Billing & Late Payment Flow (T-067). No Stripe — billing via Datacap settlement deduction (primary) or card-on-file via GWI's own Datacap MID (fallback). Manual admin escalation controls. 1 agent, all accepted. Total project now has 22 compiled routes, zero TypeScript errors.
+
+### Key Decision: No Stripe
+Owner confirmed GWI will use its own Datacap integration for subscription billing:
+- **Primary**: Settlement deduction — GWI takes subscription fee off the top from venue's Datacap settlement
+- **Fallback**: Card-on-file charge via GWI's own Datacap MID + gateway (for low-volume venues)
+- **Late payment**: Manually triggered by super_admin from dashboard (no automatic escalation)
+
+### Wave 4C Tasks
+| Task | Agent | Status | Files Created |
+|------|-------|--------|---------------|
+| MC-BILLING-T15: Billing & Late Payment | billing | ACCEPTED | 5 files (1 lib + 4 routes) |
+
+### Files Created (5 total)
+
+- `src/lib/billing.ts` — SUBSCRIPTION_PRICES (STARTER $99/PRO $199/ENTERPRISE $399), BillingMethod type, BillingRecord/BillingConfig interfaces, calculateMonthlyBill (Enterprise flat vs per-location), formatBillingPeriod, parseBillingConfig (safe JSON parse), ESCALATION_ACTIONS display map
+- `src/app/api/admin/billing/dashboard/route.ts` — GET revenue overview (super_admin): totalMrr, by-tier breakdown, pastDueOrgs, recentCharges (last 20 across all orgs)
+- `src/app/api/admin/organizations/[id]/billing/route.ts` — GET billing history (last 12 months, outstanding balance, card-on-file boolean). POST 4 actions via Zod discriminated union: record_charge, record_waiver, update_method, set_card_token (token NOT logged in audit)
+- `src/app/api/admin/organizations/[id]/billing/suspend/route.ts` — POST manual escalation: set_past_due, suspend (FORCE_SYNC), cancel (killServer per server), reactivate (FORCE_SYNC). All update org + location status.
+- `src/app/api/admin/billing/revenue/route.ts` — GET monthly revenue aggregation (?months=6, max 24): subscription revenue, by-tier, charge/waiver counts
+
+### Architecture Decisions (Wave 4C)
+1. **No Stripe**: GWI uses own Datacap MID for billing. Settlement deduction (primary) + card-on-file (fallback).
+2. **Manual escalation only**: No automatic retry ladder. Super admin manually triggers PAST_DUE → SUSPENDED → CANCELLED.
+3. **Billing history in JSON**: Stored in `CloudLocation.billingConfig.history` JSON array (first location per org). Avoids schema migration for dedicated billing table.
+4. **Cancel = kill**: Cancellation calls `killServer()` from `@/lib/kill-switch` for each non-killed server, creating KILL_SWITCH commands.
+5. **Card token security**: `set_card_token` action updates `stripeCustomerId` field (repurposed). Token value intentionally NOT logged in audit trail.
+
+### Build Verification
+```
+✓ Compiled successfully — 22 routes total
+✓ TypeScript clean (zero errors)
+```
+
+### Cumulative Route Count (after Waves 1-4C)
+| Category | Count | Routes |
+|----------|-------|--------|
+| Fleet API (HMAC auth) | 5 | register, heartbeat, license/validate, commands/stream, commands/[id]/ack |
+| Admin API (Clerk auth) | 17 | organizations (2), organizations/[id] (1), organizations/[id]/subscription (1), organizations/[id]/billing (1), organizations/[id]/billing/suspend (1), locations (1), locations/[id] (1), locations/[id]/provision (1), locations/[id]/payment-config (1), locations/[id]/hardware-limits (1), locations/[id]/kill (1), servers/[id]/kill (1), servers/[id]/kill/status (1), servers/[id]/revive (1), subscription/tiers (1), billing/dashboard (1), billing/revenue (1) |
+| Pages | 4 | /, /dashboard, /sign-in, /sign-up |
+
+### Pending Work
+| Priority | Task | Notes |
+|----------|------|-------|
+| P2 | T-062: Sync Agent Sidecar | Deferred to own session — needs all cloud endpoints stable |
+
+---
+
+## Session: February 12, 2026 (Phase 2B: Wave 4B — Subscription Tiers + Kill Switch)
+
+### Summary
+Completed Wave 4B with 2 parallel agents: Subscription Tiers & Hardware Limits enforcement (T-066) and Kill Switch remote disable/revive (T-063). Both accepted. Total project now has 18 compiled routes, zero TypeScript errors.
+
+### Wave 4B Tasks
+| Task | Agent | Status | Files Created |
+|------|-------|--------|---------------|
+| MC-TIERS-T13: Subscription Tiers & Hardware Limits | subscription-tiers | ACCEPTED | 4 files (1 lib + 3 routes) |
+| MC-KILL-T14: Kill Switch | kill-switch | ACCEPTED | 5 files (1 lib + 4 routes) |
+
+### Files Created (9 total)
+
+**Subscription Tiers & Hardware Limits:**
+- `src/lib/hardware-limits.ts` — Single source of truth: DEFAULT_LIMITS, DEFAULT_FEATURES, TIER_PRICES for STARTER/PRO/ENTERPRISE. resolveHardwareLimits (per-field fallback), checkDeviceLimit, getTierInfo, getAllTiers.
+- `src/app/api/admin/organizations/[id]/subscription/route.ts` — GET (tier + features + per-location effective limits + billing). PUT (super_admin: tier/status/maxLocations changes, resets overrides on tier change, creates FORCE_SYNC commands for all active servers).
+- `src/app/api/admin/locations/[id]/hardware-limits/route.ts` — GET (tier defaults + overrides + effective limits). PUT (per-location overrides, org_admin capped at tier max, partial merge, clean-slate detection stores DbNull).
+- `src/app/api/admin/subscription/tiers/route.ts` — GET all tiers for comparison UI (any authenticated admin).
+
+**Kill Switch:**
+- `src/lib/kill-switch.ts` — Shared kill/revive logic. killServer (isKilled=true, KILL_SWITCH command, audit). reviveServer (clear kill state, UPDATE_CONFIG with action:'revive', expire pending KILL_SWITCH commands, audit). findActiveServerWithOrg helper.
+- `src/app/api/admin/servers/[id]/kill/route.ts` — POST single kill (super_admin, rejects already-killed 409).
+- `src/app/api/admin/servers/[id]/kill/status/route.ts` — GET kill status + last 10 kill/revive commands (org_admin with access check).
+- `src/app/api/admin/servers/[id]/revive/route.ts` — POST revive (super_admin, rejects if not killed 409).
+- `src/app/api/admin/locations/[id]/kill/route.ts` — POST bulk kill all non-DECOMMISSIONED servers at location (super_admin).
+
+### Architecture Decisions (Wave 4B)
+1. **Tier enforcement at two levels**: Cloud API caps org_admin at tier maximums. Local server caches tier for offline enforcement.
+2. **Override clean-slate**: When all per-location overrides match tier defaults, store `Prisma.DbNull` (not the explicit values). Simplifies tier change reset.
+3. **FORCE_SYNC on tier change**: All location overrides reset + FORCE_SYNC commands issued to every active server. Ensures local servers reflect new tier immediately.
+4. **REVIVE via UPDATE_CONFIG**: `CommandType` enum lacks REVIVE — used `UPDATE_CONFIG` with `payload.action = 'revive'` as clean workaround. Status endpoint filters for this.
+5. **Kill cascade**: Bulk location kill iterates servers individually (each gets its own command + audit log), plus one bulk audit entry.
+
+### Build Verification
+```
+✓ Compiled successfully — 18 routes total
+✓ TypeScript clean (zero errors)
+```
+
+### Cumulative Route Count (after Waves 1-4B)
+| Category | Routes |
+|----------|--------|
+| Fleet API (HMAC auth) | `/api/fleet/register`, `/api/fleet/heartbeat`, `/api/fleet/license/validate`, `/api/fleet/commands/stream`, `/api/fleet/commands/[id]/ack` |
+| Admin API (Clerk auth) | `/api/admin/organizations`, `/api/admin/organizations/[id]`, `/api/admin/organizations/[id]/subscription`, `/api/admin/locations`, `/api/admin/locations/[id]`, `/api/admin/locations/[id]/provision`, `/api/admin/locations/[id]/payment-config`, `/api/admin/locations/[id]/hardware-limits`, `/api/admin/locations/[id]/kill`, `/api/admin/servers/[id]/kill`, `/api/admin/servers/[id]/kill/status`, `/api/admin/servers/[id]/revive`, `/api/admin/subscription/tiers` |
+| Pages | `/`, `/dashboard`, `/sign-in`, `/sign-up` |
+
+### Pending Work (Next Wave)
+| Priority | Task | Notes |
+|----------|------|-------|
+| P2 | T-067: Billing & Late Payment | Stripe retry, escalation (depends on T-066 ✅) |
+| P2 | T-062: Sync Agent Sidecar | Deferred to own session — needs all cloud endpoints stable |
+
+---
+
+## Session: February 12, 2026 (Phase 2A+2B: Wave 4A — Tenant Isolation + PayFac + Provisioning)
+
+### Summary
+Continued building Mission Control with Wave 4A: per-org Postgres tenant isolation with RLS defense-in-depth, PayFac credential management (encrypted cloud-push via SSE commands), and Ubuntu server provisioning script. Three agents completed all 3 tasks in parallel. Total project now has 16 compiled routes.
+
+### Wave 4A Tasks
+| Task | Agent | Status | Files Created/Modified |
+|------|-------|--------|----------------------|
+| MC-TENANT-T10: Tenant Isolation | tenant-isolation | ACCEPTED | 3 created, 1 modified |
+| MC-PAYFAC-T11: PayFac Credentials | payfac-creds | ACCEPTED | 2 created, 1 modified |
+| MC-PROVISION-T12: Provisioning Script | provisioning | ACCEPTED | 2 created |
+
+### Files Created/Modified (7 new, 2 modified)
+
+**Tenant Isolation:**
+- `src/lib/tenant-schema.ts` — createTenantSchema (IF NOT EXISTS), archiveTenantSchema (rename not drop), listTenantSchemas, sanitizeSlug ([a-z0-9_] only)
+- `src/lib/tenant-rls.ts` — applyRLSPolicies (FORCE RLS on CloudLocation/AdminUser/FleetAuditLog), setTenantContext (SET LOCAL session vars), super_admin bypass
+- `src/lib/tenant-middleware.ts` — withTenantContext (db.$transaction wrapper with SET LOCAL), orgId validation, passes tx to callback
+- `src/app/api/admin/organizations/route.ts` — Modified: hooks createTenantSchema(slug) fire-and-forget on POST
+
+**PayFac Credential Management:**
+- `src/app/api/admin/locations/[id]/payment-config/route.ts` — GET (decrypt+return config), PUT (encrypt+store+create per-server RSA FleetCommands), Clerk auth, org access check, audit log
+- `src/lib/credential-verification.ts` — verifyCredentials (SHA-256 hash comparison, deduplicates pending commands, creates UPDATE_PAYMENT_CONFIG on mismatch)
+- `src/app/api/fleet/heartbeat/route.ts` — Modified: added paymentConfigHash optional field, non-blocking credential verification, credentialStatus in response
+
+**Provisioning Script:**
+- `scripts/provision.sh` — Full provisioning: pre-flight checks, 5-component hardware fingerprint, 4096-bit RSA keypair (idempotent), register API call, OAEP+SHA256 decrypt, .env write, re-provision safety
+- `src/lib/fingerprint.ts` — computeFingerprintHash (matches bash algorithm), isValidFingerprint, FINGERPRINT_VERSION constant
+
+### Architecture Decisions (Wave 4A)
+1. **Two-layer tenant isolation**: Structural (per-org Postgres schema `tenant_{slug}`) + Policy (RLS with FORCE on shared tables). Fail-closed: unset context = no rows visible.
+2. **PayFac command lifecycle**: PUT credential → AES encrypt at rest → per-server RSA FleetCommand (CRITICAL priority, 7-day expiry) → SSE stream delivers → server ACKs. Heartbeat verifies hash match.
+3. **Credential deduplication**: verifyCredentials checks for existing PENDING/DELIVERED commands before creating new ones, preventing command spam on repeated heartbeats.
+4. **Fingerprint parity**: Bash and TypeScript use identical pipe-delimited format (`uuid|mac|cpu|ram|disk` → SHA-256). Version tracked for future algorithm changes.
+
+### Build Verification
+```
+ Compiled successfully — 16 routes total
+ TypeScript clean (zero errors)
+Route manifest: / + /dashboard + 6 admin API + 5 fleet API + sign-in + sign-up
+```
+
+### Cumulative Route Count (after Waves 1-4A)
+| Category | Routes |
+|----------|--------|
+| Fleet API (HMAC auth) | `/api/fleet/register`, `/api/fleet/heartbeat`, `/api/fleet/license/validate`, `/api/fleet/commands/stream`, `/api/fleet/commands/[id]/ack` |
+| Admin API (Clerk auth) | `/api/admin/organizations`, `/api/admin/organizations/[id]`, `/api/admin/locations`, `/api/admin/locations/[id]`, `/api/admin/locations/[id]/provision`, `/api/admin/locations/[id]/payment-config` |
+| Pages | `/`, `/dashboard`, `/sign-in`, `/sign-up` |
+
+### Pending Work (Next Wave)
+| Priority | Task | Notes |
+|----------|------|-------|
+| P2 | T-066: Subscription Tiers & Hardware Limits | Device caps, tier enforcement |
+| P2 | T-063: Kill Switch | SSE kill command + branded banner + revive |
+| P2 | T-067: Billing & Late Payment | Stripe retry, escalation (depends on T-066) |
+| P2 | T-062: Sync Agent Sidecar | Deferred to own session — needs all cloud endpoints stable |
+
+---
+
+## Session: February 12, 2026 (Phase 2A+2B: Wave 3 — SSE Commands + Admin API + Dashboard)
+
+### Summary
+Continued building Mission Control with Wave 3: SSE command stream for cloud→server communication, full Admin CRUD API for organizations and locations, and a fleet monitoring dashboard with real-time status cards. Three agents completed all 3 tasks in parallel. Total project now has 15 compiled routes.
+
+### Wave 3 Tasks
+| Task | Agent | Status | Files Created |
+|------|-------|--------|---------------|
+| MC-API-T07: SSE Commands | sse-commands | ✅ ACCEPTED | 2 route files |
+| MC-API-T08: Admin API | admin-api | ✅ ACCEPTED | 5 route files |
+| MC-DASH-T09: Fleet Dashboard | dashboard-builder | ✅ ACCEPTED | 6 files (page + layout + 3 components + utility) |
+
+### Files Created (13 total)
+
+**SSE Command Stream:**
+- `src/app/api/fleet/commands/stream/route.ts` — GET SSE endpoint (HMAC auth, priority ordering, Last-Event-ID replay, 30s keepalive, 5-min auto-close, batch-expire stale commands)
+- `src/app/api/fleet/commands/[id]/ack/route.ts` — POST command ACK (Zod validation, status-specific timestamps, location ownership check)
+
+**Admin API:**
+- `src/app/api/admin/organizations/route.ts` — GET (list with _count) + POST (create with slug uniqueness + audit log)
+- `src/app/api/admin/organizations/[id]/route.ts` — GET (detail with locations + servers) + PUT (update + maxLocations super_admin only)
+- `src/app/api/admin/locations/route.ts` — GET (list with status summary) + POST (create with maxLocations check)
+- `src/app/api/admin/locations/[id]/route.ts` — GET (detail with servers + tokens + commands) + PUT (update)
+- `src/app/api/admin/locations/[id]/provision/route.ts` — POST (generate 24h registration token, revoke existing)
+
+**Fleet Dashboard:**
+- `src/lib/fleet-status.ts` — computeFleetStatus(), formatRelativeTime(), STATUS_COLORS, LICENSE_COLORS
+- `src/app/dashboard/layout.tsx` — Dark theme layout with Clerk UserButton
+- `src/app/dashboard/page.tsx` — Server Component with Prisma data fetching, org selector, status cards grid, server list
+- `src/components/fleet/OrgSelector.tsx` — Client component, org switching via ?org= param
+- `src/components/fleet/StatusCard.tsx` — Client component with auto-refresh (30s), status badge (pulse for online), license badge, CPU/mem metrics
+- `src/components/fleet/ServerList.tsx` — Server component table sorted offline-first with all metrics
+
+### Build Verification
+```
+✓ Compiled successfully — 15 routes total
+✓ TypeScript clean (zero errors)
+Route manifest: / + /dashboard + 5 admin API + 5 fleet API + sign-in + sign-up
+```
+
+### Cumulative Route Count (after Waves 1-3)
+| Category | Routes |
+|----------|--------|
+| Fleet API (HMAC auth) | `/api/fleet/register`, `/api/fleet/heartbeat`, `/api/fleet/license/validate`, `/api/fleet/commands/stream`, `/api/fleet/commands/[id]/ack` |
+| Admin API (Clerk auth) | `/api/admin/organizations`, `/api/admin/organizations/[id]`, `/api/admin/locations`, `/api/admin/locations/[id]`, `/api/admin/locations/[id]/provision` |
+| Pages | `/`, `/dashboard`, `/sign-in`, `/sign-up` |
+
+---
+
 ## Session: February 11, 2026 (Planning & Preparation)
 
 ### Summary
@@ -89,8 +452,107 @@ Extended the Module A architecture plan with three new sections covering payment
 
 ---
 
+## Session: February 12, 2026 (Phase 2A: Foundation Build)
+
+### Summary
+Built the entire Mission Control cloud project foundation in a single session using PM Agent Team mode. Three code writer agents (cloud-bootstrap, schema-writer, auth-writer) executed 6 tasks in 2 waves with proper dependency ordering. All tasks accepted, build passes cleanly.
+
+### Team Structure
+- **Lead PM**: Non-coding orchestrator (planned tasks, wrote prompts, reviewed output)
+- **cloud-bootstrap**: Wave 1: project bootstrap → Wave 2: registration API
+- **schema-writer**: Wave 1: Prisma schema → Wave 2: heartbeat API
+- **auth-writer**: Wave 1: auth/HMAC/crypto → Wave 2: license validation API
+
+### Wave 1 (Foundation — No Dependencies)
+| Task | Agent | Status | Key Output |
+|------|-------|--------|------------|
+| MC-INFRA-T01: Bootstrap | cloud-bootstrap | ✅ ACCEPTED | Next.js 16.1.6, Prisma 7.4, Clerk 6.37, Zod 4.3 |
+| MC-SCHEMA-T02: Schema | schema-writer | ✅ ACCEPTED | 11 enums, 10 models, 15 indexes |
+| MC-AUTH-T03: Auth/Crypto | auth-writer | ✅ ACCEPTED | 4 files: hmac.ts, crypto.ts, auth.ts, middleware.ts |
+
+### Wave 2 (APIs — Depends on Wave 1)
+| Task | Agent | Status | Key Output |
+|------|-------|--------|------------|
+| MC-API-T04: Registration | cloud-bootstrap | ✅ ACCEPTED | POST /api/fleet/register — token validation, fingerprint check, RSA encrypt |
+| MC-API-T05: Heartbeat | schema-writer | ✅ ACCEPTED | POST /api/fleet/heartbeat — HMAC auth, metrics, pending commands |
+| MC-API-T06: License | auth-writer | ✅ ACCEPTED | POST /api/fleet/license/validate — status priority chain, tier features, signed response |
+
+### Technical Decisions
+1. **Prisma 7.4** (not 6.x like POS): adapter-based client, `prisma-client` provider, `prisma.config.ts` for connection, import from `@/generated/prisma/client`
+2. **request.clone() pattern**: `validateFleetRequest()` consumes the body via `request.text()`. All handlers that also need the body must clone first.
+3. **Registration is the only unauthenticated fleet endpoint**: Server has no API key yet, authenticates via one-time registration token instead.
+4. **License status priority chain**: kill switch → location deactivated → org subscription → location license → expiry/grace → PAST_DUE → ACTIVE
+5. **Tier features as flat string arrays**: STARTER/PRO/ENTERPRISE with cumulative feature flags
+
+### Files Created
+```
+gwi-mission-control/
+├── package.json                          # Next.js 16 + Prisma 7 + Clerk
+├── prisma/
+│   └── schema.prisma                     # 11 enums, 10 models, 15 indexes
+├── prisma.config.ts                      # Prisma 7 connection config
+├── src/
+│   ├── app/
+│   │   ├── layout.tsx                    # Root with ClerkProvider
+│   │   ├── page.tsx                      # Auth-gated redirect
+│   │   ├── sign-in/[[...sign-in]]/page.tsx
+│   │   ├── sign-up/[[...sign-up]]/page.tsx
+│   │   └── api/fleet/
+│   │       ├── register/route.ts         # POST — server registration
+│   │       ├── heartbeat/route.ts        # POST — heartbeat ingestion
+│   │       └── license/validate/route.ts # POST — license validation
+│   ├── lib/
+│   │   ├── db.ts                         # Prisma client (adapter pattern)
+│   │   ├── auth.ts                       # Clerk RBAC helpers
+│   │   ├── hmac.ts                       # HMAC signing + fleet auth
+│   │   └── crypto.ts                     # AES-256-GCM, RSA, API keys
+│   ├── middleware.ts                     # Fleet bypass Clerk, else protect
+│   └── generated/prisma/                 # Generated Prisma client
+├── .env.example
+├── CLAUDE.md
+└── tsconfig.json
+```
+
+### Build Verification
+```
+✓ Compiled successfully in 1217.3ms
+✓ All 3 fleet API routes registered
+✓ TypeScript clean (no errors)
+✓ Lint clean
+```
+
+### Review Notes
+- **T04 (Registration)**: Clean atomic transaction with RSA rollback on failure. Audit log included. No HMAC auth (correct — server has no key yet).
+- **T05 (Heartbeat)**: Proper request.clone() pattern. Uses ServerStatus/CommandStatus enums directly. Transaction for heartbeat + server update. Returns pendingCommands for command polling.
+- **T06 (License)**: Comprehensive determineLicenseStatus() with correct priority ordering. HMAC-signed response for tamper-proof caching. Minor: uses `(db as any)` and `NextResponse.json()` directly instead of helpers — acceptable for now.
+
+### Pending Work (Next Session)
+| Priority | Task | Notes |
+|----------|------|-------|
+| P2 | T-059: Fleet Dashboard (Basic) | Status cards, online/degraded/offline per location |
+| P2 | T-060: Provisioning Script | Bash: collect fingerprint, generate RSA, register with cloud |
+| P2 | T-061: SSE Command Stream | GET /api/fleet/commands/stream, ACK pipeline |
+| P1 | T-064: Tenant Isolation | Postgres Schema per org + RLS policies |
+| P1 | T-065: PayFac Credential Management | Cloud-pushed Datacap credentials |
+
+### Known Issues
+1. `(db as any)` in hmac.ts and license/validate — TODO for proper typing
+2. `middleware.ts` deprecated warning (Next.js 16 wants "proxy" convention) — cosmetic, works fine
+3. No database migrations run yet (schema only validated + generated)
+
+---
+
+## How to Resume
+1. Say: `PM Mode: Mission Control`
+2. Review PM Task Board for remaining Phase 2A/2B tasks
+3. Next priority: T-059 (Fleet Dashboard) or T-064 (Tenant Isolation)
+4. Project location: `/Users/brianlewis/Documents/My websites/gwi-mission-control/`
+
+---
+
 ## Pending Workers
-None yet — implementation starts next session.
+None — all agents shut down after Wave 2 completion.
 
 ## Known Issues
-None — this is a greenfield cloud project.
+1. `(db as any)` casts in hmac.ts and license route — needs proper Prisma typing
+2. Next.js 16 "middleware" deprecation warning — cosmetic only

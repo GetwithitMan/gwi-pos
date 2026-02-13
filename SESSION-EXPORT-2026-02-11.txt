@@ -1,0 +1,1143 @@
+================================================================================
+SESSION EXPORT — 2026-02-11
+GWI POS — Pre-Deployment Review
+================================================================================
+
+CHANGES SUMMARY:
+  1. Tax rate default: 0.08 → 0 (3 files)
+  2. Timezone: America/New_York → America/Chicago (seed.ts)
+  3. Tip percentages: hardcoded → read from location settings (close-tab)
+  4. Settings API: added 4 missing deep-merge fields (settings route)
+  5. Theme fix: dark glassmorphism → light admin (6 settings pages)
+  6. Deleted: virtual-groups/page.tsx, links/page.tsx (obsolete)
+
+DELETED FILES:
+  - src/app/(admin)/virtual-groups/page.tsx (233 lines)
+  - src/app/(admin)/links/page.tsx (141 lines)
+
+================================================================================
+FILE 1 OF 10: src/lib/seat-utils.ts
+CHANGE: Line 10 — _locationTaxRate default changed from 0.08 to 0
+================================================================================
+
+/**
+ * Seat Management Utilities (Skill 121)
+ *
+ * Per-seat balance calculations and status determination.
+ */
+
+// Module-level tax rate, updated by useOrderSettings when location settings load.
+// Starts at 0 (not hardcoded 8%) — if settings fail to load, zero tax is obvious to the user.
+// Callers can pass an explicit taxRate to override; this is the fallback default.
+let _locationTaxRate = 0
+
+/** Update the cached location tax rate (called from useOrderSettings on load). */
+export function setLocationTaxRate(rate: number) {
+  _locationTaxRate = rate
+}
+
+/** Get the current cached location tax rate. */
+export function getLocationTaxRate(): number {
+  return _locationTaxRate
+}
+
+export type SeatStatus = 'empty' | 'stale' | 'active' | 'printed' | 'paid'
+
+export interface SeatInfo {
+  seatNumber: number
+  subtotal: number
+  taxAmount: number
+  total: number
+  itemCount: number
+  status: SeatStatus
+  addedAt?: string
+}
+
+export interface OrderItemForSeat {
+  id: string
+  seatNumber?: number | null
+  price: number
+  quantity: number
+  kitchenStatus?: string
+  status?: string
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  modifiers?: { price: number }[]
+}
+
+export interface PaymentForSeat {
+  metadata?: { seatNumber?: number } | null
+  status: string
+}
+
+/**
+ * Seat status color mapping
+ */
+export const SEAT_STATUS_COLORS: Record<SeatStatus, string> = {
+  empty: '#6b7280',     // gray-500 - No items
+  stale: '#f59e0b',     // amber-500 - Items but no recent activity
+  active: '#22c55e',    // green-500 - Recent activity
+  printed: '#3b82f6',   // blue-500 - Items sent to kitchen
+  paid: '#a855f7',      // purple-500 - Seat fully paid
+}
+
+/**
+ * Seat status background colors (lighter variants)
+ */
+export const SEAT_STATUS_BG_COLORS: Record<SeatStatus, string> = {
+  empty: 'rgba(107, 114, 128, 0.2)',
+  stale: 'rgba(245, 158, 11, 0.2)',
+  active: 'rgba(34, 197, 94, 0.2)',
+  printed: 'rgba(59, 130, 246, 0.2)',
+  paid: 'rgba(168, 85, 247, 0.2)',
+}
+
+/**
+ * Seat status glow colors for selected state
+ */
+export const SEAT_STATUS_GLOW: Record<SeatStatus, string> = {
+  empty: 'rgba(107, 114, 128, 0.5)',
+  stale: 'rgba(245, 158, 11, 0.5)',
+  active: 'rgba(34, 197, 94, 0.5)',
+  printed: 'rgba(59, 130, 246, 0.5)',
+  paid: 'rgba(168, 85, 247, 0.5)',
+}
+
+/**
+ * Calculate per-seat balance
+ */
+export function calculateSeatBalance(
+  items: OrderItemForSeat[],
+  seatNumber: number,
+  taxRate: number = _locationTaxRate
+): { subtotal: number; taxAmount: number; total: number; itemCount: number } {
+  const seatItems = items.filter(item => item.seatNumber === seatNumber)
+
+  const subtotal = seatItems.reduce((sum, item) => {
+    const itemBase = Number(item.price) * item.quantity
+    const modTotal = (item.modifiers || []).reduce((m, mod) => m + Number(mod.price), 0) * item.quantity
+    return sum + itemBase + modTotal
+  }, 0)
+
+  const taxAmount = Math.round(subtotal * taxRate * 100) / 100
+  const total = Math.round((subtotal + taxAmount) * 100) / 100
+  const itemCount = seatItems.reduce((sum, item) => sum + item.quantity, 0)
+
+  return {
+    subtotal: Math.round(subtotal * 100) / 100,
+    taxAmount,
+    total,
+    itemCount,
+  }
+}
+
+/**
+ * Determine seat status based on items and payments
+ */
+export function determineSeatStatus(
+  items: OrderItemForSeat[],
+  seatNumber: number,
+  payments: PaymentForSeat[] = [],
+  staleThresholdMinutes: number = 5
+): SeatStatus {
+  // Check if seat is paid
+  const isPaid = payments.some(p =>
+    p.status === 'completed' &&
+    (p.metadata as { seatNumber?: number } | null)?.seatNumber === seatNumber
+  )
+  if (isPaid) return 'paid'
+
+  const seatItems = items.filter(item => item.seatNumber === seatNumber)
+  if (seatItems.length === 0) return 'empty'
+
+  // Check if any items have been sent to kitchen
+  const hasPrintedItems = seatItems.some(item =>
+    item.kitchenStatus && item.kitchenStatus !== 'pending'
+  )
+  if (hasPrintedItems) return 'printed'
+
+  // Check for recent activity
+  const staleThreshold = new Date(Date.now() - staleThresholdMinutes * 60 * 1000)
+  const hasRecentActivity = seatItems.some(item => {
+    const updated = item.updatedAt ? new Date(item.updatedAt) : null
+    const created = item.createdAt ? new Date(item.createdAt) : null
+    return (updated && updated > staleThreshold) || (created && created > staleThreshold)
+  })
+
+  return hasRecentActivity ? 'active' : 'stale'
+}
+
+/**
+ * Calculate all seat balances for an order
+ */
+export function calculateAllSeatBalances(
+  items: OrderItemForSeat[],
+  totalSeats: number,
+  payments: PaymentForSeat[] = [],
+  taxRate: number = _locationTaxRate
+): SeatInfo[] {
+  const seats: SeatInfo[] = []
+
+  for (let seatNum = 1; seatNum <= totalSeats; seatNum++) {
+    const balance = calculateSeatBalance(items, seatNum, taxRate)
+    const status = determineSeatStatus(items, seatNum, payments)
+
+    seats.push({
+      seatNumber: seatNum,
+      ...balance,
+      status,
+    })
+  }
+
+  return seats
+}
+
+/**
+ * Position seats around a circular orbit
+ */
+export function calculateSeatPositions(
+  seatCount: number,
+  orbitRadius: number,
+  startAngle: number = -90 // Start at top
+): { x: number; y: number; angle: number }[] {
+  const positions: { x: number; y: number; angle: number }[] = []
+  const angleStep = 360 / seatCount
+
+  for (let i = 0; i < seatCount; i++) {
+    const angle = startAngle + i * angleStep
+    const radians = (angle * Math.PI) / 180
+    const x = Math.cos(radians) * orbitRadius
+    const y = Math.sin(radians) * orbitRadius
+
+    positions.push({ x, y, angle })
+  }
+
+  return positions
+}
+
+/**
+ * Format currency for display
+ */
+export function formatSeatBalance(amount: number): string {
+  if (amount === 0) return ''
+  return `$${amount.toFixed(2)}`
+}
+
+
+================================================================================
+FILE 2 OF 10: src/lib/order-calculations.ts
+CHANGE: Line 335 — ?? 8 changed to ?? 0 (getLocationTaxRate fallback)
+================================================================================
+
+/**
+ * Order Calculations - Single Source of Truth
+ *
+ * Centralized calculation logic for order totals, taxes, and commissions.
+ * Used by both client (UI) and server (API routes) to ensure consistency.
+ *
+ * PRINCIPLES:
+ * - All money rounding goes through roundToCents() from pricing.ts
+ * - Rounding is the absolute last step (sum raw → surcharge → discount → tax → tip → THEN round)
+ * - Tax lines are rounded to 2 decimals (compliance), final total optionally rounded per settings
+ * - taxRate is always a decimal (0.08), never ambiguous 8 vs 0.08
+ */
+
+import { roundToCents, applyPriceRounding } from './pricing'
+import type { PriceRoundingSettings } from './settings'
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface OrderItemForCalculation {
+  price: number
+  quantity: number
+  status?: string // 'active' | 'voided' | 'comped' — voided/comped items excluded from totals
+  modifiers?: Array<{
+    price: number
+    quantity?: number
+  }>
+  ingredientModifications?: Array<{
+    priceAdjustment: number
+  }>
+  itemTotal?: number // For persisted items from DB
+  commissionAmount?: number // For persisted items from DB
+  categoryType?: string | null // For tax-inclusive pricing split
+  isTaxInclusive?: boolean // Stored on OrderItem — true if item was tax-inclusive at time of sale
+}
+
+export interface LocationTaxSettings {
+  tax?: {
+    defaultRate?: number // Stored as percentage (e.g. 8 for 8%), converted to decimal internally
+  }
+}
+
+export interface OrderTotals {
+  subtotal: number
+  taxTotal: number
+  taxFromInclusive: number  // Tax backed out of inclusive items
+  taxFromExclusive: number  // Tax added on top of exclusive items
+  discountTotal: number
+  tipTotal: number
+  totalBeforeRounding: number  // Total before price rounding applied
+  total: number                // Final total (after rounding if applicable)
+  roundingDelta: number        // total - totalBeforeRounding (0 if no rounding)
+  commissionTotal?: number
+}
+
+// ============================================================================
+// ITEM CALCULATIONS
+// ============================================================================
+
+/**
+ * Calculate the total for a single order item (before order-level adjustments)
+ *
+ * Formula: (itemPrice * qty) + (modifierPrices * qty) + (ingredientAdjustments * qty)
+ */
+export function calculateItemTotal(item: OrderItemForCalculation): number {
+  // If item already has itemTotal (from DB), use it
+  if (item.itemTotal !== undefined && item.itemTotal !== null) {
+    return Number(item.itemTotal)
+  }
+
+  // Calculate from components
+  const itemBaseTotal = item.price * item.quantity
+
+  const modifiersTotal = (item.modifiers || []).reduce((sum, mod) => {
+    return sum + (mod.price * (mod.quantity || 1))
+  }, 0) * item.quantity
+
+  const ingredientModTotal = (item.ingredientModifications || []).reduce((sum, ing) => {
+    return sum + (ing.priceAdjustment || 0)
+  }, 0) * item.quantity
+
+  return itemBaseTotal + modifiersTotal + ingredientModTotal
+}
+
+/**
+ * Calculate commission for a single item
+ */
+export function calculateItemCommission(
+  itemTotal: number,
+  quantity: number,
+  commissionType: string | null,
+  commissionValue: number | null
+): number {
+  if (!commissionType || commissionValue === null || commissionValue === undefined) {
+    return 0
+  }
+
+  if (commissionType === 'percent') {
+    return roundToCents(itemTotal * commissionValue / 100)
+  } else if (commissionType === 'fixed') {
+    return roundToCents(commissionValue * quantity)
+  }
+
+  return 0
+}
+
+// ============================================================================
+// ORDER CALCULATIONS
+// ============================================================================
+
+/**
+ * Calculate order subtotal from all items
+ */
+export function calculateOrderSubtotal(items: OrderItemForCalculation[]): number {
+  return items
+    .filter(item => !item.status || item.status === 'active')
+    .reduce((sum, item) => sum + calculateItemTotal(item), 0)
+}
+
+/**
+ * Calculate total commission from all items
+ */
+export function calculateOrderCommission(
+  items: Array<OrderItemForCalculation & { commissionAmount?: number }>
+): number {
+  return items.reduce((sum, item) => {
+    if (item.commissionAmount !== undefined && item.commissionAmount !== null) {
+      return sum + Number(item.commissionAmount)
+    }
+    return sum
+  }, 0)
+}
+
+/**
+ * Calculate tax based on subtotal and location settings
+ */
+export function calculateOrderTax(
+  subtotal: number,
+  locationSettings: LocationTaxSettings | null
+): number {
+  const taxRate = (locationSettings?.tax?.defaultRate || 8) / 100
+  return roundToCents(subtotal * taxRate)
+}
+
+/**
+ * Calculate final order total
+ */
+export function calculateOrderTotal(
+  subtotal: number,
+  taxTotal: number,
+  discountTotal: number,
+  tipTotal: number
+): number {
+  return roundToCents(subtotal + taxTotal - discountTotal + tipTotal)
+}
+
+/**
+ * Calculate all order totals at once.
+ *
+ * Pipeline:
+ * 1. Sum raw item totals → inclusiveSubtotal, exclusiveSubtotal
+ * 2. Calculate split tax (back out inclusive, add exclusive) — rounded to cents for compliance
+ * 3. Compute totalBeforeRounding = inclusive + exclusive + taxFromExclusive - discounts + tip
+ * 4. Apply price rounding as absolute last step (if settings provided)
+ * 5. Return roundingDelta for display
+ *
+ * @param items - Array of order items (inline or persisted)
+ * @param locationSettings - Location settings (for tax rate, stored as percentage e.g. 8)
+ * @param existingDiscountTotal - Order-level discount (default 0)
+ * @param existingTipTotal - Order-level tip (default 0)
+ * @param priceRounding - Optional price rounding settings (Skill 88)
+ * @param paymentMethod - Payment method for rounding rules (default 'card')
+ */
+export function calculateOrderTotals(
+  items: Array<OrderItemForCalculation & { commissionAmount?: number }>,
+  locationSettings: LocationTaxSettings | null,
+  existingDiscountTotal: number = 0,
+  existingTipTotal: number = 0,
+  priceRounding?: PriceRoundingSettings,
+  paymentMethod: 'cash' | 'card' = 'card'
+): OrderTotals {
+  const taxRate = (locationSettings?.tax?.defaultRate || 8) / 100
+  const commissionTotal = calculateOrderCommission(items)
+
+  // 1. Split items into tax-inclusive vs tax-exclusive
+  let inclusiveSubtotal = 0
+  let exclusiveSubtotal = 0
+
+  for (const item of items) {
+    if (item.status && item.status !== 'active') continue
+    const total = calculateItemTotal(item)
+    if (item.isTaxInclusive) {
+      inclusiveSubtotal += total
+    } else {
+      exclusiveSubtotal += total
+    }
+  }
+
+  inclusiveSubtotal = roundToCents(inclusiveSubtotal)
+  exclusiveSubtotal = roundToCents(exclusiveSubtotal)
+  const subtotal = roundToCents(inclusiveSubtotal + exclusiveSubtotal)
+
+  // 2. Split tax — rounded to cents for compliance
+  const { taxFromInclusive, taxFromExclusive, totalTax } = calculateSplitTax(
+    inclusiveSubtotal, exclusiveSubtotal, taxRate
+  )
+
+  // 3. Total before rounding
+  // Inclusive items already contain tax (no extra added), exclusive items get taxFromExclusive added
+  const totalBeforeRounding = roundToCents(
+    inclusiveSubtotal + exclusiveSubtotal + taxFromExclusive
+    - existingDiscountTotal + existingTipTotal
+  )
+
+  // 4. Apply price rounding as absolute last step
+  let total = totalBeforeRounding
+  let roundingDelta = 0
+
+  if (priceRounding) {
+    total = applyPriceRounding(totalBeforeRounding, priceRounding, paymentMethod)
+    roundingDelta = roundToCents(total - totalBeforeRounding)
+  }
+
+  return {
+    subtotal,
+    taxTotal: totalTax,
+    taxFromInclusive,
+    taxFromExclusive,
+    discountTotal: existingDiscountTotal,
+    tipTotal: existingTipTotal,
+    totalBeforeRounding,
+    total,
+    roundingDelta,
+    commissionTotal,
+  }
+}
+
+// ============================================================================
+// TIP CALCULATIONS
+// ============================================================================
+
+/**
+ * Recalculate order total when tip changes
+ */
+export function recalculateTotalWithTip(
+  subtotal: number,
+  taxTotal: number,
+  discountTotal: number,
+  newTipTotal: number
+): number {
+  return calculateOrderTotal(subtotal, taxTotal, discountTotal, newTipTotal)
+}
+
+// ============================================================================
+// TAX-INCLUSIVE PRICING
+// ============================================================================
+
+const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
+const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
+
+export interface TaxInclusiveSettings {
+  taxInclusiveLiquor: boolean
+  taxInclusiveFood: boolean
+}
+
+/**
+ * Check if an item's category type is tax-inclusive based on settings
+ */
+export function isItemTaxInclusive(
+  categoryType: string | null | undefined,
+  settings: TaxInclusiveSettings
+): boolean {
+  if (!categoryType) return false
+  if (settings.taxInclusiveLiquor && LIQUOR_CATEGORY_TYPES.includes(categoryType)) return true
+  if (settings.taxInclusiveFood && FOOD_CATEGORY_TYPES.includes(categoryType)) return true
+  return false
+}
+
+/**
+ * Split order items into tax-inclusive and tax-exclusive subtotals.
+ */
+export function splitSubtotalsByTaxInclusion(
+  items: OrderItemForCalculation[],
+  taxInclusiveSettings: TaxInclusiveSettings
+): { inclusiveSubtotal: number; exclusiveSubtotal: number } {
+  let inclusiveSubtotal = 0
+  let exclusiveSubtotal = 0
+
+  for (const item of items) {
+    if (item.status && item.status !== 'active') continue
+    const total = calculateItemTotal(item)
+    if (isItemTaxInclusive(item.categoryType, taxInclusiveSettings)) {
+      inclusiveSubtotal += total
+    } else {
+      exclusiveSubtotal += total
+    }
+  }
+
+  return {
+    inclusiveSubtotal: roundToCents(inclusiveSubtotal),
+    exclusiveSubtotal: roundToCents(exclusiveSubtotal),
+  }
+}
+
+/**
+ * Calculate tax for a mixed order with both inclusive and exclusive items.
+ *
+ * Inclusive: tax = price - (price / (1 + rate))  — backed out
+ * Exclusive: tax = price × rate                  — added on top
+ */
+export function calculateSplitTax(
+  inclusiveSubtotal: number,
+  exclusiveSubtotal: number,
+  taxRate: number
+): { taxFromInclusive: number; taxFromExclusive: number; totalTax: number } {
+  const taxFromInclusive = inclusiveSubtotal > 0
+    ? roundToCents(inclusiveSubtotal - (inclusiveSubtotal / (1 + taxRate)))
+    : 0
+  const taxFromExclusive = roundToCents(exclusiveSubtotal * taxRate)
+
+  return {
+    taxFromInclusive,
+    taxFromExclusive,
+    totalTax: roundToCents(taxFromInclusive + taxFromExclusive),
+  }
+}
+
+// ── Legacy helpers (migrated from deprecated tax-calculations.ts) ──
+
+/**
+ * Get the location's default tax rate as a decimal (e.g., 0.08 for 8%).
+ */
+export function getLocationTaxRate(settings: { tax?: { defaultRate?: number } } | null | undefined): number {
+  const rate = settings?.tax?.defaultRate ?? 0
+  return rate / 100
+}
+
+/**
+ * Get the effective tax rate for a specific item.
+ */
+export function getEffectiveTaxRate(
+  itemTaxRate: number | null | undefined,
+  itemTaxExempt: boolean,
+  locationTaxRate: number
+): number {
+  if (itemTaxExempt) return 0
+  if (itemTaxRate != null) return itemTaxRate / 100
+  return locationTaxRate
+}
+
+/**
+ * Calculate tax on a subtotal using a single rate.
+ */
+export function calculateTax(subtotal: number, taxRate: number): number {
+  return roundToCents(subtotal * taxRate)
+}
+
+/**
+ * Simplified order totals (subtotal-only signature).
+ * For full support (tax-inclusive, rounding), use calculateOrderTotals above.
+ */
+export function calculateSimpleOrderTotals(
+  subtotal: number,
+  discountTotal: number,
+  locationSettings: { tax?: { defaultRate?: number } } | null | undefined
+): {
+  subtotal: number
+  discountTotal: number
+  taxTotal: number
+  total: number
+} {
+  const taxRate = getLocationTaxRate(locationSettings)
+  const effectiveDiscount = Math.min(discountTotal, subtotal)
+  const taxableAmount = subtotal - effectiveDiscount
+  const taxTotal = roundToCents(taxableAmount * taxRate)
+  const total = roundToCents(taxableAmount + taxTotal)
+
+  return {
+    subtotal,
+    discountTotal: effectiveDiscount,
+    taxTotal,
+    total,
+  }
+}
+
+
+================================================================================
+FILE 3 OF 10: src/hooks/useOrderSettings.ts
+CHANGE: Line 74 — useState(0.08) changed to useState(0)
+================================================================================
+
+'use client'
+
+import { useState, useEffect } from 'react'
+import type { DualPricingSettings, PaymentSettings, PriceRoundingSettings, ReceiptSettings } from '@/lib/settings'
+import { useOrderStore } from '@/stores/order-store'
+import { setLocationTaxRate } from '@/lib/seat-utils'
+
+const DEFAULT_DUAL_PRICING: DualPricingSettings = {
+  enabled: true,
+  cashDiscountPercent: 4.0,
+  applyToCredit: true,
+  applyToDebit: true,
+  showSavingsMessage: true,
+}
+
+const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
+  acceptCash: true,
+  acceptCredit: true,
+  acceptDebit: true,
+  acceptGiftCards: false,
+  acceptHouseAccounts: false,
+  cashRounding: 'none',
+  roundingDirection: 'nearest',
+  enablePreAuth: true,
+  defaultPreAuthAmount: 50,
+  preAuthExpirationDays: 7,
+  processor: 'simulated',
+  testMode: true,
+  readerTimeoutSeconds: 30,
+  autoSwapOnFailure: true,
+  // Bar Tab Pre-Auth
+  incrementThresholdPercent: 80,
+  incrementAmount: 25,
+  autoIncrementEnabled: true,
+  incrementTipBufferPercent: 25,
+  maxTabAlertAmount: 500,
+  // Quick Pay / Tip
+  quickPayEnabled: true,
+  tipDollarAmountThreshold: 15,
+  tipDollarSuggestions: [1, 2, 3],
+  tipPercentSuggestions: [18, 20, 25],
+  requireCustomForZeroTip: true,
+  // Walkout Recovery
+  walkoutRetryEnabled: true,
+  walkoutRetryFrequencyDays: 3,
+  walkoutMaxRetryDays: 30,
+  walkoutAutoDetectMinutes: 120,
+  // Card Recognition
+  cardRecognitionEnabled: true,
+  cardRecognitionToastEnabled: true,
+  // Signature
+  requireSignatureAbove: 25,
+  // Bottle Service
+  bottleServiceEnabled: false,
+  bottleServiceAutoGratuityPercent: 20,
+  bottleServiceReAuthAlertEnabled: true,
+  bottleServiceMinSpendEnforced: false,
+  // Digital Receipts
+  digitalReceiptRetentionDays: 90,
+}
+
+const DEFAULT_PRICE_ROUNDING: PriceRoundingSettings = {
+  enabled: false,
+  increment: 'none',
+  direction: 'nearest',
+  applyToCash: true,
+  applyToCard: false,
+}
+
+export function useOrderSettings() {
+  const [dualPricing, setDualPricing] = useState<DualPricingSettings>(DEFAULT_DUAL_PRICING)
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>(DEFAULT_PAYMENT_SETTINGS)
+  const [priceRounding, setPriceRounding] = useState<PriceRoundingSettings>(DEFAULT_PRICE_ROUNDING)
+  const [taxRate, setTaxRate] = useState(0)
+  const [taxInclusiveLiquor, setTaxInclusiveLiquor] = useState(false)
+  const [taxInclusiveFood, setTaxInclusiveFood] = useState(false)
+  const [receiptSettings, setReceiptSettings] = useState<Partial<ReceiptSettings>>({})
+  const [requireCardForTab, setRequireCardForTab] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const loadSettings = async () => {
+    try {
+      const response = await fetch('/api/settings')
+      if (response.ok) {
+        const data = await response.json()
+        const settings = data.settings || data
+
+        if (settings.dualPricing) {
+          setDualPricing(settings.dualPricing)
+        }
+        if (settings.priceRounding) {
+          setPriceRounding(settings.priceRounding)
+        }
+        if (settings.tax?.defaultRate) {
+          const rate = settings.tax.defaultRate / 100
+          setTaxRate(rate)
+          // Push to order store so calculateTotals() uses real location rate
+          useOrderStore.getState().setEstimatedTaxRate(rate)
+          // Push to seat-utils so seat balance calculations use real rate
+          setLocationTaxRate(rate)
+        }
+        if (settings.tax?.taxInclusiveLiquor !== undefined) {
+          setTaxInclusiveLiquor(settings.tax.taxInclusiveLiquor)
+        }
+        if (settings.tax?.taxInclusiveFood !== undefined) {
+          setTaxInclusiveFood(settings.tax.taxInclusiveFood)
+        }
+        if (settings.payments) {
+          setPaymentSettings(settings.payments)
+        }
+        if (settings.receipts) {
+          setReceiptSettings(settings.receipts)
+        }
+        if (settings.barTabs?.requireCardForTab !== undefined) {
+          setRequireCardForTab(settings.barTabs.requireCardForTab)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load settings:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadSettings()
+  }, [])
+
+  return {
+    dualPricing,
+    paymentSettings,
+    priceRounding,
+    taxRate,
+    taxInclusiveLiquor,
+    taxInclusiveFood,
+    receiptSettings,
+    requireCardForTab,
+    isLoading,
+    reloadSettings: loadSettings,
+  }
+}
+
+
+================================================================================
+FILE 4 OF 10: src/app/api/orders/[id]/close-tab/route.ts
+CHANGES:
+  - Line 6: Added import { parseSettings } from '@/lib/settings'
+  - Lines 51-54: Load tip percentages from location settings instead of hardcoded
+  - Line 72: Use tipSuggestions variable instead of hardcoded [15, 18, 20, 25]
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
+import { parseError } from '@/lib/datacap/xml-parser'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { parseSettings } from '@/lib/settings'
+
+// POST - Close tab by capturing against cards
+// Supports: device tip, receipt tip (PrintBlankLine), or tip already included
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id: orderId } = await params
+    const body = await request.json().catch(() => ({}))
+    const {
+      employeeId,
+      tipMode = 'receipt', // 'device' | 'receipt' | 'included'
+      tipAmount,           // Pre-set tip amount (for 'included' mode)
+    } = body
+
+    if (!employeeId) {
+      return NextResponse.json({ error: 'Missing required field: employeeId' }, { status: 400 })
+    }
+
+    // Get order with cards
+    const order = await db.order.findFirst({
+      where: { id: orderId, deletedAt: null },
+      include: {
+        cards: {
+          where: { deletedAt: null, status: 'authorized' },
+          orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+        },
+        items: {
+          where: { deletedAt: null, status: 'active' },
+        },
+      },
+    })
+
+    if (!order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    if (order.cards.length === 0) {
+      return NextResponse.json({ error: 'No authorized cards on this tab' }, { status: 400 })
+    }
+
+    const locationId = order.locationId
+
+    // Load tip percentages from location settings
+    const location = await db.location.findFirst({ where: { id: locationId }, select: { settings: true } })
+    const locSettings = parseSettings(location?.settings)
+    const tipSuggestions = locSettings.tipBank?.tipGuide?.percentages ?? [15, 18, 20, 25]
+
+    // Calculate purchase amount from order total
+    const purchaseAmount = Number(order.total) - Number(order.tipTotal)
+    const gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
+
+    // Try capturing against default card first, then others
+    let capturedCard = null
+    let captureResult = null
+
+    for (const card of order.cards) {
+      try {
+        await validateReader(card.readerId, locationId)
+        const client = await requireDatacapClient(locationId)
+
+        // If device tip mode, fire GetSuggestiveTip first
+        if (tipMode === 'device') {
+          try {
+            const tipResponse = await client.getSuggestiveTip(card.readerId, tipSuggestions)
+            if (tipResponse.gratuityAmount) {
+              // Use device-selected tip
+              const deviceTip = parseFloat(tipResponse.gratuityAmount) || 0
+              const response = await client.preAuthCapture(card.readerId, {
+                recordNo: card.recordNo,
+                purchaseAmount,
+                gratuityAmount: deviceTip,
+              })
+              captureResult = { response, tipAmount: deviceTip }
+              capturedCard = card
+              break
+            }
+          } catch (tipErr) {
+            console.warn(`[Tab Close] Device tip prompt failed, falling back:`, tipErr)
+          }
+        }
+
+        // Standard capture (receipt tip or included tip)
+        const response = await client.preAuthCapture(card.readerId, {
+          recordNo: card.recordNo,
+          purchaseAmount,
+          gratuityAmount,
+        })
+
+        captureResult = { response, tipAmount: gratuityAmount || 0 }
+        capturedCard = card
+        break
+      } catch (err) {
+        console.warn(`[Tab Close] Capture failed for card ${card.cardLast4}:`, err)
+        continue
+      }
+    }
+
+    if (!capturedCard || !captureResult) {
+      return NextResponse.json({
+        data: {
+          success: false,
+          error: 'All cards failed to capture',
+        },
+      })
+    }
+
+    const { response } = captureResult
+    const approved = response.cmdStatus === 'Approved'
+    const error = parseError(response)
+
+    if (!approved) {
+      console.log(`[Tab Close] DECLINED Order=${orderId} Card=${capturedCard.cardType} ...${capturedCard.cardLast4}`)
+      return NextResponse.json({
+        data: {
+          success: false,
+          cardType: capturedCard.cardType,
+          cardLast4: capturedCard.cardLast4,
+          error: error
+            ? { code: error.code, message: error.text, isRetryable: error.isRetryable }
+            : { code: 'DECLINED', message: 'Capture declined', isRetryable: true },
+        },
+      })
+    }
+
+    // Update OrderCard + Order status
+    const now = new Date()
+    await db.$transaction([
+      db.orderCard.update({
+        where: { id: capturedCard.id },
+        data: {
+          status: 'captured',
+          capturedAmount: purchaseAmount + (captureResult.tipAmount || 0),
+          capturedAt: now,
+          tipAmount: captureResult.tipAmount || 0,
+        },
+      }),
+      db.order.update({
+        where: { id: orderId },
+        data: {
+          status: 'paid',
+          tabStatus: 'closed',
+          paidAt: now,
+          closedAt: now,
+          tipTotal: captureResult.tipAmount || Number(order.tipTotal),
+          total: purchaseAmount + (captureResult.tipAmount || 0),
+        },
+      }),
+      // Void any remaining authorized cards
+      ...order.cards
+        .filter((c) => c.id !== capturedCard!.id && c.status === 'authorized')
+        .map((c) =>
+          db.orderCard.update({
+            where: { id: c.id },
+            data: { status: 'voided' },
+          })
+        ),
+    ])
+
+    console.log(`[Tab Close] CAPTURED Order=${orderId} Card=${capturedCard.cardType} ...${capturedCard.cardLast4} Amount=$${purchaseAmount} Tip=$${captureResult.tipAmount || 0} TipMode=${tipMode}`)
+
+    // Dispatch open orders changed so all terminals refresh (fire-and-forget)
+    dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId }, { async: true }).catch(() => {})
+    dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+
+    return NextResponse.json({
+      data: {
+        success: true,
+        captured: {
+          cardType: capturedCard.cardType,
+          cardLast4: capturedCard.cardLast4,
+          purchaseAmount,
+          tipAmount: captureResult.tipAmount || 0,
+          totalAmount: purchaseAmount + (captureResult.tipAmount || 0),
+          authCode: response.authCode,
+        },
+        tipMode,
+        // For receipt tip mode: bartender enters tip later via /api/datacap/adjust
+        pendingTipAdjust: tipMode === 'receipt',
+        recordNo: capturedCard.recordNo,
+      },
+    })
+  } catch (error) {
+    console.error('Failed to close tab:', error)
+    return NextResponse.json({ error: 'Failed to close tab' }, { status: 500 })
+  }
+}
+
+
+================================================================================
+FILE 5 OF 10: src/app/api/settings/route.ts
+CHANGE: Lines 129-138 — Added 4 missing deep-merge fields:
+  tipBank, payments, happyHour, receiptDisplay
+================================================================================
+
+import { NextRequest, NextResponse } from 'next/server'
+import { db } from '@/lib/db'
+import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settings'
+import { requirePermission } from '@/lib/api-auth'
+import { PERMISSIONS } from '@/lib/auth-utils'
+
+// Category types that map to liquor/food tax-inclusive flags
+const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
+const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
+
+// GET location settings
+export async function GET() {
+  try {
+    const location = await db.location.findFirst()
+    if (!location) {
+      return NextResponse.json(
+        { error: 'No location found' },
+        { status: 404 }
+      )
+    }
+
+    const settings = parseSettings(location.settings)
+
+    // Derive taxInclusiveLiquor/taxInclusiveFood from TaxRule records
+    const [taxRules, categories] = await Promise.all([
+      db.taxRule.findMany({
+        where: { locationId: location.id, isActive: true, isInclusive: true, deletedAt: null },
+        select: { appliesTo: true, categoryIds: true },
+      }),
+      db.category.findMany({
+        where: { locationId: location.id, deletedAt: null },
+        select: { id: true, categoryType: true },
+      }),
+    ])
+
+    // Check if any inclusive rule covers liquor or food categories
+    let taxInclusiveLiquor = false
+    let taxInclusiveFood = false
+
+    for (const rule of taxRules) {
+      if (rule.appliesTo === 'all') {
+        // An "all items" inclusive rule makes everything inclusive
+        taxInclusiveLiquor = true
+        taxInclusiveFood = true
+        break
+      }
+      if (rule.appliesTo === 'category' && rule.categoryIds) {
+        const ruleCategories = rule.categoryIds as string[]
+        for (const cat of categories) {
+          if (ruleCategories.includes(cat.id)) {
+            if (cat.categoryType && LIQUOR_CATEGORY_TYPES.includes(cat.categoryType)) {
+              taxInclusiveLiquor = true
+            }
+            if (cat.categoryType && FOOD_CATEGORY_TYPES.includes(cat.categoryType)) {
+              taxInclusiveFood = true
+            }
+          }
+        }
+      }
+    }
+
+    // Inject derived tax-inclusive flags into settings
+    settings.tax = {
+      ...settings.tax,
+      taxInclusiveLiquor,
+      taxInclusiveFood,
+    }
+
+    return NextResponse.json({
+      locationId: location.id,
+      locationName: location.name,
+      settings,
+    })
+  } catch (error) {
+    console.error('Failed to fetch settings:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch settings' },
+      { status: 500 }
+    )
+  }
+}
+
+// PUT update location settings
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { settings, employeeId } = body as { settings: Partial<LocationSettings>; employeeId?: string }
+
+    const location = await db.location.findFirst()
+    if (!location) {
+      return NextResponse.json(
+        { error: 'No location found' },
+        { status: 404 }
+      )
+    }
+
+    // Auth: editing settings requires admin.manage_settings
+    if (employeeId) {
+      const auth = await requirePermission(employeeId, location.id, PERMISSIONS.ADMIN)
+      if (!auth.authorized) {
+        return NextResponse.json({ error: auth.error }, { status: auth.status })
+      }
+    }
+
+    // Validate dual pricing: cashDiscountPercent must be 0-10%
+    if (settings.dualPricing?.cashDiscountPercent !== undefined) {
+      const pct = settings.dualPricing.cashDiscountPercent
+      if (pct < 0 || pct > 10) {
+        return NextResponse.json(
+          { error: 'cashDiscountPercent must be between 0 and 10' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Get current settings and deep-merge with updates
+    // mergeWithDefaults() handles all nested objects including tipBank.tipGuide,
+    // happyHour.schedules, and receiptDisplay sub-sections
+    const currentSettings = parseSettings(location.settings)
+    const updatedSettings = mergeWithDefaults({
+      ...currentSettings,
+      ...settings,
+      // Deep merge for nested objects to prevent sibling field loss
+      tax: { ...currentSettings.tax, ...(settings.tax || {}) },
+      dualPricing: { ...currentSettings.dualPricing, ...(settings.dualPricing || {}) },
+      priceRounding: { ...currentSettings.priceRounding, ...(settings.priceRounding || {}) },
+      tips: { ...currentSettings.tips, ...(settings.tips || {}) },
+      tipShares: { ...currentSettings.tipShares, ...(settings.tipShares || {}) },
+      tipBank: { ...currentSettings.tipBank, ...(settings.tipBank || {}) },
+      receipts: { ...currentSettings.receipts, ...(settings.receipts || {}) },
+      payments: { ...currentSettings.payments, ...(settings.payments || {}) },
+      loyalty: { ...currentSettings.loyalty, ...(settings.loyalty || {}) },
+      happyHour: { ...currentSettings.happyHour, ...(settings.happyHour || {}) },
+      barTabs: { ...currentSettings.barTabs, ...(settings.barTabs || {}) },
+      clockOut: { ...currentSettings.clockOut, ...(settings.clockOut || {}) },
+      businessDay: { ...currentSettings.businessDay, ...(settings.businessDay || {}) },
+      posDisplay: { ...currentSettings.posDisplay, ...(settings.posDisplay || {}) },
+      receiptDisplay: { ...currentSettings.receiptDisplay, ...(settings.receiptDisplay || {}) },
+    })
+
+    // Update location
+    await db.location.update({
+      where: { id: location.id },
+      data: {
+        settings: updatedSettings as object,
+      },
+    })
+
+    return NextResponse.json({
+      locationId: location.id,
+      settings: updatedSettings,
+    })
+  } catch (error) {
+    console.error('Failed to update settings:', error)
+    return NextResponse.json(
+      { error: 'Failed to update settings' },
+      { status: 500 }
+    )
+  }
+}
+
+
+================================================================================
+NOTE: Settings pages (Files 6-10) are large UI files.
+Due to file size, they are exported in a separate file:
+  SESSION-EXPORT-2026-02-11-SETTINGS-PAGES.txt
+================================================================================

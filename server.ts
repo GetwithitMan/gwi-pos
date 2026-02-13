@@ -1,0 +1,50 @@
+/**
+ * Custom Next.js Server with Socket.io
+ *
+ * This wraps the standard Next.js server to add Socket.io support.
+ * Socket.io runs on the SAME port as Next.js (no separate process needed).
+ *
+ * Usage:
+ *   Development: npm run dev   (runs this via tsx)
+ *   Production:  npm start     (runs this via node on the built output)
+ */
+
+import { createServer } from 'http'
+import next from 'next'
+import { initializeSocketServer } from './src/lib/socket-server'
+
+const dev = process.env.NODE_ENV !== 'production'
+const hostname = process.env.HOSTNAME || 'localhost'
+const port = parseInt(process.env.PORT || '3000', 10)
+
+async function main() {
+  const app = next({ dev, hostname, port })
+  const handle = app.getRequestHandler()
+
+  await app.prepare()
+
+  const httpServer = createServer((req, res) => {
+    handle(req, res)
+  })
+
+  // Initialize Socket.io on the same HTTP server
+  // This stores the instance in globalThis so API routes can emit events
+  try {
+    await initializeSocketServer(httpServer)
+    console.log(`[Server] Socket.io initialized on path /api/socket`)
+  } catch (err) {
+    console.error('[Server] Failed to initialize Socket.io:', err)
+    // Continue without sockets — POS will fall back to polling
+  }
+
+  httpServer.listen(port, () => {
+    console.log(`[Server] GWI POS ready on http://${hostname}:${port}`)
+    console.log(`[Server] Socket.io: ws://${hostname}:${port}/api/socket`)
+    console.log(`[Server] Mode: ${dev ? 'development' : 'production'}`)
+  })
+}
+
+main().catch((err) => {
+  console.error('[Server] Fatal error:', err)
+  process.exit(1)
+})

@@ -101,7 +101,6 @@
 | ID | Task | Assigned To | Picked Up | Notes |
 |----|------|-------------|-----------|-------|
 | T-016 | POS front-end ordering UI lift — ModifierModal flow, item selection UX, order panel polish | PM: Menu | 2026-02-07 | OrderPanel modifier depth, pricing, pre-modifier buttons fixed this session. Remaining: ModifierModal redesign, item grid layout, glassmorphism consistency |
-
 ## Completed
 
 | ID | Task | Completed By | Date | Notes |
@@ -113,6 +112,20 @@
 | NEW | Cash rounding pipeline fix (Skill 327) | PM: Payments/Reports | 2026-02-11 | Dual rounding system sync, payment validation, artifact detection, daily report tracking |
 | NEW | Complete combine removal (Skill 326) | PM: Floor Plan | 2026-02-11 | ALL virtual + physical combine deleted. 116 files, -16,211 lines. Tables standalone only. |
 | NEW | Seat management fixes (Skill 328) | PM: Floor Plan/Orders | 2026-02-12 | Add seat after send, seatNumber persistence on items, extra seats restore on reopen |
+| T-054 | Mission Control: Cloud Project Bootstrap | PM: Mission Control | 2026-02-12 | Next.js 16 + Prisma 7 + Clerk + Neon PostgreSQL |
+| T-055 | Mission Control: Cloud Prisma Schema | PM: Mission Control | 2026-02-12 | 11 enums, 10 models, 15 indexes |
+| T-056 | Mission Control: Server Registration API | PM: Mission Control | 2026-02-12 | Token validation, fingerprint uniqueness, RSA encryption, audit log |
+| T-057 | Mission Control: Heartbeat Ingestion API | PM: Mission Control | 2026-02-12 | HMAC auth, ServerHeartbeat record, ServerStatus.ONLINE, pending commands |
+| T-058 | Mission Control: License Validation API | PM: Mission Control | 2026-02-12 | HMAC auth, determineLicenseStatus(), tier features, HMAC-signed response |
+| T-059 | Mission Control: Fleet Dashboard | PM: Mission Control | 2026-02-12 | Wave 3 — StatusCard, ServerList, OrgSelector, fleet-status.ts |
+| T-061 | Mission Control: SSE Command Stream | PM: Mission Control | 2026-02-12 | Wave 3 — SSE stream + command ACK, priority ordering, Last-Event-ID replay |
+| T-060 | Mission Control: Provisioning Script | PM: Mission Control | 2026-02-12 | Wave 4A — Bash: fingerprint, RSA, register, decrypt, .env |
+| T-064 | Mission Control: Tenant Isolation | PM: Mission Control | 2026-02-12 | Wave 4A — Per-org schemas, FORCE RLS, withTenantContext, fail-closed |
+| T-065 | Mission Control: PayFac Credential Management | PM: Mission Control | 2026-02-12 | Wave 4A — AES encrypt at rest, RSA per-server push, heartbeat hash verification, dedup |
+| T-063 | Mission Control: Kill Switch | PM: Mission Control | 2026-02-12 | Wave 4B — kill/revive lib, single+bulk kill, status endpoint, UPDATE_CONFIG revive |
+| T-066 | Mission Control: Subscription Tiers & Hardware Limits | PM: Mission Control | 2026-02-12 | Wave 4B — 3-tier limits, per-location overrides, tier comparison UI, FORCE_SYNC on change |
+| T-067 | Mission Control: Billing & Late Payment | PM: Mission Control | 2026-02-12 | Wave 4C — Datacap-based (no Stripe), settlement deduction + card-on-file, manual escalation, billing dashboard |
+| T-062 | Mission Control: Sync Agent Sidecar | PM: Mission Control | 2026-02-12 | 11 TypeScript files, Docker container: heartbeat, SSE consumer, command worker, license validator, HMAC client, status API |
 
 ---
 

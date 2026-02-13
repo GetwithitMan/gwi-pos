@@ -1,0 +1,2269 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2868
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 Here is a tip banking foundation I want to make the basis of this system. \
+\
+Use apis as needed and sockets for speed and to keep this system Running at full power. Speed and Accuracy is key, especially as we are talking about finances and individuals PAY.\
+\
+We need to build this out without leaving anything out. Help me design this.\
+\
+Currently in the system, I have built out a tip bank, where after the employee clocks out they are able to see how much they made in tips and commissions. They will see how much is already calculated in tip sharing from the back of house rules, and how much remains and from here they can do one off tips so if they want to give the bouncer an extra 20 bucks for helping with one guy they can do that and I have that belt. Also, the tip bank is managed in essence by the business owner when an employee wants to be paid out of this tip bank they can be paid out up to that amount that they have in the bank or during payroll. An owner can automatically add it to the employees paycheck as tips and then that clears out their tip bank account back to zero.\
+\
+All tips go to the Tip bank. (Each employee has their own account at the bank, the business is technically the bank. It\'92s just a temporary holding place for tips to be managed before distributions)\
+\
+Then on top of this we build the tip structure. Individual. Role. Weighted by points. Etc.\
+\
+\
+Here is the discussion we started with. \
+\
+If I have a group of bartenders one bartender started in the morning say from 8 AM to noon at noon a second bartender comes in at this point they decide to share tips so the main bartender chooses start bartender group. Let\'92s say for the next few hours. It\'92s just a deal and then around 4 PM. Another bartender comes in and he gets added to the group, but he only gets a percent of the tips starting at when he clocked in and then they\'92re split at that point then morning, bartender clocks out, and he gets a percent of all of his tips up to that point on his daily checkout, it shows his morning tips 100% is midday steps, 50% and his late day 33.3% is it feasible to make this happen as well as have a report to track of the sales made by the group during the group. Where I need to go with this is how do I tell my developer to draw this up?\
+\
+\
+This is absolutely feasible, and it\'92s actually a really common pain point that most POS systems handle poorly. Here\'92s how I\'92d frame it for your developer as a clear spec.\
+The Core Concept: Time-Weighted Tip Pooling\
+The key data model insight is that a Tip Group isn\'92t a static split \'97 it\'92s a series of segments where each segment has a different member count and split ratio.\
+\
+How to Explain It to Your Developer\
+Tell them to think of it in three layers:\
+1. Tip Group (the container)\
+	\uc0\u8729 	Created by a bartender (the \'93owner\'94) who taps \'93Start Bartender Group\'94\
+	\uc0\u8729 	Has a start time, an optional end time, and a list of membership events\
+	\uc0\u8729 	Tracks which terminal/register the group is tied to\
+2. Group Segments (the time slices)\
+	\uc0\u8729 	Every time someone joins or leaves the group, a new segment is created automatically\
+	\uc0\u8729 	Each segment records: start time, end time, number of active members, and the split percentage\
+	\uc0\u8729 	Using your scenario:\
+\
+\
+\
+|Segment  |Time                            |Members  |Split     |\
+|---------|--------------------------------|---------|----------|\
+|Pre-group|8:00 AM \'96 12:00 PM              |A only   |100% to A |\
+|Segment 1|12:00 PM \'96 4:00 PM              |A + B    |50/50     |\
+|Segment 2|4:00 PM \'96 6:00 PM (A clocks out)|A + B + C|33.3% each|\
+|Segment 3|6:00 PM \'96 close                 |B + C    |50/50     |\
+\
+3. Tip Transactions (the money)\
+	\uc0\u8729 	Every tip that comes in gets timestamped and tagged to the group\
+	\uc0\u8729 	At checkout or report time, the system looks at when each tip was collected, maps it to the correct segment, and applies that segment\'92s split ratio\
+\
+The Developer Spec (what to actually build)\
+Here\'92s what I\'92d hand them:\
+Data Models Needed:\
+	\uc0\u8729 	TipGroup \'97 id, created_by, register_id, started_at, ended_at, status (active/closed)\
+	\uc0\u8729 	TipGroupMembership \'97 id, group_id, employee_id, joined_at, left_at\
+	\uc0\u8729 	TipGroupSegment \'97 id, group_id, started_at, ended_at, member_count, split_percentage (auto-calculated as 1/member_count)\
+	\uc0\u8729 	TipTransaction \'97 id, group_id, segment_id (nullable), amount, timestamp, source_order_id\
+Key Business Logic:\
+	\uc0\u8729 	When a member joins or leaves \u8594  close current segment, open new segment with updated member list\
+	\uc0\u8729 	When a tip comes in \u8594  find the active segment by timestamp, assign it\
+	\uc0\u8729 	On employee checkout \u8594  query all segments where that employee was active, sum their share from each segment\
+	\uc0\u8729 	Segment splits are equal by default (1/n) but you might want a flag for custom percentages later\
+Checkout Display for Bartender A:\
+\
+Daily Checkout - Bartender A\
+\uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+Solo Tips (8:00 AM - 12:00 PM)\
+  Total: $200.00  |  Your Share: 100%  |  $200.00\
+\
+Group Tips (12:00 PM - 4:00 PM)\
+  Total: $300.00  |  Your Share: 50%   |  $150.00\
+\
+Group Tips (4:00 PM - 6:00 PM)\
+  Total: $180.00  |  Your Share: 33.3% |  $60.00\
+\
+\uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+Total Tips: $410.00\
+\
+\
+Group Report (for managers):\
+	\uc0\u8729 	Total group sales and tips by segment\
+	\uc0\u8729 	Each member\'92s total earned\
+	\uc0\u8729 	Breakdown by segment showing who was active and their share\
+	\uc0\u8729 	Ability to filter by date range\
+\
+Edge Cases to Flag for the Developer\
+These are the things that\'92ll bite you if you don\'92t think about them upfront:\
+	\uc0\u8729 	What happens if a tip is adjusted or voided after the segment closes? (Recalculate from the original segment)\
+	\uc0\u8729 	Can the group owner override the equal split? (e.g., barback gets 15% instead of 33%)\
+	\uc0\u8729 	What if someone clocks out and back in? (New membership record, they rejoin the current segment)\
+	\uc0\u8729 	Cash tips vs. credit tips \'97 are both pooled or just credit?\
+	\uc0\u8729 	Does the group auto-close when the last person clocks out?\
+\
+My Recommendation\
+Start with equal splits and auto-segmenting only. Get that working and tested before you add custom split percentages \'97 that adds a lot of UI complexity. The segment-based architecture supports both, so you\'92re not painting yourself into a corner.\
+This is a genuine differentiator for GWI POS. Most systems either don\'92t do tip pooling at all or make you set a flat percentage at the start of the night with no dynamic membership changes. Want me to sketch out the actual database schema or UI wireframe flows for this?\uc0\u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \
+\
+Let me build you both \'97 the Prisma database schema aligned with your GWI POS stack and interactive UI wireframes you can walk through with your developer.\uc0\u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \
+\
+This is an interactive developer spec you can click through. It has six screens:\
+	1.	Start Group Flow \'97 Step-by-step walkthrough of how a bartender initiates tip pooling from their terminal, with the critical UX note that solo tips before the group stay 100% theirs.\
+	2.	Active Group View \'97 What the bartender sees during their shift: live running totals, their current share, and the segment timeline updating as people join/leave.\
+	3.	Add Member \'97 The flow when a new bartender gets added mid-shift, with the exact 5-step backend logic your developer needs to implement.\
+	4.	Daily Checkout \'97 Sarah\'92s end-of-shift receipt showing her morning solo tips at 100%, midday at 50%, and late day at 33.3% \'97 exactly what you described.\
+	5.	Manager Report \'97 Full group report with segment breakdown table, per-member earnings, and export options.\
+	6.	Database Schema \'97 Complete Prisma models (TipGroup, TipGroupMembership, TipGroupSegment, TipTransaction) plus the actual TypeScript functions for addMemberToGroup() and calculateCheckout(), all aligned with your Next.js/Prisma/SQLite stack.\
+Each screen includes yellow \'93Dev Notes\'94 callouts with implementation details and edge cases. You could hand this directly to your developer as the spec \'97 it covers the data model, the business logic, the UI flows, and the offline-first sync considerations.\uc0\u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \u8203 \
+\
+\
+\
+\
+import \{ useState \} from \'93react\'94;\
+\
+const SCREENS = \{\
+OVERVIEW: \'93overview\'94,\
+START_GROUP: \'93start_group\'94,\
+ACTIVE_GROUP: \'93active_group\'94,\
+ADD_MEMBER: \'93add_member\'94,\
+CHECKOUT: \'93checkout\'94,\
+MANAGER_REPORT: \'93manager_report\'94,\
+SCHEMA: \'93schema\'94,\
+\};\
+\
+// Color palette - POS terminal dark theme\
+const colors = \{\
+bg: \'93#0f1117\'94,\
+surface: \'93#1a1d27\'94,\
+surfaceHover: \'93#232736\'94,\
+card: \'93#1e2230\'94,\
+border: \'93#2a2e3d\'94,\
+borderActive: \'93#4a7cff\'94,\
+text: \'93#e8eaf0\'94,\
+textMuted: \'93#7a7f94\'94,\
+textDim: \'93#4a4f63\'94,\
+accent: \'93#4a7cff\'94,\
+accentLight: \'93#6b94ff\'94,\
+accentDim: \'93rgba(74,124,255,0.12)\'94,\
+green: \'93#34d399\'94,\
+greenDim: \'93rgba(52,211,153,0.12)\'94,\
+yellow: \'93#fbbf24\'94,\
+yellowDim: \'93rgba(251,191,36,0.12)\'94,\
+orange: \'93#fb923c\'94,\
+orangeDim: \'93rgba(251,146,60,0.12)\'94,\
+red: \'93#f87171\'94,\
+redDim: \'93rgba(248,113,113,0.12)\'94,\
+purple: \'93#a78bfa\'94,\
+purpleDim: \'93rgba(167,139,250,0.12)\'94,\
+\};\
+\
+const Badge = (\{ children, color = \'93accent\'94, size = \'93sm\'94 \}) => \{\
+const colorMap = \{\
+accent: \{ bg: colors.accentDim, text: colors.accent \},\
+green: \{ bg: colors.greenDim, text: colors.green \},\
+yellow: \{ bg: colors.yellowDim, text: colors.yellow \},\
+orange: \{ bg: colors.orangeDim, text: colors.orange \},\
+red: \{ bg: colors.redDim, text: colors.red \},\
+purple: \{ bg: colors.purpleDim, text: colors.purple \},\
+\};\
+const c = colorMap[color];\
+return (\
+<span\
+style=\{\{\
+background: c.bg,\
+color: c.text,\
+padding: size === \'93sm\'94 ? \'932px 8px\'94 : \'934px 12px\'94,\
+borderRadius: 6,\
+fontSize: size === \'93sm\'94 ? 11 : 13,\
+fontWeight: 600,\
+letterSpacing: \'930.02em\'94,\
+\}\}\
+>\
+\{children\}\
+</span>\
+);\
+\};\
+\
+const Button = (\{ children, variant = \'93primary\'94, onClick, size = \'93md\'94, fullWidth, icon \}) => \{\
+const styles = \{\
+primary: \{ bg: colors.accent, text: \'93#fff\'94, border: \'93none\'94 \},\
+secondary: \{ bg: colors.surfaceHover, text: colors.text, border: `1px solid $\{colors.border\}` \},\
+danger: \{ bg: colors.redDim, text: colors.red, border: `1px solid rgba(248,113,113,0.2)` \},\
+success: \{ bg: colors.greenDim, text: colors.green, border: `1px solid rgba(52,211,153,0.2)` \},\
+ghost: \{ bg: \'93transparent\'94, text: colors.textMuted, border: \'93none\'94 \},\
+\};\
+const s = styles[variant];\
+const padding = size === \'93lg\'94 ? \'9314px 28px\'94 : size === \'93sm\'94 ? \'936px 14px\'94 : \'9310px 20px\'94;\
+const fontSize = size === \'93lg\'94 ? 16 : size === \'93sm\'94 ? 12 : 14;\
+\
+return (\
+<button\
+onClick=\{onClick\}\
+style=\{\{\
+background: s.bg,\
+color: s.text,\
+border: s.border,\
+padding,\
+borderRadius: 10,\
+fontSize,\
+fontWeight: 600,\
+cursor: \'93pointer\'94,\
+width: fullWidth ? \'93100%\'94 : \'93auto\'94,\
+display: \'93flex\'94,\
+alignItems: \'93center\'94,\
+justifyContent: \'93center\'94,\
+gap: 8,\
+transition: \'93all 0.15s ease\'94,\
+fontFamily: \'93inherit\'94,\
+\}\}\
+>\
+\{icon && <span style=\{\{ fontSize: fontSize + 2 \}\}>\{icon\}</span>\}\
+\{children\}\
+</button>\
+);\
+\};\
+\
+const Card = (\{ children, style = \{\}, onClick, highlight \}) => (\
+\
+  <div\
+    onClick=\{onClick\}\
+    style=\{\{\
+      background: colors.card,\
+      border: `1px solid $\{highlight ? colors.borderActive : colors.border\}`,\
+      borderRadius: 14,\
+      padding: 20,\
+      cursor: onClick ? "pointer" : "default",\
+      transition: "all 0.15s ease",\
+      ...style,\
+    \}\}\
+  >\
+    \{children\}\
+  </div>\
+);\
+\
+const ScreenTitle = (\{ title, subtitle, back, onBack \}) => (\
+\
+  <div style=\{\{ marginBottom: 24 \}\}>\
+    \{back && (\
+      <button\
+        onClick=\{onBack\}\
+        style=\{\{\
+          background: "none",\
+          border: "none",\
+          color: colors.accent,\
+          fontSize: 13,\
+          cursor: "pointer",\
+          padding: 0,\
+          marginBottom: 8,\
+          fontFamily: "inherit",\
+          display: "flex",\
+          alignItems: "center",\
+          gap: 4,\
+        \}\}\
+      >\
+        \uc0\u8592  \{back\}\
+      </button>\
+    )\}\
+    <h2 style=\{\{ margin: 0, fontSize: 22, fontWeight: 700, color: colors.text \}\}>\{title\}</h2>\
+    \{subtitle && (\
+      <p style=\{\{ margin: "6px 0 0", fontSize: 13, color: colors.textMuted \}\}>\{subtitle\}</p>\
+    )\}\
+  </div>\
+);\
+\
+const SegmentTimeline = (\{ segments \}) => (\
+\
+  <div style=\{\{ display: "flex", flexDirection: "column", gap: 2 \}\}>\
+    \{segments.map((seg, i) => (\
+      <div\
+        key=\{i\}\
+        style=\{\{\
+          display: "flex",\
+          alignItems: "stretch",\
+          gap: 12,\
+          minHeight: 60,\
+        \}\}\
+      >\
+        \{/* Timeline dot + line */\}\
+        <div style=\{\{ display: "flex", flexDirection: "column", alignItems: "center", width: 20 \}\}>\
+          <div\
+            style=\{\{\
+              width: 10,\
+              height: 10,\
+              borderRadius: "50%",\
+              background: seg.active ? colors.accent : colors.border,\
+              marginTop: 6,\
+              flexShrink: 0,\
+              boxShadow: seg.active ? `0 0 8px $\{colors.accent\}` : "none",\
+            \}\}\
+          />\
+          \{i < segments.length - 1 && (\
+            <div style=\{\{ width: 2, flex: 1, background: colors.border, marginTop: 2 \}\} />\
+          )\}\
+        </div>\
+        \{/* Content */\}\
+        <div style=\{\{ flex: 1, paddingBottom: 16 \}\}>\
+          <div style=\{\{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 \}\}>\
+            <span style=\{\{ fontSize: 13, fontWeight: 600, color: colors.text \}\}>\{seg.time\}</span>\
+            <Badge color=\{seg.active ? "green" : "accent"\} size="sm">\
+              \{seg.event\}\
+            </Badge>\
+          </div>\
+          <div style=\{\{ fontSize: 12, color: colors.textMuted \}\}>\{seg.detail\}</div>\
+          <div style=\{\{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" \}\}>\
+            \{seg.members.map((m, j) => (\
+              <span\
+                key=\{j\}\
+                style=\{\{\
+                  background: colors.surfaceHover,\
+                  color: colors.textMuted,\
+                  padding: "2px 8px",\
+                  borderRadius: 6,\
+                  fontSize: 11,\
+                \}\}\
+              >\
+                \{m\}\
+              </span>\
+            ))\}\
+          </div>\
+        </div>\
+        \{/* Split info */\}\
+        <div style=\{\{ textAlign: "right", minWidth: 70 \}\}>\
+          <div style=\{\{ fontSize: 18, fontWeight: 700, color: colors.accent \}\}>\{seg.split\}</div>\
+          <div style=\{\{ fontSize: 11, color: colors.textMuted \}\}>each</div>\
+        </div>\
+      </div>\
+    ))\}\
+  </div>\
+);\
+\
+// \uc0\u9472 \u9472 \u9472  SCREENS \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+\
+function OverviewScreen(\{ nav \}) \{\
+return (\
+<div>\
+<ScreenTitle\
+title="Tip Pooling \'97 Developer Spec"\
+subtitle="Interactive wireframes for GWI POS tip group feature"\
+/>\
+\
+```\
+  <div style=\{\{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 \}\}>\
+    \{[\
+      \{ screen: SCREENS.START_GROUP, icon: "\uc0\u9654 ", title: "Start Group Flow", desc: "Bartender initiates a tip group from their terminal", color: "accent" \},\
+      \{ screen: SCREENS.ACTIVE_GROUP, icon: "\uc0\u9889 ", title: "Active Group View", desc: "Live view with timeline segments and running totals", color: "green" \},\
+      \{ screen: SCREENS.CHECKOUT, icon: "\uc0\u55357 \u56496 ", title: "Daily Checkout", desc: "Bartender's end-of-shift tip breakdown by segment", color: "yellow" \},\
+      \{ screen: SCREENS.MANAGER_REPORT, icon: "\uc0\u55357 \u56522 ", title: "Manager Report", desc: "Full group report with sales, tips, and member earnings", color: "purple" \},\
+      \{ screen: SCREENS.SCHEMA, icon: "\uc0\u55357 \u56772 \u65039 ", title: "Database Schema", desc: "Prisma schema for Next.js / SQLite implementation", color: "orange" \},\
+    ].map((item) => (\
+      <Card key=\{item.screen\} onClick=\{() => nav(item.screen)\} highlight=\{false\} style=\{\{ cursor: "pointer" \}\}>\
+        <div style=\{\{ fontSize: 28, marginBottom: 10 \}\}>\{item.icon\}</div>\
+        <div style=\{\{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 \}\}>\
+          <span style=\{\{ fontSize: 15, fontWeight: 700, color: colors.text \}\}>\{item.title\}</span>\
+          <Badge color=\{item.color\}>UI</Badge>\
+        </div>\
+        <p style=\{\{ margin: 0, fontSize: 12, color: colors.textMuted, lineHeight: 1.5 \}\}>\{item.desc\}</p>\
+      </Card>\
+    ))\}\
+  </div>\
+\
+  <Card style=\{\{ marginTop: 16, borderColor: colors.accent \}\}>\
+    <div style=\{\{ fontSize: 13, fontWeight: 700, color: colors.accent, marginBottom: 8 \}\}>\
+      \uc0\u55357 \u56523  DEVELOPER HANDOFF NOTES\
+    </div>\
+    <div style=\{\{ fontSize: 12, color: colors.textMuted, lineHeight: 1.7 \}\}>\
+      <strong style=\{\{ color: colors.text \}\}>Stack:</strong> Next.js + Prisma + SQLite (offline-first)\
+      <br />\
+      <strong style=\{\{ color: colors.text \}\}>Core principle:</strong> Every membership change creates a new time segment. Tips are allocated by segment timestamp.\
+      <br />\
+      <strong style=\{\{ color: colors.text \}\}>Phase 1:</strong> Equal splits only (1/n members). Custom % splits in Phase 2.\
+      <br />\
+      <strong style=\{\{ color: colors.text \}\}>Offline:</strong> Groups and segments must sync when connection restored. Use local timestamps + conflict resolution.\
+    </div>\
+  </Card>\
+</div>\
+```\
+\
+);\
+\}\
+\
+function StartGroupScreen(\{ nav \}) \{\
+const [step, setStep] = useState(0);\
+\
+return (\
+<div>\
+<ScreenTitle\
+title=\'93Start Bartender Group\'94\
+subtitle=\'93Flow when bartender initiates tip pooling\'94\
+back=\'93All Screens\'94\
+onBack=\{() => nav(SCREENS.OVERVIEW)\}\
+/>\
+\
+```\
+  \{/* Step indicator */\}\
+  <div style=\{\{ display: "flex", gap: 4, marginBottom: 24 \}\}>\
+    \{["Tap Button", "Select Members", "Confirm & Start"].map((s, i) => (\
+      <div key=\{i\} style=\{\{ flex: 1 \}\}>\
+        <div\
+          style=\{\{\
+            height: 3,\
+            borderRadius: 2,\
+            background: i <= step ? colors.accent : colors.border,\
+            marginBottom: 6,\
+            transition: "background 0.2s",\
+          \}\}\
+        />\
+        <span style=\{\{ fontSize: 10, color: i <= step ? colors.accent : colors.textDim, fontWeight: 600 \}\}>\
+          \{s\}\
+        </span>\
+      </div>\
+    ))\}\
+  </div>\
+\
+  \{step === 0 && (\
+    <div>\
+      <Card>\
+        <div style=\{\{ textAlign: "center", padding: "20px 0" \}\}>\
+          <div style=\{\{ fontSize: 13, color: colors.textMuted, marginBottom: 6 \}\}>\
+            Terminal: <strong style=\{\{ color: colors.text \}\}>BAR-01</strong> \'b7 Bartender A (Sarah)\
+          </div>\
+          <div style=\{\{ fontSize: 13, color: colors.textMuted, marginBottom: 20 \}\}>\
+            Clocked in: 8:00 AM \'b7 Solo tips so far: <strong style=\{\{ color: colors.green \}\}>$142.50</strong>\
+          </div>\
+          <div\
+            style=\{\{\
+              width: 80,\
+              height: 80,\
+              borderRadius: 20,\
+              background: colors.accentDim,\
+              display: "flex",\
+              alignItems: "center",\
+              justifyContent: "center",\
+              margin: "0 auto 16px",\
+              fontSize: 36,\
+            \}\}\
+          >\
+            \uc0\u55357 \u56421 \
+          </div>\
+          <Button variant="primary" size="lg" onClick=\{() => setStep(1)\}>\
+            Start Bartender Group\
+          </Button>\
+          <p style=\{\{ fontSize: 11, color: colors.textDim, marginTop: 10 \}\}>\
+            Your solo tips before this point stay 100% yours\
+          </p>\
+        </div>\
+      </Card>\
+\
+      <Card style=\{\{ marginTop: 12 \}\}>\
+        <div style=\{\{ fontSize: 12, fontWeight: 700, color: colors.yellow, marginBottom: 6 \}\}>\
+          \uc0\u55357 \u56481  Dev Note: Button Placement\
+        </div>\
+        <div style=\{\{ fontSize: 11, color: colors.textMuted, lineHeight: 1.6 \}\}>\
+          This button appears in the bartender's quick actions menu or sidebar. Only clocked-in bartenders see it. If a group is already active on this register, show "Join Group" instead.\
+        </div>\
+      </Card>\
+    </div>\
+  )\}\
+\
+  \{step === 1 && (\
+    <div>\
+      <Card>\
+        <div style=\{\{ fontSize: 14, fontWeight: 700, color: colors.text, marginBottom: 4 \}\}>\
+          Who's joining the group?\
+        </div>\
+        <p style=\{\{ fontSize: 12, color: colors.textMuted, margin: "0 0 16px" \}\}>\
+          Select clocked-in bartenders. You can add more people later.\
+        </p>\
+        \{[\
+          \{ name: "Mike (Bartender B)", time: "Clocked in 11:45 AM", selected: true \},\
+          \{ name: "Jess (Bartender C)", time: "Clocked in 10:00 AM", selected: false \},\
+          \{ name: "Carlos (Barback)", time: "Clocked in 8:00 AM", selected: false \},\
+        ].map((person, i) => (\
+          <div\
+            key=\{i\}\
+            style=\{\{\
+              display: "flex",\
+              alignItems: "center",\
+              justifyContent: "space-between",\
+              padding: "12px 14px",\
+              background: person.selected ? colors.accentDim : colors.surface,\
+              border: `1px solid $\{person.selected ? colors.borderActive : colors.border\}`,\
+              borderRadius: 10,\
+              marginBottom: 8,\
+              cursor: "pointer",\
+            \}\}\
+          >\
+            <div>\
+              <div style=\{\{ fontSize: 14, fontWeight: 600, color: colors.text \}\}>\{person.name\}</div>\
+              <div style=\{\{ fontSize: 11, color: colors.textMuted \}\}>\{person.time\}</div>\
+            </div>\
+            <div\
+              style=\{\{\
+                width: 22,\
+                height: 22,\
+                borderRadius: 6,\
+                border: `2px solid $\{person.selected ? colors.accent : colors.border\}`,\
+                background: person.selected ? colors.accent : "transparent",\
+                display: "flex",\
+                alignItems: "center",\
+                justifyContent: "center",\
+                color: "#fff",\
+                fontSize: 12,\
+              \}\}\
+            >\
+              \{person.selected ? "\uc0\u10003 " : ""\}\
+            </div>\
+          </div>\
+        ))\}\
+      </Card>\
+      <div style=\{\{ display: "flex", gap: 8, marginTop: 12 \}\}>\
+        <Button variant="secondary" onClick=\{() => setStep(0)\}>Back</Button>\
+        <Button variant="primary" onClick=\{() => setStep(2)\} fullWidth>Next: Confirm Group</Button>\
+      </div>\
+    </div>\
+  )\}\
+\
+  \{step === 2 && (\
+    <div>\
+      <Card>\
+        <div style=\{\{ fontSize: 14, fontWeight: 700, color: colors.text, marginBottom: 16 \}\}>\
+          Confirm Tip Group\
+        </div>\
+        <div\
+          style=\{\{\
+            background: colors.surface,\
+            borderRadius: 10,\
+            padding: 16,\
+            marginBottom: 16,\
+          \}\}\
+        >\
+          <div style=\{\{ display: "flex", justifyContent: "space-between", marginBottom: 10 \}\}>\
+            <span style=\{\{ fontSize: 12, color: colors.textMuted \}\}>Group starts</span>\
+            <span style=\{\{ fontSize: 13, fontWeight: 600, color: colors.text \}\}>12:00 PM (now)</span>\
+          </div>\
+          <div style=\{\{ display: "flex", justifyContent: "space-between", marginBottom: 10 \}\}>\
+            <span style=\{\{ fontSize: 12, color: colors.textMuted \}\}>Members</span>\
+            <span style=\{\{ fontSize: 13, fontWeight: 600, color: colors.text \}\}>Sarah + Mike</span>\
+          </div>\
+          <div style=\{\{ display: "flex", justifyContent: "space-between", marginBottom: 10 \}\}>\
+            <span style=\{\{ fontSize: 12, color: colors.textMuted \}\}>Split type</span>\
+            <span style=\{\{ fontSize: 13, fontWeight: 600, color: colors.accent \}\}>Equal (50/50)</span>\
+          </div>\
+          <div style=\{\{ display: "flex", justifyContent: "space-between" \}\}>\
+            <span style=\{\{ fontSize: 12, color: colors.textMuted \}\}>Register</span>\
+            <span style=\{\{ fontSize: 13, fontWeight: 600, color: colors.text \}\}>BAR-01</span>\
+          </div>\
+        </div>\
+        <div\
+          style=\{\{\
+            background: colors.yellowDim,\
+            borderRadius: 10,\
+            padding: 12,\
+            fontSize: 12,\
+            color: colors.yellow,\
+            lineHeight: 1.5,\
+          \}\}\
+        >\
+          \uc0\u9888 \u65039  Sarah's solo tips from 8:00 AM\'9612:00 PM ($142.50) are locked in at 100%. All new tips from this point forward split 50/50.\
+        </div>\
+      </Card>\
+      <div style=\{\{ display: "flex", gap: 8, marginTop: 12 \}\}>\
+        <Button variant="secondary" onClick=\{() => setStep(1)\}>Back</Button>\
+        <Button variant="success" onClick=\{() => nav(SCREENS.ACTIVE_GROUP)\} fullWidth icon="\uc0\u10003 ">\
+          Start Group\
+        </Button>\
+      </div>\
+    </div>\
+  )\}\
+</div>\
+```\
+\
+);\
+\}\
+\
+function ActiveGroupScreen(\{ nav \}) \{\
+return (\
+<div>\
+<ScreenTitle\
+title=\'93Active Tip Group\'94\
+subtitle=\'93Live view on the bartender\'92s terminal\'94\
+back=\'93All Screens\'94\
+onBack=\{() => nav(SCREENS.OVERVIEW)\}\
+/>\
+\
+```\
+  \{/* Status bar */\}\
+  <div\
+    style=\{\{\
+      display: "flex",\
+      alignItems: "center",\
+      justifyContent: "space-between",\
+      background: colors.greenDim,\
+      border: `1px solid rgba(52,211,153,0.2)`,\
+      borderRadius: 10,\
+      padding: "10px 16px",\
+      marginBottom: 16,\
+    \}\}\
+  >\
+    <div style=\{\{ display: "flex", alignItems: "center", gap: 8 \}\}>\
+      <div\
+        style=\{\{\
+          width: 8,\
+          height: 8,\
+          borderRadius: "50%",\
+          background: colors.green,\
+          animation: "pulse 2s infinite",\
+        \}\}\
+      />\
+      <span style=\{\{ fontSize: 13, fontWeight: 600, color: colors.green \}\}>Group Active</span>\
+    </div>\
+    <span style=\{\{ fontSize: 12, color: colors.green \}\}>Since 12:00 PM \'b7 3 members</span>\
+  </div>\
+\
+  \{/* Running totals */\}\
+  <div style=\{\{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 \}\}>\
+    \{[\
+      \{ label: "Group Tips", value: "$487.25", color: colors.accent \},\
+      \{ label: "Your Share", value: "$198.42", color: colors.green \},\
+      \{ label: "Current Split", value: "33.3%", color: colors.yellow \},\
+    ].map((stat, i) => (\
+      <div\
+        key=\{i\}\
+        style=\{\{\
+          background: colors.card,\
+          border: `1px solid $\{colors.border\}`,\
+          borderRadius: 10,\
+          padding: 14,\
+          textAlign: "center",\
+        \}\}\
+      >\
+        <div style=\{\{ fontSize: 10, color: colors.textMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" \}\}>\
+          \{stat.label\}\
+        </div>\
+        <div style=\{\{ fontSize: 20, fontWeight: 700, color: stat.color \}\}>\{stat.value\}</div>\
+      </div>\
+    ))\}\
+  </div>\
+\
+  \{/* Timeline */\}\
+  <Card>\
+    <div style=\{\{ fontSize: 13, fontWeight: 700, color: colors.text, marginBottom: 14 \}\}>\
+      Group Timeline\
+    </div>\
+    <SegmentTimeline\
+      segments=\{[\
+        \{\
+          time: "12:00 PM",\
+          event: "Group Started",\
+          detail: "Sarah started the group. Tips split equally.",\
+          members: ["Sarah", "Mike"],\
+          split: "50%",\
+          active: false,\
+        \},\
+        \{\
+          time: "4:00 PM",\
+          event: "Member Joined",\
+          detail: "Carlos joined. New segment created automatically.",\
+          members: ["Sarah", "Mike", "Carlos"],\
+          split: "33.3%",\
+          active: true,\
+        \},\
+      ]\}\
+    />\
+  </Card>\
+\
+  \{/* Actions */\}\
+  <div style=\{\{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 \}\}>\
+    <Button variant="secondary" icon="\uc0\u10133 " onClick=\{() => nav(SCREENS.ADD_MEMBER)\}>\
+      Add Member\
+    </Button>\
+    <Button variant="danger" icon="\uc0\u55357 \u57002 ">Leave Group</Button>\
+  </div>\
+\
+  <Card style=\{\{ marginTop: 12 \}\}>\
+    <div style=\{\{ fontSize: 12, fontWeight: 700, color: colors.yellow, marginBottom: 6 \}\}>\
+      \uc0\u55357 \u56481  Dev Notes\
+    </div>\
+    <div style=\{\{ fontSize: 11, color: colors.textMuted, lineHeight: 1.7 \}\}>\
+      \'95 "Your Share" recalculates in real-time as tips come in<br />\
+      \'95 "Leave Group" triggers a new segment (remaining members split future tips)<br />\
+      \'95 If last member leaves, group auto-closes<br />\
+      \'95 This view updates via local state / websocket \'97 critical for offline-first\
+    </div>\
+  </Card>\
+</div>\
+```\
+\
+);\
+\}\
+\
+function AddMemberScreen(\{ nav \}) \{\
+return (\
+<div>\
+<ScreenTitle\
+title=\'93Add Member to Group\'94\
+subtitle=\'93New member gets added to the current active segment\'94\
+back=\'93Active Group\'94\
+onBack=\{() => nav(SCREENS.ACTIVE_GROUP)\}\
+/>\
+\
+```\
+  <Card>\
+    <div style=\{\{ fontSize: 14, fontWeight: 700, color: colors.text, marginBottom: 14 \}\}>\
+      Available Bartenders\
+    </div>\
+    \{[\
+      \{ name: "Carlos", role: "Bartender", clockedIn: "3:55 PM", available: true \},\
+      \{ name: "Jess", role: "Barback", clockedIn: "10:00 AM", available: true \},\
+      \{ name: "Dave", role: "Bartender", clockedIn: null, available: false \},\
+    ].map((person, i) => (\
+      <div\
+        key=\{i\}\
+        style=\{\{\
+          display: "flex",\
+          alignItems: "center",\
+          justifyContent: "space-between",\
+          padding: "12px 14px",\
+          background: person.available ? colors.surface : "transparent",\
+          border: `1px solid $\{colors.border\}`,\
+          borderRadius: 10,\
+          marginBottom: 8,\
+          opacity: person.available ? 1 : 0.4,\
+        \}\}\
+      >\
+        <div>\
+          <div style=\{\{ fontSize: 14, fontWeight: 600, color: colors.text \}\}>\
+            \{person.name\} <span style=\{\{ color: colors.textMuted, fontWeight: 400 \}\}>\'b7 \{person.role\}</span>\
+          </div>\
+          <div style=\{\{ fontSize: 11, color: colors.textMuted \}\}>\
+            \{person.clockedIn ? `Clocked in $\{person.clockedIn\}` : "Not clocked in"\}\
+          </div>\
+        </div>\
+        \{person.available ? (\
+          <Button variant="primary" size="sm">Add</Button>\
+        ) : (\
+          <Badge color="red">Unavailable</Badge>\
+        )\}\
+      </div>\
+    ))\}\
+  </Card>\
+\
+  <Card style=\{\{ marginTop: 12 \}\}>\
+    <div\
+      style=\{\{\
+        background: colors.accentDim,\
+        borderRadius: 8,\
+        padding: 12,\
+        fontSize: 12,\
+        color: colors.accent,\
+        lineHeight: 1.6,\
+      \}\}\
+    >\
+      \uc0\u8505 \u65039  When Carlos is added at 4:00 PM, a new segment starts. He earns 0% of tips from 12\'964 PM, and 33.3% of tips from 4 PM onward.\
+    </div>\
+  </Card>\
+\
+  <Card style=\{\{ marginTop: 12 \}\}>\
+    <div style=\{\{ fontSize: 12, fontWeight: 700, color: colors.yellow, marginBottom: 6 \}\}>\
+      \uc0\u55357 \u56481  Dev Notes: What Happens on Add\
+    </div>\
+    <div style=\{\{ fontSize: 11, color: colors.textMuted, lineHeight: 1.7 \}\}>\
+      1. Close current segment (end_time = now)<br />\
+      2. Create TipGroupMembership record (joined_at = now)<br />\
+      3. Create new TipGroupSegment with updated member_count<br />\
+      4. Recalculate split_pct = 1 / member_count<br />\
+      5. All terminals in the group get a push notification\
+    </div>\
+  </Card>\
+</div>\
+```\
+\
+);\
+\}\
+\
+function CheckoutScreen(\{ nav \}) \{\
+return (\
+<div>\
+<ScreenTitle\
+title=\'93Daily Checkout \'97 Sarah\'94\
+subtitle=\'93End of shift tip breakdown by time segment\'94\
+back=\'93All Screens\'94\
+onBack=\{() => nav(SCREENS.OVERVIEW)\}\
+/>\
+\
+```\
+  \{/* Total banner */\}\
+  <div\
+    style=\{\{\
+      background: `linear-gradient(135deg, $\{colors.accent\}22 0%, $\{colors.green\}22 100%)`,\
+      border: `1px solid $\{colors.borderActive\}`,\
+      borderRadius: 14,\
+      padding: 24,\
+      textAlign: "center",\
+      marginBottom: 16,\
+    \}\}\
+  >\
+    <div style=\{\{ fontSize: 11, color: colors.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 \}\}>\
+      Total Tips \'97 Sarah\
+    </div>\
+    <div style=\{\{ fontSize: 36, fontWeight: 800, color: colors.text \}\}>$410.00</div>\
+    <div style=\{\{ fontSize: 12, color: colors.textMuted, marginTop: 4 \}\}>\
+      Shift: 8:00 AM \'96 6:00 PM \'b7 10 hours\
+    </div>\
+  </div>\
+\
+  \{/* Segment breakdown */\}\
+  <div style=\{\{ display: "flex", flexDirection: "column", gap: 10 \}\}>\
+    \{[\
+      \{\
+        label: "Solo Tips",\
+        time: "8:00 AM \'96 12:00 PM",\
+        total: "$200.00",\
+        share: "100%",\
+        earned: "$200.00",\
+        color: colors.green,\
+        members: ["Sarah"],\
+      \},\
+      \{\
+        label: "Group Tips",\
+        time: "12:00 PM \'96 4:00 PM",\
+        total: "$300.00",\
+        share: "50%",\
+        earned: "$150.00",\
+        color: colors.accent,\
+        members: ["Sarah", "Mike"],\
+      \},\
+      \{\
+        label: "Group Tips",\
+        time: "4:00 PM \'96 6:00 PM",\
+        total: "$180.00",\
+        share: "33.3%",\
+        earned: "$60.00",\
+        color: colors.yellow,\
+        members: ["Sarah", "Mike", "Carlos"],\
+      \},\
+    ].map((seg, i) => (\
+      <Card key=\{i\}>\
+        <div style=\{\{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 \}\}>\
+          <div>\
+            <div style=\{\{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 \}\}>\
+              <span style=\{\{ fontSize: 14, fontWeight: 700, color: colors.text \}\}>\{seg.label\}</span>\
+              <Badge color=\{i === 0 ? "green" : i === 1 ? "accent" : "yellow"\}>\{seg.share\}</Badge>\
+            </div>\
+            <div style=\{\{ fontSize: 12, color: colors.textMuted \}\}>\{seg.time\}</div>\
+          </div>\
+          <div style=\{\{ textAlign: "right" \}\}>\
+            <div style=\{\{ fontSize: 20, fontWeight: 800, color: seg.color \}\}>\{seg.earned\}</div>\
+            <div style=\{\{ fontSize: 11, color: colors.textDim \}\}>of \{seg.total\}</div>\
+          </div>\
+        </div>\
+        <div style=\{\{ display: "flex", gap: 4 \}\}>\
+          \{seg.members.map((m, j) => (\
+            <span\
+              key=\{j\}\
+              style=\{\{\
+                background: m === "Sarah" ? colors.accentDim : colors.surfaceHover,\
+                color: m === "Sarah" ? colors.accent : colors.textMuted,\
+                padding: "2px 8px",\
+                borderRadius: 5,\
+                fontSize: 11,\
+                fontWeight: m === "Sarah" ? 600 : 400,\
+              \}\}\
+            >\
+              \{m\}\
+            </span>\
+          ))\}\
+        </div>\
+      </Card>\
+    ))\}\
+  </div>\
+\
+  \{/* Totals table */\}\
+  <Card style=\{\{ marginTop: 12 \}\}>\
+    <div style=\{\{ fontSize: 13, fontWeight: 700, color: colors.text, marginBottom: 12 \}\}>\
+      Summary\
+    </div>\
+    \{[\
+      \{ label: "Credit card tips", value: "$360.00" \},\
+      \{ label: "Cash tips (entered)", value: "$50.00" \},\
+      \{ label: "Tip pool earned", value: "$410.00" \},\
+      \{ label: "Cash owed to pool", value: "-$18.50", color: colors.red \},\
+    ].map((row, i) => (\
+      <div\
+        key=\{i\}\
+        style=\{\{\
+          display: "flex",\
+          justifyContent: "space-between",\
+          padding: "8px 0",\
+          borderBottom: i < 3 ? `1px solid $\{colors.border\}` : "none",\
+        \}\}\
+      >\
+        <span style=\{\{ fontSize: 13, color: colors.textMuted \}\}>\{row.label\}</span>\
+        <span style=\{\{ fontSize: 13, fontWeight: 600, color: row.color || colors.text \}\}>\{row.value\}</span>\
+      </div>\
+    ))\}\
+  </Card>\
+\
+  <Button variant="success" size="lg" fullWidth icon="\uc0\u10003 " style=\{\{ marginTop: 12 \}\}>\
+    Confirm & Print Checkout\
+  </Button>\
+</div>\
+```\
+\
+);\
+\}\
+\
+function ManagerReportScreen(\{ nav \}) \{\
+return (\
+<div>\
+<ScreenTitle\
+title=\'93Manager: Group Report\'94\
+subtitle=\'93Full breakdown for Tip Group #1042 \'97 Feb 6, 2026\'94\
+back=\'93All Screens\'94\
+onBack=\{() => nav(SCREENS.OVERVIEW)\}\
+/>\
+\
+```\
+  \{/* Summary cards */\}\
+  <div style=\{\{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 \}\}>\
+    \{[\
+      \{ label: "Group Duration", value: "12:00 PM \'96 10:30 PM", sub: "10.5 hours" \},\
+      \{ label: "Total Group Sales", value: "$4,280.00", sub: "142 transactions" \},\
+      \{ label: "Total Group Tips", value: "$962.50", sub: "22.5% avg tip rate" \},\
+      \{ label: "Members", value: "3 bartenders", sub: "Sarah, Mike, Carlos" \},\
+    ].map((stat, i) => (\
+      <div\
+        key=\{i\}\
+        style=\{\{\
+          background: colors.card,\
+          border: `1px solid $\{colors.border\}`,\
+          borderRadius: 10,\
+          padding: 14,\
+        \}\}\
+      >\
+        <div style=\{\{ fontSize: 10, color: colors.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 \}\}>\
+          \{stat.label\}\
+        </div>\
+        <div style=\{\{ fontSize: 16, fontWeight: 700, color: colors.text \}\}>\{stat.value\}</div>\
+        <div style=\{\{ fontSize: 11, color: colors.textDim, marginTop: 2 \}\}>\{stat.sub\}</div>\
+      </div>\
+    ))\}\
+  </div>\
+\
+  \{/* Segment breakdown */\}\
+  <Card>\
+    <div style=\{\{ fontSize: 13, fontWeight: 700, color: colors.text, marginBottom: 14 \}\}>\
+      Segment Breakdown\
+    </div>\
+    <div style=\{\{ overflowX: "auto" \}\}>\
+      <table style=\{\{ width: "100%", borderCollapse: "collapse", fontSize: 12 \}\}>\
+        <thead>\
+          <tr>\
+            \{["Segment", "Time", "Members", "Sales", "Tips", "Split"].map((h) => (\
+              <th\
+                key=\{h\}\
+                style=\{\{\
+                  textAlign: "left",\
+                  padding: "8px 6px",\
+                  borderBottom: `1px solid $\{colors.border\}`,\
+                  color: colors.textMuted,\
+                  fontSize: 10,\
+                  textTransform: "uppercase",\
+                  letterSpacing: "0.05em",\
+                  fontWeight: 600,\
+                \}\}\
+              >\
+                \{h\}\
+              </th>\
+            ))\}\
+          </tr>\
+        </thead>\
+        <tbody>\
+          \{[\
+            \{ seg: "1", time: "12\'964 PM", members: "S, M", sales: "$1,820", tips: "$412", split: "50%" \},\
+            \{ seg: "2", time: "4\'966 PM", members: "S, M, C", sales: "$960", tips: "$218", split: "33.3%" \},\
+            \{ seg: "3", time: "6\'9610:30 PM", members: "M, C", sales: "$1,500", tips: "$332.50", split: "50%" \},\
+          ].map((row, i) => (\
+            <tr key=\{i\}>\
+              \{Object.values(row).map((cell, j) => (\
+                <td\
+                  key=\{j\}\
+                  style=\{\{\
+                    padding: "10px 6px",\
+                    borderBottom: `1px solid $\{colors.border\}`,\
+                    color: j === 0 ? colors.accent : colors.text,\
+                    fontWeight: j === 0 ? 700 : 400,\
+                  \}\}\
+                >\
+                  \{cell\}\
+                </td>\
+              ))\}\
+            </tr>\
+          ))\}\
+        </tbody>\
+      </table>\
+    </div>\
+  </Card>\
+\
+  \{/* Per-member earnings */\}\
+  <Card style=\{\{ marginTop: 12 \}\}>\
+    <div style=\{\{ fontSize: 13, fontWeight: 700, color: colors.text, marginBottom: 14 \}\}>\
+      Member Earnings\
+    </div>\
+    \{[\
+      \{\
+        name: "Sarah",\
+        total: "$279.33",\
+        segments: [\
+          \{ time: "12\'964 PM", share: "$206.00", pct: "50%" \},\
+          \{ time: "4\'966 PM", share: "$72.67", pct: "33.3%" \},\
+        ],\
+        hours: "6h in group",\
+      \},\
+      \{\
+        name: "Mike",\
+        total: "$538.58",\
+        segments: [\
+          \{ time: "12\'964 PM", share: "$206.00", pct: "50%" \},\
+          \{ time: "4\'966 PM", share: "$72.67", pct: "33.3%" \},\
+          \{ time: "6\'9610:30 PM", share: "$166.25", pct: "50%" \},\
+        ],\
+        hours: "10.5h in group",\
+      \},\
+      \{\
+        name: "Carlos",\
+        total: "$238.92",\
+        segments: [\
+          \{ time: "4\'966 PM", share: "$72.67", pct: "33.3%" \},\
+          \{ time: "6\'9610:30 PM", share: "$166.25", pct: "50%" \},\
+        ],\
+        hours: "6.5h in group",\
+      \},\
+    ].map((member, i) => (\
+      <div\
+        key=\{i\}\
+        style=\{\{\
+          background: colors.surface,\
+          borderRadius: 10,\
+          padding: 14,\
+          marginBottom: 8,\
+        \}\}\
+      >\
+        <div style=\{\{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 \}\}>\
+          <div>\
+            <span style=\{\{ fontSize: 14, fontWeight: 700, color: colors.text \}\}>\{member.name\}</span>\
+            <span style=\{\{ fontSize: 11, color: colors.textDim, marginLeft: 8 \}\}>\{member.hours\}</span>\
+          </div>\
+          <span style=\{\{ fontSize: 18, fontWeight: 800, color: colors.green \}\}>\{member.total\}</span>\
+        </div>\
+        <div style=\{\{ display: "flex", gap: 6, flexWrap: "wrap" \}\}>\
+          \{member.segments.map((seg, j) => (\
+            <span\
+              key=\{j\}\
+              style=\{\{\
+                background: colors.surfaceHover,\
+                padding: "3px 8px",\
+                borderRadius: 5,\
+                fontSize: 10,\
+                color: colors.textMuted,\
+              \}\}\
+            >\
+              \{seg.time\}: \{seg.share\} (\{seg.pct\})\
+            </span>\
+          ))\}\
+        </div>\
+      </div>\
+    ))\}\
+  </Card>\
+\
+  <div style=\{\{ display: "flex", gap: 8, marginTop: 12 \}\}>\
+    <Button variant="secondary" icon="\uc0\u55357 \u56744 \u65039 " fullWidth>Print Report</Button>\
+    <Button variant="secondary" icon="\uc0\u55357 \u56548 " fullWidth>Export CSV</Button>\
+  </div>\
+</div>\
+```\
+\
+);\
+\}\
+\
+function SchemaScreen(\{ nav \}) \{\
+const schema = `// \uc0\u9472 \u9472 \u9472  PRISMA SCHEMA: TIP POOLING \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+\
+model TipGroup \{\
+id          String   @id @default(cuid())\
+createdBy   String   // employee who started the group\
+registerId  String   // which terminal/register\
+startedAt   DateTime @default(now())\
+endedAt     DateTime?\
+status      String   @default(\'93active\'94) // active | closed\
+\
+// Relations\
+memberships TipGroupMembership[]\
+segments    TipGroupSegment[]\
+tips        TipTransaction[]\
+\
+@@index([registerId, status])\
+@@index([startedAt])\
+\}\
+\
+model TipGroupMembership \{\
+id         String   @id @default(cuid())\
+groupId    String\
+employeeId String\
+joinedA\
+\
+You\'92re on the right track: what you have now is \'93Tip Bank 1.0\'94 plus \'93Dynamic Tip Groups 1.0.\'94 The missing piece is tying those to a full rules engine (individual vs role vs points) and codifying the lifecycle so devs can\'92t misinterpret anything.\
+\
+Below is a **clean spec you can hand to your developer**, broken into: data model, business rules, lifecycle flows, and how the tip bank balances get updated.\
+\
+***\
+\
+## 1. Core Concepts To Lock In\
+\
+1. **Tip Bank**:  \
+   - Every employee has a **tip ledger** (running balance) managed by the business.  \
+   - Tips credit into this ledger; payouts (cash or payroll) debit it back to zero.\
+\
+2. **Tip Sources**:  \
+   - Direct tips from a check (card or cash).  \
+   - Tip pool distributions (groups, role pools, house rules).  \
+   - One\uc0\u8209 off manual transfers between employees (e.g., \'93give bouncer 20\'94).\
+\
+3. **Tip Rules Engine**:  \
+   - **Mode 1 \'96 Individual**: 100% to the primary server/bartender.  \
+   - **Mode 2 \'96 Group / Pool**: Shared among a set of employees based on:  \
+     - Equal shares, or  \
+     - Role-based percentages, or  \
+     - Point-based weighting.  \
+   - **Mode 3 \'96 House / BOH**: Global rules (e.g., \'933% of all tips to kitchen, by hours\'94).\
+\
+Everything must resolve into **per-employee TipLedger entries** so balances are always explainable.\
+\
+***\
+\
+## 2. Data Model (Prisma-style, but stack-agnostic)\
+\
+These models sit next to your existing Employee / Order / Payment models.[1]\
+\
+### Tip Bank / Ledger\
+\
+```ts\
+model TipLedger \{\
+  id           String   @id @default(cuid())\
+  employeeId   String\
+  // + relation Employee\
+\
+  // Running balance derived from entries, but can be cached:\
+  currentBalanceCents Int @default(0)\
+\
+  createdAt   DateTime @default(now())\
+  updatedAt   DateTime @updatedAt\
+\
+  entries     TipLedgerEntry[]\
+\}\
+\
+model TipLedgerEntry \{\
+  id           String   @id @default(cuid())\
+  ledgerId     String\
+  employeeId   String   // denormalized for fast queries\
+  type         TipLedgerEntryType\
+  amountCents  Int      // + or - (credit=+, payout=-)\
+  sourceType   TipSourceType\
+  sourceId     String?  // e.g., TipTransaction.id, Payout.id, ManualTransfer.id\
+  memo         String?\
+\
+  createdAt    DateTime @default(now())\
+\}\
+\
+enum TipLedgerEntryType \{\
+  CREDIT\
+  DEBIT\
+\}\
+\
+enum TipSourceType \{\
+  DIRECT_TIP      // direct from check\
+  TIP_GROUP       // bartender group pool\
+  ROLE_POOL       // FOH/BOH rule\
+  MANUAL_TRANSFER // one-off tip between employees\
+  PAYOUT_CASH\
+  PAYOUT_PAYROLL\
+\}\
+```\
+\
+### Tip Groups (your existing dynamic pooling spec)\
+\
+You almost have this already; just make sure it explicitly connects to ledger entries.\
+\
+```ts\
+model TipGroup \{\
+  id         String   @id @default(cuid())\
+  createdBy  String   // employeeId\
+  registerId String\
+  startedAt  DateTime @default(now())\
+  endedAt    DateTime?\
+  status     String   @default("active") // active | closed\
+\
+  memberships TipGroupMembership[]\
+  segments    TipGroupSegment[]\
+  tips        TipTransaction[]\
+\}\
+\
+model TipGroupMembership \{\
+  id         String   @id @default(cuid())\
+  groupId    String\
+  employeeId String\
+  joinedAt   DateTime\
+  leftAt     DateTime?\
+\
+  // optional: role in group (bartender, barback)\
+  role       String?  // allows role-based weights later\
+\}\
+\
+model TipGroupSegment \{\
+  id           String   @id @default(cuid())\
+  groupId      String\
+  startedAt    DateTime\
+  endedAt      DateTime?\
+  memberCount  Int\
+  // store pre-calculated weights as JSON for flexibility\
+  splitJson    Json     // e.g. \{ "emp1": 0.5, "emp2": 0.5 \}\
+\
+  tips         TipTransaction[]\
+\}\
+\
+model TipTransaction \{\
+  id             String   @id @default(cuid())\
+  groupId        String?\
+  segmentId      String?\
+  orderId        String\
+  paymentId      String?  // CC payment\
+  amountCents    Int\
+  sourceType     String   // "CARD" | "CASH" | "ADJUSTMENT"\
+  collectedAt    DateTime\
+\
+  // for non-group individual tips:\
+  primaryEmployeeId String?\
+\}\
+```\
+\
+### Global Tip Rules (Individual / Role / Points)\
+\
+```ts\
+model TipRuleSet \{\
+  id           String   @id @default(cuid())\
+  businessId   String\
+  name         String   // "Default FOH Rules", "Nightclub Friday"\
+  effectiveFrom DateTime\
+  effectiveTo   DateTime?\
+  status       String   @default("active") // active | archived\
+\
+  // global options, e.g. pool cash tips, auto-apply on close, etc.\
+  configJson   Json     // flags & percentages\
+  rules        TipRule[]\
+\}\
+\
+model TipRule \{\
+  id           String   @id @default(cuid())\
+  ruleSetId    String\
+  priority     Int      // for ordering, 1 = highest\
+  scope        TipRuleScope\
+  // scopeType describes when this rule applies:\
+  // e.g. ORDER_ROLE, ORDER_ITEM_CATEGORY, BUSINESS_GLOBAL\
+  scopeType    String  \
+  conditionJson Json    // e.g. \{ "role": "server" \} or \{ "category": "food" \}\
+  distributionJson Json // e.g. equal, role %, points\
+\}\
+\
+enum TipRuleScope \{\
+  INDIVIDUAL   // direct to one employee\
+  ROLE         // by role percentages\
+  POINTS       // weighted by points\
+  HOUSE        // house takes X% or FOH/BOH splits\
+\}\
+```\
+\
+***\
+\
+## 3. Business Rules: Tip Bank Behavior\
+\
+### 3.1. When an order is closed with tips\
+\
+1. **Determine tip mode** for that order:\
+   - If a **TipGroup** is active on that register at payment time \uc0\u8594  **Group mode**.  \
+   - Else if a **rule set** is configured \uc0\u8594  apply rules to split.  \
+   - Else \uc0\u8594  **Individual** to primary employee.\
+\
+2. **Produce allocations**:  \
+   - Always end with list: `[ \{ employeeId, amountCents, sourceType, sourceId \} ]`.\
+\
+3. **Create ledger entries** for each allocation:\
+   - `type = CREDIT`, `sourceType = DIRECT_TIP | TIP_GROUP | ROLE_POOL`, `sourceId = TipTransaction.id`.  \
+\
+4. **Update `TipLedger.currentBalanceCents`** by summing.\
+\
+### 3.2. Manual \'93one-off\'94 tips (bouncer example)\
+\
+- UI flow: employee A selects \'93Give Tip\'94, chooses employee B, amount 20.  \
+- Backend:\
+  - Create **two entries**:\
+    - A: `DEBIT`, `-2000`, `sourceType = MANUAL_TRANSFER`, memo \'93To Bouncer for fight\'94.  \
+    - B: `CREDIT`, `+2000`, `sourceType = MANUAL_TRANSFER`, same memo.  \
+- The house is never in the middle here; it\'92s just shifting balances.\
+\
+### 3.3. Payouts\
+\
+- **Cash payout now**:\
+  - Owner selects employee, amount, confirms.  \
+  - Ledger entry: `DEBIT`, `sourceType = PAYOUT_CASH`.  \
+  - Optional: attach `PayoutBatch` model for audit.\
+\
+- **Payroll payout**:\
+  - On payroll run (or on demand), backend finds **unpaid tip balance** for each employee.  \
+  - Writes `DEBIT` entry with `sourceType = PAYOUT_PAYROLL`, ties to payroll export record, and resets balance to zero.  \
+\
+This matches what you described: employee can see available bank balance; owner can pay up to that amount or push it into payroll and clear it.\
+\
+***\
+\
+## 4. Tip Group Logic (Time-Segmented Pooling)\
+\
+This is exactly your scenario (A solo, then A+B, then A+B+C, etc.). You already have the UX code; you just need backend contracts.\
+\
+### 4.1. Segment creation rules\
+\
+- On **Start Group**:\
+  - Create `TipGroup`.  \
+  - Create `TipGroupMembership` for starter.  \
+  - Create initial `TipGroupSegment` with `splitJson` containing only starter at 100%.\
+\
+- On **Add Member**:\
+  - Close current segment (`endedAt = now`).  \
+  - Add membership record for new employee.  \
+  - Create new segment with updated `splitJson`.  \
+\
+- On **Leave Group / Clock Out**:\
+  - Close current segment.  \
+  - Mark membership `leftAt = now`.  \
+  - If members remain: create new segment with rebalanced `splitJson`.  \
+  - If none remain: mark `TipGroup.status = "closed"`.\
+\
+### 4.2. Allocating tips into segments\
+\
+On tip creation:\
+\
+1. Find active `TipGroupSegment` where `segment.startedAt <= collectedAt < segment.endedAt OR segment.endedAt IS NULL`.  \
+2. Attach `segmentId` on `TipTransaction`.  \
+3. At allocation time:  \
+   - Read `segment.splitJson` (e.g. `\{ "empA": 0.5, "empB": 0.5 \}`).  \
+   - For each member, compute `amount = tipAmount * weight`.  \
+   - Create ledger credits for each.\
+\
+This yields the exact checkout breakdown:  \
+- Morning (no group): 100% solo (direct).  \
+- Midday (segment 1): 50/50 of those tips.  \
+- Late (segment 2): 33.3% each of those tips.\
+\
+***\
+\
+## 5. Tip Rules: Role & Points Layer\
+\
+This is the layer on top of the group/individual models that you asked for: individual, role-based, and points. It does not replace the group model; it **feeds it** in more complex businesses.\
+\
+### 5.1. Distribution types\
+\
+1. **Individual**:  \
+   - Primary employee gets 100%, no pool.  \
+   - Simple: map to one ledger entry.\
+\
+2. **Role-based** (no dynamic group membership):  \
+   - Example: \'93Servers get 80% of tips, bartenders 10%, barbacks 10% by hours worked.\'94  \
+   - Engine:\
+     - Determine the **pool** of eligible employees for this check (e.g., everyone clocked in in FOH roles, or everyone who touched the table).  \
+     - For each role, assign a percentage.  \
+     - Within role, either:\
+       - Equal split, or  \
+       - Weighted by hours in shift during that check\'92s time window.\
+\
+3. **Points-based**:\
+   - Each employee has **tipPoints** attribute (e.g., server 10, bartender 8, barback 4).  \
+   - For a given pool:\
+     - Sum points across employees.  \
+     - Each employee\'92s share = `points / totalPoints`.\
+\
+Implementation: store configuration in `TipRule.distributionJson`. Examples:\
+\
+```json\
+// Role-based\
+\{\
+  "type": "role_percent",\
+  "roles": \{\
+    "server": 0.8,\
+    "bartender": 0.1,\
+    "barback": 0.1\
+  \},\
+  "intraRole": "hours" // or "equal"\
+\}\
+\
+// Points-based\
+\{\
+  "type": "points",\
+  "defaultPoints": 10,\
+  "employeeOverrides": \{\
+    "emp123": 15,\
+    "emp456": 5\
+  \}\
+\}\
+```\
+\
+### 5.2. Rule evaluation order\
+\
+On tip allocation, evaluate rules in a consistent sequence:\
+\
+1. Load active `TipRuleSet` for business & date.  \
+2. Filter to rules whose condition matches this context (location, order type, daypart, etc.).  \
+3. Apply highest priority rule first; rules can be:  \
+   - **Exclusive**: define full allocation.  \
+   - **Additive**: e.g., \'933% of all tips to house\'94 layered on top.\
+\
+This gives you global \'93kitchen gets 3% of all tips\'94 on top of whatever group or individual logic you already have.\
+\
+***\
+\
+## 6. Checkout & Reporting\
+\
+### 6.1. Employee daily checkout (ties to tip bank)\
+\
+For Employee X:  \
+- Query `TipLedgerEntry` for that employee for the date/shift.  \
+- Group by **sourceType** and **segment** (for TipGroup) to display:\
+\
+- Solo tips (no group)  \
+- Group tips by segment with time ranges and percentages  \
+- Role/points pool tips  \
+- Manual transfers in/out  \
+- Payouts (cash / payroll)\
+\
+The **total of all CREDITS \'96 DEBITS = change in Tip Bank balance** for the day.\
+\
+### 6.2. Manager reports\
+\
+- **By Tip Group**: as in your Manager screen, but now backed by:  \
+  - Sum of `TipTransaction` per segment.  \
+  - Sum of `TipLedgerEntry` of `sourceType = TIP_GROUP` per employee.  \
+\
+- **By Role / Rule**:  \
+  - For each `TipRule`, show total tips processed and distribution across employees and roles.\
+\
+***\
+\
+## 7. What to Hand Your Developer (Plain Instructions)\
+\
+You can literally paste this list into a ticket:\
+\
+1. Implement **TipLedger** and **TipLedgerEntry** models and use them as the single source of truth for tip balances (per employee tip bank).  \
+2. Wire all **tip sources** (direct, groups, role pools, manual transfers) to create **TipLedgerEntry** records instead of \'93just numbers\'94 on checkout.  \
+3. Complete the **TipGroup** backend:\
+   - Segment creation on join/leave.  \
+   - Assign each TipTransaction to a segment by timestamp.  \
+   - Allocate tips per segment using stored weights, then create ledger credits for each member.  \
+4. Implement **manual transfers** between employees as paired ledger DEBIT/CREDIT entries.  \
+5. Implement **payout flows**:\
+   - Cash payout now \uc0\u8594  DEBIT entry with `sourceType = PAYOUT_CASH`.  \
+   - Payroll export \uc0\u8594  DEBIT entry with `sourceType = PAYOUT_PAYROLL`, pushing the amount to payroll file.  \
+6. Add **TipRuleSet / TipRule** models and a simple rule engine that, when no group is active, calculates allocations based on:\
+   - Individual mode (100% to primary employee).  \
+   - Role-based mode (percentages by role).  \
+   - Points-based mode (weighted by employee points).  \
+7. Update **employee checkout** and **manager reports** to read from the ledger and group/segment data so every dollar is explainable back to: order \uc0\u8594  tip transaction \u8594  segment/rule \u8594  ledger entries.\
+\
+If you want, next step I can:  \
+- Finish that cut-off Prisma schema block you pasted, and  \
+- Write the core TypeScript functions: `allocateTipsForOrder()`, `applyTipRules()`, and `postToTipLedger()` so your dev can drop them into your existing Next.js/Prisma stack.\
+\
+Sources\
+[1] I am building a point of sale a lot of point of sales build the system backwards and they don't really track inventory. My system is gonna be built in inventory based meaning they can't create items without having it in inventory first this eliminate...\
+\
+... subtract that specific amount of Flour/Yeast/Salt from the "Raw" inventory even though no pizza was sold.\
+\
+Does this hierarchy feel like it covers the "simple" requirement for your users, or should we refine the "Hidden" vs "Visible" labels further? https://www.perplexity.ai/search/7a8a471a-a619-44ad-86ad-efd037152172\
+\
+\
+If an employee was on the clock when an item was added. But has clocked out earlier because the shift was over. Does that employee get credit for the portion of items that were sold/added to the tabs while he was on the clock. And then will get credit for them in the tip bank l. Then when they come in next they will see the tip bank has those funds in it?\
+\
+\
+Yes\'97if you want the system to behave that way, you can (and should) design it so that \'93credit follows the clock.\'94[1][2]\
+\
+### How this should work\
+\
+- **Tips are earned based on timestamps, not when you run payroll.**  \
+  - For each tipped check/tab, you allocate tips to employees who were **on the clock at the time items were added / check was closed**, according to your rules (individual, group, role, points).[3][1]\
+\
+- **Once allocated, those tips are locked into the employee\'92s Tip Bank.**  \
+  - When you post a TipLedgerEntry for that employee, their **Tip Bank balance increases immediately**, even if they\'92ve already clocked out.[4]\
+  - That money sits there until a cash payout or payroll payout debits it.\
+\
+- **Next time they clock in, they see the updated Tip Bank balance.**  \
+  - The UI on login / clock-in just reads their ledger balance and shows, \'93Tip Bank: $X available,\'94 which may include tips from checks that closed after they left, but whose items were sold while they were on the clock (depending on your rule).[5][6]\
+\
+### Two policy choices you need to decide\
+\
+You can pick one of these and encode it globally (or per-location):\
+\
+1. **Item-time rule (what you\'92re describing):**  \
+   - If an employee was on the clock when a specific item was added to a tab, then their share of tips tied to that item is based on **that item\'92s timestamp** and your allocation rules.  \
+   - This is more granular and fair, but requires per-line timestamps and a slightly heavier allocation algorithm.[1][3]\
+\
+2. **Check-time rule (simpler and more common):**  \
+   - Whoever is on the check / in the tip group at **time of payment** shares the tip, regardless of who rang the earlier items.[2][7][8]\
+   - In this model, once a server clocks out and transfers the check, they **no longer accrue** tip on that check after transfer; only what was allocated while they were active is in their Tip Bank.\
+\
+### Implementation guidance for your dev\
+\
+- For each order item and tip:\
+  - Store `addedAt`, `addedByEmployeeId`, and the active group/role context at that moment.\
+  - On tip allocation, decide:\
+    - **Item-based**: allocate tips proportionally by items and who was active when each item was added.  \
+    - **Check-based**: allocate based on who is associated with the check at close.\
+- After computing each employee\'92s share for that tip:\
+  - Write **TipLedgerEntry (CREDIT)** to that employee\'92s ledger.\
+  - The checkout and \'93next-shift view\'94 just read from the ledger, so past earned tips always show up, even if they were calculated after the employee clocked out.[9][4]\
+\
+If you tell me whether you want **item-based** or **check-based** earnings as the default, I can write the exact `allocateTipsForOrder()` pseudo-code so your team can drop it in.\
+\
+Sources\
+[1] Tip Pooling & The Best POS System For Bar and Restaurant - Arryved https://arryved.com/level-up-with-arryved/tip-pooling-the-best-pos-system-for-bar-and-restaurant/\
+[2] Pool Tips With Other Employees - Toast Central https://central.toasttab.com/s/article/Pooling-Tips-with-Other-Employees\
+[3] Tip pooling : r/restaurant - Reddit https://www.reddit.com/r/restaurant/comments/1ec5dne/tip_pooling/\
+[4] I am building a point of sale a lot of point of sales build the system backwards and they don't really track inventory. My system is gonna be built in inventory based meaning they can't create items without having it in inventory first this eliminate...\
+\
+... subtract that specific amount of Flour/Yeast/Salt from the "Raw" inventory even though no pizza was sold.\
+\
+Does this hierarchy feel like it covers the "simple" requirement for your users, or should we refine the "Hidden" vs "Visible" labels further? https://www.perplexity.ai/search/7a8a471a-a619-44ad-86ad-efd037152172\
+[5] How to Split Tips by Hours for Restaurant Employees - Altametrics https://altametrics.com/tip-pooling/how-to-split-tips-by-hours.html\
+[6] How to Calculate and Split Tips for Employees http://kickfin.com/blog/how-to-calculate-and-split-tips-for-employees/\
+[7] Set up tip pooling | Square Support Center - US https://squareup.com/help/us/en/article/7654-get-started-with-tip-pooling-for-team-management\
+[8] Tip pooling and tip splitting: The complete guide for restaurant owners https://blog.clover.com/tip-pooling-tip-splitting-guide-for-restaurant-owners/\
+[9] How to Pay Tips to Employees: Comparing Tip Payout Methods - eTip https://etip.io/how-to-pay-tips-to-employees/\
+[10] Tip-pool across AM & PM shifts dependent on hours worked? - Reddit https://www.reddit.com/r/TalesFromYourServer/comments/1idngrv/tippool_across_am_pm_shifts_dependent_on_hours/\
+[11] How do you allocate credit card tips to the employees working ... https://community.squareup.com/t5/Questions-How-To/How-do-you-allocate-credit-card-tips-to-the-employees-working/td-p/50174\
+[12] How to Calculate & Split Tips by Hours Worked - YouTube https://www.youtube.com/watch?v=2bvI3sZcDbw\
+[13] Tip Allocation: What It Is and How To Calculate It | Indeed.com https://www.indeed.com/career-advice/pay-salary/tip-allocation\
+[14] Articles How to Set Up a Tip Pool - Support https://u-series-support.lightspeedhq.com/s/article/Set-Up-a-Tip-Pool\
+[15] Tip Management Software | Tip Reporting Software - SpotOn https://www.spoton.com/solutions/tip-management/\
+[16] Tip Pooling Calculator - Push Operations https://www.pushoperations.com/tip-calculator\
+\
+\
+\
+I think item based is the most fair? But would it be smart to have the option for both in the admin settings? Or just stick with item based?\
+\
+\
+Item-based is more fair, but I\'92d treat it as your **advanced** mode and also support a simpler check-based option in admin.\
+\
+### Why keep both\
+\
+- **Item-based (your default for serious operators)**  \
+  - Most directly ties tips to who actually did the work (rang items, covered the table during that time window).[1][2]\
+  - Pairs well with your clock-in/clock-out data and your inventory-first philosophy; it reinforces \'93you get paid for what you actually touched.\'94[3]\
+  - Slightly heavier logic: you\'92re tracking timestamps and employees per item, and allocating tip by those proportions.\
+\
+- **Check-based (simple mode)**  \
+  - Matches how a lot of restaurants already think: \'93whoever owns the check when it\'92s paid (or whoever is in the active group) splits the tip.\'94[4][5]\
+  - Easier to explain and configure for smaller bars that don\'92t want nuance.  \
+  - Plays nicer with global hours-based pools (\'93all tips for this period divided by hours worked\'94).[6][7]\
+\
+### Recommended product decision\
+\
+- **Make item-based your recommended default** for new merchants in your target vertical (bars/nightclubs where tabs move and staff turnover mid-shift).  \
+- In **Admin \uc0\u8594  Tip Settings**, expose a single toggle like:  \
+  - \'93Tip allocation basis:  \
+    - [x] By items sold during employee\'92s shift (recommended)  \
+    - [ ] By check at time of payment (simple)\'94  \
+- Under the hood, you just branch in `allocateTipsForOrder()`:\
+  - If `mode = ITEM_BASED`, compute shares from item timestamps + staff on clock for those items.  \
+  - If `mode = CHECK_BASED`, use whoever owns the check / is in the group at pay time.\
+\
+This gives you a strong opinion (item-based fairness) without losing the ability to onboard simpler operators who just want \'93whoever closed it gets it.\'94\
+\
+Sources\
+[1] Tip Allocation: What It Is and How To Calculate It | Indeed.com https://www.indeed.com/career-advice/pay-salary/tip-allocation\
+[2] How to Share Tips Efficiently in Your Restaurant - Altametrics https://altametrics.com/tip-pools/share-tips.html\
+[3] I am building a point of sale a lot of point of sales build the system backwards and they don't really track inventory. My system is gonna be built in inventory based meaning they can't create items without having it in inventory first this eliminate...\
+\
+... subtract that specific amount of Flour/Yeast/Salt from the "Raw" inventory even though no pizza was sold.\
+\
+Does this hierarchy feel like it covers the "simple" requirement for your users, or should we refine the "Hidden" vs "Visible" labels further? https://www.perplexity.ai/search/7a8a471a-a619-44ad-86ad-efd037152172\
+[4] Tip Pooling Calculator: How to Share, Divide Restaurant Tips https://www.onehubpos.com/blog/tip-pooling-calculator\
+[5] Tip pooling and tip splitting: Guide for restaurant owners https://blog.clover.com/tip-pooling-tip-splitting-guide-for-restaurant-owners/\
+[6] How to Split Tips by Hours for Restaurant Employees https://altametrics.com/tip-pooling/how-to-split-tips-by-hours.html\
+[7] Is Tip Pooling Right for Your Restaurant? Pros, Cons, and Potential ... https://www.cbiz.com/insights/article/restaurant-tip-pooling-pros-cons-and-potential-tax-implications\
+[8] Fact Sheet #15: Tipped Employees Under the Fair Labor Standards ... https://www.dol.gov/agencies/whd/fact-sheets/15-tipped-employees-flsa\
+[9] What are allocated tips? A guide for employers - OnPay https://onpay.com/insights/allocated-tips-employers-guide/\
+[10] Understanding Tip Credit Models: A Guide for Restaurants | KNOW https://www.getknowapp.com/blog/tip-credit-models/\
+[11] Fair Tip Distribution: Pooling vs Sharing - Over Easy Office https://www.overeasyoffice.com/blog/comprehensive-guide-to-tip-pooling-and-tip-sharing\
+[12] Solving Tip Payout Chaos with Flexspring's POS Integration for ... https://retailminded.com/solving-tip-payout-chaos-with-flexsprings-pos-integration-for-wisely-by-adp/\
+[13] Tip Management System - Nuvioo Restaurant POS https://pos.nuvioo.com/tip-management\
+[14] Should You Implement Tip Pooling? Pros, Cons, and Best Practices ... https://workforce.com/news/the-pros-and-cons-of-tip-pooling-in-restaurants\
+[15] Choosing the Right Tipping Solution | JustTip https://justtip.net/blog/2024/08/13/choosing-the-right-tipping-solution-flex-pos-or-qr-codes/\
+[16] Is 5% of total sales a lot for tip Sharing? : r/Serverlife - Reddit https://www.reddit.com/r/Serverlife/comments/1kgobpj/is_5_of_total_sales_a_lot_for_tip_sharing/\
+\
+\
+More things to think about and consider, Servers who are working tables and have another employee help then should be able to add another "Owner" to the table. They can do this by clicking the table name or number and it will show them detail details of the table and ask them if they want to add an owner and when they click add it, I'll ask him what the split is if it's an even split or by percent they can even add three or four employee employees to share it with which then automatically calculates into a tip bank as well.\
+\
+We also need to think about a chargeback or a return. We might need an admin setting to see. Do we want to charge the employees back for chargebacks or not? The business owners can decide on that but this allows hundred percent transparency for the business and it requires more employee diligence and making sure they don't get charged backs\
+\
+We need to be able to have manager edits, so if an employee forgets to join a group or forgets to clock out at the right time that the manager can edit it, which will also edit the tip bank even after tips have been paid. It can do a backwards calculation or deductions as well so that employees can't cheat maybe even a history so that if somebody does change the rules or maybe somebody gets greedy and changes their weighted percent that it'll show that in there as well\
+\
+Can you think of anything else we need to add to this foundation and then write it up in a super detailed report that I can give to my DEVELOPERS\
+\
+\
+Yes\'97these are exactly the kinds of edge cases and controls you want baked into the **foundation**. Here\'92s a detailed spec you can hand your developers, organized by features and the data/logic they need.[1][2][3][4]\
+\
+***\
+\
+## 1. Shared Table Ownership (Multi\uc0\u8209 Owner Tables)\
+\
+### Business behavior\
+\
+- Any server can **add additional \'93owners\'94 to a table/tab** when another employee helps.  \
+- Owner can choose:\
+  - **Even split** (2\'964+ employees, auto 50/50, 33/33/33, etc.).  \
+  - **Custom percent split** (e.g., 70/30, 60/20/20).  \
+- The split drives **tip allocation rules** for that table/tab; output must flow directly into each employee\'92s Tip Bank.[5][6]\
+\
+### Data model\
+\
+```ts\
+model TableOwnership \{\
+  id           String   @id @default(cuid())\
+  tableId      String   // or orderId if you attach to order instead of table\
+  orderId      String?\
+  createdAt    DateTime @default(now())\
+  createdById  String   // who set the split\
+\
+  // current active owners/split\
+  owners       TableOwnershipOwner[]\
+  isActive     Boolean  @default(true)\
+\}\
+\
+model TableOwnershipOwner \{\
+  id               String   @id @default(cuid())\
+  tableOwnershipId String\
+  employeeId       String\
+  sharePercent     Float    // e.g. 50.0, 33.33 etc.\
+\}\
+```\
+\
+### UI / UX\
+\
+- Tap **table header (name/number)** \uc0\u8594  open \'93Table Details\'94.\
+- Section: **Owners & Tip Split**:\
+  - Show current owners list and percentages.\
+  - Button: \'93Add Owner\'94.\
+  - Flow:\
+    1. Choose additional employees (only currently clocked in).  \
+    2. Prompt: \'93Even split or custom percent?\'94  \
+       - Even: auto divide `100 / n`.  \
+       - Custom: mini editor where they type percentages; validate sum = 100.  \
+- Changes should apply **from that moment forward**, not retroactively, unless a manager uses an override.[5]\
+\
+### Logic\
+\
+- For **item-based mode**:\
+  - When an item is added:\
+    - Look up current `TableOwnership` for that order/table at that timestamp.\
+    - Attach the ownership snapshot (employee IDs + split %) to that line (or to a \'93tip allocation context\'94 object).\
+- For **check-based mode**:\
+  - On payment:\
+    - Use the latest active `TableOwnership` snapshot to split tips.\
+\
+All of this just feeds into your existing `allocateTipsForOrder()` \uc0\u8594  `TipLedgerEntry` pipeline.\
+\
+***\
+\
+## 2. Chargebacks, Voids, and Returns\
+\
+### Business behavior\
+\
+- There is an **Admin setting**:\
+  - \'93Chargeback handling:\
+    - [ ] Business absorbs chargebacks (no employee clawback)  \
+    - [ ] Charge back employees\'92 tips if card payment is reversed\'94\
+- If enabled, when a card payment (and its tip) is reversed, the system **claws back** the tip portion from affected employees\'92 Tip Banks.[7][8]\
+\
+### Data model / config\
+\
+```ts\
+model TipSettings \{\
+  id                    String   @id @default(cuid())\
+  businessId            String\
+  allocationMode        String   // "ITEM_BASED" | "CHECK_BASED"\
+  chargebackPolicy      String   // "BUSINESS_ABSORBS" | "EMPLOYEE_CHARGEBACK"\
+  allowNegativeBalances Boolean  @default(false)\
+\}\
+```\
+\
+### Logic\
+\
+1. On **chargeback / refund / void** of a payment with tips:\
+   - Locate original `TipTransaction` and all `TipLedgerEntry` rows that credited employees for that tip.[8]\
+2. If `chargebackPolicy = BUSINESS_ABSORBS`:\
+   - Do nothing to ledgers (optional: create a HOUSE loss record for accounting only).\
+3. If `chargebackPolicy = EMPLOYEE_CHARGEBACK`:\
+   - For each affected employee:\
+     - Create **DEBIT** entry equal to their original credited amount (negative amount) with `sourceType = DIRECT_TIP` or `MANUAL_ADJUSTMENT`, `memo = "Chargeback for Txn #..."`.[7]\
+   - If you disallow negative balances, cap at current balance and flag remainder for manager review.\
+\
+This keeps your Tip Bank as the single ledger, but policies govern whether it reacts to chargebacks.\
+\
+***\
+\
+## 3. Manager Edits & Retroactive Fixes\
+\
+### Business behavior\
+\
+Managers must be able to fix:\
+\
+- Employee **forgot to join a group**.  \
+- Employee **forgot to clock out** (overstated hours, wrong segment membership).  \
+- Ownership split on a table was **wrong**.  \
+- A tip was misapplied and needs re-splitting.\
+\
+Edits must:\
+\
+- Re-run calculations and **update Tip Bank even after tips have been paid** (chargeback-style adjustments).[9][1]\
+- Maintain a **full audit trail** so nobody can quietly game the system.[10][11]\
+\
+### Audit models\
+\
+```ts\
+model TipAdjustment \{\
+  id             String   @id @default(cuid())\
+  businessId     String\
+  createdAt      DateTime @default(now())\
+  createdById    String   // manager\
+  reason         String\
+  contextJson    Json     // what was changed: membership, split, ownership, etc.\
+  autoRecalcRan  Boolean  @default(false)\
+\}\
+\
+model TipLedgerEntry \{\
+  // ...existing fields...\
+  adjustmentId   String?  // if this entry came from a manager adjustment\
+\}\
+```\
+\
+### Manager tools\
+\
+1. **Edit Group Membership / Segments**:\
+   - Manager UI: \'93Tip Groups \uc0\u8594  Group #123 \u8594  Timeline\'94.\
+   - Can:\
+     - Change `joinedAt` / `leftAt` for a member (fix late join / forgotten clock-out).  \
+     - Remove or add memberships.  \
+   - When they save:\
+     - Backend recalculates **segments** and replays allocation:\
+       - Void previously generated **CREDIT/DEBIT** entries related to those segments.  \
+       - Insert new entries reflecting corrected splits.  \
+     - Attach those new entries to a `TipAdjustment` record.\
+\
+2. **Edit Table Ownership Split**:\
+   - Manager UI: \'93Orders \uc0\u8594  Order #456 \u8594  Ownership & Tip Split (Manager Override)\'94.\
+   - Allowed actions:\
+     - Change percentages.  \
+     - Add/remove owners.  \
+   - On save:\
+     - Re-run allocation on that order\'92s tips.  \
+     - Generate ledger **delta entries** (positive for those who get more, negative for those who lose).\
+\
+3. **Edit employee clock-in/out**:\
+   - When a manager changes a time clock:\
+     - If you use **hours-based** or **item-based** allocation that depends on active-employee windows, flag those shifts for **recalculation**.[2][12]\
+   - System runs the same recalculation pipeline as above and posts `TipAdjustment` with a clear reason.\
+\
+### History / visibility\
+\
+- For each employee:\
+  - Show \'93Tip Adjustment History\'94:\
+    - Date, manager, delta amount, type (group fix, clock fix, table split fix).  \
+- For each group/order:\
+  - Show a change log:\
+    - \'932026-02-10 09:50 \'96 Manager Alex changed split Sarah 70% / Mike 30% \uc0\u8594  Sarah 60% / Mike 40% (Adjustment #A123).\'94\
+\
+This makes it obvious if someone \'93gets greedy\'94 and protects you from drama.\
+\
+***\
+\
+## 4. Additional Foundation Pieces To Add\
+\
+### 4.1. Permissions & Roles\
+\
+Define which roles can:\
+\
+- Start/stop **groups**, add members.  \
+- Add **table co-owners** and edit splits (servers vs bartenders vs managers).  \
+- Perform **manager edits** and run recalculations.  \
+- Change **tip settings** (allocation mode, chargeback policy, FOH/BOH rules).[13][10]\
+\
+This is just your existing RBAC with new permissions like:\
+\
+- `tip.manageGroups`  \
+- `tip.overrideSplits`  \
+- `tip.manageSettings`  \
+- `tip.performAdjustments`\
+\
+### 4.2. Transparency for staff\
+\
+To keep trust high:\
+\
+- Each employee\'92s **daily checkout** should show:\
+  - Base earnings for the shift.  \
+  - Tip pool earnings by source (direct, group, role-based, manual transfers).  \
+  - Any **adjustments/chargebacks** applied that day, with reason.[14][1]\
+- Optionally, a \'93Tip Bank statement\'94 view:\
+  - Running ledger, similar to a bank account:\
+    - \'93+ $40.20 Group Tips \'96 Segment 2\'94  \
+    - \'93\uc0\u8722  $15.00 Chargeback \'96 Order #1234\'94\
+\
+### 4.3. Legal/compliance guardrails (high level)\
+\
+- Make sure admins can **document their policy** (for their lawyer/CPA):\
+  - How tips are pooled, who can be in the pool (no managers if they have hiring/firing power in many jurisdictions).[11][15]\
+  - Whether chargebacks are clawed back from employees or not.[16][7]\
+- Your system should:\
+  - Always preserve **raw data**: original tip amounts, orders, timestamps.  \
+  - Allow exports of tip distributions for payroll and tax reporting.[17][18]\
+\
+***\
+\
+## 5. Developer-Facing Summary (What to Build)\
+\
+You can paste this as a spec header:\
+\
+1. **Shared ownership at table/order level** with:\
+   - `TableOwnership` + `TableOwnershipOwner` models.  \
+   - UI to add co-owners and define even or custom percentage splits.  \
+   - Integration into tip allocation (items or checks reference the active ownership snapshot at their timestamp).\
+\
+2. **Chargeback/void handling**:\
+   - `TipSettings.chargebackPolicy` with two modes: business absorbs vs employee chargeback.  \
+   - On payment reversal, auto-generate **ledger DEBIT entries** for affected employees when policy says so.\
+\
+3. **TipSettings & global modes**:\
+   - `allocationMode`: `ITEM_BASED` vs `CHECK_BASED`.  \
+   - Chargeback policy, allowNegativeBalances, other upcoming flags (FOH/BOH splits, points).\
+\
+4. **Manager adjustment infrastructure**:\
+   - `TipAdjustment` model capturing who changed what and why.  \
+   - Recalculation engine that:\
+     - Rebuilds tip allocations when group membership, clock times, or ownership splits change.  \
+     - Posts **delta ledger entries** tied to the adjustment record.\
+\
+5. **Audit trail and history UIs**:\
+   - For employees: Tip Bank statement + adjustments log.  \
+   - For groups/orders: timeline of ownership, membership changes, and recalcs.\
+\
+6. **Permissions**:\
+   - New role-based permissions for starting groups, editing splits, changing settings, and running adjustments.\
+\
+If you want, next I can write the **pseudo-code for the recalculation engine** (take a changed group/ownership/clock, compute old vs new allocations, post ledger deltas) so your devs have concrete function signatures to implement.\
+\
+Sources\
+[1] What Is Tip Pooling and How Does It Work? - Square https://squareup.com/us/en/the-bottom-line/operating-your-business/what-you-need-to-know-about-tip-pooling\
+[2] Tip pooling and tip splitting: The complete guide for restaurant owners https://blog.clover.com/ca/tip-pooling-and-tip-splitting-the-complete-guide-for-restaurant-owners/\
+[3] How to Share Tips Efficiently in Your Restaurant - Altametrics https://altametrics.com/tip-pools/share-tips.html\
+[4] I am building a point of sale a lot of point of sales build the system backwards and they don't really track inventory. My system is gonna be built in inventory based meaning they can't create items without having it in inventory first this eliminate...\
+\
+... subtract that specific amount of Flour/Yeast/Salt from the "Raw" inventory even though no pizza was sold.\
+\
+Does this hierarchy feel like it covers the "simple" requirement for your users, or should we refine the "Hidden" vs "Visible" labels further? https://www.perplexity.ai/search/7a8a471a-a619-44ad-86ad-efd037152172\
+[5] Bill Splitting Headaches? How Chinese Restaurant POS Fixes ... https://www.eats365pos.com/us/blog/post/bill-splitting-chinese-restaurant-pos\
+[6] Split Checks on the POS - Toast Central https://central.toasttab.com/s/article/Splitting-Checks-by-Item-1492811097734\
+[7] Can an employer ask for your tip amount back when a credit card ... https://www.avvo.com/legal-answers/can-an-employer-ask-for-your-tip-amount-back-when--2552738.html\
+[8] Understanding and Preventing Chargebacks - Webstaurant Store https://www.webstaurantstore.com/blog/3734/chargebacks-explained.html\
+[9] Pool Tips and Tipping Out - Toast Central https://central.toasttab.com/s/article/Pooling-Tips-and-Tipping-Out\
+[10] What's the best way to change a tip-out policy? https://restaurantbusinessonline.com/advice-guy/whats-best-way-change-tip-out-policy\
+[11] What to do about managers on our tip pool taking majority ... - Reddit https://www.reddit.com/r/Serverlife/comments/123ef82/what_to_do_about_managers_on_our_tip_pool_taking/\
+[12] How to Split Tips by Hours for Restaurant Employees https://altametrics.com/tip-pooling/how-to-split-tips-by-hours.html\
+[13] Owner experience with tip sharing : r/restaurantowners - Reddit https://www.reddit.com/r/restaurantowners/comments/1kkrcmh/owner_experience_with_tip_sharing/\
+[14] The Ultimate Tip-Out & Tip Pooling Guide For Your Restaurant https://www.youtube.com/watch?v=X9HhIPEHILE\
+[15] Is Tip Pooling Right for Your Restaurant? Pros, Cons, and Potential ... https://www.cbiz.com/insights/article/restaurant-tip-pooling-pros-cons-and-potential-tax-implications\
+[16] $600 tip I have to pay back to restaurant : r/bartenders - Reddit https://www.reddit.com/r/bartenders/comments/1bzb89l/600_tip_i_have_to_pay_back_to_restaurant/\
+[17] What are allocated tips? A guide for employers - OnPay https://onpay.com/insights/allocated-tips-employers-guide/\
+[18] Solving Tip Payout Chaos with Flexspring's POS Integration for ... https://retailminded.com/solving-tip-payout-chaos-with-flexsprings-pos-integration-for-wisely-by-adp/\
+[19] How to Calculate and Split Tips for Employees http://kickfin.com/blog/how-to-calculate-and-split-tips-for-employees/\
+[20] How to Set Up a Tip Pool - Upserve https://help.upserve.com/s/article/Set-Up-a-Tip-Pool\
+\
+# On the clock in screen we can put the groups here so people can see who is in a group and when they were added. So they can make sure the group is running properly, \
+\
+Need requirements as to who can be allowed to join a group. Maybe the person who started the group is the owner and can add additional to the team (others can request to be added but must be approved by the owner), but can transfer or it auto transfers when they clock out to the next senior person, or can delegate a owner manually if other group members remain until only 1 remains or they are all clocked out\
+\
+\
+## Tip Banking System Developer Specification\
+\
+This document provides a comprehensive specification for implementing the Tip Banking system in GWI POS. It builds on the existing foundation (Tip Bank, Dynamic Tip Groups, Tip Rules Engine) and incorporates all discussed features, edge cases, and new requirements. The goal is to create a system that is **clear, easy to understand, and user-friendly** for end users (employees, managers, owners) while being robust, auditable, and fair.\
+\
+The system must prioritize:\
+- **Transparency**: Every tip dollar must be traceable via timestamps, sources, and audit logs.\
+- **Fairness**: Allocations based on configurable rules (e.g., item-based vs. check-based).\
+- **Usability**: Intuitive UI flows with real-time updates, notifications, and simple views.\
+- **Compliance**: Support for legal requirements (e.g., no manager participation in pools, tax reporting).\
+- **Offline-First**: Handle local storage and sync (aligned with Next.js/Prisma/SQLite stack).\
+\
+Implement in phases:\
+1. **Core Tip Bank & Ledger** (if not already done).\
+2. **Dynamic Tip Groups & Segments**.\
+3. **Tip Rules Engine (Individual/Role/Points)**.\
+4. **Advanced Features (Shared Ownership, Chargebacks, Edits)**.\
+5. **UI/UX Enhancements (Clock-In Screen, Group Management)**.\
+6. **Reporting & Audit**.\
+\
+Use Prisma for data models, TypeScript for logic, and ensure all functions are testable.\
+\
+---\
+\
+### 1. Core Concepts & Data Models\
+\
+#### 1.1 Key Concepts\
+- **Tip Bank**: A per-employee ledger acting as a "holding account" for tips. Credits from tips/pools; debits from payouts/transfers. Balances must be viewable in real-time.\
+- **Tip Sources**: Direct (from orders), Group Pools, Role/Points Pools, Manual Transfers.\
+- **Allocation Modes**: Configurable per business (Admin Settings):\
+  - **Item-Based** (default/recommended): Tips allocated based on who was on-clock when items were added to tabs/orders. Fair for dynamic shifts.\
+  - **Check-Based** (simple): Tips allocated based on who owns the check/group at payment time.\
+- **Dynamic Tip Groups**: Time-segmented pools where membership changes create new segments with adjusted splits.\
+- **Tip Rules**: Layered on top for non-group scenarios (e.g., house rules like 3% to BOH).\
+- **Payouts**: Cash (immediate) or Payroll (batched, clears balance).\
+- **Auditability**: All changes logged; no silent edits.\
+\
+#### 1.2 Data Models (Prisma Schema)\
+Extend your existing models. Ensure indexes for performance (e.g., on timestamps, employeeId).\
+\
+```prisma\
+// Enums\
+enum TipLedgerEntryType \{\
+  CREDIT\
+  DEBIT\
+\}\
+\
+enum TipSourceType \{\
+  DIRECT_TIP\
+  TIP_GROUP\
+  ROLE_POOL\
+  MANUAL_TRANSFER\
+  PAYOUT_CASH\
+  PAYOUT_PAYROLL\
+\}\
+\
+enum TipRuleScope \{\
+  INDIVIDUAL\
+  ROLE\
+  POINTS\
+  HOUSE\
+\}\
+\
+enum TipAllocationMode \{\
+  ITEM_BASED\
+  CHECK_BASED\
+\}\
+\
+enum ChargebackPolicy \{\
+  BUSINESS_ABSORBS\
+  EMPLOYEE_CHARGEBACK\
+\}\
+\
+// Tip Settings (per business)\
+model TipSettings \{\
+  id                     String             @id @default(cuid())\
+  businessId             String             @unique\
+  allocationMode         TipAllocationMode  @default(ITEM_BASED)\
+  chargebackPolicy       ChargebackPolicy   @default(BUSINESS_ABSORBS)\
+  allowNegativeBalances  Boolean            @default(false)\
+  allowManagerInPools    Boolean            @default(false) // Compliance flag\
+  configJson             Json?              // Additional flags (e.g., pool cash tips)\
+\}\
+\
+// Tip Ledger (Tip Bank)\
+model TipLedger \{\
+  id                 String             @id @default(cuid())\
+  employeeId         String\
+  currentBalanceCents Int               @default(0) // Cached; update via triggers or hooks\
+  createdAt          DateTime           @default(now())\
+  updatedAt          DateTime           @updatedAt\
+\
+  employee           Employee           @relation(fields: [employeeId], references: [id])\
+  entries            TipLedgerEntry[]\
+\}\
+\
+// Ledger Entries\
+model TipLedgerEntry \{\
+  id            String              @id @default(cuid())\
+  ledgerId      String\
+  employeeId    String              // Denormalized\
+  type          TipLedgerEntryType\
+  amountCents   Int                 // Positive for CREDIT, negative for DEBIT\
+  sourceType    TipSourceType\
+  sourceId      String?             // e.g., TipTransaction.id\
+  memo          String?\
+  adjustmentId  String?             // If from manager edit\
+  createdAt     DateTime            @default(now())\
+\
+  ledger        TipLedger           @relation(fields: [ledgerId], references: [id])\
+  adjustment    TipAdjustment?      @relation(fields: [adjustmentId], references: [id])\
+\}\
+\
+// Tip Groups\
+model TipGroup \{\
+  id         String    @id @default(cuid())\
+  createdBy  String    // employeeId\
+  registerId String\
+  startedAt  DateTime  @default(now())\
+  endedAt    DateTime?\
+  status     String    @default("active") // active | closed\
+  ownerId    String    // Current owner (for approvals/transfers)\
+\
+  memberships TipGroupMembership[]\
+  segments   TipGroupSegment[]\
+  tips       TipTransaction[]\
+\}\
+\
+// Group Memberships\
+model TipGroupMembership \{\
+  id         String   @id @default(cuid())\
+  groupId    String\
+  employeeId String\
+  joinedAt   DateTime\
+  leftAt     DateTime?\
+  role       String?  // e.g., "bartender" for role-based weights\
+  approvedBy String?  // Approver employeeId (for requests)\
+\}\
+\
+// Group Segments\
+model TipGroupSegment \{\
+  id          String   @id @default(cuid())\
+  groupId     String\
+  startedAt   DateTime\
+  endedAt     DateTime?\
+  memberCount Int\
+  splitJson   Json     // \{ "emp1": 0.333, "emp2": 0.333, ... \} for custom/equal splits\
+\
+  tips        TipTransaction[]\
+\}\
+\
+// Tip Transactions\
+model TipTransaction \{\
+  id                 String   @id @default(cuid())\
+  groupId            String?\
+  segmentId          String?\
+  orderId            String\
+  paymentId          String?\
+  amountCents        Int\
+  sourceType         String   // CARD | CASH | ADJUSTMENT\
+  collectedAt        DateTime\
+  primaryEmployeeId  String?  // For individual mode\
+\
+  group              TipGroup? @relation(fields: [groupId], references: [id])\
+  segment            TipGroupSegment? @relation(fields: [segmentId], references: [id])\
+\}\
+\
+// Tip Rule Sets\
+model TipRuleSet \{\
+  id            String   @id @default(cuid())\
+  businessId    String\
+  name          String\
+  effectiveFrom DateTime\
+  effectiveTo   DateTime?\
+  status        String   @default("active")\
+  configJson    Json?\
+\
+  rules         TipRule[]\
+\}\
+\
+// Tip Rules\
+model TipRule \{\
+  id               String        @id @default(cuid())\
+  ruleSetId        String\
+  priority         Int\
+  scope            TipRuleScope\
+  scopeType        String        // e.g., ORDER_ROLE, BUSINESS_GLOBAL\
+  conditionJson    Json          // e.g., \{ "role": "server" \}\
+  distributionJson Json          // e.g., \{ "type": "role_percent", "roles": \{ "server": 0.8 \} \}\
+\}\
+\
+// Table Ownership (for shared tables)\
+model TableOwnership \{\
+  id         String   @id @default(cuid())\
+  tableId    String   // Or orderId\
+  orderId    String?\
+  createdAt  DateTime @default(now())\
+  createdById String\
+  isActive   Boolean  @default(true)\
+\
+  owners     TableOwnershipOwner[]\
+\}\
+\
+// Table Ownership Owners\
+model TableOwnershipOwner \{\
+  id               String  @id @default(cuid())\
+  tableOwnershipId String\
+  employeeId       String\
+  sharePercent     Float\
+\}\
+\
+// Tip Adjustments (for manager edits)\
+model TipAdjustment \{\
+  id           String   @id @default(cuid())\
+  businessId   String\
+  createdAt    DateTime @default(now())\
+  createdById  String   // Manager\
+  reason       String\
+  contextJson  Json     // Changed data (e.g., \{ "oldJoinedAt": ..., "newJoinedAt": ... \})\
+  autoRecalcRan Boolean  @default(false)\
+\
+  entries      TipLedgerEntry[]\
+\}\
+\
+// Assume existing: Employee, Order, Payment, Register models with relations (e.g., Employee has tipPoints Int? for points mode)\
+```\
+\
+- **Notes**: \
+  - Use JSON for flexibility in splits/distributions to support future customizations.\
+  - Cache `currentBalanceCents` with Prisma middleware or triggers to avoid summing entries on every read.\
+  - Ensure all models have soft-delete flags if needed for compliance.\
+\
+---\
+\
+### 2. Business Logic & Functions\
+\
+Implement as TypeScript functions in your backend (e.g., `/lib/tips.ts`). All functions must:\
+- Be atomic (use transactions).\
+- Log audits.\
+- Trigger notifications (e.g., via websockets/email).\
+\
+#### 2.1 Tip Allocation Pipeline\
+Core function: `allocateTipsForOrder(orderId: string)`\
+\
+1. Load order, payment, items (with timestamps, addedById).\
+2. Determine mode from `TipSettings`.\
+3. Check for active TipGroup on register at collectedAt.\
+4. If group active: Use segment splitJson.\
+5. Else: Apply active TipRuleSet rules (highest priority first; exclusive or additive).\
+6. For Item-Based: Proportion tips by item timestamps + on-clock employees/ownership.\
+7. For Check-Based: Use ownership/group at payment time.\
+8. Output: Array of \{ employeeId, amountCents, sourceType, sourceId \}.\
+9. Call `postToTipLedger` for each.\
+\
+Pseudo-code:\
+```ts\
+async function allocateTipsForOrder(orderId: string) \{\
+  const order = await prisma.order.findUnique(\{ where: \{ id: orderId \}, include: \{ items: true, payment: true \} \});\
+  const settings = await getTipSettings(order.businessId);\
+  const tipAmount = order.payment.tipCents;\
+\
+  let allocations: \{ employeeId: string; amountCents: number; sourceType: TipSourceType; sourceId: string \}[] = [];\
+\
+  // Step 1: Find context (group or rules)\
+  const group = await findActiveGroupForRegisterAtTime(order.registerId, order.payment.collectedAt);\
+  if (group) \{\
+    const segment = findSegmentForTimestamp(group, order.payment.collectedAt);\
+    allocations = calculateGroupAllocations(tipAmount, segment.splitJson);\
+  \} else \{\
+    const ruleSet = await findActiveRuleSet(order.businessId, order.payment.collectedAt);\
+    allocations = applyRulesToTip(tipAmount, ruleSet, order, settings.allocationMode);\
+  \}\
+\
+  // Step 2: Handle shared ownership override\
+  const ownership = await findActiveOwnershipForOrder(orderId, order.payment.collectedAt);\
+  if (ownership) \{\
+    allocations = adjustAllocationsByOwnership(allocations, ownership.owners);\
+  \}\
+\
+  // Step 3: Create TipTransaction\
+  const txn = await prisma.tipTransaction.create(\{ data: \{ /* ... */ \} \});\
+\
+  // Step 4: Post to ledgers\
+  for (const alloc of allocations) \{\
+    await postToTipLedger(alloc.employeeId, alloc.amountCents, TipLedgerEntryType.CREDIT, alloc.sourceType, txn.id);\
+  \}\
+\}\
+```\
+\
+- `applyRulesToTip`: Evaluate rules; for ROLE: sum by role %; for POINTS: weight by employee.tipPoints.\
+- `postToTipLedger(employeeId: string, amount: number, type: TipLedgerEntryType, sourceType: TipSourceType, sourceId: string, memo?: string)`: Create entry, update cached balance.\
+\
+#### 2.2 Group Management\
+- `startTipGroup(createdBy: string, registerId: string, initialMembers: string[])`: Create group/segment/memberships; set ownerId = createdBy.\
+- `requestJoinGroup(groupId: string, employeeId: string)`: Create pending membership; notify owner.\
+- `approveJoinGroup(groupId: string, employeeId: string, approvedBy: string)`: Add membership, close/reopen segment, recalc splitJson (default equal; support custom).\
+- `leaveGroup(groupId: string, employeeId: string)`: Mark leftAt, close/reopen segment.\
+- **Ownership Transfer**:\
+  - On owner clock-out: Auto-transfer to senior member (by join time or employee.seniorityLevel).\
+  - Manual: `transferGroupOwnership(groupId: string, newOwnerId: string)`.\
+  - If last member: Auto-close group.\
+- Only owner can approve joins/add members; others request.\
+- Who can join: Clocked-in employees in eligible roles (config via TipSettings; e.g., no managers if allowManagerInPools = false).\
+\
+#### 2.3 Manual Transfers & Payouts\
+- `manualTransfer(fromEmployeeId: string, toEmployeeId: string, amountCents: number, memo: string)`: Paired DEBIT/CREDIT entries.\
+- `cashPayout(employeeId: string, amountCents: number)`: DEBIT if balance >= amount.\
+- `payrollPayoutBatch(businessId: string, dateRange: \{ from: Date, to: Date \})`: Sum unpaid balances, create DEBITs, export CSV/JSON for payroll integration.\
+\
+#### 2.4 Chargebacks & Voids\
+- `handleChargeback(paymentId: string)`: Find related TipTransaction/entries; if policy = EMPLOYEE_CHARGEBACK, create DEBITs proportional to original credits.\
+\
+#### 2.5 Manager Edits & Recalcs\
+- `performTipAdjustment(context: \{ type: 'group' | 'ownership' | 'clock', id: string, changes: Json \}, reason: string, managerId: string)`:\
+  1. Create TipAdjustment.\
+  2. Apply changes (e.g., update joinedAt).\
+  3. Recalc affected segments/allocations: Compute old vs new (deltas).\
+  4. Post delta entries linked to adjustment.\
+- Recalc Engine: `recalculateAllocationsForContext(contextId: string, type: string)`: Replay tips, compare old/new.\
+\
+#### 2.6 Notifications\
+- Real-time: Websockets for group changes (joins, segments), adjustments.\
+- Email/SMS: Daily tip summaries, adjustment alerts.\
+\
+---\
+\
+### 3. UI/UX Flows\
+\
+Use the provided wireframe code as base; extend with React components.\
+\
+#### 3.1 Clock-In Screen Enhancements\
+- Show "Active Groups" section: List groups on registers, with members, join times, current splits.\
+- Buttons: "Request Join" (if not in group), "View My Tip Bank" (balance + recent entries).\
+- Ensure visibility: "Who is in a group and when they were added" for monitoring.\
+\
+#### 3.2 Employee Views\
+- **Daily Checkout**: Breakdown by solo/group/role, with times/shares (as in wireframes).\
+- **Tip Bank Dashboard**: Ledger history, adjustments, payouts. Mobile-friendly.\
+- **Group View**: Timeline, members, running totals (as in Active Group screen).\
+\
+#### 3.3 Manager Views\
+- **Group Editor**: Timeline with edit buttons (memberships, times).\
+- **Adjustment Tool**: Search orders/groups, apply fixes, see preview deltas.\
+- **Settings Page**: Toggles for modes/policies; rule editor (add roles/points).\
+\
+#### 3.4 Usability Guidelines\
+- Tooltips: Explain terms (e.g., "Segment: Time slice when membership changed").\
+- Validation: Splits sum to 100%; prevent negatives.\
+- Accessibility: Dark theme, keyboard nav.\
+- Offline: Local state for groups; sync on reconnect.\
+\
+---\
+\
+### 4. Reporting & Compliance\
+\
+- **Employee Report**: PDF/CSV of ledger entries by date.\
+- **Manager Report**: As in wireframes, plus audit logs.\
+- **Tax Export**: Sum tips for W-2 (allocated tips reporting).\
+- Compliance: Enforce no managers in pools; flag large adjustments.\
+\
+---\
+\
+### 5. Edge Cases & Testing\
+- **Edges**: Tip voids after payout; group close with pending tips; negative balances; multi-location sync.\
+- **Tests**: Unit (allocateTipsForOrder); Integration (full flow); Scenarios (e.g., chargeback with policy on/off).\
+\
+---\
+\
+### 6. Missing Pieces & Recommendations\
+- **Integration**: API hooks for payroll (e.g., ADP/QuickBooks).\
+- **Security**: Encrypt sensitive data; role-based access.\
+- **Performance**: Paginate ledgers; index queries.\
+- **Analytics**: Dashboards for tip trends.\
+- **Future-Proof**: Add support for crypto tips or instant payouts (e.g., Venmo).\
+\
+Hand this to devs with the wireframe code. If needed, I can provide full TS functions or ERD diagrams.\
+\
+}

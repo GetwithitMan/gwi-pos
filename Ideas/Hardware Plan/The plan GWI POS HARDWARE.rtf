@@ -1,0 +1,1091 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2868
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\froman\fcharset0 Times-Bold;\f1\froman\fcharset0 Times-Roman;\f2\froman\fcharset0 Times-Italic;
+\f3\fmodern\fcharset0 Courier;\f4\fmodern\fcharset0 Courier-Bold;}
+{\colortbl;\red255\green255\blue255;\red0\green0\blue0;\red252\green39\blue18;\red109\green109\blue109;
+}
+{\*\expandedcolortbl;;\cssrgb\c0\c0\c0;\cssrgb\c100000\c25271\c7591;\cssrgb\c50196\c50196\c50196;
+}
+{\*\listtable{\list\listtemplateid1\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid1\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid1}
+{\list\listtemplateid2\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat0\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid101\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat0\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid102\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listname ;}\listid2}
+{\list\listtemplateid3\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat0\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid201\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid202\'01\'01;}{\levelnumbers\'01;}\fi-360\li1440\lin1440 }{\listname ;}\listid3}
+{\list\listtemplateid4\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat0\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid301\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat0\levelspace360\levelindent0{\*\levelmarker \{circle\}}{\leveltext\leveltemplateid302\'01\uc0\u9702 ;}{\levelnumbers;}\fi-360\li1440\lin1440 }{\listname ;}\listid4}
+{\list\listtemplateid5\listhybrid{\listlevel\levelnfc23\levelnfcn23\leveljc0\leveljcn0\levelfollow0\levelstartat0\levelspace360\levelindent0{\*\levelmarker \{disc\}}{\leveltext\leveltemplateid401\'01\uc0\u8226 ;}{\levelnumbers;}\fi-360\li720\lin720 }{\listname ;}\listid5}
+{\list\listtemplateid6\listhybrid{\listlevel\levelnfc0\levelnfcn0\leveljc0\leveljcn0\levelfollow0\levelstartat1\levelspace360\levelindent0{\*\levelmarker \{decimal\}}{\leveltext\leveltemplateid501\'01\'00;}{\levelnumbers\'01;}\fi-360\li720\lin720 }{\listname ;}\listid6}}
+{\*\listoverridetable{\listoverride\listid1\listoverridecount0\ls1}{\listoverride\listid2\listoverridecount0\ls2}{\listoverride\listid3\listoverridecount0\ls3}{\listoverride\listid4\listoverridecount0\ls4}{\listoverride\listid5\listoverridecount0\ls5}{\listoverride\listid6\listoverridecount0\ls6}}
+\margl1440\margr1440\vieww29800\viewh14120\viewkind0
+\deftab720
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 \
+PM Mode: Mission Control and everything is ready to go.\
+\
+\
+                                                                                                                                                                                                              \
+  1. Sign in at https://app.thepasspos.com \'97 use your GitHub account (brian@get-with-it.com)\
+  2. Select the "Get With It" org when prompted by Clerk\
+  3. Dashboard should show your "GWI Admin Dev" location (currently offline \'97 no server connected yet)\
+\
+  To connect your local POS server (Wave 5 of the plan), you'd run provision.sh with the registration token on the NUC. Since you're running locally on your Mac (not a NUC with Docker), that step is for\
+  later when hardware is ready.\
+\
+  Want to go sign in and verify the dashboard works, or shall we switch to POS development work?\
+\
+\
+\
+\
+\
+\
+\
+\
+\
+1. Say: PM Mode: Mission Control\
+  2. Review /docs/plans/MISSION-CONTROL-MODULE-A.md (15 sections + 3 appendices)\
+  3. Review PM Task Board for Phase 2A tasks (T-054 to T-067)\
+  4. Start with Skill 300: Cloud Project Bootstrap (create separate Next.js project)\
+\cf3 (TABLES BACKUP Backup created: pos-20260211-184610.db. Now let me set up the team.) Saved to docs/audits/FLOOR-PLAN-AUDIT-2026-02-11.md -- full audit with all findings, bug list,\
+  implementation priorities, and every file/line reference in one place.\cf0 \
+\pard\pardeftab720\sa298\partightenfactor0
+\cf0 \outl0\strokewidth0 Say PM Mode: Mission Control to start implementation. Phase 2A priority:\
+  1. Skill 300: Cloud Project Bootstrap\
+  2. Skill 301: Cloud Prisma Schema\
+  3. Skill 320: Tenant Isolation (Schemas + RLS)\
+  4. Skill 302: Server Registration API\
+  5. Skill 303: Heartbeat Ingestion\
+  6. Skill 304: License Validation API\
+  7. Skill 305: Fleet Dashboard (Basic)\
+  8. Skill 306: Provisioning Script\outl0\strokewidth0 \strokec2 \
+\pard\pardeftab720\sa298\partightenfactor0
+\cf0 \
+Mission Control Preparation Complete                                                                   \
+   \
+  New Files Created                                                                                      \
+  File: docs/plans/MISSION-CONTROL-MODULE-A.md\
+  Lines: 716                                                  \
+  Description: Permanent copy of the full architecture plan (12 sections + 3 appendices)\
+  \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+  File: docs/domains/MISSION-CONTROL-DOMAIN.md\
+  Lines: 175\
+  Description: Domain 25 documentation (layers, responsibilities, integration points, security model,\
+    hardware kit, related skills)\
+  \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+  File: docs/changelogs/MISSION-CONTROL-CHANGELOG.md\
+  Lines: 57\
+  Description: Initial changelog entry with architecture decisions and resume instructions\
+  Files Updated\
+  File: CLAUDE.md\
+  Changes: Added Domain 25 to registry table + full domain section (layers, integration points, related\
+    skills 300-320)\
+  \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+  File: docs/PM-TASK-BOARD.md\
+  Changes: Added 11 tasks (T-054 through T-064) covering Phase 2A + 2B deliverables. Added PM: Mission\
+    Control to Domain PM Registry.\
+  \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+  File: docs/skills/SKILLS-INDEX.md\
+  Changes: Added "Mission Control" category with 21 skills (300-320). Updated completion summary. Added\
+  to\
+     "Recently Completed" and "Next Session Priority".\
+  Tomorrow Morning\
+\
+  \
+\
+\
+\
+\
+\
+Plan: Mission Control Center \'97 Core Module A: Tenant & Fleet Management\
+                                                          \
+ Context\
+\
+ GWI POS is a hybrid SaaS system where each restaurant location runs a local Ubuntu server (Docker +\
+ PostgreSQL) for sub-50ms latency and 100% offline capability. Phase 2 is the cloud Admin Console ("The\
+ Mothership") \'97 a multi-tenant dashboard that manages the fleet of local servers with full control and\
+ maximum security.\
+Put it right after the \'93Mission\'94 line in the Master Specification header, before \'93Part 1: The Strict Isolation Strategy (Software).\'94[1]\
+\
+For example:\
+\
+```md\
+Master Specification: GWI POS Infrastructure\
+Mission: Build a secure, multi-tenant POS platform with strict data isolation and automated online ordering.\
+\
+Repo layout:\
+- thepulse-pos           \'96 Local server + POS app (Ubuntu + Docker + Postgres)\
+- thepulse-mothership    \'96 Cloud Admin Console (Next.js + Neon + Stripe + Clerk)\
+- @thepulse/shared       \'96 Shared TypeScript types, API contracts, and enums\
+\
+Part 1: The Strict Isolation Strategy (Software)\
+...\
+```\
+\
+\
+ The local POS already has excellent foundations:\
+ - Organization \uc0\u8594  Location \u8594  80+ tables with locationId, deletedAt, syncedAt\
+ - Docker Compose with Watchtower auto-updates\
+ - KDS/Terminal 256-bit device tokens with httpOnly cookies (pairing pattern)\
+ - Socket.io real-time infrastructure\
+ - Offline sync algorithm fully designed (not yet implemented)\
+ - Health check API, internal API secret pattern\
+\
+ What's missing: The cloud side \'97 server registration, fleet monitoring, secure communication, license\
+ enforcement, and controlled updates.\
+\
+ ---\
+ Architecture Overview\
+\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474                     MISSION CONTROL CENTER (Cloud - Vercel)                \u9474 \
+ \uc0\u9474                                                                           \u9474 \
+ \uc0\u9474   Next.js App + Neon PostgreSQL + S3 Backups                             \u9474 \
+ \uc0\u9474                                                                           \u9474 \
+ \uc0\u9474   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9474 \
+ \uc0\u9474   \u9474  Fleet Dash  \u9474   \u9474  Sync Engine  \u9474   \u9474  Licensing  \u9474   \u9474  Update Mgr   \u9474   \u9474 \
+ \uc0\u9474   \u9474  (real-time) \u9474   \u9474  (ingest)     \u9474   \u9474  (enforce)  \u9474   \u9474  (rollout)    \u9474   \u9474 \
+ \uc0\u9474   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9474 \
+ \uc0\u9474                                                                           \u9474 \
+ \uc0\u9474   AdminUser auth (email + password + TOTP MFA)                           \u9474 \
+ \uc0\u9474   JWT in httpOnly cookies (mirrors KDS device token pattern)             \u9474 \
+ \uc0\u9474                                                                           \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+                                \uc0\u9474 \
+                All connections initiated OUTBOUND by local servers\
+                (servers never expose ports to the internet)\
+                                \uc0\u9474 \
+          \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+          \uc0\u9474                      \u9474                      \u9474 \
+          \uc0\u9660                      \u9660                      \u9660 \
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474   LOCAL SERVER A  \u9474   \u9474   LOCAL SERVER B  \u9474   \u9474   LOCAL SERVER C  \u9474 \
+ \uc0\u9474   (Ubuntu+Docker) \u9474   \u9474   (Ubuntu+Docker) \u9474   \u9474   (Ubuntu+Docker) \u9474 \
+ \uc0\u9474                   \u9474   \u9474                   \u9474   \u9474                   \u9474 \
+ \uc0\u9474  \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488  \u9474   \u9474  \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488  \u9474   \u9474  \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488  \u9474 \
+ \uc0\u9474  \u9474  Sync Agent   \u9474  \u9474   \u9474  \u9474  Sync Agent   \u9474  \u9474   \u9474  \u9474  Sync Agent   \u9474  \u9474 \
+ \uc0\u9474  \u9474  (sidecar)    \u9474  \u9474   \u9474  \u9474  (sidecar)    \u9474  \u9474   \u9474  \u9474  (sidecar)    \u9474  \u9474 \
+ \uc0\u9474  \u9474  - heartbeat  \u9474  \u9474   \u9474  \u9474  - heartbeat  \u9474  \u9474   \u9474  \u9474  - heartbeat  \u9474  \u9474 \
+ \uc0\u9474  \u9474  - sync       \u9474  \u9474   \u9474  \u9474  - sync       \u9474  \u9474   \u9474  \u9474  - sync       \u9474  \u9474 \
+ \uc0\u9474  \u9474  - SSE listen \u9474  \u9474   \u9474  \u9474  - SSE listen \u9474  \u9474   \u9474  \u9474  - SSE listen \u9474  \u9474 \
+ \uc0\u9474  \u9474  - license    \u9474  \u9474   \u9474  \u9474  - license    \u9474  \u9474   \u9474  \u9474  - license    \u9474  \u9474 \
+ \uc0\u9474  \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496  \u9474   \u9474  \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496  \u9474   \u9474  \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496  \u9474 \
+ \uc0\u9474  \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488  \u9474   \u9474  \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488  \u9474   \u9474  \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488  \u9474 \
+ \uc0\u9474  \u9474  GWI POS App  \u9474  \u9474   \u9474  \u9474  GWI POS App  \u9474  \u9474   \u9474  \u9474  GWI POS App  \u9474  \u9474 \
+ \uc0\u9474  \u9474  (unchanged)  \u9474  \u9474   \u9474  \u9474  (unchanged)  \u9474  \u9474   \u9474  \u9474  (unchanged)  \u9474  \u9474 \
+ \uc0\u9474  \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496  \u9474   \u9474  \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496  \u9474   \u9474  \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496  \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+\
+ Key principles:\
+ - The Sync Agent is the ONLY process allowed to talk to the cloud. The POS app only talks to the local\
+ database and local HTTP APIs (including the Sync Agent's internal API). The POS app NEVER calls the\
+ Mothership directly.\
+ - The POS app treats license state, kill state, and cloud-pushed config as read-only inputs consumed\
+ via the Sync Agent's local API.\
+ - The Sync Agent is a separate Docker sidecar container. The POS application requires zero code changes\
+  for Module A.\
+\
+ ---\
+ 1. Server Registration & Identity ("Provision, Then Phone Home")\
+\
+ Phase 1: Admin creates location in Mothership\
+\
+ - Creates CloudLocation record with status PROVISIONING\
+ - Generates one-time ServerRegistrationToken (UUID, 24-hour expiry)\
+ - Downloads provisioning bundle (JSON file for USB stick or secure transfer)\
+\
+ Phase 2: Provisioning script runs on Ubuntu server (HOST, not Docker)\
+\
+ Important: The provisioning script runs directly on the Ubuntu host OS, never inside a Docker\
+ container. It writes to /etc/gwi-pos/ and generates the .env file consumed by Docker Compose.\
+\
+ - Loads the provisioning bundle (registrationToken, SYNC_API_URL, locationId, orgId)\
+ - Collects hardware fingerprint: SHA-256 of SMBIOS UUID + MAC + CPU + RAM + disk serial\
+ - Includes a fingerprintVersion: 1 field so the formula can be updated later without breaking existing\
+ installs\
+ - Generates 4096-bit RSA keypair locally (private key stays on server, chmod 0600, owned by root)\
+ - Sends POST /api/fleet/register with token + fingerprint + fingerprintVersion + public key\
+\
+ Phase 3: Cloud validates and responds\
+\
+ - Validates token (exists? not expired? not already used?)\
+ - Checks hardware fingerprint uniqueness: If fingerprint already belongs to another active\
+ CloudLocation, returns error hardware_already_registered (detects mis-deploys or cloned images)\
+ - Stores hardware fingerprint + fingerprintVersion + public key in ServerNode record\
+ - Generates serverApiKey (64-char hex \'97 mirrors KDS deviceToken pattern)\
+ - Encrypts serverApiKey with server's RSA public key (only that server can decrypt)\
+ - Returns encrypted key + marks token as USED (one-time, never valid again)\
+\
+ Phase 4: Server stores credentials\
+\
+ - Decrypts serverApiKey with private key\
+ - Stores in /etc/gwi-pos/credentials.json (on LUKS-encrypted disk)\
+ - Writes Docker .env with SYNC_ENABLED=true, SYNC_API_KEY, SERVER_NODE_ID\
+ - Starts containers, sends first heartbeat\
+\
+ Why this is secure\
+ Decision: One-time token (24h expiry)\
+ Rationale: Mirrors KDS pairingCode pattern. Prevents replay attacks.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Decision: Hardware fingerprint\
+ Rationale: Binds credential to physical hardware. Cloned disk images fail fingerprint check.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Decision: RSA key exchange\
+ Rationale: Even if HTTPS is compromised via rogue CA, only the server's private key decrypts the API\
+   key.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Decision: Private key never leaves server\
+ Rationale: Stored on LUKS disk, root-only access. Docker mounts as read-only secret.\
+ Re-provisioning (hardware replacement)\
+\
+ Admin clicks "Re-provision" \uc0\u8594  old serverApiKey revoked immediately \u8594  new token generated \u8594  new server\
+ follows same flow \uc0\u8594  old ServerNode set to decommissioned status (NOT deleted \'97 remains in DB for full\
+ audit trail via FleetAuditLog history).\
+\
+ ---\
+ 2. Secure Communication Model\
+\
+ Zero inbound ports \'97 server only calls OUT\
+\
+ The local server never accepts inbound connections from the internet. All communication is\
+ outbound-initiated.\
+\
+ Server \uc0\u8594  Cloud (HTTPS POST with HMAC)\
+\
+ Every request includes:\
+ Authorization: Bearer \{serverApiKey\}\
+ X-Server-Node-Id: \{serverNodeId\}\
+ X-Hardware-Fingerprint: \{SHA-256 hash\}\
+ X-Request-Signature: \{HMAC-SHA256(body, serverApiKey)\}\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474     Channel    \u9474  Frequency  \u9474                           Data                          \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Heartbeat     \u9474  Every 60s  \u9474  status, uptime, version, CPU, RAM, disk, active orders \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Health Report \u9474  Every 5min \u9474  Full /api/health response + monitoring aggregation     \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Data Sync     \u9474  Every 5min \u9474  Batched records using existing syncedAt watermark      \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Error Reports \u9474  Real-time  \u9474  Fire-and-forget error log forwarding                   \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+ Cloud \uc0\u8594  Server (SSE \'97 Server-Sent Events)\
+\
+ The Sync Agent maintains a persistent SSE connection (outbound from server):\
+ GET https://api.gwipos.com/api/fleet/commands/stream\
+ Authorization: Bearer \{serverApiKey\}\
+ Last-Event-ID: \{lastProcessedCommandId\}\
+\
+ SSE chosen over WebSocket because:\
+ - Works through any HTTP proxy/firewall (standard HTTPS)\
+ - Built-in automatic reconnect with Last-Event-ID replay\
+ - Re-authenticates on every reconnect\
+ - Simpler for one-way command push\
+\
+ Command types delivered via SSE:\
+ - force_sync \'97 trigger immediate sync with priority\
+ - update_config \'97 push setting changes\
+ - kill_switch \'97 suspend or lock the location\
+ - force_update \'97 push Docker image update with rollback\
+ - request_diagnostic \'97 request health/debug snapshot\
+ - revoke_credential \'97 rotate server API key\
+\
+ Every command is ACK'd by the server: POST /api/fleet/commands/\{id\}/ack\
+\
+ SSE Reconnect Policy\
+\
+ - Exponential backoff: 1s \uc0\u8594  2s \u8594  4s \u8594  8s \u8594  16s \u8594  32s \u8594  60s max with random jitter (\'b130%)\
+ - On reconnect, Sync Agent always revalidates license if last check is >5 minutes old\
+ - Last-Event-ID sent on every reconnect to replay missed commands\
+\
+ Command Execution Guarantees\
+\
+ - Sync Agent processes commands serially, in-order per ServerNode \'97 a force_update cannot run in\
+ parallel with force_sync\
+ - Every FleetCommand has an expiresAt field. If a command arrives after expiry, Sync Agent ACKs it as\
+ expired and skips execution (prevents stale commands applying after long outages)\
+ - Sync Agent remembers lastProcessedCommandId and ignores duplicates (idempotent)\
+ - Commands are processed from a single-threaded worker queue\
+\
+ HMAC Request Signing\
+\
+ Mirrors the existing Twilio webhook signature pattern (src/lib/twilio.ts). Provides:\
+ - Integrity: Body wasn't tampered with\
+ - Authentication: Only the server with the correct key can sign\
+ - Non-repudiation: Cloud can verify which server sent the request\
+\
+ ---\
+ 3. Cloud Database Schema (New \'97 Neon PostgreSQL)\
+\
+ Key Models\
+\
+ CloudOrganization\
+ \uc0\u9500 \u9472 \u9472  stripeCustomerId, subscriptionTier (starter|pro|enterprise)\
+ \uc0\u9500 \u9472 \u9472  subscriptionStatus (active|past_due|suspended|cancelled)\
+ \uc0\u9500 \u9472 \u9472  maxLocations (limit enforcement)\
+ \uc0\u9500 \u9472 \u9472  AdminUser[] (email + passwordHash + TOTP MFA)\
+ \uc0\u9492 \u9472 \u9472  CloudLocation[]\
+     \uc0\u9500 \u9472 \u9472  licenseKey (unique), licenseExpiresAt, licenseStatus\
+     \uc0\u9500 \u9472 \u9472  gracePeriodDays (default 14)\
+     \uc0\u9500 \u9472 \u9472  ServerNode[]\
+     \uc0\u9474    \u9500 \u9472 \u9472  serverApiKey (64-char hex, unique \'97 like KDS deviceToken)\
+     \uc0\u9474    \u9500 \u9472 \u9472  hardwareFingerprint (SHA-256), fingerprintVersion (Int, default 1)\
+     \uc0\u9474    \u9500 \u9472 \u9472  publicKey (RSA PEM)\
+     \uc0\u9474    \u9500 \u9472 \u9472  status (registered|online|offline|degraded|decommissioned)\
+     \uc0\u9474    \u9500 \u9472 \u9472  currentVersion, targetVersion, schemaVersion (tracks Prisma migration state)\
+     \uc0\u9474    \u9500 \u9472 \u9472  healthStatus, healthDetails (JSON)\
+     \uc0\u9474    \u9500 \u9472 \u9472  isKilled, killedAt, killedReason, killBanner (JSON: \{code, message, supportContact\})\
+     \uc0\u9474    \u9492 \u9472 \u9472  ServerHeartbeat[] (cpuPercent, memoryUsedMb, diskUsedGb, activeOrders...)\
+     \uc0\u9500 \u9472 \u9472  ServerRegistrationToken[]\
+     \uc0\u9474    \u9500 \u9472 \u9472  token (unique UUID, one-time use)\
+     \uc0\u9474    \u9500 \u9472 \u9472  status (pending|used|expired|revoked)\
+     \uc0\u9474    \u9492 \u9472 \u9472  expiresAt (24 hours from creation)\
+     \uc0\u9500 \u9472 \u9472  SyncSession[] \u8594  SyncBatch[]\
+     \uc0\u9474    \u9500 \u9472 \u9472  direction (upload|download), status, recordsTotal/Success/Failed\
+     \uc0\u9474    \u9492 \u9472 \u9472  conflictsDetected, conflictsResolved, conflictDetails\
+     \uc0\u9492 \u9472 \u9472  FleetCommand[]\
+         \uc0\u9500 \u9472 \u9472  commandType, payload, priority\
+         \uc0\u9500 \u9472 \u9472  status (pending|delivered|acknowledged|completed|failed|expired)\
+         \uc0\u9492 \u9472 \u9472  createdBy (AdminUser who issued it)\
+\
+ FleetAuditLog (organization-level)\
+ \uc0\u9500 \u9472 \u9472  actorType (admin_user|system|server_node)\
+ \uc0\u9500 \u9472 \u9472  action (server.registered|command.issued|license.suspended|sync.completed...)\
+ \uc0\u9500 \u9472 \u9472  resource, resourceId, details (JSON)\
+ \uc0\u9492 \u9472 \u9472  ipAddress, userAgent\
+\
+ ---\
+ 4. License Enforcement\
+\
+ Boot-time check flow\
+\
+ Server Boot \uc0\u8594  SYNC_ENABLED=true?\
+   \uc0\u9500 \u9472 \u9472  false \u8594  Standalone mode (dev/pre-registration)\
+   \uc0\u9492 \u9472 \u9472  true \u8594  POST /api/fleet/license/validate\
+       \uc0\u9500 \u9472 \u9472  200 active \u8594  Cache license locally, start POS\
+       \uc0\u9500 \u9472 \u9472  200 grace_period \u8594  Start with warning banner, retry hourly\
+       \uc0\u9500 \u9472 \u9472  200 suspended \u8594  Check local cache grace period\
+       \uc0\u9474    \u9500 \u9472 \u9472  Grace remaining \u8594  Run with warning\
+       \uc0\u9474    \u9492 \u9472 \u9472  Grace expired \u8594  Read-only mode\
+       \uc0\u9500 \u9472 \u9472  200 killed \u8594  Immediate lockout\
+       \uc0\u9492 \u9472 \u9472  Network error \u8594  Check local license cache\
+           \uc0\u9500 \u9472 \u9472  Cache valid + within grace \u8594  Run normally\
+           \uc0\u9500 \u9472 \u9472  Cache expired \u8594  Read-only mode\
+           \uc0\u9492 \u9472 \u9472  No cache \u8594  Limited standalone (orders work, no sync)\
+\
+ Local license cache\
+\
+ Stored at /etc/gwi-pos/license-cache.json, HMAC-signed by cloud using serverApiKey. Prevents tampering\
+ \'97 if signature doesn't match, cache is treated as missing.\
+\
+ In-memory caching: The POS app caches the last known good license state in memory and only re-reads\
+ from the Sync Agent status API on a timer (every 60s). This prevents a transient filesystem glitch from\
+  flipping the store into read-only mode mid-rush.\
+\
+ Kill switch\
+\
+ Delivered via SSE kill_switch command. Server ACKs and sets local flag. POS checks flag on next\
+ request. Kill requires active delivery \'97 if server goes offline, it uses cached license (dead man's\
+ switch pattern).\
+\
+ Kill banner schema: The kill command includes a structured killBanner payload:\
+ \{\
+   "code": "ACCOUNT_SUSPENDED",\
+   "title": "Service Suspended",\
+   "message": "Your GWI POS subscription has been suspended. Please contact support.",\
+   "supportPhone": "1-800-GWI-HELP",\
+   "supportEmail": "support@gwipos.com"\
+ \}\
+ The POS UI displays this branded banner instead of a generic lockout screen.\
+\
+ Emergency Unlock Code (playbook, not in initial code)\
+\
+ If the cloud is down AND a bug has triggered a false kill/suspension, an owner-level admin can generate\
+  a time-limited Emergency Unlock Code via a pre-shared offline recovery process (e.g., call support \uc0\u8594 \
+ verify identity \uc0\u8594  receive 8-digit code \u8594  enter on server CLI). This is a last-resort recovery path,\
+ documented in the operational runbook but not built in Phase 2A.\
+\
+ ---\
+ 5. Fleet Monitoring Dashboard\
+\
+ Real-time status cards per location\
+\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488   \u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474 Location 1\u9474   \u9474 Location 2\u9474   \u9474 Location 3\u9474   \u9474 Location 4\u9474 \
+ \uc0\u9474   \u9989  OK   \u9474   \u9474  \u9888 \u65039  DEGRAD\u9474   \u9474   \u9989  OK   \u9474   \u9474   \u10060  DOWN \u9474 \
+ \uc0\u9474  v2.1.0   \u9474   \u9474  v2.0.5   \u9474   \u9474  v2.1.0   \u9474   \u9474  v2.0.5   \u9474 \
+ \uc0\u9474  47 orders\u9474   \u9474  12 orders\u9474   \u9474  83 orders\u9474   \u9474  Last: 5m \u9474 \
+ \uc0\u9474  Sync: \u9989  \u9474   \u9474  Sync: \u9888 \u65039  \u9474   \u9474  Sync: \u9989  \u9474   \u9474  Sync: \u10060  \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496   \u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+\
+ Status Thresholds\
+ Status: Online\
+ Definition: Last heartbeat < 2 minutes ago\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Status: Degraded\
+ Definition: 2-4 missed heartbeats (2-4 minutes since last) \'97 usually indicates high CPU, network blip,\
+   or Docker restart\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Status: Offline\
+ Definition: 5+ missed heartbeats (5+ minutes since last) \'97 server is down or unreachable\
+ Alerting rules\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474                Condition               \u9474  Severity  \u9474           Action          \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  No heartbeat 2min (degraded)          \u9474  Warning   \u9474  Dashboard yellow         \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  No heartbeat 5min (offline)           \u9474  Critical  \u9474  Dashboard red + email    \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  No heartbeat 15min                    \u9474  Emergency \u9474  SMS to admin             \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Sync failed 3x                        \u9474  Warning   \u9474  Dashboard yellow         \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Sync gap > 30min                      \u9474  Critical  \u9474  Email                    \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Disk > 85%                            \u9474  Warning   \u9474  Dashboard yellow         \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Disk > 95%                            \u9474  Critical  \u9474  Email + SMS              \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  License expiring < 30 days            \u9474  Warning   \u9474  Email                    \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Error spike > 10/min                  \u9474  Critical  \u9474  Dashboard red + email    \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Version >1 release behind for >7 days \u9474  Warning   \u9474  Dashboard yellow + email \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Schema migration pending >24h         \u9474  Warning   \u9474  Email                    \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+ ---\
+ 6. Secure Update Pipeline\
+\
+ Build flow (GitHub Actions)\
+\
+ 1. git push main \uc0\u8594  Run tests \u8594  Build Docker image (same multi-stage Dockerfile)\
+ 2. Sign image with Cosign (keyless OIDC)\
+ 3. Push to GitHub Container Registry (ghcr.io/gwipos/pos:\{version\})\
+ 4. Generate SBOM \uc0\u8594  Notify Mothership API\
+\
+ Mothership-controlled rollout (replaces Watchtower auto-pull)\
+\
+ 1. Admin sees new version on dashboard\
+ 2. Selects rollout strategy: Canary (1 location, monitor 24h) / Rolling (sequential with gaps) /\
+ Immediate\
+ 3. Mothership issues force_update command via SSE with imageTag, imageDigest, signatureRef,\
+ rollbackVersion\
+ 4. Local Sync Agent: verify Cosign signature \uc0\u8594  pull image \u8594  graceful stop \u8594  start new \u8594  health check\
+ 5. If health check fails within rollback window \uc0\u8594  auto-rollback to previous version\
+ 6. ACK result to cloud\
+\
+ Watchtower in production\
+\
+ WATCHTOWER_POLL_INTERVAL=0 (disabled). Sync Agent triggers Watchtower via local HTTP API\
+ (127.0.0.1:8080) only when Mothership commands it.\
+\
+ ---\
+ 7. Threat Model\
+ #: T1\
+ Attack: Stolen/cloned disk image\
+ Mitigation: Hardware fingerprint bound to physical hardware. Clone fails fingerprint check on\
+ heartbeat.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T2\
+ Attack: Man-in-the-middle on sync\
+ Mitigation: HTTPS + HMAC body signing. Even with compromised CA, HMAC prevents tampering. RSA key\
+   exchange at registration.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T3\
+ Attack: Compromised serverApiKey\
+ Mitigation: Rotatable from Mothership via revoke_credential command. New key encrypted with server's\
+ RSA\
+    public key.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T4\
+ Attack: Unauthorized server registration\
+ Mitigation: One-time tokens, 24h expiry, admin-generated, audit logged.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T5\
+ Attack: Insider admin abuse\
+ Mitigation: All actions in FleetAuditLog. MFA required. Role-based access. Kill switch requires owner\
+   role.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T6\
+ Attack: Command replay attack\
+ Mitigation: Unique command IDs + Last-Event-ID tracking + expiresAt on stale commands.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T7\
+ Attack: License cache tampering\
+ Mitigation: HMAC-signed by cloud. Invalid signature = treated as missing.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T8\
+ Attack: Malicious Docker image push\
+ Mitigation: Cosign-signed images. Sync Agent verifies signature before applying. Auto-rollback on\
+ failed\
+    health check.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T9\
+ Attack: Cross-tenant data leak\
+ Mitigation: Every query filtered by orgId/locationId. Server API keys scoped to single location.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ #: T10\
+ Attack: SSE connection hijacking\
+ Mitigation: Bearer token auth on every reconnect. HTTPS only. Outbound-initiated by server.\
+ ---\
+ 8. API Surface\
+\
+ Fleet API (server-to-cloud, authenticated by serverApiKey + HMAC)\
+\
+ POST /api/fleet/register            \'97 One-time server registration\
+ POST /api/fleet/heartbeat           \'97 60-second heartbeat\
+ POST /api/fleet/health-report       \'97 5-minute health data\
+ POST /api/fleet/sync/upload         \'97 Batch data sync (local \uc0\u8594  cloud)\
+ POST /api/fleet/sync/download       \'97 Batch data pull (cloud \uc0\u8594  local)\
+ POST /api/fleet/license/validate    \'97 License check (boot + periodic)\
+ POST /api/fleet/errors/report       \'97 Error log forwarding\
+ GET  /api/fleet/commands/stream     \'97 SSE command stream (long-lived)\
+ POST /api/fleet/commands/\{id\}/ack   \'97 Command acknowledgment\
+\
+ Admin API (admin console, authenticated by JWT + MFA)\
+\
+ CRUD /api/admin/organizations       \'97 Org management\
+ CRUD /api/admin/locations           \'97 Location management\
+ POST /api/admin/locations/\{id\}/provision    \'97 Generate registration token\
+ POST /api/admin/locations/\{id\}/commands     \'97 Issue command to server\
+ GET  /api/admin/locations/\{id\}/sync-status  \'97 Sync health\
+ GET  /api/admin/locations/\{id\}/heartbeats   \'97 Recent heartbeats\
+ GET  /api/admin/servers/fleet-status        \'97 All servers overview\
+ POST /api/admin/servers/\{id\}/kill           \'97 Kill switch\
+ POST /api/admin/servers/\{id\}/revive         \'97 Revive killed server\
+ POST /api/admin/updates/push               \'97 Push update to servers\
+ GET  /api/admin/audit-log                  \'97 Filtered audit log\
+ POST /api/admin/auth/login                 \'97 Email + password\
+ POST /api/admin/auth/mfa/verify            \'97 TOTP verification\
+\
+ ---\
+ 9. Local Server Changes (Minimal)\
+\
+ Module A requires zero changes to the POS application code. All cloud communication is handled by the\
+ new Sync Agent sidecar:\
+\
+ 1. New Docker sidecar container: sync-agent \'97 lightweight Node.js service\
+   - Handles heartbeat, sync, SSE command listening, license validation\
+   - Reads POS database directly (read-only for sync queries)\
+   - Communicates with POS via internal Docker network only\
+ 2. Enhanced /api/health \'97 Add fields for the Sync Agent to forward:\
+   - activeOrderCount \'97 open orders right now\
+   - dbSizeMb \'97 database file/tablespace size\
+   - diskUsage \'97 percent used on data partition\
+   - schemaVersion \'97 current Prisma migration hash (e.g., 20260211_add_tip_bank)\
+   - migrationPending \'97 boolean, true if the running schema is behind the deployed code's migrations\
+ 3. New env vars in docker-compose.yml (extending existing lines 30-40):\
+ SERVER_NODE_ID=$\{SERVER_NODE_ID\}\
+ 4. License check middleware (optional, Phase 2B) \'97 Checks local license cache file on boot. If expired\
+ + grace exhausted \uc0\u8594  read-only mode.\
+\
+ ---\
+ 10. Implementation Phases\
+\
+ Phase 2A: Foundation (Weeks 1-3)\
+\
+ - Create separate cloud Next.js project with Neon PostgreSQL\
+ - Cloud Prisma schema (all models above)\
+ - POST /api/fleet/register \'97 server registration endpoint\
+ - POST /api/fleet/heartbeat \'97 heartbeat ingestion\
+ - POST /api/fleet/license/validate \'97 license validation\
+ - Provisioning script for Ubuntu servers\
+ - Basic fleet dashboard (status cards, online/offline)\
+\
+ Phase 2B: Communication (Weeks 4-6)\
+\
+ - SSE command stream (GET /api/fleet/commands/stream)\
+ - Sync Agent Docker sidecar (heartbeat client, SSE listener, command ACK)\
+ - Command issuance from admin UI (force sync, kill switch, diagnostics)\
+ - License cache + grace period logic on local server\
+ - Alerting rules + email/SMS notifications\
+\
+ Phase 2C: Data Sync (Weeks 7-10)\
+\
+ - POST /api/fleet/sync/upload with batch processing + conflict resolution\
+ - Implement syncedAt watermark tracking in Sync Agent\
+ - Sync Agent enforces maxRecordsPerBatch (default 500) \'97 chunks large backlogs locally before upload\
+ - LWW conflict resolution with field-level merge\
+ - Sync health monitoring on dashboard\
+ - Error report forwarding\
+\
+ Phase 2D: Updates & Licensing (Weeks 11-13)\
+\
+ - GitHub Actions CI/CD with Cosign image signing\
+ - Mothership-controlled update pipeline (canary/rolling/immediate)\
+ - Rollback mechanism\
+ - License management admin UI\
+ - Stripe billing integration\
+\
+ ---\
+ Verification\
+\
+ 1. Registration: Generate token in Mothership \uc0\u8594  run provisioning script on fresh Ubuntu \u8594  verify server\
+  appears on dashboard as "online"\
+ 2. Heartbeat: Stop POS container on a server \uc0\u8594  verify dashboard shows "offline" within 2 minutes\
+ 3. Commands: Issue request_diagnostic from dashboard \uc0\u8594  verify response arrives within 10 seconds\
+ 4. License: Suspend a location's license \uc0\u8594  verify POS shows warning banner \u8594  expire grace \u8594  verify\
+ read-only mode\
+ 5. Kill switch: Kill a server from dashboard \uc0\u8594  verify POS locks out \u8594  revive \u8594  verify POS resumes\
+ 6. Update: Push a version update to one location (canary) \uc0\u8594  verify it pulls, restarts, health checks,\
+ and ACKs\
+ 7. Sync: Create orders on local POS offline \uc0\u8594  reconnect \u8594  verify data syncs to cloud within 5 minutes\
+ 8. Security: Clone a server's disk to new hardware \uc0\u8594  verify registration fails (hardware fingerprint\
+ mismatch)\
+\
+ ---\
+ Appendix A: POS \uc0\u8596  Sync Agent Local Contract\
+\
+ The POS application never calls the Mothership directly. It reads cloud-pushed state from the Sync\
+ Agent's internal HTTP API on the Docker bridge network.\
+\
+ Sync Agent Internal API (port 8081, Docker-internal only)\
+\
+ GET http://sync-agent:8081/status\
+\
+ Response:\
+ \{\
+   "licenseStatus": "active",\
+   "licenseExpiresAt": "2027-01-15T00:00:00Z",\
+   "gracePeriodDays": 14,\
+   "isKilled": false,\
+   "killBanner": null,\
+   "lastSyncAt": "2026-02-11T14:32:00Z",\
+   "syncStatus": "ok",\
+   "cloudReachable": true,\
+   "currentVersion": "2.1.0",\
+   "targetVersion": "2.1.0",\
+   "pendingCommands": 0\
+ \}\
+\
+ POS consumption pattern:\
+ - POS caches this response in memory (Zustand or module-level variable)\
+ - Re-fetches on a 60-second timer (not on every request)\
+ - If fetch fails (Sync Agent down), POS uses last known good state \'97 does NOT flip to read-only on a\
+ single failure\
+ - License middleware (Phase 2B) reads from this in-memory cache, never hits filesystem or network on\
+ the hot path\
+\
+ Port exposure\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474             Port            \u9474             Exposed to            \u9474             Purpose            \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  8081                       \u9474  Docker bridge only (gwi-network) \u9474  Sync Agent status API for POS \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  3000                       \u9474  Host + LAN                       \u9474  POS web application           \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  None inbound from internet \u9474  \'97                                \u9474  Zero attack surface           \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+ ---\
+ Appendix B: Command Execution Guarantees (Expanded)\
+\
+ Processing model\
+\
+ The Sync Agent runs a single-threaded command worker \'97 one command at a time, in delivery order.\
+\
+ SSE Stream \uc0\u8594  Command Queue (FIFO) \u8594  Worker \u8594  Execute \u8594  ACK \u8594  Next\
+\
+ Guarantees\
+ Guarantee: At-most-once execution\
+ Mechanism: lastProcessedCommandId persisted to disk. Duplicates ignored on SSE replay.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Guarantee: In-order delivery\
+ Mechanism: SSE Last-Event-ID + server-side ordering by createdAt. Worker processes FIFO.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Guarantee: Expiry protection\
+ Mechanism: Every FleetCommand has expiresAt. Stale commands ACK'd as expired, not executed.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Guarantee: No parallel execution\
+ Mechanism: Worker dequeues one command, executes fully, ACKs, then dequeues next.\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Guarantee: Crash recovery\
+ Mechanism: On restart, Sync Agent reconnects SSE with Last-Event-ID, replays from last ACK'd command.\
+ ACK statuses\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474     Status    \u9474                        Meaning                        \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  acknowledged \u9474  Command received, starting execution                 \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  completed    \u9474  Execution succeeded                                  \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  failed       \u9474  Execution failed (includes error details in payload) \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  expired      \u9474  Command arrived after expiresAt \'97 skipped            \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+ Command priority\
+\
+ Commands execute in FIFO order, but kill_switch and revoke_credential are always inserted at the front\
+ of the queue (preemptive priority).\
+\
+ ---\
+ Appendix C: Operational Defaults\
+\
+ Reference table of all configurable intervals, limits, and thresholds with their default values.\
+\
+ Heartbeat & Health\
+ Parameter: Heartbeat interval\
+ Default: 60s\
+ Configurable?: Yes (env var)\
+ Notes: HEARTBEAT_INTERVAL_MS=60000\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Health report interval\
+ Default: 5min\
+ Configurable?: Yes (env var)\
+ Notes: HEALTH_REPORT_INTERVAL_MS=300000\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Degraded threshold\
+ Default: 2 missed heartbeats\
+ Configurable?: Cloud-side config\
+ Notes: Dashboard turns yellow\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Offline threshold\
+ Default: 5 missed heartbeats\
+ Configurable?: Cloud-side config\
+ Notes: Dashboard turns red, email fires\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Emergency threshold\
+ Default: 15 missed heartbeats\
+ Configurable?: Cloud-side config\
+ Notes: SMS fires\
+ SSE & Reconnect\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474              Parameter             \u9474        Default       \u9474                   Notes                   \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Initial backoff                   \u9474  1s                  \u9474  After first disconnect                   \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Max backoff                       \u9474  60s                 \u9474  Cap for exponential growth               \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Backoff multiplier                \u9474  2x                  \u9474  Doubles each attempt                     \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Jitter                            \u9474  \'b130%                \u9474  Random offset to prevent thundering herd \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  License revalidation on reconnect \u9474  If last check >5min \u9474  Ensures license state is fresh           \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+ Sync\
+ Parameter: Sync interval (online)\
+ Default: 5min\
+ Notes: Normal operating cadence\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Sync interval (recovery)\
+ Default: 30s\
+ Notes: After reconnect, until backlog cleared\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Max records per batch\
+ Default: 500\
+ Notes: Sync Agent chunks locally before upload\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Sync priority\
+ Default: Orders P1 \uc0\u8594  TimeClock P2 \u8594  Customers P3 \u8594  Inventory P4 \u8594  Menu P5 \u8594  Settings P6\
+ Notes: Matches existing OFFLINE-SYNC-ALGORITHM.md\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Conflict resolution\
+ Default: LWW with field-level merge\
+ Notes: Financial records: local wins. Reference data: cloud wins.\
+ License & Grace\
+ Parameter: Grace period\
+ Default: 14 days\
+ Notes: Per-location, configurable in Mothership\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: License check (boot)\
+ Default: Immediate\
+ Notes: Blocks startup until response or cache checked\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: License check (periodic)\
+ Default: 60s timer\
+ Notes: POS re-reads from Sync Agent status API\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Cache location\
+ Default: /etc/gwi-pos/license-cache.json\
+ Notes: HMAC-signed by cloud\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: In-memory TTL\
+ Default: 60s\
+ Notes: POS module-level cache, re-fetched on timer\
+ Registration & Security\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474          Parameter          \u9474        Default        \u9474                       Notes                      \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Registration token expiry  \u9474  24 hours             \u9474  One-time use                                    \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  RSA key size               \u9474  4096 bits            \u9474  Generated on server during provisioning         \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Server API key length      \u9474  64-char hex (256     \u9474  Mirrors KDS deviceToken pattern                 \u9474 \
+ \uc0\u9474                             \u9474  bits)                \u9474                                                  \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Hardware fingerprint       \u9474  1                    \u9474  fingerprintVersion field for future formula     \u9474 \
+ \uc0\u9474  version                    \u9474                       \u9474  updates                                         \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+ Updates\
+ Parameter: Rollback window\
+ Default: 5min\
+ Notes: Auto-rollback if health check fails within window\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Health check after update\
+ Default: 3 attempts, 10s apart\
+ Notes: Must pass all 3 to confirm successful update\
+ \uc0\u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \
+ Parameter: Watchtower poll interval\
+ Default: 0 (disabled)\
+ Notes: Sync Agent triggers via local API on command\
+ Alerting\
+ \uc0\u9484 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9516 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9488 \
+ \uc0\u9474         Parameter         \u9474             Default            \u9474          Notes         \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Version drift alert      \u9474  >1 release behind for >7 days \u9474  Warning severity      \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Schema migration pending \u9474  >24 hours                     \u9474  Warning severity      \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Disk warning             \u9474  >85%                          \u9474  Dashboard yellow      \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Disk critical            \u9474  >95%                          \u9474  Email + SMS           \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  Error spike              \u9474  >10 errors/min                \u9474  Dashboard red + email \u9474 \
+ \uc0\u9500 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9532 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9508 \
+ \uc0\u9474  License expiry warning   \u9474  <30 days remaining            \u9474  Email                 \u9474 \
+ \uc0\u9492 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9524 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9472 \u9496 \
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b0\fs24 \cf0 To answer your specific concerns:\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls1\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Database Overlap:
+\f1\b0  We prevent this using 
+\f0\b Postgres Schemas
+\f1\b0  or 
+\f0\b Row-Level Security (RLS)
+\f1\b0 .\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Wildcard Websites:
+\f1\b0  We use 
+\f0\b Edge Middleware
+\f1\b0  to rewrite URLs dynamically.\
+\ls1\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Unique Logins:
+\f1\b0  We use 
+\f0\b Organization-Based Auth
+\f1\b0  (Clerk B2B) to strictly scope users.\
+\pard\pardeftab720\sa240\partightenfactor0
+\cf0 \strokec2 Here is the complete 
+\f0\b \strokec2 Master Specification
+\f1\b0 \strokec2  (Hardware + Software Isolation) to hand to your developer. It covers everything.\
+\pard\pardeftab720\partightenfactor0
+\cf4 \strokec4 \
+\pard\pardeftab720\sa321\partightenfactor0
+
+\f0\b\fs48 \cf0 \strokec2 Master Specification: GWI POS Infrastructure\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\fs24 \cf0 Mission:
+\f1\b0 \strokec2  Build a secure, multi-tenant POS platform with strict data isolation and automated online ordering.\
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 Part 1: The Strict Isolation Strategy (Software)\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f2\i\b0\fs24 \cf0 To Developer: We need a "Shared Nothing" architecture for tenant data.
+\f1\i0 \
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \strokec2 1. Database Isolation (The "Vault" Method)\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f1\b0\fs24 \cf0 \strokec2 Do not just add a 
+\f3\fs26 \strokec2 where location_id = x
+\f1\fs24 \strokec2  clause to every query (that is error-prone). We need structural isolation.\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls2\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Strategy:
+\f1\b0  
+\f0\b Postgres Schemas
+\f1\b0  (or Row-Level Security).\
+\ls2\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Implementation:
+\f1\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa240\partightenfactor0
+\ls2\ilvl1
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Global Schema (
+\f4\fs26 public
+\f0\fs24 ):
+\f1\b0  Stores the routing map (
+\f3\fs26 tenants
+\f1\fs24 , 
+\f3\fs26 domains
+\f1\fs24 , 
+\f3\fs26 subscription_status
+\f1\fs24 ).\
+\ls2\ilvl1
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Tenant Schemas (
+\f4\fs26 tenant_101
+\f0\fs24 , 
+\f4\fs26 tenant_102
+\f0\fs24 ):
+\f1\b0  Each location gets its own dedicated schema.\
+\ls2\ilvl1
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 The Guard Rail:
+\f1\b0  The Database User for "Location 101" is 
+\f0\b only
+\f1\b0  granted permission to access 
+\f3\fs26 tenant_101
+\f1\fs24 . Even if the application tries to run 
+\f3\fs26 SELECT * FROM tenant_102
+\f1\fs24 , the database itself will reject it.\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 2. Wildcard Subdomains (Online Ordering)\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f2\i\b0\fs24 \cf0 \strokec2 To Developer: We need "Vanity URLs" for every location automatically.
+\f1\i0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls3\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 DNS Setup:
+\f1\b0  A wildcard 
+\f3\fs26 CNAME
+\f1\fs24  record (
+\f3\fs26 *.gwipos.com
+\f1\fs24 ) pointing to Vercel.\
+\ls3\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Middleware Logic (Next.js Edge):
+\f1\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa240\partightenfactor0
+\ls3\ilvl1\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 User visits 
+\f3\fs26 downtown-burger.gwipos.com
+\f1\fs24 .\
+\ls3\ilvl1\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Middleware extracts subdomain 
+\f3\fs26 downtown-burger
+\f1\fs24 .\
+\ls3\ilvl1\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Look up 
+\f3\fs26 TenantID
+\f1\fs24  in Global DB (Result: 
+\f3\fs26 105
+\f1\fs24 ).\
+\ls3\ilvl1
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Rewrite
+\f1\b0  request to 
+\f3\fs26 /stores/105/home
+\f1\fs24  (User still sees 
+\f3\fs26 downtown-burger.gwipos.com
+\f1\fs24 ).\
+\ls3\ilvl1
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	5	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Inject
+\f1\b0  
+\f3\fs26 TenantID: 105
+\f1\fs24  header into the request context.\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 3. Admin Login Isolation (The "Bouncer")\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f2\i\b0\fs24 \cf0 \strokec2 To Developer: Managers must never be able to access another store's data.
+\f1\i0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls4\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Auth Provider:
+\f1\b0  
+\f0\b Clerk B2B
+\f1\b0  (Organizations).\
+\ls4\ilvl0
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Role-Based Access Control (RBAC):
+\f1\b0 \
+\pard\tx940\tx1440\pardeftab720\li1440\fi-1440\sa240\partightenfactor0
+\ls4\ilvl1
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Super Admin (You):
+\f1\b0  Access to ALL Organizations.\
+\ls4\ilvl1
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Org Admin (Franchisee):
+\f1\b0  Access to THEIR Organization(s) only.\
+\ls4\ilvl1
+\f0\b \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u9702 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Location Manager:
+\f1\b0  Access to SPECIFIC Location ID only.\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls4\ilvl0
+\f0\b \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Enforcement:
+\f1\b0  The API Middleware must validate 
+\f3\fs26 (User_Org_ID == Resource_Org_ID)
+\f1\fs24  on 
+\f0\b every single request
+\f1\b0 .\
+\pard\pardeftab720\partightenfactor0
+\cf4 \strokec4 \
+\pard\pardeftab720\sa298\partightenfactor0
+
+\f0\b\fs36 \cf0 \strokec2 Part 2: The Master Hardware List\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f2\i\b0\fs24 \cf0 To Developer: This is the standard "Kit" we are shipping to every location. The software must support these specific devices.
+\f1\i0 \
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \strokec2 1. The Server (The Brain)\
+2. The Stations (The Interface)\
+Add a single line in Part 2 (hardware list) clarifying Linux touch stations as primary, iOS/Android as optional terminals \'97 just to lock in the hardware assumptions inside the same doc\
+\pard\pardeftab720\partightenfactor0
+
+\f1\b0\fs24 \cf0 \strokec2 3. The Printers (Kitchen & Receipt)\
+\
+\pard\pardeftab720\sa280\partightenfactor0
+
+\f0\b\fs28 \cf0 \strokec2 4. The Network (The Backbone)\
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls5\ilvl0
+\fs24 \cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	\uc0\u8226 	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 Model:
+\f1\b0  
+\f0\b Ubiquiti
+\f1\b0 \
+\pard\pardeftab720\partightenfactor0
+\cf0 \strokec2 5. Payments (Datacap Integrated)
+\f0\b\fs36 \strokec2 \
+\pard\pardeftab720\sa298\partightenfactor0
+\cf0 \
+\
+\
+\
+Part 3: The Deliverables Checklist\
+\pard\pardeftab720\sa240\partightenfactor0
+
+\f2\i\b0\fs24 \cf0 To Developer: Please confirm you can deliver the following:
+\f1\i0 \
+\pard\tx220\tx720\pardeftab720\li720\fi-720\sa240\partightenfactor0
+\ls6\ilvl0\cf0 \kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	1	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 [ ] 
+\f0\b Multi-Tenant DB:
+\f1\b0  Proof of strict data isolation (Schemas or RLS).\
+\ls6\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	2	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 [ ] 
+\f0\b Wildcard Routing:
+\f1\b0  
+\f3\fs26 demo.myapp.com
+\f1\fs24  automatically loads the Demo Store.\
+\ls6\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	3	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 [ ] 
+\f0\b Hardware Mgmt UI:
+\f1\b0  A screen to input 
+\f3\fs26 Secure Device IDs
+\f1\fs24  for Datacap.\
+\ls6\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	4	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 [ ] 
+\f0\b Fleet Dashboard:
+\f1\b0  A live view of all NUCs (Online/Offline status).\
+\ls6\ilvl0\kerning1\expnd0\expndtw0 \outl0\strokewidth0 {\listtext	5	}\expnd0\expndtw0\kerning0
+\outl0\strokewidth0 \strokec2 [ ] 
+\f0\b Deployment Script:
+\f1\b0  A bash script to provision a blank NUC from a USB stick.\
+}
