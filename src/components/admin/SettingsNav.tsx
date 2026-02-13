@@ -1,10 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { hasPermission, isAdmin, PERMISSIONS } from '@/lib/auth-utils'
 import { useAuthStore } from '@/stores/auth-store'
+
+const CLOUD_PARENT_DOMAINS = [
+  '.ordercontrolcenter.com',
+  '.barpos.restaurant',
+]
+
+const MISSION_CONTROL_URL = 'https://app.thepasspos.com'
 
 interface SettingsNavItem {
   name: string
@@ -185,9 +192,24 @@ const settingsSections: SettingsSection[] = [
 
 export function SettingsNav() {
   const pathname = usePathname()
-  const { employee } = useAuthStore()
+  const { employee, logout } = useAuthStore()
   const permissions = employee?.permissions || []
   const userIsAdmin = isAdmin(permissions)
+
+  const isCloud = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    return CLOUD_PARENT_DOMAINS.some((d) => window.location.hostname.endsWith(d))
+  }, [])
+
+  const handleCloudSignOut = useCallback(async () => {
+    try {
+      await fetch('/api/auth/cloud-session', { method: 'DELETE' })
+    } catch {
+      // Cookie clear failed — redirect anyway
+    }
+    logout()
+    window.location.href = MISSION_CONTROL_URL
+  }, [logout])
 
   // Auto-expand section that contains the active page
   const getActiveSection = () => {
@@ -236,12 +258,24 @@ export function SettingsNav() {
     <nav className="w-56 bg-white border-r min-h-screen overflow-y-auto flex-shrink-0">
       {/* Header */}
       <div className="px-4 py-3 border-b bg-gray-50">
-        <Link href="/orders" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to POS
-        </Link>
+        {isCloud ? (
+          <a
+            href={MISSION_CONTROL_URL}
+            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Mission Control
+          </a>
+        ) : (
+          <Link href="/orders" className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to POS
+          </Link>
+        )}
         <h2 className="text-sm font-bold text-gray-900">Settings</h2>
       </div>
 
@@ -298,6 +332,21 @@ export function SettingsNav() {
           )
         })}
       </div>
+
+      {/* Cloud mode: Sign Out */}
+      {isCloud && (
+        <div className="mt-auto px-4 py-3 border-t">
+          <button
+            onClick={handleCloudSignOut}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Sign Out
+          </button>
+        </div>
+      )}
     </nav>
   )
 }

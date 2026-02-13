@@ -130,6 +130,79 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 })
 
 /**
+ * GET /api/auth/cloud-session
+ *
+ * Re-bootstrap the client auth store from the existing httpOnly
+ * session cookie.  Used when the POS auth store has a stale
+ * locationId (e.g. after DB routing changes) but the cloud session
+ * cookie is still valid.  Returns the same employee shape as POST
+ * so the client can call login(data.employee).
+ */
+export const GET = withVenue(async function GET(request: NextRequest) {
+  const sessionToken = request.cookies.get('pos-cloud-session')?.value
+  if (!sessionToken) {
+    return NextResponse.json(
+      { error: 'No cloud session' },
+      { status: 401 }
+    )
+  }
+
+  const secret = process.env.PROVISION_API_KEY
+  if (!secret) {
+    return NextResponse.json(
+      { error: 'Server misconfigured' },
+      { status: 500 }
+    )
+  }
+
+  const payload = await verifyCloudToken(sessionToken, secret)
+  if (!payload) {
+    return NextResponse.json(
+      { error: 'Invalid or expired session' },
+      { status: 401 }
+    )
+  }
+
+  // Resolve Location from venue DB (same logic as POST)
+  let location: { id: string; name: string } | null = null
+
+  if (payload.posLocationId) {
+    location = await db.location.findUnique({
+      where: { id: payload.posLocationId },
+      select: { id: true, name: true },
+    })
+  }
+
+  if (!location) {
+    location = await db.location.findFirst({
+      select: { id: true, name: true },
+      orderBy: { createdAt: 'asc' },
+    })
+  }
+
+  if (!location) {
+    return NextResponse.json(
+      { error: 'No location in venue database' },
+      { status: 404 }
+    )
+  }
+
+  const nameParts = payload.name.split(' ')
+  const employee = {
+    id: `cloud-${payload.sub}`,
+    firstName: nameParts[0] || 'Cloud',
+    lastName: nameParts.slice(1).join(' ') || 'Admin',
+    displayName: payload.name,
+    role: { id: 'cloud-admin', name: 'Cloud Admin' },
+    location: { id: location.id, name: location.name },
+    permissions: ['admin'],
+    isDevAccess: false,
+  }
+
+  return NextResponse.json({ employee })
+})
+
+/**
  * DELETE /api/auth/cloud-session
  *
  * Clear the cloud session cookie (logout).
