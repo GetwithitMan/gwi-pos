@@ -1,0 +1,13 @@
+# Large binary files — not needed for Vercel build
+epson printers
+prisma/backups
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-shm
+prisma/*.db-wal
+Ideas
+SESSION-EXPORT*
+Manual PDF.pdf
+ePOS_SDK_JavaScript_v2.27.0h.zip
+server.ts
+docs/audits
