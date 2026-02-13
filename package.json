@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "dotenv -e .env.local -- tsx server.ts",
     "dev:next": "next dev --webpack",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && node scripts/generate-schema-sql.mjs && next build",
+    "schema:sql": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/schema.sql",
     "start": "NODE_ENV=production node -r tsx/cjs server.ts",
     "start:next": "next start",
     "lint": "eslint",
@@ -34,6 +35,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@heroicons/react": "^2.2.0",
+    "@neondatabase/serverless": "^1.0.2",
     "@prisma/client": "6.19.2",
     "@types/pdfkit": "^0.17.4",
     "bcryptjs": "^3.0.3",

@@ -2,9 +2,11 @@ import { NextRequest } from 'next/server'
 import { db, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
 import { PrismaClient } from '@prisma/client'
 import { hash } from 'bcryptjs'
-import { execSync } from 'child_process'
+import { neon } from '@neondatabase/serverless'
+import { readFileSync } from 'fs'
+import path from 'path'
 
-// Allow up to 60s for schema push + seed (Vercel Pro)
+// Allow up to 60s for seed (schema push via direct SQL is fast)
 export const maxDuration = 60
 
 /**
@@ -63,21 +65,28 @@ export async function POST(request: NextRequest) {
       console.log(`[Provision] Database already exists: ${dbName}`)
     }
 
-    // ── 2. Push Prisma schema ──────────────────────────────────────────
+    // ── 2. Push schema via direct SQL (no execSync needed) ─────────────
     try {
-      execSync(
-        'node node_modules/.bin/prisma db push --accept-data-loss --skip-generate',
-        {
-          env: {
-            ...process.env,
-            DATABASE_URL: venueDbUrl,
-            DIRECT_URL: venueDirectUrl,
-          },
-          timeout: 45000,
-          cwd: process.cwd(),
-        }
-      )
-      console.log(`[Provision] Schema pushed to ${dbName}`)
+      const venueSQL = neon(venueDirectUrl)
+
+      // Check if tables already exist (idempotency)
+      const tableCheck = await venueSQL`
+        SELECT COUNT(*)::int as count
+        FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+      `
+
+      if (tableCheck[0].count > 0) {
+        console.log(`[Provision] Schema already exists in ${dbName}, skipping push`)
+      } else {
+        // Read pre-generated schema SQL (built at deploy time by generate-schema-sql.mjs)
+        const schemaSql = readFileSync(
+          path.join(process.cwd(), 'prisma/schema.sql'),
+          'utf-8'
+        )
+        await venueSQL(schemaSql)
+        console.log(`[Provision] Schema pushed to ${dbName}`)
+      }
     } catch (pushErr) {
       console.error('[Provision] Schema push failed:', pushErr)
       return Response.json(
