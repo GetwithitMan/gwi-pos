@@ -51,23 +51,17 @@ export async function POST(request: NextRequest) {
   let locationName: string
 
   try {
-    // Try to find existing Location for this venue
+    // Use the FIRST Location in the database. The POS master DB typically
+    // has one Location (from seed or provisioning). The cloud admin must
+    // use the same locationId as the existing data (menu items, etc.)
+    // to avoid foreign key and multi-tenancy mismatches.
     let location = await db.location.findFirst({
-      where: { name: dbSlug },
       select: { id: true, name: true },
+      orderBy: { createdAt: 'asc' },
     })
 
     if (!location) {
-      // Also check by a cloud-prefixed name (in case previously created)
-      location = await db.location.findFirst({
-        where: { name: { startsWith: dbSlug } },
-        select: { id: true, name: true },
-      })
-    }
-
-    if (!location) {
-      // Auto-create a Location so cloud admin can manage this venue.
-      // First ensure an Organization exists.
+      // No Location at all — auto-create one for this venue.
       let org = await db.organization.findFirst({
         select: { id: true },
       })
