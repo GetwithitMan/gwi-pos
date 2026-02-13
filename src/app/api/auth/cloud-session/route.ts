@@ -43,10 +43,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Venue mismatch' }, { status: 403 })
   }
 
-  // Get the venue's Location record from its database
+  // Try to get the venue's Location record from its database.
+  // If the venue DB isn't provisioned yet, use fallback values from the JWT.
   const dbSlug = venueSlug || payload.slug
-  let locationId: string
-  let locationName: string
+  let locationId = `cloud-${dbSlug}`
+  let locationName = dbSlug
 
   try {
     const venueDb = getDbForVenue(dbSlug)
@@ -54,21 +55,13 @@ export async function POST(request: NextRequest) {
       select: { id: true, name: true },
     })
 
-    if (!location) {
-      return NextResponse.json(
-        { error: 'Venue database not provisioned' },
-        { status: 404 }
-      )
+    if (location) {
+      locationId = location.id
+      locationName = location.name
     }
-
-    locationId = location.id
-    locationName = location.name
   } catch (error) {
-    console.error('[cloud-auth] DB connection failed:', error)
-    return NextResponse.json(
-      { error: 'Database connection failed' },
-      { status: 503 }
-    )
+    // Venue DB not provisioned yet — use fallback values
+    console.warn('[cloud-auth] Venue DB not available, using fallback:', dbSlug)
   }
 
   // Build cloud employee for the auth store
