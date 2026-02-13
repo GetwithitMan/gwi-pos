@@ -51,7 +51,6 @@ export async function POST(request: NextRequest) {
   try {
     const venueDb = getDbForVenue(dbSlug)
     const location = await venueDb.location.findFirst({
-      where: { deletedAt: null },
       select: { id: true, name: true },
     })
 
