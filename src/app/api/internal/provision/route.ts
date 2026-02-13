@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { db, buildVenueDatabaseUrl, buildVenueDirectUrl, venueDbName } from '@/lib/db'
 import { PrismaClient } from '@prisma/client'
 import { hash } from 'bcryptjs'
-import { neon } from '@neondatabase/serverless'
+import { neon, Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
 import path from 'path'
 
@@ -84,7 +84,13 @@ export async function POST(request: NextRequest) {
           path.join(process.cwd(), 'prisma/schema.sql'),
           'utf-8'
         )
-        await venueSQL(schemaSql)
+        // Use Pool for raw multi-statement SQL (neon() tagged template can't accept raw strings)
+        const pool = new Pool({ connectionString: venueDirectUrl })
+        try {
+          await pool.query(schemaSql)
+        } finally {
+          await pool.end()
+        }
         console.log(`[Provision] Schema pushed to ${dbName}`)
       }
     } catch (pushErr) {
