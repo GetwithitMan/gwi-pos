@@ -26,6 +26,7 @@ export interface CloudTokenPayload {
   slug: string // Venue slug
   orgId: string // Organization ID
   role: string // Admin role
+  posLocationId?: string // POS Location.id (from provisioning)
   iat: number
   exp: number
 }

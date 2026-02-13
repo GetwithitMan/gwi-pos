@@ -91,9 +91,10 @@ export async function POST(request: NextRequest) {
       datasources: { db: { url: venueDbUrl } },
     })
 
+    let posLocationId: string
     try {
-      await seedVenueDefaults(venueDb, name)
-      console.log(`[Provision] Seeded defaults for ${slug}`)
+      posLocationId = await seedVenueDefaults(venueDb, name)
+      console.log(`[Provision] Seeded defaults for ${slug} (locationId: ${posLocationId})`)
     } finally {
       await venueDb.$disconnect()
     }
@@ -101,8 +102,9 @@ export async function POST(request: NextRequest) {
     return Response.json({
       success: true,
       databaseName: dbName,
+      posLocationId,
       slug,
-      posUrl: `https://${slug}.barpos.restaurant`,
+      posUrl: `https://${slug}.ordercontrolcenter.com`,
     })
   } catch (error) {
     console.error('[Provision] Error:', error)
@@ -117,7 +119,7 @@ export async function POST(request: NextRequest) {
 // Default venue seed (minimal — just enough to log in and start building)
 // ============================================================================
 
-async function seedVenueDefaults(venueDb: PrismaClient, venueName: string) {
+async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Promise<string> {
   // Organization
   const org = await venueDb.organization.create({
     data: { name: venueName },
@@ -291,4 +293,6 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string) {
       },
     })
   }
+
+  return locationId
 }

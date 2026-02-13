@@ -43,25 +43,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Venue mismatch' }, { status: 403 })
   }
 
-  // Find or create a Location record in the master database.
-  // All POS API routes use `db` (master), so the locationId must reference
-  // a real Location record there — otherwise foreign keys fail.
+  // Resolve the POS Location record for this cloud session.
+  // Priority: JWT posLocationId (provisioned) → findFirst (dev) → auto-create (empty DB)
   const dbSlug = venueSlug || payload.slug
   let locationId: string
   let locationName: string
 
   try {
-    // Use the FIRST Location in the database. The POS master DB typically
-    // has one Location (from seed or provisioning). The cloud admin must
-    // use the same locationId as the existing data (menu items, etc.)
-    // to avoid foreign key and multi-tenancy mismatches.
-    let location = await db.location.findFirst({
-      select: { id: true, name: true },
-      orderBy: { createdAt: 'asc' },
-    })
+    let location: { id: string; name: string } | null = null
 
+    // 1. JWT has posLocationId from provisioning — use it directly
+    if (payload.posLocationId) {
+      location = await db.location.findUnique({
+        where: { id: payload.posLocationId },
+        select: { id: true, name: true },
+      })
+      if (!location) {
+        console.warn(`[cloud-auth] JWT posLocationId "${payload.posLocationId}" not found in DB, falling back`)
+      }
+    }
+
+    // 2. Fallback: find first Location (dev/unprovisioned scenario)
     if (!location) {
-      // No Location at all — auto-create one for this venue.
+      location = await db.location.findFirst({
+        select: { id: true, name: true },
+        orderBy: { createdAt: 'asc' },
+      })
+    }
+
+    // 3. No Location at all — auto-create (empty database)
+    if (!location) {
       let org = await db.organization.findFirst({
         select: { id: true },
       })
@@ -85,7 +96,7 @@ export async function POST(request: NextRequest) {
     locationId = location.id
     locationName = location.name
   } catch (error) {
-    console.error('[cloud-auth] Failed to find/create Location:', error)
+    console.error('[cloud-auth] Failed to resolve Location:', error)
     // Last resort fallback — will cause FK errors on writes but at least auth works
     locationId = `cloud-${dbSlug}`
     locationName = dbSlug
