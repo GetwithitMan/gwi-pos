@@ -104,16 +104,16 @@
 ### Mission Control (Cloud Admin Console — Phase 2)
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
-| 300 | Cloud Project Bootstrap | TODO | Mission Control | - | Separate Next.js project, Neon PostgreSQL, Clerk B2B, project structure |
-| 301 | Cloud Prisma Schema | TODO | Mission Control | 300 | CloudOrganization, CloudLocation, ServerNode, ServerHeartbeat, ServerRegistrationToken, SyncSession, FleetCommand, FleetAuditLog |
-| 302 | Server Registration API | TODO | Mission Control | 301 | POST /api/fleet/register, one-time tokens, hardware fingerprint, RSA key exchange |
-| 303 | Heartbeat Ingestion | TODO | Mission Control | 301 | POST /api/fleet/heartbeat, 60s interval, status thresholds (online/degraded/offline) |
-| 304 | License Validation API | TODO | Mission Control | 301 | POST /api/fleet/license/validate, HMAC-signed local cache, 14-day grace period |
-| 305 | Fleet Dashboard (Basic) | TODO | Mission Control | 303 | Real-time status cards per location, online/degraded/offline, version info |
-| 306 | Provisioning Script | TODO | Mission Control | 302 | Ubuntu host bash script: fingerprint, RSA keypair, register, write .env |
-| 307 | SSE Command Stream | TODO | Mission Control | 301 | GET /api/fleet/commands/stream, exponential backoff reconnect, Last-Event-ID replay |
-| 308 | Sync Agent Sidecar | TODO | Mission Control | 307 | Docker container: heartbeat, SSE listener, command ACK, license validator |
-| 309 | Kill Switch | TODO | Mission Control | 307 | SSE kill_switch command, branded killBanner, revive from dashboard |
+| 300 | Cloud Project Bootstrap | DONE | Mission Control | - | Next.js 16, Prisma 7, Clerk B2B, Neon PostgreSQL |
+| 301 | Cloud Prisma Schema | DONE | Mission Control | 300 | 11 enums, 10 models, 15 indexes |
+| 302 | Server Registration API | DONE | Mission Control | 301 | POST /api/fleet/register, token validation, fingerprint, RSA key exchange |
+| 303 | Heartbeat Ingestion | DONE | Mission Control | 301 | POST /api/fleet/heartbeat, HMAC auth, metrics, pending commands |
+| 304 | License Validation API | DONE | Mission Control | 301 | POST /api/fleet/license/validate, status priority chain, tier features, signed response |
+| 305 | Fleet Dashboard (Basic) | DONE | Mission Control | 303 | StatusCard, ServerList, OrgSelector, fleet-status.ts, auto-refresh |
+| 306 | Provisioning Script | DONE | Mission Control | 302 | provision.sh: fingerprint, RSA keypair, register, decrypt, .env write |
+| 307 | SSE Command Stream | DONE | Mission Control | 301 | GET /api/fleet/commands/stream, priority ordering, Last-Event-ID, keepalive |
+| 308 | Sync Agent Sidecar | DONE | Mission Control | 307 | 11 TypeScript files, Docker: heartbeat, SSE, commands, license, HMAC |
+| 309 | Kill Switch | DONE | Mission Control | 307 | kill/revive lib, single+bulk kill, status endpoint, UPDATE_CONFIG revive |
 | 310 | License Cache + Grace Period | TODO | Mission Control | 304 | Local HMAC-signed cache, in-memory 60s timer, grace degradation to read-only |
 | 311 | Alerting (Email + SMS) | TODO | Mission Control | 303 | Degraded/offline/disk/license/error spike alerts |
 | 312 | Data Sync Upload | TODO | Mission Control | 308 | POST /api/fleet/sync/upload, batch processing, syncedAt watermark |
@@ -122,12 +122,16 @@
 | 315 | Sync Health Dashboard | TODO | Mission Control | 312 | Sync status monitoring, gap detection, error forwarding |
 | 316 | Cosign Image Pipeline | TODO | Mission Control | - | GitHub Actions, Cosign keyless OIDC signing, SBOM generation |
 | 317 | Controlled Rollout | TODO | Mission Control | 316, 307 | Canary/rolling/immediate strategies, auto-rollback on health check failure |
-| 318 | Stripe Billing Integration | TODO | Mission Control | 300 | Subscription tiers, license management, maxLocations enforcement |
-| 319 | Wildcard Subdomain Routing | TODO | Mission Control | 300 | Edge Middleware, *.gwipos.com DNS, per-location online ordering URLs |
-| 320 | Tenant Isolation (Schemas + RLS) | TODO | Mission Control | 301 | Postgres Schema per org, RLS policies, per-org DB roles |
-| 321 | PayFac Credential Management | TODO | Mission Control | 301, 307 | Cloud-pushed Datacap credentials (AES-256-GCM at rest, RSA-encrypted delivery via SSE), tamper prevention (60s heartbeat overwrite), unregistered reader rejection, per-location processing rate |
-| 322 | Subscription Tiers & Hardware Limits | TODO | Mission Control | 301, 318 | Starter/Pro/Enterprise tiers, device caps (terminals/handhelds/KDS/printers/readers), feature gating, two-level enforcement (cloud + local cache), upgrade/downgrade flows |
-| 323 | Billing & Late Payment Flow | TODO | Mission Control | 318 | Stripe retry schedule, email/banner/read-only/kill escalation (Day 1→45), processing fee deduction from Datacap settlement, billing dashboard |
+| 318 | Stripe Billing Integration | DONE | Mission Control | 300 | Datacap-based (no Stripe), settlement deduction + card-on-file, manual escalation |
+| 319 | Wildcard Subdomain Routing | DONE | Mission Control | 300 | *.ordercontrolcenter.com DNS, per-venue POS subdomains |
+| 320 | Tenant Isolation (Schemas + RLS) | DONE | Mission Control | 301 | Per-org schemas, FORCE RLS, withTenantContext, fail-closed |
+| 321 | PayFac Credential Management | DONE | Mission Control | 301, 307 | AES encrypt at rest, RSA per-server push, heartbeat hash verification, dedup |
+| 322 | Subscription Tiers & Hardware Limits | DONE | Mission Control | 301, 318 | 3-tier limits, per-location overrides, tier comparison UI, FORCE_SYNC on change |
+| 323 | Billing & Late Payment Flow | DONE | Mission Control | 318 | Datacap-based, settlement deduction, card-on-file, manual escalation, billing dashboard |
+| 329 | Venue Provisioning locationId Handoff | DONE | Mission Control | 302 | Provision returns posLocationId, MC stores it, JWT includes it, cloud-session uses it |
+| 330 | Cloud Auth Venue Admin | DONE | Mission Control | 300, 329 | HMAC-SHA256 JWT, cloud-session cookie, admin-only POS access, route blocking |
+| 331 | Team Management Page | DONE | Mission Control | 300 | Clerk API for invite/role/remove, TeamManager component, audit logging |
+| 332 | Venue Admin Portal | DONE | Mission Control | 300, 330 | Sidebar nav, POS-matching dark UI, settings/team/hardware/servers pages |
 | 324 | Ingredient Category Delete | DONE | Inventory | - | Category delete with cascade soft-delete. Empty categories delete freely; categories with items show warning + require typing DELETE. Both list and hierarchy views. |
 | 325 | Prep Item Cost Cascade Fix | DONE | Inventory | 126 | Rewrote /api/ingredients/[id]/cost to use direct DB queries (was fragile HTTP self-fetch). Fixed 11 missing fields in list API. Cost now cascades: recipe→parent→prep item. |
 

@@ -126,6 +126,9 @@
 | T-066 | Mission Control: Subscription Tiers & Hardware Limits | PM: Mission Control | 2026-02-12 | Wave 4B — 3-tier limits, per-location overrides, tier comparison UI, FORCE_SYNC on change |
 | T-067 | Mission Control: Billing & Late Payment | PM: Mission Control | 2026-02-12 | Wave 4C — Datacap-based (no Stripe), settlement deduction + card-on-file, manual escalation, billing dashboard |
 | T-062 | Mission Control: Sync Agent Sidecar | PM: Mission Control | 2026-02-12 | 11 TypeScript files, Docker container: heartbeat, SSE consumer, command worker, license validator, HMAC client, status API |
+| NEW | Cloud Auth + Venue Admin Access (Skills 329-332) | PM: Mission Control | 2026-02-12 | Cloud JWT auth, team management, venue portal, posLocationId handoff |
+| T-068 | Per-venue DB routing middleware — API routes use `db` (master) but need `getDbForVenue(slug)` for multi-venue production | PM: Mission Control | 2026-02-12 | Large refactor. Infrastructure exists in db.ts. Needs AsyncLocalStorage or per-request helper. |
+| T-069 | Remove hardcoded DEFAULT_LOCATION_ID from 13 API routes — read locationId from auth session instead | PM: Mission Control | 2026-02-12 | Files: sync-resolution, print-routes, terminals, payment-readers, roles, sync-audit, printers, kds-screens, etc. |
 
 ---
 

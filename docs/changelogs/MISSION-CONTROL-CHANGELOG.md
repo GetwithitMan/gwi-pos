@@ -1,5 +1,87 @@
 # Mission Control Changelog
 
+## Session: February 12, 2026 (Cloud Auth + Team Management + Venue Provisioning)
+
+### Summary
+Built the cloud auth flow between MC and POS, the team management page, venue admin portal, and fixed critical locationId handoff issues. POS cloud admin at `{slug}.ordercontrolcenter.com` now works end-to-end.
+
+### Cloud Auth (Skill 330)
+- **POS**: HMAC-SHA256 JWT validation, httpOnly cloud session cookie, admin-only route blocking
+- **POS**: `*.ordercontrolcenter.com` subdomain detection in middleware
+- **POS**: Multi-tenant infrastructure: per-venue Neon DBs, provisioning API
+- **MC**: `generatePosAccessToken()` JWT generation with user + venue claims
+- **MC**: `/pos-access/{slug}` redirect page (Clerk auth → JWT → POS redirect)
+- **MC**: Updated venue links to use `ordercontrolcenter.com` subdomains
+
+### Team Management (Skill 331)
+- **MC**: Team management page at `/venue/{slug}/admin/team`
+- **MC**: Clerk API integration for invite, role change, remove members
+- **MC**: `TeamManager` client component with member table, invite modal, pending invitations
+- **MC**: API routes: `/api/venue/{slug}/team` (GET/POST), `/api/venue/{slug}/team/{userId}` (PUT/DELETE)
+- **MC**: Fixed: Link CloudOrganization to Clerk org for team lookups
+
+### Venue Admin Portal (Skill 332)
+- **MC**: Full sidebar nav with POS-matching dark UI at `/venue/{slug}/admin/*`
+- **MC**: Settings, team, floor plan, hardware, servers pages
+- **MC**: Neon provisioning: `provisionPosDatabase()` calls POS provision endpoint
+- **MC**: Venue Admin quick links on location detail page
+
+### Venue Provisioning Fix (Skill 329) — CRITICAL
+**Problem**: Cloud admin sessions had wrong `locationId`, causing FK constraint errors on all writes.
+
+**Three progressive fixes**:
+1. `019f6a1` — Cloud admin gets `'admin'` permission (not `'all'`)
+2. `2c8263e` — Cloud-session auto-creates Location in master DB (was using fake IDs)
+3. `703e0ea` — Cloud-session uses `findFirst()` instead of name-based search (was creating duplicates)
+
+**Definitive fix** (posLocationId handoff):
+- POS: Provision endpoint returns `posLocationId` in response
+- MC: Stores `posLocationId` on CloudLocation schema
+- MC: Includes `posLocationId` in JWT token
+- POS: Cloud-session uses JWT's posLocationId directly, with findFirst fallback
+
+### Commits
+
+**POS (gwi-pos)**:
+- `c8a779d` — feat: posLocationId handoff (Skill 329)
+- `703e0ea` — fix: cloud-session uses first existing Location
+- `2c8263e` — fix: cloud-session auto-creates Location in master DB
+- `019f6a1` — fix: cloud admin gets 'admin' permission
+- `5a6a8c4` — fix: cloud auth gracefully handles missing venue database
+- `e7a4ee5` — fix: Uint8Array BufferSource type mismatch in cloud-auth
+- `a1a8352` — fix: remove deletedAt filter from Location query
+- `8fa4a03` — feat: cloud auth admin-only access
+- `501666b` — feat: *.ordercontrolcenter.com venue subdomains
+- `8801810` — feat: multi-tenant infrastructure
+
+**MC (gwi-mission-control)**:
+- `1ff0750` — feat: posLocationId in JWT (Skill 329)
+- `8e7980d` — feat: Venue Admin quick links on location detail
+- `aa58e24` — fix: link CloudOrganization to Clerk org
+- `e3920de` — feat: team management page
+- `f24e826` — feat: POS access token generation
+- `e0617e6` — fix: venue POS links use ordercontrolcenter.com
+- `d417ba0` — feat: strip duplicate POS pages, Neon provisioning
+- `2493d11` — feat: venue admin portal
+
+### New Skills Documented
+- Skill 329: Venue Provisioning locationId Handoff
+- Skill 330: Cloud Auth Venue Admin
+- Skill 331: MC Team Management Page
+- Skill 332: MC Venue Admin Portal
+
+### Known Issues
+- 13 POS routes have hardcoded `DEFAULT_LOCATION_ID = 'loc-1'` — need updating to read from auth session
+- Per-venue database routing not yet implemented (all routes use master `db`)
+- Empty ingredient categories hidden in hierarchy view (by design, but confusing for new users)
+
+### How to Resume
+1. Say: `PM Mode: Mission Control`
+2. Review PM Task Board for remaining tasks
+3. Key priorities: per-venue DB routing middleware, DEFAULT_LOCATION_ID cleanup
+
+---
+
 ## Session: February 12, 2026 (Production Deploy + Domain Setup)
 
 ### Summary
