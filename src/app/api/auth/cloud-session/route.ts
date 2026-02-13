@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyCloudToken } from '@/lib/cloud-auth'
-import { getDbForVenue } from '@/lib/db'
+import { db } from '@/lib/db'
 
 /**
  * POST /api/auth/cloud-session
@@ -43,25 +43,58 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Venue mismatch' }, { status: 403 })
   }
 
-  // Try to get the venue's Location record from its database.
-  // If the venue DB isn't provisioned yet, use fallback values from the JWT.
+  // Find or create a Location record in the master database.
+  // All POS API routes use `db` (master), so the locationId must reference
+  // a real Location record there — otherwise foreign keys fail.
   const dbSlug = venueSlug || payload.slug
-  let locationId = `cloud-${dbSlug}`
-  let locationName = dbSlug
+  let locationId: string
+  let locationName: string
 
   try {
-    const venueDb = getDbForVenue(dbSlug)
-    const location = await venueDb.location.findFirst({
+    // Try to find existing Location for this venue
+    let location = await db.location.findFirst({
+      where: { name: dbSlug },
       select: { id: true, name: true },
     })
 
-    if (location) {
-      locationId = location.id
-      locationName = location.name
+    if (!location) {
+      // Also check by a cloud-prefixed name (in case previously created)
+      location = await db.location.findFirst({
+        where: { name: { startsWith: dbSlug } },
+        select: { id: true, name: true },
+      })
     }
+
+    if (!location) {
+      // Auto-create a Location so cloud admin can manage this venue.
+      // First ensure an Organization exists.
+      let org = await db.organization.findFirst({
+        select: { id: true },
+      })
+      if (!org) {
+        org = await db.organization.create({
+          data: { name: payload.name ? `${payload.name}'s Organization` : 'Cloud Organization' },
+        })
+      }
+
+      location = await db.location.create({
+        data: {
+          name: dbSlug,
+          organizationId: org.id,
+          timezone: 'America/New_York',
+        },
+        select: { id: true, name: true },
+      })
+      console.log('[cloud-auth] Auto-created Location:', location.id, location.name)
+    }
+
+    locationId = location.id
+    locationName = location.name
   } catch (error) {
-    // Venue DB not provisioned yet — use fallback values
-    console.warn('[cloud-auth] Venue DB not available, using fallback:', dbSlug)
+    console.error('[cloud-auth] Failed to find/create Location:', error)
+    // Last resort fallback — will cause FK errors on writes but at least auth works
+    locationId = `cloud-${dbSlug}`
+    locationName = dbSlug
   }
 
   // Build cloud employee for the auth store
