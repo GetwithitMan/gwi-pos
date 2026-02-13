@@ -1,5 +1,83 @@
 # Mission Control Changelog
 
+## Session: February 12, 2026 (Online Ordering Infrastructure + Deploy Fix — Skills 335-336)
+
+### Summary
+Added online ordering URL infrastructure to CloudLocation. Each venue gets a unique 6-character order code for path-based online ordering URLs (`ordercontrolcenter.com/{code}/{slug}`). Also fixed the 500 error on release deploy that was caused by passing Clerk org IDs as FK references.
+
+### Online Ordering URL Infrastructure (Skill 336)
+- **Schema**: Added `orderCode` (unique, 6-char alphanumeric) and `onlineOrderingEnabled` (boolean, default false) to CloudLocation
+- **Create Route**: Auto-generates unique orderCode on location creation (chars: A-Z excluding O/I, 2-9 excluding 0/1)
+- **Update Route**: Added `onlineOrderingEnabled` toggle to PUT schema
+- **VenueUrlCard**: Rewritten with two sections — admin portal URL + online ordering URL
+- **UI Features**: Copy button, on/off toggle, order code display for QR codes, "coming soon" when disabled
+- **Backfill**: Ran script to assign order codes to existing locations (gwi-admin-dev → VGH9Z6)
+- **Architecture Decision**: Path-based URLs instead of subdomains — no DNS config, better privacy, single deployment
+
+### Deploy 500 Fix (Skill 335 continuation)
+- Fixed `resolveCloudOrgId()` — was passing raw Clerk org ID (`org_2abc...`) to FleetAuditLog FK
+- All 3 release routes now use `resolveCloudOrgId()` for proper cuid resolution
+- Added try-catch wrappers to prevent unhandled errors
+
+### Domain Architecture Discussion
+- `barpos.restaurant` = POS demo only (password-protect via Vercel)
+- `ordercontrolcenter.com/{code}/{slug}` = customer-facing online ordering (future)
+- `{slug}.ordercontrolcenter.com` = venue admin portal (existing)
+- STABLE vs BETA release channels for controlled deployment (test locations first, then production)
+
+### Key Files Changed
+| File | Changes |
+|------|---------|
+| `prisma/schema.prisma` | Added orderCode + onlineOrderingEnabled to CloudLocation |
+| `src/app/api/admin/locations/route.ts` | generateOrderCode(), uniqueOrderCode(), auto-assign on create |
+| `src/app/api/admin/locations/[id]/route.ts` | onlineOrderingEnabled in update schema |
+| `src/app/dashboard/locations/[id]/page.tsx` | Pass new props to VenueUrlCard |
+| `src/components/admin/VenueUrlCard.tsx` | Full rewrite: admin portal + online ordering sections |
+| `scripts/backfill-order-codes.ts` | One-time backfill script |
+
+### Commits
+- `d7851af` — feat: add online ordering URL infrastructure (orderCode + toggle)
+- `788def0` — fix: resolve CloudOrganization ID for audit logs (was using Clerk org ID)
+
+---
+
+## Session: February 12, 2026 (Release System + Auth Fixes — Skills 334-335)
+
+### Summary
+Fixed critical 500 errors on release creation and deployment. Root cause: Clerk organization IDs were being passed as foreign keys to CloudOrganization, causing constraint violations. Also added AdminUser auto-provisioning for first-time admin users.
+
+### Release Management & Deployment (Skill 334)
+- **MC**: Release CRUD: create, list, detail, archive (soft delete)
+- **MC**: Deploy to locations: FORCE_UPDATE FleetCommand, schema version gate
+- **MC**: Per-location results with 207 Multi-Status for mixed outcomes
+- **MC**: Channel-scoped `isLatest` semantics (one latest per STABLE/BETA)
+
+### Auth Enhancements (Skill 335)
+- **MC**: `resolveAdminUserId()` auto-provisions AdminUser record on first use
+  - Solves chicken-and-egg: Clerk authenticates user, but DB needs FK-ready record
+  - Creates AdminUser with name, email, role from Clerk session
+  - Links to CloudOrganization if Clerk org ID matches
+- **MC**: `resolveCloudOrgId()` resolves Clerk org ID → CloudOrganization.id (cuid)
+  - Prevents FK constraint violation on FleetAuditLog writes
+  - Used by all 3 release routes (create, deploy, archive)
+- **MC**: All release routes wrapped in try-catch for proper error handling
+
+### Bug Fix: 500 on Release Create & Deploy
+**Root cause**: `FleetAuditLog.organizationId` has a FK to `CloudOrganization.id` (cuid), but routes passed `admin.orgId` (Clerk org ID like `org_2abc...`). Prisma FK violation → unhandled → 500.
+
+**Files modified**: 5
+- `src/lib/auth.ts` — Added `resolveCloudOrgId()`, updated `resolveAdminUserId()`
+- `src/app/api/admin/releases/route.ts` — `resolveCloudOrgId`, try-catch
+- `src/app/api/admin/releases/[id]/route.ts` — `resolveCloudOrgId`
+- `src/app/api/admin/releases/[id]/deploy/route.ts` — `resolveCloudOrgId`, try-catch
+- `src/lib/release-manager.ts` — `organizationId: string | null`
+
+### Commits
+- `788def0` — fix: resolve CloudOrganization ID for audit logs (was using Clerk org ID)
+- `1debb7f` — fix: auto-provision AdminUser for first-time Clerk users
+
+---
+
 ## Session: February 12, 2026 (Cloud Auth + Team Management + Venue Provisioning)
 
 ### Summary

@@ -105,7 +105,7 @@
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
 | 300 | Cloud Project Bootstrap | DONE | Mission Control | - | Next.js 16, Prisma 7, Clerk B2B, Neon PostgreSQL |
-| 301 | Cloud Prisma Schema | DONE | Mission Control | 300 | 11 enums, 10 models, 15 indexes |
+| 301 | Cloud Prisma Schema | DONE | Mission Control | 300 | 11 enums, 10+ models, 15+ indexes, AdminUser, SupportUser, AdminUserLocationAssignment |
 | 302 | Server Registration API | DONE | Mission Control | 301 | POST /api/fleet/register, token validation, fingerprint, RSA key exchange |
 | 303 | Heartbeat Ingestion | DONE | Mission Control | 301 | POST /api/fleet/heartbeat, HMAC auth, metrics, pending commands |
 | 304 | License Validation API | DONE | Mission Control | 301 | POST /api/fleet/license/validate, status priority chain, tier features, signed response |
@@ -122,7 +122,7 @@
 | 315 | Sync Health Dashboard | TODO | Mission Control | 312 | Sync status monitoring, gap detection, error forwarding |
 | 316 | Cosign Image Pipeline | TODO | Mission Control | - | GitHub Actions, Cosign keyless OIDC signing, SBOM generation |
 | 317 | Controlled Rollout | TODO | Mission Control | 316, 307 | Canary/rolling/immediate strategies, auto-rollback on health check failure |
-| 318 | Stripe Billing Integration | DONE | Mission Control | 300 | Datacap-based (no Stripe), settlement deduction + card-on-file, manual escalation |
+| 318 | Billing Integration | DONE | Mission Control | 300 | Datacap-based (no Stripe), settlement deduction + card-on-file, manual escalation |
 | 319 | Wildcard Subdomain Routing | DONE | Mission Control | 300 | *.ordercontrolcenter.com DNS, per-venue POS subdomains |
 | 320 | Tenant Isolation (Schemas + RLS) | DONE | Mission Control | 301 | Per-org schemas, FORCE RLS, withTenantContext, fail-closed |
 | 321 | PayFac Credential Management | DONE | Mission Control | 301, 307 | AES encrypt at rest, RSA per-server push, heartbeat hash verification, dedup |
@@ -132,6 +132,13 @@
 | 330 | Cloud Auth Venue Admin | DONE | Mission Control | 300, 329 | HMAC-SHA256 JWT, cloud-session cookie, admin-only POS access, route blocking |
 | 331 | Team Management Page | DONE | Mission Control | 300 | Clerk API for invite/role/remove, TeamManager component, audit logging |
 | 332 | Venue Admin Portal | DONE | Mission Control | 300, 330 | Sidebar nav, POS-matching dark UI, settings/team/hardware/servers pages |
+| 334 | Release Management & Deployment | DONE | Mission Control | 301, 307, 308 | Create releases (semver, channel, image tag), deploy to locations via FORCE_UPDATE FleetCommand, schema version gate, per-location results |
+| 335 | Auth Enhancements | DONE | Mission Control | 300 | AdminUser auto-provisioning (resolveAdminUserId), CloudOrganization ID resolution (resolveCloudOrgId), FK constraint fix for audit logs |
+| 336 | Online Ordering URL Infrastructure | DONE | Mission Control | 300, 319 | orderCode (6-char unique) + onlineOrderingEnabled on CloudLocation, auto-generate on create, VenueUrlCard UI with toggle + copy, path-based URL pattern |
+
+### POS Inventory (Non-MC)
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
 | 324 | Ingredient Category Delete | DONE | Inventory | - | Category delete with cascade soft-delete. Empty categories delete freely; categories with items show warning + require typing DELETE. Both list and hierarchy views. |
 | 325 | Prep Item Cost Cascade Fix | DONE | Inventory | 126 | Rewrote /api/ingredients/[id]/cost to use direct DB queries (was fragile HTTP self-fetch). Fixed 11 missing fields in list API. Cost now cascades: recipe→parent→prep item. |
 
@@ -161,10 +168,11 @@
 | 17 | Table Status | DONE | Floor Plan | 16 | Available/occupied/reserved/dirty, quick toggle |
 | 18 | Table Transfer | DONE | Floor Plan | 16, 02 | Transfer API, moves orders with audit log |
 | 19 | Reservations | DONE | Events | 16 | Full booking system, admin page, status tracking |
-| 117 | Virtual Table Combine | DONE | Floor Plan | 106, 107 | Long-press to link tables, pulsing glow, T-S notation, manager dashboard |
-| 206 | Seat Management System | DONE | Floor Plan | 16, 117 | Seat API, generation, positioning, virtual group numbering, reflow on resize |
+| 117 | Virtual Table Combine | DONE | Floor Plan | 106, 107 | **REMOVED in Skill 326** — was: long-press to link tables |
+| 206 | Seat Management System | DONE | Floor Plan | 16 | Seat API, generation, positioning, orbital auto-spacing or manual DB positions |
 | 207 | Table Resize & Rotation | DONE | Floor Plan | 16 | 8 resize handles, rotation handle, grid snap, collision detection, shape-specific minimums |
-| 229 | Table Combine Types | DONE | Floor Plan | 107, 117 | Physical (drag-drop, seats 1..N) vs Virtual (long-hold, per-table seats). **Critical: handleTableCombine must call /api/tables/combine, NOT virtual-combine** |
+| 229 | Table Combine Types | DONE | Floor Plan | 107, 117 | **REMOVED in Skill 326** — was: physical vs virtual combine |
+| 326 | Combine Removal (Full) | DONE | Floor Plan | 117, 229 | Both virtual AND physical combine fully removed from entire codebase (116 files, -16,211 lines). Tables are now standalone. API routes return 410 Gone. |
 | 328 | Seat Management Fixes | DONE | Floor Plan, Orders | 121, 206 | Add seat after send, seatNumber persistence on items, extra seats restore on reopen |
 
 ### Bar Features
@@ -198,6 +206,7 @@
 | 88 | Price Rounding | DONE | Payments | 09 | Cent-safe rounding via `roundToCents()`, `roundPrice()` rewritten to cent-based math (Skill 239) |
 | 239 | Pricing Engine Refactor | DONE | Payments | 31, 36, 88 | Single source of truth: `roundToCents()`, extended `calculateOrderTotals`, `usePricing` as thin adapter, 29 files |
 | 240 | Tax-Inclusive Pricing | DONE | Settings | 36, 239 | Category-based tax-inclusive rules, `calculateSplitTax()`, item stamping, split UI display |
+| 327 | Cash Rounding Pipeline | DONE | Payments | 88, 239 | Two rounding systems (priceRounding active, cashRounding legacy). Client sends rounded amount, server computes adjustment from rawRemaining. Rounding artifact handling, paidTolerance = half increment. Daily report integration. |
 
 ### Inventory & Menu
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -228,6 +237,7 @@
 | 205 | Component Improvements | DONE | Inventory | 204 | Shared cost hook, recipe cost aggregation (N→1), hierarchy caching (5min TTL), error rollback, accessibility |
 | 215 | Unified Modifier Inventory Deduction | DONE | Inventory | 125, 143 | Fallback path: Modifier.ingredientId → Ingredient → InventoryItem for deduction when no ModifierInventoryLink exists; updates deductInventoryForOrder, deductInventoryForVoidedItem, calculateTheoreticalUsage, PMIX |
 | 216 | Ingredient-Modifier Connection Visibility | DONE | Inventory | 143, 204, 211, 214 | Bidirectional visibility: Connected badge, dual-path menu item resolution (item-owned + junction), expandable linked modifiers panel, linkedModifierCount |
+| 333 | Ingredient Category Inline Creation | DONE | Menu, Inventory | 145, 211 | Create categories inline from ItemEditor picker (green + purple). needsVerification flag, red badge + verify button on /ingredients page. Optimistic UI updates. |
 
 ### Reporting
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -318,13 +328,13 @@
 |----------|------|---------|------|-------|------------|
 | Foundation | 3 | 0 | 1 | 4 | 75% |
 | Order Flow | 7 | 1 | 0 | 8 | 94% |
-| Payment | 13 | 0 | 0 | 13 | 100% |
+| Payment | 14 | 0 | 0 | 14 | 100% |
 | Advanced Orders | 13 | 2 | 0 | 15 | 93% |
-| Table Management | 4 | 0 | 0 | 4 | 100% |
+| Table Management | 6 | 0 | 0 | 6 | 100% |
 | Bar Features | 2 | 1 | 0 | 3 | 83% |
 | Kitchen Display | 4 | 1 | 2 | 7 | 71% |
 | Pricing & Discounts | 8 | 0 | 0 | 8 | 100% |
-| Inventory & Menu | 23 | 0 | 0 | 23 | 100% |
+| Inventory & Menu | 26 | 0 | 0 | 26 | 100% |
 | Menu Builder | 6 | 0 | 0 | 6 | 100% |
 | Reporting | 13 | 0 | 0 | 13 | 100% |
 | Employee Features | 6 | 0 | 0 | 6 | 100% |
@@ -339,8 +349,8 @@
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| Mission Control (Phase 2) | 0 | 0 | 24 | 24 | 0% |
-| **TOTAL** | **184** | **7** | **37** | **228** | **84%** |
+| Mission Control (Phase 2) | 19 | 0 | 8 | 27 | 70% |
+| **TOTAL** | **196** | **7** | **24** | **227** | **89%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -460,6 +470,45 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-12 — Online Ordering URL Infrastructure, Deploy Fix, Skills 335-336)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 335 | MC Auth Enhancements (Deploy Fix) | Fixed 500 error on release deploy — `resolveCloudOrgId()` converts Clerk org ID → CloudOrganization.id for FleetAuditLog FK. All 3 release routes updated. |
+| 336 | Online Ordering URL Infrastructure | `orderCode` (unique 6-char) + `onlineOrderingEnabled` on CloudLocation. Auto-generated on create. VenueUrlCard rewritten: admin portal URL + online ordering URL with toggle/copy. Path-based URL: `ordercontrolcenter.com/{code}/{slug}`. Backfilled existing locations. |
+
+## Recently Completed (2026-02-12 — MC Release System, Auth Fixes, Ingredient Category Creation)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 333 | Ingredient Category Inline Creation | "New Category" button + inline form in ItemEditor ingredient picker (both green and purple pickers). Categories created from Menu Builder get `needsVerification: true`. Red pulsing "New Category" badge + green "Verify" button on `/ingredients` page. Optimistic UI via `onCategoryCreated` callback. Schema: `needsVerification Boolean @default(false)` on IngredientCategory. |
+| 334 | MC Release Management & Deployment | Release CRUD (create/list/detail/archive), deploy to locations via FORCE_UPDATE FleetCommand. Schema version gate blocks deploys if server too old. Per-location results (207 Multi-Status). Channel-scoped `isLatest` semantics. Full audit trail. |
+| 335 | MC Auth Enhancements | `resolveAdminUserId()` auto-provisions AdminUser for first-time Clerk users (fixes "Admin user not found" error). `resolveCloudOrgId()` converts Clerk org ID → CloudOrganization.id for FK relations (fixes 500 on release create/deploy). All release routes updated with try-catch. |
+
+## Recently Completed (2026-02-12 — Mission Control Cloud Auth, Team, Venue Portal, Skills 329-332)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 329 | Venue Provisioning locationId Handoff | Provision returns posLocationId from CloudLocation, MC stores it, JWT includes it, POS cloud-session uses it. Fixes venue admin from seeing wrong location data. |
+| 330 | Cloud Auth Venue Admin | HMAC-SHA256 JWT for POS access from cloud, cloud-session cookie, admin-only POS access routes, authentication flow for venue management. |
+| 331 | Team Management Page | Clerk API integration for invite/role/remove team members. TeamManager component with role badges, invite modal. Audit logging for all team changes. |
+| 332 | Venue Admin Portal | Full sidebar navigation with POS-matching dark UI theme. Settings, Team, Hardware, Floor Plan, Servers pages. Owner/Employee role support planned. |
+
+## Recently Completed (2026-02-12 — Mission Control Production Deploy & Foundation, Skills 300-323)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 300-309 | MC Foundation (Waves 1-3) | Cloud project bootstrap, Prisma schema, server registration, heartbeat, license validation, fleet dashboard, provisioning script, SSE command stream, sync agent sidecar, kill switch. GitHub repo, Vercel deploy, Neon DB, custom domains (app.thepasspos.com, ordercontrolcenter.com). |
+| 318-323 | MC Billing & Security (Waves 4A-4C) | Tenant isolation with RLS, PayFac credential management (AES+RSA), subscription tiers (Starter/Pro/Enterprise) with hardware limits, billing with Datacap settlement deduction, late payment escalation flow. |
+
+## Recently Completed (2026-02-11 — Combine Removal, Cash Rounding, Seat Fixes, Skills 326-328)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 326 | Combine Removal (Full) | Both virtual AND physical combine fully removed from entire codebase. 116 files modified, -16,211 lines deleted. Tables are now standalone with no grouping. API routes return 410 Gone. `table-geometry.ts` reduced from 1,014→349 lines. `src/domains/floor-plan/groups/` directory deleted. |
+| 327 | Cash Rounding Pipeline | Two rounding systems unified: `priceRounding` (active, Skill 88) takes precedence over `cashRounding` (legacy). Client sends already-rounded amount, server computes adjustment from `rawRemaining`. Handles rounding artifacts (remaining < increment → treat as paid). `paidTolerance` = half the rounding increment. `handleCompVoidComplete` calls `syncServerTotals()` to prevent stale PaymentModal totals. Daily report shows `payment.roundingAdjustment` in revenue + cash sections. |
+| 328 | Seat Management Fixes | Add seat after send to kitchen (server grows `extraSeatCount`). `seatNumber` + `courseNumber` included in item create data (was missing). Extra seats restored on table reopen by scanning max seat number from loaded order items. `extraSeats` Map rebuilt from server data instead of relying on lost client state. |
 
 ## Recently Completed (2026-02-11 — Ingredient Category Delete & Cost Fix, Skills 324-325)
 
