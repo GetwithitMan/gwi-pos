@@ -123,6 +123,7 @@ interface IngredientCategory {
   sortOrder: number
   isActive: boolean
   ingredientCount: number
+  needsVerification?: boolean
 }
 
 interface MenuItemIngredient {
@@ -523,6 +524,14 @@ export default function MenuManagementPage() {
     })
   }, [])
 
+  const handleCategoryCreated = useCallback((category: IngredientCategory) => {
+    setIngredientCategories(prev => {
+      const exists = prev.some(c => c.id === category.id)
+      if (exists) return prev
+      return [...prev, category]
+    })
+  }, [])
+
   const filteredItems = items.filter(item => item.categoryId === selectedCategory)
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
 
@@ -815,6 +824,7 @@ export default function MenuManagementPage() {
                 setRefreshKey(prev => prev + 1)
               }}
               onIngredientCreated={handleIngredientCreated}
+              onCategoryCreated={handleCategoryCreated}
               onToggle86={handleToggleItem86}
               onDelete={(itemId) => {
                 handleDeleteItem(itemId)

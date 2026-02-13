@@ -626,6 +626,7 @@ interface GroupedHierarchyProps {
     icon?: string | null
     color?: string | null
     isActive?: boolean
+    needsVerification?: boolean
   }>
   ingredients: HierarchyIngredient[]
   selectedIds: Set<string>
@@ -636,6 +637,7 @@ interface GroupedHierarchyProps {
   onAddPreparation: (parent: Ingredient) => void
   onToggleActive: (ingredient: Ingredient) => void
   onVerify?: (ingredient: Ingredient) => void
+  onVerifyCategory?: (category: { id: string; name: string }) => void
   onEditCategory?: (category: { id: string; name: string }) => void
   onDeleteCategory?: (category: { id: string; name: string }) => void
 }
@@ -660,6 +662,7 @@ export function GroupedIngredientHierarchy({
   onAddPreparation,
   onToggleActive,
   onVerify,
+  onVerifyCategory,
   onEditCategory,
   onDeleteCategory,
 }: GroupedHierarchyProps) {
@@ -722,7 +725,7 @@ export function GroupedIngredientHierarchy({
         {/* Categorized ingredients - sorted alphabetically */}
         {sortedCategories.map(category => {
           const categoryIngredients = grouped.get(category.id) || []
-          if (categoryIngredients.length === 0) return null
+          if (categoryIngredients.length === 0 && !category.needsVerification) return null
 
           return (
             <CategoryHierarchySection
@@ -737,6 +740,7 @@ export function GroupedIngredientHierarchy({
               onAddPreparation={onAddPreparation}
               onToggleActive={onToggleActive}
               onVerify={onVerify}
+              onVerifyCategory={onVerifyCategory}
               onEditCategory={onEditCategory}
               onDeleteCategory={onDeleteCategory}
             />
@@ -777,6 +781,7 @@ interface CategoryHierarchySectionProps {
     icon?: string | null
     color?: string | null
     isActive?: boolean
+    needsVerification?: boolean
   }
   ingredients: HierarchyIngredient[]
   selectedIds: Set<string>
@@ -787,6 +792,7 @@ interface CategoryHierarchySectionProps {
   onAddPreparation: (parent: Ingredient) => void
   onToggleActive: (ingredient: Ingredient) => void
   onVerify?: (ingredient: Ingredient) => void
+  onVerifyCategory?: (category: { id: string; name: string }) => void
   onEditCategory?: (category: { id: string; name: string }) => void
   onDeleteCategory?: (category: { id: string; name: string }) => void
 }
@@ -802,6 +808,7 @@ function CategoryHierarchySection({
   onAddPreparation,
   onToggleActive,
   onVerify,
+  onVerifyCategory,
   onEditCategory,
   onDeleteCategory,
 }: CategoryHierarchySectionProps) {
@@ -831,12 +838,12 @@ function CategoryHierarchySection({
   }
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm overflow-hidden ${unverifiedCount > 0 ? 'border-2 border-red-300 ring-1 ring-red-200' : 'border'}`}>
+    <div className={`bg-white rounded-lg shadow-sm overflow-hidden ${(unverifiedCount > 0 || category.needsVerification) ? 'border-2 border-red-300 ring-1 ring-red-200' : 'border'}`}>
       {/* Category Header - Compact */}
       <div
-        className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-colors ${unverifiedCount > 0 ? 'hover:bg-red-50 bg-red-50/30' : 'hover:bg-gray-50'}`}
+        className={`flex items-center justify-between px-3 py-2 cursor-pointer transition-colors ${(unverifiedCount > 0 || category.needsVerification) ? 'hover:bg-red-50 bg-red-50/30' : 'hover:bg-gray-50'}`}
         onClick={() => setIsExpanded(!isExpanded)}
-        style={{ borderLeft: `3px solid ${unverifiedCount > 0 ? '#ef4444' : (category.color || '#6b7280')}` }}
+        style={{ borderLeft: `3px solid ${(unverifiedCount > 0 || category.needsVerification) ? '#ef4444' : (category.color || '#6b7280')}` }}
       >
         <div className="flex items-center gap-2">
           {/* Select All in Category Checkbox */}
@@ -862,6 +869,11 @@ function CategoryHierarchySection({
             <span className="text-xs text-gray-400">
               {ingredients.length} inv / {totalCount - ingredients.length} prep
             </span>
+            {category.needsVerification && (
+              <span className="px-1.5 py-0.5 bg-red-500 text-white rounded-full text-[10px] font-bold animate-pulse">
+                ⚠ New Category
+              </span>
+            )}
             {unverifiedCount > 0 && (
               <span className="px-1.5 py-0.5 bg-red-500 text-white rounded-full text-[10px] font-bold animate-pulse">
                 ⚠ {unverifiedCount} unverified
@@ -880,6 +892,19 @@ function CategoryHierarchySection({
           </div>
         </div>
         <div className="flex items-center gap-1">
+          {category.needsVerification && onVerifyCategory && category.id !== 'uncategorized' && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onVerifyCategory(category)
+              }}
+              className="h-6 px-2 text-xs border-green-300 text-green-700 hover:bg-green-50 hover:text-green-800"
+            >
+              ✓ Verify
+            </Button>
+          )}
           {onEditCategory && category.id !== 'uncategorized' && (
             <Button
               variant="ghost"

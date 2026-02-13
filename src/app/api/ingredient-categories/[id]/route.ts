@@ -65,6 +65,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       color,
       sortOrder,
       isActive,
+      needsVerification,
     } = body
 
     // Check category exists
@@ -95,6 +96,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         ...(color !== undefined && { color }),
         ...(sortOrder !== undefined && { sortOrder }),
         ...(isActive !== undefined && { isActive }),
+        ...(needsVerification !== undefined && { needsVerification }),
         // NOTE: code is intentionally NOT updated - it's immutable
       },
       include: {

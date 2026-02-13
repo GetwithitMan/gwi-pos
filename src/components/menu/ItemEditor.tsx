@@ -52,6 +52,7 @@ interface IngredientCategory {
   sortOrder: number
   isActive: boolean
   ingredientCount: number
+  needsVerification?: boolean
 }
 
 interface Modifier {
@@ -106,13 +107,14 @@ interface ItemEditorProps {
   locationId?: string
   onItemUpdated: () => void
   onIngredientCreated?: (ingredient: IngredientLibraryItem) => void
+  onCategoryCreated?: (category: IngredientCategory) => void
   onToggle86?: (item: MenuItem) => void
   onDelete?: (itemId: string) => void
   refreshKey?: number
   onSelectGroup?: (groupId: string | null) => void
 }
 
-export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = [], locationId = '', onItemUpdated, onIngredientCreated, onToggle86, onDelete, refreshKey, onSelectGroup }: ItemEditorProps) {
+export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = [], locationId = '', onItemUpdated, onIngredientCreated, onCategoryCreated, onToggle86, onDelete, refreshKey, onSelectGroup }: ItemEditorProps) {
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
   const [loading, setLoading] = useState(false)
@@ -167,6 +169,8 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   const [newInventoryName, setNewInventoryName] = useState('')
   const [newPrepName, setNewPrepName] = useState('')
   const [creatingIngredientLoading, setCreatingIngredientLoading] = useState(false)
+  const [creatingNewCategory, setCreatingNewCategory] = useState(false)
+  const [newCategoryName, setNewCategoryName] = useState('')
 
   const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null)
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
@@ -1101,6 +1105,49 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     })
   }
 
+  // Create new ingredient category inline
+  const createCategory = async () => {
+    if (!newCategoryName.trim()) return
+    setCreatingIngredientLoading(true)
+
+    try {
+      const response = await fetch('/api/ingredient-categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          name: newCategoryName.trim(),
+          needsVerification: true,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        toast.error(errorData.error || 'Failed to create category')
+        return
+      }
+
+      const { data } = await response.json()
+      onCategoryCreated?.(data)
+      setNewCategoryName('')
+      setCreatingNewCategory(false)
+
+      // Auto-expand the new category and open inventory item creation
+      setExpandedCategories(prev => {
+        const next = new Set(prev)
+        next.add(data.id)
+        return next
+      })
+      setCreatingInventoryInCategory(data.id)
+      toast.success(`Created "${data.name}" — now add an inventory item`)
+    } catch (error) {
+      console.error('Error creating category:', error)
+      toast.error('Failed to create category')
+    } finally {
+      setCreatingIngredientLoading(false)
+    }
+  }
+
   // Create inventory item (parent)
   const createInventoryItem = async (categoryId: string) => {
     if (!newInventoryName.trim()) return
@@ -1762,6 +1809,47 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
               className="w-full px-2 py-1 text-xs border rounded mb-1"
               autoFocus
             />
+            {/* New Category inline form */}
+            {creatingNewCategory ? (
+              <div className="px-2 py-1.5 bg-amber-50 border border-amber-200 rounded mb-1">
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') createCategory()
+                    if (e.key === 'Escape') { setCreatingNewCategory(false); setNewCategoryName('') }
+                  }}
+                  placeholder="New category name..."
+                  className="w-full px-2 py-1 text-xs border rounded mb-1"
+                  autoFocus
+                  disabled={creatingIngredientLoading}
+                />
+                <div className="flex gap-1">
+                  <button
+                    onClick={createCategory}
+                    className="flex-1 px-2 py-1 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+                    disabled={!newCategoryName.trim() || creatingIngredientLoading}
+                  >
+                    Create Category
+                  </button>
+                  <button
+                    onClick={() => { setCreatingNewCategory(false); setNewCategoryName('') }}
+                    className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                    disabled={creatingIngredientLoading}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setCreatingNewCategory(true)}
+                className="w-full px-2 py-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 mb-1 font-medium"
+              >
+                + New Category
+              </button>
+            )}
             <div className="max-h-96 overflow-y-auto space-y-0.5">
               {(() => {
                 const hierarchy = buildHierarchy(modIngredientSearch)
@@ -2556,6 +2644,47 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                         className="w-full px-2 py-1 text-xs border rounded mb-1"
                         autoFocus
                       />
+                      {/* New Category inline form */}
+                      {creatingNewCategory ? (
+                        <div className="px-2 py-1.5 bg-amber-50 border border-amber-200 rounded mb-1">
+                          <input
+                            type="text"
+                            value={newCategoryName}
+                            onChange={(e) => setNewCategoryName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') createCategory()
+                              if (e.key === 'Escape') { setCreatingNewCategory(false); setNewCategoryName('') }
+                            }}
+                            placeholder="New category name..."
+                            className="w-full px-2 py-1 text-xs border rounded mb-1"
+                            autoFocus
+                            disabled={creatingIngredientLoading}
+                          />
+                          <div className="flex gap-1">
+                            <button
+                              onClick={createCategory}
+                              className="flex-1 px-2 py-1 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
+                              disabled={!newCategoryName.trim() || creatingIngredientLoading}
+                            >
+                              Create Category
+                            </button>
+                            <button
+                              onClick={() => { setCreatingNewCategory(false); setNewCategoryName('') }}
+                              className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                              disabled={creatingIngredientLoading}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setCreatingNewCategory(true)}
+                          className="w-full px-2 py-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 mb-1 font-medium"
+                        >
+                          + New Category
+                        </button>
+                      )}
                       <div className="max-h-96 overflow-y-auto space-y-0.5">
                         {(() => {
                           const hierarchy = buildHierarchy(ingredientSearch)

@@ -4248,7 +4248,8 @@ model IngredientCategory {
   sortOrder   Int      @default(0)
 
   // Status
-  isActive    Boolean  @default(true)
+  isActive          Boolean  @default(true)
+  needsVerification Boolean  @default(false)
 
   // Relations
   ingredients Ingredient[]

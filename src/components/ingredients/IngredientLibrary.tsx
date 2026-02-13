@@ -19,6 +19,7 @@ export interface IngredientCategory {
   sortOrder: number
   isActive: boolean
   ingredientCount?: number
+  needsVerification?: boolean
 }
 
 export interface InventoryItemRef {
@@ -607,6 +608,28 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
     }
   }
 
+  const handleVerifyCategory = async (category: { id: string; name: string }) => {
+    try {
+      const response = await fetch(`/api/ingredient-categories/${category.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ needsVerification: false }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        toast.error(error.error || 'Failed to verify category')
+        return
+      }
+
+      toast.success(`Category "${category.name}" verified`)
+      await loadCategories()
+    } catch (error) {
+      console.error('Error verifying category:', error)
+      toast.error('Failed to verify category')
+    }
+  }
+
   const handleAddPreparation = (parent: Ingredient) => {
     setPreparationParent(parent)
     setShowPreparationModal(true)
@@ -864,6 +887,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
           onAddPreparation={handleAddPreparation}
           onToggleActive={handleToggleActive}
           onVerify={handleVerifyIngredient}
+          onVerifyCategory={handleVerifyCategory}
           onEditCategory={(cat) => handleEditCategory(cat as IngredientCategory)}
           onDeleteCategory={(cat) => handleDeleteCategory(cat as IngredientCategory)}
         />

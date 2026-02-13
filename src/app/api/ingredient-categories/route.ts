@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
       icon,
       color,
       sortOrder,
+      needsVerification,
     } = body
 
     if (!locationId || !name) {
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
         icon,
         color,
         sortOrder: finalSortOrder,
+        needsVerification: needsVerification ?? false,
       },
     })
 
