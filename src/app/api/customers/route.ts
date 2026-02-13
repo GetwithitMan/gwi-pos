@@ -29,7 +29,6 @@ export async function GET(request: NextRequest) {
       ],
     } : {}
 
-    // For SQLite with JSON tags field, use string_contains to search within the JSON array
     const tagFilter = tag ? { tags: { string_contains: tag } } : {}
 
     const customers = await db.customer.findMany({

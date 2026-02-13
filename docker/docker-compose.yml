@@ -1,12 +1,10 @@
-# GWI POS - Docker Compose (SQLite Version)
+# GWI POS - Docker Compose (PostgreSQL / Neon)
 #
-# For local restaurant servers using SQLite database.
-# Simpler setup with file-based database.
+# For local restaurant servers using cloud PostgreSQL (Neon).
+# DATABASE_URL and DIRECT_URL are provided by provision.sh.
 #
 # Usage:
 #   docker-compose up -d
-#
-# Data is persisted in ./data/ directory
 
 version: '3.8'
 
@@ -24,7 +22,8 @@ services:
       - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=file:/app/data/pos.db
+      - DATABASE_URL=${DATABASE_URL}
+      - DIRECT_URL=${DIRECT_URL}
       - TZ=${TZ:-America/New_York}
       # Location configuration
       - LOCATION_ID=${LOCATION_ID}
@@ -42,11 +41,6 @@ services:
       - PUSHER_KEY=${PUSHER_KEY}
       - PUSHER_SECRET=${PUSHER_SECRET}
       - PUSHER_CLUSTER=${PUSHER_CLUSTER}
-    volumes:
-      # Persist database and backups
-      - ./data:/app/data
-      # Optional: mount custom config
-      - ./config:/app/config:ro
     networks:
       - gwi-network
     labels:
@@ -78,36 +72,6 @@ services:
     networks:
       - gwi-network
 
-  # ===========================================================================
-  # Backup Service (Optional)
-  # ===========================================================================
-  backup:
-    image: alpine:latest
-    container_name: gwi-backup
-    restart: unless-stopped
-    environment:
-      - TZ=${TZ:-America/New_York}
-      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
-      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
-    volumes:
-      - ./data:/data
-      - ./backups:/backups
-      - ./scripts:/scripts:ro
-    entrypoint: |
-      /bin/sh -c '
-        apk add --no-cache sqlite dcron
-        echo "$${BACKUP_SCHEDULE} /scripts/backup.sh" | crontab -
-        crond -f -l 2
-      '
-    networks:
-      - gwi-network
-    profiles:
-      - backup
-
 networks:
   gwi-network:
     driver: bridge
-
-volumes:
-  gwi-data:
-    driver: local
