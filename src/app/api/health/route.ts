@@ -9,6 +9,7 @@
 
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,7 +29,7 @@ interface HealthResponse {
 // Track server start time for uptime
 const startTime = Date.now()
 
-export async function GET(): Promise<NextResponse<HealthResponse>> {
+export const GET = withVenue(async function GET(): Promise<NextResponse<HealthResponse>> {
   const timestamp = new Date().toISOString()
   const uptime = Math.floor((Date.now() - startTime) / 1000)
   const version = process.env.npm_package_version || '1.0.0'
@@ -78,4 +79,4 @@ export async function GET(): Promise<NextResponse<HealthResponse>> {
   const httpStatus = status === 'healthy' ? 200 : status === 'degraded' ? 200 : 503
 
   return NextResponse.json(response, { status: httpStatus })
-}
+})

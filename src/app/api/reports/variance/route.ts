@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateTheoreticalUsage, toNumber } from '@/lib/inventory-calculations'
 import { varianceQuerySchema, validateRequest } from '@/lib/validations'
+import { withVenue } from '@/lib/with-venue'
 
 interface VarianceItem {
   inventoryItemId: string
@@ -23,7 +24,7 @@ interface VarianceItem {
 }
 
 // GET - Calculate actual vs theoretical variance
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
 
@@ -226,4 +227,4 @@ export async function GET(request: NextRequest) {
     console.error('Variance report error:', error)
     return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 })
   }
-}
+})

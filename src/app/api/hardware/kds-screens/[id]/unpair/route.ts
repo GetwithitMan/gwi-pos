@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // POST /api/hardware/kds-screens/[id]/unpair - Remove device pairing
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -39,4 +40,4 @@ export async function POST(
     console.error('Failed to unpair device:', error)
     return NextResponse.json({ error: 'Failed to unpair device' }, { status: 500 })
   }
-}
+})

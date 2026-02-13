@@ -21,6 +21,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { RoutingResult } from '@/types/routing'
+import { withVenue } from '@/lib/with-venue'
 
 // In production, verify internal API secret
 const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || 'dev-internal-secret'
@@ -32,7 +33,7 @@ interface BroadcastRequest {
   payload?: unknown
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   // Verify internal secret (skip in development for easier testing)
   if (process.env.NODE_ENV === 'production') {
     const secret = request.headers.get('X-Internal-Secret')
@@ -294,4 +295,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

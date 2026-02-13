@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import crypto from 'crypto'
+import { withVenue } from '@/lib/with-venue'
 
 // GET single terminal
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -52,10 +53,10 @@ export async function GET(
     console.error('Failed to fetch terminal:', error)
     return NextResponse.json({ error: 'Failed to fetch terminal' }, { status: 500 })
   }
-}
+})
 
 // PUT update terminal
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -240,10 +241,10 @@ export async function PUT(
     }
     return NextResponse.json({ error: 'Failed to update terminal' }, { status: 500 })
   }
-}
+})
 
 // DELETE terminal (soft delete)
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -271,4 +272,4 @@ export async function DELETE(
     console.error('Failed to delete terminal:', error)
     return NextResponse.json({ error: 'Failed to delete terminal' }, { status: 500 })
   }
-}
+})

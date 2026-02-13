@@ -2,9 +2,10 @@ import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { logger } from '@/lib/logger'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List all floor plan elements for a location (optionally filtered by section)
-export async function GET(req: Request) {
+export const GET = withVenue(async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const locationId = searchParams.get('locationId')
   const sectionId = searchParams.get('sectionId')
@@ -88,10 +89,10 @@ export async function GET(req: Request) {
     console.error('[floor-plan-elements] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch elements' }, { status: 500 })
   }
-}
+})
 
 // POST - Create a new floor plan element
-export async function POST(req: Request) {
+export const POST = withVenue(async function POST(req: Request) {
   try {
     const body = await req.json()
     logger.log('[floor-plan-elements] POST body:', body)
@@ -240,4 +241,4 @@ export async function POST(req: Request) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json({ error: `Failed to create element: ${message}` }, { status: 500 })
   }
-}
+})

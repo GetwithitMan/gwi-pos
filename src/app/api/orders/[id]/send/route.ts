@@ -6,9 +6,10 @@ import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
+import { withVenue } from '@/lib/with-venue'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -228,4 +229,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

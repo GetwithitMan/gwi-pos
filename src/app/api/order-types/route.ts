@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { SYSTEM_ORDER_TYPES } from '@/types/order-types'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List all order types for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -34,10 +35,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // POST - Create a new order type
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -104,10 +105,10 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // PUT - Initialize system order types for a location
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId } = body
@@ -169,4 +170,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

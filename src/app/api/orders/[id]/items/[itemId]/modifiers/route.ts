@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // PUT - Update modifiers on an existing order item
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
@@ -82,4 +83,4 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})

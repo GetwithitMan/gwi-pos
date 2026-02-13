@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List all categories for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -40,9 +41,9 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, color, categoryType, categoryShow, printerIds } = body
@@ -107,4 +108,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET /api/time-clock/status?employeeId=X - Check if employee is clocked in
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const employeeId = request.nextUrl.searchParams.get('employeeId')
 
@@ -37,4 +38,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

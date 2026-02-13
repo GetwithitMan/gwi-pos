@@ -3,10 +3,11 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Check if tab needs auto-increment and fire IncrementalAuth if so
 // Called after adding items to a tab. Fires silently in the background.
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -172,4 +173,4 @@ export async function POST(
     console.error('Failed to auto-increment:', error)
     return NextResponse.json({ error: 'Failed to auto-increment' }, { status: 500 })
   }
-}
+})

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/menu/items/[id]/recipe
  * Get recipe ingredients for a menu item (cocktail)
  */
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -95,14 +96,14 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * POST /api/menu/items/[id]/recipe
  * Save recipe ingredients for a menu item
  * Replaces all existing ingredients with the new list
  */
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -242,13 +243,13 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * DELETE /api/menu/items/[id]/recipe
  * Remove all recipe ingredients from a menu item
  */
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -267,4 +268,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List bottle service tiers for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -33,10 +34,10 @@ export async function GET(request: NextRequest) {
     console.error('Failed to list bottle service tiers:', error)
     return NextResponse.json({ error: 'Failed to list bottle service tiers' }, { status: 500 })
   }
-}
+})
 
 // POST - Create a new bottle service tier
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, name, description, color, depositAmount, minimumSpend, autoGratuityPercent, sortOrder } = body
@@ -75,4 +76,4 @@ export async function POST(request: NextRequest) {
     console.error('Failed to create bottle service tier:', error)
     return NextResponse.json({ error: 'Failed to create bottle service tier' }, { status: 500 })
   }
-}
+})

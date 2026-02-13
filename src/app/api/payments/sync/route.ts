@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 const DEFAULT_LOCATION_ID = 'loc-1'
 
@@ -10,7 +11,7 @@ const DEFAULT_LOCATION_ID = 'loc-1'
  * These payments were authorized while online, but captured while offline.
  * They need special handling for reconciliation.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -190,14 +191,14 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * GET /api/payments/sync
  *
  * Get payments that need reconciliation (offline-captured)
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
@@ -257,14 +258,14 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * PATCH /api/payments/sync
  *
  * Mark payments as reconciled
  */
-export async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const { paymentIds, reconciledBy } = body
@@ -300,4 +301,4 @@ export async function PATCH(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

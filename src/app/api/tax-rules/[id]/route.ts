@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get a single tax rule
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -34,10 +35,10 @@ export async function GET(
     console.error('Failed to fetch tax rule:', error)
     return NextResponse.json({ error: 'Failed to fetch tax rule' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update a tax rule
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -79,10 +80,10 @@ export async function PUT(
     console.error('Failed to update tax rule:', error)
     return NextResponse.json({ error: 'Failed to update tax rule' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Delete a tax rule
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -100,4 +101,4 @@ export async function DELETE(
     console.error('Failed to delete tax rule:', error)
     return NextResponse.json({ error: 'Failed to delete tax rule' }, { status: 500 })
   }
-}
+})

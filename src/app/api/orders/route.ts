@@ -10,9 +10,10 @@ import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { getLocationSettings } from '@/lib/location-cache'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Create a new order
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
@@ -335,10 +336,10 @@ export async function POST(request: NextRequest) {
 
     return apiError.internalError('Failed to create order', ERROR_CODES.INTERNAL_ERROR)
   }
-}
+})
 
 // GET - List orders with pagination (for order history, kitchen display, etc.)
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -422,4 +423,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

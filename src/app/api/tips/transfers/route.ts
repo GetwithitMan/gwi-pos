@@ -16,10 +16,11 @@ import {
   dollarsToCents,
   centsToDollars,
 } from '@/lib/domain/tips'
+import { withVenue } from '@/lib/with-venue'
 
 // ─── POST: Create a tip transfer ────────────────────────────────────────────
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, fromEmployeeId, toEmployeeId, amount, memo } = body
@@ -183,11 +184,11 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── GET: List transfer history ──────────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -284,4 +285,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

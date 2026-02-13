@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string; groupId: string }>
 }
 
 // PUT /api/menu/items/[id]/modifier-groups/[groupId] - Update modifier group
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
@@ -131,7 +132,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     console.error('Error updating modifier group:', error)
     return NextResponse.json({ error: 'Failed to update modifier group' }, { status: 500 })
   }
-}
+})
 
 // Recursively collect all group IDs and modifier IDs under a group (for cascade delete)
 async function collectDescendants(groupId: string, groupIds: Set<string>, modifierIds: Set<string>, visited = new Set<string>()) {
@@ -155,7 +156,7 @@ async function collectDescendants(groupId: string, groupIds: Set<string>, modifi
 }
 
 // DELETE /api/menu/items/[id]/modifier-groups/[groupId] - Delete modifier group (cascade)
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId, groupId } = await params
     const { searchParams } = new URL(request.url)
@@ -212,4 +213,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     console.error('Error deleting modifier group:', error)
     return NextResponse.json({ error: 'Failed to delete modifier group' }, { status: 500 })
   }
-}
+})

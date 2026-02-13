@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // GET - Get all floor plan entertainment elements with their status
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -201,10 +202,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // PATCH - Update floor plan element status
-export async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const { elementId, locationId, status, currentOrderId, sessionStartedAt, sessionExpiresAt } = body
@@ -302,4 +303,4 @@ export async function PATCH(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

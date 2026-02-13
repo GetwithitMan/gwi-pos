@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET all modifier groups with their modifiers
 // Optional query params:
 //   - channel: 'online' | 'pos' - filter modifiers by channel visibility
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const channel = searchParams.get('channel') // 'online', 'pos', or null (admin - show all)
@@ -112,10 +113,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // POST create new modifier group
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, displayName, modifierTypes, minSelections, maxSelections, isRequired, allowStacking, hasOnlineOverride, isSpiritGroup, modifiers } = body
@@ -215,4 +216,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

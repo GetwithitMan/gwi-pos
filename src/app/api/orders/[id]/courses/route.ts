@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // Default course names for display
 const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
@@ -12,7 +13,7 @@ const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
 }
 
 // GET - Get course status for an order
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -145,10 +146,10 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 // POST - Fire a course or update course settings
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -371,4 +372,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

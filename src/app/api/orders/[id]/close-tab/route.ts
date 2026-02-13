@@ -4,10 +4,11 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Close tab by capturing against cards
 // Supports: device tip, receipt tip (PrintBlankLine), or tip already included
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -193,4 +194,4 @@ export async function POST(
     console.error('Failed to close tab:', error)
     return NextResponse.json({ error: 'Failed to close tab' }, { status: 500 })
   }
-}
+})

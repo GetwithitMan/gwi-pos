@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List closed orders (paid, closed) with search, pagination, date range, tip filtering
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -205,4 +206,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

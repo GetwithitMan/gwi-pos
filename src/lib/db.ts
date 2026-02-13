@@ -18,7 +18,7 @@ function createPrismaClient(url?: string) {
 // Master database client (gwi_pos — default/fallback)
 // ============================================================================
 
-const masterClient = globalForPrisma.prisma ?? createPrismaClient()
+export const masterClient = globalForPrisma.prisma ?? createPrismaClient()
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = masterClient
 
 // ============================================================================

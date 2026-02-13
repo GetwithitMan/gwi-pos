@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
+import { withVenue } from '@/lib/with-venue'
 
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -102,4 +103,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

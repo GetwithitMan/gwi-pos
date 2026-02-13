@@ -22,6 +22,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { withVenue } from '@/lib/with-venue'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,7 +31,7 @@ export const dynamic = 'force-dynamic'
 // GET - List Errors
 // ============================================
 
-export async function GET(req: NextRequest) {
+export const GET = withVenue(async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
 
@@ -159,7 +160,7 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ============================================
 // GET - Error Statistics

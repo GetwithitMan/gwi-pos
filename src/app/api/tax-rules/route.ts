@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List tax rules
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -35,10 +36,10 @@ export async function GET(request: NextRequest) {
     console.error('Tax rules error:', error)
     return NextResponse.json({ error: 'Failed to fetch tax rules' }, { status: 500 })
   }
-}
+})
 
 // POST - Create tax rule
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -85,4 +86,4 @@ export async function POST(request: NextRequest) {
     console.error('Create tax rule error:', error)
     return NextResponse.json({ error: 'Failed to create tax rule' }, { status: 500 })
   }
-}
+})

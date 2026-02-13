@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * POST /api/eod/reset
@@ -9,7 +10,7 @@ import { db } from '@/lib/db'
  * 1. Reset all table statuses to 'available'
  * 2. Clear any stale session data
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, employeeId, dryRun = false } = body
@@ -187,14 +188,14 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * GET /api/eod/reset?locationId=xxx
  *
  * Check EOD reset status - what needs to be cleaned up
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -259,4 +260,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

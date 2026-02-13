@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/inventory/86-status
@@ -7,7 +8,7 @@ import { db } from '@/lib/db'
  * Returns all inventory items with their 86 status and affected items count.
  * Used by the Quick 86 page.
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -210,7 +211,7 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching 86 status:', error)
     return NextResponse.json({ error: 'Failed to fetch 86 status' }, { status: 500 })
   }
-}
+})
 
 /**
  * POST /api/inventory/86-status
@@ -218,7 +219,7 @@ export async function GET(request: NextRequest) {
  * Toggle the 86 status of an ingredient.
  * Returns the updated ingredient and list of affected items.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientId, is86d, employeeId } = body
@@ -338,14 +339,14 @@ export async function POST(request: NextRequest) {
     console.error('Error updating 86 status:', error)
     return NextResponse.json({ error: 'Failed to update 86 status' }, { status: 500 })
   }
-}
+})
 
 /**
  * PATCH /api/inventory/86-status
  *
  * Toggle the showOnQuick86 flag for an ingredient.
  */
-export async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientId, showOnQuick86 } = body
@@ -379,4 +380,4 @@ export async function PATCH(request: NextRequest) {
     console.error('Error updating Quick 86 status:', error)
     return NextResponse.json({ error: 'Failed to update Quick 86 status' }, { status: 500 })
   }
-}
+})

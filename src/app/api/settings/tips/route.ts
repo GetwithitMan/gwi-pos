@@ -4,9 +4,10 @@ import { parseSettings } from '@/lib/settings'
 import type { TipBankSettings, TipShareSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withVenue } from '@/lib/with-venue'
 
 // GET tip settings for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -50,10 +51,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // PUT update tip settings for a location
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, employeeId, tipBank, tipShares } = body as {
@@ -141,4 +142,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

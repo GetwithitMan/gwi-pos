@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLedgerBalance, getLedgerEntries, centsToDollars } from '@/lib/domain/tips'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get the requesting employee's own ledger balance + recent entries
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -87,4 +88,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

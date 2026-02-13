@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -29,7 +30,7 @@ function calculateBottleMetrics(
  * GET /api/liquor/bottles
  * List all bottle products for the location
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const tier = searchParams.get('tier')
@@ -131,14 +132,14 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * POST /api/liquor/bottles
  * Create a new bottle product with auto-calculated metrics
  * Also creates a linked InventoryItem for unified stock tracking
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -307,4 +308,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

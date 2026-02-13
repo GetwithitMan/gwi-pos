@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic'
 // POST - Log Performance Issue
 // ============================================
 
-export async function POST(req: NextRequest) {
+export const POST = withVenue(async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ============================================
 // Helper: Performance Monitor Utility

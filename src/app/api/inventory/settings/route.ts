@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 const DEFAULT_SETTINGS = {
   // Tracking mode
@@ -25,7 +26,7 @@ const DEFAULT_SETTINGS = {
 }
 
 // GET - Get inventory settings for location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -101,10 +102,10 @@ export async function GET(request: NextRequest) {
     console.error('Get inventory settings error:', error)
     return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
   }
-}
+})
 
 // POST - Create or update inventory settings
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, ...settingsData } = body
@@ -216,4 +217,4 @@ export async function POST(request: NextRequest) {
     console.error('Save inventory settings error:', error)
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 })
   }
-}
+})

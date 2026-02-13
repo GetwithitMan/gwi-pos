@@ -10,12 +10,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withVenue } from '@/lib/with-venue'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
 // ─── GET: Single template ────────────────────────────────────────────────────
 
-export async function GET(request: NextRequest, context: RouteContext) {
+export const GET = withVenue(async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params
     const locationId = request.nextUrl.searchParams.get('locationId')
@@ -70,11 +71,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── PUT: Update template ────────────────────────────────────────────────────
 
-export async function PUT(request: NextRequest, context: RouteContext) {
+export const PUT = withVenue(async function PUT(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params
     const body = await request.json()
@@ -149,11 +150,11 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── DELETE: Soft delete template ────────────────────────────────────────────
 
-export async function DELETE(request: NextRequest, context: RouteContext) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params
     const locationId = request.nextUrl.searchParams.get('locationId')
@@ -203,4 +204,4 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
-export async function GET() {
+export const GET = withVenue(async function GET() {
   try {
     const location = await db.location.findFirst({
       select: {
@@ -22,9 +23,9 @@ export async function GET() {
     console.error('Failed to fetch location:', error)
     return NextResponse.json({ error: 'Failed to fetch location' }, { status: 500 })
   }
-}
+})
 
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, address, phone, timezone } = body
@@ -57,4 +58,4 @@ export async function PUT(request: NextRequest) {
     console.error('Failed to update location:', error)
     return NextResponse.json({ error: 'Failed to update location' }, { status: 500 })
   }
-}
+})

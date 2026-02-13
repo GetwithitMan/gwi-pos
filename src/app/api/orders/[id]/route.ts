@@ -4,9 +4,10 @@ import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateTotalWithTip } from '@/lib/order-calculations'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get order details
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -50,11 +51,11 @@ export async function GET(
     console.error('Failed to fetch order:', error)
     return apiError.internalError('Failed to fetch order', ERROR_CODES.INTERNAL_ERROR)
   }
-}
+})
 
 // PUT - Update order METADATA only (NO items)
 // For item updates, use POST /api/orders/[id]/items instead
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -180,4 +181,4 @@ export async function PUT(
     console.error('Failed to update order:', error)
     return apiError.internalError('Failed to update order', ERROR_CODES.INTERNAL_ERROR)
   }
-}
+})

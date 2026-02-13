@@ -16,6 +16,7 @@ import { errorCapture } from '@/lib/error-capture'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -133,7 +134,7 @@ const PaymentRequestSchema = z.object({
 })
 
 // POST - Process payment for order
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -1049,4 +1050,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

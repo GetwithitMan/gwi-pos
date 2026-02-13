@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Release held tickets
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -67,10 +68,10 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})
 
 // DELETE - Release all held tickets for an event (cleanup endpoint)
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -109,4 +110,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

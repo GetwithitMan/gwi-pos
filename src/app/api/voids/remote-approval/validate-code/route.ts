@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface ValidateCodeBody {
   orderId: string
@@ -15,7 +16,7 @@ interface ValidateCodeBody {
   employeeId: string
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body: ValidateCodeBody = await request.json()
     const { orderId, orderItemId, code, employeeId } = body
@@ -126,4 +127,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
+import { withVenue } from '@/lib/with-venue'
 
 // Helper to safely get permissions as an array
 function getPermissionsArray(permissions: unknown): string[] {
@@ -19,7 +20,7 @@ function getPermissionsArray(permissions: unknown): string[] {
 }
 
 // GET - List all roles for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -67,10 +68,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // POST - Create a new role
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight } = body as {
@@ -134,4 +135,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

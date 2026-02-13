@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { convert } from '@/lib/unit-conversions'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * Calculate cost per unit for a single ingredient from DB data (no HTTP calls).
@@ -152,7 +153,7 @@ async function calculateIngredientCost(ingredientId: string): Promise<{
  * For recipe items: Sums component costs directly from DB
  * For prep items: Derives cost from parent ingredient
  */
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -182,4 +183,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})

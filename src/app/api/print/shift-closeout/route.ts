@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { buildShiftCloseoutReceipt } from '@/lib/escpos/shift-closeout-receipt'
 import { sendToPrinter } from '@/lib/printer-connection'
+import { withVenue } from '@/lib/with-venue'
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { shiftId, locationId } = body
@@ -168,4 +169,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Mark an open tab as a walkout and create retry records
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -93,4 +94,4 @@ export async function POST(
     console.error('Failed to mark walkout:', error)
     return NextResponse.json({ error: 'Failed to mark walkout' }, { status: 500 })
   }
-}
+})

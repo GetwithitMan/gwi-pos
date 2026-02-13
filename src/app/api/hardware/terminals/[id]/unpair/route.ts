@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { withVenue } from '@/lib/with-venue'
 
 // POST unpair a terminal (manager action)
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -40,4 +41,4 @@ export async function POST(
     console.error('Failed to unpair terminal:', error)
     return NextResponse.json({ error: 'Failed to unpair terminal' }, { status: 500 })
   }
-}
+})

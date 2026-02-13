@@ -5,6 +5,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 interface CompVoidRequest {
   action: 'comp' | 'void'
@@ -17,7 +18,7 @@ interface CompVoidRequest {
 }
 
 // POST - Comp or void an item
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -265,10 +266,10 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})
 
 // PUT - Undo a comp/void (restore item)
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -376,10 +377,10 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
 // GET - Get comp/void history for an order
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -439,4 +440,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})

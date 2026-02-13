@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchInventoryAdjustment, dispatchStockLevelChange } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * Calculate cost per unit from ingredient data
@@ -35,7 +36,7 @@ function getStockLevel(
  * Returns all daily count items with their current stock levels.
  * Used by the Quick Stock Adjustment page.
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -103,7 +104,7 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching stock items:', error)
     return NextResponse.json({ error: 'Failed to fetch stock items' }, { status: 500 })
   }
-}
+})
 
 /**
  * POST /api/inventory/stock-adjust
@@ -111,7 +112,7 @@ export async function GET(request: NextRequest) {
  * Adjust the stock level of a single ingredient.
  * Supports: set (absolute), add, subtract operations.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientId, operation, quantity, reason, employeeId } = body
@@ -266,7 +267,7 @@ export async function POST(request: NextRequest) {
     console.error('Error adjusting stock:', error)
     return NextResponse.json({ error: 'Failed to adjust stock' }, { status: 500 })
   }
-}
+})
 
 /**
  * PATCH /api/inventory/stock-adjust
@@ -275,7 +276,7 @@ export async function POST(request: NextRequest) {
  * Used by Quick Stock Adjust page with verification.
  * Creates audit trail and cost tracking records.
  */
-export async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const { adjustments, employeeId } = body
@@ -510,4 +511,4 @@ export async function PATCH(request: NextRequest) {
     console.error('Error bulk adjusting stock:', error)
     return NextResponse.json({ error: 'Failed to bulk adjust stock' }, { status: 500 })
   }
-}
+})

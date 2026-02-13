@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyCloudToken } from '@/lib/cloud-auth'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * POST /api/auth/cloud-session
@@ -11,7 +12,7 @@ import { db } from '@/lib/db'
  *
  * Called by the /auth/cloud page after MC redirect.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   const body = await request.json()
   const { token } = body
 
@@ -126,15 +127,15 @@ export async function POST(request: NextRequest) {
   })
 
   return response
-}
+})
 
 /**
  * DELETE /api/auth/cloud-session
  *
  * Clear the cloud session cookie (logout).
  */
-export async function DELETE() {
+export const DELETE = withVenue(async function DELETE() {
   const response = NextResponse.json({ success: true })
   response.cookies.delete('pos-cloud-session')
   return response
-}
+})

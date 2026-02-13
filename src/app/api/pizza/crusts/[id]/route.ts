@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // PATCH /api/pizza/crusts/[id] - Update pizza crust
-export async function PATCH(
+export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -43,10 +44,10 @@ export async function PATCH(
     console.error('Failed to update pizza crust:', error)
     return NextResponse.json({ error: 'Failed to update pizza crust' }, { status: 500 })
   }
-}
+})
 
 // DELETE /api/pizza/crusts/[id] - Delete pizza crust (soft delete)
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -63,4 +64,4 @@ export async function DELETE(
     console.error('Failed to delete pizza crust:', error)
     return NextResponse.json({ error: 'Failed to delete pizza crust' }, { status: 500 })
   }
-}
+})

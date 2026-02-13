@@ -4,9 +4,10 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
+import { withVenue } from '@/lib/with-venue'
 
 // GET commission report
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const startDate = searchParams.get('startDate')
@@ -204,4 +205,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

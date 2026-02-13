@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List storage locations
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -34,10 +35,10 @@ export async function GET(request: NextRequest) {
     console.error('Storage locations list error:', error)
     return NextResponse.json({ error: 'Failed to fetch storage locations' }, { status: 500 })
   }
-}
+})
 
 // POST - Create storage location
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, name, description, sortOrder } = body
@@ -76,4 +77,4 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to create storage location' }, { status: 500 })
   }
-}
+})

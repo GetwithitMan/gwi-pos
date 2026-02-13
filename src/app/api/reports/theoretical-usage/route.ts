@@ -3,9 +3,10 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateTheoreticalUsage } from '@/lib/inventory-calculations'
 import { theoreticalUsageQuerySchema, validateRequest } from '@/lib/validations'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Calculate theoretical usage based on sales
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
 
@@ -48,4 +49,4 @@ export async function GET(request: NextRequest) {
     console.error('Theoretical usage report error:', error)
     return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 })
   }
-}
+})

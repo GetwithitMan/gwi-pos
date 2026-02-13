@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { withVenue } from '@/lib/with-venue'
 
 const DEFAULT_LOCATION_ID = 'loc-1'
 
 // POST sync an offline order
 // This handles orders that were created while the terminal was offline
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -203,4 +204,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

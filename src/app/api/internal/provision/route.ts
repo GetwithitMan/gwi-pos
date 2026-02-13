@@ -5,6 +5,7 @@ import { hash } from 'bcryptjs'
 import { neon, Pool } from '@neondatabase/serverless'
 import { readFileSync } from 'fs'
 import path from 'path'
+import { withVenue } from '@/lib/with-venue'
 
 // Allow up to 60s for seed (schema push via direct SQL is fast)
 export const maxDuration = 60
@@ -27,7 +28,7 @@ export const maxDuration = 60
  * Response:
  *   { success: true, databaseName: "gwi_pos_joes_bar", slug: "joes-bar" }
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   // ── Auth ──────────────────────────────────────────────────────────────
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
@@ -128,7 +129,7 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ============================================================================
 // Default venue seed (minimal — just enough to log in and start building)

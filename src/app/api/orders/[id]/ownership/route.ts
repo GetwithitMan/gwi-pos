@@ -16,12 +16,13 @@ import {
   removeOrderOwner,
   updateOwnershipSplits,
 } from '@/lib/domain/tips/table-ownership'
+import { withVenue } from '@/lib/with-venue'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
 // ─── GET: Get active ownership for an order ─────────────────────────────────
 
-export async function GET(request: NextRequest, { params }: RouteContext) {
+export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteContext) {
   try {
     const { id: orderId } = await params
     const searchParams = request.nextUrl.searchParams
@@ -60,11 +61,11 @@ export async function GET(request: NextRequest, { params }: RouteContext) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── POST: Add an owner to an order ─────────────────────────────────────────
 
-export async function POST(request: NextRequest, { params }: RouteContext) {
+export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const { id: orderId } = await params
     const body = await request.json()
@@ -170,11 +171,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── PUT: Update ownership split percentages ────────────────────────────────
 
-export async function PUT(request: NextRequest, { params }: RouteContext) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteContext) {
   try {
     const { id: orderId } = await params
     const body = await request.json()
@@ -271,11 +272,11 @@ export async function PUT(request: NextRequest, { params }: RouteContext) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── DELETE: Remove an owner from an order ──────────────────────────────────
 
-export async function DELETE(request: NextRequest, { params }: RouteContext) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteContext) {
   try {
     const { id: orderId } = await params
     const body = await request.json()
@@ -358,4 +359,4 @@ export async function DELETE(request: NextRequest, { params }: RouteContext) {
       { status: 500 }
     )
   }
-}
+})

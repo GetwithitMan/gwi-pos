@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * POST /api/tables/[id]/seats/save-as-default
@@ -7,7 +8,7 @@ import { db } from '@/lib/db'
  * Save all current seat positions as the "builder default" positions.
  * This is used by admins to explicitly save seat arrangements from the floor plan builder.
  */
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -100,4 +101,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

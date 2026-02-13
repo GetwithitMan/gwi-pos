@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchLocationAlert } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,7 +17,7 @@ export const dynamic = 'force-dynamic'
 // POST - Record Health Check
 // ============================================
 
-export async function POST(req: NextRequest) {
+export const POST = withVenue(async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
@@ -114,13 +115,13 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ============================================
 // GET - Get Latest Health Status
 // ============================================
 
-export async function GET(req: NextRequest) {
+export const GET = withVenue(async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const locationId = searchParams.get('locationId')
@@ -184,7 +185,7 @@ export async function GET(req: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ============================================
 // Helper: Health Check Utility

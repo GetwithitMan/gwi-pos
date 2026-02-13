@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 const DEFAULT_LOCATION_ID = 'loc-1'
 
@@ -9,7 +10,7 @@ const DEFAULT_LOCATION_ID = 'loc-1'
  * Fetches sync audit log entries for the admin dashboard.
  * This is the "Timeline of Truth" for dispute resolution.
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
@@ -120,14 +121,14 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * POST /api/admin/sync-audit
  *
  * Creates a sync audit entry. Used by the sync-resolution endpoint.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -178,4 +179,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

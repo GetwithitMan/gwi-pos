@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { withVenue } from '@/lib/with-venue'
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -29,14 +30,14 @@ export async function GET(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-}
+})
 
 interface BatchCloseRequest {
   locationId: string
   readerId: string
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json() as BatchCloseRequest
     const { locationId, readerId } = body
@@ -61,4 +62,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-}
+})

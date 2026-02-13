@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getEffectiveCost, toNumber } from '@/lib/inventory-calculations'
 import { createModifierInventoryLinkSchema, validateRequest } from '@/lib/validations'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get inventory link for modifier
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -73,10 +74,10 @@ export async function GET(
     console.error('Get modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory link' }, { status: 500 })
   }
-}
+})
 
 // POST - Create or update inventory link for modifier
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -199,10 +200,10 @@ export async function POST(
     console.error('Save modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to save inventory link' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Remove inventory link from modifier
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -227,4 +228,4 @@ export async function DELETE(
     console.error('Delete modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to delete inventory link' }, { status: 500 })
   }
-}
+})

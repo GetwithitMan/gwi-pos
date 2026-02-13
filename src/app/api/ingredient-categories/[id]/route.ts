@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 // GET /api/ingredient-categories/[id] - Get a single category with its ingredients
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -49,11 +50,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Error fetching ingredient category:', error)
     return NextResponse.json({ error: 'Failed to fetch ingredient category' }, { status: 500 })
   }
-}
+})
 
 // PUT /api/ingredient-categories/[id] - Update a category
 // NOTE: code is IMMUTABLE and cannot be changed
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -121,11 +122,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     console.error('Error updating ingredient category:', error)
     return NextResponse.json({ error: 'Failed to update ingredient category' }, { status: 500 })
   }
-}
+})
 
 // DELETE /api/ingredient-categories/[id] - Soft delete a category
 // If category has items, requires confirmDelete: "DELETE" in body to cascade soft-delete them
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -220,4 +221,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     console.error('Error deleting ingredient category:', error)
     return NextResponse.json({ error: 'Failed to delete ingredient category' }, { status: 500 })
   }
-}
+})

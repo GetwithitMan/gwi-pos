@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
 
 // GET /api/hardware/kds-screens/auth - Verify device token and get screen info
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     // Try to get token from httpOnly cookie first (most secure), then header (fallback)
     const cookieToken = request.cookies.get(DEVICE_TOKEN_COOKIE)?.value
@@ -133,4 +134,4 @@ export async function GET(request: NextRequest) {
     console.error('Failed to authenticate KDS:', error)
     return NextResponse.json({ error: 'Failed to authenticate' }, { status: 500 })
   }
-}
+})

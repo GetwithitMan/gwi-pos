@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza/toppings - Get all pizza toppings
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const location = await db.location.findFirst()
     if (!location) {
@@ -31,10 +32,10 @@ export async function GET(request: NextRequest) {
     console.error('Failed to get pizza toppings:', error)
     return NextResponse.json({ error: 'Failed to get pizza toppings' }, { status: 500 })
   }
-}
+})
 
 // POST /api/pizza/toppings - Create pizza topping
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, displayName, description, category, price, extraPrice, color, iconUrl } = body
@@ -80,4 +81,4 @@ export async function POST(request: NextRequest) {
     console.error('Failed to create pizza topping:', error)
     return NextResponse.json({ error: 'Failed to create pizza topping' }, { status: 500 })
   }
-}
+})

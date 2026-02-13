@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { withVenue } from '@/lib/with-venue'
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   const { service } = await request.json()
 
   try {
@@ -34,4 +35,4 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Test failed'
     return NextResponse.json({ success: false, message }, { status: 200 })
   }
-}
+})

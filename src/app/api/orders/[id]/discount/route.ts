@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { withVenue } from '@/lib/with-venue'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -14,7 +15,7 @@ interface ApplyDiscountRequest {
 }
 
 // POST - Apply a discount to an order
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -206,10 +207,10 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})
 
 // GET - Get discounts applied to an order
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -249,10 +250,10 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 // DELETE - Remove a discount from an order
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -330,4 +331,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

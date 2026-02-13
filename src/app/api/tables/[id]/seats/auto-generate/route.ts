@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { generateSeatPositions as generateSeatPositionsFromLib, type SeatPattern as LibSeatPattern } from '@/lib/seat-generation'
 import { SEAT_RADIUS } from '@/lib/floorplan/constants'
+import { withVenue } from '@/lib/with-venue'
 
 type LabelPattern = 'numeric' | 'alpha' | 'alphanumeric'
 
@@ -63,7 +64,7 @@ function pointInRotatedRect(
 }
 
 // POST - Auto-generate seats for a table based on capacity and pattern
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -382,4 +383,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

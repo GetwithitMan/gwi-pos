@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get single waste log entry
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -33,10 +34,10 @@ export async function GET(
     console.error('Get waste log entry error:', error)
     return NextResponse.json({ error: 'Failed to fetch waste log entry' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update waste log entry (limited updates)
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -77,10 +78,10 @@ export async function PUT(
     console.error('Update waste log entry error:', error)
     return NextResponse.json({ error: 'Failed to update waste log entry' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Reverse and soft delete waste log entry (atomic transaction)
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -141,4 +142,4 @@ export async function DELETE(
     console.error('Delete waste log entry error:', error)
     return NextResponse.json({ error: 'Failed to delete waste log entry' }, { status: 500 })
   }
-}
+})

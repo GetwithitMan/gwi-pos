@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 // GET /api/ingredients/[id] - Get a single ingredient with full details
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const locationId = request.nextUrl.searchParams.get('locationId')
@@ -192,10 +193,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Error fetching ingredient:', error)
     return NextResponse.json({ error: 'Failed to fetch ingredient' }, { status: 500 })
   }
-}
+})
 
 // PUT /api/ingredients/[id] - Update an ingredient
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -426,10 +427,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     console.error('Error updating ingredient:', error)
     return NextResponse.json({ error: 'Failed to update ingredient' }, { status: 500 })
   }
-}
+})
 
 // DELETE /api/ingredients/[id] - Soft delete or permanent delete an ingredient
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const { searchParams } = new URL(request.url)
@@ -534,4 +535,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     console.error('Error deleting ingredient:', error)
     return NextResponse.json({ error: 'Failed to delete ingredient' }, { status: 500 })
   }
-}
+})

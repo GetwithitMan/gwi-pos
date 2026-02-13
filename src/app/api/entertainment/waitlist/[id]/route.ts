@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get a specific waitlist entry
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -66,10 +67,10 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 // PATCH - Update waitlist entry status
-export async function PATCH(
+export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -231,10 +232,10 @@ export async function PATCH(
       { status: 500 }
     )
   }
-}
+})
 
 // DELETE - Remove from waitlist (soft delete)
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -319,4 +320,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

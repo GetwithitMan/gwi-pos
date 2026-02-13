@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza/toppings/[id] - Get single pizza topping
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -23,10 +24,10 @@ export async function GET(
     console.error('Failed to get pizza topping:', error)
     return NextResponse.json({ error: 'Failed to get pizza topping' }, { status: 500 })
   }
-}
+})
 
 // PATCH /api/pizza/toppings/[id] - Update pizza topping
-export async function PATCH(
+export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -64,10 +65,10 @@ export async function PATCH(
     console.error('Failed to update pizza topping:', error)
     return NextResponse.json({ error: 'Failed to update pizza topping' }, { status: 500 })
   }
-}
+})
 
 // DELETE /api/pizza/toppings/[id] - Delete pizza topping (soft delete)
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -84,4 +85,4 @@ export async function DELETE(
     console.error('Failed to delete pizza topping:', error)
     return NextResponse.json({ error: 'Failed to delete pizza topping' }, { status: 500 })
   }
-}
+})

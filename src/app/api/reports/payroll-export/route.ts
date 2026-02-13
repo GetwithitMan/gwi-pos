@@ -9,10 +9,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { aggregatePayrollData, formatPayrollCSV } from '@/lib/domain/tips/tip-payroll-export'
+import { withVenue } from '@/lib/with-venue'
 
 // ─── GET: Generate payroll export ────────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -105,4 +106,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

@@ -8,12 +8,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchVoidApprovalUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 interface RejectBody {
   reason?: string
 }
 
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
@@ -114,4 +115,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { withVenue } from '@/lib/with-venue'
 
 interface SplitRequest {
   type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'get_splits'
@@ -13,7 +14,7 @@ interface SplitRequest {
 }
 
 // POST - Split an order into multiple trackable sub-orders
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -822,4 +823,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

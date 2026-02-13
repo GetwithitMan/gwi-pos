@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string; ingredientId: string }>
 }
 
 // PUT /api/menu/items/[id]/ingredients/[ingredientId] - Update ingredient settings for a menu item
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId, ingredientId } = await params
     const body = await request.json()
@@ -110,4 +111,4 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       { status: 500 }
     )
   }
-}
+})

@@ -15,9 +15,10 @@ import {
   formatPhoneE164,
 } from '@/lib/twilio'
 import { dispatchVoidApprovalUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // Twilio sends form-urlencoded data
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     // Parse form data
     const formData = await request.formData()
@@ -201,4 +202,4 @@ export async function POST(request: NextRequest) {
       headers: { 'Content-Type': 'text/xml' },
     })
   }
-}
+})

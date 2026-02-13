@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 // GET - Get a single tray config
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -33,10 +34,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Get tray config error:', error)
     return NextResponse.json({ error: 'Failed to fetch tray config' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update a tray config
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -72,10 +73,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     }
     return NextResponse.json({ error: 'Failed to update tray config' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Soft delete a tray config
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -94,4 +95,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     console.error('Delete tray config error:', error)
     return NextResponse.json({ error: 'Failed to delete tray config' }, { status: 500 })
   }
-}
+})

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { withVenue } from '@/lib/with-venue'
 
 interface CollectCardRequest {
   locationId: string
@@ -8,7 +9,7 @@ interface CollectCardRequest {
   placeholderAmount?: number
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await parseBody<CollectCardRequest>(request)
     const { locationId, readerId, placeholderAmount } = body
@@ -38,4 +39,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-}
+})

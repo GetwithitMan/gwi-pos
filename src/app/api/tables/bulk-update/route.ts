@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { normalizeCoord } from '@/lib/table-geometry'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 interface TablePositionUpdate {
   id: string
@@ -19,7 +20,7 @@ interface TablePositionUpdate {
  * IMPORTANT: All positions are normalized to grid alignment server-side
  * to ensure DB and UI are always on the same grid (prevents phantom "unsaved changes")
  */
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const { tables, locationId } = await request.json() as {
       tables: TablePositionUpdate[]
@@ -93,4 +94,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

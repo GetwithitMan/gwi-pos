@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get single inventory count with items
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -62,10 +63,10 @@ export async function GET(
     console.error('Get inventory count error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory count' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update count (record counts, complete, approve)
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -229,10 +230,10 @@ export async function PUT(
     console.error('Update inventory count error:', error)
     return NextResponse.json({ error: 'Failed to update inventory count' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Soft delete inventory count
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -263,4 +264,4 @@ export async function DELETE(
     console.error('Delete inventory count error:', error)
     return NextResponse.json({ error: 'Failed to delete inventory count' }, { status: 500 })
   }
-}
+})

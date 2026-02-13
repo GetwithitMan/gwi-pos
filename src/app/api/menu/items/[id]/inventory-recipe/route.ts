@@ -6,9 +6,10 @@ import {
   toNumber
 } from '@/lib/inventory-calculations'
 import { createMenuItemRecipeSchema, validateRequest } from '@/lib/validations'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get inventory recipe for menu item (food costing)
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -78,10 +79,10 @@ export async function GET(
     console.error('Get menu item inventory recipe error:', error)
     return NextResponse.json({ error: 'Failed to fetch recipe' }, { status: 500 })
   }
-}
+})
 
 // POST - Create or update inventory recipe for menu item
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -234,10 +235,10 @@ export async function POST(
     console.error('Save menu item inventory recipe error:', error)
     return NextResponse.json({ error: 'Failed to save recipe' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Remove inventory recipe from menu item
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -272,4 +273,4 @@ export async function DELETE(
     console.error('Delete menu item inventory recipe error:', error)
     return NextResponse.json({ error: 'Failed to delete recipe' }, { status: 500 })
   }
-}
+})

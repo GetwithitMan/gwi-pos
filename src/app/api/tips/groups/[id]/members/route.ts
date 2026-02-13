@@ -17,10 +17,11 @@ import {
   getGroupInfo,
 } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // ─── POST: Add member OR request to join ─────────────────────────────────────
 
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -145,11 +146,11 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})
 
 // ─── PUT: Approve a pending join request ──────────────────────────────────────
 
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -229,11 +230,11 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
 // ─── DELETE: Remove member / leave group ──────────────────────────────────────
 
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -338,4 +339,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

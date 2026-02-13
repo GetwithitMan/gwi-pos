@@ -3,10 +3,11 @@ import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
 import { dispatchNewOrder, dispatchEntertainmentUpdate } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
+import { withVenue } from '@/lib/with-venue'
 
 // POST /api/orders/[id]/fire-course - Fire items for a specific course
 // Used by coursing system to send delayed courses to kitchen
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -169,4 +170,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

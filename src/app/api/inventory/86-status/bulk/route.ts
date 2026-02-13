@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * POST /api/inventory/86-status/bulk
@@ -7,7 +8,7 @@ import { db } from '@/lib/db'
  * Bulk update 86 status for multiple ingredients.
  * Useful for donut shops clearing multiple items at once.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientIds, is86d, employeeId } = body
@@ -65,4 +66,4 @@ export async function POST(request: NextRequest) {
     console.error('Error bulk updating 86 status:', error)
     return NextResponse.json({ error: 'Failed to bulk update 86 status' }, { status: 500 })
   }
-}
+})

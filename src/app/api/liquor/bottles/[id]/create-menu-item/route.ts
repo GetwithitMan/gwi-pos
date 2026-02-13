@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * POST /api/liquor/bottles/[id]/create-menu-item
  * Create a menu item linked to a bottle product
  */
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -172,4 +173,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

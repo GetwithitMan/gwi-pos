@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Void an unclosed tab (releases all card holds)
 // Fires VoidSaleByRecordNo for each authorized OrderCard
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -90,4 +91,4 @@ export async function POST(
     console.error('Failed to void tab:', error)
     return NextResponse.json({ error: 'Failed to void tab' }, { status: 500 })
   }
-}
+})

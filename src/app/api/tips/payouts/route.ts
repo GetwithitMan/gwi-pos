@@ -15,10 +15,11 @@ import {
   centsToDollars,
   getLedgerBalance,
 } from '@/lib/domain/tips'
+import { withVenue } from '@/lib/with-venue'
 
 // ─── POST: Cash out tips for a single employee ──────────────────────────────
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, employeeId, amount, shiftId, approvedById, memo } = body
@@ -124,11 +125,11 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── GET: Get payout history ─────────────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -219,4 +220,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

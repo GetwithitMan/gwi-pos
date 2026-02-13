@@ -1,7 +1,8 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
+import { withVenue } from '@/lib/with-venue'
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export const POST = withVenue(async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { removeAtSeatNumber } = await req.json()
   const { id: orderId } = await params
 
@@ -44,4 +45,4 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     console.error('[seating/remove] Shift-down failed:', error)
     return NextResponse.json({ error: 'SHIFT_DOWN_FAILED' }, { status: 500 })
   }
-}
+})

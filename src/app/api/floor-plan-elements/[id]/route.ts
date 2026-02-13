@@ -1,9 +1,10 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get a single floor plan element
-export async function GET(
+export const GET = withVenue(async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -62,10 +63,10 @@ export async function GET(
     console.error('[floor-plan-elements/[id]] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch element' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update a floor plan element
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -165,10 +166,10 @@ export async function PUT(
     console.error('[floor-plan-elements/[id]] PUT error:', error)
     return NextResponse.json({ error: 'Failed to update element' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Soft delete a floor plan element
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -205,4 +206,4 @@ export async function DELETE(
     console.error('[floor-plan-elements/[id]] DELETE error:', error)
     return NextResponse.json({ error: 'Failed to delete element' }, { status: 500 })
   }
-}
+})

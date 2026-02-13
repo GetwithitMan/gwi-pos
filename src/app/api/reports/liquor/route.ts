@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/reports/liquor
@@ -12,7 +13,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
  * - Pour cost analysis
  * - Upsell performance
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const startDate = searchParams.get('startDate')
@@ -346,4 +347,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

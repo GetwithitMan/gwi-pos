@@ -4,9 +4,10 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Generate employee shift report
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const shiftId = searchParams.get('shiftId')
@@ -797,7 +798,7 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 function round(value: number): number {
   return Math.round(value * 100) / 100

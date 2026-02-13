@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GWI POS - Seats Cleanup API
@@ -9,7 +10,7 @@ import { db } from '@/lib/db';
  */
 
 // POST - Clean up duplicate seats
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const { locationId, dryRun = true } = body;
@@ -117,10 +118,10 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
+})
 
 // GET - Check for duplicates without modifying
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const locationId = searchParams.get('locationId');
 
@@ -137,4 +138,4 @@ export async function GET(request: NextRequest) {
   } as NextRequest;
 
   return POST(mockRequest);
-}
+})

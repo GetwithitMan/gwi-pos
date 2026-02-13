@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 interface SeatUpdate {
   id: string
@@ -13,7 +14,7 @@ interface SeatUpdate {
 }
 
 // PUT - Bulk update seat positions
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -99,4 +100,4 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})

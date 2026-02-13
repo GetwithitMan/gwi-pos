@@ -15,6 +15,7 @@ import {
   getAdjustmentHistory,
 } from '@/lib/domain/tips/tip-recalculation'
 import type { AdjustmentType } from '@/lib/domain/tips/tip-recalculation'
+import { withVenue } from '@/lib/with-venue'
 
 // ─── Valid adjustment types ──────────────────────────────────────────────────
 
@@ -28,7 +29,7 @@ const VALID_ADJUSTMENT_TYPES: AdjustmentType[] = [
 
 // ─── GET: List adjustment history ────────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -126,11 +127,11 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── POST: Create a tip adjustment ──────────────────────────────────────────
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, adjustmentType, reason, context, employeeDeltas, recalculate } = body
@@ -273,4 +274,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

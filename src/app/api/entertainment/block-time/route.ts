@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate, dispatchEntertainmentStatusChanged } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Start block time for an order item
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { orderItemId, minutes, locationId } = body
@@ -154,10 +155,10 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // PATCH - Extend block time
-export async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const { orderItemId, additionalMinutes, locationId } = body
@@ -277,10 +278,10 @@ export async function PATCH(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // DELETE - Stop block time early
-export async function DELETE(request: NextRequest) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const orderItemId = searchParams.get('orderItemId')
@@ -403,4 +404,4 @@ export async function DELETE(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

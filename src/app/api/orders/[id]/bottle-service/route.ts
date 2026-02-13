@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Open a bottle service tab (with tier selection + deposit pre-auth)
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -170,10 +171,10 @@ export async function POST(
     console.error('Failed to open bottle service tab:', error)
     return NextResponse.json({ error: 'Failed to open bottle service tab' }, { status: 500 })
   }
-}
+})
 
 // GET - Get bottle service status for an order (spend progress, alerts)
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -249,4 +250,4 @@ export async function GET(
     console.error('Failed to get bottle service status:', error)
     return NextResponse.json({ error: 'Failed to get bottle service status' }, { status: 500 })
   }
-}
+})

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { randomBytes } from 'crypto'
+import { withVenue } from '@/lib/with-venue'
 
 // Cookie name for device token
 const DEVICE_TOKEN_COOKIE = 'kds_device_token'
 
 // POST /api/hardware/kds-screens/pair - Complete pairing with a code
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { pairingCode, deviceInfo } = body
@@ -90,4 +91,4 @@ export async function POST(request: NextRequest) {
     console.error('Failed to complete pairing:', error)
     return NextResponse.json({ error: 'Failed to complete pairing' }, { status: 500 })
   }
-}
+})

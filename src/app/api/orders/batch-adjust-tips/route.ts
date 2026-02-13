@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface TipAdjustment {
   orderId: string
@@ -8,7 +9,7 @@ interface TipAdjustment {
 }
 
 // POST - Batch adjust tips for multiple orders
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const { adjustments, employeeId } = await request.json() as {
       adjustments: TipAdjustment[]
@@ -130,4 +131,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

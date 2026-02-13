@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET /api/ingredients - List ingredients with filtering and grouping
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -310,10 +311,10 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching ingredients:', error)
     return NextResponse.json({ error: 'Failed to fetch ingredients' }, { status: 500 })
   }
-}
+})
 
 // POST /api/ingredients - Create a new ingredient
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -516,4 +517,4 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     return NextResponse.json({ error: 'Failed to create ingredient', detail: message }, { status: 500 })
   }
-}
+})

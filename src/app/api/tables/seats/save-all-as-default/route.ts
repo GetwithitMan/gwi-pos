@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * POST /api/tables/seats/save-all-as-default
@@ -7,7 +8,7 @@ import { db } from '@/lib/db'
  * Save ALL current seat positions across ALL tables as the "builder default" positions.
  * This is used by admins to save the entire floor plan arrangement.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, employeeId, tableIds } = body
@@ -99,4 +100,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza - Get all pizza builder data at once (for PizzaBuilderModal)
-export async function GET() {
+export const GET = withVenue(async function GET() {
   try {
     const location = await db.location.findFirst()
     if (!location) {
@@ -126,4 +127,4 @@ export async function GET() {
     console.error('Failed to get pizza data:', error)
     return NextResponse.json({ error: 'Failed to get pizza data' }, { status: 500 })
   }
-}
+})

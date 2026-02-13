@@ -3,10 +3,11 @@ import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Retry capture for a walkout tab (manual trigger)
 // Also used by cron/scheduler for auto-retry
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}))
     const { walkoutRetryId, employeeId } = body
@@ -133,10 +134,10 @@ export async function POST(request: NextRequest) {
     console.error('Failed to process walkout retry:', error)
     return NextResponse.json({ error: 'Failed to process walkout retry' }, { status: 500 })
   }
-}
+})
 
 // GET - List walkout retries for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -189,4 +190,4 @@ export async function GET(request: NextRequest) {
     console.error('Failed to list walkout retries:', error)
     return NextResponse.json({ error: 'Failed to list walkout retries' }, { status: 500 })
   }
-}
+})

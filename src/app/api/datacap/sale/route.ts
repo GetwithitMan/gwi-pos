@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { requireDatacapClient, validateReader, parseBody, datacapErrorResponse } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { withVenue } from '@/lib/with-venue'
 
 interface SaleRequest {
   locationId: string
@@ -13,7 +14,7 @@ interface SaleRequest {
   employeeId: string
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await parseBody<SaleRequest>(request)
     const { locationId, readerId, invoiceNo, amount, tipAmount, tipMode, tipSuggestions, employeeId } = body
@@ -76,4 +77,4 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return datacapErrorResponse(err)
   }
-}
+})

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const { ingredientIds, parentIngredientId, categoryId, isBaseIngredient } = await request.json()
 
@@ -84,4 +85,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

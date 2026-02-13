@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get single prep item
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -58,10 +59,10 @@ export async function GET(
     console.error('Get prep item error:', error)
     return NextResponse.json({ error: 'Failed to fetch prep item' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update prep item
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -170,10 +171,10 @@ export async function PUT(
     }
     return NextResponse.json({ error: 'Failed to update prep item' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Soft delete prep item
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -207,4 +208,4 @@ export async function DELETE(
     console.error('Delete prep item error:', error)
     return NextResponse.json({ error: 'Failed to delete prep item' }, { status: 500 })
   }
-}
+})

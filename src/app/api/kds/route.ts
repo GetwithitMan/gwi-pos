@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchItemStatus, dispatchOrderBumped } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get orders for KDS display
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -211,10 +212,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // PUT - Mark item(s) as complete (bump) or resend
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { itemIds, action, resendNote } = body as {
@@ -346,4 +347,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

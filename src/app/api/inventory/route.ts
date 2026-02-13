@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List inventory levels and transactions
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -87,10 +88,10 @@ export async function GET(request: NextRequest) {
     console.error('Inventory error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory' }, { status: 500 })
   }
-}
+})
 
 // POST - Record inventory transaction
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -190,4 +191,4 @@ export async function POST(request: NextRequest) {
     console.error('Inventory transaction error:', error)
     return NextResponse.json({ error: 'Failed to record transaction' }, { status: 500 })
   }
-}
+})

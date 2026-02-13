@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { compare } from 'bcryptjs'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * POST /api/auth/verify-pin
@@ -11,7 +12,7 @@ import { compare } from 'bcryptjs'
  * Does NOT create an audit log entry for login - the calling operation
  * should log its own audit entry with the verified employee ID.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const { pin, locationId } = await request.json()
 
@@ -83,4 +84,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

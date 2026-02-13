@@ -5,6 +5,7 @@ import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-errors
 import { validateRequest, idSchema } from '@/lib/validations'
 import { z } from 'zod'
 import { calculateSplitTicketPricing, type OrderItemInput, type RoundingIncrement } from '@/lib/split-pricing'
+import { withVenue } from '@/lib/with-venue'
 
 // ============================================
 // Validation Schemas
@@ -23,7 +24,7 @@ const createSplitTicketsSchema = z.object({
 // GET - Get all split tickets for an order
 // ============================================
 
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -72,13 +73,13 @@ export async function GET(
   } catch (error) {
     return handleApiError(error, 'Failed to get split tickets')
   }
-}
+})
 
 // ============================================
 // POST - Create split tickets from an order
 // ============================================
 
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -299,13 +300,13 @@ export async function POST(
   } catch (error) {
     return handleApiError(error, 'Failed to create split tickets')
   }
-}
+})
 
 // ============================================
 // DELETE - Merge split tickets back to parent
 // ============================================
 
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -363,4 +364,4 @@ export async function DELETE(
   } catch (error) {
     return handleApiError(error, 'Failed to merge split tickets')
   }
-}
+})

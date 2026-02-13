@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List inventory transactions with pagination
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -82,10 +83,10 @@ export async function GET(request: NextRequest) {
     console.error('Inventory transactions list error:', error)
     return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 })
   }
-}
+})
 
 // POST - Create manual adjustment transaction
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -162,4 +163,4 @@ export async function POST(request: NextRequest) {
     console.error('Create inventory transaction error:', error)
     return NextResponse.json({ error: 'Failed to create transaction' }, { status: 500 })
   }
-}
+})

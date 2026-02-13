@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/ingredients/:id/recipe-cost
@@ -7,7 +8,7 @@ import { db } from '@/lib/db'
  * Returns aggregated recipe cost for an ingredient
  * Reduces network chatter by calculating total cost server-side
  */
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -110,4 +111,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})

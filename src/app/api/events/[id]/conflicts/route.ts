@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // Helper to parse HH:MM time to minutes from midnight
 function parseTimeToMinutes(time: string): number {
@@ -43,7 +44,7 @@ function calculateOverlapMinutes(
 }
 
 // GET - Get reservation conflicts for an event
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -136,4 +137,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})

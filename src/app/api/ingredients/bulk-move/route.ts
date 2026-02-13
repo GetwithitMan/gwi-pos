@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * PUT /api/ingredients/bulk-move
  * Move multiple ingredients to a different category
  */
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { ingredientIds, categoryId } = body
@@ -62,4 +63,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

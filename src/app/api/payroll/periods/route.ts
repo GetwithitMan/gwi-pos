@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateTaxes } from '@/lib/payroll/tax-calculator'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List payroll periods
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -60,10 +61,10 @@ export async function GET(request: NextRequest) {
     console.error('Failed to fetch payroll periods:', error)
     return NextResponse.json({ error: 'Failed to fetch payroll periods' }, { status: 500 })
   }
-}
+})
 
 // POST - Create a new payroll period
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, periodStart, periodEnd, periodType } = body
@@ -118,4 +119,4 @@ export async function POST(request: NextRequest) {
     console.error('Failed to create payroll period:', error)
     return NextResponse.json({ error: 'Failed to create payroll period' }, { status: 500 })
   }
-}
+})

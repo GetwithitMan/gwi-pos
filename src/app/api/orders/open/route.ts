@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // GET - List all open orders (any type)
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -264,4 +265,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

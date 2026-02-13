@@ -10,10 +10,11 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { checkDeclarationMinimum } from '@/lib/domain/tips/tip-compliance'
+import { withVenue } from '@/lib/with-venue'
 
 // ─── POST: Declare cash tips ─────────────────────────────────────────────────
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, employeeId, shiftId, amountCents, totalSalesCents } = body
@@ -155,11 +156,11 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── GET: List cash tip declarations ─────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -284,4 +285,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

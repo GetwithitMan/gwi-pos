@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/liquor/menu-items
  * List all menu items in liquor categories (what shows on POS)
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     // Get the location (for now using first location)
     const location = await db.location.findFirst()
@@ -92,4 +93,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

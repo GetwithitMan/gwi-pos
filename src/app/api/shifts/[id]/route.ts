@@ -3,9 +3,10 @@ import { db } from '@/lib/db'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get shift details with sales summary
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -78,10 +79,10 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 // PUT - Close shift / update shift
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -282,7 +283,7 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
 // Helper function to calculate shift summary
 async function calculateShiftSummary(

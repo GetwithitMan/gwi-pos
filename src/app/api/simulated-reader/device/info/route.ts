@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { checkSimulatedReaderAccess } from '../../guard'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * Simulated Datacap Reader - Device Info
@@ -7,7 +8,7 @@ import { checkSimulatedReaderAccess } from '../../guard'
  * Returns a simulated reader identity for development/testing.
  * BLOCKED in production via NODE_ENV guard.
  */
-export async function GET() {
+export const GET = withVenue(async function GET() {
   const blocked = checkSimulatedReaderAccess()
   if (blocked) return blocked
 
@@ -17,4 +18,4 @@ export async function GET() {
     model: 'GWI Simulated Reader',
     status: 'ready',
   })
-}
+})

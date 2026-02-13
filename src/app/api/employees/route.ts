@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPin } from '@/lib/auth'
 import { createEmployeeSchema, validateRequest } from '@/lib/validations'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List employees for a location with pagination
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -81,10 +82,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // POST - Create a new employee
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
@@ -186,4 +187,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

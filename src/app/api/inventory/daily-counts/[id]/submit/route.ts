@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 // POST - Submit a daily count for approval
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -75,4 +76,4 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.error('Submit daily count error:', error)
     return NextResponse.json({ error: 'Failed to submit daily count' }, { status: 500 })
   }
-}
+})

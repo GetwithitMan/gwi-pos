@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 // GET - Get a single daily count session with all items
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -83,10 +84,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Get daily count error:', error)
     return NextResponse.json({ error: 'Failed to fetch daily count' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update count session or add/update count items
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -196,10 +197,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     console.error('Update daily count error:', error)
     return NextResponse.json({ error: 'Failed to update daily count' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Soft delete a daily count session
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -222,4 +223,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     console.error('Delete daily count error:', error)
     return NextResponse.json({ error: 'Failed to delete daily count' }, { status: 500 })
   }
-}
+})

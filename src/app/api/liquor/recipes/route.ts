@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/liquor/recipes
  * List all cocktails that have recipes defined
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('categoryId')
@@ -136,4 +137,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

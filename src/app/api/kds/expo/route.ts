@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * Expo KDS API - Returns all items from all stations for expeditor view
@@ -10,7 +11,7 @@ import { db } from '@/lib/db'
  */
 
 // GET - Get all orders for expo display
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -161,10 +162,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // PUT - Update item status from expo
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { itemIds, action, status } = body
@@ -234,4 +235,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

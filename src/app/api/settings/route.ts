@@ -3,13 +3,14 @@ import { db } from '@/lib/db'
 import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withVenue } from '@/lib/with-venue'
 
 // Category types that map to liquor/food tax-inclusive flags
 const LIQUOR_CATEGORY_TYPES = ['liquor', 'drinks']
 const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
 
 // GET location settings
-export async function GET() {
+export const GET = withVenue(async function GET() {
   try {
     const location = await db.location.findFirst()
     if (!location) {
@@ -78,10 +79,10 @@ export async function GET() {
       { status: 500 }
     )
   }
-}
+})
 
 // PUT update location settings
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { settings, employeeId } = body as { settings: Partial<LocationSettings>; employeeId?: string }
@@ -161,4 +162,4 @@ export async function PUT(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

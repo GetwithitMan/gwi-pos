@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // Table status validation
 const VALID_STATUSES = ['available', 'occupied', 'dirty', 'reserved'] as const
@@ -11,7 +12,7 @@ function isValidStatus(s: string | null): s is TableStatus {
 }
 
 // GET - List all tables for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -151,10 +152,10 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // POST - Create a new table
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -273,4 +274,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
-export async function PATCH(
+export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -124,4 +125,4 @@ export async function PATCH(
       { status: 500 }
     )
   }
-}
+})

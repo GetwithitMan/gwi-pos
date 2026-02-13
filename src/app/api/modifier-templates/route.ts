@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 const DEMO_LOCATION_ID = 'loc-demo-001'
 
 // GET /api/modifier-templates - Get all modifier group templates
-export async function GET() {
+export const GET = withVenue(async function GET() {
   try {
     const templates = await db.modifierGroupTemplate.findMany({
       where: {
@@ -46,10 +47,10 @@ export async function GET() {
     console.error('Error fetching modifier templates:', error)
     return NextResponse.json({ error: 'Failed to fetch templates' }, { status: 500 })
   }
-}
+})
 
 // POST /api/modifier-templates - Create a new template
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -137,4 +138,4 @@ export async function POST(request: NextRequest) {
     console.error('Error creating modifier template:', error)
     return NextResponse.json({ error: 'Failed to create template' }, { status: 500 })
   }
-}
+})

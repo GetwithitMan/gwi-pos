@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 const DEFAULT_LOCATION_ID = 'loc-1'
 
 // POST terminal heartbeat - updates online status
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     // Get token from httpOnly cookie
     const terminalToken = request.cookies.get('terminal_token')?.value
@@ -95,4 +96,4 @@ export async function POST(request: NextRequest) {
     console.error('Terminal heartbeat failed:', error)
     return NextResponse.json({ error: 'Heartbeat failed' }, { status: 500 })
   }
-}
+})

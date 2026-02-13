@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get ticket details
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -150,10 +151,10 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 // PUT - Update ticket (transfer, update customer info)
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -214,10 +215,10 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})
 
 // DELETE - Cancel ticket
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -283,4 +284,4 @@ export async function DELETE(
       { status: 500 }
     )
   }
-}
+})

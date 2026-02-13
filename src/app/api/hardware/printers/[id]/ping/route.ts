@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { testPrinterConnection } from '@/lib/printer-connection'
+import { withVenue } from '@/lib/with-venue'
 
 // POST test printer connection
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -45,4 +46,4 @@ export async function POST(
     console.error('Failed to ping printer:', error)
     return NextResponse.json({ error: 'Failed to ping printer' }, { status: 500 })
   }
-}
+})

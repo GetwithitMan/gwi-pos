@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getDbForVenue, venueDbName } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/internal/venue-health?slug=joes-bar
@@ -17,7 +18,7 @@ import { getDbForVenue, venueDbName } from '@/lib/db'
  *   { ok: true, slug, database, tables: 139, latencyMs: 12 }
  *   { ok: false, slug, error: "..." }
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   const apiKey = request.headers.get('x-api-key')
   if (!apiKey || apiKey !== process.env.PROVISION_API_KEY) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -59,4 +60,4 @@ export async function GET(request: NextRequest) {
       error: error instanceof Error ? error.message : 'Connection failed',
     }, { status: 503 })
   }
-}
+})

@@ -11,9 +11,10 @@ import {
   PAPER_WIDTH,
 } from '@/lib/escpos/commands'
 import { PrinterSettings } from '@/types/printer-settings'
+import { withVenue } from '@/lib/with-venue'
 
 // POST print test page
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -178,4 +179,4 @@ export async function POST(
     console.error('Failed to print test page:', error)
     return NextResponse.json({ error: 'Failed to print test page' }, { status: 500 })
   }
-}
+})

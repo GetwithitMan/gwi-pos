@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get single invoice with line items
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -45,10 +46,10 @@ export async function GET(
     console.error('Get invoice error:', error)
     return NextResponse.json({ error: 'Failed to fetch invoice' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update invoice or apply to inventory
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -168,10 +169,10 @@ export async function PUT(
     console.error('Update invoice error:', error)
     return NextResponse.json({ error: 'Failed to update invoice' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Soft delete invoice (only if pending)
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -202,4 +203,4 @@ export async function DELETE(
     console.error('Delete invoice error:', error)
     return NextResponse.json({ error: 'Failed to delete invoice' }, { status: 500 })
   }
-}
+})

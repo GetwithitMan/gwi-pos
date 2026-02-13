@@ -4,9 +4,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { centsToDollars, getLedgerBalance } from '@/lib/domain/tips'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get pending tips for an employee
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -150,7 +151,7 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 // POST - Collect pending tips
 // TODO: The "collect/accept" concept doesn't map cleanly to the immutable ledger model.
@@ -158,7 +159,7 @@ export async function GET(
 // entries (see /api/tips/payouts). This legacy endpoint is kept for backward compatibility
 // until the UI is migrated to use the payout flow. Once migrated, remove this handler.
 // POST - Accept/collect tips (updates TipShare status only — TipBank removed in Skill 284)
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -219,4 +220,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

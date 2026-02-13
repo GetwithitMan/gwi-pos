@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 // GET /api/ingredients/[id]/recipe - Get recipe components for an ingredient
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
 
@@ -44,10 +45,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Error fetching ingredient recipe:', error)
     return NextResponse.json({ error: 'Failed to fetch recipe' }, { status: 500 })
   }
-}
+})
 
 // POST /api/ingredients/[id]/recipe - Add a component to the recipe
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -134,10 +135,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.error('Error adding recipe component:', error)
     return NextResponse.json({ error: 'Failed to add component' }, { status: 500 })
   }
-}
+})
 
 // PUT /api/ingredients/[id]/recipe - Update a recipe component
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params
     const body = await request.json()
@@ -183,10 +184,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     console.error('Error updating recipe component:', error)
     return NextResponse.json({ error: 'Failed to update component' }, { status: 500 })
   }
-}
+})
 
 // DELETE /api/ingredients/[id]/recipe - Remove a component from the recipe
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { searchParams } = new URL(request.url)
     const recipeId = searchParams.get('recipeId')
@@ -205,4 +206,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     console.error('Error removing recipe component:', error)
     return NextResponse.json({ error: 'Failed to remove component' }, { status: 500 })
   }
-}
+})

@@ -1,6 +1,7 @@
 // src/app/api/floor-plan/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/floor-plan?locationId=xxx&sectionId=yyy&include=tables,seats,sections,entertainment,elements
@@ -14,7 +15,7 @@ import { db } from '@/lib/db'
  *
  * Used by FloorPlanHome to load initial data.
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const locationId = searchParams.get('locationId')
   const sectionId = searchParams.get('sectionId')
@@ -277,4 +278,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

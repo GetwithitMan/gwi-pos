@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Add shift to schedule
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -95,10 +96,10 @@ export async function POST(
     console.error('Failed to create shift:', error)
     return NextResponse.json({ error: 'Failed to create shift' }, { status: 500 })
   }
-}
+})
 
 // PUT - Bulk update shifts
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -178,4 +179,4 @@ export async function PUT(
     console.error('Failed to update shifts:', error)
     return NextResponse.json({ error: 'Failed to update shifts' }, { status: 500 })
   }
-}
+})

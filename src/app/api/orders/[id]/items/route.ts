@@ -6,6 +6,7 @@ import { calculateCardPrice } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
@@ -80,7 +81,7 @@ type NewItem = {
  * Each item is added in a transaction and totals are recalculated
  * based on the current database state, not client-provided totals.
  */
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -423,4 +424,4 @@ export async function POST(
 
     return apiError.internalError('Failed to add items to order', ERROR_CODES.INTERNAL_ERROR)
   }
-}
+})

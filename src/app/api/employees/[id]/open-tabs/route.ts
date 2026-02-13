@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Check if employee has open tabs/orders
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -72,10 +73,10 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 // POST - Transfer all tabs to another employee (quick transfer)
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -131,4 +132,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

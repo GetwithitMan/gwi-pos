@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/liquor/categories
  * List all spirit categories for the location
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const isActive = searchParams.get('isActive')
@@ -81,13 +82,13 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * POST /api/liquor/categories
  * Create a new spirit category
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { name, displayName, description } = body
@@ -143,4 +144,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

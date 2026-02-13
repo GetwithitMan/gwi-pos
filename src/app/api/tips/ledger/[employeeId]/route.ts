@@ -3,6 +3,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getLedgerBalance, getLedgerEntries, centsToDollars } from '@/lib/domain/tips'
 import type { LedgerSourceType, LedgerEntriesFilter } from '@/lib/domain/tips'
+import { withVenue } from '@/lib/with-venue'
 
 const VALID_SOURCE_TYPES: LedgerSourceType[] = [
   'DIRECT_TIP',
@@ -16,7 +17,7 @@ const VALID_SOURCE_TYPES: LedgerSourceType[] = [
 ]
 
 // GET - Full ledger statement with filters (admin or self-access)
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ employeeId: string }> }
 ) {
@@ -124,4 +125,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})

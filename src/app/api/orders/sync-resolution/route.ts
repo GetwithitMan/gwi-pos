@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 const DEFAULT_LOCATION_ID = 'loc-1'
 
@@ -80,7 +81,7 @@ async function logAuditEntry(params: {
  * Handles batch syncing of offline payments with idempotency protection.
  * Each transaction has a "fingerprint" (idempotencyKey) that prevents double-charges.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const { transactions, locationId = DEFAULT_LOCATION_ID } = await request.json()
 
@@ -370,14 +371,14 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * GET /api/orders/sync-resolution
  *
  * Get sync audit statistics for the admin dashboard
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
@@ -480,4 +481,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

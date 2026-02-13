@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string }>
@@ -90,7 +91,7 @@ function formatModifierGroup(group: {
 // - Auto-cleans orphaned childModifierGroupId references
 // - Used by ItemEditor and ModifierFlowEditor
 //
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
 
@@ -162,11 +163,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Error fetching item modifier groups:', error)
     return NextResponse.json({ error: 'Failed to fetch modifier groups' }, { status: 500 })
   }
-}
+})
 
 // POST /api/menu/items/[id]/modifier-groups - Create a new item-owned modifier group
 // If parentModifierId is provided, creates as child group and links to that modifier
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
     const body = await request.json()
@@ -508,10 +509,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.error('Error creating modifier group:', error)
     return NextResponse.json({ error: 'Failed to create modifier group' }, { status: 500 })
   }
-}
+})
 
 // PATCH /api/menu/items/[id]/modifier-groups - Bulk update sort orders
-export async function PATCH(request: NextRequest, { params }: RouteParams) {
+export const PATCH = withVenue(async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
     const body = await request.json()
@@ -555,10 +556,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     console.error('Error updating modifier group sort orders:', error)
     return NextResponse.json({ error: 'Failed to update sort orders' }, { status: 500 })
   }
-}
+})
 
 // POST /api/menu/items/[id]/modifier-groups/reparent - Move a group to a different hierarchy level
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
     const body = await request.json()
@@ -631,7 +632,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const message = error?.message || 'Failed to reparent modifier group'
     return NextResponse.json({ error: message }, { status: 500 })
   }
-}
+})
 
 // Helper: Check if potentialDescendantGroupId is a descendant of ancestorGroupId
 async function checkIsDescendant(tx: Prisma.TransactionClient, ancestorGroupId: string, potentialDescendantGroupId: string, visited = new Set<string>()): Promise<boolean> {

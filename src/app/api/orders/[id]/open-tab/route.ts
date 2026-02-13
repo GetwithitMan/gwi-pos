@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * Normalize cardholder name from card reader.
@@ -28,7 +29,7 @@ function normalizeCardholderName(cardholderName: string | undefined): string | u
 // 2. EMVPreAuth for configurable hold amount
 // 3. Creates OrderCard record
 // 4. Updates order with tab name from chip
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -192,4 +193,4 @@ export async function POST(
     console.error('Failed to open tab:', error)
     return NextResponse.json({ error: 'Failed to open tab' }, { status: 500 })
   }
-}
+})

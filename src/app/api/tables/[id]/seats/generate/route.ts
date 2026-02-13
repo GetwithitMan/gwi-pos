@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
 import { generateSeatPositions, type SeatPattern } from '@/lib/seat-generation';
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Generate/regenerate default seat layout
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -98,4 +99,4 @@ export async function POST(
       { status: 500 }
     );
   }
-}
+})

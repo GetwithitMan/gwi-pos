@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string; groupId: string }>
 }
 
 // POST /api/menu/items/[id]/modifier-groups/[groupId]/modifiers - Add modifier
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
@@ -108,10 +109,10 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.error('Error creating modifier:', error)
     return NextResponse.json({ error: 'Failed to create modifier' }, { status: 500 })
   }
-}
+})
 
 // PUT /api/menu/items/[id]/modifier-groups/[groupId]/modifiers - Update modifier
-export async function PUT(request: NextRequest, { params }: RouteParams) {
+export const PUT = withVenue(async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId, groupId } = await params
     const body = await request.json()
@@ -236,10 +237,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     console.error('Error updating modifier:', error)
     return NextResponse.json({ error: 'Failed to update modifier' }, { status: 500 })
   }
-}
+})
 
 // DELETE /api/menu/items/[id]/modifier-groups/[groupId]/modifiers - Delete modifier
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export const DELETE = withVenue(async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
     const { groupId } = await params
     const { searchParams } = new URL(request.url)
@@ -281,4 +282,4 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     console.error('Error deleting modifier:', error)
     return NextResponse.json({ error: 'Failed to delete modifier' }, { status: 500 })
   }
-}
+})

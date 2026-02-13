@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * Atomic Seat Management API (Skill 121)
@@ -36,7 +37,7 @@ interface SeatBalance {
  *
  * Returns current seating information including per-seat balances
  */
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -154,7 +155,7 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * POST /api/orders/[id]/seating
@@ -171,7 +172,7 @@ export async function GET(
  *   After:  [S1, S3→S2, S4→S3]
  *   Items on S2 go to "Shared", items on S3 become S2, etc.
  */
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -368,4 +369,4 @@ export async function POST(
                    message.includes('Cannot') ? 400 : 500
     return NextResponse.json({ error: message }, { status })
   }
-}
+})

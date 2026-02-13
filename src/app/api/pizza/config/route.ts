@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { PizzaPrintSettings } from '@/types/pizza-print-settings'
+import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza/config - Get pizza configuration for location
-export async function GET() {
+export const GET = withVenue(async function GET() {
   try {
     const location = await db.location.findFirst()
     if (!location) {
@@ -51,10 +52,10 @@ export async function GET() {
     console.error('Failed to get pizza config:', error)
     return NextResponse.json({ error: 'Failed to get pizza config' }, { status: 500 })
   }
-}
+})
 
 // PATCH /api/pizza/config - Update pizza configuration
-export async function PATCH(request: NextRequest) {
+export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
     const location = await db.location.findFirst()
@@ -120,4 +121,4 @@ export async function PATCH(request: NextRequest) {
     console.error('Failed to update pizza config:', error)
     return NextResponse.json({ error: 'Failed to update pizza config' }, { status: 500 })
   }
-}
+})

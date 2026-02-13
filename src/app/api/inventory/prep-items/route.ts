@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET /api/inventory/prep-items - List prep items for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -44,4 +45,4 @@ export async function GET(request: NextRequest) {
     console.error('Error fetching prep items:', error)
     return NextResponse.json({ error: 'Failed to fetch prep items' }, { status: 500 })
   }
-}
+})

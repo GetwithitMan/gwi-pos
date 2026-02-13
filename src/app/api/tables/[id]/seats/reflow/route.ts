@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Reflow seats when table is resized
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -155,4 +156,4 @@ export async function POST(
       { status: 500 }
     );
   }
-}
+})

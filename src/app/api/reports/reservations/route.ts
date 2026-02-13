@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withVenue } from '@/lib/with-venue'
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -187,4 +188,4 @@ export async function GET(request: NextRequest) {
     console.error('Reservation report error:', error)
     return NextResponse.json({ error: 'Failed to generate reservation report' }, { status: 500 })
   }
-}
+})

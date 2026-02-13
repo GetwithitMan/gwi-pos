@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { withVenue } from '@/lib/with-venue'
 
 interface TimelineEntry {
   id: string
@@ -14,7 +15,7 @@ interface TimelineEntry {
 }
 
 // GET /api/orders/[id]/timeline - Full order activity timeline
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -233,4 +234,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})

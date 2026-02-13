@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
 // GET /api/menu/items/[id]/ingredients - Get ingredients for a menu item
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export const GET = withVenue(async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
 
@@ -84,11 +85,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     console.error('Error fetching menu item ingredients:', error)
     return NextResponse.json({ error: 'Failed to fetch ingredients' }, { status: 500 })
   }
-}
+})
 
 // POST /api/menu/items/[id]/ingredients - Save ingredients for a menu item
 // Replaces all existing ingredient links
-export async function POST(request: NextRequest, { params }: RouteParams) {
+export const POST = withVenue(async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const { id: menuItemId } = await params
     const body = await request.json()
@@ -216,4 +217,4 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     console.error('Error saving menu item ingredients:', error)
     return NextResponse.json({ error: 'Failed to save ingredients' }, { status: 500 })
   }
-}
+})

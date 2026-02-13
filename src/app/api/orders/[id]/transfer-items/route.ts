@@ -4,6 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { withVenue } from '@/lib/with-venue'
 
 interface TransferItemsRequest {
   toOrderId: string
@@ -12,7 +13,7 @@ interface TransferItemsRequest {
 }
 
 // POST - Transfer items from one order to another
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -206,10 +207,10 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})
 
 // GET - Get available orders to transfer to (open orders at same location)
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -287,4 +288,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})

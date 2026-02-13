@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - Get single storage location
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -40,10 +41,10 @@ export async function GET(
     console.error('Get storage location error:', error)
     return NextResponse.json({ error: 'Failed to fetch storage location' }, { status: 500 })
   }
-}
+})
 
 // PUT - Update storage location
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -81,10 +82,10 @@ export async function PUT(
     }
     return NextResponse.json({ error: 'Failed to update storage location' }, { status: 500 })
   }
-}
+})
 
 // DELETE - Soft delete storage location
-export async function DELETE(
+export const DELETE = withVenue(async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -120,4 +121,4 @@ export async function DELETE(
     console.error('Delete storage location error:', error)
     return NextResponse.json({ error: 'Failed to delete storage location' }, { status: 500 })
   }
-}
+})

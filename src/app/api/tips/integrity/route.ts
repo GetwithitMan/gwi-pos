@@ -16,6 +16,7 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { db } from '@/lib/db'
 import { recalculateBalance } from '@/lib/domain/tips/tip-ledger'
+import { withVenue } from '@/lib/with-venue'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ interface ReconciliationResult {
 
 // ─── GET: Run integrity check ────────────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -218,4 +219,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

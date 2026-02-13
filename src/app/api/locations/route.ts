@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List all locations
-export async function GET() {
+export const GET = withVenue(async function GET() {
   try {
     const locations = await db.location.findMany({
       where: { isActive: true },
@@ -26,4 +27,4 @@ export async function GET() {
       { status: 500 }
     )
   }
-}
+})

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { compare } from 'bcryptjs'
+import { withVenue } from '@/lib/with-venue'
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const { pin, locationId } = await request.json()
 
@@ -127,4 +128,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

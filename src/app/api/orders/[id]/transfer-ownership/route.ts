@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 interface TransferOwnershipRequest {
   employeeId: string
@@ -11,7 +12,7 @@ interface TransferOwnershipRequest {
 }
 
 // POST - Transfer tab/order ownership to another employee
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -153,4 +154,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

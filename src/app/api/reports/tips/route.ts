@@ -5,12 +5,13 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
+import { withVenue } from '@/lib/with-venue'
 
 // Migrated from legacy TipBank/TipShare (Skill 273)
 // All tip data now sourced from TipLedgerEntry instead of TipShare/TipBank models.
 
 // GET - Get tips report data
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -391,4 +392,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

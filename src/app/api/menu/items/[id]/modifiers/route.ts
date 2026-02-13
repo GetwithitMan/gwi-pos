@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET modifier groups for a menu item — reads from item-owned groups (ModifierGroup.menuItemId)
 //
@@ -13,7 +14,7 @@ import { db } from '@/lib/db'
 //
 // Optional query params:
 //   - channel: 'online' | 'pos' - filter modifiers by channel visibility
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -138,15 +139,15 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})
 
 // POST is no longer needed — modifier groups are item-owned, managed via
 // /api/menu/items/[id]/modifier-groups (the ItemEditor API)
 // Keeping a stub that returns a clear error if anything still calls it.
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   console.warn('Deprecated endpoint called: POST /api/menu/items/[id]/modifiers - should use /api/menu/items/[id]/modifier-groups')
   return NextResponse.json(
     { error: 'Shared modifier linking is deprecated. Use /api/menu/items/[id]/modifier-groups to manage item-owned modifier groups.' },
     { status: 410 }
   )
-}
+})

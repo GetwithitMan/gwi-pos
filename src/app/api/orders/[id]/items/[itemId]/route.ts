@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // PUT - Update an order item (seat, course, hold status, kitchen status, etc.)
-export async function PUT(
+export const PUT = withVenue(async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; itemId: string }> }
 ) {
@@ -185,4 +186,4 @@ export async function PUT(
       { status: 500 }
     )
   }
-}
+})

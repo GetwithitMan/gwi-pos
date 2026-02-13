@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List/search tickets
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const eventId = searchParams.get('eventId')
@@ -143,4 +144,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -35,7 +36,7 @@ function calculateBottleMetrics(
  * This is useful for syncing old bottles created before the
  * inventory integration was added.
  */
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     // Get the location (for now using first location)
     const location = await db.location.findFirst()
@@ -178,14 +179,14 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 /**
  * GET /api/liquor/bottles/sync-inventory
  *
  * Returns count of bottles that need syncing (no inventory link)
  */
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     // Get the location (for now using first location)
     const location = await db.location.findFirst()
@@ -228,4 +229,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

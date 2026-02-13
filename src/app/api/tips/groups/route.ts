@@ -12,10 +12,11 @@ import { db } from '@/lib/db'
 import { startTipGroup } from '@/lib/domain/tips/tip-groups'
 import type { TipGroupInfo } from '@/lib/domain/tips/tip-groups'
 import { dispatchTipGroupUpdate } from '@/lib/socket-dispatch'
+import { withVenue } from '@/lib/with-venue'
 
 // ─── GET: List active tip groups for a location ─────────────────────────────
 
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
@@ -141,11 +142,11 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 // ─── POST: Start a new tip group ────────────────────────────────────────────
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { locationId, initialMemberIds, registerId, splitMode } = body
@@ -220,4 +221,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

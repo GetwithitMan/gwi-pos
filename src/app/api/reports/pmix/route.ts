@@ -6,6 +6,7 @@ import { getEffectiveCost, toNumber, convertUnits, getModifierMultiplier } from 
 import { pmixQuerySchema, validateRequest } from '@/lib/validations'
 import { getLocationSettings } from '@/lib/location-cache'
 import { parseSettings } from '@/lib/settings'
+import { withVenue } from '@/lib/with-venue'
 
 interface PMixItem {
   menuItemId: string
@@ -24,7 +25,7 @@ interface PMixItem {
 }
 
 // GET - Product Mix (P-Mix) report
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
 
@@ -396,4 +397,4 @@ export async function GET(request: NextRequest) {
     console.error('P-Mix report error:', error)
     return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 })
   }
-}
+})

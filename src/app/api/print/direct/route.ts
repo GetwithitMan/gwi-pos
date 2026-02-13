@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import net from 'net'
+import { withVenue } from '@/lib/with-venue'
 
 // Maximum recommended print buffer size (16KB)
 // Larger buffers (logos, high-res bitmaps) can hang sockets on degraded networks
@@ -9,7 +10,7 @@ const MAX_BUFFER_SIZE = 65536 // Hard limit: 64KB
 // POST direct print to a printer on the local network
 // This bypasses the main server routing and sends directly to the printer IP
 // Used when the main server is down but local network is still up
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const { printerIp, printerPort = 9100, data, skipSizeCheck = false } = await request.json()
 
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})
 
 function sendToPrinter(ip: string, port: number, data: Buffer): Promise<void> {
   return new Promise((resolve, reject) => {

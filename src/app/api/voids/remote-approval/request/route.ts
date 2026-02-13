@@ -11,6 +11,7 @@ import {
   generateApprovalToken,
   isTwilioConfigured,
 } from '@/lib/twilio'
+import { withVenue } from '@/lib/with-venue'
 
 interface RequestBody {
   locationId: string
@@ -25,7 +26,7 @@ interface RequestBody {
   terminalId?: string
 }
 
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body: RequestBody = await request.json()
 
@@ -206,4 +207,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
+})

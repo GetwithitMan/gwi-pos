@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRandomCard, generateAuthCode, delay, randomBetween } from '@/lib/mock-cards'
 import { checkSimulatedReaderAccess } from '../guard'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * Simulated Datacap Reader - Process Transaction
@@ -8,7 +9,7 @@ import { checkSimulatedReaderAccess } from '../guard'
  * Uses mock card database for realistic simulation with ~5% decline rate.
  * BLOCKED in production via NODE_ENV guard.
  */
-export async function POST(request: Request) {
+export const POST = withVenue(async function POST(request: Request) {
   const blocked = checkSimulatedReaderAccess()
   if (blocked) return blocked
 
@@ -96,4 +97,4 @@ export async function POST(request: Request) {
     // Include customer name for chip reads (real readers return cardholder name)
     ...(entryMethod === 'Chip' && { CardholderName: `${card.firstName} ${card.lastName}` }),
   })
-}
+})

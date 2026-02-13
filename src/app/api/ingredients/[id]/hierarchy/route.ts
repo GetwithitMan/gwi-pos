@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 /**
  * GET /api/ingredients/[id]/hierarchy
@@ -10,7 +11,7 @@ import { db } from '@/lib/db'
  * - recipeIngredients[]: ingredients used in its recipe (if any)
  * - prepItems[]: prep items derived from this inventory item
  */
-export async function GET(
+export const GET = withVenue(async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
@@ -133,4 +134,4 @@ export async function GET(
       { status: 500 }
     )
   }
-}
+})

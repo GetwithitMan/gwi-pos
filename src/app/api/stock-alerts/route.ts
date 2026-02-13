@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db as prisma } from '@/lib/db'
+import { withVenue } from '@/lib/with-venue'
 
 // GET - List stock alerts
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
@@ -53,10 +54,10 @@ export async function GET(request: NextRequest) {
     console.error('Stock alerts error:', error)
     return NextResponse.json({ error: 'Failed to fetch alerts' }, { status: 500 })
   }
-}
+})
 
 // PUT - Acknowledge or resolve alerts
-export async function PUT(request: NextRequest) {
+export const PUT = withVenue(async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { alertIds, action, employeeId } = body
@@ -92,4 +93,4 @@ export async function PUT(request: NextRequest) {
     console.error('Update alerts error:', error)
     return NextResponse.json({ error: 'Failed to update alerts' }, { status: 500 })
   }
-}
+})

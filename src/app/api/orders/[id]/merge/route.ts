@@ -4,9 +4,10 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { withVenue } from '@/lib/with-venue'
 
 // POST - Merge another order into this one
-export async function POST(
+export const POST = withVenue(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
@@ -221,4 +222,4 @@ export async function POST(
       { status: 500 }
     )
   }
-}
+})

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import crypto from 'crypto'
+import { withVenue } from '@/lib/with-venue'
 
 const DEFAULT_LOCATION_ID = 'loc-1'
 
 // GET all terminals for a location
-export async function GET(request: NextRequest) {
+export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
@@ -43,10 +44,10 @@ export async function GET(request: NextRequest) {
     console.error('Failed to fetch terminals:', error)
     return NextResponse.json({ error: 'Failed to fetch terminals' }, { status: 500 })
   }
-}
+})
 
 // POST create a new terminal
-export async function POST(request: NextRequest) {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
@@ -127,4 +128,4 @@ export async function POST(request: NextRequest) {
     }
     return NextResponse.json({ error: 'Failed to create terminal' }, { status: 500 })
   }
-}
+})
