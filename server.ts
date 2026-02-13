@@ -12,6 +12,8 @@
 import { createServer } from 'http'
 import next from 'next'
 import { initializeSocketServer } from './src/lib/socket-server'
+import { requestStore } from './src/lib/request-context'
+import { getDbForVenue } from './src/lib/db'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -24,7 +26,16 @@ async function main() {
   await app.prepare()
 
   const httpServer = createServer((req, res) => {
-    handle(req, res)
+    // Multi-tenant: wrap request in AsyncLocalStorage with the correct
+    // PrismaClient so that `import { db } from '@/lib/db'` automatically
+    // routes to the venue's Neon database.
+    const slug = req.headers['x-venue-slug'] as string | undefined
+    if (slug && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
+      const prisma = getDbForVenue(slug)
+      requestStore.run({ slug, prisma }, () => handle(req, res))
+    } else {
+      handle(req, res)
+    }
   })
 
   // Initialize Socket.io on the same HTTP server
