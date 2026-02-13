@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
 
   // Enable strict mode for better error catching
   reactStrictMode: true,
+
+  // Inject app version from package.json at build time
+  env: {
+    NEXT_PUBLIC_APP_VERSION: require('./package.json').version,
+  },
 };
 
 export default nextConfig;

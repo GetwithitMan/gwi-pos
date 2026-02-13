@@ -164,6 +164,7 @@ export function TopBar({
                   {employee.role?.name && (
                     <div className="text-gray-400 text-sm">{employee.role.name}</div>
                   )}
+                  <div className="text-gray-500 text-xs mt-1">v{process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'}</div>
                 </div>
                 <div className="py-1">
                   <Link
