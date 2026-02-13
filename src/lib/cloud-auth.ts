@@ -56,7 +56,12 @@ export async function verifyCloudToken(
 
     const signature = base64urlDecode(signatureB64)
     const data = encoder.encode(`${headerB64}.${payloadB64}`)
-    const valid = await crypto.subtle.verify('HMAC', key, signature, data)
+    const valid = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      signature.buffer.slice(signature.byteOffset, signature.byteOffset + signature.byteLength) as ArrayBuffer,
+      data
+    )
 
     if (!valid) return null
 
