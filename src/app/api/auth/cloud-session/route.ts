@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     displayName: payload.name,
     role: { id: 'cloud-admin', name: 'Cloud Admin' },
     location: { id: locationId, name: locationName },
-    permissions: ['all'],
+    permissions: ['admin'],
     isDevAccess: false,
   }
 
