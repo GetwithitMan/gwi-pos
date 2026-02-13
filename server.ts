@@ -13,7 +13,7 @@ import { createServer } from 'http'
 import next from 'next'
 import { initializeSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
-import { getDbForVenue } from './src/lib/db'
+import { getDbForVenue, masterClient } from './src/lib/db'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -34,7 +34,9 @@ async function main() {
       const prisma = getDbForVenue(slug)
       requestStore.run({ slug, prisma }, () => handle(req, res))
     } else {
-      handle(req, res)
+      // Local/NUC mode (no slug header): still wrap in requestStore so
+      // withVenue() fast-path fires and skips await headers() entirely.
+      requestStore.run({ slug: '', prisma: masterClient }, () => handle(req, res))
     }
   })
 

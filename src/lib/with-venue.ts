@@ -20,7 +20,7 @@
  */
 
 import { headers } from 'next/headers'
-import { requestStore } from './request-context'
+import { requestStore, getRequestPrisma } from './request-context'
 import { getDbForVenue, masterClient } from './db'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,6 +28,13 @@ type RouteHandler = (...args: any[]) => Promise<Response> | Response
 
 export function withVenue(handler: RouteHandler): RouteHandler {
   return async (request, context) => {
+    // Fast path: if already inside a request context (NUC server.ts wraps
+    // every request in requestStore.run()), skip the headers() lookup entirely.
+    // This avoids the async overhead of await headers() on local POS.
+    if (getRequestPrisma()) {
+      return handler(request, context)
+    }
+
     const headersList = await headers()
     const slug = headersList.get('x-venue-slug')
 
@@ -47,7 +54,7 @@ export function withVenue(handler: RouteHandler): RouteHandler {
       return requestStore.run({ slug, prisma }, () => handler(request, context))
     }
 
-    // No slug (main domain, local dev) — use master client
+    // No slug (main domain, local dev via `next dev`) — use master client
     return requestStore.run(
       { slug: '', prisma: masterClient },
       () => handler(request, context)
