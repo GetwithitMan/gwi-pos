@@ -7,7 +7,7 @@
     "dev:next": "next dev --webpack",
     "build": "prisma generate && node scripts/generate-schema-sql.mjs && next build && node scripts/build-server.mjs",
     "schema:sql": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/schema.sql",
-    "start": "NODE_ENV=production node server.js",
+    "start": "NODE_ENV=production node -r ./preload.js server.js",
     "start:next": "next start",
     "lint": "eslint",
     "postinstall": "prisma generate",
