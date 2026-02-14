@@ -79,41 +79,45 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Validate registration code
-    if (!location.registrationToken) {
-      return NextResponse.json(
-        { error: 'No registration code has been generated for this venue.' },
-        { status: 400 }
-      )
-    }
+    // Validate registration code against ServerRegistrationToken
+    const regToken = await masterClient.serverRegistrationToken.findFirst({
+      where: { locationId: location.id, token: body.code },
+    })
 
-    if (location.registrationTokenUsed) {
-      return NextResponse.json(
-        {
-          error:
-            'Registration code has already been used. Generate a new one from Mission Control.',
-        },
-        { status: 400 }
-      )
-    }
-
-    if (
-      location.registrationTokenExpiresAt &&
-      new Date() > location.registrationTokenExpiresAt
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            'Registration code has expired. Generate a new one from Mission Control.',
-        },
-        { status: 400 }
-      )
-    }
-
-    if (location.registrationToken !== body.code) {
+    if (!regToken) {
       return NextResponse.json(
         { error: 'Invalid registration code.' },
         { status: 401 }
+      )
+    }
+
+    if (regToken.status === 'USED') {
+      return NextResponse.json(
+        {
+          error:
+            'Registration code has already been used. Generate a new one from venue settings.',
+        },
+        { status: 400 }
+      )
+    }
+
+    if (regToken.status === 'REVOKED') {
+      return NextResponse.json(
+        {
+          error:
+            'Registration code has been revoked. Generate a new one from venue settings.',
+        },
+        { status: 400 }
+      )
+    }
+
+    if (new Date() > regToken.expiresAt) {
+      return NextResponse.json(
+        {
+          error:
+            'Registration code has expired. Generate a new one from venue settings.',
+        },
+        { status: 400 }
       )
     }
 
@@ -135,10 +139,14 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Mark registration token as used
-    await masterClient.location.update({
-      where: { id: location.id },
-      data: { registrationTokenUsed: true },
+    // Mark registration token as USED with audit trail
+    await masterClient.serverRegistrationToken.update({
+      where: { id: regToken.id },
+      data: {
+        status: 'USED',
+        usedAt: new Date(),
+        usedByServerNodeId: serverNode.id,
+      },
     })
 
     // Build environment variables for the NUC

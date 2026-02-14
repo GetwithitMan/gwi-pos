@@ -242,7 +242,8 @@ model Location {
   healthChecks    HealthCheck[]
 
   // Fleet Management (Skill 345)
-  serverNodes ServerNode[]
+  serverNodes              ServerNode[]
+  serverRegistrationTokens ServerRegistrationToken[]
 
   @@index([organizationId])
 }
@@ -263,6 +264,36 @@ model ServerNode {
   currentVersion      String?
   lastHeartbeatAt     DateTime?
   ipAddress           String? // Last known IP
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationId])
+}
+
+// ============================================
+// SERVER REGISTRATION TOKENS (Skill 345 - Fleet Provisioning)
+// ============================================
+
+enum RegistrationTokenStatus {
+  PENDING
+  USED
+  EXPIRED
+  REVOKED
+}
+
+model ServerRegistrationToken {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  token     String                  @unique // 6-char alphanumeric (typo-resistant charset)
+  status    RegistrationTokenStatus @default(PENDING)
+  expiresAt DateTime // 24 hours from creation
+
+  usedAt             DateTime?
+  usedByFingerprint  String? // hardware fingerprint of NUC that consumed it
+  usedByServerNodeId String? // ServerNode.id created during registration
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
