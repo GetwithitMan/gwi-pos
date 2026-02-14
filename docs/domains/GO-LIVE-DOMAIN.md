@@ -24,7 +24,7 @@ Every location exists in exactly one of these three modes:
 - Simulated payment processing (no real charges)
 - Seed/demo data (PIN 1234/2345/3456)
 - Debug logging enabled (`console.log`, debug divs)
-- SQLite database (`prisma/pos.db`)
+- Neon PostgreSQL database (database-per-venue)
 - R&D routes accessible (`/rnd/*`, `/test-floorplan`)
 - No HTTPS required
 
@@ -52,7 +52,7 @@ Every location exists in exactly one of these three modes:
 ### 3. Production Mode
 
 - Real everything: real charges, real inventory, real reports
-- PostgreSQL database (not SQLite)
+- Neon PostgreSQL database (database-per-venue)
 - HTTPS enforced
 - Debug logging removed
 - Demo data removed
@@ -69,10 +69,10 @@ Every location exists in exactly one of these three modes:
 | **Training Mode** | Training flag on Location, training order tagging, training report filtering, receipt watermark, KDS banner | Location settings, Order model, report APIs, receipt generation, KDS UI |
 | **Seed/Demo Data** | Remove demo employees (PIN 1234/2345/3456), demo menu items, demo tables | `prisma/seed.ts`, Employee records, MenuItem records, Table records |
 | **Debug/Dev Code** | Remove `console.log`/`console.warn`/`console.error` (keep error logging), debug divs, dev-only routes | All source files, `/rnd/*`, `/test-floorplan` |
-| **Environment Config** | `.env.local` to `.env.production`, `DATABASE_URL` to PostgreSQL, enable HTTPS, configure real API keys | `.env.*`, Docker Compose, Nginx/Caddy config |
+| **Environment Config** | `.env.local` to `.env.production`, verify `DATABASE_URL` points to Neon PostgreSQL, enable HTTPS, configure real API keys | `.env.*`, Docker Compose, Nginx/Caddy config |
 | **Hardware Verification** | Printers configured and tested, KDS screens paired, payment readers pinged and responding | `/settings/hardware`, KDS pairing, reader ping |
 | **Security Hardening** | Change default PINs, enforce HTTPS, enable IP binding on KDS, review role permissions, remove R&D routes | Employee records, KDS settings, role/permission audit |
-| **Data Migration** | Migrate SQLite to PostgreSQL, verify all tables have `locationId`, verify sync fields (`deletedAt`, `syncedAt`) present | Prisma migration scripts, schema validation |
+| **Data Migration** | Verify all tables have `locationId`, verify sync fields (`deletedAt`, `syncedAt`) present, provision venue database | Prisma migration scripts, schema validation |
 | **Monitoring** | Error reporting active, health checks configured, alerting enabled (SMS for CRITICAL, email for HIGH) | Error Reporting domain (Domain 16), `/api/monitoring/*` |
 
 ---
@@ -183,8 +183,8 @@ Before any location goes live, search the codebase for these tags and resolve ea
 
 | # | Check | How to Verify |
 |---|-------|---------------|
-| 5.1 | PostgreSQL database running | `DATABASE_URL` points to PostgreSQL (not SQLite) |
-| 5.2 | Database migrated from SQLite | All data transferred, schema validated |
+| 5.1 | PostgreSQL database running | `DATABASE_URL` points to Neon PostgreSQL venue database |
+| 5.2 | Venue database provisioned | Database `gwi_pos_{slug}` created, schema migrated, data seeded |
 | 5.3 | Docker Compose configured | All services start cleanly |
 | 5.4 | Watchtower configured | Auto-updates enabled |
 | 5.5 | Database backups configured | Automated backup schedule verified |

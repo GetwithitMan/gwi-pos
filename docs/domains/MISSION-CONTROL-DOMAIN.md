@@ -80,7 +80,7 @@ Local Servers (Ubuntu + Docker)
 
 ### This Domain is NOT Responsible For:
 - POS application code changes (Module A requires zero POS changes)
-- Local database schema (Prisma/SQLite — owned by respective domains)
+- Local database schema (Prisma/PostgreSQL — owned by respective domains)
 - KDS, printers, card readers (owned by Hardware domain)
 - Payment transaction processing logic (owned by Payments domain — Datacap XML, EMV flows)
 - Menu/inventory management (owned by respective domains)

@@ -125,17 +125,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           }
         }
 
-        // Parse timed pricing from linked menu item
-        let timedPricing = null
-        if (element.linkedMenuItem?.timedPricing) {
-          try {
-            timedPricing = typeof element.linkedMenuItem.timedPricing === 'string'
-              ? JSON.parse(element.linkedMenuItem.timedPricing)
-              : element.linkedMenuItem.timedPricing
-          } catch {
-            timedPricing = null
-          }
-        }
+        // Timed pricing from linked menu item (Json column, already an object)
+        const timedPricing = element.linkedMenuItem?.timedPricing ?? null
 
         return {
           id: element.id,

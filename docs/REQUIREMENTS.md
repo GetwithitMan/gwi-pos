@@ -980,7 +980,7 @@ Support for:
 | Styling | Tailwind CSS 4.x |
 | State Management | Zustand 5.x |
 | Validation | Zod 4.x |
-| Database | SQLite (dev) / PostgreSQL (prod) |
+| Database | Neon PostgreSQL (database-per-venue) |
 | ORM | Prisma 6.x |
 | Real-time | Socket.io |
 

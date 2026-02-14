@@ -53,7 +53,7 @@ The GWI POS database is designed for:
 - **Multi-tenancy**: All data is scoped by `locationId`
 - **Offline-first**: Sync fields (`syncedAt`, `deletedAt`) enable cloud synchronization
 - **Soft deletes**: Records are never hard-deleted; use `deletedAt` timestamp
-- **SQLite (dev)** / **PostgreSQL (production)**: Schema is portable
+- **Neon PostgreSQL (database-per-venue)**: Each venue gets its own database (`gwi_pos_{slug}`)
 
 ### Database Statistics
 
@@ -162,7 +162,7 @@ const items = await db.menuItem.findMany({
 
 ### JSON Fields
 
-SQLite doesn't support arrays, so arrays are stored as JSON:
+Complex data types are stored as JSON fields in Prisma:
 
 | Field Example | Type | Content |
 |---------------|------|---------|
@@ -2350,19 +2350,18 @@ System action logging.
 
 ## Database Configuration
 
-### SQLite (Development)
+### Neon PostgreSQL (All Environments)
 
 ```env
-DATABASE_URL="file:./pos.db"
+# Pooled connection (for queries — goes through PgBouncer)
+DATABASE_URL="postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/gwi_pos_{slug}?sslmode=require"
+
+# Direct connection (for migrations — bypasses PgBouncer)
+DIRECT_URL="postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/gwi_pos_{slug}?sslmode=require"
 ```
 
-Location: `prisma/pos.db`
-
-### PostgreSQL (Production)
-
-```env
-DATABASE_URL="postgresql://user:password@localhost:5432/gwi_pos"
-```
+Each venue gets its own database: `gwi_pos_{slug}` (e.g., `gwi_pos_joes_bar`).
+Master database: `gwi_pos` (stores organization/location metadata).
 
 ### Connection in Code
 
@@ -2383,33 +2382,27 @@ const items = await db.menuItem.findMany({
 
 ## Migration Notes
 
-### SQLite vs PostgreSQL Differences
+### PostgreSQL Features in Use
 
-| Feature | SQLite | PostgreSQL |
-|---------|--------|------------|
-| Arrays | JSON string | Native arrays |
-| Decimals | Stored as text | Native DECIMAL |
-| Full-text search | Limited | Native support |
-| JSON operators | Basic | Advanced |
-| Concurrent writes | Limited | Full support |
-
-### Migration Path
-
-1. **Development**: Use SQLite (`file:./pos.db`)
-2. **Local Production**: SQLite or PostgreSQL
-3. **Cloud**: PostgreSQL recommended
+| Feature | Usage |
+|---------|-------|
+| Native arrays | Available but JSON still used for Prisma compatibility |
+| Native DECIMAL | Precise financial calculations |
+| Full-text search | Available for menu/ingredient search |
+| Advanced JSON | `jsonb` operators for settings/configuration |
+| Concurrent writes | Full MVCC support across terminals |
+| Connection pooling | Neon PgBouncer via `DATABASE_URL` |
 
 ### Backup Commands
 
 ```bash
-# SQLite backup
-npm run db:backup
+# PostgreSQL backup via pg_dump
+pg_dump $DATABASE_URL > backup.sql
 
-# List backups
-npm run db:list-backups
+# Restore from dump
+psql $DATABASE_URL < backup.sql
 
-# Restore
-npm run db:restore
+# Neon also provides point-in-time recovery via dashboard
 ```
 
 ---

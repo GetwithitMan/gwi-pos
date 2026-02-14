@@ -374,7 +374,7 @@ For production restaurant servers, GWI POS runs in Docker on Ubuntu:
 ```
 docker/
 ├── Dockerfile                   # Multi-stage build (deps → builder → runner)
-├── docker-compose.yml           # SQLite deployment (simpler)
+├── docker-compose.yml           # PostgreSQL deployment
 └── docker-compose.postgres.yml  # PostgreSQL deployment (recommended)
 ```
 
@@ -391,7 +391,7 @@ docker/
 
 ```dockerfile
 # Database persisted at mounted volume
-ENV DATABASE_URL="file:/app/data/pos.db"
+ENV DATABASE_URL="postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/gwi_pos_{slug}?sslmode=require"
 
 # Runs custom server (NOT next start)
 CMD ["node", "server.js"]
@@ -512,9 +512,9 @@ npx prisma studio   # Same, for MC database
 | `next.config.ts` | `output: 'standalone'` for Docker |
 | `server.ts` | Custom HTTP server with Socket.io |
 | `.env.local` | Dev environment (PostgreSQL Neon) |
-| `.env` | Base config (SQLite for Docker) |
+| `.env` | Base config (PostgreSQL for Docker) |
 | `docker/Dockerfile` | Multi-stage production build |
-| `docker/docker-compose.yml` | SQLite deployment |
+| `docker/docker-compose.yml` | PostgreSQL deployment |
 | `docker/docker-compose.postgres.yml` | PostgreSQL deployment |
 | `src/lib/db.ts` | Master + per-venue Prisma clients |
 | `src/lib/cloud-auth.ts` | JWT verification for cloud admin |

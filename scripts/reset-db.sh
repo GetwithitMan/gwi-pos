@@ -2,6 +2,7 @@
 
 # GWI POS - Database Reset Script
 # Use this to completely reset the database to a fresh state
+# Requires DATABASE_URL to be set (PostgreSQL)
 
 set -e
 
@@ -19,13 +20,10 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "1. Removing existing database..."
-rm -f prisma/pos.db prisma/pos.db-journal
+echo "1. Pushing schema to database..."
+npx prisma db push --force-reset
 
-echo "2. Creating fresh database..."
-npx prisma db push
-
-echo "3. Seeding initial data..."
+echo "2. Seeding initial data..."
 npm run db:seed
 
 echo ""

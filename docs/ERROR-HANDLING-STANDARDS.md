@@ -77,7 +77,7 @@ YY = Specific error within domain (2 digits)
 | **21xx** | Reports | Report generation, exports |
 | **22xx** | Sync | Cloud sync, conflicts |
 | **23xx** | Settings | Configuration, preferences |
-| **24xx** | Database | Prisma, SQLite/PostgreSQL |
+| **24xx** | Database | Prisma, PostgreSQL |
 | **25xx** | Network | Connectivity, timeouts |
 | **99xx** | System | Unexpected, generic errors |
 
@@ -654,7 +654,7 @@ function mapToAppError(error: unknown): AppError {
       })
     }
 
-    if (error.message.includes('SQLITE_BUSY') || error.message.includes('deadlock')) {
+    if (error.message.includes('deadlock') || error.message.includes('could not serialize')) {
       return new AppError('ERR_2404', undefined, {
         retryable: true,
         retryAfter: 100,
@@ -882,8 +882,8 @@ async function saveWithRetry<T>(
       ...RETRY_STRATEGIES.databaseLock,
       shouldRetry: (error) => {
         // Only retry on lock/deadlock errors
-        return error.message.includes('SQLITE_BUSY') ||
-               error.message.includes('deadlock')
+        return error.message.includes('deadlock') ||
+               error.message.includes('could not serialize')
       },
     }
   )

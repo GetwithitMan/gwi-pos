@@ -4,56 +4,52 @@ Database backup, restoration, and data management.
 
 ## Overview
 
-GWI POS uses SQLite for local data storage. Regular backups protect against data loss.
+GWI POS uses Neon PostgreSQL (database-per-venue) for data storage. Each venue has its own database (`gwi_pos_{slug}`). Regular backups protect against data loss. Neon also provides point-in-time recovery via the dashboard.
 
-## Database Location
+## Database Connection
 
-```
-prisma/pos.db        # Main database file
-prisma/backups/      # Backup directory
+```env
+# Pooled connection (for queries)
+DATABASE_URL="postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/gwi_pos_{slug}?sslmode=require"
+
+# Direct connection (for migrations)
+DIRECT_URL="postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/gwi_pos_{slug}?sslmode=require"
 ```
 
 ## Backup Commands
 
-### Create Backup
+### Create Backup (pg_dump)
 ```bash
-npm run db:backup
+pg_dump $DATABASE_URL > backup-$(date +%Y%m%d-%H%M%S).sql
 ```
-Creates timestamped backup:
-```
-prisma/backups/pos-20260128-143022.db
-```
+Creates timestamped SQL dump file.
 
 ### List Backups
 ```bash
-npm run db:list-backups
+ls -lt backups/*.sql
 ```
 Shows all available backups with dates.
 
 ### Restore from Backup
 ```bash
-npm run db:restore
-```
-Restores from most recent backup.
-
-### Restore Specific Backup
-```bash
-cp prisma/backups/pos-20260128-143022.db prisma/pos.db
+psql $DATABASE_URL < backup-20260128-143022.sql
 ```
 
 ## Automatic Backups
 
 ### Before Destructive Operations
-These commands auto-backup first:
-- `npm run reset` - Full database reset
+Always create a backup before:
 - `npm run db:push` - Schema push (if destructive)
 - `npm run db:migrate` - Migrations
+
+### Neon Point-in-Time Recovery
+Neon provides built-in point-in-time recovery via the Neon dashboard. This allows restoring to any second within the retention window without manual backups.
 
 ### Scheduled Backups
 Configure cron job for regular backups:
 ```bash
 # Daily at 2am
-0 2 * * * cd /path/to/gwi-pos && npm run db:backup
+0 2 * * * pg_dump $DATABASE_URL > /backups/gwi-pos-$(date +\%Y\%m\%d-\%H\%M\%S).sql
 ```
 
 ## Dangerous Commands
@@ -72,34 +68,26 @@ Configure cron job for regular backups:
 |---------|------|-------|
 | `npx prisma generate` | None | Regenerates client |
 | `npm run db:studio` | None | View only |
-| `npm run db:backup` | None | Creates backup |
 
 ## Data Export
 
 ### Export to CSV
 ```bash
-# Using sqlite3
-sqlite3 prisma/pos.db ".mode csv" ".output orders.csv" "SELECT * FROM Order;"
+# Using psql
+psql $DATABASE_URL -c "COPY (SELECT * FROM \"Order\") TO STDOUT WITH CSV HEADER" > orders.csv
 ```
 
 ### Export All Tables
 ```bash
 # Create SQL dump
-sqlite3 prisma/pos.db .dump > backup.sql
+pg_dump $DATABASE_URL > backup.sql
 ```
 
 ## Data Import
 
 ### From SQL Dump
 ```bash
-sqlite3 prisma/pos.db < backup.sql
-```
-
-### From Another Database
-```bash
-# Copy and regenerate
-cp other.db prisma/pos.db
-npx prisma generate
+psql $DATABASE_URL < backup.sql
 ```
 
 ## Schema Changes
@@ -115,83 +103,78 @@ npx prisma generate
 ### Rollback
 If migration fails:
 ```bash
-npm run db:restore
+psql $DATABASE_URL < backup.sql
 ```
 
 ## Database Maintenance
 
-### Vacuum (Optimize)
+### Analyze (Optimize Query Plans)
 ```bash
-sqlite3 prisma/pos.db "VACUUM;"
+psql $DATABASE_URL -c "ANALYZE;"
 ```
 
-### Check Integrity
+### Check Table Sizes
 ```bash
-sqlite3 prisma/pos.db "PRAGMA integrity_check;"
+psql $DATABASE_URL -c "SELECT relname, pg_size_pretty(pg_total_relation_size(relid)) FROM pg_catalog.pg_statio_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 20;"
 ```
 
-### Database Size
+### Vacuum (Reclaim Space)
 ```bash
-ls -lh prisma/pos.db
+psql $DATABASE_URL -c "VACUUM ANALYZE;"
 ```
 
 ## Multi-Device Sync
 
-### Current Limitation
-- SQLite is single-file
-- No built-in sync
-- Local storage only
-
-### For Multi-Device
-Consider:
-- PostgreSQL for production
-- Cloud database service
-- Sync service layer
+### Current Architecture
+- Neon PostgreSQL is cloud-hosted
+- All devices connect via pooled DATABASE_URL
+- Sync Agent sidecar handles cloud-to-local sync
+- Full concurrent write support via PostgreSQL MVCC
 
 ## Disaster Recovery
 
 ### Recovery Steps
 1. Stop application
-2. Locate most recent backup
-3. Restore backup file
-4. Regenerate Prisma client
-5. Restart application
-6. Verify data
+2. Use Neon point-in-time recovery, or restore from pg_dump backup
+3. Regenerate Prisma client
+4. Restart application
+5. Verify data
 
 ### Verification
 ```bash
 # Check row counts
-sqlite3 prisma/pos.db "SELECT COUNT(*) FROM Order;"
-sqlite3 prisma/pos.db "SELECT COUNT(*) FROM MenuItem;"
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM \"Order\";"
+psql $DATABASE_URL -c "SELECT COUNT(*) FROM \"MenuItem\";"
 ```
 
 ## Backup Storage
 
 ### Local Backups
-- Stored in `prisma/backups/`
+- Store pg_dump files on secure local disk
 - Keep last 30 days
 - Auto-cleanup old backups
 
 ### Off-Site Backups
 Recommended for production:
 - Cloud storage (S3, GCS)
-- External drive
+- Neon point-in-time recovery (built-in)
 - Remote server
 
 ### Backup Script
 ```bash
 #!/bin/bash
 # backup-to-cloud.sh
-npm run db:backup
-LATEST=$(ls -t prisma/backups/*.db | head -1)
-aws s3 cp $LATEST s3://my-bucket/backups/
+BACKUP_FILE="gwi-pos-$(date +%Y%m%d-%H%M%S).sql"
+pg_dump $DATABASE_URL > /tmp/$BACKUP_FILE
+aws s3 cp /tmp/$BACKUP_FILE s3://my-bucket/backups/
+rm /tmp/$BACKUP_FILE
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `prisma/pos.db` | Main database |
-| `prisma/backups/` | Backup directory |
-| `package.json` | Backup scripts |
 | `prisma/schema.prisma` | Database schema |
+| `prisma/migrations/` | Migration files |
+| `src/lib/db.ts` | Master + per-venue Prisma clients |
+| `package.json` | Database scripts |

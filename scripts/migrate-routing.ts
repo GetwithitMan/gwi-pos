@@ -149,7 +149,7 @@ async function migrateRouting(locationId?: string): Promise<MigrationResult> {
 
           if (pizzaPrinter) {
             // Check if a pizza station already exists
-            // Note: SQLite doesn't support JSON queries, so we fetch all and filter
+            // Fetch all stations and filter in application code
             const existingStations = await db.station.findMany({
               where: {
                 locationId: location.id,

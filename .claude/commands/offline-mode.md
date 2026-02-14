@@ -11,7 +11,7 @@ Offline mode allows the POS to continue taking orders and processing cash paymen
 **Note:** Full offline mode is planned but not yet implemented. Current capabilities:
 
 ### What Works Offline
-- SQLite database is local
+- PostgreSQL database is local (on NUC server)
 - App runs on local network
 - Basic operations if server running locally
 
@@ -100,9 +100,9 @@ Automatically activates when:
 - Cached menu
 - Cached settings
 
-### SQLite (Server)
-- Full database
-- Requires local server
+### PostgreSQL (Server)
+- Full database on local NUC
+- Requires local server running
 
 ## Sync Strategy
 
@@ -176,7 +176,7 @@ Future enhancement:
 ### Local Server
 Current best practice:
 - Run server locally
-- SQLite on same machine
+- PostgreSQL on same machine
 - Network for devices
 
 ## Key Files

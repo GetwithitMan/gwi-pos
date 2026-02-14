@@ -488,7 +488,7 @@ Check license with cloud
 
 ### Can Wait (But Document)
 
-- PostgreSQL migration (SQLite fine for dev)
+- ~~PostgreSQL migration~~ (DONE -- migrated to Neon PostgreSQL, database-per-venue)
 - Docker containerization
 - Admin console
 - Sync service

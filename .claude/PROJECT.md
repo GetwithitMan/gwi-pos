@@ -22,7 +22,7 @@ GWI POS is a hybrid SaaS point-of-sale system designed for bars and restaurants.
 | **Styling** | Tailwind CSS 4.x | Rapid UI development |
 | **State** | Zustand 5.x | Lightweight state management |
 | **Backend** | Next.js API Routes | Serverless-ready APIs |
-| **Database** | SQLite (dev) → PostgreSQL (prod) | Local-first data |
+| **Database** | Neon PostgreSQL (database-per-venue) | Local-first data |
 | **ORM** | Prisma 6.x | Type-safe queries |
 | **Validation** | Zod 4.x | Runtime validation |
 | **Real-time** | Socket.io (planned) | KDS/terminal updates |
@@ -65,7 +65,7 @@ gwi-pos/
 ├── prisma/
 │   ├── schema.prisma     # Database schema (82 models)
 │   ├── seed.ts           # Demo data seeder
-│   └── pos.db            # SQLite database file
+│   └── migrations/       # PostgreSQL migration files
 ├── src/
 │   ├── app/              # Next.js App Router
 │   │   ├── (auth)/       # Login pages

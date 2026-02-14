@@ -8,14 +8,6 @@ function getPermissionsArray(permissions: unknown): string[] {
   if (Array.isArray(permissions)) {
     return permissions
   }
-  if (typeof permissions === 'string') {
-    try {
-      const parsed = JSON.parse(permissions)
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
-  }
   return []
 }
 

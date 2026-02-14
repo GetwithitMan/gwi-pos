@@ -114,9 +114,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // Build the raw settings object for storage
     // We need the raw JSON, not the parsed/merged one, to avoid overwriting other sections
-    const rawSettings = (typeof location.settings === 'string'
-      ? JSON.parse(location.settings)
-      : location.settings) as Record<string, unknown> || {}
+    const rawSettings = (location.settings as Record<string, unknown>) || {}
 
     const updatedRawSettings = {
       ...rawSettings,

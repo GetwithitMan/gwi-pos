@@ -23,7 +23,7 @@ function createPrismaClient(url?: string) {
  * - pool_timeout: Seconds to wait for a connection before erroring (default 10)
  */
 function appendPoolParams(url: string): string {
-  if (!url || url.startsWith('file:')) return url // Skip for SQLite URLs (legacy/test)
+  if (!url) return url
 
   const limit = parseInt(process.env.DATABASE_CONNECTION_LIMIT || '5', 10)
   const timeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)

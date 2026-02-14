@@ -119,7 +119,7 @@ npm run dev
 **Debug:**
 ```bash
 # Check employee in database
-sqlite3 prisma/pos.db "SELECT * FROM Employee WHERE pin='1234';"
+psql $DATABASE_URL -c "SELECT * FROM \"Employee\" WHERE pin='1234';"
 ```
 
 #### Session Keeps Logging Out
