@@ -28,7 +28,8 @@ import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
 import { POSDisplaySettingsModal } from '@/components/orders/POSDisplaySettings'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
-import { getPizzaBasePrice, debugPizzaPricing } from '@/lib/pizza-helpers'
+import { debugPizzaPricing } from '@/lib/pizza-helpers'
+import { buildPizzaModifiers, getPizzaBasePrice } from '@/lib/pizza-order-utils'
 import { PaymentModal } from '@/components/payment/PaymentModal'
 import { DiscountModal } from '@/components/orders/DiscountModal'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
@@ -724,29 +725,22 @@ export default function OrdersPage() {
 
     const loadQuickBarItems = async () => {
       try {
-        const itemPromises = quickBar.map(async (itemId) => {
-          try {
-            const res = await fetch(`/api/menu/items/${itemId}`)
-            if (!cancelled && res.ok) {
-              const data = await res.json()
-              const customStyle = menuItemColors[itemId]
-              return {
-                id: data.item.id,
-                name: data.item.name,
-                price: Number(data.item.price),
-                bgColor: customStyle?.bgColor || null,
-                textColor: customStyle?.textColor || null,
-              }
-            }
-          } catch {
-            // Individual item fetch failed — skip it
-          }
-          return null
+        const res = await fetch('/api/menu/items/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemIds: quickBar }),
         })
-
-        const items = await Promise.all(itemPromises)
-        if (!cancelled) {
-          setQuickBarItems(items.filter(Boolean) as typeof quickBarItems)
+        if (!cancelled && res.ok) {
+          const { items } = await res.json()
+          setQuickBarItems(
+            (items as { id: string; name: string; price: number }[]).map(item => ({
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              bgColor: menuItemColors[item.id]?.bgColor || null,
+              textColor: menuItemColors[item.id]?.textColor || null,
+            }))
+          )
         }
       } catch {
         // Quick bar load failed — non-critical, ignore
@@ -1108,7 +1102,7 @@ export default function OrdersPage() {
     if (!savedOrderId) return
 
     const response = await fetch(`/api/orders/${savedOrderId}`, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
     })
@@ -1642,212 +1636,8 @@ export default function OrdersPage() {
     // Build display name with size info
     const itemName = selectedPizzaItem.name
 
-    // Build modifiers array organized by section boxes (like pizza builder)
-    const pizzaModifiers: { id: string; name: string; price: number; preModifier?: string; depth: number }[] = []
-    const maxSections = 24
-    const halfSize = maxSections / 2
-    const quarterSize = maxSections / 4
-    const sixthSize = maxSections / 6
-    const eighthSize = maxSections / 8
-
-    // Define all box section ranges
-    const boxSections: Record<string, number[]> = {
-      'WHOLE': Array.from({ length: maxSections }, (_, i) => i),
-      'RIGHT HALF': Array.from({ length: halfSize }, (_, i) => i),
-      'LEFT HALF': Array.from({ length: halfSize }, (_, i) => halfSize + i),
-      'TOP RIGHT': Array.from({ length: quarterSize }, (_, i) => i),
-      'BOTTOM RIGHT': Array.from({ length: quarterSize }, (_, i) => quarterSize + i),
-      'BOTTOM LEFT': Array.from({ length: quarterSize }, (_, i) => quarterSize * 2 + i),
-      'TOP LEFT': Array.from({ length: quarterSize }, (_, i) => quarterSize * 3 + i),
-    }
-    // Add sixths
-    for (let i = 0; i < 6; i++) {
-      boxSections[`1/6-${i + 1}`] = Array.from({ length: sixthSize }, (_, j) => i * sixthSize + j)
-    }
-    // Add eighths
-    for (let i = 0; i < 8; i++) {
-      boxSections[`1/8-${i + 1}`] = Array.from({ length: eighthSize }, (_, j) => i * eighthSize + j)
-    }
-
-    // Collect all items with their sections
-    type PizzaItem = { type: string; id: string; name: string; sections: number[]; price: number; amount?: string }
-    const allItems: PizzaItem[] = []
-
-    if (config.sauces) {
-      config.sauces.forEach(s => {
-        const prefix = s.amount === 'light' ? 'Light ' : s.amount === 'extra' ? 'Extra ' : ''
-        allItems.push({ type: 'sauce', id: s.sauceId, name: `${prefix}${s.name}`, sections: s.sections, price: s.price || 0 })
-      })
-    }
-    if (config.cheeses) {
-      config.cheeses.forEach(c => {
-        const prefix = c.amount === 'light' ? 'Light ' : c.amount === 'extra' ? 'Extra ' : ''
-        allItems.push({ type: 'cheese', id: c.cheeseId, name: `${prefix}${c.name}`, sections: c.sections, price: c.price || 0 })
-      })
-    }
-    config.toppings.forEach(t => {
-      const prefix = t.amount === 'light' ? 'Light ' : t.amount === 'extra' ? 'Extra ' : ''
-      allItems.push({ type: 'topping', id: t.toppingId, name: `${prefix}${t.name}`, sections: t.sections, price: t.price })
-    })
-
-    // Determine section mode based on items (find smallest sections used)
-    let sectionMode = 1 // Default to whole
-    allItems.forEach(item => {
-      if (item.sections.length < maxSections) {
-        if (item.sections.length <= eighthSize) sectionMode = Math.max(sectionMode, 8)
-        else if (item.sections.length <= sixthSize) sectionMode = Math.max(sectionMode, 6)
-        else if (item.sections.length <= quarterSize) sectionMode = Math.max(sectionMode, 4)
-        else if (item.sections.length <= halfSize) sectionMode = Math.max(sectionMode, 2)
-      }
-    })
-
-    // Helper to check if sections exactly match a box
-    const exactlyCovers = (itemSections: number[], boxName: string): boolean => {
-      const boxSecs = boxSections[boxName]
-      if (!boxSecs || itemSections.length !== boxSecs.length) return false
-      const sorted = [...itemSections].sort((a, b) => a - b)
-      return boxSecs.every((s, i) => sorted[i] === s)
-    }
-
-    // Helper to check if item sections cover a box's sections
-    const coversBox = (itemSections: number[], boxName: string): boolean => {
-      const boxSecs = boxSections[boxName]
-      if (!boxSecs) return false
-      return boxSecs.every(s => itemSections.includes(s))
-    }
-
-    // Group items into boxes
-    const boxContents: Record<string, { items: string[]; totalPrice: number }> = {}
-
-    // Initialize all boxes we'll show
-    const boxOrder = [
-      'WHOLE',
-      'LEFT HALF', 'RIGHT HALF',
-      'TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT',
-      '1/6-1', '1/6-2', '1/6-3', '1/6-4', '1/6-5', '1/6-6',
-      '1/8-1', '1/8-2', '1/8-3', '1/8-4', '1/8-5', '1/8-6', '1/8-7', '1/8-8',
-    ]
-
-    boxOrder.forEach(box => {
-      boxContents[box] = { items: [], totalPrice: 0 }
-    })
-
-    // Place each item in the appropriate box(es)
-    allItems.forEach(item => {
-      // Find the best (largest) box this item exactly covers
-      let placed = false
-
-      // Check from largest to smallest
-      if (exactlyCovers(item.sections, 'WHOLE')) {
-        boxContents['WHOLE'].items.push(item.name)
-        boxContents['WHOLE'].totalPrice += item.price
-        placed = true
-      } else if (exactlyCovers(item.sections, 'LEFT HALF')) {
-        boxContents['LEFT HALF'].items.push(item.name)
-        boxContents['LEFT HALF'].totalPrice += item.price
-        placed = true
-      } else if (exactlyCovers(item.sections, 'RIGHT HALF')) {
-        boxContents['RIGHT HALF'].items.push(item.name)
-        boxContents['RIGHT HALF'].totalPrice += item.price
-        placed = true
-      } else {
-        // Check quarters
-        for (const q of ['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT']) {
-          if (exactlyCovers(item.sections, q)) {
-            boxContents[q].items.push(item.name)
-            boxContents[q].totalPrice += item.price
-            placed = true
-            break
-          }
-        }
-      }
-
-      if (!placed) {
-        // Check sixths
-        for (let i = 1; i <= 6; i++) {
-          if (exactlyCovers(item.sections, `1/6-${i}`)) {
-            boxContents[`1/6-${i}`].items.push(item.name)
-            boxContents[`1/6-${i}`].totalPrice += item.price
-            placed = true
-            break
-          }
-        }
-      }
-
-      if (!placed) {
-        // Check eighths
-        for (let i = 1; i <= 8; i++) {
-          if (exactlyCovers(item.sections, `1/8-${i}`)) {
-            boxContents[`1/8-${i}`].items.push(item.name)
-            boxContents[`1/8-${i}`].totalPrice += item.price
-            placed = true
-            break
-          }
-        }
-      }
-
-      if (!placed) {
-        // Non-standard grouping - place in each smallest box it covers
-        const smallestBoxes = sectionMode === 8 ? ['1/8-1', '1/8-2', '1/8-3', '1/8-4', '1/8-5', '1/8-6', '1/8-7', '1/8-8'] :
-          sectionMode === 6 ? ['1/6-1', '1/6-2', '1/6-3', '1/6-4', '1/6-5', '1/6-6'] :
-          sectionMode === 4 ? ['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT'] :
-          ['LEFT HALF', 'RIGHT HALF']
-
-        smallestBoxes.forEach(boxName => {
-          if (coversBox(item.sections, boxName)) {
-            boxContents[boxName].items.push(item.name)
-            // Don't add price multiple times for split items
-          }
-        })
-      }
-    })
-
-    // Determine which rows to show based on section mode
-    const rows: string[][] = [['WHOLE', 'LEFT HALF', 'RIGHT HALF']]
-    if (sectionMode >= 4) rows.push(['TOP LEFT', 'TOP RIGHT', 'BOTTOM LEFT', 'BOTTOM RIGHT'])
-    if (sectionMode >= 6) rows.push(['1/6-1', '1/6-2', '1/6-3', '1/6-4', '1/6-5', '1/6-6'])
-    if (sectionMode >= 8) {
-      rows.push(['1/8-1', '1/8-2', '1/8-3', '1/8-4'])
-      rows.push(['1/8-5', '1/8-6', '1/8-7', '1/8-8'])
-    }
-
-    // Build modifiers from boxes - show ALL boxes in relevant rows
-    rows.forEach((row, rowIdx) => {
-      row.forEach(boxName => {
-        // Skip halves row if mode is 1 (whole only)
-        if (sectionMode === 1 && (boxName === 'LEFT HALF' || boxName === 'RIGHT HALF')) return
-
-        const content = boxContents[boxName]
-        const itemsText = content.items.length > 0 ? content.items.join(', ') : '-'
-
-        pizzaModifiers.push({
-          id: `pizza-box-${boxName.replace(/\s+/g, '-').toLowerCase()}`,
-          name: `${boxName}: ${itemsText}`,
-          price: content.totalPrice,
-          depth: 0,
-        })
-      })
-    })
-
-    // Add cooking instructions
-    if (config.cookingInstructions) {
-      pizzaModifiers.push({
-        id: 'pizza-cooking',
-        name: config.cookingInstructions,
-        price: 0,
-        depth: 0,
-      })
-    }
-
-    // Add cut style
-    if (config.cutStyle && config.cutStyle !== 'Normal Cut') {
-      pizzaModifiers.push({
-        id: 'pizza-cut',
-        name: config.cutStyle,
-        price: 0,
-        depth: 0,
-      })
-    }
+    // Build modifiers array organized by section boxes (extracted to pizza-order-utils)
+    const pizzaModifiers = buildPizzaModifiers(config)
 
     // FIX-004: Use base price only (size + crust + sauce + cheese)
     // Toppings are in modifiers, not in item.price
@@ -3196,7 +2986,7 @@ export default function OrdersPage() {
                         if (orderId) {
                           // Update metadata (tab name) on the saved order
                           await fetch(`/api/orders/${orderId}`, {
-                            method: 'PUT',
+                            method: 'PATCH',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ tabName: store.currentOrder?.tabName }),
                           })
