@@ -453,6 +453,381 @@ BKEOF
 
   log "Daily backup configured (4 AM, 7-day retention)."
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # Server Role: Sudoers Rules
+  # ───────────────────────────────────────────────────────────────────────────
+
+  header "Configuring Sudoers"
+
+  cat > /etc/sudoers.d/gwi-pos <<SUDEOF
+# GWI POS — allow service user to manage POS services without password
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-pos
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop pulse-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start pulse-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-kiosk
+SUDEOF
+  chmod 440 /etc/sudoers.d/gwi-pos
+
+  log "Sudoers rules configured."
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Server Role: Heartbeat Script + Cron
+  # ───────────────────────────────────────────────────────────────────────────
+
+  header "Setting Up Heartbeat"
+
+  HB_SCRIPT="$APP_BASE/heartbeat.sh"
+  cat > "$HB_SCRIPT" <<'HBEOF'
+#!/usr/bin/env bash
+# GWI POS Heartbeat — sends system metrics to Mission Control
+set -uo pipefail
+
+ENV_FILE="/opt/gwi-pos/.env"
+[[ ! -f "$ENV_FILE" ]] && exit 1
+
+# Parse env (line-by-line, handles values with = signs)
+SERVER_NODE_ID="" SERVER_API_KEY="" HARDWARE_FINGERPRINT="" MISSION_CONTROL_URL=""
+while IFS= read -r line; do
+  line="${line%%#*}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  [[ -z "$line" ]] && continue
+  key="${line%%=*}"; val="${line#*=}"
+  case "$key" in
+    SERVER_NODE_ID)       SERVER_NODE_ID="$val" ;;
+    SERVER_API_KEY)       SERVER_API_KEY="$val" ;;
+    HARDWARE_FINGERPRINT) HARDWARE_FINGERPRINT="$val" ;;
+    MISSION_CONTROL_URL)  MISSION_CONTROL_URL="$val" ;;
+  esac
+done < "$ENV_FILE"
+
+[[ -z "$SERVER_NODE_ID" || -z "$SERVER_API_KEY" || -z "$MISSION_CONTROL_URL" ]] && exit 1
+
+# Metrics
+UPTIME=$(awk '{printf "%d", $1}' /proc/uptime 2>/dev/null || echo 0)
+CPU=$(awk '/^cpu /{u=$2+$4; t=$2+$4+$5; printf "%.1f", u*100/t}' /proc/stat 2>/dev/null || echo "0")
+MEM_TOTAL=$(free -m 2>/dev/null | awk '/Mem:/{print $2}' || echo 1)
+MEM_USED=$(free -m 2>/dev/null | awk '/Mem:/{print $3}' || echo 0)
+DISK_TOTAL=$(df -BG / 2>/dev/null | awk 'NR==2{gsub("G",""); print $2+0}' || echo 1)
+DISK_USED=$(df -BG / 2>/dev/null | awk 'NR==2{gsub("G",""); print $3+0}' || echo 0)
+VERSION=$(jq -r '.version // "unknown"' /opt/gwi-pos/app/package.json 2>/dev/null || echo "unknown")
+
+BODY=$(printf '{"version":"%s","uptime":%d,"activeOrders":0,"cpuPercent":%s,"memoryUsedMb":%d,"memoryTotalMb":%d,"diskUsedGb":%s,"diskTotalGb":%s}' \
+  "$VERSION" "$UPTIME" "$CPU" "$MEM_USED" "$MEM_TOTAL" "$DISK_USED" "$DISK_TOTAL")
+
+SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SERVER_API_KEY" 2>/dev/null | awk '{print $NF}')
+
+HTTP_CODE=$(curl -sS --max-time 15 -o /dev/null -w "%{http_code}" -X POST \
+  "${MISSION_CONTROL_URL}/api/fleet/heartbeat" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SERVER_API_KEY" \
+  -H "X-Server-Node-Id: $SERVER_NODE_ID" \
+  -H "X-Hardware-Fingerprint: ${HARDWARE_FINGERPRINT:-}" \
+  -H "X-Request-Signature: $SIG" \
+  -d "$BODY" 2>&1) || HTTP_CODE="err"
+
+echo "$HTTP_CODE $(date -u +%H:%M:%S)" >> /opt/gwi-pos/heartbeat.log
+
+# Keep log small
+if [[ -f /opt/gwi-pos/heartbeat.log ]] && [[ $(wc -l < /opt/gwi-pos/heartbeat.log) -gt 500 ]]; then
+  tail -200 /opt/gwi-pos/heartbeat.log > /opt/gwi-pos/heartbeat.log.tmp && mv /opt/gwi-pos/heartbeat.log.tmp /opt/gwi-pos/heartbeat.log
+fi
+HBEOF
+
+  chmod +x "$HB_SCRIPT"
+  chown "$POSUSER":"$POSUSER" "$HB_SCRIPT"
+
+  # Add heartbeat cron (every minute, as POSUSER)
+  HB_CRON="* * * * * $HB_SCRIPT"
+  (crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$HB_SCRIPT"; echo "$HB_CRON") | crontab -u "$POSUSER" -
+
+  # Run first heartbeat now
+  sudo -u "$POSUSER" bash "$HB_SCRIPT" &
+
+  log "Heartbeat configured (every 60 seconds)."
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Server Role: Sync Agent (receives deploy commands from Mission Control)
+  # ───────────────────────────────────────────────────────────────────────────
+
+  header "Setting Up Sync Agent"
+
+  SYNC_SCRIPT="$APP_BASE/sync-agent.js"
+  cat > "$SYNC_SCRIPT" <<'SAEOF'
+// GWI POS Sync Agent — receives fleet commands from Mission Control
+// Runs as systemd service (pulse-sync). No npm dependencies — native Node.js only.
+'use strict'
+const https = require('https')
+const http = require('http')
+const crypto = require('crypto')
+const { execSync } = require('child_process')
+const fs = require('fs')
+const path = require('path')
+
+const ENV_FILE = '/opt/gwi-pos/.env'
+const APP_DIR = '/opt/gwi-pos/app'
+const LOG_FILE = '/opt/gwi-pos/sync-agent.log'
+
+// ── Load config from .env ──────────────────────────────────────────────────
+const env = {}
+try {
+  fs.readFileSync(ENV_FILE, 'utf-8').split('\n').forEach(line => {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) return
+    const eq = t.indexOf('=')
+    if (eq > 0) env[t.slice(0, eq)] = t.slice(eq + 1)
+  })
+} catch (e) {
+  console.error('[Sync] Cannot read .env:', e.message)
+  process.exit(1)
+}
+
+const NODE_ID = env.SERVER_NODE_ID
+const API_KEY = env.SERVER_API_KEY
+const HW_FP   = env.HARDWARE_FINGERPRINT || ''
+const MC_URL  = env.MISSION_CONTROL_URL
+
+if (!NODE_ID || !API_KEY || !MC_URL) {
+  console.error('[Sync] Missing SERVER_NODE_ID, SERVER_API_KEY, or MISSION_CONTROL_URL')
+  process.exit(1)
+}
+
+function log(msg) {
+  const line = new Date().toISOString() + ' ' + msg
+  console.log(line)
+  try { fs.appendFileSync(LOG_FILE, line + '\n') } catch {}
+}
+
+// ── HMAC Auth ──────────────────────────────────────────────────────────────
+function sign(body) {
+  return crypto.createHmac('sha256', API_KEY).update(body).digest('hex')
+}
+
+function authHeaders(body) {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': 'Bearer ' + API_KEY,
+    'X-Server-Node-Id': NODE_ID,
+    'X-Hardware-Fingerprint': HW_FP,
+    'X-Request-Signature': sign(body),
+  }
+}
+
+// ── HTTP helpers ───────────────────────────────────────────────────────────
+function postJson(urlPath, data) {
+  return new Promise(function(resolve, reject) {
+    var body = JSON.stringify(data)
+    var url = new URL(urlPath, MC_URL)
+    var mod = url.protocol === 'https:' ? https : http
+    var req = mod.request(url, { method: 'POST', headers: authHeaders(body) }, function(res) {
+      var d = ''
+      res.on('data', function(c) { d += c })
+      res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
+// ── Shell exec ─────────────────────────────────────────────────────────────
+function run(cmd, cwd, timeoutSec) {
+  try {
+    execSync(cmd, { cwd: cwd, timeout: (timeoutSec || 300) * 1000, stdio: 'pipe', encoding: 'utf-8' })
+    return true
+  } catch (e) {
+    log('  FAILED: ' + (e.stderr || e.message || '').slice(0, 300))
+    return false
+  }
+}
+
+// ── FORCE_UPDATE handler ───────────────────────────────────────────────────
+function handleForceUpdate(payload) {
+  log('[Update] Starting FORCE_UPDATE...')
+  var steps = []
+
+  function step(name, cmd, failOk, timeout) {
+    log('  ' + name + '...')
+    var ok = run(cmd, APP_DIR, timeout)
+    steps.push(name + (ok ? ' OK' : ' FAIL'))
+    return ok || failOk
+  }
+
+  step('git stash', 'git stash', true, 30)
+  if (!step('git pull', 'git pull --ff-only', false, 60)) {
+    return { ok: false, error: 'git pull failed', steps: steps }
+  }
+  step('git stash pop', 'git stash pop', true, 30)
+
+  // Re-copy env files in case they were updated
+  try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env')) } catch (e) {}
+  try { fs.copyFileSync(ENV_FILE, path.join(APP_DIR, '.env.local')) } catch (e) {}
+
+  if (!step('npm install', 'npm install --production=false', false, 180)) {
+    return { ok: false, error: 'npm install failed', steps: steps }
+  }
+  step('prisma generate', 'npx prisma generate', true, 60)
+  step('prisma db push', 'npx prisma db push --accept-data-loss', true, 60)
+  if (!step('build', 'npm run build', false, 300)) {
+    return { ok: false, error: 'build failed', steps: steps }
+  }
+  if (!step('restart', 'sudo systemctl restart pulse-pos', false, 30)) {
+    return { ok: false, error: 'restart failed', steps: steps }
+  }
+
+  var ver = 'unknown'
+  try { ver = JSON.parse(fs.readFileSync(path.join(APP_DIR, 'package.json'), 'utf-8')).version } catch (e) {}
+  log('[Update] SUCCESS — v' + ver)
+  return { ok: true, version: ver, steps: steps }
+}
+
+// ── Command ACK ────────────────────────────────────────────────────────────
+function ack(cmdId, result) {
+  var body = result.ok
+    ? { status: 'COMPLETED', resultPayload: { version: result.version, steps: result.steps } }
+    : { status: 'FAILED', errorMessage: result.error || 'Unknown', resultPayload: { steps: result.steps } }
+  postJson('/api/fleet/commands/' + cmdId + '/ack', body)
+    .then(function(r) { log('[Sync] ACK ' + body.status + ' (HTTP ' + r.status + ')') })
+    .catch(function(e) { log('[Sync] ACK failed: ' + e.message) })
+}
+
+// ── Process received command ───────────────────────────────────────────────
+function processCommand(dataStr) {
+  try {
+    var cmd = JSON.parse(dataStr)
+    log('[Sync] Command: ' + cmd.type + ' (' + cmd.id + ')')
+
+    var result
+    if (cmd.type === 'FORCE_UPDATE') {
+      result = handleForceUpdate(cmd.payload || {})
+    } else if (cmd.type === 'KILL_SWITCH') {
+      log('[Sync] KILL_SWITCH received — acknowledged')
+      result = { ok: true }
+    } else {
+      log('[Sync] Unknown command: ' + cmd.type + ', ACK OK')
+      result = { ok: true }
+    }
+    ack(cmd.id, result)
+  } catch (e) {
+    log('[Sync] Error processing command: ' + e.message)
+  }
+}
+
+// ── SSE Stream ─────────────────────────────────────────────────────────────
+var reconnectDelay = 1000
+
+function connectStream() {
+  var url = new URL('/api/fleet/commands/stream', MC_URL)
+  var mod = url.protocol === 'https:' ? https : http
+
+  log('[Sync] Connecting to ' + MC_URL + '...')
+
+  var req = mod.get(url, { headers: authHeaders('') }, function(res) {
+    if (res.statusCode !== 200) {
+      log('[Sync] Stream HTTP ' + res.statusCode)
+      scheduleReconnect()
+      return
+    }
+
+    log('[Sync] Connected to command stream')
+    reconnectDelay = 1000
+
+    var buf = ''
+    var evt = {}
+
+    res.on('data', function(chunk) {
+      buf += chunk.toString()
+      var lines = buf.split('\n')
+      buf = lines.pop() // keep incomplete last line
+
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i]
+        if (line.startsWith(':')) continue  // keepalive comment
+        if (line === '') {
+          // End of event
+          if (evt.event === 'command' && evt.data) {
+            processCommand(evt.data)
+          }
+          evt = {}
+          continue
+        }
+        var ci = line.indexOf(': ')
+        if (ci < 0) continue
+        var field = line.slice(0, ci)
+        var value = line.slice(ci + 2)
+        if (field === 'id') evt.id = value
+        else if (field === 'event') evt.event = value
+        else if (field === 'data') evt.data = value
+      }
+    })
+
+    res.on('end', function() {
+      log('[Sync] Stream ended, reconnecting...')
+      scheduleReconnect()
+    })
+
+    res.on('error', function(err) {
+      log('[Sync] Stream error: ' + err.message)
+      scheduleReconnect()
+    })
+  })
+
+  req.on('error', function(err) {
+    log('[Sync] Connection error: ' + err.message)
+    scheduleReconnect()
+  })
+}
+
+function scheduleReconnect() {
+  log('[Sync] Reconnect in ' + (reconnectDelay / 1000) + 's')
+  setTimeout(connectStream, reconnectDelay)
+  reconnectDelay = Math.min(reconnectDelay * 2, 60000)
+}
+
+// ── Start ──────────────────────────────────────────────────────────────────
+log('[Sync] GWI POS Sync Agent started')
+log('[Sync] MC: ' + MC_URL + '  Node: ' + NODE_ID)
+connectStream()
+
+// Trim log periodically (every hour)
+setInterval(function() {
+  try {
+    var lines = fs.readFileSync(LOG_FILE, 'utf-8').split('\n')
+    if (lines.length > 1000) {
+      fs.writeFileSync(LOG_FILE, lines.slice(-500).join('\n'))
+    }
+  } catch (e) {}
+}, 3600000)
+SAEOF
+
+  chown "$POSUSER":"$POSUSER" "$SYNC_SCRIPT"
+
+  # pulse-sync.service — Sync Agent
+  cat > /etc/systemd/system/pulse-sync.service <<SVCEOF
+[Unit]
+Description=GWI POS Sync Agent
+After=network-online.target pulse-pos.service
+Wants=network-online.target
+
+[Service]
+User=$POSUSER
+WorkingDirectory=$APP_BASE
+ExecStart=/usr/bin/node $APP_BASE/sync-agent.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pulse-sync
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+  systemctl daemon-reload
+  systemctl enable pulse-sync
+  systemctl restart pulse-sync
+
+  log "Sync agent configured and started."
+
 fi  # end server role
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -576,10 +951,13 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   echo -e "  ${GREEN}POS URL:${NC}  http://localhost:3000"
   echo -e "  ${GREEN}Database:${NC} PostgreSQL (local) — $DB_NAME"
   echo -e "  ${GREEN}Backups:${NC}  $BACKUP_DIR (daily 4 AM, 7-day retention)"
+  echo -e "  ${GREEN}Heartbeat:${NC} Every 60 seconds → Mission Control"
+  echo -e "  ${GREEN}Sync:${NC}     Listening for deploy commands"
   echo ""
   echo -e "  ${CYAN}Services:${NC}"
-  echo "    pulse-pos   — $(systemctl is-active pulse-pos 2>/dev/null || echo 'unknown')"
+  echo "    pulse-pos    — $(systemctl is-active pulse-pos 2>/dev/null || echo 'unknown')"
   echo "    pulse-kiosk  — $(systemctl is-active pulse-kiosk 2>/dev/null || echo 'unknown')"
+  echo "    pulse-sync   — $(systemctl is-active pulse-sync 2>/dev/null || echo 'unknown')"
   echo "    postgresql   — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
 else
   echo -e "  ${GREEN}Server:${NC}   $SERVER_URL"
@@ -592,10 +970,13 @@ fi
 echo ""
 echo -e "  ${CYAN}Useful commands:${NC}"
 echo "    sudo systemctl status pulse-pos    — Check POS status"
+echo "    sudo systemctl status pulse-sync   — Check sync agent"
 echo "    sudo journalctl -u pulse-pos -f    — View POS logs"
+echo "    sudo journalctl -u pulse-sync -f   — View sync agent logs"
 echo "    sudo systemctl restart pulse-pos   — Restart POS"
 if [[ "$STATION_ROLE" == "server" ]]; then
   echo "    sudo bash $BACKUP_SCRIPT     — Run manual backup"
+  echo "    cat /opt/gwi-pos/heartbeat.log   — View heartbeat log"
 fi
 echo ""
 echo -e "  ${CYAN}Re-run this installer to update:${NC}"
