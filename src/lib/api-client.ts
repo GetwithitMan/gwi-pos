@@ -227,6 +227,13 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
+    // Lightweight metadata-only update (no items in response)
+    patch: (id: string, data: unknown) =>
+      fetchApi<unknown>(`/api/orders/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+
     listOpen: (params: { locationId: string; employeeId?: string }) =>
       fetchApi<unknown[]>(`/api/orders/open${buildQueryString(params)}`),
 

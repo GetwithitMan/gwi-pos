@@ -203,7 +203,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       const hasSentItems = order.items.some(i => i.sentToKitchen)
       if (!hasSentItems) {
         fetch(`/api/orders/${order.id}`, {
-          method: 'PUT',
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'cancelled' }),
         }).catch(() => {})

@@ -635,29 +635,22 @@ export function FloorPlanHome({
 
     const loadQuickBarItems = async () => {
       try {
-        const itemPromises = quickBar.map(async (itemId) => {
-          try {
-            const res = await fetch(`/api/menu/items/${itemId}`)
-            if (!cancelled && res.ok) {
-              const data = await res.json()
-              const customStyle = menuItemColors[itemId]
-              return {
-                id: data.item.id,
-                name: data.item.name,
-                price: Number(data.item.price),
-                bgColor: customStyle?.bgColor || null,
-                textColor: customStyle?.textColor || null,
-              }
-            }
-          } catch {
-            // Individual item fetch failed — skip it
-          }
-          return null
+        const res = await fetch('/api/menu/items/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ itemIds: quickBar }),
         })
-
-        const items = await Promise.all(itemPromises)
-        if (!cancelled) {
-          setQuickBarItems(items.filter(Boolean) as typeof quickBarItems)
+        if (!cancelled && res.ok) {
+          const { items } = await res.json()
+          setQuickBarItems(
+            (items as { id: string; name: string; price: number }[]).map(item => ({
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              bgColor: menuItemColors[item.id]?.bgColor || null,
+              textColor: menuItemColors[item.id]?.textColor || null,
+            }))
+          )
         }
       } catch {
         // Quick bar load failed — non-critical, ignore
