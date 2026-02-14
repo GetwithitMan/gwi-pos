@@ -1069,8 +1069,10 @@ export function FloorPlanHome({
       } else if (!isSameTable) {
         setActiveOrderId(null)
         setActiveOrderNumber(null)
-        store.clearOrder()
-        store.startOrder('dine_in', {
+        activeOrder.clearOrder()
+        // Use hook's startOrder to trigger background draft POST
+        // Draft shell created in DB immediately — ensureOrderInDB later only appends items
+        activeOrder.startOrder('dine_in', {
           locationId,
           tableId: primaryTable.id,
           guestCount: totalSeats,
@@ -1089,8 +1091,9 @@ export function FloorPlanHome({
       store.updateOrderType(orderType)
     } else {
       // No items yet — start fresh with the new type
-      store.clearOrder()
-      store.startOrder(orderType)
+      // Use hook's startOrder to trigger background draft POST
+      activeOrder.clearOrder()
+      activeOrder.startOrder(orderType)
     }
 
     // Clear table context for non-table order types
