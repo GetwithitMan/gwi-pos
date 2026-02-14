@@ -192,8 +192,17 @@ export function OpenOrdersPanel({
   }, [locationId, refreshTrigger])
 
   // Socket-based real-time open orders updates (replaces 3s polling)
-  const handleSocketOrdersChanged = useCallback(() => {
-    if (viewMode === 'open') loadOrders()
+  // Delta updates: "paid"/"voided" remove from list locally; others trigger full refresh
+  const handleSocketOrdersChanged = useCallback((data: { locationId: string; trigger: string; orderId?: string }) => {
+    if (viewMode !== 'open') return
+    const { trigger, orderId } = data
+    if (orderId && (trigger === 'paid' || trigger === 'voided')) {
+      // Delta: remove closed/voided order from local state (no fetch)
+      setOrders(prev => prev.filter(o => o.id !== orderId))
+    } else {
+      // Created/transferred/reopened — need full data
+      loadOrders()
+    }
   }, [viewMode])
 
   useOrderSockets({
@@ -223,10 +232,8 @@ export function OpenOrdersPanel({
   const loadOrders = async () => {
     if (!locationId) return
     try {
-      const params = new URLSearchParams({ locationId, summary: 'true', _t: Date.now().toString() })
-      const response = await fetch(`/api/orders/open?${params}`, {
+      const response = await fetch(`/api/orders/open?locationId=${locationId}&summary=true`, {
         cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' },
       })
       if (response.ok) {
         const data = await response.json()
