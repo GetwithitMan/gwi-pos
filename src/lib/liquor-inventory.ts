@@ -59,6 +59,42 @@ export async function processLiquorInventory(
       },
     })
 
+    // Batch: collect all linked bottle IDs across all order items' modifiers
+    const allLinkedBottleIds = orderItems
+      .flatMap(oi => oi.modifiers)
+      .map(m => m.linkedBottleProductId)
+      .filter((id): id is string => id !== null)
+
+    // Batch: collect all recipe bottle IDs
+    const allRecipeBottleIds = orderItems
+      .flatMap(oi => oi.menuItem.recipeIngredients || [])
+      .map(ri => ri.bottleProduct.id)
+
+    const allBottleIds = [...new Set([...allLinkedBottleIds, ...allRecipeBottleIds])]
+
+    // Single batch fetch for ALL bottles we might need (substitutions + recipes)
+    const allBottles = allBottleIds.length > 0
+      ? await db.bottleProduct.findMany({
+          where: { id: { in: allBottleIds } },
+        })
+      : []
+    const allBottleMap = new Map(allBottles.map(b => [b.id, b]))
+
+    // Collect all inventory transactions to batch-create after processing
+    const transactionsToCreate: {
+      locationId: string
+      menuItemId: string
+      type: string
+      quantityBefore: number
+      quantityChange: number
+      quantityAfter: number
+      unitCost: number
+      totalCost: number
+      orderId: string
+      employeeId: string | null
+      reason: string
+    }[] = []
+
     for (const orderItem of orderItems) {
       // Skip non-liquor items or items without recipes
       if (
@@ -77,11 +113,8 @@ export async function processLiquorInventory(
       const spiritSubstitutions = new Map<string, string>()
       for (const mod of orderItem.modifiers) {
         if (mod.linkedBottleProductId) {
-          // Get the bottle to find its spirit category
-          const bottle = await db.bottleProduct.findUnique({
-            where: { id: mod.linkedBottleProductId },
-            select: { spiritCategoryId: true },
-          })
+          // Use batch-loaded map instead of individual query
+          const bottle = allBottleMap.get(mod.linkedBottleProductId)
           if (bottle) {
             spiritSubstitutions.set(bottle.spiritCategoryId, mod.linkedBottleProductId)
           }
@@ -103,9 +136,9 @@ export async function processLiquorInventory(
           }
         }
 
-        // Get the actual bottle details
+        // Use batch-loaded map instead of individual query
         const actualBottle = wasSubstituted
-          ? await db.bottleProduct.findUnique({ where: { id: actualBottleId } })
+          ? allBottleMap.get(actualBottleId) || null
           : defaultBottle
 
         if (!actualBottle) continue
@@ -125,25 +158,21 @@ export async function processLiquorInventory(
 
         itemCost += pourCost
 
-        // Create inventory transaction for pour tracking
-        // We use InventoryTransaction to track pour usage
-        // quantityChange is in "pours" (can be fractional, stored as whole numbers * 100)
+        // Collect transaction data for batch create (instead of individual creates)
         const poursAsInt = Math.round(pourCount * 100) // Store as hundredths for precision
 
-        await db.inventoryTransaction.create({
-          data: {
-            locationId: actualBottle.locationId,
-            menuItemId: actualBottle.id, // Using bottle as the "item"
-            type: 'sale',
-            quantityBefore: 0, // We're not tracking running total in this model
-            quantityChange: -poursAsInt, // Negative for sales
-            quantityAfter: 0,
-            unitCost: actualBottle.pourCost ? Number(actualBottle.pourCost) : 0,
-            totalCost: pourCost,
-            orderId,
-            employeeId: employeeId || null,
-            reason: `${orderItem.name} - ${pourCount} pour(s)${wasSubstituted ? ' (substituted)' : ''}`,
-          },
+        transactionsToCreate.push({
+          locationId: actualBottle.locationId,
+          menuItemId: actualBottle.id, // Using bottle as the "item"
+          type: 'sale',
+          quantityBefore: 0, // We're not tracking running total in this model
+          quantityChange: -poursAsInt, // Negative for sales
+          quantityAfter: 0,
+          unitCost: actualBottle.pourCost ? Number(actualBottle.pourCost) : 0,
+          totalCost: pourCost,
+          orderId,
+          employeeId: employeeId || null,
+          reason: `${orderItem.name} - ${pourCount} pour(s)${wasSubstituted ? ' (substituted)' : ''}`,
         })
       }
 
@@ -156,6 +185,11 @@ export async function processLiquorInventory(
         })
         totalCost += itemCost
       }
+    }
+
+    // Batch create all inventory transactions in one query
+    if (transactionsToCreate.length > 0) {
+      await db.inventoryTransaction.createMany({ data: transactionsToCreate })
     }
 
     return { processed: results, totalCost }

@@ -788,6 +788,7 @@ model Category {
   @@index([prepStationId])
   @@index([sortOrder])
   @@index([categoryType])
+  @@index([locationId, isActive, deletedAt])
 }
 
 model MenuItem {
@@ -939,6 +940,7 @@ model MenuItem {
   @@index([categoryId])
   @@index([prepStationId])
   @@index([isActive, showOnPOS])
+  @@index([locationId, isActive, deletedAt])
 }
 
 model ModifierGroup {
@@ -1665,6 +1667,8 @@ model Order {
   @@index([orderTypeId])
   @@index([parentOrderId])
   @@index([offlineId])
+  @@index([locationId, status])
+  @@index([locationId, status, createdAt])
 }
 
 model OrderItem {
@@ -1757,6 +1761,8 @@ model OrderItem {
   @@index([orderId])
   @@index([menuItemId])
   @@index([kitchenStatus])
+  @@index([orderId, kitchenStatus])
+  @@index([orderId, status])
 }
 
 model OrderItemModifier {
@@ -3313,6 +3319,7 @@ model TaxRule {
 
   @@index([locationId])
   @@index([isActive])
+  @@index([locationId, isActive, isInclusive])
 }
 
 // ============================================

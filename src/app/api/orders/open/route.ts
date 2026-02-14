@@ -21,6 +21,68 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       )
     }
 
+    // Summary mode: lightweight response for sidebar/list views
+    const summary = searchParams.get('summary') === 'true'
+    if (summary) {
+      const summaryOrders = await db.order.findMany({
+        where: {
+          locationId,
+          status: { in: ['open', 'sent', 'in_progress'] },
+          deletedAt: null,
+          ...(employeeId ? { employeeId } : {}),
+          ...(orderType ? { orderType } : {}),
+        },
+        select: {
+          id: true,
+          orderNumber: true,
+          displayNumber: true,
+          status: true,
+          orderType: true,
+          tableId: true,
+          tabName: true,
+          subtotal: true,
+          taxTotal: true,
+          tipTotal: true,
+          total: true,
+          createdAt: true,
+          employeeId: true,
+          table: {
+            select: { id: true, name: true },
+          },
+          employee: {
+            select: { id: true, displayName: true },
+          },
+          _count: {
+            select: { items: true },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+
+      return NextResponse.json({
+        orders: summaryOrders.map(o => ({
+          id: o.id,
+          orderNumber: o.orderNumber,
+          displayNumber: o.displayNumber,
+          status: o.status,
+          orderType: o.orderType,
+          tableId: o.tableId,
+          tabName: o.tabName,
+          tableName: o.table?.name || null,
+          employeeId: o.employeeId,
+          employeeName: o.employee?.displayName || null,
+          subtotal: Number(o.subtotal),
+          taxTotal: Number(o.taxTotal),
+          tipTotal: Number(o.tipTotal),
+          total: Number(o.total),
+          itemCount: o._count.items,
+          createdAt: o.createdAt,
+        })),
+        count: summaryOrders.length,
+        summary: true,
+      })
+    }
+
     // Try to include split order fields if they exist in schema
     let orders
     try {

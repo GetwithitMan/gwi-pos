@@ -143,15 +143,30 @@ export const POST = withVenue(async function POST(
   try {
     body = await request.json()
 
+    // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+      include: {
+        payments: true,
+        location: true,
+        customer: true,
+      },
+    })
+
+    if (!order) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
     // Check for $0 order BEFORE Zod validation (Zod requires amount > 0,
     // but voided orders legitimately have $0 total and need to be closed)
-    const zeroCheckOrder = await db.order.findUnique({
-      where: { id: orderId },
-      select: { total: true, status: true, payments: { where: { status: 'completed' }, select: { totalAmount: true } } },
-    })
-    if (zeroCheckOrder && zeroCheckOrder.status !== 'paid' && zeroCheckOrder.status !== 'closed') {
-      const zeroAlreadyPaid = zeroCheckOrder.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0)
-      const zeroRemaining = Number(zeroCheckOrder.total) - zeroAlreadyPaid
+    if (order.status !== 'paid' && order.status !== 'closed') {
+      const zeroAlreadyPaid = order.payments
+        .filter(p => p.status === 'completed')
+        .reduce((sum, p) => sum + Number(p.totalAmount), 0)
+      const zeroRemaining = Number(order.total) - zeroAlreadyPaid
       if (zeroRemaining <= 0 && zeroAlreadyPaid === 0) {
         await db.order.update({
           where: { id: orderId },
@@ -181,55 +196,28 @@ export const POST = withVenue(async function POST(
 
     const { payments, employeeId, terminalId, idempotencyKey } = validation.data
 
-    // Idempotency check: reject duplicate payment requests
-    // In a bar environment, double-taps and browser retries are common
+    // Idempotency check using already-loaded payments (no extra query needed)
     if (idempotencyKey) {
-      const existingPayment = await db.payment.findFirst({
-        where: {
-          orderId,
-          idempotencyKey,
-          status: 'completed',
-        },
-        select: { id: true },
-      })
-      if (existingPayment) {
+      const duplicatePayments = order.payments.filter(
+        p => p.idempotencyKey === idempotencyKey && p.status === 'completed'
+      )
+      if (duplicatePayments.length > 0) {
         // Return success with existing data — don't process again
-        const existingOrder = await db.order.findUnique({
-          where: { id: orderId },
-          include: { payments: { where: { idempotencyKey } } },
-        })
         return NextResponse.json({
           success: true,
           duplicate: true,
-          payments: existingOrder?.payments.map(p => ({
+          payments: duplicatePayments.map(p => ({
             id: p.id,
             method: p.paymentMethod,
             amount: Number(p.amount),
             tipAmount: Number(p.tipAmount),
             totalAmount: Number(p.totalAmount),
             status: p.status,
-          })) || [],
-          orderStatus: existingOrder?.status || 'unknown',
+          })),
+          orderStatus: order.status || 'unknown',
           remainingBalance: 0,
         })
       }
-    }
-
-    // Get the order with customer for loyalty
-    const order = await db.order.findUnique({
-      where: { id: orderId },
-      include: {
-        payments: true,
-        location: true,
-        customer: true,
-      },
-    })
-
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
     }
 
     // Server-side permission check for payment processing
@@ -368,13 +356,18 @@ export const POST = withVenue(async function POST(
     let totalTips = 0
     let alreadyPaidInLoop = 0
 
+    // Resolve drawer ONCE before the loop (instead of per-payment)
+    const drawerAttribution = await resolveDrawerForPayment(
+      'cash', // Resolve for cash (non-cash returns null anyway)
+      employeeId || null,
+      terminalId,
+    )
+
     for (const payment of payments) {
-      // Resolve drawer/shift attribution for this payment
-      const attribution = await resolveDrawerForPayment(
-        payment.method,
-        employeeId || null,
-        terminalId,
-      )
+      // Use cached attribution for cash, null for non-cash
+      const attribution = payment.method === 'cash'
+        ? drawerAttribution
+        : { drawerId: null, shiftId: null }
 
       let paymentRecord: {
         locationId: string
@@ -882,9 +875,11 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      // Process liquor inventory deductions for cocktails with recipes
+      // Process liquor inventory deductions for cocktails with recipes (fire-and-forget)
       // This tracks pour usage and creates inventory transactions
-      await processLiquorInventory(orderId, employeeId)
+      processLiquorInventory(orderId, employeeId).catch(err => {
+        console.error('Background liquor inventory failed:', err)
+      })
 
       // Deduct general food/ingredient inventory (fire-and-forget to not block payment)
       // This processes MenuItemRecipes and ModifierInventoryLinks
