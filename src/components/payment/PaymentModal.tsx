@@ -35,6 +35,7 @@ interface PaymentModalProps {
   terminalId?: string  // Required for Datacap integration
   locationId?: string  // Required for Datacap integration
   initialMethod?: 'cash' | 'credit'  // Skip method selection, go straight to payment
+  waitForOrderReady?: () => Promise<void>  // Await background items persist before /pay
 }
 
 interface PendingPayment {
@@ -99,6 +100,7 @@ export function PaymentModal({
   terminalId,
   locationId,
   initialMethod,
+  waitForOrderReady,
 }: PaymentModalProps) {
   // ALL HOOKS MUST BE AT THE TOP - before any conditional returns
   // State for fetched order data (when orderTotal is not provided)
@@ -464,6 +466,12 @@ export function PaymentModal({
     setError(null)
 
     try {
+      // Ensure items are persisted before calling /pay
+      // (started in background when modal opened — typically already done by now)
+      if (waitForOrderReady) {
+        await waitForOrderReady()
+      }
+
       const response = await fetch(`/api/orders/${orderId}/pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

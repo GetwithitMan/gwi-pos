@@ -230,6 +230,9 @@ export default function OrdersPage() {
   // FloorPlanHome table deselect callback (registered via onRegisterDeselectTable)
   const floorPlanDeselectTableRef = useRef<(() => void) | null>(null)
 
+  // Background items-persist promise (started when PaymentModal opens, awaited before /pay)
+  const orderReadyPromiseRef = useRef<Promise<string | null> | null>(null)
+
   // Receipt modal state
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [receiptOrderId, setReceiptOrderId] = useState<string | null>(null)
@@ -1052,29 +1055,34 @@ export default function OrdersPage() {
     const hasSplitTotal = currentOrder?.total && currentOrder.total > 0 && !hasItems
     if (!hasItems && !hasSplitTotal) return
 
-    // If order hasn't been saved yet, save it first
     let orderId = savedOrderId
     if (!orderId) {
+      // Edge case: no draft shell was created (e.g., loaded from Open Orders)
+      // Fall back to blocking await
       setIsSendingOrder(true)
       try {
         orderId = await ensureOrderInDB(employee?.id)
-        if (orderId) {
-          setSavedOrderId(orderId)
-        }
+        if (orderId) setSavedOrderId(orderId)
       } finally {
         setIsSendingOrder(false)
       }
+      if (!orderId) return
     }
 
-    if (orderId) {
-      setOrderToPayId(orderId)
-      // Fetch pre-authed tab cards for "Charge existing card" option
-      fetch(`/api/orders/${orderId}/cards`)
-        .then(r => r.ok ? r.json() : { data: [] })
-        .then(d => setPaymentTabCards((d.data || []).filter((c: { status: string }) => c.status === 'authorized')))
-        .catch(() => setPaymentTabCards([]))
-      setShowPaymentModal(true)
-    }
+    // Open modal IMMEDIATELY — items persist in background while user
+    // interacts with payment method selection (~1-3 seconds of overlap)
+    setOrderToPayId(orderId)
+
+    // Start items persist in background (store promise for PaymentModal to await)
+    orderReadyPromiseRef.current = ensureOrderInDB(employee?.id)
+
+    // Fetch pre-authed tab cards in parallel
+    fetch(`/api/orders/${orderId}/cards`)
+      .then(r => r.ok ? r.json() : { data: [] })
+      .then(d => setPaymentTabCards((d.data || []).filter((c: { status: string }) => c.status === 'authorized')))
+      .catch(() => setPaymentTabCards([]))
+
+    setShowPaymentModal(true)
   }
 
   const handleReceiptClose = () => {
@@ -3124,6 +3132,12 @@ export default function OrdersPage() {
             employeeId={employee?.id}
             terminalId="terminal-1"
             locationId={employee?.location?.id}
+            waitForOrderReady={async () => {
+              if (orderReadyPromiseRef.current) {
+                await orderReadyPromiseRef.current
+                orderReadyPromiseRef.current = null
+              }
+            }}
           />
         )}
         <ReceiptModal
