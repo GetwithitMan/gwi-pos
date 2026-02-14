@@ -719,7 +719,7 @@ export function FloorPlanHome({
 
   // Instant local table status: When items are added to a table order,
   // immediately mark the table as 'occupied' in local state (no server round-trip)
-  const { currentOrder } = useOrderStore()
+  const currentOrder = useOrderStore(s => s.currentOrder)
   const itemCount = currentOrder?.items?.length ?? 0
   useEffect(() => {
     if (activeTableId && itemCount > 0) {

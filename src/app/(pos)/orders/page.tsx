@@ -62,7 +62,8 @@ import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderCon
 export default function OrdersPage() {
   const router = useRouter()
   const { employee, isAuthenticated, logout } = useAuthStore()
-  const { currentOrder, startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore()
+  const currentOrder = useOrderStore(s => s.currentOrder)
+  const { startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore.getState()
   const { hasDevAccess, setHasDevAccess } = useDevStore()
 
   // Hydration guard: Zustand persist middleware starts with defaults (isAuthenticated=false)

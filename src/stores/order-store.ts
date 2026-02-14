@@ -250,6 +250,42 @@ interface OrderState {
 // Set via setEstimatedTaxRate when location settings load.
 let estimatedTaxRate = 0.08
 
+// Pure function to compute totals from an order — used by mutations to batch into a single set()
+function computeTotals(order: Order): { subtotal: number; taxTotal: number; total: number; commissionTotal: number } {
+  let subtotal = 0
+  let commissionTotal = 0
+
+  order.items.forEach(item => {
+    // Skip voided and comped items — they don't contribute to totals
+    if (item.status === 'voided' || item.status === 'comped') return
+
+    const itemPrice = item.price * item.quantity
+    const modifiersPrice = item.modifiers.reduce((modSum, mod) => modSum + mod.price, 0) * item.quantity
+    const ingredientModsPrice = (item.ingredientModifications || []).reduce((sum, ing) => sum + (ing.priceAdjustment || 0), 0) * item.quantity
+    subtotal += itemPrice + modifiersPrice + ingredientModsPrice
+
+    // Calculate commission for item
+    const itemCommission = (item.commissionAmount || 0) * item.quantity
+    const modifiersCommission = item.modifiers.reduce(
+      (modSum, mod) => modSum + (mod.commissionAmount || 0),
+      0
+    ) * item.quantity
+    commissionTotal += itemCommission + modifiersCommission
+  })
+
+  const afterDiscount = subtotal - order.discountTotal
+  // Client-side estimate only — server totals via syncServerTotals are authoritative
+  const taxTotal = Math.round(afterDiscount * estimatedTaxRate * 100) / 100
+  const total = Math.round((afterDiscount + taxTotal) * 100) / 100
+
+  return {
+    subtotal: Math.round(subtotal * 100) / 100,
+    taxTotal,
+    total,
+    commissionTotal: Math.round(commissionTotal * 100) / 100,
+  }
+}
+
 export const useOrderStore = create<OrderState>((set, get) => ({
   currentOrder: null,
   orderHistory: [],
@@ -383,41 +419,35 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       id: generateTempItemId(),
     }
 
-    set({
-      currentOrder: {
-        ...currentOrder,
-        items: [...currentOrder.items, newItem],
-      },
-    })
-    get().calculateTotals()
+    const updatedOrder = { ...currentOrder, items: [...currentOrder.items, newItem] }
+    const totals = computeTotals(updatedOrder)
+    set({ currentOrder: { ...updatedOrder, ...totals } })
   },
 
   updateItem: (itemId, updates) => {
     const { currentOrder } = get()
     if (!currentOrder) return
 
-    set({
-      currentOrder: {
-        ...currentOrder,
-        items: currentOrder.items.map((item) =>
-          item.id === itemId ? { ...item, ...updates } : item
-        ),
-      },
-    })
-    get().calculateTotals()
+    const updatedOrder = {
+      ...currentOrder,
+      items: currentOrder.items.map((item) =>
+        item.id === itemId ? { ...item, ...updates } : item
+      ),
+    }
+    const totals = computeTotals(updatedOrder)
+    set({ currentOrder: { ...updatedOrder, ...totals } })
   },
 
   removeItem: (itemId) => {
     const { currentOrder } = get()
     if (!currentOrder) return
 
-    set({
-      currentOrder: {
-        ...currentOrder,
-        items: currentOrder.items.filter((item) => item.id !== itemId),
-      },
-    })
-    get().calculateTotals()
+    const updatedOrder = {
+      ...currentOrder,
+      items: currentOrder.items.filter((item) => item.id !== itemId),
+    }
+    const totals = computeTotals(updatedOrder)
+    set({ currentOrder: { ...updatedOrder, ...totals } })
   },
 
   updateQuantity: (itemId, quantity) => {
@@ -472,54 +502,17 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const { currentOrder } = get()
     if (!currentOrder) return
 
-    set({
-      currentOrder: {
-        ...currentOrder,
-        discountTotal: amount,
-      },
-    })
-    get().calculateTotals()
+    const updatedOrder = { ...currentOrder, discountTotal: amount }
+    const totals = computeTotals(updatedOrder)
+    set({ currentOrder: { ...updatedOrder, ...totals } })
   },
 
   calculateTotals: () => {
     const { currentOrder } = get()
     if (!currentOrder) return
 
-    let subtotal = 0
-    let commissionTotal = 0
-
-    currentOrder.items.forEach(item => {
-      // Skip voided and comped items — they don't contribute to totals
-      if (item.status === 'voided' || item.status === 'comped') return
-
-      const itemPrice = item.price * item.quantity
-      const modifiersPrice = item.modifiers.reduce((modSum, mod) => modSum + mod.price, 0) * item.quantity
-      const ingredientModsPrice = (item.ingredientModifications || []).reduce((sum, ing) => sum + (ing.priceAdjustment || 0), 0) * item.quantity
-      subtotal += itemPrice + modifiersPrice + ingredientModsPrice
-
-      // Calculate commission for item
-      const itemCommission = (item.commissionAmount || 0) * item.quantity
-      const modifiersCommission = item.modifiers.reduce(
-        (modSum, mod) => modSum + (mod.commissionAmount || 0),
-        0
-      ) * item.quantity
-      commissionTotal += itemCommission + modifiersCommission
-    })
-
-    const afterDiscount = subtotal - currentOrder.discountTotal
-    // Client-side estimate only — server totals via syncServerTotals are authoritative
-    const taxTotal = Math.round(afterDiscount * estimatedTaxRate * 100) / 100
-    const total = Math.round((afterDiscount + taxTotal) * 100) / 100
-
-    set({
-      currentOrder: {
-        ...currentOrder,
-        subtotal: Math.round(subtotal * 100) / 100,
-        taxTotal,
-        total,
-        commissionTotal: Math.round(commissionTotal * 100) / 100,
-      },
-    })
+    const totals = computeTotals(currentOrder)
+    set({ currentOrder: { ...currentOrder, ...totals } })
   },
 
   clearOrder: () => {

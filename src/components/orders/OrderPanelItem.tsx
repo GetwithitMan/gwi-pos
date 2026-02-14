@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { EntertainmentSessionControls } from './EntertainmentSessionControls'
 import type { UiModifier, IngredientModification } from '@/types/orders'
 
@@ -76,7 +76,7 @@ interface OrderPanelItemProps {
   cardPriceMultiplier?: number
 }
 
-export function OrderPanelItem({
+export const OrderPanelItem = memo(function OrderPanelItem({
   item,
   locationId,
   showControls = false,
@@ -949,4 +949,4 @@ export function OrderPanelItem({
       )}
     </div>
   )
-}
+})
