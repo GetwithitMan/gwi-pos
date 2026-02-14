@@ -13,7 +13,14 @@ import { EditorCanvasDB } from './EditorCanvasDB';
 import { FixtureToolbar } from './FixtureToolbar';
 import { FixturePropertiesDB } from './FixturePropertiesDB';
 import type { EditorToolMode, FixtureType } from './types';
-import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch';
+// Dispatch floor plan update via API (cannot import socket-server in client component)
+function dispatchFloorPlanUpdate(locationId: string, _options?: { async?: boolean }) {
+  fetch('/api/internal/socket/broadcast', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'FLOOR_PLAN_UPDATE', locationId }),
+  }).catch(() => { /* fire-and-forget */ })
+}
 import { toast } from '@/stores/toast-store';
 
 // =============================================================================
