@@ -23,7 +23,7 @@ PART 1: AUTOMATED INSTALLATION (RECOMMENDED)
 --------------------------------------------------------------------------------
 From the NUC terminal (or via SSH):
 
-    curl -sSL https://raw.githubusercontent.com/GetwithitMan/gwi-pos/main/scripts/installer.run | sudo bash
+    curl -sSL https://www.thepasspos.com/installer.run | sudo bash
 
 The installer will prompt you for:
     1. Station role: Server or Terminal

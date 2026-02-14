@@ -196,7 +196,7 @@ Re-running installer on existing install:
 
 ```bash
 # Fresh install
-curl -sSL https://raw.githubusercontent.com/GetwithitMan/gwi-pos/main/scripts/installer.run | sudo bash
+curl -sSL https://www.thepasspos.com/installer.run | sudo bash
 
 # Re-run (update existing)
 sudo bash /opt/gwi-pos/installer.run
