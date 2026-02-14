@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { toast } from '@/stores/toast-store'
 import { isTempId, buildOrderItemPayload } from '@/lib/order-utils'
@@ -449,6 +449,55 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       }
     }
   }, [options.employeeId, options.locationId])
+
+  // Background autosave: periodically persist dirty items so Send/Pay is near-instant
+  const autosaveInFlightRef = useRef(false)
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (autosaveInFlightRef.current) return // skip if previous autosave still running
+      const store = useOrderStore.getState()
+      const order = store.currentOrder
+      if (!order?.id || isTempId(order.id)) return // no DB ID yet
+      const unsaved = order.items.filter(item => isTempId(item.id))
+      if (unsaved.length === 0) return // nothing to save
+
+      autosaveInFlightRef.current = true
+      try {
+        const res = await fetch(`/api/orders/${order.id}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: unsaved.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+          }),
+        })
+        if (res.ok) {
+          const result = await res.json()
+          if (result.addedItems) {
+            for (const added of result.addedItems) {
+              if (added.correlationId) {
+                store.updateItemId(added.correlationId, added.id)
+              }
+            }
+          }
+          if (result.subtotal !== undefined) {
+            store.syncServerTotals({
+              subtotal: result.subtotal,
+              discountTotal: result.discountTotal ?? 0,
+              taxTotal: result.taxTotal ?? 0,
+              tipTotal: result.tipTotal,
+              total: result.total,
+            })
+          }
+        }
+      } catch {
+        // Silent failure — Send/Pay will retry via ensureOrderInDB
+      } finally {
+        autosaveInFlightRef.current = false
+      }
+    }, 5000) // every 5 seconds
+
+    return () => clearInterval(interval)
+  }, []) // stable — reads from store directly
 
   // Remove item
   const handleRemoveItem = useCallback(async (itemId: string) => {
