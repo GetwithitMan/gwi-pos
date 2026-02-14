@@ -137,6 +137,7 @@
 | 336 | Online Ordering URL Infrastructure | DONE | Mission Control | 300, 319 | orderCode (6-char unique) + onlineOrderingEnabled on CloudLocation, auto-generate on create, VenueUrlCard UI with toggle + copy, path-based URL pattern |
 | 337 | Multi-Tenant DB Routing | DONE | Mission Control | 300, 330 | AsyncLocalStorage + withVenue() wrapper for all 348 POS API routes. 3-tier Proxy resolution: request context → headers → master. Per-venue Neon DB via globalThis cache. |
 | 338 | Cloud Session Validation & Guard | DONE | Mission Control | 337, 330 | validate-session endpoint, useRequireAuth cloud awareness, useCloudSessionGuard layout guard, cloud sign-out button. Fixes stale locationId after DB routing changes. |
+| 345 | NUC Installer Package | DONE | Mission Control / DevOps | 302 | `installer.run` provisions Ubuntu NUCs as POS stations. Fleet registration API, PostgreSQL + systemd + kiosk + RealVNC. Server and Terminal roles. |
 
 ### Performance Overhaul (Feb 14, 2026)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -361,9 +362,9 @@
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| Mission Control (Phase 2) | 21 | 0 | 8 | 29 | 72% |
+| Mission Control (Phase 2) | 22 | 0 | 8 | 30 | 73% |
 | Performance Overhaul | 6 | 0 | 0 | 6 | 100% |
-| **TOTAL** | **204** | **7** | **24** | **235** | **91%** |
+| **TOTAL** | **205** | **7** | **24** | **236** | **91%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -512,6 +513,12 @@ Skills that can be developed simultaneously:
 | 342 | PostgreSQL-Only DevOps | Removed all SQLite references from Docker, scripts, 18 docs. Connection pooling (`DATABASE_CONNECTION_LIMIT`). `reset-db.sh` rewritten for pg_dump. Zero SQLite matches in codebase. |
 | 343 | Socket & State Hardening | 150ms event debouncing via `onAny`, delta open orders (paid/voided = local remove, no fetch), conditional 30s polling, location/menu caches, PrismaClient connection pooling, connectedTerminals memory leak fix (5min sweep). |
 | 344 | Order Flow Performance (P0) | PaymentModal instant open (background `ensureOrderInDB`), fire-and-forget exact cash, floor plan snapshot with coalescing (`snapshotInFlightRef` + `snapshotPendingRef`), draft pre-creation on table tap, 5s background autosave for temp-ID items. |
+
+## Recently Completed (2026-02-14 — NUC Installer Package, Skill 345)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 345 | NUC Installer Package | `installer.run` (~500 lines) provisions Ubuntu 22.04+ NUCs as POS stations. Fleet registration API (`POST /api/fleet/register`) validates one-time codes, creates ServerNode, returns env vars. Server role: PostgreSQL + Node.js + systemd + Chromium kiosk. Terminal role: kiosk-only. RealVNC enrollment. Daily pg_dump backups with 7-day retention. Idempotent re-run for updates. Schema: Location.slug, registrationToken fields, ServerNode model. |
 
 ## Recently Completed (2026-02-13 — Multi-Tenant DB Routing + Cloud Session Validation, Skills 337-338)
 

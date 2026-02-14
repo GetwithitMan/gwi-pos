@@ -1,0 +1,604 @@
+#!/usr/bin/env bash
+# =============================================================================
+# GWI POS Installer — installer.run
+# =============================================================================
+#
+# Provisions Ubuntu 22.04+ NUCs as POS stations.
+#
+# Roles:
+#   Server   — Local PostgreSQL + POS app + Chromium kiosk + backups + RealVNC
+#   Terminal — Chromium kiosk pointing at server + optional RealVNC
+#
+# Usage:
+#   curl -sSL https://raw.githubusercontent.com/GetwithitMan/gwi-pos/main/scripts/installer.run | sudo bash
+#
+# Re-running is idempotent: backs up DB first, pulls latest code, restarts services.
+# =============================================================================
+
+set -euo pipefail
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────────────────────
+
+APP_BASE="/opt/gwi-pos"
+APP_DIR="$APP_BASE/app"
+ENV_FILE="$APP_BASE/.env"
+BACKUP_DIR="$APP_BASE/backups"
+BACKUP_SCRIPT="$APP_BASE/backup-pos.sh"
+MC_API_URL="https://app.thepasspos.com/api/fleet/register"
+
+# Color output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+log()   { echo -e "${GREEN}[GWI POS]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[WARNING]${NC} $*"; }
+err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+header() { echo -e "\n${CYAN}═══════════════════════════════════════════════════════${NC}"; echo -e "${CYAN}  $*${NC}"; echo -e "${CYAN}═══════════════════════════════════════════════════════${NC}\n"; }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pre-flight Checks
+# ─────────────────────────────────────────────────────────────────────────────
+
+header "GWI POS Installer"
+
+# Must be root
+if [[ $EUID -ne 0 ]]; then
+  err "This installer must be run as root. Use: sudo bash installer.run"
+  exit 1
+fi
+
+# Must be Ubuntu 22.04+
+if [ -f /etc/os-release ]; then
+  . /etc/os-release
+  if [[ "$ID" != "ubuntu" ]] || [[ "${VERSION_ID%%.*}" -lt 22 ]]; then
+    err "GWI POS requires Ubuntu 22.04 or later. Detected: $PRETTY_NAME"
+    exit 1
+  fi
+  log "OS: $PRETTY_NAME"
+else
+  err "Cannot detect OS. /etc/os-release not found."
+  exit 1
+fi
+
+# Resolve service user (the non-root user who will run services)
+POSUSER="${SUDO_USER:-}"
+if [[ -z "$POSUSER" ]] || [[ "$POSUSER" == "root" ]]; then
+  # Try to find a non-root user with a home directory
+  POSUSER=$(getent passwd 1000 | cut -d: -f1 || echo "")
+  if [[ -z "$POSUSER" ]]; then
+    err "Cannot determine service user. Run with: sudo -u <username> bash installer.run"
+    exit 1
+  fi
+fi
+POSUSER_HOME=$(eval echo "~$POSUSER")
+log "Service user: $POSUSER (home: $POSUSER_HOME)"
+
+# Network check
+log "Checking network connectivity..."
+if ! curl -fsS --max-time 10 "https://app.thepasspos.com" >/dev/null 2>&1; then
+  warn "Cannot reach Mission Control (app.thepasspos.com). Checking general internet..."
+  if ! curl -fsS --max-time 10 "https://google.com" >/dev/null 2>&1; then
+    err "No internet connection. Connect to the network and try again."
+    exit 1
+  fi
+  warn "Internet is available but Mission Control is unreachable. Registration may fail."
+fi
+log "Network: OK"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Prompts
+# ─────────────────────────────────────────────────────────────────────────────
+
+header "Station Configuration"
+
+# 1. Role
+echo "What role is this station?"
+echo "  1) Server  — Runs POS app + database + kiosk"
+echo "  2) Terminal — Kiosk only (connects to a server)"
+echo ""
+while true; do
+  read -rp "Select (1 or 2): " role_choice
+  case $role_choice in
+    1) STATION_ROLE="server"; break ;;
+    2) STATION_ROLE="terminal"; break ;;
+    *) echo "Please enter 1 or 2." ;;
+  esac
+done
+log "Role: $STATION_ROLE"
+
+# 2. Venue domain + registration code
+echo ""
+read -rp "Venue domain (e.g., fruittabar.ordercontrolcenter.com): " VENUE_DOMAIN
+read -rp "Registration code: " REG_CODE
+
+if [[ -z "$VENUE_DOMAIN" ]] || [[ -z "$REG_CODE" ]]; then
+  err "Venue domain and registration code are required."
+  exit 1
+fi
+
+# 3. RealVNC (optional)
+echo ""
+echo "RealVNC Remote Access (optional — press Enter to skip)"
+read -rp "Company name (for VNC grouping): " COMPANY_NAME
+read -rp "Location / terminal name: " TERMINAL_NAME
+read -rp "RealVNC cloud connectivity token: " REALVNC_TOKEN
+
+# 4. Terminal: server URL
+SERVER_URL=""
+if [[ "$STATION_ROLE" == "terminal" ]]; then
+  echo ""
+  read -rp "Server URL (e.g., http://192.168.1.50:3000): " SERVER_URL
+  if [[ -z "$SERVER_URL" ]]; then
+    err "Server URL is required for terminal stations."
+    exit 1
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Existing Install Detection (Idempotent)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ -d "$APP_BASE" ]]; then
+  header "Existing Installation Detected"
+  log "Found existing install at $APP_BASE"
+
+  if [[ "$STATION_ROLE" == "server" ]] && [[ -f "$BACKUP_SCRIPT" ]]; then
+    log "Running pre-update backup..."
+    bash "$BACKUP_SCRIPT" || warn "Backup failed — continuing anyway."
+  fi
+
+  log "Updating existing installation..."
+else
+  log "Fresh installation."
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mission Control Registration
+# ─────────────────────────────────────────────────────────────────────────────
+
+header "Registering with Mission Control"
+
+log "Calling $MC_API_URL..."
+
+REG_PAYLOAD=$(cat <<EOF
+{"domain":"$VENUE_DOMAIN","code":"$REG_CODE","role":"$STATION_ROLE"}
+EOF
+)
+
+REG_RESPONSE=$(curl -fsS --max-time 30 -X POST \
+  "$MC_API_URL" \
+  -H "Content-Type: application/json" \
+  -d "$REG_PAYLOAD" 2>&1) || {
+  err "Mission Control registration failed."
+  err "Response: $REG_RESPONSE"
+  err ""
+  err "Check:"
+  err "  - Venue domain is correct"
+  err "  - Registration code is valid and not expired"
+  err "  - Network can reach app.thepasspos.com"
+  exit 1
+}
+
+# Verify response has data
+if ! echo "$REG_RESPONSE" | jq -e '.data.env' >/dev/null 2>&1; then
+  err "Invalid response from Mission Control."
+  err "Response: $REG_RESPONSE"
+  exit 1
+fi
+
+log "Registration successful!"
+
+# Write env file
+mkdir -p "$APP_BASE"
+echo "# Generated by installer.run — DO NOT EDIT MANUALLY" > "$ENV_FILE"
+echo "# Venue: $VENUE_DOMAIN" >> "$ENV_FILE"
+echo "# Role: $STATION_ROLE" >> "$ENV_FILE"
+echo "# Installed: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$ENV_FILE"
+echo "" >> "$ENV_FILE"
+echo "$REG_RESPONSE" | jq -r '.data.env | to_entries[] | "\(.key)=\(.value)"' >> "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+chown "$POSUSER":"$POSUSER" "$ENV_FILE"
+log "Environment written to $ENV_FILE"
+
+# Extract values we need for setup
+REPO_URL=$(echo "$REG_RESPONSE" | jq -r '.data.repoUrl // empty')
+DB_USER=$(echo "$REG_RESPONSE" | jq -r '.data.env.DB_USER // "pulse_pos"')
+DB_PASSWORD=$(echo "$REG_RESPONSE" | jq -r '.data.env.DB_PASSWORD // empty')
+DB_NAME=$(echo "$REG_RESPONSE" | jq -r '.data.env.DB_NAME // "pulse_pos"')
+LOCATION_NAME=$(echo "$REG_RESPONSE" | jq -r '.data.env.LOCATION_NAME // "GWI POS"')
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Common Setup (Both Roles)
+# ─────────────────────────────────────────────────────────────────────────────
+
+header "Installing Dependencies"
+
+apt-get update -y
+
+# Install common packages
+apt-get install -y \
+  curl \
+  git \
+  jq \
+  ca-certificates \
+  gnupg \
+  chromium-browser \
+  || apt-get install -y \
+  curl \
+  git \
+  jq \
+  ca-certificates \
+  gnupg \
+  chromium
+
+log "Common packages installed."
+
+# Install Node.js 20 if not present or too old
+if ! command -v node >/dev/null 2>&1; then
+  log "Installing Node.js 20..."
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y nodejs
+elif [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 20 ]]; then
+  log "Upgrading Node.js to 20..."
+  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  apt-get install -y nodejs
+fi
+log "Node.js: $(node -v)"
+log "npm: $(npm -v)"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Server Role: PostgreSQL
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ "$STATION_ROLE" == "server" ]]; then
+  header "Setting Up Local PostgreSQL"
+
+  apt-get install -y postgresql postgresql-contrib
+
+  # Ensure PostgreSQL is running
+  systemctl enable postgresql
+  systemctl start postgresql
+
+  # Create database and user (idempotent)
+  log "Creating database '$DB_NAME' and user '$DB_USER'..."
+  sudo -u postgres psql -v ON_ERROR_STOP=0 <<EOSQL
+DO \$\$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$DB_USER') THEN
+    CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASSWORD';
+  ELSE
+    ALTER ROLE $DB_USER WITH PASSWORD '$DB_PASSWORD';
+  END IF;
+END\$\$;
+
+SELECT 'CREATE DATABASE $DB_NAME OWNER $DB_USER'
+WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME')\gexec
+EOSQL
+
+  # Allow local connections with password
+  PG_HBA=$(sudo -u postgres psql -t -c "SHOW hba_file;" | tr -d '[:space:]')
+  if ! grep -q "$DB_USER" "$PG_HBA" 2>/dev/null; then
+    # Add md5 auth for our user before the default entries
+    sed -i "/^local.*all.*all/i local   $DB_NAME   $DB_USER   md5" "$PG_HBA"
+    systemctl reload postgresql
+  fi
+
+  log "PostgreSQL ready: $DB_NAME owned by $DB_USER"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Server Role: POS App Install
+  # ───────────────────────────────────────────────────────────────────────────
+
+  header "Installing POS Application"
+
+  if [[ -z "$REPO_URL" ]]; then
+    err "No repo URL returned from Mission Control."
+    exit 1
+  fi
+
+  # Clone or update
+  if [[ -d "$APP_DIR/.git" ]]; then
+    log "Updating existing app code..."
+    sudo -u "$POSUSER" bash -c "
+      cd '$APP_DIR'
+      git remote set-url origin '$REPO_URL' 2>/dev/null || true
+      git fetch --all
+      git reset --hard origin/main
+    "
+  else
+    log "Cloning app from $REPO_URL..."
+    mkdir -p "$APP_DIR"
+    chown "$POSUSER":"$POSUSER" "$APP_BASE"
+    sudo -u "$POSUSER" git clone "$REPO_URL" "$APP_DIR"
+  fi
+
+  # Copy env files into app directory
+  sudo -u "$POSUSER" cp "$ENV_FILE" "$APP_DIR/.env"
+  sudo -u "$POSUSER" cp "$ENV_FILE" "$APP_DIR/.env.local"
+
+  # Build the application
+  log "Building application (this may take a few minutes)..."
+  sudo -u "$POSUSER" bash -c "
+    cd '$APP_DIR'
+    npm ci --production=false
+    npx prisma generate
+    npx prisma db push --accept-data-loss 2>/dev/null || npx prisma db push
+    npm run build
+  "
+
+  log "POS application built successfully!"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Server Role: Systemd Services
+  # ───────────────────────────────────────────────────────────────────────────
+
+  header "Configuring Systemd Services"
+
+  # pulse-pos.service — POS backend/UI
+  cat > /etc/systemd/system/pulse-pos.service <<SVCEOF
+[Unit]
+Description=GWI POS Server
+After=network-online.target postgresql.service
+Wants=network-online.target postgresql.service
+
+[Service]
+User=$POSUSER
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$ENV_FILE
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node -r ./preload.js server.js
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pulse-pos
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+
+  # pulse-kiosk.service — Chromium in kiosk mode
+  cat > /etc/systemd/system/pulse-kiosk.service <<SVCEOF
+[Unit]
+Description=GWI POS Kiosk
+After=graphical.target pulse-pos.service
+Wants=pulse-pos.service
+
+[Service]
+User=$POSUSER
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito --check-for-update-interval=31536000 http://localhost:3000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
+SVCEOF
+
+  systemctl daemon-reload
+  systemctl enable pulse-pos
+  systemctl enable pulse-kiosk
+
+  log "Starting POS server..."
+  systemctl restart pulse-pos
+
+  # Wait for POS to be ready before starting kiosk
+  log "Waiting for POS to start..."
+  for i in $(seq 1 30); do
+    if curl -fsS http://localhost:3000/api/health >/dev/null 2>&1; then
+      log "POS is ready!"
+      break
+    fi
+    sleep 2
+  done
+
+  systemctl restart pulse-kiosk
+  log "Services configured and started."
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Server Role: Backup Script + Cron
+  # ───────────────────────────────────────────────────────────────────────────
+
+  header "Setting Up Backups"
+
+  mkdir -p "$BACKUP_DIR"
+  chown "$POSUSER":"$POSUSER" "$BACKUP_DIR"
+
+  # Install backup script
+  cat > "$BACKUP_SCRIPT" <<'BKEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+BACKUP_DIR=/opt/gwi-pos/backups
+RETENTION_DAYS=7
+
+if [ -f /opt/gwi-pos/.env ]; then
+  DB_NAME=$(grep -oP '^DB_NAME=\K.*' /opt/gwi-pos/.env 2>/dev/null || echo "pulse_pos")
+  DB_USER=$(grep -oP '^DB_USER=\K.*' /opt/gwi-pos/.env 2>/dev/null || echo "pulse_pos")
+else
+  DB_NAME="${DB_NAME:-pulse_pos}"
+  DB_USER="${DB_USER:-pulse_pos}"
+fi
+
+mkdir -p "$BACKUP_DIR"
+timestamp=$(date +%Y%m%d-%H%M%S)
+backup_file="$BACKUP_DIR/pos-$timestamp.sql.gz"
+
+echo "[Backup] Starting PostgreSQL backup of '$DB_NAME'..."
+if pg_dump -U "$DB_USER" "$DB_NAME" 2>/dev/null | gzip > "$backup_file"; then
+  size=$(du -h "$backup_file" | cut -f1)
+  echo "[Backup] Success: $backup_file ($size)"
+else
+  echo "[Backup] WARNING: pg_dump failed."
+  rm -f "$backup_file"
+  exit 1
+fi
+
+find "$BACKUP_DIR" -type f -name 'pos-*.sql.gz' -mtime +"$RETENTION_DAYS" -delete
+echo "[Backup] Done."
+BKEOF
+
+  chmod +x "$BACKUP_SCRIPT"
+  chown "$POSUSER":"$POSUSER" "$BACKUP_SCRIPT"
+
+  # Add cron entry (idempotent)
+  CRON_LINE="0 4 * * * $BACKUP_SCRIPT"
+  (crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$BACKUP_SCRIPT"; echo "$CRON_LINE") | crontab -u "$POSUSER" -
+
+  log "Daily backup configured (4 AM, 7-day retention)."
+
+fi  # end server role
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Terminal Role: Kiosk Only
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ "$STATION_ROLE" == "terminal" ]]; then
+  header "Configuring Terminal Kiosk"
+
+  # pulse-kiosk.service — Chromium pointing at server
+  cat > /etc/systemd/system/pulse-kiosk.service <<SVCEOF
+[Unit]
+Description=GWI POS Kiosk (Terminal)
+After=graphical.target network-online.target
+Wants=network-online.target
+
+[Service]
+User=$POSUSER
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
+ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito --check-for-update-interval=31536000 $SERVER_URL
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
+SVCEOF
+
+  systemctl daemon-reload
+  systemctl enable pulse-kiosk
+  systemctl restart pulse-kiosk
+
+  log "Terminal kiosk configured → $SERVER_URL"
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RealVNC Enrollment (Both Roles)
+# ─────────────────────────────────────────────────────────────────────────────
+
+if [[ -n "${REALVNC_TOKEN:-}" ]]; then
+  header "Setting Up RealVNC Remote Access"
+
+  if ! command -v vncserver-x11 >/dev/null 2>&1; then
+    log "Installing RealVNC Server..."
+    wget -q -O /tmp/vncserver.deb \
+      "https://www.realvnc.com/download/file/vnc.files/VNC-Server-Latest-Linux-x64.deb" || {
+      warn "Failed to download RealVNC. Skipping VNC setup."
+      REALVNC_TOKEN=""
+    }
+
+    if [[ -n "$REALVNC_TOKEN" ]]; then
+      apt-get install -y /tmp/vncserver.deb
+      rm -f /tmp/vncserver.deb
+    fi
+  fi
+
+  if [[ -n "$REALVNC_TOKEN" ]]; then
+    ROLE_SUFFIX="Server"
+    [[ "$STATION_ROLE" == "terminal" ]] && ROLE_SUFFIX="Terminal"
+
+    # Build friendly name: PulsePOS-CompanyName-LocationName-Role
+    FRIENDLY_NAME="PulsePOS"
+    [[ -n "${COMPANY_NAME:-}" ]] && FRIENDLY_NAME="$FRIENDLY_NAME-$COMPANY_NAME"
+    [[ -n "${TERMINAL_NAME:-}" ]] && FRIENDLY_NAME="$FRIENDLY_NAME-$TERMINAL_NAME"
+    FRIENDLY_NAME="$FRIENDLY_NAME-$ROLE_SUFFIX"
+
+    # Remove spaces and special chars from name
+    FRIENDLY_NAME=$(echo "$FRIENDLY_NAME" | tr ' ' '-' | tr -cd 'A-Za-z0-9-_')
+
+    log "Enrolling as: $FRIENDLY_NAME"
+    vncserver-x11 -service -joinCloud "$REALVNC_TOKEN" -joinName "$FRIENDLY_NAME" 2>&1 || {
+      warn "RealVNC enrollment failed. Check your cloud token and try manually."
+    }
+  fi
+else
+  log "RealVNC: Skipped (no token provided)."
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Desktop Launcher
+# ─────────────────────────────────────────────────────────────────────────────
+
+header "Creating Desktop Launcher"
+
+POS_URL="http://localhost:3000"
+[[ "$STATION_ROLE" == "terminal" ]] && POS_URL="$SERVER_URL"
+
+# Application menu entry
+cat > /usr/share/applications/gwi-pos.desktop <<DTEOF
+[Desktop Entry]
+Type=Application
+Name=GWI POS
+Comment=Launch GWI POS — $LOCATION_NAME
+Exec=xdg-open $POS_URL
+Icon=$APP_DIR/public/icon.png
+Terminal=false
+Categories=Office;Utility;
+DTEOF
+
+# Copy to user desktop
+DESKTOP_DIR="$POSUSER_HOME/Desktop"
+if [[ -d "$DESKTOP_DIR" ]]; then
+  cp /usr/share/applications/gwi-pos.desktop "$DESKTOP_DIR/" 2>/dev/null || true
+  chown "$POSUSER":"$POSUSER" "$DESKTOP_DIR/gwi-pos.desktop" 2>/dev/null || true
+  chmod +x "$DESKTOP_DIR/gwi-pos.desktop" 2>/dev/null || true
+fi
+
+log "Desktop launcher created."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+header "Installation Complete!"
+
+echo -e "  ${GREEN}Role:${NC}     $STATION_ROLE"
+echo -e "  ${GREEN}Venue:${NC}    $VENUE_DOMAIN"
+echo -e "  ${GREEN}Location:${NC} $LOCATION_NAME"
+
+if [[ "$STATION_ROLE" == "server" ]]; then
+  echo -e "  ${GREEN}POS URL:${NC}  http://localhost:3000"
+  echo -e "  ${GREEN}Database:${NC} PostgreSQL (local) — $DB_NAME"
+  echo -e "  ${GREEN}Backups:${NC}  $BACKUP_DIR (daily 4 AM, 7-day retention)"
+  echo ""
+  echo -e "  ${CYAN}Services:${NC}"
+  echo "    pulse-pos   — $(systemctl is-active pulse-pos 2>/dev/null || echo 'unknown')"
+  echo "    pulse-kiosk  — $(systemctl is-active pulse-kiosk 2>/dev/null || echo 'unknown')"
+  echo "    postgresql   — $(systemctl is-active postgresql 2>/dev/null || echo 'unknown')"
+else
+  echo -e "  ${GREEN}Server:${NC}   $SERVER_URL"
+fi
+
+if [[ -n "${REALVNC_TOKEN:-}" ]]; then
+  echo -e "  ${GREEN}RealVNC:${NC}  Enrolled as $FRIENDLY_NAME"
+fi
+
+echo ""
+echo -e "  ${CYAN}Useful commands:${NC}"
+echo "    sudo systemctl status pulse-pos    — Check POS status"
+echo "    sudo journalctl -u pulse-pos -f    — View POS logs"
+echo "    sudo systemctl restart pulse-pos   — Restart POS"
+if [[ "$STATION_ROLE" == "server" ]]; then
+  echo "    sudo bash $BACKUP_SCRIPT     — Run manual backup"
+fi
+echo ""
+echo -e "  ${CYAN}Re-run this installer to update:${NC}"
+echo "    curl -sSL https://raw.githubusercontent.com/GetwithitMan/gwi-pos/main/scripts/installer.run | sudo bash"
+echo ""
+log "Done! GWI POS is ready."

@@ -1,327 +1,199 @@
 ================================================================================
-GWI POS - Linux Server Installation & Management Guide
+GWI POS - NUC Installation Guide
 ================================================================================
 
-This guide covers installing the POS system on a Linux Ubuntu 24 server
-and managing it remotely from your Mac.
+This guide covers installing GWI POS on Ubuntu 22.04+ NUCs using the
+automated installer script.
+
+For full technical details, see: docs/INSTALLER-SPEC.md
+
 
 ================================================================================
-PART 1: LINUX SERVER SETUP
+PART 1: AUTOMATED INSTALLATION (RECOMMENDED)
 ================================================================================
 
-1. CONNECT TO YOUR LINUX SERVER
+1. PREREQUISITES
 --------------------------------------------------------------------------------
-From your Mac terminal:
+- Ubuntu 22.04+ Desktop (NUC or mini PC)
+- Internet connectivity
+- A registration code from Mission Control admin
+- Your venue domain (e.g., fruittabar.ordercontrolcenter.com)
 
-    ssh user@your-linux-server-ip
-
-Replace "user" with your Linux username and "your-linux-server-ip" with
-the actual IP address (e.g., ssh admin@192.168.1.100)
-
-
-2. INSTALL NODE.JS
+2. RUN THE INSTALLER
 --------------------------------------------------------------------------------
-Run these commands on the Linux server:
+From the NUC terminal (or via SSH):
 
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt install -y nodejs
+    curl -sSL https://raw.githubusercontent.com/GetwithitMan/gwi-pos/main/scripts/installer.run | sudo bash
 
-Verify installation:
+The installer will prompt you for:
+    1. Station role: Server or Terminal
+    2. Venue domain (e.g., fruittabar.ordercontrolcenter.com)
+    3. Registration code (from Mission Control)
+    4. RealVNC details (optional, for remote support)
+    5. Server URL (Terminal role only)
 
-    node -v
-    npm -v
-
-Node should be version 20.x or higher.
-
-
-3. INSTALL GIT (if not already installed)
+3. WHAT GETS INSTALLED
 --------------------------------------------------------------------------------
-    sudo apt install -y git
 
+SERVER role:
+    - PostgreSQL (local database for offline operation)
+    - Node.js 20 + GWI POS application
+    - Chromium kiosk (full-screen POS at localhost:3000)
+    - Daily backup cron job (4 AM)
+    - RealVNC (if token provided)
 
-4. CREATE PROJECT DIRECTORY
+TERMINAL role:
+    - Chromium kiosk (points to server NUC)
+    - RealVNC (if token provided)
+
+4. AFTER INSTALLATION
 --------------------------------------------------------------------------------
-    sudo mkdir -p /var/www
-    sudo chown $USER:$USER /var/www
-    cd /var/www
+The POS is running at:
 
-
-5. GET THE CODE TO THE SERVER
---------------------------------------------------------------------------------
-OPTION A - Using Git (recommended):
-
-    git clone YOUR_REPO_URL gwi-pos
-    cd gwi-pos
-
-OPTION B - Copy from Mac (run this FROM YOUR MAC, not the server):
-
-    rsync -avz --exclude 'node_modules' --exclude '.next' --exclude 'prisma/*.db' \
-      "/Users/brianlewis/Documents/My websites/GWI POINT OF SALE/gwi-pos/" \
-      user@your-linux-server-ip:/var/www/gwi-pos/
-
-
-6. INSTALL DEPENDENCIES
---------------------------------------------------------------------------------
-On the Linux server:
-
-    cd /var/www/gwi-pos
-    npm install
-
-
-7. SETUP THE DATABASE
---------------------------------------------------------------------------------
-    npm run db:setup
-
-This creates the SQLite database and seeds it with demo data.
+    http://localhost:3000          (on the server NUC)
+    http://SERVER-IP:3000         (from other devices on the network)
 
 Demo login PINs:
-    - Manager:   1234
-    - Server:    2345
-    - Bartender: 3456
-
-
-8. BUILD FOR PRODUCTION
---------------------------------------------------------------------------------
-    npm run build
-
-
-9. INSTALL PM2 (Process Manager)
---------------------------------------------------------------------------------
-PM2 keeps your app running and auto-restarts it if it crashes or the server reboots.
-
-    sudo npm install -g pm2
-
-
-10. START THE APPLICATION
---------------------------------------------------------------------------------
-    pm2 start npm --name "gwi-pos" -- start
-
-Verify it's running:
-
-    pm2 status
-
-
-11. CONFIGURE AUTO-START ON REBOOT
---------------------------------------------------------------------------------
-    pm2 startup
-
-Follow the command it outputs (copy/paste and run it), then:
-
-    pm2 save
+    Manager:   1234
+    Server:    2345
+    Bartender: 3456
 
 
 ================================================================================
-PART 2: ACCESSING THE POS
+PART 2: MANAGING THE NUC
 ================================================================================
 
-Default port is 3000.
-
-From the server itself:
-    http://localhost:3000
-
-From other devices on the same network:
-    http://YOUR-LINUX-SERVER-IP:3000
-
-Example URLs (replace with your server's IP):
-    Main POS:        http://192.168.1.100:3000
-    KDS Display:     http://192.168.1.100:3000/kds
-    Login:           http://192.168.1.100:3000/login
-
-
-================================================================================
-PART 3: MANAGING FROM YOUR MAC
-================================================================================
-
-SSH INTO SERVER
+CHECK SERVICE STATUS
 --------------------------------------------------------------------------------
-    ssh user@your-linux-server-ip
-
-
-CHECK APP STATUS
---------------------------------------------------------------------------------
-    pm2 status
-
+    sudo systemctl status pulse-pos        # POS server (server role)
+    sudo systemctl status pulse-kiosk      # Kiosk browser (both roles)
 
 VIEW LOGS
 --------------------------------------------------------------------------------
-    pm2 logs gwi-pos
+    sudo journalctl -u pulse-pos -f        # Tail POS server logs
+    sudo journalctl -u pulse-kiosk -f      # Tail kiosk logs
 
-Real-time logs:
-    pm2 logs gwi-pos --lines 100
-
-
-RESTART THE APP
+RESTART SERVICES
 --------------------------------------------------------------------------------
-    pm2 restart gwi-pos
+    sudo systemctl restart pulse-pos       # Restart POS server
+    sudo systemctl restart pulse-kiosk     # Restart kiosk browser
 
-
-STOP THE APP
+STOP SERVICES
 --------------------------------------------------------------------------------
-    pm2 stop gwi-pos
+    sudo systemctl stop pulse-kiosk        # Stop kiosk only
+    sudo systemctl stop pulse-pos          # Stop POS server
 
 
 ================================================================================
-PART 4: PUSHING UPDATES
+PART 3: UPDATES
 ================================================================================
 
-IF USING GIT
---------------------------------------------------------------------------------
-Step 1 - On your Mac, commit and push changes:
+Re-run the installer to update to the latest version:
 
-    cd "/Users/brianlewis/Documents/My websites/GWI POINT OF SALE/gwi-pos"
-    git add .
-    git commit -m "Description of changes"
-    git push
+    sudo bash /opt/gwi-pos/installer.run
 
-Step 2 - On Linux server (via SSH):
+This will:
+    1. Back up the database automatically
+    2. Pull the latest code from GitHub
+    3. Rebuild the application
+    4. Restart all services
 
-    cd /var/www/gwi-pos
-    git pull
-    npm install          # Only if dependencies changed
-    npm run build
-    pm2 restart gwi-pos
-
-
-IF NOT USING GIT (direct copy)
---------------------------------------------------------------------------------
-Step 1 - From your Mac:
-
-    rsync -avz --exclude 'node_modules' --exclude '.next' --exclude 'prisma/*.db' \
-      "/Users/brianlewis/Documents/My websites/GWI POINT OF SALE/gwi-pos/" \
-      user@your-linux-server-ip:/var/www/gwi-pos/
-
-Step 2 - On Linux server (via SSH):
-
-    cd /var/www/gwi-pos
-    npm install          # Only if dependencies changed
-    npm run build
-    pm2 restart gwi-pos
+No data is lost during updates.
 
 
 ================================================================================
-PART 5: DATABASE MANAGEMENT
+PART 4: DATABASE MANAGEMENT
 ================================================================================
 
 DATABASE LOCATION
 --------------------------------------------------------------------------------
-    /var/www/gwi-pos/prisma/pos.db
+    PostgreSQL: pulse_pos database (local)
 
-
-BACKUP DATABASE (run from your Mac)
+MANUAL BACKUP
 --------------------------------------------------------------------------------
-    scp user@your-linux-server-ip:/var/www/gwi-pos/prisma/pos.db \
-      ~/Desktop/pos-backup-$(date +%Y%m%d).db
+    sudo -u posuser /opt/gwi-pos/backup-pos.sh
 
-
-RESTORE DATABASE (run from your Mac)
+AUTOMATIC BACKUPS
 --------------------------------------------------------------------------------
-    scp ~/Desktop/pos-backup-YYYYMMDD.db \
-      user@your-linux-server-ip:/var/www/gwi-pos/prisma/pos.db
+    Cron runs daily at 4:00 AM
+    Stored in: /opt/gwi-pos/backups/
+    Retention: 7 days (older backups auto-deleted)
 
-Then restart the app:
-    ssh user@your-linux-server-ip "pm2 restart gwi-pos"
-
-
-RESET DATABASE TO DEMO DATA
+LIST BACKUPS
 --------------------------------------------------------------------------------
-On the Linux server:
+    ls -lh /opt/gwi-pos/backups/
 
-    cd /var/www/gwi-pos
-    rm prisma/pos.db
-    npm run db:setup
-    pm2 restart gwi-pos
+RESTORE FROM BACKUP
+--------------------------------------------------------------------------------
+    sudo systemctl stop pulse-pos
+    gunzip < /opt/gwi-pos/backups/pos-YYYYMMDD-HHMMSS.sql.gz | \
+      sudo -u postgres psql pulse_pos
+    sudo systemctl start pulse-pos
 
 
 ================================================================================
-PART 6: TROUBLESHOOTING
+PART 5: TROUBLESHOOTING
 ================================================================================
 
-APP WON'T START
+POS WON'T START
 --------------------------------------------------------------------------------
 Check logs:
-    pm2 logs gwi-pos --lines 50
+    sudo journalctl -u pulse-pos --lines 50
+
+Check PostgreSQL:
+    sudo systemctl status postgresql
 
 Check if port 3000 is in use:
     sudo lsof -i :3000
 
-Kill process using port 3000:
-    sudo kill -9 $(sudo lsof -t -i:3000)
+KIOSK WON'T LAUNCH
+--------------------------------------------------------------------------------
+Check if POS is ready:
+    curl -s http://localhost:3000/api/health
 
+Check kiosk logs:
+    sudo journalctl -u pulse-kiosk --lines 20
 
 DATABASE ERRORS
 --------------------------------------------------------------------------------
-Reset the database:
-    cd /var/www/gwi-pos
-    rm prisma/pos.db
-    npm run db:setup
-    pm2 restart gwi-pos
+Check PostgreSQL is running:
+    sudo systemctl status postgresql
 
+Connect to database:
+    sudo -u postgres psql pulse_pos
 
-PERMISSION ERRORS
+REMOTE ACCESS (RealVNC)
 --------------------------------------------------------------------------------
-Fix ownership:
-    sudo chown -R $USER:$USER /var/www/gwi-pos
+If RealVNC was configured during install, the NUC should appear in your
+RealVNC Connect account under the name:
 
+    PulsePOS-{Company}-{Location}-{Role}
 
-CHECK SERVER RESOURCES
+FACTORY RESET
 --------------------------------------------------------------------------------
-Memory usage:
-    free -h
+WARNING: This deletes ALL data including the database.
 
-Disk space:
-    df -h
+    sudo systemctl stop pulse-pos pulse-kiosk
+    sudo rm -rf /opt/gwi-pos
+    sudo rm -f /etc/systemd/system/pulse-pos.service
+    sudo rm -f /etc/systemd/system/pulse-kiosk.service
+    sudo systemctl daemon-reload
 
-CPU/processes:
-    htop    (or top if htop not installed)
-
-
-================================================================================
-PART 7: USEFUL PM2 COMMANDS
-================================================================================
-
-    pm2 status              # Show all running apps
-    pm2 logs gwi-pos        # View logs
-    pm2 restart gwi-pos     # Restart app
-    pm2 stop gwi-pos        # Stop app
-    pm2 start gwi-pos       # Start app
-    pm2 delete gwi-pos      # Remove from PM2
-    pm2 monit               # Real-time monitoring dashboard
-    pm2 save                # Save current process list
-    pm2 resurrect           # Restore saved process list
+Then re-run the installer.
 
 
 ================================================================================
-PART 8: OPTIONAL - NGINX REVERSE PROXY
+PART 6: FILE LOCATIONS
 ================================================================================
 
-If you want to run on port 80 (standard HTTP) or add SSL:
-
-Install Nginx:
-    sudo apt install -y nginx
-
-Create config:
-    sudo nano /etc/nginx/sites-available/gwi-pos
-
-Add this content:
-
-    server {
-        listen 80;
-        server_name your-domain.com;  # or use _ for any
-
-        location / {
-            proxy_pass http://localhost:3000;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade $http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
-            proxy_cache_bypass $http_upgrade;
-        }
-    }
-
-Enable the site:
-    sudo ln -s /etc/nginx/sites-available/gwi-pos /etc/nginx/sites-enabled/
-    sudo nginx -t
-    sudo systemctl restart nginx
+Application:        /opt/gwi-pos/app/
+Environment:        /opt/gwi-pos/.env
+Backups:            /opt/gwi-pos/backups/
+Backup script:      /opt/gwi-pos/backup-pos.sh
+Installer copy:     /opt/gwi-pos/installer.run
+POS service:        /etc/systemd/system/pulse-pos.service
+Kiosk service:      /etc/systemd/system/pulse-kiosk.service
+Desktop launcher:   /usr/share/applications/gwi-pos.desktop
 
 
 ================================================================================
@@ -329,9 +201,8 @@ QUICK REFERENCE
 ================================================================================
 
 Server IP:          ___________________________
-SSH User:           ___________________________
-Project Path:       /var/www/gwi-pos
-Database Path:      /var/www/gwi-pos/prisma/pos.db
+Venue Domain:       ___________________________.ordercontrolcenter.com
+Station Role:       Server / Terminal
 App Port:           3000
 Manager PIN:        1234
 Server PIN:         2345
