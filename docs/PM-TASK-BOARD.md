@@ -133,10 +133,12 @@
 | T-067 | Mission Control: Billing & Late Payment | PM: Mission Control | 2026-02-12 | Wave 4C — Datacap-based (no Stripe), settlement deduction + card-on-file, manual escalation, billing dashboard |
 | T-062 | Mission Control: Sync Agent Sidecar | PM: Mission Control | 2026-02-12 | 11 TypeScript files, Docker container: heartbeat, SSE consumer, command worker, license validator, HMAC client, status API |
 | NEW | Cloud Auth + Venue Admin Access (Skills 329-332) | PM: Mission Control | 2026-02-12 | Cloud JWT auth, team management, venue portal, posLocationId handoff |
-| T-068 | Per-venue DB routing middleware — API routes use `db` (master) but need `getDbForVenue(slug)` for multi-venue production | PM: Mission Control | 2026-02-12 | Large refactor. Infrastructure exists in db.ts. Needs AsyncLocalStorage or per-request helper. |
-| T-069 | Remove hardcoded DEFAULT_LOCATION_ID from 13 API routes — read locationId from auth session instead | PM: Mission Control | 2026-02-12 | Files: sync-resolution, print-routes, terminals, payment-readers, roles, sync-audit, printers, kds-screens, etc. |
 | NEW | Online Ordering URL Infrastructure (Skill 336) | PM: Mission Control | 2026-02-12 | orderCode + onlineOrderingEnabled added to CloudLocation, auto-generated on create, VenueUrlCard shows ordering URL |
 | NEW | MC Release Deploy Fix (Skill 335) | PM: Mission Control | 2026-02-12 | Fixed 500 error — resolveCloudOrgId() for audit log FK, try-catch on all release routes |
+| T-068 | Per-venue DB routing (Skill 337) | PM: Mission Control | 2026-02-13 | withVenue() + AsyncLocalStorage. All 348 routes wrapped. 3-tier Proxy resolution. 5 commits. |
+| T-069 | Remove hardcoded DEFAULT_LOCATION_ID (Skill 337) | PM: Mission Control | 2026-02-13 | Resolved by withVenue() — all routes now read from request context, not hardcoded IDs |
+| NEW | Multi-Tenant DB Routing (Skill 337) | PM: Mission Control | 2026-02-13 | AsyncLocalStorage + withVenue() for all 348 API routes. Per-venue Neon DB. Safety rail on slug mismatch. |
+| NEW | Cloud Session Validation & Guard (Skill 338) | PM: Mission Control | 2026-02-13 | validate-session endpoint, useCloudSessionGuard layout guard, cloud sign-out, fixes stale locationId |
 
 ---
 

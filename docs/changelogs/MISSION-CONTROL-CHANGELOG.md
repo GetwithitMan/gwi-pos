@@ -1,5 +1,73 @@
 # Mission Control Changelog
 
+## Session: February 13, 2026 (Multi-Tenant DB Routing + Cloud Session Validation — Skills 337-338)
+
+### Summary
+Implemented per-venue database routing so cloud POS at `{slug}.ordercontrolcenter.com` writes to each venue's individual Neon database instead of the master `gwi_pos` database. Then fixed the cascading session issues (stale `locationId`, redirect loops, race conditions) caused by the routing change.
+
+### Multi-Tenant DB Routing (Skill 337)
+
+**Problem**: Next.js 16 changed `headers()` to return a Promise. The synchronous db.ts Proxy couldn't `await` it, causing silent fallback to the master DB for all cloud venues.
+
+**Solution** (2 commits):
+- **`src/lib/request-context.ts`** — AsyncLocalStorage for per-request tenant context (`requestStore`)
+- **`src/lib/with-venue.ts`** — Route handler wrapper: `await headers()` → read `x-venue-slug` → `getDbForVenue(slug)` → `requestStore.run()`
+- **`src/lib/db.ts`** — 3-tier Proxy resolution: AsyncLocalStorage → headers fallback → master client
+- **Codemod**: All 348 API route files (617 handlers) wrapped with `withVenue()` via automated script
+- **Safety rail**: If slug is present but DB resolution fails → 500 (not silent master fallback)
+- Per-venue PrismaClient cached in `globalThis.venueClients` Map (survives HMR)
+
+### Cloud Session Validation & Guard (Skill 338)
+
+**Problem**: After DB routing, the browser's auth store had stale `locationId: "loc-1"` from master DB. Venue DB uses `cmll6q1gp0002l504nbyllnv0`. This caused:
+1. FK violation on all writes (500 errors)
+2. Cloud mode redirect loop (`useRequireAuth` → `/login` → middleware blocks → `/settings` → loop)
+3. Race condition: settings pages rendered with stale data before async validation completes
+
+**Solution** (3 commits):
+- **Commit `ae1aa1a`**: `GET /api/auth/validate-session` — lightweight locationId/employeeId check
+- **Commit `a25aa5b`**: `GET /api/auth/cloud-session` — re-bootstraps auth store from httpOnly cookie; `useRequireAuth` cloud mode detection; SettingsNav sign-out button + Mission Control link
+- **Commit `7fe120e`**: `useCloudSessionGuard` in settings layout — blocks ALL children until validation completes (spinner), covers every settings page
+
+### Key Files Changed
+
+| File | Changes |
+|------|---------|
+| `src/lib/request-context.ts` | CREATED — AsyncLocalStorage for per-request tenant context |
+| `src/lib/with-venue.ts` | CREATED — Route handler wrapper |
+| `src/lib/db.ts` | MODIFIED — 3-tier Proxy resolution, exported masterClient |
+| 348 API route files | MODIFIED — Wrapped with `withVenue()` |
+| `src/app/api/auth/validate-session/route.ts` | CREATED — locationId/employeeId check |
+| `src/app/api/auth/cloud-session/route.ts` | MODIFIED — Added GET handler for cookie re-bootstrap |
+| `src/hooks/useRequireAuth.ts` | MODIFIED — Cloud mode detection + re-bootstrap |
+| `src/app/(admin)/settings/layout.tsx` | MODIFIED — `useCloudSessionGuard` blocks children until valid |
+| `src/components/admin/SettingsNav.tsx` | MODIFIED — Cloud sign-out button, MC link |
+
+### Commits
+
+**POS (gwi-pos)**:
+- `1f0a18f` — feat: multi-tenant DB routing via AsyncLocalStorage + Proxy
+- `bf9d2a5` — feat: wrap all 348 API routes with withVenue()
+- `ae1aa1a` — fix: add session validation to catch stale locationId
+- `a25aa5b` — fix: cloud mode session re-bootstrap and sign-out button
+- `7fe120e` — fix: block settings pages until cloud session is validated
+
+### New Skills Documented
+- Skill 337: Multi-Tenant DB Routing (withVenue + AsyncLocalStorage)
+- Skill 338: Cloud Session Validation & Guard
+
+### Known Issues
+- Need to verify that commit `7fe120e` fixes ingredient category creation on live Vercel deployment
+- Empty ingredient categories still hidden in hierarchy view (by design)
+
+### How to Resume
+1. Say: `PM Mode: Mission Control`
+2. Review PM Task Board for remaining tasks
+3. Key priorities: venue DB connection layer for MC admin pages (MC-011 plan), online ordering
+4. Verify cloud settings pages work end-to-end on Vercel
+
+---
+
 ## Session: February 12, 2026 (Online Ordering Infrastructure + Deploy Fix — Skills 335-336)
 
 ### Summary

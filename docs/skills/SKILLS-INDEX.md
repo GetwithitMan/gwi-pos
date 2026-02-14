@@ -135,6 +135,8 @@
 | 334 | Release Management & Deployment | DONE | Mission Control | 301, 307, 308 | Create releases (semver, channel, image tag), deploy to locations via FORCE_UPDATE FleetCommand, schema version gate, per-location results |
 | 335 | Auth Enhancements | DONE | Mission Control | 300 | AdminUser auto-provisioning (resolveAdminUserId), CloudOrganization ID resolution (resolveCloudOrgId), FK constraint fix for audit logs |
 | 336 | Online Ordering URL Infrastructure | DONE | Mission Control | 300, 319 | orderCode (6-char unique) + onlineOrderingEnabled on CloudLocation, auto-generate on create, VenueUrlCard UI with toggle + copy, path-based URL pattern |
+| 337 | Multi-Tenant DB Routing | DONE | Mission Control | 300, 330 | AsyncLocalStorage + withVenue() wrapper for all 348 POS API routes. 3-tier Proxy resolution: request context → headers → master. Per-venue Neon DB via globalThis cache. |
+| 338 | Cloud Session Validation & Guard | DONE | Mission Control | 337, 330 | validate-session endpoint, useRequireAuth cloud awareness, useCloudSessionGuard layout guard, cloud sign-out button. Fixes stale locationId after DB routing changes. |
 
 ### POS Inventory (Non-MC)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -349,8 +351,8 @@
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| Mission Control (Phase 2) | 19 | 0 | 8 | 27 | 70% |
-| **TOTAL** | **196** | **7** | **24** | **227** | **89%** |
+| Mission Control (Phase 2) | 21 | 0 | 8 | 29 | 72% |
+| **TOTAL** | **198** | **7** | **24** | **229** | **90%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -485,6 +487,16 @@ Skills that can be developed simultaneously:
 | 333 | Ingredient Category Inline Creation | "New Category" button + inline form in ItemEditor ingredient picker (both green and purple pickers). Categories created from Menu Builder get `needsVerification: true`. Red pulsing "New Category" badge + green "Verify" button on `/ingredients` page. Optimistic UI via `onCategoryCreated` callback. Schema: `needsVerification Boolean @default(false)` on IngredientCategory. |
 | 334 | MC Release Management & Deployment | Release CRUD (create/list/detail/archive), deploy to locations via FORCE_UPDATE FleetCommand. Schema version gate blocks deploys if server too old. Per-location results (207 Multi-Status). Channel-scoped `isLatest` semantics. Full audit trail. |
 | 335 | MC Auth Enhancements | `resolveAdminUserId()` auto-provisions AdminUser for first-time Clerk users (fixes "Admin user not found" error). `resolveCloudOrgId()` converts Clerk org ID → CloudOrganization.id for FK relations (fixes 500 on release create/deploy). All release routes updated with try-catch. |
+| 336 | MC Online Ordering URL Infrastructure | `orderCode` (unique 6-char alphanumeric) + `onlineOrderingEnabled` on CloudLocation. Auto-generated on create. VenueUrlCard rewritten with admin portal + online ordering sections. Path-based URLs: `ordercontrolcenter.com/{code}/{slug}`. |
+| 337 | Multi-Tenant DB Routing (withVenue + AsyncLocalStorage) | Per-request tenant context via `requestStore.run()`. `withVenue()` wrapper properly `await`s Next.js 16 `headers()`. 3-tier db.ts Proxy: AsyncLocalStorage → headers → master. All 348 API routes wrapped via codemod. Per-venue PrismaClient cached in `globalThis.venueClients`. Safety rail: slug present but DB fails → 500 (not silent fallback). |
+| 338 | Cloud Session Validation & Guard | `GET /api/auth/validate-session` lightweight check. `GET /api/auth/cloud-session` re-bootstraps from httpOnly cookie. `useRequireAuth` cloud mode detection + re-bootstrap. `useCloudSessionGuard` in settings layout blocks children until valid. Cloud sign-out button + Mission Control link in SettingsNav. Fixes stale `locationId: "loc-1"` after DB routing changes. |
+
+## Recently Completed (2026-02-13 — Multi-Tenant DB Routing + Cloud Session Validation, Skills 337-338)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 337 | Multi-Tenant DB Routing | `withVenue()` wrapper + AsyncLocalStorage for per-request tenant context. All 348 POS API routes wrapped via codemod. `db.ts` Proxy with 3-tier resolution: AsyncLocalStorage → headers → master. Per-venue Neon PrismaClient cached in `globalThis.venueClients` Map. Safety rail: slug present but DB fails → 500 (not silent master fallback). |
+| 338 | Cloud Session Validation & Guard | `GET /api/auth/validate-session` checks locationId/employeeId exist in venue DB. `useRequireAuth` detects cloud mode and re-bootstraps from httpOnly cookie instead of redirecting to blocked `/login`. `useCloudSessionGuard` in settings layout blocks ALL children until validation completes (spinner). Cloud sign-out button in SettingsNav. |
 
 ## Recently Completed (2026-02-12 — Mission Control Cloud Auth, Team, Venue Portal, Skills 329-332)
 
