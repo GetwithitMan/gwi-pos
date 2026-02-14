@@ -917,11 +917,8 @@ export function FloorPlanHome({
     try {
       // Use same /api/menu endpoint as orders page for consistency
       // Stores BOTH categories AND items — items are filtered client-side on category click
-      const timestamp = Date.now()
-      const params = new URLSearchParams({ locationId, _t: timestamp.toString() })
-      const res = await fetch(`/api/menu?${params}`, {
+      const res = await fetch(`/api/menu?locationId=${locationId}`, {
         cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' },
       })
       if (res.ok) {
         const data = await res.json()

@@ -2,103 +2,121 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getAllMenuItemsStockStatus } from '@/lib/stock-status'
 import { withVenue } from '@/lib/with-venue'
+import { createServerTiming } from '@/lib/perf-timing'
+import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
 
-// Force dynamic rendering - never cache (entertainment status changes frequently)
+// Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export const GET = withVenue(async function GET(request: NextRequest) {
+  const timing = createServerTiming()
+  timing.start('total')
+
   try {
     const { searchParams } = new URL(request.url)
     const locationId = searchParams.get('locationId')
     const categoryType = searchParams.get('categoryType')   // Optional: 'food', 'liquor', 'drinks', etc.
     const categoryShow = searchParams.get('categoryShow')   // Optional: 'food', 'bar', 'entertainment'
 
+    // Check server-side cache first
+    if (locationId) {
+      const cacheKey = buildMenuCacheKey(locationId, categoryType, categoryShow)
+      const cached = getMenuCache(cacheKey)
+      if (cached) {
+        timing.add('cache', 0, 'Hit')
+        timing.end('total')
+        return timing.apply(NextResponse.json(cached))
+      }
+    }
+
     // Build location filter - if locationId provided, filter by it
     const locationFilter = locationId ? { locationId } : {}
     const categoryTypeFilter = categoryType ? { categoryType } : {}
     const categoryShowFilter = categoryShow ? { categoryShow } : {}
 
-    const categories = await db.category.findMany({
-      where: { isActive: true, deletedAt: null, ...locationFilter, ...categoryTypeFilter, ...categoryShowFilter },
-      orderBy: { sortOrder: 'asc' },
-      include: {
-        _count: {
-          select: {
-            menuItems: { where: { deletedAt: null, isActive: true } }
+    // Run all three queries in parallel (were sequential before)
+    timing.start('db')
+    const [categories, items, stockStatusMap] = await Promise.all([
+      db.category.findMany({
+        where: { isActive: true, deletedAt: null, ...locationFilter, ...categoryTypeFilter, ...categoryShowFilter },
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          _count: {
+            select: {
+              menuItems: { where: { deletedAt: null, isActive: true } }
+            }
           }
         }
-      }
-    })
+      }),
 
-    const items = await db.menuItem.findMany({
-      where: {
-        isActive: true,
-        deletedAt: null,
-        ...locationFilter,
-        ...(categoryType ? { category: { categoryType } } : {}),
-        ...(categoryShow ? { category: { categoryShow } } : {}),
-      },
-      orderBy: { sortOrder: 'asc' },
-      include: {
-        category: {
-          select: { categoryType: true }
+      db.menuItem.findMany({
+        where: {
+          isActive: true,
+          deletedAt: null,
+          ...locationFilter,
+          ...(categoryType ? { category: { categoryType } } : {}),
+          ...(categoryShow ? { category: { categoryShow } } : {}),
         },
-        modifierGroups: {
-          where: {
-            deletedAt: null,
-            modifierGroup: { deletedAt: null }
+        orderBy: { sortOrder: 'asc' },
+        include: {
+          category: {
+            select: { categoryType: true }
           },
-          include: {
-            modifierGroup: {
-              include: {
-                modifiers: {
-                  where: { deletedAt: null, isActive: true },
-                  select: {
-                    id: true,
-                    name: true,
-                    price: true,
-                    spiritTier: true,
-                  },
-                  orderBy: { sortOrder: 'asc' }
+          modifierGroups: {
+            where: {
+              deletedAt: null,
+              modifierGroup: { deletedAt: null }
+            },
+            include: {
+              modifierGroup: {
+                include: {
+                  modifiers: {
+                    where: { deletedAt: null, isActive: true },
+                    select: {
+                      id: true,
+                      name: true,
+                      price: true,
+                      spiritTier: true,
+                    },
+                    orderBy: { sortOrder: 'asc' }
+                  }
+                }
+              }
+            }
+          },
+          recipeIngredients: {
+            include: {
+              bottleProduct: {
+                select: {
+                  id: true,
+                  name: true,
+                  pourCost: true
+                }
+              }
+            }
+          },
+          // Include ingredients to check 86 status
+          ingredients: {
+            where: { deletedAt: null },
+            include: {
+              ingredient: {
+                select: {
+                  id: true,
+                  name: true,
+                  is86d: true
                 }
               }
             }
           }
-        },
-        recipeIngredients: {
-          include: {
-            bottleProduct: {
-              select: {
-                id: true,
-                name: true,
-                pourCost: true
-              }
-            }
-          }
-        },
-        // Include ingredients to check 86 status
-        ingredients: {
-          where: { deletedAt: null },
-          include: {
-            ingredient: {
-              select: {
-                id: true,
-                name: true,
-                is86d: true
-              }
-            }
-          }
         }
-      }
-    })
+      }),
 
-    // Get stock status for all menu items (if locationId provided)
-    let stockStatusMap = new Map()
-    if (locationId) {
-      stockStatusMap = await getAllMenuItemsStockStatus(locationId)
-    }
+      locationId ? getAllMenuItemsStockStatus(locationId) : Promise.resolve(new Map()),
+    ])
+    timing.end('db', 'Queries')
 
+    timing.start('map')
     // Calculate pour cost for items with recipes and check 86 status
     const itemsWithPourCost = items.map(item => {
       let totalPourCost = 0
@@ -167,7 +185,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    const responseData = {
       categories: categories.map(c => ({
         id: c.id,
         name: c.name,
@@ -231,7 +249,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         stockCount: item.stockCount,
         stockIngredientName: item.stockIngredientName,
       }))
-    })
+    }
+    timing.end('map', 'Response mapping')
+
+    // Store in cache
+    if (locationId) {
+      const cacheKey = buildMenuCacheKey(locationId, categoryType, categoryShow)
+      setMenuCache(cacheKey, responseData)
+    }
+
+    timing.end('total')
+    return timing.apply(NextResponse.json(responseData))
   } catch (error) {
     console.error('Failed to fetch menu:', error)
     return NextResponse.json(

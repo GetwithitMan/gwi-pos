@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { createServerTiming } from '@/lib/perf-timing'
 
 /**
  * GET /api/floorplan/snapshot?locationId=...
@@ -16,7 +17,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'locationId required' }, { status: 400 })
   }
 
+  const timing = createServerTiming()
+  timing.start('total')
+
   try {
+    timing.start('db')
     const [tables, sections, elements, openOrdersCount] = await Promise.all([
       // Tables with seats + current order summary (no items/modifiers)
       db.table.findMany({
@@ -83,8 +88,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         where: { locationId, status: 'open', deletedAt: null },
       }),
     ])
+    timing.end('db', 'Parallel queries')
 
-    return NextResponse.json({
+    timing.start('map')
+    const response = NextResponse.json({
       tables: tables.map(t => ({
         id: t.id,
         name: t.name,
@@ -163,6 +170,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })),
       openOrdersCount,
     })
+    timing.end('map', 'Response mapping')
+    timing.end('total')
+    return timing.apply(response)
   } catch (error) {
     console.error('[floorplan/snapshot] GET error:', error)
     return NextResponse.json({ error: 'Failed to load floor plan' }, { status: 500 })

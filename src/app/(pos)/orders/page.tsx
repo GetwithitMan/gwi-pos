@@ -538,11 +538,8 @@ export default function OrdersPage() {
   const loadMenu = useCallback(async () => {
     if (!employee?.location?.id) return
     try {
-      const timestamp = Date.now()
-      const params = new URLSearchParams({ locationId: employee.location.id, _t: timestamp.toString() })
-      const response = await fetch(`/api/menu?${params}`, {
+      const response = await fetch(`/api/menu?locationId=${employee.location.id}`, {
         cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' },
       })
       if (response.ok) {
         const data = await response.json()

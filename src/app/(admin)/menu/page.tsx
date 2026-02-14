@@ -229,17 +229,10 @@ export default function MenuManagementPage() {
   // Define loadMenu first so it can be used in useEffects
   const loadMenu = useCallback(async () => {
     try {
-      // Add cache-busting for fresh entertainment status
-      const timestamp = Date.now()
-
       const locationId = employee?.location?.id
       const [menuResponse, ingredientsResponse, ingredientCategoriesResponse, printersResponse, kdsResponse] = await Promise.all([
-        fetch(`/api/menu?_t=${timestamp}`, {
+        fetch('/api/menu', {
           cache: 'no-store',
-          headers: {
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-            'Pragma': 'no-cache',
-          }
         }),
         locationId ? fetch(`/api/ingredients?locationId=${locationId}`) : Promise.resolve(null),
         locationId ? fetch(`/api/ingredient-categories?locationId=${locationId}`) : Promise.resolve(null),
