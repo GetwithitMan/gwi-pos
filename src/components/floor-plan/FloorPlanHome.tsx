@@ -688,7 +688,10 @@ export function FloorPlanHome({
       callbacksRef.current.clearExpiredFlashes()
     }, 1000)
 
-    return () => clearInterval(heartbeat)
+    return () => {
+      clearInterval(heartbeat)
+      if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current)
+    }
   }, []) // Empty deps - refs keep callbacks fresh
 
   // 20s fallback polling ONLY when socket is disconnected
@@ -866,8 +869,10 @@ export function FloorPlanHome({
   }, [paidOrderId, activeOrderId, activeTableId, tables, onPaidOrderCleared])
 
   // Refs to track previous data for change detection (prevents flashing during polling)
-  // In-flight snapshot request (for deduplication)
+  // Snapshot deduplication + coalescing refs
   const snapshotInFlightRef = useRef(false)
+  const snapshotPendingRef = useRef(false)
+  const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Ref to prevent double-tap race condition on Send button
   const isProcessingSendRef = useRef(false)
@@ -879,8 +884,17 @@ export function FloorPlanHome({
   })
 
   const loadFloorPlanData = async (showLoading = true) => {
-    if (snapshotInFlightRef.current) return // deduplicate concurrent requests
+    // Coalescing: if a fetch is in flight, mark pending and let the trailing refresh handle it
+    if (snapshotInFlightRef.current) {
+      snapshotPendingRef.current = true
+      return
+    }
+    if (snapshotTimerRef.current) {
+      clearTimeout(snapshotTimerRef.current)
+      snapshotTimerRef.current = null
+    }
     snapshotInFlightRef.current = true
+    snapshotPendingRef.current = false
     if (showLoading) setLoading(true)
     try {
       const res = await fetch(`/api/floorplan/snapshot?locationId=${locationId}`)
@@ -896,6 +910,13 @@ export function FloorPlanHome({
     } finally {
       snapshotInFlightRef.current = false
       if (showLoading) setLoading(false)
+      // If more events arrived while fetching, do one trailing refresh after 150ms
+      if (snapshotPendingRef.current) {
+        snapshotPendingRef.current = false
+        snapshotTimerRef.current = setTimeout(() => {
+          loadFloorPlanData(false)
+        }, 150)
+      }
     }
   }
 
