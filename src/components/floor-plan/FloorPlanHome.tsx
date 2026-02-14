@@ -671,11 +671,10 @@ export function FloorPlanHome({
 
   // Load data on mount — skip loadCategories if parent owns menu data (prop defined, even if empty while loading)
   useEffect(() => {
-    loadFloorPlanData()
+    loadFloorPlanData() // snapshot includes openOrdersCount
     if (initialCategories === undefined) {
       loadCategories()
     }
-    loadOpenOrdersCount()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId])
 
@@ -696,8 +695,7 @@ export function FloorPlanHome({
   useEffect(() => {
     if (isConnected) return // socket working, no polling needed
     const fallback = setInterval(() => {
-      callbacksRef.current.loadFloorPlanData?.()
-      callbacksRef.current.loadOpenOrdersCount?.()
+      callbacksRef.current.loadFloorPlanData?.() // snapshot includes count
     }, 20000)
     return () => clearInterval(fallback)
   }, [isConnected])
@@ -706,8 +704,7 @@ export function FloorPlanHome({
   useEffect(() => {
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') {
-        callbacksRef.current.loadFloorPlanData?.()
-        callbacksRef.current.loadOpenOrdersCount?.()
+        callbacksRef.current.loadFloorPlanData?.() // snapshot includes count
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
@@ -718,8 +715,7 @@ export function FloorPlanHome({
     if (!isConnected) return
 
     const refreshAll = () => {
-      loadFloorPlanData(false)
-      loadOpenOrdersCount()
+      loadFloorPlanData(false) // snapshot includes count
     }
 
     const unsubs = [
@@ -767,8 +763,7 @@ export function FloorPlanHome({
   // Parent-triggered refresh (e.g., after send-to-kitchen in orders page)
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
-      loadFloorPlanData(false)
-      loadOpenOrdersCount()
+      loadFloorPlanData(false) // snapshot includes count
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger])
@@ -864,17 +859,15 @@ export function FloorPlanHome({
     useOrderStore.getState().clearOrder()
 
     // Refresh floor plan to show updated table status
-    loadFloorPlanData()
-    loadOpenOrdersCount()
+    loadFloorPlanData() // snapshot includes count
 
     // Notify parent that we've cleared the paid order
     onPaidOrderCleared?.()
   }, [paidOrderId, activeOrderId, activeTableId, tables, onPaidOrderCleared])
 
   // Refs to track previous data for change detection (prevents flashing during polling)
-  const prevTablesJsonRef = useRef<string>('')
-  const prevSectionsJsonRef = useRef<string>('')
-  const prevElementsJsonRef = useRef<string>('')
+  // In-flight snapshot request (for deduplication)
+  const snapshotInFlightRef = useRef(false)
 
   // Ref to prevent double-tap race condition on Send button
   const isProcessingSendRef = useRef(false)
@@ -883,50 +876,25 @@ export function FloorPlanHome({
   const callbacksRef = useRef({
     clearExpiredFlashes,
     loadFloorPlanData: null as (() => Promise<void>) | null,
-    loadOpenOrdersCount: null as (() => Promise<void>) | null,
   })
 
   const loadFloorPlanData = async (showLoading = true) => {
-    // Only show loading state on initial load, not during background polling
+    if (snapshotInFlightRef.current) return // deduplicate concurrent requests
+    snapshotInFlightRef.current = true
     if (showLoading) setLoading(true)
     try {
-      const [tablesRes, sectionsRes, elementsRes] = await Promise.all([
-        fetch(`/api/tables?locationId=${locationId}&includeSeats=true&includeOrders=true`),
-        fetch(`/api/sections?locationId=${locationId}`),
-        fetch(`/api/floor-plan-elements?locationId=${locationId}`),
-      ])
-
-      if (tablesRes.ok) {
-        const data = await tablesRes.json()
-        const newTables = data.tables || []
-        // Only update if data actually changed to prevent flashing during polling
-        const newJson = JSON.stringify(newTables)
-        if (newJson !== prevTablesJsonRef.current) {
-          prevTablesJsonRef.current = newJson
-          setTables(newTables)
-        }
-      }
-      if (sectionsRes.ok) {
-        const data = await sectionsRes.json()
-        const newSections = data.sections || []
-        const newJson = JSON.stringify(newSections)
-        if (newJson !== prevSectionsJsonRef.current) {
-          prevSectionsJsonRef.current = newJson
-          setSections(newSections)
-        }
-      }
-      if (elementsRes.ok) {
-        const data = await elementsRes.json()
-        const newElements = data.elements || []
-        const newJson = JSON.stringify(newElements)
-        if (newJson !== prevElementsJsonRef.current) {
-          prevElementsJsonRef.current = newJson
-          setElements(newElements)
-        }
+      const res = await fetch(`/api/floorplan/snapshot?locationId=${locationId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setTables(data.tables || [])
+        setSections(data.sections || [])
+        setElements(data.elements || [])
+        setOpenOrdersCount(data.openOrdersCount ?? 0)
       }
     } catch (error) {
-      console.error('[FloorPlanHome] Load error:', error)
+      console.error('[FloorPlanHome] Snapshot load error:', error)
     } finally {
+      snapshotInFlightRef.current = false
       if (showLoading) setLoading(false)
     }
   }
@@ -957,24 +925,11 @@ export function FloorPlanHome({
     }
   }
 
-  const loadOpenOrdersCount = async () => {
-    try {
-      const res = await fetch(`/api/orders?locationId=${locationId}&status=open&count=true`)
-      if (res.ok) {
-        const data = await res.json()
-        setOpenOrdersCount(data.count || 0)
-      }
-    } catch (error) {
-      console.error('[FloorPlanHome] Open orders count error:', error)
-    }
-  }
-
   // FIX 4: Keep refs updated with latest callbacks
   useEffect(() => {
     callbacksRef.current = {
       clearExpiredFlashes,
       loadFloorPlanData: () => loadFloorPlanData(false),
-      loadOpenOrdersCount,
     }
   })
 
@@ -1437,7 +1392,6 @@ export function FloorPlanHome({
 
       // Refresh floor plan data in background (fire-and-forget — UI already cleared)
       loadFloorPlanData(false).catch(() => {})
-      loadOpenOrdersCount()
     } catch (error) {
       console.error('[FloorPlanHome] Failed to send order:', error)
     } finally {
@@ -1657,9 +1611,8 @@ export function FloorPlanHome({
     setViewMode('tables')
 
     // Refresh floor plan to show updated table status
-    loadFloorPlanData()
-    loadOpenOrdersCount()
-  }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData, loadOpenOrdersCount])
+    loadFloorPlanData() // snapshot includes count
+  }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData])
 
   // Note: Ghost preview calculation is now handled by useFloorPlanDrag hook
 
