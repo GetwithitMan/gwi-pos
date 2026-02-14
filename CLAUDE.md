@@ -27,11 +27,50 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
 
 | Phase | What | Status |
 |-------|------|--------|
-| **1** | Build the POS | 🔄 In Progress |
-| **2** | Build Admin Console | ⏳ Later |
-| **3** | Deployment Infrastructure | ⏳ Later |
+| **1** | Build the POS (`gwi-pos`) | 🔄 In Progress |
+| **2** | Build Admin Console (`gwi-mission-control`) | 🔄 In Progress |
+| **3** | Deployment Infrastructure | 🔄 In Progress |
 
 **Full architecture details:** See `/docs/GWI-ARCHITECTURE.md`
+
+### Two Separate Repos & Deployments
+
+This system is split across **two independent repositories**. Never put Mission Control features in the POS repo or vice versa.
+
+| | GWI POS | GWI Mission Control |
+|---|---------|-------------------|
+| **Repo** | `gwi-pos` | `gwi-mission-control` |
+| **Local path** | `/Users/brianlewis/Documents/My websites/2-8 2026-B-am GWI POINT OF SALE` | `/Users/brianlewis/Documents/My websites/gwi-mission-control` |
+| **Vercel domain** | `www.barpos.restaurant` | `app.thepasspos.com` |
+| **Venue subdomains** | `{slug}.ordercontrolcenter.com` | N/A |
+| **Purpose** | POS app (ordering, payments, KDS, floor plan, menu, reports) | Admin console (onboard venues, fleet management, monitoring, billing) |
+| **Database** | Neon PostgreSQL — one database per venue (`gwi_pos_{slug}`) | Neon PostgreSQL — single master database |
+| **Prisma schema** | `prisma/schema.prisma` (POS models: Order, MenuItem, Table, etc.) | Own `prisma/schema.prisma` (Cloud models: CloudOrganization, CloudLocation, ServerNode, etc.) |
+| **Auth** | Employee PIN login (per-venue) | Clerk B2B (org-level admin users) |
+
+**Release workflow:**
+1. New POS features → commit & push to `gwi-pos` → Vercel auto-deploys to `barpos.restaurant` / `*.ordercontrolcenter.com`
+2. New MC features → commit & push to `gwi-mission-control` → Vercel auto-deploys to `app.thepasspos.com`
+
+**What lives WHERE:**
+
+| Feature | Repo |
+|---------|------|
+| Fleet registration, NUC provisioning, registration tokens | **Mission Control** |
+| Server heartbeat, sync, license validation | **Mission Control** |
+| Venue onboarding, organization management | **Mission Control** |
+| Fleet dashboard, server monitoring | **Mission Control** |
+| POS ordering, payments, KDS, floor plan | **POS** |
+| Menu builder, modifiers, ingredients | **POS** |
+| Reports (daily, shift, PMIX, tips) | **POS** |
+| Employee management, roles, permissions | **POS** |
+| Hardware (printers, KDS screens, payment readers) | **POS** |
+| Venue settings (name, address, timezone) | **POS** |
+
+**NEVER do this:**
+- Add fleet/registration/provisioning code to the POS repo
+- Add POS ordering/menu/payment logic to the MC repo
+- Duplicate models that exist in the other repo's schema
 
 ## Tech Stack
 
