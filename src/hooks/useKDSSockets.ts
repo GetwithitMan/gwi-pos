@@ -21,6 +21,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type {
   KDSOrderReceivedEvent,
   KDSItemStatusUpdateEvent,
@@ -123,136 +124,124 @@ export function useKDSSockets(options: UseKDSSocketsOptions): UseKDSSocketsRetur
     ordersRef.current = orders
   }, [orders])
 
-  // Initialize socket connection
+  // Initialize socket connection (shared socket)
   useEffect(() => {
-    let socket: Socket | null = null
+    const socket = getSharedSocket() as Socket
+    socketRef.current = socket
 
-    async function initSocket() {
-      try {
-        // Dynamic import socket.io-client
-        const { io } = await import('socket.io-client')
+    // Connection events
+    const onConnect = () => {
+      setIsConnected(true)
+      setConnectionError(null)
+      setReconnectAttempts(0)
 
-        const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
+      // Join station rooms
+      socket.emit('join_station', {
+        locationId,
+        tags,
+        terminalId,
+        stationId,
+      })
+    }
 
-        socket = io(serverUrl, {
-          path: '/api/socket',
-          transports: ['websocket', 'polling'],
-          reconnection: true,
-          reconnectionAttempts: 10,
-          reconnectionDelay: 1000,
-          reconnectionDelayMax: 5000,
-        }) as Socket
+    const onDisconnect = () => {
+      setIsConnected(false)
+    }
 
-        socketRef.current = socket
+    const onConnectError = (error: unknown) => {
+      console.error('[KDS Socket] Connection error:', error)
+      setConnectionError(error instanceof Error ? error.message : 'Connection error')
+      setReconnectAttempts((prev) => prev + 1)
+    }
 
-        // Connection events
-        socket.on('connect', () => {
-          setIsConnected(true)
-          setConnectionError(null)
-          setReconnectAttempts(0)
+    // KDS Events
+    const onOrderReceived = (data: unknown) => {
+      const orderData = data as KDSOrderReceivedEvent
 
-          // Join station rooms
-          socket!.emit('join_station', {
-            locationId,
-            tags,
-            terminalId,
-            stationId,
-          })
-        })
+      const newOrder: KDSOrder = {
+        ...orderData,
+        receivedAt: new Date(),
+        itemStatuses: new Map(
+          orderData.primaryItems.map((item) => [item.id, 'pending'])
+        ),
+      }
 
-        socket.on('disconnect', (_reason: unknown) => {
-          setIsConnected(false)
-        })
+      // Add to orders (newest first)
+      setOrders((prev) => [newOrder, ...prev])
 
-        socket.on('connect_error', (error: unknown) => {
-          console.error('[KDS Socket] Connection error:', error)
-          setConnectionError(error instanceof Error ? error.message : 'Connection error')
-          setReconnectAttempts((prev) => prev + 1)
-        })
+      // Callbacks
+      if (onNewOrder) onNewOrder(orderData)
 
-        // KDS Events
-        socket.on('kds:order-received', (data: unknown) => {
-          const orderData = data as KDSOrderReceivedEvent
+      // Sound alert
+      if (playSound) playChime()
 
-          const newOrder: KDSOrder = {
-            ...orderData,
-            receivedAt: new Date(),
-            itemStatuses: new Map(
-              orderData.primaryItems.map((item) => [item.id, 'pending'])
-            ),
-          }
-
-          // Add to orders (newest first)
-          setOrders((prev) => [newOrder, ...prev])
-
-          // Callbacks
-          if (onNewOrder) onNewOrder(orderData)
-
-          // Sound alert
-          if (playSound) playChime()
-
-          // Flash effect (via CSS class)
-          if (flashOnNew) {
-            document.body.classList.add('kds-flash-new')
-            setTimeout(() => {
-              document.body.classList.remove('kds-flash-new')
-            }, 500)
-          }
-        })
-
-        socket.on('kds:item-status', (data: unknown) => {
-          const update = data as KDSItemStatusUpdateEvent
-
-          setOrders((prev) =>
-            prev.map((order) => {
-              if (order.orderId === update.orderId) {
-                const newStatuses = new Map(order.itemStatuses)
-                newStatuses.set(update.itemId, update.status)
-                return { ...order, itemStatuses: newStatuses }
-              }
-              return order
-            })
-          )
-
-          if (onItemStatus) onItemStatus(update)
-        })
-
-        socket.on('kds:order-bumped', (data: unknown) => {
-          const update = data as KDSOrderBumpedEvent
-
-          // Remove order from display if it's fully served
-          if (update.allItemsServed) {
-            setOrders((prev) => prev.filter((o) => o.orderId !== update.orderId))
-          }
-
-          if (onOrderBumped) onOrderBumped(update)
-        })
-
-        socket.on('entertainment:session-update', (data: unknown) => {
-          const update = data as EntertainmentSessionUpdateEvent
-
-          if (onEntertainmentUpdate) onEntertainmentUpdate(update)
-        })
-
-        // Confirmation of room join
-        socket.on('joined', (_response: { success: boolean; rooms: number }) => {
-        })
-      } catch (error) {
-        console.error('[KDS Socket] Failed to initialize:', error)
-        setConnectionError(
-          error instanceof Error ? error.message : 'Failed to initialize socket'
-        )
+      // Flash effect (via CSS class)
+      if (flashOnNew) {
+        document.body.classList.add('kds-flash-new')
+        setTimeout(() => {
+          document.body.classList.remove('kds-flash-new')
+        }, 500)
       }
     }
 
-    initSocket()
+    const onItemStatusUpdate = (data: unknown) => {
+      const update = data as KDSItemStatusUpdateEvent
+
+      setOrders((prev) =>
+        prev.map((order) => {
+          if (order.orderId === update.orderId) {
+            const newStatuses = new Map(order.itemStatuses)
+            newStatuses.set(update.itemId, update.status)
+            return { ...order, itemStatuses: newStatuses }
+          }
+          return order
+        })
+      )
+
+      if (onItemStatus) onItemStatus(update)
+    }
+
+    const onOrderBumpedEvent = (data: unknown) => {
+      const update = data as KDSOrderBumpedEvent
+
+      // Remove order from display if it's fully served
+      if (update.allItemsServed) {
+        setOrders((prev) => prev.filter((o) => o.orderId !== update.orderId))
+      }
+
+      if (onOrderBumped) onOrderBumped(update)
+    }
+
+    const onEntertainmentSessionUpdate = (data: unknown) => {
+      const update = data as EntertainmentSessionUpdateEvent
+
+      if (onEntertainmentUpdate) onEntertainmentUpdate(update)
+    }
+
+    socket.on('connect', onConnect)
+    socket.on('disconnect', onDisconnect)
+    socket.on('connect_error', onConnectError)
+    socket.on('kds:order-received', onOrderReceived)
+    socket.on('kds:item-status', onItemStatusUpdate)
+    socket.on('kds:order-bumped', onOrderBumpedEvent)
+    socket.on('entertainment:session-update', onEntertainmentSessionUpdate)
+
+    if (socket.connected) {
+      onConnect()
+    }
 
     // Cleanup on unmount
     return () => {
-      if (socket) {
-        socket.emit('leave_station', { terminalId })
-        socket.disconnect()
-      }
+      socket.emit('leave_station', { terminalId })
+      socket.off('connect', onConnect)
+      socket.off('disconnect', onDisconnect)
+      socket.off('connect_error', onConnectError)
+      socket.off('kds:order-received', onOrderReceived)
+      socket.off('kds:item-status', onItemStatusUpdate)
+      socket.off('kds:order-bumped', onOrderBumpedEvent)
+      socket.off('entertainment:session-update', onEntertainmentSessionUpdate)
+      socketRef.current = null
+      releaseSharedSocket()
     }
   }, [locationId, terminalId, stationId, tags.join(','), playSound, flashOnNew])
 

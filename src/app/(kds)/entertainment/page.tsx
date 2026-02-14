@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { io, type Socket } from 'socket.io-client'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { EntertainmentItemCard } from '@/components/entertainment/EntertainmentItemCard'
@@ -28,7 +28,8 @@ export default function EntertainmentKDSPage() {
   const [selectedEntryForSeat, setSelectedEntryForSeat] = useState<WaitlistEntry | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   const [socketConnected, setSocketConnected] = useState(false)
-  const socketRef = useRef<Socket | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const socketRef = useRef<any>(null)
 
   // Get location ID from employee context
   const locationId = employee?.location?.id || ''
@@ -72,45 +73,50 @@ export default function EntertainmentKDSPage() {
     }
   }, [locationId])
 
-  // Socket.io connection for real-time entertainment updates
+  // Socket.io connection for real-time entertainment updates (shared socket)
   useEffect(() => {
     if (!locationId) return
 
-    const socket = io(window.location.origin, {
-      path: '/api/socket',
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 2000,
-    })
+    const socket = getSharedSocket()
     socketRef.current = socket
 
-    socket.on('connect', () => {
+    const onConnect = () => {
       setSocketConnected(true)
       socket.emit('join_station', {
         locationId,
         tags: ['entertainment'],
         terminalId: 'entertainment-kds-' + Date.now(),
       })
-    })
+    }
 
-    socket.on('disconnect', () => {
+    const onDisconnect = () => {
       setSocketConnected(false)
-    })
+    }
 
-    // Entertainment-specific events trigger immediate refresh
-    socket.on('entertainment:status-changed', () => {
+    const onEntertainmentChanged = () => {
       fetchStatus()
-    })
+    }
 
-    // Order events can also affect entertainment (session start/stop)
-    socket.on('orders:list-changed', () => {
+    const onListChanged = () => {
       fetchStatus()
-    })
+    }
+
+    socket.on('connect', onConnect)
+    socket.on('disconnect', onDisconnect)
+    socket.on('entertainment:status-changed', onEntertainmentChanged)
+    socket.on('orders:list-changed', onListChanged)
+
+    if (socket.connected) {
+      onConnect()
+    }
 
     return () => {
-      socket.disconnect()
+      socket.off('connect', onConnect)
+      socket.off('disconnect', onDisconnect)
+      socket.off('entertainment:status-changed', onEntertainmentChanged)
+      socket.off('orders:list-changed', onListChanged)
       socketRef.current = null
+      releaseSharedSocket()
     }
   }, [locationId, fetchStatus])
 

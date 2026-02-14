@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { io, type Socket } from 'socket.io-client'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import type { Socket } from 'socket.io-client'
 import { useAuthStore } from '@/stores/auth-store'
 
 // LocalStorage keys for device authentication
@@ -243,20 +244,13 @@ function KDSContent() {
     }
   }, [authState, screenConfig, employee?.location?.id])
 
-  // Socket connection for live updates
+  // Socket connection for live updates (shared socket)
   useEffect(() => {
     if (authState !== 'authenticated' && authState !== 'employee_fallback') return
 
-    const socket = io(window.location.origin, {
-      path: '/api/socket',
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-    })
+    const socket = getSharedSocket()
 
-    socket.on('connect', () => {
+    const onConnect = () => {
       setSocketConnected(true)
 
       const locationId = getLocationId()
@@ -278,20 +272,35 @@ function KDSContent() {
         terminalId: `kds-${screenConfig?.id || 'fallback'}-${Date.now()}`,
         stationId: stationIds?.[0],
       })
-    })
+    }
 
-    // Refresh on any KDS event
-    socket.on('kds:order-received', () => loadOrders())
-    socket.on('kds:item-status', () => loadOrders())
-    socket.on('kds:order-bumped', () => loadOrders())
-    socket.on('order:created', () => loadOrders())
+    const onOrderReceived = () => loadOrders()
+    const onItemStatus = () => loadOrders()
+    const onOrderBumped = () => loadOrders()
+    const onOrderCreated = () => loadOrders()
+    const onDisconnect = () => setSocketConnected(false)
 
-    socket.on('disconnect', () => setSocketConnected(false))
+    socket.on('connect', onConnect)
+    socket.on('kds:order-received', onOrderReceived)
+    socket.on('kds:item-status', onItemStatus)
+    socket.on('kds:order-bumped', onOrderBumped)
+    socket.on('order:created', onOrderCreated)
+    socket.on('disconnect', onDisconnect)
+
+    if (socket.connected) {
+      onConnect()
+    }
 
     socketRef.current = socket
     return () => {
-      socket.disconnect()
+      socket.off('connect', onConnect)
+      socket.off('kds:order-received', onOrderReceived)
+      socket.off('kds:item-status', onItemStatus)
+      socket.off('kds:order-bumped', onOrderBumped)
+      socket.off('order:created', onOrderCreated)
+      socket.off('disconnect', onDisconnect)
       socketRef.current = null
+      releaseSharedSocket()
     }
   }, [authState, screenConfig])
 

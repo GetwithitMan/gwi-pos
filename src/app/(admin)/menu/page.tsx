@@ -11,7 +11,7 @@ import { ItemTreeView } from '@/components/menu/ItemTreeView'
 import { ItemEditor, IngredientLibraryItem } from '@/components/menu/ItemEditor'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
-import { io, Socket } from 'socket.io-client'
+import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
 
 // Category types for reporting and item builder selection
 const CATEGORY_TYPES = [
@@ -308,25 +308,30 @@ export default function MenuManagementPage() {
     }
   }, [selectedCategory])
 
-  // Real-time entertainment status updates via socket (replaces polling)
+  // Real-time entertainment status updates + ingredient library via shared socket
   const selectedCategoryType = categories.find(c => c.id === selectedCategory)?.categoryType
   useEffect(() => {
-    if (selectedCategoryType !== 'entertainment' || !employee?.location?.id) return
+    if (!employee?.location?.id) return
 
-    const socket: Socket = io()
+    const socket = getSharedSocket()
     const locationId = employee.location.id
 
-    // Join location-specific room for entertainment updates
-    socket.emit('join-location', locationId)
+    // Join location room (shared socket may already be joined, but additive is fine)
+    const onConnect = () => {
+      socket.emit('join_station', {
+        locationId,
+        tags: [],
+        terminalId: getTerminalId(),
+      })
+    }
 
-    // Listen for real-time entertainment status changes
-    socket.on('entertainment:status-changed', (event: {
+    // Entertainment status handler
+    const onEntertainmentChanged = (event: {
       itemId: string
       entertainmentStatus: 'available' | 'in_use' | 'reserved' | 'maintenance'
       currentOrderId: string | null
       expiresAt: string | null
     }) => {
-      // Patch local items array with updated status
       setItems(prev => prev.map(item =>
         item.id === event.itemId
           ? {
@@ -336,49 +341,42 @@ export default function MenuManagementPage() {
             }
           : item
       ))
-    })
+    }
 
-    // Still refresh on visibility/focus changes (useful when tab returns)
+    // Ingredient library handler
+    const onIngredientUpdate = (data: { ingredient: IngredientLibraryItem }) => {
+      setIngredientsLibrary(prev => {
+        const exists = prev.some(ing => ing.id === data.ingredient.id)
+        if (exists) return prev
+        return [...prev, data.ingredient]
+      })
+    }
+
+    socket.on('connect', onConnect)
+    socket.on('entertainment:status-changed', onEntertainmentChanged)
+    socket.on('ingredient:library-update', onIngredientUpdate)
+
+    if (socket.connected) {
+      onConnect()
+    }
+
+    // Refresh on visibility changes (useful when tab returns)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadMenuRef.current()
       }
     }
-    const handleFocus = () => {
-      loadMenuRef.current()
-    }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('focus', handleFocus)
 
     return () => {
-      socket.off('entertainment:status-changed')
-      socket.disconnect()
+      socket.off('connect', onConnect)
+      socket.off('entertainment:status-changed', onEntertainmentChanged)
+      socket.off('ingredient:library-update', onIngredientUpdate)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('focus', handleFocus)
+      releaseSharedSocket()
     }
-  }, [selectedCategoryType, employee?.location?.id])
-
-  // Socket.io for real-time ingredient library updates
-  useEffect(() => {
-    const socket: Socket = io()
-
-    socket.on('ingredient:library-update', (data: { ingredient: IngredientLibraryItem }) => {
-      setIngredientsLibrary(prev => {
-        // Check if ingredient already exists (prevent duplicates)
-        const exists = prev.some(ing => ing.id === data.ingredient.id)
-        if (exists) return prev
-
-        // Add new ingredient to library
-        return [...prev, data.ingredient]
-      })
-    })
-
-    return () => {
-      socket.off('ingredient:library-update')
-      socket.disconnect()
-    }
-  }, [])
+  }, [employee?.location?.id])
 
   // Handler for cross-item modifier group copy
   const handleCopyModifierGroup = async (groupId: string, sourceItemId: string, targetItemId: string, groupName: string) => {

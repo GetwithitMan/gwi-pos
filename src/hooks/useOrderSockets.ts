@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
+import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
 
 // Socket.io client type
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,15 +13,6 @@ type Socket = {
   off: (event: string, callback?: SocketCallback) => void
   connect: () => void
   disconnect: () => void
-}
-
-// Stable terminal ID — generated once per browser tab, persists across re-mounts
-let stableTerminalId: string | null = null
-function getTerminalId(): string {
-  if (!stableTerminalId) {
-    stableTerminalId = 'pos-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)
-  }
-  return stableTerminalId
 }
 
 interface UseOrderSocketsOptions {
@@ -58,14 +50,15 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
   useEffect(() => {
     if (!locationId || !enabled) return
 
-    let socket: Socket | null = null
+    const socket = getSharedSocket() as Socket
+    socketRef.current = socket
 
     // Named handlers so we can remove them explicitly on cleanup
     const onConnect = () => {
       setIsConnected(true)
 
       // Join location room via join_station (server joins location:{locationId} room)
-      socket!.emit('join_station', {
+      socket.emit('join_station', {
         locationId,
         tags: [],
         terminalId: getTerminalId(),
@@ -109,56 +102,28 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       callbacksRef.current.onEntertainmentStatusChanged?.(payload)
     }
 
-    const onJoined = (_response: { success: boolean; rooms: number }) => {
+    socket.on('connect', onConnect)
+    socket.on('disconnect', onDisconnect)
+    socket.on('connect_error', onConnectError)
+    socket.on('orders:list-changed', onListChanged)
+    socket.on('order:totals-updated', onTotalsUpdated)
+    socket.on('entertainment:status-changed', onEntertainmentChanged)
+
+    // If already connected (shared socket was created by another consumer), join immediately
+    if (socket.connected) {
+      onConnect()
     }
 
-    async function initSocket() {
-      try {
-        const { io } = await import('socket.io-client')
-
-        const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
-
-        socket = io(serverUrl, {
-          path: '/api/socket',
-          transports: ['websocket', 'polling'],
-          reconnection: true,
-          reconnectionAttempts: 3,
-          reconnectionDelay: 2000,
-          reconnectionDelayMax: 10000,
-        }) as Socket
-
-        socketRef.current = socket
-
-        socket.on('connect', onConnect)
-        socket.on('disconnect', onDisconnect)
-        socket.on('connect_error', onConnectError)
-
-        // orders:list-changed covers creates, pays, voids, transfers
-        // (no separate order:created listener — that's a KDS event and would double-refresh)
-        socket.on('orders:list-changed', onListChanged)
-        socket.on('order:totals-updated', onTotalsUpdated)
-        socket.on('entertainment:status-changed', onEntertainmentChanged)
-        socket.on('joined', onJoined)
-      } catch (error) {
-        console.error('[Order Socket] Failed to initialize:', error)
-      }
-    }
-
-    initSocket()
-
-    // Cleanup: remove listeners explicitly, then disconnect
+    // Cleanup: remove our listeners, release shared socket reference
     return () => {
-      if (socket) {
-        socket.off('connect', onConnect)
-        socket.off('disconnect', onDisconnect)
-        socket.off('connect_error', onConnectError)
-        socket.off('orders:list-changed', onListChanged)
-        socket.off('order:totals-updated', onTotalsUpdated)
-        socket.off('entertainment:status-changed', onEntertainmentChanged)
-        socket.off('joined', onJoined)
-        socket.disconnect()
-        socketRef.current = null
-      }
+      socket.off('connect', onConnect)
+      socket.off('disconnect', onDisconnect)
+      socket.off('connect_error', onConnectError)
+      socket.off('orders:list-changed', onListChanged)
+      socket.off('order:totals-updated', onTotalsUpdated)
+      socket.off('entertainment:status-changed', onEntertainmentChanged)
+      socketRef.current = null
+      releaseSharedSocket()
     }
   }, [locationId, enabled])
 

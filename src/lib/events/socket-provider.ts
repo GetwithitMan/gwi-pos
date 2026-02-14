@@ -2,14 +2,8 @@
  * Socket.io Event Provider
  *
  * Real-time event provider using Socket.io for WebSocket communication.
- * Use this for local server deployments where you control the infrastructure.
- *
- * Requirements:
- * - npm install socket.io-client
- * - A Socket.io server running (see /api/socket for Next.js integration)
- *
- * Note: Socket.io does NOT work with Vercel serverless functions.
- * For serverless deployments, use Pusher or Ably provider instead.
+ * Uses the shared socket singleton from @/lib/shared-socket to avoid
+ * multiple connections per browser tab.
  */
 
 import type {
@@ -30,10 +24,7 @@ import { DEFAULT_PROVIDER_CONFIG } from './provider'
 type Socket = any
 
 /**
- * Socket.io event provider
- *
- * Requires socket.io-client to be installed:
- * npm install socket.io-client
+ * Socket.io event provider using shared socket singleton
  */
 export class SocketEventProvider implements EventProvider {
   readonly name = 'socket.io'
@@ -50,6 +41,15 @@ export class SocketEventProvider implements EventProvider {
   private eventListeners: Map<string, Set<EventCallback<EventName>>> = new Map()
   private pendingEvents: Map<string, { data: unknown; timer: ReturnType<typeof setTimeout> }> = new Map()
   private readonly DEBOUNCE_MS = 150
+
+  // Named handler references for proper cleanup
+  private onConnectHandler: (() => void) | null = null
+  private onDisconnectHandler: ((reason: string) => void) | null = null
+  private onConnectErrorHandler: ((error: Error) => void) | null = null
+  private onReconnectAttemptHandler: ((attempt: number) => void) | null = null
+  private onReconnectFailedHandler: (() => void) | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private onAnyHandler: ((eventName: string, data: any) => void) | null = null
 
   constructor(config?: Partial<ProviderConfig>) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config }
@@ -69,39 +69,26 @@ export class SocketEventProvider implements EventProvider {
     this.connectionCallbacks.forEach((cb) => cb(this.connectionState))
   }
 
-  async connect(locationId: string, authToken?: string): Promise<void> {
-    // Dynamically import socket.io-client
-    let io: (url: string, opts: object) => Socket
+  async connect(locationId: string): Promise<void> {
+    // Use shared socket singleton instead of creating our own connection
+    let getSharedSocket: () => Socket
 
     try {
-      // Dynamic import - socket.io-client is a listed dependency
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const socketIo = await import('socket.io-client') as any
-      io = socketIo.io || socketIo.default?.io || socketIo.default
+      const shared = await import('@/lib/shared-socket')
+      getSharedSocket = shared.getSharedSocket
     } catch {
       throw new Error(
-        'socket.io-client is not installed. Run: npm install socket.io-client'
+        'shared-socket module not found'
       )
     }
 
     this.setConnectionStatus('connecting')
     this.locationId = locationId
 
-    const serverUrl = this.config.serverUrl || window.location.origin
+    this.socket = getSharedSocket()
 
-    this.socket = io(serverUrl, {
-      path: '/api/socket',
-      auth: authToken ? { token: authToken } : undefined,
-      query: { locationId },
-      transports: ['websocket', 'polling'],
-      reconnection: this.config.reconnect?.enabled ?? true,
-      reconnectionAttempts: this.config.reconnect?.maxAttempts ?? 10,
-      reconnectionDelay: this.config.reconnect?.delayMs ?? 1000,
-      reconnectionDelayMax: this.config.reconnect?.maxDelayMs ?? 30000,
-    })
-
-    // Set up connection event handlers
-    this.socket.on('connect', () => {
+    // Create named handlers for proper cleanup
+    this.onConnectHandler = () => {
       this.setConnectionStatus('connected')
       this.connectionState.reconnectAttempts = 0
 
@@ -109,49 +96,44 @@ export class SocketEventProvider implements EventProvider {
       this.subscribedChannels.forEach((channelName) => {
         this.socket?.emit('subscribe', channelName)
       })
-    })
+    }
 
-    this.socket.on('disconnect', (reason: string) => {
+    this.onDisconnectHandler = (reason: string) => {
       if (reason === 'io server disconnect') {
-        // Server disconnected us, don't auto-reconnect
         this.setConnectionStatus('disconnected')
       } else {
-        // Client-side disconnect or network issue
         this.setConnectionStatus('reconnecting')
       }
-    })
+    }
 
-    this.socket.on('connect_error', (error: Error) => {
+    this.onConnectErrorHandler = (error: Error) => {
       this.connectionState.reconnectAttempts++
       this.setConnectionStatus('error', error.message)
 
       if (this.config.debug) {
         console.error(`[SocketEvents] Connection error:`, error)
       }
-    })
+    }
 
-    this.socket.on('reconnect_attempt', (attempt: number) => {
+    this.onReconnectAttemptHandler = (attempt: number) => {
       this.connectionState.reconnectAttempts = attempt
       this.setConnectionStatus('reconnecting')
+    }
 
-    })
-
-    this.socket.on('reconnect_failed', () => {
+    this.onReconnectFailedHandler = () => {
       this.setConnectionStatus('error', 'Reconnection failed')
-    })
+    }
 
-    // Set up event forwarding from server with debouncing
-    this.socket.onAny((eventName: string, data: EventMap[EventName]) => {
+    // Event forwarding with debouncing
+    this.onAnyHandler = (eventName: string, data: EventMap[EventName]) => {
       const listeners = this.eventListeners.get(eventName)
       if (!listeners || listeners.size === 0) return
 
-      // Cancel any pending debounce for this event type
       const pending = this.pendingEvents.get(eventName)
       if (pending) {
         clearTimeout(pending.timer)
       }
 
-      // Debounce: wait 150ms before firing, coalescing rapid events
       const timer = setTimeout(() => {
         this.pendingEvents.delete(eventName)
         const currentListeners = this.eventListeners.get(eventName)
@@ -167,10 +149,24 @@ export class SocketEventProvider implements EventProvider {
       }, this.DEBOUNCE_MS)
 
       this.pendingEvents.set(eventName, { data, timer })
-    })
+    }
+
+    // Register handlers on shared socket
+    this.socket.on('connect', this.onConnectHandler)
+    this.socket.on('disconnect', this.onDisconnectHandler)
+    this.socket.on('connect_error', this.onConnectErrorHandler)
+    this.socket.on('reconnect_attempt', this.onReconnectAttemptHandler)
+    this.socket.on('reconnect_failed', this.onReconnectFailedHandler)
+    this.socket.onAny(this.onAnyHandler)
 
     // Auto-subscribe to location channel
     this.subscribeChannel('location', locationId)
+
+    // If already connected (shared socket was created by another consumer), resolve immediately
+    if (this.socket.connected) {
+      this.onConnectHandler()
+      return Promise.resolve()
+    }
 
     // Wait for connection
     return new Promise((resolve, reject) => {
@@ -192,9 +188,31 @@ export class SocketEventProvider implements EventProvider {
 
   async disconnect(): Promise<void> {
     if (this.socket) {
-      this.socket.disconnect()
+      // Remove our handlers from the shared socket (don't disconnect it)
+      if (this.onConnectHandler) this.socket.off('connect', this.onConnectHandler)
+      if (this.onDisconnectHandler) this.socket.off('disconnect', this.onDisconnectHandler)
+      if (this.onConnectErrorHandler) this.socket.off('connect_error', this.onConnectErrorHandler)
+      if (this.onReconnectAttemptHandler) this.socket.off('reconnect_attempt', this.onReconnectAttemptHandler)
+      if (this.onReconnectFailedHandler) this.socket.off('reconnect_failed', this.onReconnectFailedHandler)
+      if (this.onAnyHandler) this.socket.offAny(this.onAnyHandler)
+
+      // Release our reference to the shared socket
+      try {
+        const { releaseSharedSocket } = await import('@/lib/shared-socket')
+        releaseSharedSocket()
+      } catch {
+        // Ignore if module not available during cleanup
+      }
+
       this.socket = null
     }
+
+    this.onConnectHandler = null
+    this.onDisconnectHandler = null
+    this.onConnectErrorHandler = null
+    this.onReconnectAttemptHandler = null
+    this.onReconnectFailedHandler = null
+    this.onAnyHandler = null
 
     this.eventListeners.clear()
     // Clear pending debounce timers
@@ -205,7 +223,6 @@ export class SocketEventProvider implements EventProvider {
     this.subscribedChannels.clear()
     this.locationId = null
     this.setConnectionStatus('disconnected')
-
   }
 
   subscribeChannel(channelType: ChannelType, channelId: string): UnsubscribeFn {
@@ -226,7 +243,6 @@ export class SocketEventProvider implements EventProvider {
     if (this.socket?.connected) {
       this.socket.emit('unsubscribe', channelName)
     }
-
   }
 
   subscribe<T extends EventName>(
@@ -234,7 +250,6 @@ export class SocketEventProvider implements EventProvider {
     callback: EventCallback<T>,
     channelFilter?: { type: ChannelType; id: string }
   ): UnsubscribeFn {
-    // Build event key (with channel filter if provided)
     const eventKey = channelFilter
       ? `${buildChannelName(channelFilter.type, channelFilter.id)}:${event}`
       : event
@@ -295,18 +310,6 @@ export class SocketEventProvider implements EventProvider {
 
 /**
  * Create a Socket.io event provider instance
- *
- * @param config - Provider configuration
- * @returns EventProvider instance
- *
- * @example
- * ```typescript
- * const provider = createSocketProvider({
- *   serverUrl: 'http://localhost:3000',
- *   debug: true,
- * })
- * await provider.connect('location_123')
- * ```
  */
 export function createSocketProvider(config?: Partial<ProviderConfig>): EventProvider {
   return new SocketEventProvider(config)

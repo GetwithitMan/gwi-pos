@@ -11,6 +11,7 @@ import { toast } from '@/stores/toast-store'
 import { SPIRIT_TIERS, BOTTLE_SIZES, LIQUOR_DEFAULTS } from '@/lib/constants'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { RecipeBuilder } from '@/components/menu/RecipeBuilder'
+import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
 
 interface SpiritCategory {
   id: string
@@ -105,45 +106,35 @@ function LiquorBuilderContent() {
     loadData()
   }, [isAuthenticated, router])
 
-  // Socket connection for real-time updates
+  // Socket connection for real-time updates (shared socket)
   useEffect(() => {
-    let socket: any = null
+    const socket = getSharedSocket()
+    socketRef.current = socket
 
-    async function initSocket() {
-      try {
-        const { io } = await import('socket.io-client')
-        const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
-
-        socket = io(serverUrl, {
-          path: '/api/socket',
-          transports: ['websocket', 'polling'],
-          reconnection: true,
-        })
-
-        socketRef.current = socket
-
-        socket.on('connect', () => {
-          // Join location room for updates
-          socket.emit('join_location', { locationId: 'default' })
-        })
-
-        // Listen for menu updates
-        socket.on('menu:updated', (_data: unknown) => {
-          // Refresh data when menu changes using refs to get latest functions
-          loadBottlesRef.current?.()
-        })
-
-      } catch (error) {
-        // Socket not available, using polling
-      }
+    const onConnect = () => {
+      socket.emit('join_station', {
+        locationId: 'default',
+        tags: [],
+        terminalId: getTerminalId(),
+      })
     }
 
-    initSocket()
+    const onMenuUpdated = () => {
+      loadBottlesRef.current?.()
+    }
+
+    socket.on('connect', onConnect)
+    socket.on('menu:updated', onMenuUpdated)
+
+    if (socket.connected) {
+      onConnect()
+    }
 
     return () => {
-      if (socket) {
-        socket.disconnect()
-      }
+      socket.off('connect', onConnect)
+      socket.off('menu:updated', onMenuUpdated)
+      socketRef.current = null
+      releaseSharedSocket()
     }
   }, [])
 
