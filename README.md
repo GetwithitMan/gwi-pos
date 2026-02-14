@@ -67,7 +67,7 @@ A modern, fast point-of-sale system built for bars and restaurants with a "fewes
 - **Styling**: Tailwind CSS
 - **State Management**: Zustand
 - **ORM**: Prisma 6
-- **Database**: SQLite (local file)
+- **Database**: Neon PostgreSQL (database-per-venue)
 - **Validation**: Zod
 - **Deployment**: Vercel or self-hosted Linux
 
@@ -132,9 +132,9 @@ npm run dev
 
 4. Open http://localhost:3000
 
-## Database Setup (SQLite)
+## Database Setup (Neon PostgreSQL)
 
-The database is a local SQLite file - no external database setup required.
+Each venue gets its own PostgreSQL database on Neon. Set `DATABASE_URL` and `DIRECT_URL` in `.env.local`.
 
 ### Initial Setup
 
@@ -162,15 +162,16 @@ npm run reset
 npm run db:studio
 ```
 
-### Database File Location
+### Connection
 
-The SQLite database is stored at: `prisma/pos.db`
+Set `DATABASE_URL` and `DIRECT_URL` in `.env.local` with your Neon PostgreSQL connection strings.
 
 ## Environment Variables
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | SQLite path: `file:./pos.db` |
+| `DATABASE_URL` | PostgreSQL connection string (Neon) |
+| `DIRECT_URL` | PostgreSQL direct connection string (Neon) |
 
 ## Development
 

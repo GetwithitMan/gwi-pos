@@ -90,29 +90,23 @@ Default login PIN: `1234` (Manager)
 
 ## Deployment Options
 
-### Option A: SQLite (Recommended for Most)
+### Standard Deployment (Neon PostgreSQL)
 
-Best for:
-- Single-location deployments
-- Simpler backup/restore
-- Lower resource usage
+The app connects to Neon PostgreSQL (cloud database-per-venue). Configure `DATABASE_URL` and `DIRECT_URL` in your `.env` file.
 
 ```bash
 docker compose up -d
 ```
 
-### Option B: PostgreSQL
+### Self-Hosted PostgreSQL (Optional)
 
-Best for:
-- High-volume locations
-- Advanced reporting needs
-- Multiple concurrent users (10+)
+For deployments with a local PostgreSQL instance instead of Neon:
 
 ```bash
 # Configure PostgreSQL password in .env
 echo "POSTGRES_PASSWORD=$(openssl rand -base64 16)" >> .env
 
-# Start with PostgreSQL
+# Start with local PostgreSQL
 docker compose -f docker-compose.postgres.yml up -d
 ```
 
@@ -123,14 +117,11 @@ After setup, the directory structure is:
 ```
 /opt/gwi-pos/
 ├── docker/
-│   ├── docker-compose.yml       # Main compose file (SQLite)
-│   ├── docker-compose.postgres.yml
-│   ├── Dockerfile               # SQLite build
-│   ├── Dockerfile.postgres      # PostgreSQL build
+│   ├── docker-compose.yml       # Main compose file (Neon PostgreSQL)
+│   ├── docker-compose.postgres.yml  # Self-hosted PostgreSQL option
+│   ├── Dockerfile               # Production build
 │   ├── .env                     # Your configuration
 │   ├── .env.example             # Configuration template
-│   ├── data/                    # Database files
-│   │   └── pos.db               # SQLite database
 │   ├── backups/                 # Automated backups
 │   ├── config/                  # Optional config overrides
 │   └── scripts/
@@ -324,7 +315,7 @@ free -m
 
 ```bash
 # Check database integrity
-sqlite3 /opt/gwi-pos/docker/data/pos.db "PRAGMA integrity_check;"
+psql "$DATABASE_URL" -c "SELECT 1;"  # Verify database connectivity
 
 # Restore from backup
 ./scripts/restore.sh

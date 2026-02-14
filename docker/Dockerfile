@@ -52,8 +52,8 @@ RUN adduser --system --uid 1001 nextjs
 
 # Install runtime dependencies
 RUN apk add --no-cache \
-    # For database operations
-    sqlite \
+    # For database operations (pg_dump/psql)
+    postgresql-client \
     # For healthchecks
     curl \
     # For timezone support
@@ -72,8 +72,8 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Create directories for persistent data
-RUN mkdir -p /app/data /app/data/backups
+# Create directories
+RUN mkdir -p /app/uploads
 RUN chown -R nextjs:nodejs /app
 
 # Switch to non-root user
@@ -84,9 +84,6 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
-
-# Database will be mounted at /app/data
-ENV DATABASE_URL="file:/app/data/pos.db"
 
 # Expose port
 EXPOSE 3000

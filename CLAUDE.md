@@ -42,15 +42,15 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
 | TypeScript | 5.x | Type Safety |
 | Tailwind CSS | 4.x | Styling |
 | Prisma | 6.19.2 | ORM |
-| SQLite | - | Database (local file: `prisma/pos.db`) |
+| PostgreSQL | Neon | Database (cloud, database-per-venue) |
 | Zustand | 5.x | State Management |
 | Zod | 4.x | Validation |
 
 ## Database
 
-**Database Type**: SQLite (NOT PostgreSQL)
+**Database Type**: Neon PostgreSQL (database-per-venue)
 
-The database is a local SQLite file stored at `prisma/pos.db`.
+Each venue gets its own PostgreSQL database on Neon. Multi-tenant isolation is enforced at the database level, with `locationId` as an additional application-level filter.
 
 ### CRITICAL: Protecting Your Data
 
@@ -74,11 +74,15 @@ npm run db:backup && npm run db:push  # or db:migrate
 - No `reset` or `db:push` in production — migrations only
 - Backup before migrate (automatic)
 - Soft deletes only (never hard delete, use `deletedAt`)
-- PostgreSQL required for production (SQLite is dev-only)
+- PostgreSQL (Neon) for all environments
 
 ### Environment Variables
 
-Located in `.env.local`: `DATABASE_URL="file:./pos.db"`
+Located in `.env.local`:
+```
+DATABASE_URL="postgresql://...@neon.tech/gwi_pos?sslmode=require"
+DIRECT_URL="postgresql://...@neon.tech/gwi_pos?sslmode=require"
+```
 
 ### CRITICAL: Multi-Tenancy (locationId)
 
@@ -186,7 +190,7 @@ Single-screen builder with item-owned modifier groups (not shared). Left panel h
 
 ```
 gwi-pos/
-├── prisma/              # Schema, seed, SQLite DB
+├── prisma/              # Schema, seed, migrations
 ├── src/
 │   ├── app/
 │   │   ├── (auth)/      # Login pages
@@ -222,7 +226,7 @@ gwi-pos/
 
 ### Common Patterns
 1. Decimal fields — Convert to `Number()` when returning from API
-2. JSON fields — Used for arrays in SQLite (e.g., `modifierTypes`, `pourSizes`)
+2. JSON fields — Used for structured data (e.g., `modifierTypes`, `pourSizes`)
 3. Soft deletes — `deletedAt: new Date()` (required for sync)
 4. Sort order — Most lists support `sortOrder`
 5. Always filter by `locationId` and `deletedAt: null`

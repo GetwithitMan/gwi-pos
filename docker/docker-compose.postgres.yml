@@ -6,7 +6,7 @@
 # Usage:
 #   docker-compose -f docker-compose.postgres.yml up -d
 #
-# Note: This overrides the default SQLite configuration
+# Note: For self-hosted deployments with a local PostgreSQL instance
 
 version: '3.8'
 
@@ -42,7 +42,7 @@ services:
   gwi-pos:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.postgres
+      dockerfile: docker/Dockerfile
     container_name: gwi-pos
     restart: unless-stopped
     depends_on:

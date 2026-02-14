@@ -13,7 +13,7 @@ import { db } from '@/lib/db'
 // ─── Transaction Client Type ─────────────────────────────────────────────────
 // Prisma transaction client — pass this to avoid nested transactions.
 // When provided, postToTipLedger uses the caller's transaction instead of
-// creating its own. This is critical for SQLite which doesn't support nested
+// creating its own. This ensures group allocations use a single
 // transactions, and ensures group allocations commit atomically.
 export type TxClient = Parameters<Parameters<typeof db.$transaction>[0]>[0]
 

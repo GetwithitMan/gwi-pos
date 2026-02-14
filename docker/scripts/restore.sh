@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
-# GWI POS - Database Restore Script
+# GWI POS - Database Restore Script (PostgreSQL)
 # =============================================================================
-# Restores the SQLite database from a backup.
+# Restores the PostgreSQL database from a pg_dump backup.
 #
 # Usage:
 #   ./restore.sh                    # Restore from latest backup
@@ -16,8 +16,6 @@ set -e
 
 # Configuration
 BACKUP_DIR="${BACKUP_DIR:-/opt/gwi-pos/docker/backups}"
-DATA_DIR="${DATA_DIR:-/opt/gwi-pos/docker/data}"
-DB_FILE="$DATA_DIR/pos.db"
 
 # Colors
 RED='\033[0;31m'
@@ -32,19 +30,21 @@ warn() { echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] ${YELLOW}WARN${NC} $1"; }
 error() { echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] ${RED}ERROR${NC} $1"; exit 1; }
 info() { echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] ${BLUE}INFO${NC} $1"; }
 
+# Check DATABASE_URL is set
+check_database() {
+    if [ -z "$DATABASE_URL" ]; then
+        error "DATABASE_URL environment variable is not set"
+    fi
+}
+
 # List available backups
 list_backups() {
     echo ""
     echo "Available backups in $BACKUP_DIR:"
     echo ""
-
-    # List backups sorted by date (newest first)
-    ls -lt "$BACKUP_DIR"/pos-*.db* 2>/dev/null | head -20 || echo "No backups found"
-
+    ls -lt "$BACKUP_DIR"/pos-*.dump 2>/dev/null | head -20 || echo "No backups found"
     echo ""
-
-    # Show latest
-    LATEST=$(ls -t "$BACKUP_DIR"/pos-*.db* 2>/dev/null | head -1)
+    LATEST=$(ls -t "$BACKUP_DIR"/pos-*.dump 2>/dev/null | head -1)
     if [ -n "$LATEST" ]; then
         echo "Latest backup: $(basename $LATEST)"
     fi
@@ -52,58 +52,40 @@ list_backups() {
 
 # Find latest backup
 get_latest_backup() {
-    # Try compressed first
-    LATEST=$(ls -t "$BACKUP_DIR"/pos-*.db.gz 2>/dev/null | head -1)
-
-    # Fall back to uncompressed
-    if [ -z "$LATEST" ]; then
-        LATEST=$(ls -t "$BACKUP_DIR"/pos-*.db 2>/dev/null | head -1)
-    fi
-
-    echo "$LATEST"
+    ls -t "$BACKUP_DIR"/pos-*.dump 2>/dev/null | head -1
 }
 
 # Stop the POS service
 stop_service() {
     log "Stopping GWI POS service..."
-
-    # Try systemd first
     if systemctl is-active --quiet gwi-pos 2>/dev/null; then
         systemctl stop gwi-pos
         success "Service stopped via systemd"
         return
     fi
-
-    # Try docker compose
     if [ -f "/opt/gwi-pos/docker/docker-compose.yml" ]; then
         cd /opt/gwi-pos/docker
         docker compose down 2>/dev/null || true
         success "Service stopped via docker compose"
         return
     fi
-
     warn "Could not stop service automatically. Ensure POS is not running!"
 }
 
 # Start the POS service
 start_service() {
     log "Starting GWI POS service..."
-
-    # Try systemd first
     if systemctl list-unit-files | grep -q gwi-pos; then
         systemctl start gwi-pos
         success "Service started via systemd"
         return
     fi
-
-    # Try docker compose
     if [ -f "/opt/gwi-pos/docker/docker-compose.yml" ]; then
         cd /opt/gwi-pos/docker
         docker compose up -d
         success "Service started via docker compose"
         return
     fi
-
     warn "Could not start service automatically. Start manually!"
 }
 
@@ -111,15 +93,13 @@ start_service() {
 restore_backup() {
     BACKUP_FILE="$1"
 
-    # Validate backup file
     if [ ! -f "$BACKUP_FILE" ]; then
         error "Backup file not found: $BACKUP_FILE"
     fi
 
-    log "=== GWI POS Restore ==="
+    log "=== GWI POS Restore (PostgreSQL) ==="
     info "Restoring from: $BACKUP_FILE"
 
-    # Confirm with user
     echo ""
     echo -e "${YELLOW}WARNING: This will replace the current database!${NC}"
     echo ""
@@ -132,57 +112,21 @@ restore_backup() {
 
     # Stop service
     stop_service
-
-    # Wait for service to fully stop
     sleep 3
 
     # Create safety backup of current database
-    if [ -f "$DB_FILE" ]; then
-        SAFETY_BACKUP="$BACKUP_DIR/pos-pre-restore-$(date +%Y%m%d-%H%M%S).db"
-        log "Creating safety backup of current database..."
-        cp "$DB_FILE" "$SAFETY_BACKUP"
-        success "Safety backup created: $SAFETY_BACKUP"
+    SAFETY_FILE="$BACKUP_DIR/pos-pre-restore-$(date +%Y%m%d-%H%M%S).dump"
+    log "Creating safety backup of current database..."
+    pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl > "$SAFETY_FILE" 2>/dev/null || warn "Could not create safety backup (database may be empty)"
+    if [ -f "$SAFETY_FILE" ] && [ -s "$SAFETY_FILE" ]; then
+        success "Safety backup created: $SAFETY_FILE"
     fi
 
-    # Ensure data directory exists
-    mkdir -p "$DATA_DIR"
+    # Restore
+    log "Restoring database from backup..."
+    pg_restore "$DATABASE_URL" --clean --if-exists --no-owner --no-acl "$BACKUP_FILE"
 
-    # Restore based on file type
-    if [[ "$BACKUP_FILE" == *.gz ]]; then
-        log "Decompressing and restoring backup..."
-        gunzip -c "$BACKUP_FILE" > "$DB_FILE"
-    else
-        log "Restoring backup..."
-        cp "$BACKUP_FILE" "$DB_FILE"
-    fi
-
-    # Restore journal if exists
-    JOURNAL_BACKUP="${BACKUP_FILE}-journal"
-    if [ -f "$JOURNAL_BACKUP" ]; then
-        cp "$JOURNAL_BACKUP" "$DB_FILE-journal"
-    else
-        # Remove old journal
-        rm -f "$DB_FILE-journal"
-    fi
-
-    # Verify restore
-    if [ -f "$DB_FILE" ]; then
-        DB_SIZE=$(du -h "$DB_FILE" | cut -f1)
-        success "Database restored: $DB_FILE ($DB_SIZE)"
-
-        # Verify integrity
-        if command -v sqlite3 &> /dev/null; then
-            log "Verifying database integrity..."
-            INTEGRITY=$(sqlite3 "$DB_FILE" "PRAGMA integrity_check;" 2>&1)
-            if [ "$INTEGRITY" = "ok" ]; then
-                success "Database integrity check passed"
-            else
-                warn "Database integrity check: $INTEGRITY"
-            fi
-        fi
-    else
-        error "Restore failed - database file not created"
-    fi
+    success "Database restored from: $BACKUP_FILE"
 
     # Start service
     start_service
@@ -191,12 +135,12 @@ restore_backup() {
     echo ""
     echo "Please verify the POS is working correctly."
     echo "If there are issues, restore the safety backup:"
-    echo "  ./restore.sh $SAFETY_BACKUP"
+    echo "  ./restore.sh $SAFETY_FILE"
 }
 
 # Show help
 show_help() {
-    echo "GWI POS Database Restore Script"
+    echo "GWI POS Database Restore Script (PostgreSQL)"
     echo ""
     echo "Usage:"
     echo "  $0                      Restore from latest backup"
@@ -204,15 +148,16 @@ show_help() {
     echo "  $0 --list               List available backups"
     echo "  $0 --help               Show this help"
     echo ""
-    echo "Examples:"
-    echo "  $0                                          # Latest backup"
-    echo "  $0 /opt/gwi-pos/docker/backups/pos-20240115-020000.db.gz"
+    echo "Environment variables:"
+    echo "  DATABASE_URL       PostgreSQL connection string (REQUIRED)"
+    echo "  BACKUP_DIR         Backup directory"
     echo ""
     echo "WARNING: This will stop the POS service during restore!"
 }
 
-# Main execution
 main() {
+    check_database
+
     case "$1" in
         --list|-l)
             list_backups
@@ -221,7 +166,6 @@ main() {
             show_help
             ;;
         "")
-            # Restore from latest
             LATEST=$(get_latest_backup)
             if [ -z "$LATEST" ]; then
                 error "No backups found in $BACKUP_DIR"
@@ -229,7 +173,6 @@ main() {
             restore_backup "$LATEST"
             ;;
         *)
-            # Restore from specified file
             restore_backup "$1"
             ;;
     esac

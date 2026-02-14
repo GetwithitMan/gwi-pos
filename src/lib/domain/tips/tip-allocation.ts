@@ -787,7 +787,7 @@ async function allocateToGroup(params: {
 
   // ── Single transaction for the entire group allocation (Skill 271) ────
   // Wrapping TipTransaction creation + all ledger posts in one $transaction
-  // prevents nested transaction failures on SQLite and ensures all member
+  // prevents nested transaction failures and ensures all member
   // credits commit or rollback together.
   const result = await db.$transaction(async (tx: TxClient) => {
     // Create TipTransaction linked to the group and segment (Skill 274: idempotency key)
