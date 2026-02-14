@@ -138,6 +138,16 @@
 | 337 | Multi-Tenant DB Routing | DONE | Mission Control | 300, 330 | AsyncLocalStorage + withVenue() wrapper for all 348 POS API routes. 3-tier Proxy resolution: request context → headers → master. Per-venue Neon DB via globalThis cache. |
 | 338 | Cloud Session Validation & Guard | DONE | Mission Control | 337, 330 | validate-session endpoint, useRequireAuth cloud awareness, useCloudSessionGuard layout guard, cloud sign-out button. Fixes stale locationId after DB routing changes. |
 
+### Performance Overhaul (Feb 14, 2026)
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 339 | Frontend Instant Feel | DONE | Global | - | Zustand atomic selectors, batch set(), React.memo on OrderPanelItem. Button tap 500-800ms → 100-200ms. |
+| 340 | Shared Socket Singleton | DONE | Global | - | One io() per tab via shared-socket.ts with ref counting. Direct emit (no HTTP hop). Kill all constant polling. |
+| 341 | Database Hot Paths | DONE | Orders/Menu | - | Batch liquor N+1 (30→3 queries), unblock pay route, 7 compound indexes, menu cache (60s TTL), floor plan snapshot (4→1), bulk menu items, lightweight PATCH. |
+| 342 | PostgreSQL-Only DevOps | DONE | DevOps | - | Remove all SQLite refs from Docker/scripts/docs. Connection pooling. Zero SQLite references in codebase. |
+| 343 | Socket & State Hardening | DONE | Global | 340 | 150ms event debouncing, delta open orders, conditional 30s polling, location/menu caches, connectedTerminals leak fix. |
+| 344 | Order Flow Performance (P0) | DONE | Orders/Payments | 339, 340, 341 | PaymentModal instant open, fire-and-forget cash, floor plan snapshot coalescing, draft pre-creation, 5s background autosave. |
+
 ### POS Inventory (Non-MC)
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
@@ -352,7 +362,8 @@
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
 | Mission Control (Phase 2) | 21 | 0 | 8 | 29 | 72% |
-| **TOTAL** | **198** | **7** | **24** | **229** | **90%** |
+| Performance Overhaul | 6 | 0 | 0 | 6 | 100% |
+| **TOTAL** | **204** | **7** | **24** | **235** | **91%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -490,6 +501,17 @@ Skills that can be developed simultaneously:
 | 336 | MC Online Ordering URL Infrastructure | `orderCode` (unique 6-char alphanumeric) + `onlineOrderingEnabled` on CloudLocation. Auto-generated on create. VenueUrlCard rewritten with admin portal + online ordering sections. Path-based URLs: `ordercontrolcenter.com/{code}/{slug}`. |
 | 337 | Multi-Tenant DB Routing (withVenue + AsyncLocalStorage) | Per-request tenant context via `requestStore.run()`. `withVenue()` wrapper properly `await`s Next.js 16 `headers()`. 3-tier db.ts Proxy: AsyncLocalStorage → headers → master. All 348 API routes wrapped via codemod. Per-venue PrismaClient cached in `globalThis.venueClients`. Safety rail: slug present but DB fails → 500 (not silent fallback). |
 | 338 | Cloud Session Validation & Guard | `GET /api/auth/validate-session` lightweight check. `GET /api/auth/cloud-session` re-bootstraps from httpOnly cookie. `useRequireAuth` cloud mode detection + re-bootstrap. `useCloudSessionGuard` in settings layout blocks children until valid. Cloud sign-out button + Mission Control link in SettingsNav. Fixes stale `locationId: "loc-1"` after DB routing changes. |
+
+## Recently Completed (2026-02-14 — Performance Overhaul, Skills 339-344)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 339 | Frontend Instant Feel | Zustand atomic selectors (no full-store destructuring), batch `set()` (one render per mutation), `React.memo` on OrderPanelItem. 60-75% tap latency reduction. |
+| 340 | Shared Socket Singleton | `src/lib/shared-socket.ts` — one `io()` per tab with ref counting. All 8 consumers migrated. Direct emit via `emitToLocation()`/`emitToTags()` (no HTTP hop). Killed all constant polling (KDS 5s, Expo 3s, entertainment 3s, open orders 3s). 30s fallback only when socket disconnected. |
+| 341 | Database Hot Paths | Batch liquor N+1 (30→3 queries), fire-and-forget liquor inventory on pay, merged triple order query (3→1), 7 compound indexes, menu cache (60s TTL), floor plan snapshot API (4→1 fetches), bulk menu items endpoint, lightweight PATCH for metadata, open orders `?summary=true`. |
+| 342 | PostgreSQL-Only DevOps | Removed all SQLite references from Docker, scripts, 18 docs. Connection pooling (`DATABASE_CONNECTION_LIMIT`). `reset-db.sh` rewritten for pg_dump. Zero SQLite matches in codebase. |
+| 343 | Socket & State Hardening | 150ms event debouncing via `onAny`, delta open orders (paid/voided = local remove, no fetch), conditional 30s polling, location/menu caches, PrismaClient connection pooling, connectedTerminals memory leak fix (5min sweep). |
+| 344 | Order Flow Performance (P0) | PaymentModal instant open (background `ensureOrderInDB`), fire-and-forget exact cash, floor plan snapshot with coalescing (`snapshotInFlightRef` + `snapshotPendingRef`), draft pre-creation on table tap, 5s background autosave for temp-ID items. |
 
 ## Recently Completed (2026-02-13 — Multi-Tenant DB Routing + Cloud Session Validation, Skills 337-338)
 

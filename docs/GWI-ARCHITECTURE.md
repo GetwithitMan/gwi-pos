@@ -1,7 +1,7 @@
 # GWI POS - System Architecture
 
-**Version:** 1.0
-**Updated:** January 30, 2026
+**Version:** 2.0
+**Updated:** February 14, 2026
 **Model:** SaaS with Local Servers
 
 ---
@@ -157,6 +157,270 @@ Everything stays on the local network = instant.
 |--------------|---------|
 | Cloud-only (Square) | 100-500ms per action |
 | GWI (local server) | < 50ms per action |
+
+---
+
+## Real-Time Architecture (Socket.io)
+
+### Non-Negotiable Principles
+
+1. **Socket-first.** Every cross-terminal update uses Socket.io. No polling for core screens.
+2. **One socket per tab.** All consumers share `src/lib/shared-socket.ts` singleton. Never call `io()` directly.
+3. **Direct emit.** Server-side dispatch uses `emitToLocation()` / `emitToTags()`. Never HTTP broadcast hop.
+4. **Delta updates for lists.** Remove items locally on paid/voided/deleted events. Only refetch for additions/changes.
+5. **30s fallback only.** Polling at 30s ONLY when socket is disconnected. Never constant-poll when connected.
+
+### Socket Server (`src/lib/socket-server.ts`)
+
+Custom `server.ts` wraps Next.js and injects Socket.io. The server instance lives on `globalThis.socketServer` (survives HMR in dev).
+
+```
+┌─────────────────────────────────────────────────┐
+│                 Node.js Process                   │
+│                                                   │
+│  server.ts                                       │
+│  ├── Next.js (HTTP)                              │
+│  └── Socket.io Server (WebSocket)                │
+│       ├── Room: location:{locationId}            │
+│       ├── Room: tag:{tagName}                    │
+│       └── Room: terminal:{terminalId}            │
+│                                                   │
+│  globalThis.socketServer (survives HMR)          │
+└─────────────────────────────────────────────────┘
+```
+
+**Room types:**
+- `location:{id}` — All terminals at a location (open orders, floor plan updates)
+- `tag:{name}` — KDS stations (pizza, bar, expo) receive tagged tickets
+- `terminal:{id}` — Direct messages to a specific terminal
+
+### Shared Socket Singleton (`src/lib/shared-socket.ts`)
+
+ONE `io()` connection per browser tab with ref-counted lifecycle:
+
+```typescript
+import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
+
+// In useEffect:
+const socket = getSharedSocket()    // lazily creates, increments refCount
+// ... register handlers ...
+return () => {
+  // ... remove handlers ...
+  releaseSharedSocket()             // decrements refCount, disconnects at 0
+}
+```
+
+**All consumers use this pattern:**
+- `useOrderSockets` — floor plan + open orders
+- `useKDSSockets` — KDS screens
+- `SocketEventProvider` — debounced event forwarding
+- `menu/page.tsx` — ingredient + entertainment events
+- `kds/page.tsx`, `entertainment/page.tsx`, `ExpoScreen.tsx`
+- `liquor-builder/page.tsx`
+
+### Server-Side Dispatch (`src/lib/socket-dispatch.ts`)
+
+API routes emit events directly via `emitToLocation()` / `emitToTags()`. Fire-and-forget (never blocks response):
+
+```typescript
+// In any API route handler:
+import { emitToLocation } from '@/lib/socket-server'
+
+// After saving to DB:
+emitToLocation(locationId, 'orders:list-changed', { orderId, status: 'paid' })
+// Don't await — fire and forget
+```
+
+**Available dispatch functions:**
+| Function | Event | Used By |
+|----------|-------|---------|
+| `dispatchOpenOrdersChanged` | `orders:list-changed` | Pay, send, void, create |
+| `dispatchOrderTotalsUpdate` | `order:totals-updated` | Add items, discount, tip |
+| `dispatchMenuItemChanged` | `menu:item-changed` | Item CRUD |
+| `dispatchMenuStockChanged` | `menu:stock-changed` | 86'd items |
+| `dispatchMenuStructureChanged` | `menu:structure-changed` | Category/modifier CRUD |
+| `dispatchEntertainmentStatusChanged` | `entertainment:status-changed` | Session start/stop/extend |
+| `dispatchIngredientLibraryUpdate` | `ingredient:updated` | Ingredient CRUD |
+| `dispatchFloorPlanUpdate` | `floor-plan:updated` | Table move/resize |
+| `dispatchVoidApprovalUpdate` | `void:approval-update` | Remote void SMS |
+
+### Client-Side Debouncing (`SocketEventProvider`)
+
+All socket events flow through `SocketEventProvider` which debounces at 150ms via `onAny()`. This prevents fetch storms when the server emits rapid events (e.g., multiple items added in quick succession).
+
+### Delta Update Pattern (Lists)
+
+When a list item is removed (paid, voided, deleted), remove from local state without refetching:
+
+```typescript
+socket.on('orders:list-changed', (data) => {
+  if (data?.status === 'paid' || data?.status === 'voided') {
+    // Remove locally — zero network
+    setOpenOrders(prev => prev.filter(o => o.id !== data.orderId))
+  } else {
+    // Full refresh only for new/changed orders
+    debouncedRefresh()
+  }
+})
+```
+
+### Conditional Polling (Fallback Only)
+
+Poll at 30s ONLY when socket is disconnected:
+
+```typescript
+useEffect(() => {
+  if (!isConnected) {
+    const fallback = setInterval(loadOrders, 30000) // 30s, not 3-5s
+    return () => clearInterval(fallback)
+  }
+}, [isConnected])
+```
+
+---
+
+## Caching Architecture
+
+### Menu Cache (`src/lib/menu-cache.ts`)
+
+In-memory cache with 60s TTL per locationId. Cache hit = ~0ms vs ~50-200ms DB query.
+
+```typescript
+import { getCachedMenu, invalidateMenuCache } from '@/lib/menu-cache'
+
+// Read (auto-caches on miss)
+const menu = await getCachedMenu(locationId)
+
+// Invalidate after CRUD
+invalidateMenuCache(locationId)
+```
+
+### Location Cache (`src/lib/location-cache.ts`)
+
+Location settings (tax rules, categories, rounding config) cached with TTL. Prevents N queries on rapid order creation.
+
+### Snapshot APIs
+
+Composite views use single-query snapshot APIs instead of multiple fetches:
+
+| Endpoint | Replaces | Savings |
+|----------|----------|---------|
+| `GET /api/floorplan/snapshot` | tables + sections + open orders + counts | 4 → 1 fetch |
+| `GET /api/orders/open?summary=true` | full items/modifiers for sidebar | 90% less data |
+| `POST /api/menu/items/bulk` | N individual item GETs | 12 → 1 fetch |
+
+### Request Coalescing
+
+Rapid refresh requests are coalesced so only one network call fires:
+
+```typescript
+const snapshotInFlightRef = useRef(false)
+const snapshotPendingRef = useRef(false)
+
+async function refreshSnapshot() {
+  if (snapshotInFlightRef.current) {
+    snapshotPendingRef.current = true  // queue trailing refresh
+    return
+  }
+  snapshotInFlightRef.current = true
+  // ... fetch ...
+  snapshotInFlightRef.current = false
+  if (snapshotPendingRef.current) {
+    snapshotPendingRef.current = false
+    setTimeout(refreshSnapshot, 150)   // trailing refresh
+  }
+}
+```
+
+---
+
+## Mandatory Performance Rules
+
+**These rules apply to ALL new features on POS, KDS, and Expo screens.**
+
+### Rule 1: Socket-First Updates
+
+Any feature that updates data visible on other terminals MUST:
+- Emit a socket event from the API route via `emitToLocation()` or `emitToTags()`
+- Listen for that event on the client via `getSharedSocket()`
+- **NEVER** add polling to get cross-terminal updates
+
+### Rule 2: Delta Updates for Lists
+
+Any feature that adds/removes items from a list (orders, tickets, tables) MUST:
+- Remove items locally on removal events (paid, voided, deleted, bumped)
+- Only refetch the full list for additions or complex changes
+- **NEVER** refetch the entire list on every event
+
+### Rule 3: Use Existing Caches
+
+Any feature that reads menu items, categories, tax rules, or location settings MUST:
+- Use `src/lib/menu-cache.ts` for menu data
+- Use `src/lib/location-cache.ts` for location settings
+- **NEVER** write fresh DB queries for data that's already cached
+
+### Rule 4: Zustand Atomic Selectors
+
+Any component that reads from a Zustand store MUST:
+- Use atomic selectors: `useStore(s => s.field)`
+- **NEVER** destructure the entire store: `const { ... } = useStore()`
+
+### Rule 5: Single `set()` Per Interaction
+
+Any Zustand mutation that changes data + needs recalculated totals MUST:
+- Compute totals in JS and call `set()` once
+- **NEVER** call `set()` then `calculateTotals()` (two render passes)
+
+### Rule 6: No Blocking Background Work
+
+API routes that trigger non-critical side effects (inventory deduction, print jobs, socket dispatch) MUST:
+- Use fire-and-forget: `void doWork().catch(console.error)`
+- **NEVER** `await` non-critical work before returning the response
+
+### Rule 7: Instant UI Feedback
+
+User-facing modals and panels MUST:
+- Open instantly on tap (background work runs after)
+- Close instantly on completion (background payment/save runs after)
+- **NEVER** block UI on network requests that the user doesn't need to wait for
+
+### Rule 8: Compound Indexes
+
+Any new query pattern that filters on multiple columns MUST:
+- Add a compound `@@index` in `schema.prisma`
+- **NEVER** rely on single-column indexes for multi-column WHERE clauses
+
+---
+
+## Database Strategy
+
+### PostgreSQL Only
+
+**Database:** Neon PostgreSQL with database-per-venue. SQLite is NOT supported.
+
+- Local NUC: Local PostgreSQL in Docker
+- Cloud venues: Neon PostgreSQL (one database per venue)
+- Per-venue PrismaClient cached in `globalThis.venueClients`
+- `withVenue()` wrapper resolves DB from request context via AsyncLocalStorage
+- Connection pooling: `DATABASE_CONNECTION_LIMIT` (default 5), `DATABASE_POOL_TIMEOUT` (default 10s)
+
+### Schema Requirements
+
+Every table must have:
+
+```prisma
+model ExampleTable {
+  id         String    @id @default(cuid())
+  locationId String
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  syncedAt   DateTime?
+
+  @@index([locationId])
+}
+```
 
 ---
 
@@ -478,24 +742,6 @@ Check license with cloud
 
 ---
 
-## Immediate Action Items
-
-### Must Do Now (Before More Features)
-
-1. **Add soft delete fields** - Add `deletedAt DateTime?` to all tables
-2. **Add sync tracking** - Add `syncedAt DateTime?` to all tables
-3. **Never hard delete** - All deletes set `deletedAt` instead
-
-### Can Wait (But Document)
-
-- ~~PostgreSQL migration~~ (DONE -- migrated to Neon PostgreSQL, database-per-venue)
-- Docker containerization
-- Admin console
-- Sync service
-- Payment processor integration
-
----
-
 ## Competitive Advantage
 
 | Problem with Others | GWI Solution |
@@ -510,5 +756,41 @@ Check license with cloud
 
 ---
 
+## Key Files Reference
+
+### Socket & Real-Time
+| File | Purpose |
+|------|---------|
+| `src/lib/shared-socket.ts` | Shared socket singleton (one per tab) |
+| `src/lib/socket-server.ts` | Socket.io server, `emitToLocation()`, `emitToTags()` |
+| `src/lib/socket-dispatch.ts` | 17 dispatch functions for API routes |
+| `src/lib/events/socket-provider.ts` | 150ms debounced event forwarding |
+| `src/hooks/useOrderSockets.ts` | Order + floor plan socket events |
+| `src/hooks/useKDSSockets.ts` | KDS socket events |
+
+### Caching
+| File | Purpose |
+|------|---------|
+| `src/lib/menu-cache.ts` | Menu data cache (60s TTL) |
+| `src/lib/location-cache.ts` | Location settings cache |
+| `src/app/api/floorplan/snapshot/route.ts` | Single-query floor plan snapshot |
+| `src/app/api/menu/items/bulk/route.ts` | Bulk menu item fetch |
+
+### State Management
+| File | Purpose |
+|------|---------|
+| `src/stores/order-store.ts` | Order state (atomic selectors, batch set()) |
+| `src/components/orders/OrderPanelItem.tsx` | React.memo wrapped item |
+
+### Database
+| File | Purpose |
+|------|---------|
+| `src/lib/db.ts` | PrismaClient with connection pooling, 3-tier Proxy |
+| `src/lib/with-venue.ts` | Per-venue DB routing wrapper |
+| `src/lib/request-context.ts` | AsyncLocalStorage for tenant context |
+| `prisma/schema.prisma` | 7 compound indexes on hot paths |
+
+---
+
 *This document is the architecture source of truth for GWI POS.*
-*Last Updated: January 30, 2026*
+*Last Updated: February 14, 2026*

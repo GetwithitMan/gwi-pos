@@ -125,6 +125,69 @@ npm start            # Start production server
 npm run lint         # Lint code
 ```
 
+## Performance Rules (MANDATORY)
+
+**These rules are NON-NEGOTIABLE for any new feature on POS, KDS, or Expo screens.**
+**Full architecture details:** See `/docs/GWI-ARCHITECTURE.md` Real-Time Architecture section.
+**Skill docs:** See `/docs/skills/339-344` for implementation details.
+
+### Socket-First Updates (No Polling)
+- Cross-terminal updates MUST use Socket.io via `emitToLocation()` or `emitToTags()` from API routes
+- Client MUST listen via `getSharedSocket()` from `src/lib/shared-socket.ts`
+- **NEVER** call `io()` directly — always use `getSharedSocket()` / `releaseSharedSocket()`
+- **NEVER** add `setInterval` polling for data that can come via socket
+- Fallback polling at 30s ONLY when `isConnected === false`
+
+### Delta Updates for Lists
+- Removal events (paid, voided, deleted, bumped) → remove from local state, zero network
+- Addition/change events → debounced full refresh (150ms minimum)
+- **NEVER** refetch an entire list on every socket event
+
+### Use Existing Caches
+- Menu data: `src/lib/menu-cache.ts` (60s TTL)
+- Location settings: `src/lib/location-cache.ts`
+- Snapshot APIs: `/api/floorplan/snapshot`, `/api/orders/open?summary=true`, `/api/menu/items/bulk`
+- **NEVER** write fresh DB queries for data that's already cached
+
+### Zustand Patterns
+- **Atomic selectors only**: `useStore(s => s.field)` — never `const { ... } = useStore()`
+- **Single `set()` per interaction**: compute totals in JS, call `set()` once — never `set()` then `calculateTotals()`
+
+### API Route Performance
+- Non-critical side effects (inventory, print, socket dispatch) MUST be fire-and-forget: `void doWork().catch(console.error)`
+- **NEVER** `await` background work before returning response
+- New multi-column query patterns MUST add compound `@@index` in schema.prisma
+- **NEVER** write N+1 loops — batch with `findMany` + Map lookup
+
+### Instant UI Feedback
+- Modals/panels MUST open instantly (background work runs after opening)
+- Cash payments close modal instantly (payment runs in background)
+- **NEVER** block UI on network requests the user doesn't need to wait for
+
+### Server-Side Socket Dispatch Pattern
+```typescript
+// In API route after DB write:
+import { emitToLocation } from '@/lib/socket-server'
+emitToLocation(locationId, 'orders:list-changed', { orderId, status })
+// Don't await — fire and forget
+```
+
+### Client-Side Socket Consumer Pattern
+```typescript
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+
+useEffect(() => {
+  const socket = getSharedSocket()
+  const onEvent = (data) => { /* handle */ }
+  socket.on('my:event', onEvent)
+  if (socket.connected) { /* join rooms */ }
+  return () => {
+    socket.off('my:event', onEvent)
+    releaseSharedSocket()
+  }
+}, [deps])
+```
+
 ## Application Routes
 
 ### POS Routes
