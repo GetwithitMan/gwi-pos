@@ -3115,8 +3115,10 @@ export default function OrdersPage() {
               setShowPaymentModal(false)
               setOrderToPayId(null)
               setInitialPayMethod(undefined)
-              if (paidId) {
-                setPreloadedReceiptData(receiptData || null)
+              // Show receipt modal only when receiptData is provided
+              // (fire-and-forget cash payments pass no data → skip receipt)
+              if (paidId && receiptData) {
+                setPreloadedReceiptData(receiptData)
                 setReceiptOrderId(paidId)
                 setShowReceiptModal(true)
               }

@@ -7,6 +7,7 @@ import { calculateTip, getQuickCashAmounts, calculateChange, PAYMENT_METHOD_LABE
 import type { DualPricingSettings, TipSettings, PaymentSettings, PriceRoundingSettings } from '@/lib/settings'
 import { DatacapPaymentProcessor } from './DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
+import { toast } from '@/stores/toast-store'
 
 export interface TabCard {
   id: string
@@ -454,11 +455,63 @@ export function PaymentModal({
     processPayments([...pendingPayments, payment])
   }
 
+  // Build the /pay request body (shared between sync and fire-and-forget paths)
+  const buildPayBody = (payments: PendingPayment[]) => ({
+    payments: payments.map(p => ({
+      method: p.method,
+      amount: p.amount,
+      tipAmount: p.tipAmount,
+      amountTendered: p.amountTendered,
+      cardBrand: p.cardBrand,
+      cardLast4: p.cardLast4,
+      giftCardId: p.giftCardId,
+      giftCardNumber: p.giftCardNumber,
+      houseAccountId: p.houseAccountId,
+      // Datacap Direct fields — only include if we have the required fields
+      ...(p.datacapRecordNo && p.datacapRefNumber ? {
+        datacapRecordNo: p.datacapRecordNo,
+        datacapRefNumber: p.datacapRefNumber,
+        datacapSequenceNo: p.datacapSequenceNo,
+        authCode: p.authCode,
+        entryMethod: p.entryMethod,
+        signatureData: p.signatureData,
+        amountAuthorized: p.amountAuthorized,
+      } : {}),
+    })),
+    employeeId,
+  })
+
   const processPayments = async (payments: PendingPayment[]) => {
     // Safety: Validate orderId exists before attempting payment
     if (!orderId) {
       setError('Cannot process payment: No order ID provided. Please close this dialog and try again.')
       setIsProcessing(false)
+      return
+    }
+
+    // Fire-and-forget for cash-only full payment (most common bar flow)
+    // Close UI immediately — /pay runs in background
+    const isCashOnly = payments.every(p => p.method === 'cash') && pendingPayments.length === 0
+    if (isCashOnly) {
+      onPaymentComplete() // no receiptData → parent skips receipt modal
+      const payOrderId = orderId
+      const payBody = buildPayBody(payments)
+      ;(async () => {
+        try {
+          if (waitForOrderReady) await waitForOrderReady()
+          const res = await fetch(`/api/orders/${payOrderId}/pay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payBody),
+          })
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}))
+            toast.error(`Cash payment save failed: ${data.error || 'Server error'}. Check Open Orders.`)
+          }
+        } catch {
+          toast.error('Cash payment failed to save. Check Open Orders.')
+        }
+      })()
       return
     }
 
@@ -475,30 +528,7 @@ export function PaymentModal({
       const response = await fetch(`/api/orders/${orderId}/pay`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          payments: payments.map(p => ({
-            method: p.method,
-            amount: p.amount,
-            tipAmount: p.tipAmount,
-            amountTendered: p.amountTendered,
-            cardBrand: p.cardBrand,
-            cardLast4: p.cardLast4,
-            giftCardId: p.giftCardId,
-            giftCardNumber: p.giftCardNumber,
-            houseAccountId: p.houseAccountId,
-            // Datacap Direct fields — only include if we have the required fields
-            ...(p.datacapRecordNo && p.datacapRefNumber ? {
-              datacapRecordNo: p.datacapRecordNo,
-              datacapRefNumber: p.datacapRefNumber,
-              datacapSequenceNo: p.datacapSequenceNo,
-              authCode: p.authCode,
-              entryMethod: p.entryMethod,
-              signatureData: p.signatureData,
-              amountAuthorized: p.amountAuthorized,
-            } : {}),
-          })),
-          employeeId,
-        }),
+        body: JSON.stringify(buildPayBody(payments)),
       })
 
       if (!response.ok) {
