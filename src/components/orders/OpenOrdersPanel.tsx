@@ -223,7 +223,7 @@ export function OpenOrdersPanel({
   const loadOrders = async () => {
     if (!locationId) return
     try {
-      const params = new URLSearchParams({ locationId, _t: Date.now().toString() })
+      const params = new URLSearchParams({ locationId, summary: 'true', _t: Date.now().toString() })
       const response = await fetch(`/api/orders/open?${params}`, {
         cache: 'no-store',
         headers: { 'Cache-Control': 'no-cache' },

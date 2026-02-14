@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useEvents } from '@/lib/events/use-events'
 
 /**
  * PitBossDashboard - Entertainment Expo for gaming areas
@@ -135,6 +136,8 @@ export function PitBossDashboard({
   const [isLoading, setIsLoading] = useState(false)
   const [currentTime, setCurrentTime] = useState(new Date())
 
+  const { isConnected, subscribe } = useEvents({ locationId })
+
   // Update time every second for accurate countdowns
   useEffect(() => {
     const interval = setInterval(() => {
@@ -142,6 +145,35 @@ export function PitBossDashboard({
     }, 1000)
     return () => clearInterval(interval)
   }, [])
+
+  // Socket-driven updates for KDS entertainment data
+  useEffect(() => {
+    if (!isConnected || !onRefresh) return
+    const unsubs: (() => void)[] = []
+    unsubs.push(subscribe('entertainment:session-update', () => onRefresh()))
+    unsubs.push(subscribe('kds:order-received', () => onRefresh()))
+    unsubs.push(subscribe('kds:item-bumped', () => onRefresh()))
+    unsubs.push(subscribe('kds:order-bumped', () => onRefresh()))
+    unsubs.push(subscribe('order:updated', () => onRefresh()))
+    return () => unsubs.forEach(u => u())
+  }, [isConnected, subscribe, onRefresh])
+
+  // 20s disconnected-only fallback
+  useEffect(() => {
+    if (isConnected || !onRefresh) return
+    const fallback = setInterval(() => onRefresh(), 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected, onRefresh])
+
+  // visibilitychange for instant refresh on tab switch
+  useEffect(() => {
+    if (!onRefresh) return
+    const handler = () => {
+      if (document.visibilityState === 'visible') onRefresh()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [onRefresh])
 
   // Build active sessions (one per in-use table)
   const activeSessions = useMemo(() => {

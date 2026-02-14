@@ -295,7 +295,7 @@ function KDSContent() {
     }
   }, [authState, screenConfig])
 
-  // Load orders and heartbeat
+  // Load orders on mount + heartbeat (always runs)
   useEffect(() => {
     if (authState !== 'authenticated' && authState !== 'employee_fallback') return
 
@@ -306,17 +306,27 @@ function KDSContent() {
     const heartbeatInterval = setInterval(sendHeartbeat, 30000)
     sendHeartbeat()
 
-    // Fallback polling ONLY when socket is disconnected (30s, not 5s)
-    let fallbackInterval: ReturnType<typeof setInterval> | null = null
-    if (!socketConnected) {
-      fallbackInterval = setInterval(loadOrders, 30000)
-    }
-
     return () => {
       clearInterval(heartbeatInterval)
-      if (fallbackInterval) clearInterval(fallbackInterval)
     }
-  }, [authState, screenConfig, stationParam, showCompleted, socketConnected])
+  }, [authState, screenConfig, stationParam, showCompleted])
+
+  // Fallback polling ONLY when socket is disconnected (20s)
+  useEffect(() => {
+    if (authState !== 'authenticated' && authState !== 'employee_fallback') return
+    if (socketConnected) return
+    const fallback = setInterval(loadOrders, 20000)
+    return () => clearInterval(fallback)
+  }, [authState, socketConnected])
+
+  // Instant refresh on tab switch
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') loadOrders()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [])
 
   const sendHeartbeat = async () => {
     if (!screenConfig || !deviceToken) return

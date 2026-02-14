@@ -383,8 +383,8 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     showSavingsMessage: true,
   },
   priceRounding: {
-    enabled: false,
-    increment: 'none',              // none, 0.05, 0.10, 0.25, 0.50, 1.00
+    enabled: true,
+    increment: '1.00',              // none, 0.05, 0.10, 0.25, 0.50, 1.00
     direction: 'nearest',           // nearest, up, down
     applyToCash: true,              // Apply to cash payments
     applyToCard: false,             // Apply to card payments

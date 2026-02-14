@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { useEvents } from '@/lib/events/use-events'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrency, formatTime } from '@/lib/utils'
 
@@ -48,6 +49,8 @@ export default function TabsPage() {
     }
   }, [isAuthenticated, router])
 
+  const { subscribe, isConnected } = useEvents()
+
   // Load tabs on mount
   useEffect(() => {
     if (employee?.location?.id) {
@@ -55,11 +58,39 @@ export default function TabsPage() {
     }
   }, [employee?.location?.id])
 
-  // Auto-refresh every 10 seconds
+  // Socket-driven refresh: subscribe to events that affect tab list
   useEffect(() => {
+    if (!isConnected) return
+
+    const unsubs = [
+      subscribe('order:created', () => loadTabs()),
+      subscribe('order:updated', () => loadTabs()),
+      subscribe('payment:processed', () => loadTabs()),
+      subscribe('tab:updated', () => loadTabs()),
+      subscribe('orders:list-changed', () => loadTabs()),
+    ]
+
+    return () => unsubs.forEach(unsub => unsub())
+  }, [isConnected, subscribe])
+
+  // 20s fallback polling only when socket is disconnected
+  useEffect(() => {
+    if (isConnected) return
     if (!employee?.location?.id) return
-    const interval = setInterval(loadTabs, 10000)
-    return () => clearInterval(interval)
+
+    const fallback = setInterval(loadTabs, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected, employee?.location?.id])
+
+  // Instant refresh on tab visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && employee?.location?.id) {
+        loadTabs()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [employee?.location?.id])
 
   const loadTabs = async () => {

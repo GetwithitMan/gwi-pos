@@ -10,9 +10,12 @@ import { useAuthStore } from '@/stores/auth-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { HardwareHealthWidget } from '@/components/hardware/HardwareHealthWidget'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useEvents } from '@/lib/events/use-events'
 
 export default function SettingsPage() {
   const { employee } = useAuthStore()
+  const locationId = employee?.location?.id
+  const { isConnected } = useEvents({ locationId })
   const [settings, setSettings] = useState<LocationSettings>(DEFAULT_SETTINGS)
   const [locationName, setLocationName] = useState('')
   const [isLoading, setIsLoading] = useState(true)
@@ -57,9 +60,22 @@ export default function SettingsPage() {
   useEffect(() => {
     loadSettings()
     loadHardwareStatus()
-    // Refresh hardware status every 30 seconds
-    const interval = setInterval(loadHardwareStatus, 30000)
-    return () => clearInterval(interval)
+  }, [loadHardwareStatus])
+
+  // 20s fallback polling only when socket is disconnected
+  useEffect(() => {
+    if (isConnected) return
+    const fallback = setInterval(loadHardwareStatus, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected, loadHardwareStatus])
+
+  // Instant refresh on tab switch
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') loadHardwareStatus()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
   }, [loadHardwareStatus])
 
   const loadSettings = async () => {

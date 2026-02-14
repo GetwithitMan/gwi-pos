@@ -3,16 +3,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { offlineDb, PaymentIntent } from '@/lib/offline-db'
+import { useEvents } from '@/lib/events/use-events'
 
 interface SyncStatusIndicatorProps {
   terminalId?: string
+  locationId?: string
   showPaymentAlerts?: boolean
 }
 
 export function SyncStatusIndicator({
   terminalId,
+  locationId,
   showPaymentAlerts = true,
 }: SyncStatusIndicatorProps) {
+  const { isConnected, subscribe } = useEvents({ locationId })
   const [isOnline, setIsOnline] = useState(true)
   const [offlineQueueCount, setOfflineQueueCount] = useState(0)
   const [pendingPayments, setPendingPayments] = useState(0)
@@ -62,12 +66,23 @@ export function SyncStatusIndicator({
     }
   }, [])
 
-  // Poll for queue updates
+  // Socket-driven updates for sync/payment events
+  useEffect(() => {
+    if (!isConnected) return
+    const unsubs = [
+      subscribe('sync:completed', () => updateCounts()),
+      subscribe('payment:processed', () => updateCounts()),
+    ]
+    return () => unsubs.forEach(fn => fn())
+  }, [isConnected, subscribe, updateCounts])
+
+  // Initial load + 20s fallback polling when socket is disconnected
   useEffect(() => {
     updateCounts()
-    const interval = setInterval(updateCounts, 2000)
-    return () => clearInterval(interval)
-  }, [updateCounts])
+    if (isConnected) return
+    const fallback = setInterval(updateCounts, 20000)
+    return () => clearInterval(fallback)
+  }, [updateCounts, isConnected])
 
   const totalPending = offlineQueueCount + pendingPayments
   const hasFailedPayments = failedPayments.length > 0

@@ -7,8 +7,9 @@
  * Navigation hub for detailed error views and health monitoring.
  */
 
-import { use, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useEvents } from '@/lib/events/use-events'
 
 interface ErrorStats {
   bySeverity: { severity: string; count: number }[]
@@ -30,11 +31,31 @@ export default function MonitoringDashboard() {
   const [health, setHealth] = useState<HealthStatus[]>([])
   const [loading, setLoading] = useState(true)
 
+  // Get locationId from localStorage for socket connection
+  const [locationId, setLocationId] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    setLocationId(localStorage.getItem('locationId') || undefined)
+  }, [])
+  const { isConnected } = useEvents({ locationId })
+
   useEffect(() => {
     loadDashboardData()
-    // Refresh every 30 seconds
-    const interval = setInterval(loadDashboardData, 30000)
-    return () => clearInterval(interval)
+  }, [])
+
+  // 20s fallback polling only when socket is disconnected
+  useEffect(() => {
+    if (isConnected) return
+    const fallback = setInterval(loadDashboardData, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected])
+
+  // Instant refresh on tab switch
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') loadDashboardData()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
   }, [])
 
   async function loadDashboardData() {

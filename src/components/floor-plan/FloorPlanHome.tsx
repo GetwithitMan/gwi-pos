@@ -52,8 +52,8 @@ interface MenuItem {
   hasModifiers?: boolean
   isPizza?: boolean
   itemType?: string // 'standard' | 'combo' | 'timed_rental' | 'pizza'
-  entertainmentStatus?: 'available' | 'in_use' | 'maintenance'
-  blockTimeMinutes?: number
+  entertainmentStatus?: 'available' | 'in_use' | 'maintenance' | 'reserved' | null
+  blockTimeMinutes?: number | null
   modifierGroupCount?: number
   timedPricing?: {
     per15Min?: number
@@ -172,6 +172,9 @@ interface FloorPlanHomeProps {
   onRegisterDeselectTable?: (fn: () => void) => void
   // Counter that triggers a floor plan refresh when incremented (e.g., after send-to-kitchen)
   refreshTrigger?: number
+  // Pre-loaded menu data from parent (avoids duplicate /api/menu fetch)
+  initialCategories?: Category[]
+  initialMenuItems?: MenuItem[]
 }
 
 // Pizza order configuration (matches what pizza builder produces)
@@ -201,17 +204,45 @@ export function FloorPlanHome({
   children,
   onRegisterDeselectTable,
   refreshTrigger,
+  initialCategories,
+  initialMenuItems,
 }: FloorPlanHomeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   // View mode: tables (floor plan) or menu (category items)
   const [viewMode, setViewMode] = useState<ViewMode>('tables')
 
-  // Categories and menu items
-  const [categories, setCategories] = useState<Category[]>([])
+  // Categories and menu items — initialized from parent props when available
+  const [categories, setCategories] = useState<Category[]>(initialCategories || [])
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [allMenuItems, setAllMenuItems] = useState<MenuItem[]>(initialMenuItems || []) // Full menu, loaded once
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])       // Filtered by category
   const [loadingMenuItems, setLoadingMenuItems] = useState(false)
+
+  // Sync from parent when props update (e.g., parent's loadMenu completes after mount)
+  useEffect(() => {
+    if (initialCategories && initialCategories.length > 0) {
+      setCategories(initialCategories)
+    }
+  }, [initialCategories])
+
+  useEffect(() => {
+    if (initialMenuItems && initialMenuItems.length > 0) {
+      setAllMenuItems(initialMenuItems)
+      // If a category is selected, refresh its filtered view
+      if (selectedCategoryIdRef.current) {
+        setMenuItems(initialMenuItems.filter(
+          item => item.categoryId === selectedCategoryIdRef.current
+        ))
+      }
+    }
+  }, [initialMenuItems])
+
+  // Refs for stable callbacks (avoid stale closures + prevent callback recreation)
+  const selectedCategoryIdRef = useRef(selectedCategoryId)
+  selectedCategoryIdRef.current = selectedCategoryId
+  const allMenuItemsRef = useRef(allMenuItems)
+  allMenuItemsRef.current = allMenuItems
 
   // Open orders count
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
@@ -638,39 +669,38 @@ export function FloorPlanHome({
     return () => { cancelled = true }
   }, [quickBar, menuItemColors])
 
-  // Load data on mount
+  // Load data on mount — skip loadCategories if parent owns menu data (prop defined, even if empty while loading)
   useEffect(() => {
     loadFloorPlanData()
-    loadCategories()
+    if (initialCategories === undefined) {
+      loadCategories()
+    }
     loadOpenOrdersCount()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId])
 
-  // Consolidated heartbeat - single interval for all periodic tasks
+  // Socket.io: primary update mechanism for all floor plan data
+  const { subscribe, isConnected } = useEvents({ locationId, autoConnect: true })
+
+  // 1s heartbeat for UI timers only (flash/undo expiry) — NO data polling
   // FIX 4: Uses refs for callbacks to prevent interval restart on re-render
-  // This prevents multiple setIntervals from causing frame drops during animations
   useEffect(() => {
-    let tickCount = 0
     const heartbeat = setInterval(() => {
-      tickCount++
-
-      // Every tick (1s): Clear expired undos and flashes
       callbacksRef.current.clearExpiredFlashes()
-
-      // Every 30 ticks (30s): Safety-net polling for floor plan data
-      // Primary updates come via Socket.io (instant), this catches anything missed
-      if (tickCount % 30 === 0 && tickCount > 0) {
-        callbacksRef.current.loadFloorPlanData?.()
-      }
-
-      // Every 30 ticks (30s): Refresh open orders count (also backed by sockets)
-      if (tickCount >= 30) {
-        tickCount = 0
-        callbacksRef.current.loadOpenOrdersCount?.()
-      }
     }, 1000)
 
     return () => clearInterval(heartbeat)
   }, []) // Empty deps - refs keep callbacks fresh
+
+  // 20s fallback polling ONLY when socket is disconnected
+  useEffect(() => {
+    if (isConnected) return // socket working, no polling needed
+    const fallback = setInterval(() => {
+      callbacksRef.current.loadFloorPlanData?.()
+      callbacksRef.current.loadOpenOrdersCount?.()
+    }, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected])
 
   // Visibility change: instant refresh when user switches back to this tab/app
   useEffect(() => {
@@ -684,27 +714,53 @@ export function FloorPlanHome({
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [])
 
-  // Socket.io: Listen for floor plan updates + order changes
-  const { subscribe, isConnected } = useEvents({ locationId, autoConnect: true })
-
   useEffect(() => {
     if (!isConnected) return
 
-    // Subscribe to floor-plan:updated event for live preview
-    // Pass false to skip loading state during background refresh
-    const unsub1 = subscribe('floor-plan:updated', () => {
-      logger.log('[FloorPlanHome] Received floor-plan:updated event, refreshing...')
+    const refreshAll = () => {
       loadFloorPlanData(false)
-    })
+      loadOpenOrdersCount()
+    }
 
-    // Subscribe to orders:list-changed for instant cross-terminal table updates
-    // When any terminal creates/sends/pays an order, refresh floor plan to show table status
-    const unsub2 = subscribe('orders:list-changed', () => {
-      logger.log('[FloorPlanHome] Received orders:list-changed event, refreshing floor plan...')
-      loadFloorPlanData(false)
-    })
+    const unsubs = [
+      // Floor plan layout changes from another terminal
+      subscribe('floor-plan:updated', () => {
+        logger.log('[FloorPlanHome] Received floor-plan:updated event, refreshing...')
+        refreshAll()
+      }),
+      // Open orders list changed (create/send/pay/void)
+      subscribe('orders:list-changed', () => {
+        logger.log('[FloorPlanHome] Received orders:list-changed event, refreshing...')
+        refreshAll()
+      }),
+      // New order created — table status changes
+      subscribe('order:created', () => {
+        logger.log('[FloorPlanHome] Received order:created event, refreshing...')
+        refreshAll()
+      }),
+      // Order updated (items added, metadata changed)
+      subscribe('order:updated', () => {
+        logger.log('[FloorPlanHome] Received order:updated event, refreshing...')
+        refreshAll()
+      }),
+      // Explicit table status change
+      subscribe('table:status-changed', () => {
+        logger.log('[FloorPlanHome] Received table:status-changed event, refreshing...')
+        loadFloorPlanData(false)
+      }),
+      // Payment processed — table goes back to available
+      subscribe('payment:processed', () => {
+        logger.log('[FloorPlanHome] Received payment:processed event, refreshing...')
+        refreshAll()
+      }),
+      // Entertainment session update — status glow changes
+      subscribe('entertainment:session-update', () => {
+        logger.log('[FloorPlanHome] Received entertainment:session-update event, refreshing...')
+        loadFloorPlanData(false)
+      }),
+    ]
 
-    return () => { unsub1(); unsub2() }
+    return () => unsubs.forEach(unsub => unsub())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, subscribe])
 
@@ -835,7 +891,7 @@ export function FloorPlanHome({
     if (showLoading) setLoading(true)
     try {
       const [tablesRes, sectionsRes, elementsRes] = await Promise.all([
-        fetch(`/api/tables?locationId=${locationId}&includeSeats=true&includeOrders=true&includeOrderItems=true`),
+        fetch(`/api/tables?locationId=${locationId}&includeSeats=true&includeOrders=true`),
         fetch(`/api/sections?locationId=${locationId}`),
         fetch(`/api/floor-plan-elements?locationId=${locationId}`),
       ])
@@ -878,6 +934,7 @@ export function FloorPlanHome({
   const loadCategories = async () => {
     try {
       // Use same /api/menu endpoint as orders page for consistency
+      // Stores BOTH categories AND items — items are filtered client-side on category click
       const timestamp = Date.now()
       const params = new URLSearchParams({ locationId, _t: timestamp.toString() })
       const res = await fetch(`/api/menu?${params}`, {
@@ -887,6 +944,13 @@ export function FloorPlanHome({
       if (res.ok) {
         const data = await res.json()
         setCategories(data.categories || [])
+        setAllMenuItems(data.items || [])
+        // If a category is currently selected, refresh its filtered view
+        if (selectedCategoryIdRef.current) {
+          setMenuItems((data.items || []).filter(
+            (item: MenuItem) => item.categoryId === selectedCategoryIdRef.current
+          ))
+        }
       }
     } catch (error) {
       console.error('[FloorPlanHome] Categories load error:', error)
@@ -914,23 +978,12 @@ export function FloorPlanHome({
     }
   })
 
-  const loadMenuItems = async (categoryId: string) => {
-    setLoadingMenuItems(true)
-    try {
-      // Include stock status for prep item tracking
-      const res = await fetch(`/api/menu/items?categoryId=${categoryId}&locationId=${locationId}&includeStock=true`)
-      if (res.ok) {
-        const data = await res.json()
-        setMenuItems(data.items || [])
-      }
-    } catch {
-      // Network error — non-critical, menu items just won't load
-    } finally {
-      setLoadingMenuItems(false)
-    }
-  }
+  // loadMenuItems removed — category filtering is now instant client-side
+  // from allMenuItems (loaded once via loadCategories → /api/menu)
 
   // Handle category click - toggle between tables and menu view
+  // Uses refs for stable callback (no recreation on state change = no Framer Motion re-evals)
+  // Filters from allMenuItems client-side instead of making per-category API calls
   const handleCategoryClick = useCallback((categoryId: string | null) => {
     if (!categoryId) {
       // "All" was clicked - show tables
@@ -941,18 +994,18 @@ export function FloorPlanHome({
     }
 
     // Toggle behavior: clicking same category deselects it
-    if (categoryId === selectedCategoryId) {
+    if (categoryId === selectedCategoryIdRef.current) {
       setSelectedCategoryId(null)
       setViewMode('tables')
       setMenuItems([])
       return
     }
 
-    // Select new category
+    // Select new category — instant client-side filter (0ms, no API call)
     setSelectedCategoryId(categoryId)
     setViewMode('menu')
-    loadMenuItems(categoryId)
-  }, [selectedCategoryId])
+    setMenuItems(allMenuItemsRef.current.filter(item => item.categoryId === categoryId))
+  }, [])
 
 
   // Handle table tap - open order panel
@@ -2130,34 +2183,6 @@ export function FloorPlanHome({
                   >
                     {canCustomize && (
                       <>
-                        {/* Quick Pick Numbers Toggle */}
-                        <button
-                          onClick={() => {
-                            updateSetting('quickPickEnabled', !layout.quickPickEnabled)
-                            setShowSettingsDropdown(false)
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            padding: '10px 16px',
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#e2e8f0',
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <svg width="16" height="16" fill="none" stroke={layout.quickPickEnabled ? '#a855f7' : '#94a3b8'} viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
-                          </svg>
-                          {layout.quickPickEnabled ? '✓ Quick Pick Numbers' : 'Quick Pick Numbers'}
-                        </button>
-
                         {/* Show/Hide Quick Bar Toggle */}
                         <button
                           onClick={() => {

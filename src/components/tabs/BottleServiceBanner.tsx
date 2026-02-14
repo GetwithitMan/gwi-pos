@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useEvents } from '@/lib/events/use-events'
 
 interface BottleServiceStatus {
   depositAmount: number
@@ -30,6 +31,7 @@ export default function BottleServiceBanner({
   compact = false,
 }: BottleServiceBannerProps) {
   const [status, setStatus] = useState<BottleServiceStatus | null>(null)
+  const { subscribe, isConnected } = useEvents()
 
   const loadStatus = useCallback(() => {
     fetch(`/api/orders/${orderId}/bottle-service`)
@@ -40,11 +42,42 @@ export default function BottleServiceBanner({
       .catch(() => {})
   }, [orderId])
 
+  // Load on mount
   useEffect(() => {
     loadStatus()
-    // Poll every 30s for updated spend
-    const interval = setInterval(loadStatus, 30000)
-    return () => clearInterval(interval)
+  }, [loadStatus])
+
+  // Socket-driven refresh: order/tab/payment events affect bottle service spend
+  useEffect(() => {
+    if (!isConnected) return
+
+    const unsubs = [
+      subscribe('order:updated', () => loadStatus()),
+      subscribe('order:item-added', () => loadStatus()),
+      subscribe('tab:updated', () => loadStatus()),
+      subscribe('payment:processed', () => loadStatus()),
+    ]
+
+    return () => unsubs.forEach(unsub => unsub())
+  }, [isConnected, subscribe, loadStatus])
+
+  // 20s fallback polling only when socket is disconnected
+  useEffect(() => {
+    if (isConnected) return
+
+    const fallback = setInterval(loadStatus, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected, loadStatus])
+
+  // Instant refresh on tab visibility change
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadStatus()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [loadStatus])
 
   if (!status) return null

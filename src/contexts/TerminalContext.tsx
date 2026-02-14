@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { TerminalPairingOverlay, TerminalConfig } from '@/components/pos/TerminalPairingOverlay'
+import { useEvents } from '@/lib/events/use-events'
 
 interface TerminalContextValue {
   terminal: TerminalConfig | null
@@ -16,7 +17,8 @@ interface TerminalContextValue {
 
 const TerminalContext = createContext<TerminalContextValue | null>(null)
 
-const HEARTBEAT_INTERVAL = 30000 // 30 seconds
+const HEARTBEAT_CONNECTED_INTERVAL = 60000 // 60s when socket connected (keepalive only)
+const HEARTBEAT_DISCONNECTED_INTERVAL = 20000 // 20s when socket disconnected (fallback)
 
 interface TerminalProviderProps {
   children: ReactNode
@@ -74,18 +76,35 @@ export function TerminalProvider({ children, requirePairing = false }: TerminalP
     checkTerminalAuth()
   }, [checkTerminalAuth])
 
-  // Heartbeat interval
+  // Socket connection awareness — heartbeat less often when socket is connected
+  const { isConnected: socketConnected } = useEvents({ autoConnect: false })
+
+  // Heartbeat interval — slower when socket connected, faster when disconnected
   useEffect(() => {
     if (!terminal) return
 
-    const interval = setInterval(async () => {
+    const interval = socketConnected
+      ? HEARTBEAT_CONNECTED_INTERVAL
+      : HEARTBEAT_DISCONNECTED_INTERVAL
+
+    const timer = setInterval(async () => {
       const stillValid = await checkTerminalAuth()
       if (!stillValid) {
         console.warn('Terminal session invalidated')
       }
-    }, HEARTBEAT_INTERVAL)
+    }, interval)
 
-    return () => clearInterval(interval)
+    return () => clearInterval(timer)
+  }, [terminal, checkTerminalAuth, socketConnected])
+
+  // visibilitychange for instant recheck on tab switch
+  useEffect(() => {
+    if (!terminal) return
+    const handler = () => {
+      if (document.visibilityState === 'visible') checkTerminalAuth()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
   }, [terminal, checkTerminalAuth])
 
   const handlePaired = useCallback((config: TerminalConfig) => {

@@ -81,91 +81,94 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
-    // Get total count
-    const totalCount = await prisma.order.count({ where })
+    // Run all 5 queries in parallel (they're independent reads)
+    const [totalCount, orders, stats, statusBreakdown, typeBreakdown, paymentBreakdown] = await Promise.all([
+      // 1. Total count
+      prisma.order.count({ where }),
 
-    // Get orders with pagination
-    const orders = await prisma.order.findMany({
-      where,
-      select: {
-        id: true,
-        orderNumber: true,
-        orderType: true,
-        status: true,
-        tabName: true,
-        guestCount: true,
-        subtotal: true,
-        taxTotal: true,
-        discountTotal: true,
-        total: true,
-        createdAt: true,
-        closedAt: true,
-        employee: {
-          select: { id: true, firstName: true, lastName: true },
-        },
-        customer: {
-          select: { id: true, firstName: true, lastName: true, phone: true },
-        },
-        table: {
-          select: { id: true, name: true },
-        },
-        payments: {
-          select: {
-            id: true,
-            paymentMethod: true,
-            amount: true,
-            tipAmount: true,
-            totalAmount: true,
-            cardLast4: true,
-            cardBrand: true,
+      // 2. Paginated orders
+      prisma.order.findMany({
+        where,
+        select: {
+          id: true,
+          orderNumber: true,
+          orderType: true,
+          status: true,
+          tabName: true,
+          guestCount: true,
+          subtotal: true,
+          taxTotal: true,
+          discountTotal: true,
+          total: true,
+          createdAt: true,
+          closedAt: true,
+          employee: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          customer: {
+            select: { id: true, firstName: true, lastName: true, phone: true },
+          },
+          table: {
+            select: { id: true, name: true },
+          },
+          payments: {
+            select: {
+              id: true,
+              paymentMethod: true,
+              amount: true,
+              tipAmount: true,
+              totalAmount: true,
+              cardLast4: true,
+              cardBrand: true,
+            },
+          },
+          _count: {
+            select: { items: true },
           },
         },
-        _count: {
-          select: { items: true },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+
+      // 3. Summary stats
+      prisma.order.aggregate({
+        where,
+        _sum: {
+          subtotal: true,
+          taxTotal: true,
+          total: true,
+          discountTotal: true,
         },
-      },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    })
+        _count: true,
+      }),
 
-    // Calculate summary stats
-    const stats = await prisma.order.aggregate({
-      where,
-      _sum: {
-        subtotal: true,
-        taxTotal: true,
-        total: true,
-        discountTotal: true,
-      },
-      _count: true,
-    })
+      // 4. Status breakdown (uses same filters for consistency)
+      prisma.order.groupBy({
+        by: ['status'],
+        where,
+        _count: true,
+        _sum: { total: true },
+      }),
 
-    // Get status breakdown
-    const statusBreakdown = await prisma.order.groupBy({
-      by: ['status'],
-      where: { locationId },
-      _count: true,
-      _sum: { total: true },
-    })
+      // 5. Order type breakdown
+      prisma.order.groupBy({
+        by: ['orderType'],
+        where,
+        _count: true,
+        _sum: { total: true },
+      }),
 
-    // Get order type breakdown
-    const typeBreakdown = await prisma.order.groupBy({
-      by: ['orderType'],
-      where,
-      _count: true,
-      _sum: { total: true },
-    })
-
-    // Get payment method breakdown
-    const paymentBreakdown = await prisma.payment.groupBy({
-      by: ['paymentMethod'],
-      where: {
-        order: { locationId },
-      },
-      _count: true,
-      _sum: { amount: true, tipAmount: true },
-    })
+      // 6. Payment method breakdown (scoped to filtered orders)
+      prisma.payment.groupBy({
+        by: ['paymentMethod'],
+        where: {
+          order: where,
+        },
+        _count: true,
+        _sum: { amount: true, tipAmount: true },
+      }),
+    ])
 
     return NextResponse.json({
       orders: orders.map(order => ({

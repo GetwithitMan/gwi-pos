@@ -36,21 +36,52 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           id: true,
           orderNumber: true,
           displayNumber: true,
+          parentOrderId: true,
+          splitIndex: true,
           status: true,
           orderType: true,
           tableId: true,
           tabName: true,
+          guestCount: true,
+          courseMode: true,
+          customFields: true,
           subtotal: true,
           taxTotal: true,
           tipTotal: true,
           total: true,
           createdAt: true,
+          openedAt: true,
+          reopenedAt: true,
+          reopenReason: true,
           employeeId: true,
+          preAuthId: true,
+          preAuthCardBrand: true,
+          preAuthLast4: true,
+          preAuthAmount: true,
+          preAuthExpiresAt: true,
           table: {
-            select: { id: true, name: true },
+            select: { id: true, name: true, section: { select: { name: true } } },
           },
           employee: {
-            select: { id: true, displayName: true },
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+          customer: {
+            select: { id: true, firstName: true, lastName: true },
+          },
+          orderTypeRef: {
+            select: { id: true, name: true, color: true, icon: true },
+          },
+          cards: {
+            where: { deletedAt: null, status: 'authorized' },
+            select: { cardholderName: true, cardType: true, cardLast4: true },
+            take: 1,
+            orderBy: { createdAt: 'desc' },
+          },
+          payments: {
+            select: { status: true, totalAmount: true },
+          },
+          items: {
+            select: { isHeld: true, quantity: true },
           },
           _count: {
             select: { items: true },
@@ -63,113 +94,134 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         orders: summaryOrders.map(o => ({
           id: o.id,
           orderNumber: o.orderNumber,
-          displayNumber: o.displayNumber,
+          displayNumber: o.displayNumber || String(o.orderNumber),
+          isSplitTicket: !!o.parentOrderId,
+          parentOrderId: o.parentOrderId,
+          splitIndex: o.splitIndex,
           status: o.status,
           orderType: o.orderType,
-          tableId: o.tableId,
+          orderTypeConfig: o.orderTypeRef ? {
+            name: o.orderTypeRef.name,
+            color: o.orderTypeRef.color,
+            icon: o.orderTypeRef.icon,
+          } : null,
+          customFields: o.customFields as Record<string, string> | null,
           tabName: o.tabName,
+          tabStatus: (o as Record<string, unknown>).tabStatus || null,
+          cardholderName: (o as { cards?: { cardholderName: string | null }[] }).cards?.[0]?.cardholderName || null,
           tableName: o.table?.name || null,
+          tableId: o.tableId,
+          table: o.table ? {
+            id: o.table.id,
+            name: o.table.name,
+            section: o.table.section?.name || null,
+          } : null,
+          customer: o.customer ? {
+            id: o.customer.id,
+            name: `${o.customer.firstName || ''} ${o.customer.lastName || ''}`.trim(),
+          } : null,
+          guestCount: o.guestCount,
+          employee: {
+            id: o.employee.id,
+            name: o.employee.displayName || `${o.employee.firstName} ${o.employee.lastName}`,
+          },
           employeeId: o.employeeId,
-          employeeName: o.employee?.displayName || null,
+          // Status flags for badges
+          hasHeldItems: o.items.some((item: { isHeld?: boolean }) => item.isHeld),
+          courseMode: (o as Record<string, unknown>).courseMode || null,
+          hasCoursingEnabled: (o as Record<string, unknown>).courseMode !== 'off' && !!(o as Record<string, unknown>).courseMode,
+          // No items/modifiers in summary - just counts
+          itemCount: o.items.reduce((sum: number, item: { quantity: number }) => sum + item.quantity, 0),
           subtotal: Number(o.subtotal),
           taxTotal: Number(o.taxTotal),
           tipTotal: Number(o.tipTotal),
           total: Number(o.total),
-          itemCount: o._count.items,
+          // Pre-auth info
+          hasPreAuth: !!o.preAuthId,
+          preAuth: o.preAuthId ? {
+            cardBrand: o.preAuthCardBrand,
+            last4: o.preAuthLast4,
+            amount: o.preAuthAmount ? Number(o.preAuthAmount) : null,
+            expiresAt: o.preAuthExpiresAt?.toISOString(),
+          } : null,
           createdAt: o.createdAt,
+          openedAt: o.openedAt,
+          reopenedAt: o.reopenedAt?.toISOString() || null,
+          reopenReason: o.reopenReason || null,
+          // Payment status
+          paidAmount: o.payments
+            .filter((p: { status: string }) => p.status === 'completed')
+            .reduce((sum: number, p: { totalAmount: unknown }) => sum + Number(p.totalAmount), 0),
+          // Defaults for fields not in summary
+          waitlist: [],
+          isOnWaitlist: false,
+          entertainment: [],
+          hasActiveEntertainment: false,
+          items: [],
+          hasSplits: false,
+          splitCount: 0,
+          splits: [],
         })),
         count: summaryOrders.length,
         summary: true,
       })
     }
 
-    // Try to include split order fields if they exist in schema
-    let orders
-    try {
-      orders = await db.order.findMany({
-        where: {
-          locationId,
-          status: { in: ['open', 'sent', 'in_progress'] },
-          // Show both parent orders (no parentOrderId) and split tickets (have parentOrderId)
-          // But exclude parent orders that have been split (status = 'split')
-          ...(employeeId ? { employeeId } : {}),
-          ...(orderType ? { orderType } : {}),
+    const orders = await db.order.findMany({
+      where: {
+        locationId,
+        status: { in: ['open', 'sent', 'in_progress'] },
+        ...(employeeId ? { employeeId } : {}),
+        ...(orderType ? { orderType } : {}),
+      },
+      include: {
+        employee: {
+          select: { id: true, displayName: true, firstName: true, lastName: true },
         },
-        include: {
-          employee: {
-            select: { id: true, displayName: true, firstName: true, lastName: true },
-          },
-          table: {
-            select: { id: true, name: true, section: { select: { name: true } } },
-          },
-          customer: {
-            select: { id: true, firstName: true, lastName: true },
-          },
-          orderTypeRef: {
-            select: { id: true, name: true, color: true, icon: true },
-          },
-          items: {
-            include: {
-              modifiers: true,
+        table: {
+          select: { id: true, name: true, section: { select: { name: true } } },
+        },
+        customer: {
+          select: { id: true, firstName: true, lastName: true },
+        },
+        orderTypeRef: {
+          select: { id: true, name: true, color: true, icon: true },
+        },
+        items: {
+          include: {
+            modifiers: {
+              select: {
+                id: true,
+                modifierId: true,
+                name: true,
+                price: true,
+                depth: true,
+                preModifier: true,
+              },
             },
           },
-          cards: {
-            where: { deletedAt: null, status: 'authorized' },
-            select: { cardholderName: true, cardType: true, cardLast4: true },
-            take: 1,
-            orderBy: { createdAt: 'desc' },
-          },
-          payments: true,
-          splitOrders: {
-            select: {
-              id: true,
-              splitIndex: true,
-              status: true,
-              total: true,
-            },
-            orderBy: { splitIndex: 'asc' },
-          },
         },
-        orderBy: { createdAt: 'desc' },
-      })
-    } catch {
-      // Fallback if split fields don't exist in database yet
-      orders = await db.order.findMany({
-        where: {
-          locationId,
-          status: { in: ['open', 'sent', 'in_progress'] },
-          ...(employeeId ? { employeeId } : {}),
-          ...(orderType ? { orderType } : {}),
+        cards: {
+          where: { deletedAt: null, status: 'authorized' },
+          select: { cardholderName: true, cardType: true, cardLast4: true },
+          take: 1,
+          orderBy: { createdAt: 'desc' },
         },
-        include: {
-          employee: {
-            select: { id: true, displayName: true, firstName: true, lastName: true },
-          },
-          table: {
-            select: { id: true, name: true, section: { select: { name: true } } },
-          },
-          customer: {
-            select: { id: true, firstName: true, lastName: true },
-          },
-          orderTypeRef: {
-            select: { id: true, name: true, color: true, icon: true },
-          },
-          items: {
-            include: {
-              modifiers: true,
-            },
-          },
-          cards: {
-            where: { deletedAt: null, status: 'authorized' },
-            select: { cardholderName: true, cardType: true, cardLast4: true },
-            take: 1,
-            orderBy: { createdAt: 'desc' },
-          },
-          payments: true,
+        payments: {
+          select: { status: true, totalAmount: true },
         },
-        orderBy: { createdAt: 'desc' },
-      })
-    }
+        splitOrders: {
+          select: {
+            id: true,
+            splitIndex: true,
+            status: true,
+            total: true,
+          },
+          orderBy: { splitIndex: 'asc' },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
 
     // Get waitlist entries linked to these orders
     const orderIds = orders.map(o => o.id)

@@ -60,10 +60,26 @@ interface UsePOSLayoutReturn {
   resetToDefaults: () => void
 }
 
+// Cache layout in sessionStorage to prevent flash on remount
+function getCachedLayout(employeeId?: string): POSLayoutSettings {
+  if (!employeeId || typeof window === 'undefined') return DEFAULT_LAYOUT_SETTINGS
+  try {
+    const cached = sessionStorage.getItem(`pos-layout-${employeeId}`)
+    if (cached) return { ...DEFAULT_LAYOUT_SETTINGS, ...JSON.parse(cached) }
+  } catch { /* ignore parse errors */ }
+  return DEFAULT_LAYOUT_SETTINGS
+}
+
+function setCachedLayout(employeeId: string, layout: POSLayoutSettings) {
+  try {
+    sessionStorage.setItem(`pos-layout-${employeeId}`, JSON.stringify(layout))
+  } catch { /* ignore quota errors */ }
+}
+
 export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutReturn {
   const { employeeId, locationId, permissions } = options
 
-  const [layout, setLayout] = useState<POSLayoutSettings>(DEFAULT_LAYOUT_SETTINGS)
+  const [layout, setLayout] = useState<POSLayoutSettings>(() => getCachedLayout(employeeId))
   const [isLoading, setIsLoading] = useState(true)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
@@ -89,7 +105,9 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
       const response = await fetch(`/api/employees/${employeeId}/layout`)
       if (response.ok) {
         const data = await response.json()
-        setLayout({ ...DEFAULT_LAYOUT_SETTINGS, ...data.layout })
+        const merged = { ...DEFAULT_LAYOUT_SETTINGS, ...data.layout }
+        setLayout(merged)
+        setCachedLayout(employeeId, merged)
       }
     } catch {
       // Network error — non-critical, defaults will be used
@@ -148,9 +166,13 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
     key: K,
     value: POSLayoutSettings[K]
   ) => {
-    setLayout(prev => ({ ...prev, [key]: value }))
+    setLayout(prev => {
+      const next = { ...prev, [key]: value }
+      if (employeeId) setCachedLayout(employeeId, next)
+      return next
+    })
     setHasUnsavedChanges(true)
-  }, [])
+  }, [employeeId])
 
   // Mode controls
   const setMode = useCallback((mode: 'bar' | 'food') => {

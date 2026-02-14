@@ -48,7 +48,7 @@ interface MenuItem {
   categoryId: string
   hasModifiers?: boolean
   hasOtherModifiers?: boolean // Has non-spirit modifier groups
-  pourSizes?: Record<string, number> | null // { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
+  pourSizes?: Record<string, number | { label: string; multiplier: number }> | null // { shot: 1.0, double: 2.0, tall: 1.5, short: 0.75 }
   defaultPourSize?: string | null
   spiritTiers?: SpiritTiers | null // Spirit upgrade options by tier
 }
@@ -90,6 +90,9 @@ interface BartenderViewProps {
   // Settings
   requireNameWithoutCard?: boolean
   tapCardBehavior?: 'close' | 'tab' | 'prompt'
+  // Pre-loaded menu data from parent (avoids duplicate /api/menu fetch)
+  initialCategories?: Category[]
+  initialMenuItems?: MenuItem[]
   // OrderPanel rendered by parent, passed as children
   children?: React.ReactNode
   // Ref to allow parent to deselect current tab (e.g., "Hide" button)
@@ -240,6 +243,8 @@ export function BartenderView({
   onOpenCompVoid,
   employeePermissions = [],
   requireNameWithoutCard = false,
+  initialCategories,
+  initialMenuItems,
   children,
   onRegisterDeselectTab,
   refreshTrigger: externalRefreshTrigger,
@@ -263,12 +268,38 @@ export function BartenderView({
   // Menu section (Bar / Food / My Bar)
   const [menuSection, setMenuSection] = useState<MenuSection>('bar')
 
-  // Categories & Menu
-  const [categories, setCategories] = useState<Category[]>([])
+  // Categories & Menu — initialized from parent props when available
+  const [categories, setCategories] = useState<Category[]>(initialCategories || [])
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [allMenuItems, setAllMenuItems] = useState<MenuItem[]>(initialMenuItems || []) // Full menu, loaded once
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])       // Filtered by category
   const [isLoadingMenu, setIsLoadingMenu] = useState(false)
   const [menuPage, setMenuPage] = useState(1)
+
+  // Refs for stable callbacks
+  const allMenuItemsRef = useRef(allMenuItems)
+  allMenuItemsRef.current = allMenuItems
+  const selectedCategoryIdRef = useRef(selectedCategoryId)
+  selectedCategoryIdRef.current = selectedCategoryId
+
+  // Sync from parent when props update (e.g., parent's loadMenu completes after mount)
+  useEffect(() => {
+    if (initialCategories && initialCategories.length > 0) {
+      setCategories(initialCategories)
+    }
+  }, [initialCategories])
+
+  useEffect(() => {
+    if (initialMenuItems && initialMenuItems.length > 0) {
+      setAllMenuItems(initialMenuItems)
+      // If a category is selected, refresh its filtered view
+      if (selectedCategoryIdRef.current) {
+        setMenuItems(initialMenuItems.filter(
+          item => item.categoryId === selectedCategoryIdRef.current
+        ))
+      }
+    }
+  }, [initialMenuItems])
 
   // Custom favorites bar
   const [favorites, setFavorites] = useState<FavoriteItem[]>([])
@@ -489,32 +520,26 @@ export function BartenderView({
         const data = await res.json()
         const cats = data.categories || []
         setCategories(cats)
+        setAllMenuItems(data.items || [])
       }
     } catch (error) {
       console.error('[BartenderView] Failed to load categories:', error)
     }
   }, [locationId])
 
-  const loadMenuItems = useCallback(async (categoryId: string) => {
-    setIsLoadingMenu(true)
+  // Client-side category filter — no API call needed
+  const filterMenuItemsByCategory = useCallback((categoryId: string) => {
     setMenuPage(1)
-    try {
-      const res = await fetch(`/api/menu/items?categoryId=${categoryId}&locationId=${locationId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setMenuItems(data.items || [])
-      }
-    } catch (error) {
-      console.error('[BartenderView] Failed to load menu items:', error)
-    } finally {
-      setIsLoadingMenu(false)
-    }
-  }, [locationId])
+    setMenuItems(allMenuItemsRef.current.filter(item => item.categoryId === categoryId))
+  }, [])
 
-  // Initial load
+  // Initial load — skip if parent owns menu data (prop defined, even if empty while loading)
   useEffect(() => {
-    loadCategories()
-  }, [loadCategories])
+    if (initialCategories === undefined) {
+      loadCategories()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId])
 
   // Items from FloorPlanHome are automatically available via Zustand store
   // No mount-time sync needed — the store IS the source of truth
@@ -755,44 +780,29 @@ export function BartenderView({
     setIsEditingFavorites(false)
   }, [saveFavorites])
 
-  // Load items for all entertainment categories
-  const loadEntertainmentItems = useCallback(async () => {
+  // Filter items for all entertainment categories — instant client-side
+  const loadEntertainmentItems = useCallback(() => {
     if (filteredCategories.length === 0) {
       setMenuItems([])
       return
     }
-    setIsLoadingMenu(true)
     setMenuPage(1)
-    try {
-      // Load items from all entertainment categories
-      const allItems: MenuItem[] = []
-      for (const cat of filteredCategories) {
-        const res = await fetch(`/api/menu/items?categoryId=${cat.id}&locationId=${locationId}`)
-        if (res.ok) {
-          const data = await res.json()
-          allItems.push(...(data.items || []))
-        }
-      }
-      setMenuItems(allItems)
-    } catch (error) {
-      console.error('[BartenderView] Failed to load entertainment items:', error)
-    } finally {
-      setIsLoadingMenu(false)
-    }
-  }, [filteredCategories, locationId])
+    const catIds = new Set(filteredCategories.map(c => c.id))
+    setMenuItems(allMenuItemsRef.current.filter(item => catIds.has(item.categoryId)))
+  }, [filteredCategories])
 
   // Auto-select first category when section changes (or load all for entertainment)
   useEffect(() => {
     if (menuSection === 'entertainment') {
-      // Entertainment mode: load all entertainment items
+      // Entertainment mode: show all entertainment items
       setSelectedCategoryId(null)
       loadEntertainmentItems()
     } else if (filteredCategories.length > 0) {
       const firstCat = filteredCategories[0]
       setSelectedCategoryId(firstCat.id)
-      loadMenuItems(firstCat.id)
+      filterMenuItemsByCategory(firstCat.id)
     }
-  }, [menuSection, filteredCategories, loadMenuItems, loadEntertainmentItems])
+  }, [menuSection, filteredCategories, filterMenuItemsByCategory, loadEntertainmentItems])
 
   // Track which tab ID we last loaded items for (to prevent overwriting local changes)
   const loadedTabIdRef = useRef<string | null>(null)
@@ -867,8 +877,8 @@ export function BartenderView({
 
   const handleCategoryClick = useCallback((categoryId: string) => {
     setSelectedCategoryId(categoryId)
-    loadMenuItems(categoryId)
-  }, [loadMenuItems])
+    filterMenuItemsByCategory(categoryId)
+  }, [filterMenuItemsByCategory])
 
   const handleMenuItemTap = useCallback((item: MenuItem) => {
     // Convert local MenuItem to EngineMenuItem and delegate to engine

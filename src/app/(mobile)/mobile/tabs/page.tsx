@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import MobileTabCard from '@/components/mobile/MobileTabCard'
+import { useEvents } from '@/lib/events/use-events'
 
 interface MobileTab {
   id: string
@@ -43,6 +44,7 @@ function MobileTabsContent() {
   const [tabs, setTabs] = useState<MobileTab[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'mine' | 'all'>('mine')
+  const { isConnected, subscribe } = useEvents({})
 
   const loadTabs = useCallback(async () => {
     try {
@@ -61,9 +63,33 @@ function MobileTabsContent() {
 
   useEffect(() => {
     loadTabs()
-    // Poll every 10s for updates
-    const interval = setInterval(loadTabs, 10000)
-    return () => clearInterval(interval)
+  }, [loadTabs])
+
+  // Socket-driven updates
+  useEffect(() => {
+    if (!isConnected) return
+    const unsubs: (() => void)[] = []
+    unsubs.push(subscribe('order:created' as never, () => loadTabs()))
+    unsubs.push(subscribe('order:updated' as never, () => loadTabs()))
+    unsubs.push(subscribe('payment:processed' as never, () => loadTabs()))
+    unsubs.push(subscribe('tab:updated' as never, () => loadTabs()))
+    return () => unsubs.forEach(u => u())
+  }, [isConnected, subscribe, loadTabs])
+
+  // 20s disconnected-only fallback
+  useEffect(() => {
+    if (isConnected) return
+    const fallback = setInterval(loadTabs, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected, loadTabs])
+
+  // Instant refresh on tab switch
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') loadTabs()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
   }, [loadTabs])
 
   const filteredTabs = filter === 'all' ? tabs : tabs

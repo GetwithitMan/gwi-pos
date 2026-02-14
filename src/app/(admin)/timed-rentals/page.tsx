@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { useEvents } from '@/lib/events/use-events'
 
 import type { EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals'
 import {
@@ -82,6 +83,8 @@ function TimedRentalsContent() {
   const itemIdFromUrl = searchParams.get('item')
 
   const { employee, isAuthenticated } = useAuthStore()
+  const locationId = employee?.location?.id
+  const { isConnected, subscribe } = useEvents({ locationId })
   const [sessions, setSessions] = useState<TimedSession[]>([])
   const [timedItems, setTimedItems] = useState<TimedItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -109,11 +112,32 @@ function TimedRentalsContent() {
       return
     }
     loadData()
-
-    // Refresh every 30 seconds for live timer updates
-    const interval = setInterval(loadData, 30000)
-    return () => clearInterval(interval)
   }, [isAuthenticated, router])
+
+  // Socket-driven updates for entertainment status changes
+  useEffect(() => {
+    if (!isConnected) return
+    const unsub = subscribe('entertainment:session-update', () => {
+      loadData()
+    })
+    return unsub
+  }, [isConnected, subscribe])
+
+  // 20s fallback polling only when socket is disconnected
+  useEffect(() => {
+    if (isConnected) return
+    const fallback = setInterval(loadData, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected])
+
+  // Instant refresh on tab switch
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') loadData()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [])
 
   // Handle URL parameter for item builder
   useEffect(() => {

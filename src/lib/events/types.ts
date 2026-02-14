@@ -176,6 +176,9 @@ export interface EventMap {
 
   // Tabs
   'tab:updated': TabUpdatedEvent
+
+  // Void Approvals
+  'void:approval-update': VoidApprovalUpdateEvent
 }
 
 export type EventName = keyof EventMap
@@ -252,6 +255,15 @@ export interface OrdersListChangedEvent {
   locationId: string
   trigger: string
   orderId?: string
+}
+
+// Void Approval Events
+export interface VoidApprovalUpdateEvent {
+  type: 'approved' | 'rejected' | 'expired'
+  approvalId: string
+  terminalId?: string
+  approvalCode?: string
+  managerName: string
 }
 
 // ==================== Channel Types ====================

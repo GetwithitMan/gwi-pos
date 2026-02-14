@@ -522,6 +522,14 @@ export default function OrdersPage() {
   }, [hydrated, isAuthenticated, router])
 
   // Load menu with cache-busting
+  // NOTE: selectedCategory intentionally NOT in deps — loadMenu fetches ALL items.
+  // Category filtering is done client-side (line ~2437). Including selectedCategory
+  // here caused a circular re-fetch on every category click (loadMenu recreated →
+  // useEffect re-ran → full /api/menu re-fetch). Use selectedCategoryRef for the
+  // initial-selection guard.
+  const selectedCategoryRef = useRef(selectedCategory)
+  selectedCategoryRef.current = selectedCategory
+
   const loadMenu = useCallback(async () => {
     if (!employee?.location?.id) return
     try {
@@ -535,7 +543,7 @@ export default function OrdersPage() {
         const data = await response.json()
         setCategories(data.categories)
         setMenuItems([...data.items]) // Force new array reference
-        if (data.categories.length > 0 && !selectedCategory) {
+        if (data.categories.length > 0 && !selectedCategoryRef.current) {
           setSelectedCategory(data.categories[0].id)
         }
       }
@@ -544,7 +552,7 @@ export default function OrdersPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [employee?.location?.id, selectedCategory])
+  }, [employee?.location?.id])
 
   // Load order types
   const loadOrderTypes = useCallback(async () => {
@@ -2690,9 +2698,9 @@ export default function OrdersPage() {
               setOrderCustomFields({})
               setOrderSent(false)
             }}
-            selectedItemId={layout.quickPickEnabled ? quickPickSelectedId : undefined}
-            selectedItemIds={layout.quickPickEnabled ? quickPickSelectedIds : undefined}
-            onItemSelect={layout.quickPickEnabled ? selectQuickPickItem : undefined}
+            selectedItemId={quickPickSelectedId}
+            selectedItemIds={quickPickSelectedIds}
+            onItemSelect={selectQuickPickItem}
             multiSelectMode={quickPickMultiSelect}
             onToggleMultiSelect={toggleQuickPickMultiSelect}
             onSelectAllPending={selectAllPendingQuickPick}
@@ -2708,8 +2716,7 @@ export default function OrdersPage() {
             hideHeader={viewMode === 'floor-plan'}
             className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0 !h-auto'}
           />
-      {/* Quick Pick Strip — right side of order panel */}
-      {layout.quickPickEnabled && (
+      {/* Quick Pick Strip — always visible, right side of order panel */}
         <QuickPickStrip
           selectedItemId={quickPickSelectedId}
           selectedItemQty={quickPickSelectedId ? orderPanelItems.find(i => i.id === quickPickSelectedId)?.quantity : undefined}
@@ -2743,7 +2750,6 @@ export default function OrdersPage() {
             return firstItem?.delayMinutes ?? null
           })()}
         />
-      )}
     </div>
   ) : null
 
@@ -2787,6 +2793,8 @@ export default function OrdersPage() {
             onPaidOrderCleared={() => setPaidOrderId(null)}
             onRegisterDeselectTable={(fn) => { floorPlanDeselectTableRef.current = fn }}
             refreshTrigger={floorPlanRefreshTrigger}
+            initialCategories={categories}
+            initialMenuItems={menuItems}
           >
             {sharedOrderPanel}
           </FloorPlanHome>
@@ -2840,6 +2848,8 @@ export default function OrdersPage() {
             requireNameWithoutCard={false}
             tapCardBehavior="close"
             refreshTrigger={tabsRefreshTrigger}
+            initialCategories={categories}
+            initialMenuItems={menuItems}
           >
             {sharedOrderPanel}
           </BartenderView>

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
+import { useEvents } from '@/lib/events/use-events'
 
 interface Manager {
   id: string
@@ -88,42 +89,72 @@ export function RemoteVoidApprovalModal({
     return () => clearInterval(interval)
   }, [expiresAt, state])
 
-  // Poll for approval status when pending
+  const { isConnected, subscribe } = useEvents({ locationId })
+
+  // Helper to check approval status via API (used for fallback + initial check)
+  const checkApprovalStatus = useCallback(async () => {
+    if (state !== 'pending' || !approvalId) return
+    try {
+      const response = await fetch(`/api/voids/remote-approval/${approvalId}/status`)
+      const data = await response.json()
+
+      if (data.data?.status === 'approved' && data.data?.approvalCode) {
+        setApprovalCode(data.data.approvalCode)
+        setEnteredCode(data.data.approvalCode)
+        setState('enter_code')
+      } else if (data.data?.status === 'rejected') {
+        setState('error')
+        setError(`Request rejected by ${data.data.managerName}`)
+      } else if (data.data?.status === 'expired') {
+        setState('error')
+        setError('Request expired')
+      }
+    } catch (err) {
+      console.error('Status check error:', err)
+    }
+  }, [state, approvalId])
+
+  // Socket-driven updates for void approval
+  useEffect(() => {
+    if (state !== 'pending' || !approvalId || !isConnected) return
+
+    const unsub = subscribe('void:approval-update', (data) => {
+      if (data.approvalId !== approvalId) return
+
+      if (data.type === 'approved' && data.approvalCode) {
+        setApprovalCode(data.approvalCode)
+        setEnteredCode(data.approvalCode)
+        setState('enter_code')
+      } else if (data.type === 'rejected') {
+        setState('error')
+        setError(`Request rejected by ${data.managerName}`)
+      } else if (data.type === 'expired') {
+        setState('error')
+        setError('Request expired')
+      }
+    })
+
+    return unsub
+  }, [state, approvalId, isConnected, subscribe])
+
+  // 20s disconnected-only fallback polling
+  useEffect(() => {
+    if (state !== 'pending' || !approvalId || isConnected) return
+
+    const fallback = setInterval(() => checkApprovalStatus(), 20000)
+    return () => clearInterval(fallback)
+  }, [state, approvalId, isConnected, checkApprovalStatus])
+
+  // visibilitychange for instant check on tab switch
   useEffect(() => {
     if (state !== 'pending' || !approvalId) return
 
-    const pollInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/voids/remote-approval/${approvalId}/status`)
-        const data = await response.json()
-
-        if (data.data?.status === 'approved' && data.data?.approvalCode) {
-          setApprovalCode(data.data.approvalCode)
-          setEnteredCode(data.data.approvalCode) // Auto-fill
-          setState('enter_code')
-          clearInterval(pollInterval)
-        } else if (data.data?.status === 'rejected') {
-          setState('error')
-          setError(`Request rejected by ${data.data.managerName}`)
-          clearInterval(pollInterval)
-        } else if (data.data?.status === 'expired') {
-          setState('error')
-          setError('Request expired')
-          clearInterval(pollInterval)
-        }
-      } catch (err) {
-        console.error('Polling error:', err)
-      }
-    }, 3000) // Poll every 3 seconds
-
-    return () => clearInterval(pollInterval)
-  }, [state, approvalId])
-
-  // Listen for socket events (if available)
-  useEffect(() => {
-    // Socket listener would go here
-    // For now, relying on polling
-  }, [])
+    const handler = () => {
+      if (document.visibilityState === 'visible') checkApprovalStatus()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [state, approvalId, checkApprovalStatus])
 
   const fetchManagers = async () => {
     try {

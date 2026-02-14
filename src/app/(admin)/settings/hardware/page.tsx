@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useEvents } from '@/lib/events/use-events'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface PrinterStatus {
   id: string
@@ -65,6 +67,9 @@ function getTerminalLiveStatus(terminal: TerminalStatus): 'online' | 'stale' | '
 }
 
 export default function HardwareDashboard() {
+  const { employee } = useAuthStore()
+  const locationId = employee?.location?.id
+  const { isConnected } = useEvents({ locationId })
   const [printers, setPrinters] = useState<PrinterStatus[]>([])
   const [kdsScreens, setKdsScreens] = useState<KDSScreenStatus[]>([])
   const [terminals, setTerminals] = useState<TerminalStatus[]>([])
@@ -108,9 +113,22 @@ export default function HardwareDashboard() {
 
   useEffect(() => {
     fetchStatus()
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchStatus, 30000)
-    return () => clearInterval(interval)
+  }, [fetchStatus])
+
+  // 20s fallback polling only when socket is disconnected
+  useEffect(() => {
+    if (isConnected) return
+    const fallback = setInterval(fetchStatus, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected, fetchStatus])
+
+  // Instant refresh on tab switch
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') fetchStatus()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
   }, [fetchStatus])
 
   const handlePingPrinter = async (printerId: string) => {

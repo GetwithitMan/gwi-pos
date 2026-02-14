@@ -25,12 +25,33 @@ export const GET = withVenue(async function GET(
         },
         items: {
           include: {
-            modifiers: true,
-            ingredientModifications: true,
-            pizzaData: true, // Include pizza configuration
+            modifiers: {
+              select: {
+                id: true,
+                modifierId: true,
+                name: true,
+                price: true,
+                depth: true,
+                preModifier: true,
+                linkedMenuItemId: true,
+              },
+            },
+            pizzaData: true,
           },
         },
-        payments: true,
+        payments: {
+          select: {
+            id: true,
+            paymentMethod: true,
+            amount: true,
+            tipAmount: true,
+            totalAmount: true,
+            status: true,
+            cardLast4: true,
+            cardBrand: true,
+            roundingAdjustment: true,
+          },
+        },
       },
     })
 
@@ -41,11 +62,13 @@ export const GET = withVenue(async function GET(
     // Use mapper for complete response with all modifier fields
     const response = mapOrderForResponse(order)
 
+    const paidAmount = (order.payments as { status: string; totalAmount: unknown }[])
+      .filter(p => p.status === 'completed')
+      .reduce((sum, p) => sum + Number(p.totalAmount), 0)
+
     return NextResponse.json({
       ...response,
-      paidAmount: order.payments
-        .filter(p => p.status === 'completed')
-        .reduce((sum, p) => sum + Number(p.totalAmount), 0),
+      paidAmount,
     })
   } catch (error) {
     console.error('Failed to fetch order:', error)

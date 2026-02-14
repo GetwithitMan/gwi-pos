@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useEvents } from '@/lib/events/use-events'
 
 interface SyncLogEntry {
   id: string
@@ -38,6 +39,7 @@ export function SyncAuditLog({
   date,
   terminalId,
 }: SyncAuditLogProps) {
+  const { isConnected, subscribe } = useEvents({ locationId })
   const [logs, setLogs] = useState<SyncLogEntry[]>([])
   const [summary, setSummary] = useState<SyncSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,9 +70,31 @@ export function SyncAuditLog({
 
   useEffect(() => {
     fetchLogs()
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(fetchLogs, 30000)
-    return () => clearInterval(interval)
+  }, [fetchLogs])
+
+  // Socket-driven updates for sync events
+  useEffect(() => {
+    if (!isConnected) return
+    const unsub = subscribe('sync:completed', () => {
+      fetchLogs()
+    })
+    return unsub
+  }, [isConnected, subscribe])
+
+  // 20s fallback polling only when socket is disconnected
+  useEffect(() => {
+    if (isConnected) return
+    const fallback = setInterval(fetchLogs, 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected, fetchLogs])
+
+  // Instant refresh on tab switch
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') fetchLogs()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
   }, [fetchLogs])
 
   return (

@@ -10,6 +10,7 @@ import { RoomTabs } from './RoomTabs'
 import { calculateAttachSide, calculateAttachPosition } from './table-positioning'
 import './styles/floor-plan.css'
 import { logger } from '@/lib/logger'
+import { useEvents } from '@/lib/events/use-events'
 
 type FloorPlanMode = 'admin' | 'pos'
 
@@ -78,10 +79,40 @@ export function UnifiedFloorPlan({
     setLoading,
   } = useFloorPlanStore()
 
+  const { isConnected, subscribe } = useEvents({ locationId })
+
   // Load data on mount
   useEffect(() => {
     loadFloorPlanData()
   }, [locationId, roomId])
+
+  // Socket-driven updates for floor plan data
+  useEffect(() => {
+    if (!isConnected) return
+    const unsubs: (() => void)[] = []
+    unsubs.push(subscribe('order:created', () => loadFloorPlanData()))
+    unsubs.push(subscribe('order:updated', () => loadFloorPlanData()))
+    unsubs.push(subscribe('table:status-changed', () => loadFloorPlanData()))
+    unsubs.push(subscribe('floor-plan:updated', () => loadFloorPlanData()))
+    unsubs.push(subscribe('orders:list-changed', () => loadFloorPlanData()))
+    return () => unsubs.forEach(u => u())
+  }, [isConnected, subscribe])
+
+  // 20s disconnected-only fallback
+  useEffect(() => {
+    if (isConnected) return
+    const fallback = setInterval(() => loadFloorPlanData(), 20000)
+    return () => clearInterval(fallback)
+  }, [isConnected])
+
+  // visibilitychange for instant refresh on tab switch
+  useEffect(() => {
+    const handler = () => {
+      if (document.visibilityState === 'visible') loadFloorPlanData()
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [])
 
   // Clear expired flashes
   useEffect(() => {
