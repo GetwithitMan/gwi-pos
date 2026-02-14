@@ -233,6 +233,7 @@ export default function OrdersPage() {
   // Receipt modal state
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [receiptOrderId, setReceiptOrderId] = useState<string | null>(null)
+  const [preloadedReceiptData, setPreloadedReceiptData] = useState<any>(null)
 
   // Order that was just paid - triggers FloorPlanHome to clear its state
   const [paidOrderId, setPaidOrderId] = useState<string | null>(null)
@@ -3101,12 +3102,13 @@ export default function OrdersPage() {
             dualPricing={dualPricing}
             paymentSettings={paymentSettings}
             priceRounding={priceRounding}
-            onPaymentComplete={async () => {
+            onPaymentComplete={(receiptData) => {
               const paidId = orderToPayId
               setShowPaymentModal(false)
               setOrderToPayId(null)
               setInitialPayMethod(undefined)
               if (paidId) {
+                setPreloadedReceiptData(receiptData || null)
                 setReceiptOrderId(paidId)
                 setShowReceiptModal(true)
               }
@@ -3132,10 +3134,12 @@ export default function OrdersPage() {
             }
             setShowReceiptModal(false)
             setReceiptOrderId(null)
+            setPreloadedReceiptData(null)
           }}
           orderId={receiptOrderId}
           locationId={employee.location?.id || ''}
           receiptSettings={receiptSettings}
+          preloadedData={preloadedReceiptData}
         />
         <TipAdjustmentOverlay
           isOpen={showTipAdjustment}

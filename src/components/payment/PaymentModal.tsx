@@ -30,7 +30,7 @@ interface PaymentModalProps {
   tipSettings?: TipSettings
   paymentSettings: PaymentSettings
   priceRounding?: PriceRoundingSettings
-  onPaymentComplete: () => void
+  onPaymentComplete: (receiptData?: any) => void
   employeeId?: string
   terminalId?: string  // Required for Datacap integration
   locationId?: string  // Required for Datacap integration
@@ -504,7 +504,7 @@ export function PaymentModal({
       setPendingPayments(payments)
 
       if (result.orderStatus === 'paid') {
-        onPaymentComplete()
+        onPaymentComplete(result.receiptData)
       } else {
         // Partial payment - reset for more payments
         setStep('method')

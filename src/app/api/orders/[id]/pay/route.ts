@@ -144,12 +144,16 @@ export const POST = withVenue(async function POST(
     body = await request.json()
 
     // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
+    // Includes items/employee/table so we can build receipt data in the response (avoids second fetch)
     const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
         payments: true,
         location: true,
         customer: true,
+        items: { include: { modifiers: true } },
+        employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
+        table: { select: { id: true, name: true } },
       },
     })
 
@@ -1002,6 +1006,65 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Build receipt data inline (eliminates separate /receipt fetch)
+    const receiptData = {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      displayNumber: order.displayNumber,
+      orderType: order.orderType,
+      tabName: order.tabName,
+      tableName: order.table?.name || null,
+      guestCount: order.guestCount,
+      employee: {
+        id: order.employee.id,
+        name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
+      },
+      location: {
+        name: order.location.name,
+        address: order.location.address,
+        phone: order.location.phone,
+      },
+      items: order.items.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: Number(item.price),
+        itemTotal: Number(item.itemTotal),
+        specialNotes: item.specialNotes,
+        status: item.status,
+        modifiers: (item.modifiers || []).map((mod: any) => ({
+          id: mod.id,
+          name: mod.name,
+          price: Number(mod.price),
+          preModifier: mod.preModifier,
+        })),
+      })),
+      payments: createdPayments.map(p => ({
+        method: p.paymentMethod,
+        amount: Number(p.amount),
+        tipAmount: Number(p.tipAmount),
+        totalAmount: Number(p.totalAmount),
+        cardBrand: p.cardBrand,
+        cardLast4: p.cardLast4,
+        authCode: p.authCode,
+        amountTendered: p.amountTendered ? Number(p.amountTendered) : null,
+        changeGiven: p.changeGiven ? Number(p.changeGiven) : null,
+      })),
+      subtotal: Number(order.subtotal),
+      discountTotal: Number(order.discountTotal),
+      taxTotal: Number(order.taxTotal),
+      tipTotal: Number(order.tipTotal),
+      total: Number(order.total),
+      createdAt: order.createdAt.toISOString(),
+      paidAt: new Date().toISOString(),
+      customer: order.customer ? {
+        name: (order.customer as any).displayName || `${(order.customer as any).firstName} ${(order.customer as any).lastName}`,
+        loyaltyPoints: (order.customer as any).loyaltyPoints,
+      } : null,
+      loyaltyPointsRedeemed: null,
+      loyaltyPointsEarned: pointsEarned || null,
+    }
+
     // Return response
     return NextResponse.json({
       success: true,
@@ -1021,6 +1084,7 @@ export const POST = withVenue(async function POST(
       })),
       orderStatus: newPaidTotal >= orderTotal - paidTolerance ? 'paid' : 'partial',
       remainingBalance: newPaidTotal >= orderTotal - paidTolerance ? 0 : Math.max(0, orderTotal - newPaidTotal),
+      receiptData,
       // Loyalty info
       loyaltyPointsEarned: pointsEarned,
       customerId: order.customer?.id || null,

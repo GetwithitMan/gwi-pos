@@ -11,6 +11,7 @@ interface ReceiptModalProps {
   orderId: string | null
   locationId: string
   receiptSettings?: Partial<ReceiptSettings>
+  preloadedData?: ReceiptData | null
 }
 
 export function ReceiptModal({
@@ -19,6 +20,7 @@ export function ReceiptModal({
   orderId,
   locationId,
   receiptSettings,
+  preloadedData,
 }: ReceiptModalProps) {
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -29,6 +31,13 @@ export function ReceiptModal({
     if (!isOpen || !orderId) {
       setReceiptData(null)
       setIsLoading(true)
+      return
+    }
+
+    // Skip fetch if preloaded data is provided (from pay API response)
+    if (preloadedData) {
+      setReceiptData(preloadedData)
+      setIsLoading(false)
       return
     }
 
@@ -53,7 +62,7 @@ export function ReceiptModal({
     }
 
     fetchReceipt()
-  }, [isOpen, orderId, locationId])
+  }, [isOpen, orderId, locationId, preloadedData])
 
   const handlePrint = () => {
     // Create a new window with just the receipt content
