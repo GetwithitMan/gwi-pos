@@ -40,11 +40,6 @@ model Location {
   // Settings
   settings Json?
 
-  // Fleet Registration (Skill 345)
-  registrationToken          String?   @unique
-  registrationTokenExpiresAt DateTime?
-  registrationTokenUsed      Boolean   @default(false)
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -242,63 +237,8 @@ model Location {
   healthChecks    HealthCheck[]
 
   // Fleet Management (Skill 345)
-  serverNodes              ServerNode[]
-  serverRegistrationTokens ServerRegistrationToken[]
 
   @@index([organizationId])
-}
-
-// ============================================
-// SERVER NODES (Skill 345 - Fleet Management)
-// ============================================
-
-model ServerNode {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-
-  serverApiKey        String  @unique // 64-char hex token for heartbeat/sync auth
-  role                String  @default("server") // "server" | "terminal"
-  status              String  @default("registered") // registered | online | offline | decommissioned
-  hardwareFingerprint String? // SHA-256 of hardware identifiers (future)
-  currentVersion      String?
-  lastHeartbeatAt     DateTime?
-  ipAddress           String? // Last known IP
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([locationId])
-}
-
-// ============================================
-// SERVER REGISTRATION TOKENS (Skill 345 - Fleet Provisioning)
-// ============================================
-
-enum RegistrationTokenStatus {
-  PENDING
-  USED
-  EXPIRED
-  REVOKED
-}
-
-model ServerRegistrationToken {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-
-  token     String                  @unique // 6-char alphanumeric (typo-resistant charset)
-  status    RegistrationTokenStatus @default(PENDING)
-  expiresAt DateTime // 24 hours from creation
-
-  usedAt             DateTime?
-  usedByFingerprint  String? // hardware fingerprint of NUC that consumed it
-  usedByServerNodeId String? // ServerNode.id created during registration
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([locationId])
 }
 
 // ============================================

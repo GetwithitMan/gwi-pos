@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
@@ -25,30 +25,6 @@ interface LocationData {
   timezone: string
 }
 
-interface RegCodeData {
-  code: string | null
-  expiresAt: string | null
-  used: boolean
-  status: 'none' | 'active' | 'expired' | 'used' | 'revoked'
-}
-
-function formatTimeRemaining(expiresAt: string): string {
-  const diff = new Date(expiresAt).getTime() - Date.now()
-  if (diff <= 0) return 'Expired'
-  const hours = Math.floor(diff / (1000 * 60 * 60))
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-  if (hours > 0) return `${hours}h ${minutes}m remaining`
-  return `${minutes}m remaining`
-}
-
-const STATUS_BADGE: Record<RegCodeData['status'], { label: string; className: string }> = {
-  none: { label: 'No Code', className: 'bg-gray-100 text-gray-600' },
-  active: { label: 'Active', className: 'bg-green-100 text-green-700' },
-  expired: { label: 'Expired', className: 'bg-red-100 text-red-700' },
-  used: { label: 'Used', className: 'bg-gray-100 text-gray-600' },
-  revoked: { label: 'Revoked', className: 'bg-gray-100 text-gray-600' },
-}
-
 export default function VenueSettingsPage() {
   const router = useRouter()
   const { isAuthenticated } = useAuthStore()
@@ -62,27 +38,11 @@ export default function VenueSettingsPage() {
   const [hasChanges, setHasChanges] = useState(false)
   const [original, setOriginal] = useState({ name: '', address: '', phone: '', timezone: 'America/New_York' })
 
-  // Registration code state
-  const [regCode, setRegCode] = useState<RegCodeData>({ code: null, expiresAt: null, used: false, status: 'none' })
-  const [isGenerating, setIsGenerating] = useState(false)
-
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login')
     }
   }, [isAuthenticated, router])
-
-  const loadRegCode = useCallback(async () => {
-    try {
-      const res = await fetch('/api/location/registration-code')
-      if (res.ok) {
-        const { data } = await res.json() as { data: RegCodeData }
-        setRegCode(data)
-      }
-    } catch {
-      // Non-critical — silently fail
-    }
-  }, [])
 
   useEffect(() => {
     async function loadLocation() {
@@ -108,8 +68,7 @@ export default function VenueSettingsPage() {
       }
     }
     loadLocation()
-    loadRegCode()
-  }, [loadRegCode])
+  }, [])
 
   useEffect(() => {
     setHasChanges(
@@ -154,35 +113,6 @@ export default function VenueSettingsPage() {
     }
   }
 
-  const handleGenerateCode = async () => {
-    setIsGenerating(true)
-    try {
-      const res = await fetch('/api/location/registration-code', { method: 'POST' })
-      if (res.ok) {
-        const { data } = await res.json() as { data: RegCodeData }
-        setRegCode(data)
-        toast.success('Registration code generated — expires in 24 hours')
-      } else {
-        const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-        toast.error(err.error || 'Failed to generate code')
-      }
-    } catch {
-      toast.error('Failed to generate registration code')
-    } finally {
-      setIsGenerating(false)
-    }
-  }
-
-  const handleCopyCode = async () => {
-    if (!regCode.code) return
-    try {
-      await navigator.clipboard.writeText(regCode.code)
-      toast.success('Code copied to clipboard')
-    } catch {
-      toast.error('Failed to copy code')
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="p-6 max-w-4xl mx-auto">
@@ -193,8 +123,6 @@ export default function VenueSettingsPage() {
       </div>
     )
   }
-
-  const badge = STATUS_BADGE[regCode.status]
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -289,73 +217,6 @@ export default function VenueSettingsPage() {
                   </option>
                 ))}
               </select>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* NUC Registration */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>NUC Registration</CardTitle>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${badge.className}`}>
-                {badge.label}
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Code display */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 bg-gray-50 border rounded px-4 py-3 font-mono text-2xl tracking-[0.3em] text-center select-all">
-                  {regCode.code || '------'}
-                </div>
-                {regCode.code && regCode.status === 'active' && (
-                  <Button
-                    variant="outline"
-                    onClick={handleCopyCode}
-                    className="shrink-0"
-                    aria-label="Copy registration code"
-                  >
-                    Copy
-                  </Button>
-                )}
-              </div>
-
-              {/* Expiry info */}
-              {regCode.expiresAt && regCode.status === 'active' && (
-                <p className="text-sm text-gray-500">
-                  {formatTimeRemaining(regCode.expiresAt)}
-                </p>
-              )}
-              {regCode.status === 'expired' && (
-                <p className="text-sm text-red-600">
-                  Code has expired. Generate a new one.
-                </p>
-              )}
-              {regCode.status === 'used' && (
-                <p className="text-sm text-gray-500">
-                  This code was used to register a NUC. Generate a new one for additional devices.
-                </p>
-              )}
-
-              {/* Generate button */}
-              <Button
-                variant="primary"
-                onClick={handleGenerateCode}
-                disabled={isGenerating}
-                isLoading={isGenerating}
-              >
-                {regCode.status === 'active' ? 'Regenerate Code' : 'Generate Code'}
-              </Button>
-
-              {/* Installer hint */}
-              <div className="mt-2 p-3 bg-gray-50 border rounded text-xs text-gray-500">
-                <p className="font-medium text-gray-600 mb-1">Installer Command</p>
-                <code className="block text-gray-500 break-all">
-                  curl -sSL https://www.thepasspos.com/installer.run | sudo bash
-                </code>
-              </div>
             </div>
           </CardContent>
         </Card>
