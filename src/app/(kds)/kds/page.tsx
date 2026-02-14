@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { io, type Socket } from 'socket.io-client'
 import { useAuthStore } from '@/stores/auth-store'
 
 // LocalStorage keys for device authentication
@@ -133,6 +134,8 @@ function KDSContent() {
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
   const [showCompleted, setShowCompleted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [socketConnected, setSocketConnected] = useState(false)
+  const socketRef = useRef<Socket | null>(null)
 
   // Authenticate device on mount
   useEffect(() => {
@@ -240,26 +243,80 @@ function KDSContent() {
     }
   }, [authState, screenConfig, employee?.location?.id])
 
-  // Load orders on interval
+  // Socket connection for live updates
   useEffect(() => {
     if (authState !== 'authenticated' && authState !== 'employee_fallback') return
 
-    // TODO: SCALING - Replace polling with WebSockets/SSE for production
-    // Current: 10 terminals × 5s polling = ~120 DB hits/min during service
-    // Target: Push-based updates via Socket.io (see /src/lib/events/socket-provider.ts)
-    // Orders pushed on: create, item_added, status_change, bump
-    loadOrders()
-    const interval = setInterval(loadOrders, 5000)
+    const socket = io(window.location.origin, {
+      path: '/api/socket',
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+    })
 
-    // Also send heartbeat every 30 seconds
+    socket.on('connect', () => {
+      setSocketConnected(true)
+
+      const locationId = getLocationId()
+
+      // Build tags from station config
+      const tags: string[] = []
+      if (screenConfig?.stations?.length) {
+        screenConfig.stations.forEach(s => {
+          if (s.stationType) tags.push(s.stationType)
+        })
+      }
+      if (tags.length === 0) tags.push('kitchen')
+
+      const stationIds = getStationIds()
+
+      socket.emit('join_station', {
+        locationId,
+        tags,
+        terminalId: `kds-${screenConfig?.id || 'fallback'}-${Date.now()}`,
+        stationId: stationIds?.[0],
+      })
+    })
+
+    // Refresh on any KDS event
+    socket.on('kds:order-received', () => loadOrders())
+    socket.on('kds:item-status', () => loadOrders())
+    socket.on('kds:order-bumped', () => loadOrders())
+    socket.on('order:created', () => loadOrders())
+
+    socket.on('disconnect', () => setSocketConnected(false))
+
+    socketRef.current = socket
+    return () => {
+      socket.disconnect()
+      socketRef.current = null
+    }
+  }, [authState, screenConfig])
+
+  // Load orders and heartbeat
+  useEffect(() => {
+    if (authState !== 'authenticated' && authState !== 'employee_fallback') return
+
+    // One initial fetch on mount
+    loadOrders()
+
+    // Heartbeat always runs (device keepalive)
     const heartbeatInterval = setInterval(sendHeartbeat, 30000)
-    sendHeartbeat() // Initial heartbeat
+    sendHeartbeat()
+
+    // Fallback polling ONLY when socket is disconnected (30s, not 5s)
+    let fallbackInterval: ReturnType<typeof setInterval> | null = null
+    if (!socketConnected) {
+      fallbackInterval = setInterval(loadOrders, 30000)
+    }
 
     return () => {
-      clearInterval(interval)
       clearInterval(heartbeatInterval)
+      if (fallbackInterval) clearInterval(fallbackInterval)
     }
-  }, [authState, screenConfig, stationParam, showCompleted])
+  }, [authState, screenConfig, stationParam, showCompleted, socketConnected])
 
   const sendHeartbeat = async () => {
     if (!screenConfig || !deviceToken) return
@@ -531,6 +588,8 @@ function KDSContent() {
             <p className="text-sm text-gray-400">
               {orders.length} order{orders.length !== 1 ? 's' : ''} •
               Updated {lastUpdate.toLocaleTimeString()}
+              <span className={`ml-2 w-2 h-2 rounded-full inline-block ${socketConnected ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}
+                title={socketConnected ? 'Live updates' : 'Polling fallback'} />
               {authState === 'employee_fallback' && (
                 <span className="ml-2 text-yellow-500">(Employee Mode)</span>
               )}

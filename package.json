@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "dotenv -e .env.local -- tsx server.ts",
+    "dev": "dotenv -e .env.local -- tsx -r ./preload.js server.ts",
     "dev:next": "next dev --webpack",
     "build": "prisma generate && node scripts/generate-schema-sql.mjs && next build && node scripts/build-server.mjs",
     "schema:sql": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/schema.sql",

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { io, type Socket } from 'socket.io-client'
 
 /**
  * ExpoScreen - Expeditor view for food orders
@@ -78,6 +79,8 @@ export function ExpoScreen({
   const [orders, setOrders] = useState<ExpoOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
+  const [socketConnected, setSocketConnected] = useState(false)
+  const socketRef = useRef<Socket | null>(null)
 
   // Fetch orders for expo view
   const loadOrders = useCallback(async () => {
@@ -107,16 +110,52 @@ export function ExpoScreen({
     }
   }, [locationId, deviceToken])
 
-  // Poll for updates
-  // TODO: SCALING - Replace polling with WebSockets/SSE for production
-  // Current: 10 terminals × 3s polling = ~200 DB hits/min during service
-  // Target: Push-based updates via Socket.io only when orders change
-  // See: /docs/architecture/kds-realtime.md for migration plan
+  // Socket connection for live updates
   useEffect(() => {
+    const socket = io(window.location.origin, {
+      path: '/api/socket',
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+    })
+
+    socket.on('connect', () => {
+      setSocketConnected(true)
+      socket.emit('join_station', {
+        locationId,
+        tags: [routingTag || 'expo'],
+        terminalId: `expo-${screenConfig?.id || locationId}-${Date.now()}`,
+      })
+    })
+
+    // Refresh on any KDS event
+    socket.on('kds:order-received', () => loadOrders())
+    socket.on('kds:item-status', () => loadOrders())
+    socket.on('kds:order-bumped', () => loadOrders())
+    socket.on('order:created', () => loadOrders())
+
+    socket.on('disconnect', () => setSocketConnected(false))
+
+    socketRef.current = socket
+    return () => {
+      socket.disconnect()
+      socketRef.current = null
+    }
+  }, [locationId, routingTag, screenConfig?.id])
+
+  // Initial fetch + fallback polling when socket disconnected
+  useEffect(() => {
+    // One initial fetch
     loadOrders()
-    const interval = setInterval(loadOrders, 3000) // 3 second polling for expo
-    return () => clearInterval(interval)
-  }, [loadOrders])
+
+    // Fallback polling ONLY when socket is disconnected (30s, not 3s)
+    if (!socketConnected) {
+      const interval = setInterval(loadOrders, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [loadOrders, socketConnected])
 
   // Map raw orders to ExpoOrder format
   function mapOrders(rawOrders: any[]): ExpoOrder[] {
@@ -263,6 +302,8 @@ export function ExpoScreen({
           <span className="text-purple-300">
             {orders.length} order{orders.length !== 1 ? 's' : ''} | Updated{' '}
             {lastUpdate.toLocaleTimeString()}
+            <span className={`ml-2 w-2 h-2 rounded-full inline-block ${socketConnected ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'}`}
+              title={socketConnected ? 'Live updates' : 'Polling fallback'} />
           </span>
         </div>
         <button

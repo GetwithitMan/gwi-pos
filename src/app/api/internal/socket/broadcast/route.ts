@@ -1,4 +1,8 @@
 /**
+ * @deprecated This route is no longer used by socket-dispatch.ts which now
+ * calls emitToLocation/emitToTags directly. Kept for backward compatibility
+ * with any external callers. Will be removed in a future cleanup.
+ *
  * Internal Socket Broadcast API
  *
  * This endpoint is called by other API routes to broadcast events

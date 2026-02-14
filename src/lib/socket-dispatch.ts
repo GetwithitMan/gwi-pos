@@ -2,7 +2,8 @@
  * Socket Event Dispatcher
  *
  * Utility for dispatching real-time events from API routes.
- * Works with both local socket server and external services.
+ * Calls emitToLocation/emitToTags directly (in-process) instead of
+ * going through the HTTP broadcast route.
  *
  * Usage:
  * ```typescript
@@ -15,54 +16,11 @@
  */
 
 import type { RoutingResult } from '@/types/routing'
-
-const SOCKET_SERVER_URL = process.env.SOCKET_SERVER_URL || 'http://localhost:3000'
-const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || 'dev-internal-secret'
+import { emitToLocation, emitToTags } from '@/lib/socket-server'
 
 interface DispatchOptions {
   /** Don't await the dispatch (fire and forget) */
   async?: boolean
-  /** Log debug information */
-  debug?: boolean
-}
-
-/**
- * Internal broadcast function
- */
-async function broadcast(
-  type: string,
-  locationId: string,
-  data: Record<string, unknown>,
-  options: DispatchOptions = {}
-): Promise<boolean> {
-  const { debug = false } = options
-
-  try {
-    const response = await fetch(`${SOCKET_SERVER_URL}/api/internal/socket/broadcast`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Secret': INTERNAL_SECRET,
-      },
-      body: JSON.stringify({
-        type,
-        locationId,
-        ...data,
-      }),
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`[SocketDispatch] Broadcast failed: ${errorText}`)
-      return false
-    }
-
-    return true
-  } catch (error) {
-    // Socket dispatch failures should not block the main operation
-    console.error('[SocketDispatch] Failed to dispatch:', error)
-    return false
-  }
 }
 
 /**
@@ -76,15 +34,67 @@ export async function dispatchNewOrder(
   routingResult: RoutingResult,
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('NEW_ORDER', locationId, { routingResult }, options)
+  const doEmit = async () => {
+    try {
+      // Emit to each station's tags
+      for (const manifest of routingResult.manifests) {
+        const orderEvent = {
+          orderId: routingResult.order.orderId,
+          orderNumber: routingResult.order.orderNumber,
+          orderType: routingResult.order.orderType,
+          tableName: routingResult.order.tableName,
+          tabName: routingResult.order.tabName,
+          employeeName: routingResult.order.employeeName,
+          createdAt: routingResult.order.createdAt.toISOString(),
+          primaryItems: manifest.primaryItems.map((item) => ({
+            id: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            seatNumber: item.seatNumber,
+            specialNotes: item.specialNotes,
+            sourceTableName: item.sourceTableName,
+            modifiers: item.modifiers.map((m) => ({
+              name: m.name,
+              preModifier: m.preModifier,
+            })),
+            isPizza: item.isPizza,
+            isBar: item.isBar,
+            pizzaData: item.pizzaData,
+          })),
+          referenceItems: manifest.referenceItems.map((item) => ({
+            id: item.id,
+            name: item.name,
+            quantity: item.quantity,
+            stationName: manifest.stationName,
+          })),
+          matchedTags: manifest.matchedTags,
+          stationId: manifest.stationId,
+          stationName: manifest.stationName,
+        }
+
+        await emitToTags(manifest.matchedTags, 'kds:order-received', orderEvent)
+      }
+
+      // Also emit to location for general awareness
+      await emitToLocation(locationId, 'order:created', {
+        orderId: routingResult.order.orderId,
+        orderNumber: routingResult.order.orderNumber,
+        stations: routingResult.manifests.map((m) => m.stationName),
+      })
+
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    // Fire and forget
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -104,14 +114,23 @@ export async function dispatchItemStatus(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('ITEM_STATUS', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToTags(['expo'], 'kds:item-status', payload)
+      await emitToLocation(locationId, 'kds:item-status', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -130,14 +149,23 @@ export async function dispatchOrderBumped(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('ORDER_BUMPED', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToTags(['expo'], 'kds:order-bumped', payload)
+      await emitToLocation(locationId, 'kds:order-bumped', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -159,14 +187,23 @@ export async function dispatchEntertainmentUpdate(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('ENTERTAINMENT_UPDATE', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToTags(['entertainment'], 'entertainment:session-update', payload)
+      await emitToLocation(locationId, 'entertainment:session-update', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -185,14 +222,22 @@ export async function dispatchLocationAlert(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('LOCATION_ALERT', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'location:alert', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -212,14 +257,22 @@ export async function dispatchVoidApprovalUpdate(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('VOID_APPROVAL', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'void:approval-update', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -232,14 +285,22 @@ export async function dispatchFloorPlanUpdate(
   locationId: string,
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('FLOOR_PLAN_UPDATE', locationId, {}, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'floor-plan:updated', { locationId })
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -265,14 +326,22 @@ export async function dispatchInventoryAdjustment(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('INVENTORY_ADJUSTMENT', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'inventory:adjustment', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -292,14 +361,22 @@ export async function dispatchStockLevelChange(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('STOCK_LEVEL_CHANGE', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'inventory:stock-change', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -318,14 +395,22 @@ export async function dispatchMenuUpdate(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('MENU_UPDATE', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'menu:updated', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -347,14 +432,22 @@ export async function dispatchIngredientLibraryUpdate(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('INGREDIENT_LIBRARY_UPDATE', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'ingredient:library-update', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -372,20 +465,28 @@ export async function dispatchMenuItemChanged(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('MENU_ITEM_CHANGED', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'menu:item-changed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
  * Dispatch menu stock change event (for online ordering)
  *
- * Called when an item's stock status changes (e.g., in_stock → out_of_stock).
+ * Called when an item's stock status changes (e.g., in_stock -> out_of_stock).
  * Allows online ordering to immediately show "Sold Out" without polling.
  */
 export async function dispatchMenuStockChanged(
@@ -397,14 +498,22 @@ export async function dispatchMenuStockChanged(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('MENU_STOCK_CHANGED', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'menu:stock-changed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -422,20 +531,28 @@ export async function dispatchMenuStructureChanged(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('MENU_STRUCTURE_CHANGED', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'menu:structure-changed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
  * Dispatch entertainment status change event
  *
- * Called when entertainment item status changes (available → in_use, etc.).
+ * Called when entertainment item status changes (available -> in_use, etc.).
  * Replaces polling for entertainment category status updates.
  */
 export async function dispatchEntertainmentStatusChanged(
@@ -448,14 +565,22 @@ export async function dispatchEntertainmentStatusChanged(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('ENTERTAINMENT_STATUS_CHANGED', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'entertainment:status-changed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -463,20 +588,6 @@ export async function dispatchEntertainmentStatusChanged(
  *
  * Called when order totals change (items added, tip updated, discount applied).
  * Updates all connected clients with new order totals in real-time.
- *
- * @param locationId - Location ID for room scoping
- * @param orderId - Order ID that was updated
- * @param totals - Updated order totals
- * @param options - Dispatch options (async, debug)
- *
- * Example:
- *   await dispatchOrderTotalsUpdate(locationId, orderId, {
- *     subtotal: 50.00,
- *     taxTotal: 4.00,
- *     tipTotal: 8.00,
- *     discountTotal: 0,
- *     total: 62.00,
- *   }, { async: true })
  */
 export async function dispatchOrderTotalsUpdate(
   locationId: string,
@@ -491,18 +602,26 @@ export async function dispatchOrderTotalsUpdate(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('ORDER_TOTALS_UPDATE', locationId, {
-    orderId,
-    totals,
-    timestamp: new Date().toISOString(),
-  }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'order:totals-updated', {
+        orderId,
+        totals,
+        timestamp: new Date().toISOString(),
+      })
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -517,14 +636,22 @@ export async function dispatchOpenOrdersChanged(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('OPEN_ORDERS_CHANGED', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'orders:list-changed', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async open orders dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async open orders dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
 
 /**
@@ -545,12 +672,20 @@ export async function dispatchTipGroupUpdate(
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {
-  const promise = broadcast('TIP_GROUP_UPDATE', locationId, { payload }, options)
+  const doEmit = async () => {
+    try {
+      await emitToLocation(locationId, 'tip-group:updated', payload)
+      return true
+    } catch (error) {
+      console.error('[SocketDispatch] Failed to dispatch:', error)
+      return false
+    }
+  }
 
   if (options.async) {
-    promise.catch((err) => console.error('[SocketDispatch] Async tip group dispatch failed:', err))
+    doEmit().catch((err) => console.error('[SocketDispatch] Async tip group dispatch failed:', err))
     return true
   }
 
-  return promise
+  return doEmit()
 }
