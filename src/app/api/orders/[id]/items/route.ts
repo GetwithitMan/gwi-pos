@@ -114,7 +114,7 @@ export const POST = withVenue(async function POST(
         throw new Error('Order not found')
       }
 
-      if (existingOrder.status !== 'open') {
+      if (existingOrder.status !== 'open' && existingOrder.status !== 'draft') {
         throw new Error('Cannot modify a closed order')
       }
 

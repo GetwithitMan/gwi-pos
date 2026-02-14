@@ -115,6 +115,14 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Transition draft → open on first send (so Open Orders panel sees it)
+    if (order.status === 'draft') {
+      await db.order.update({
+        where: { id },
+        data: { status: 'open' },
+      })
+    }
+
     // Batch update regular items (single query)
     if (regularItemIds.length > 0) {
       await batchUpdateOrderItemStatus(regularItemIds, 'sent', now)
@@ -183,8 +191,8 @@ export const POST = withVenue(async function POST(
       console.error('[API /orders/[id]/send] Prep stock deduction failed:', err)
     })
 
-    // Audit log: sent to kitchen
-    await db.auditLog.create({
+    // Audit log: sent to kitchen (fire-and-forget — don't block response)
+    db.auditLog.create({
       data: {
         locationId: order.locationId,
         employeeId: order.employeeId,
@@ -197,6 +205,8 @@ export const POST = withVenue(async function POST(
           itemNames: itemsToProcess.filter(i => !i.isHeld).map(i => i.name),
         },
       },
+    }).catch(err => {
+      console.error('[API /orders/[id]/send] Audit log failed:', err)
     })
 
     // Dispatch open orders + floor plan update so all terminals refresh table status instantly

@@ -133,7 +133,7 @@ export const createOrderSchema = z.object({
   tableId: idSchema.nullish(),
   tabName: z.string().max(50).nullish(),
   guestCount: z.number().int().positive().default(1),
-  items: z.array(orderItemSchema).min(1, 'Order must have at least one item'),
+  items: z.array(orderItemSchema).default([]),  // Empty = draft shell (no items yet)
   notes: z.string().max(500).nullish(),
   customFields: z.record(z.string(), z.string()).optional(), // Custom fields for configurable order types
 })

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useOrderStore } from '@/stores/order-store'
 import { toast } from '@/stores/toast-store'
 import { isTempId, buildOrderItemPayload } from '@/lib/order-utils'
@@ -137,6 +137,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const [isSending, setIsSending] = useState(false)
 
+  // Ref to track background draft creation promise (so ensureOrderInDB can await it)
+  const draftPromiseRef = useRef<Promise<string | null> | null>(null)
+
   // Convert store items to OrderPanelItemData format
   const items: OrderPanelItemData[] = useMemo(() => {
     if (!currentOrder?.items) return []
@@ -190,17 +193,40 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     }
   }, [])
 
-  // Clear order
+  // Clear order — cancel draft in DB if it was never sent
   const clearOrder = useCallback(() => {
-    useOrderStore.getState().clearOrder()
+    const store = useOrderStore.getState()
+    const order = store.currentOrder
+
+    // If order has a real DB ID and no items were sent, soft-delete the draft
+    if (order?.id && !isTempId(order.id)) {
+      const hasSentItems = order.items.some(i => i.sentToKitchen)
+      if (!hasSentItems) {
+        fetch(`/api/orders/${order.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'cancelled' }),
+        }).catch(() => {})
+      }
+    }
+
+    // Abandon any pending draft creation
+    draftPromiseRef.current = null
+
+    store.clearOrder()
     setExpandedItemId(null)
     options.onOrderCleared?.()
   }, [options])
 
   // Start a new order (dine_in, bar_tab, takeout, etc.)
+  // Also fires a background POST to create a draft shell in the DB,
+  // so "Send to Kitchen" only needs to append items (not create the order).
   const startOrder = useCallback((orderType: string, opts: StartOrderOptions = {}) => {
+    const resolvedLocationId = opts.locationId || options.locationId
+    const resolvedEmployeeId = options.employeeId
+
     useOrderStore.getState().startOrder(orderType, {
-      locationId: opts.locationId || options.locationId,
+      locationId: resolvedLocationId,
       tableId: opts.tableId,
       tableName: opts.tableName,
       tabName: opts.tabName,
@@ -208,7 +234,36 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       orderTypeId: opts.orderTypeId,
       customFields: opts.customFields,
     })
-  }, [options.locationId])
+
+    // Background: create draft order shell in DB (no items, lightweight)
+    if (resolvedEmployeeId && resolvedLocationId) {
+      const draftPromise = fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: resolvedEmployeeId,
+          locationId: resolvedLocationId,
+          orderType,
+          orderTypeId: opts.orderTypeId,
+          tableId: opts.tableId || null,
+          tabName: opts.tabName || null,
+          guestCount: opts.guestCount || 1,
+          items: [],  // Empty = draft shell
+          customFields: opts.customFields,
+        }),
+      }).then(async (res) => {
+        if (res.ok) {
+          const data = await res.json()
+          // Store the real DB ID so ensureOrderInDB can skip creation
+          useOrderStore.getState().updateOrderId(data.id, data.orderNumber)
+          return data.id as string
+        }
+        return null
+      }).catch(() => null)
+
+      draftPromiseRef.current = draftPromise
+    }
+  }, [options.locationId, options.employeeId])
 
   // Add an item to the current order (local only — not saved to DB until send/pay)
   const addItem = useCallback((item: AddItemInput) => {
@@ -259,6 +314,13 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
    * - Returns the real orderId, or null on failure
    */
   const ensureOrderInDB = useCallback(async (employeeId?: string): Promise<string | null> => {
+    // If a background draft creation is in flight, wait for it first
+    // (typically resolves in <100ms since it's just creating an empty shell)
+    if (draftPromiseRef.current) {
+      await draftPromiseRef.current
+      draftPromiseRef.current = null
+    }
+
     const store = useOrderStore.getState()
     const order = store.currentOrder
     if (!order) return null
@@ -643,15 +705,11 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     setIsSending(true)
 
     try {
-      // Step 1: Ensure order exists in DB (creates if needed, appends unsaved items)
-      const resolvedOrderId = await ensureOrderInDB(employeeId)
-      if (!resolvedOrderId) {
-        // ensureOrderInDB already showed error toast
-        return
-      }
-
-      // Step 2: If coursing is enabled, handle course-based firing
+      // Routing: coursing, delay, or standard (fire-and-forget) send
       if (currentOrder.coursingEnabled) {
+        // Coursing needs all items persisted first (blocking — per-course API calls)
+        const resolvedOrderId = await ensureOrderInDB(employeeId)
+        if (!resolvedOrderId) return
         // Determine which courses have delays set
         const courseDelays = currentOrder.courseDelays || {}
         const pendingItems = currentOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
@@ -760,65 +818,123 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         // Reload from API for fresh server state
         await loadOrder(resolvedOrderId)
       } else if (currentOrder.pendingDelay && currentOrder.pendingDelay > 0 && !currentOrder.delayStartedAt) {
-        // Order-level delay: Save items to DB but DON'T fire to kitchen yet.
-        // Start the delay timer — items will fire when timer expires or user taps "Fire Now"
+        // Order-level delay: persist items, start timer, don't fire yet
+        const resolvedOrderId = await ensureOrderInDB(employeeId)
+        if (!resolvedOrderId) return
         const store = useOrderStore.getState()
         store.startDelayTimer()
         toast.info(`Order delayed — fires in ${currentOrder.pendingDelay}m`)
         options.onOrderSent?.(resolvedOrderId)
       } else {
-        // Standard send — check for per-item delays
+        // ═══ STANDARD SEND — FIRE-AND-FORGET (INSTANT UI) ═══
+        // Only await the draft promise (near-instant — created on table tap).
+        // Items append + /send run entirely in background.
+        if (draftPromiseRef.current) {
+          await draftPromiseRef.current
+          draftPromiseRef.current = null
+        }
+
+        // Get fresh state after draft resolution
         const store = useOrderStore.getState()
         const freshOrder = store.currentOrder
         if (!freshOrder) return
 
-        const pendingItems = freshOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
-        const heldItems = freshOrder.items.filter(i => !i.sentToKitchen && i.isHeld)
-        const delayedItems = pendingItems.filter(i => i.delayMinutes && i.delayMinutes > 0 && !i.delayStartedAt)
-        const immediateItems = pendingItems.filter(i => !i.delayMinutes || i.delayMinutes <= 0)
-
-        // ALWAYS call the send route when there are pending items (immediate or delayed).
-        // The send route handles delayed items by stamping delayStartedAt on the server.
-        // Without this call, delayed-only sends would never persist delayStartedAt,
-        // and loadOrder would wipe the client-side timestamp.
-        if (immediateItems.length > 0 || delayedItems.length > 0) {
-          const res = await fetch(`/api/orders/${resolvedOrderId}/send`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              employeeId: employeeId || options.employeeId,
-              // Only send specific item IDs when we have a mix of delayed and immediate
-              ...(delayedItems.length > 0 && immediateItems.length > 0
-                ? { itemIds: immediateItems.map(i => i.id) }
-                : {}),
-            }),
-          })
-
-          if (!res.ok) {
-            const error = await res.json()
-            toast.error(error.error || 'Failed to send order')
-            return
-          }
-
-          // Mark immediate items as sent in store
-          if (immediateItems.length > 0) {
-            const storeAfterSend = useOrderStore.getState()
-            if (storeAfterSend.currentOrder) {
-              for (const item of immediateItems) {
-                storeAfterSend.updateItem(item.id, { sentToKitchen: true })
-              }
-            }
-          }
+        // Get DB order ID (from draft shell created on table tap)
+        let resolvedOrderId = freshOrder.id && !isTempId(freshOrder.id) ? freshOrder.id : null
+        if (!resolvedOrderId) {
+          // Rare fallback: draft didn't complete. Block on full persist.
+          resolvedOrderId = await ensureOrderInDB(employeeId)
+          if (!resolvedOrderId) return
         }
 
-        // Start delay timers on delayed items (client-side backup, server already stamped)
+        const pendingItems = freshOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
+        const delayedItems = pendingItems.filter(i => i.delayMinutes && i.delayMinutes > 0 && !i.delayStartedAt)
+        const immediateItems = pendingItems.filter(i => !i.delayMinutes || i.delayMinutes <= 0)
+        const unsavedItems = freshOrder.items.filter(item => isTempId(item.id))
+
+        if (immediateItems.length > 0 || delayedItems.length > 0) {
+          // Optimistically mark immediate items as sent — UI clears instantly
+          if (immediateItems.length > 0) {
+            for (const item of immediateItems) {
+              store.updateItem(item.id, { sentToKitchen: true })
+            }
+          }
+
+          // Fire-and-forget: append unsaved items → send to kitchen
+          // Both API calls run in background — user sees instant response
+          const orderId = resolvedOrderId
+          const bgChain = async () => {
+            let itemIdMap: Map<string, string> | null = null
+
+            // Step 1: Append unsaved items to DB (if any have temp IDs)
+            if (unsavedItems.length > 0) {
+              const appendRes = await fetch(`/api/orders/${orderId}/items`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  items: unsavedItems.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+                }),
+              })
+              if (!appendRes.ok) throw new Error('Failed to save items')
+              const result = await appendRes.json()
+              itemIdMap = new Map<string, string>()
+              if (result.addedItems) {
+                const s = useOrderStore.getState()
+                for (const added of result.addedItems) {
+                  if (added.correlationId) {
+                    itemIdMap.set(added.correlationId, added.id)
+                    s.updateItemId(added.correlationId, added.id)
+                  }
+                }
+              }
+              if (result.subtotal !== undefined) {
+                useOrderStore.getState().syncServerTotals({
+                  subtotal: result.subtotal,
+                  discountTotal: result.discountTotal ?? 0,
+                  taxTotal: result.taxTotal ?? 0,
+                  tipTotal: result.tipTotal,
+                  total: result.total,
+                })
+              }
+            }
+
+            // Step 2: Send to kitchen (items now in DB)
+            const sendBody: Record<string, unknown> = {
+              employeeId: employeeId || options.employeeId,
+            }
+            if (delayedItems.length > 0 && immediateItems.length > 0) {
+              sendBody.itemIds = immediateItems.map(i => {
+                if (isTempId(i.id) && itemIdMap?.has(i.id)) return itemIdMap.get(i.id)!
+                return i.id
+              })
+            }
+
+            const sendRes = await fetch(`/api/orders/${orderId}/send`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(sendBody),
+            })
+            if (!sendRes.ok) {
+              const err = await sendRes.json().catch(() => ({}))
+              throw new Error(err.error || 'Kitchen routing failed')
+            }
+          }
+
+          bgChain()
+            .then(() => loadOrder(orderId).catch(() => {}))
+            .catch(err => {
+              console.error('[useActiveOrder] Background send failed:', err)
+              toast.error('Send failed — tap Send again to retry')
+            })
+        }
+
+        // Delay timers (synchronous — no DB call)
         if (delayedItems.length > 0) {
           store.startItemDelayTimers(delayedItems.map(i => i.id))
           const delayDesc = delayedItems.map(i => `${i.name} (${i.delayMinutes}m)`).join(', ')
           toast.info(`Delayed: ${delayDesc}`)
         }
 
-        // Clear order-level delay state after successful send
         const storeAfter = useOrderStore.getState()
         if (storeAfter.currentOrder?.pendingDelay) {
           storeAfter.markDelayFired()
@@ -828,11 +944,6 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           toast.success(`${immediateItems.length} item${immediateItems.length !== 1 ? 's' : ''} sent to kitchen`)
         }
         options.onOrderSent?.(resolvedOrderId)
-
-        // Reload from API for fresh server state (fire-and-forget — don't block the UI)
-        if (immediateItems.length > 0 || delayedItems.length > 0) {
-          loadOrder(resolvedOrderId).catch(() => {})
-        }
       }
     } catch (error) {
       console.error('[useActiveOrder] Failed to send order:', error)

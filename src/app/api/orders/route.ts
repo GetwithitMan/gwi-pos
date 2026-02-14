@@ -44,6 +44,68 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const orderNumber = (lastOrder?.orderNumber || 0) + 1
 
+    // === FAST PATH: Draft shell creation (no items) ===
+    // When items is empty, create a lightweight order shell without tax/commission/totals computation.
+    // This enables background pre-creation on table tap so "Send to Kitchen" is near-instant.
+    if (items.length === 0) {
+      const initialSeatCount = guestCount || 1
+      const initialSeatTimestamps: Record<string, string> = {}
+      const now = new Date().toISOString()
+      for (let i = 1; i <= initialSeatCount; i++) {
+        initialSeatTimestamps[i.toString()] = now
+      }
+
+      const order = await db.order.create({
+        data: {
+          locationId,
+          employeeId,
+          orderNumber,
+          orderType,
+          orderTypeId: orderTypeId || null,
+          tableId: tableId || null,
+          tabName: tabName || null,
+          guestCount: initialSeatCount,
+          baseSeatCount: initialSeatCount,
+          extraSeatCount: 0,
+          seatVersion: 0,
+          seatTimestamps: initialSeatTimestamps,
+          status: 'draft',
+          subtotal: 0,
+          discountTotal: 0,
+          taxTotal: 0,
+          taxFromInclusive: 0,
+          taxFromExclusive: 0,
+          tipTotal: 0,
+          total: 0,
+          commissionTotal: 0,
+          notes: notes || null,
+          customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
+        },
+      })
+
+      // Fire-and-forget audit log
+      db.auditLog.create({
+        data: {
+          locationId,
+          employeeId,
+          action: 'order_draft_created',
+          entityType: 'order',
+          entityId: order.id,
+          details: { orderNumber, orderType, tableId: tableId || null },
+        },
+      }).catch(() => {})
+
+      // No socket dispatches for drafts — invisible to Open Orders & Floor Plan
+      return NextResponse.json({
+        id: order.id,
+        orderNumber,
+        status: 'draft',
+        items: [],
+      })
+    }
+
+    // === STANDARD PATH: Full order creation with items ===
+
     // Fetch menu items to get commission settings
     const menuItemIds = items.map(item => item.menuItemId)
     const menuItems = await db.menuItem.findMany({

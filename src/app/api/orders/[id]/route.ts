@@ -136,7 +136,7 @@ export const PUT = withVenue(async function PUT(
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
     }
 
-    if (existingOrder.status !== 'open') {
+    if (existingOrder.status !== 'open' && existingOrder.status !== 'draft') {
       return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
     }
 
