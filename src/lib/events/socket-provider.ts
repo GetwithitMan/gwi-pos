@@ -48,6 +48,8 @@ export class SocketEventProvider implements EventProvider {
   private connectionCallbacks: Array<(state: ConnectionState) => void> = []
   private config: ProviderConfig
   private eventListeners: Map<string, Set<EventCallback<EventName>>> = new Map()
+  private pendingEvents: Map<string, { data: unknown; timer: ReturnType<typeof setTimeout> }> = new Map()
+  private readonly DEBOUNCE_MS = 150
 
   constructor(config?: Partial<ProviderConfig>) {
     this.config = { ...DEFAULT_PROVIDER_CONFIG, ...config }
@@ -138,19 +140,33 @@ export class SocketEventProvider implements EventProvider {
       this.setConnectionStatus('error', 'Reconnection failed')
     })
 
-    // Set up event forwarding from server
+    // Set up event forwarding from server with debouncing
     this.socket.onAny((eventName: string, data: EventMap[EventName]) => {
-      console.log(`[SocketEvents] Received: ${eventName}`, { hasListeners: this.eventListeners.has(eventName), listenerCount: this.eventListeners.get(eventName)?.size ?? 0 })
       const listeners = this.eventListeners.get(eventName)
-      if (listeners) {
-        listeners.forEach((callback) => {
-          try {
-            callback(data)
-          } catch (error) {
-            console.error(`[SocketEvents] Error in listener for ${eventName}:`, error)
-          }
-        })
+      if (!listeners || listeners.size === 0) return
+
+      // Cancel any pending debounce for this event type
+      const pending = this.pendingEvents.get(eventName)
+      if (pending) {
+        clearTimeout(pending.timer)
       }
+
+      // Debounce: wait 150ms before firing, coalescing rapid events
+      const timer = setTimeout(() => {
+        this.pendingEvents.delete(eventName)
+        const currentListeners = this.eventListeners.get(eventName)
+        if (currentListeners) {
+          currentListeners.forEach((callback) => {
+            try {
+              callback(data)
+            } catch (error) {
+              console.error(`[SocketEvents] Error in listener for ${eventName}:`, error)
+            }
+          })
+        }
+      }, this.DEBOUNCE_MS)
+
+      this.pendingEvents.set(eventName, { data, timer })
     })
 
     // Auto-subscribe to location channel
@@ -181,6 +197,11 @@ export class SocketEventProvider implements EventProvider {
     }
 
     this.eventListeners.clear()
+    // Clear pending debounce timers
+    for (const pending of this.pendingEvents.values()) {
+      clearTimeout(pending.timer)
+    }
+    this.pendingEvents.clear()
     this.subscribedChannels.clear()
     this.locationId = null
     this.setConnectionStatus('disconnected')

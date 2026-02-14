@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { io, type Socket } from 'socket.io-client'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
 import { EntertainmentItemCard } from '@/components/entertainment/EntertainmentItemCard'
@@ -11,7 +12,7 @@ import { SeatFromWaitlistModal } from '@/components/entertainment/SeatFromWaitli
 import type { EntertainmentItem, WaitlistEntry } from '@/lib/entertainment'
 import { toast } from '@/stores/toast-store'
 
-const REFRESH_INTERVAL = 3000 // 3 seconds - faster refresh for real-time updates
+const REFRESH_INTERVAL = 30000 // 30s fallback only when socket disconnected
 
 export default function EntertainmentKDSPage() {
   const router = useRouter()
@@ -26,6 +27,8 @@ export default function EntertainmentKDSPage() {
   const [showSeatModal, setShowSeatModal] = useState(false)
   const [selectedEntryForSeat, setSelectedEntryForSeat] = useState<WaitlistEntry | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
+  const [socketConnected, setSocketConnected] = useState(false)
+  const socketRef = useRef<Socket | null>(null)
 
   // Get location ID from employee context
   const locationId = employee?.location?.id || ''
@@ -42,15 +45,8 @@ export default function EntertainmentKDSPage() {
     if (!locationId) return
 
     try {
-      // Add timestamp to prevent any caching
-      const timestamp = Date.now()
-      const url = `/api/entertainment/status?locationId=${locationId}&_t=${timestamp}`
-      const response = await fetch(url, {
+      const response = await fetch(`/api/entertainment/status?locationId=${locationId}`, {
         cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-        },
       })
       if (response.ok) {
         const data = await response.json()
@@ -76,23 +72,65 @@ export default function EntertainmentKDSPage() {
     }
   }, [locationId])
 
-  // Initial load and polling
+  // Socket.io connection for real-time entertainment updates
   useEffect(() => {
-    if (locationId) {
-      // Fetch immediately on mount
-      fetchStatus()
+    if (!locationId) return
 
-      // Set up polling interval
+    const socket = io(window.location.origin, {
+      path: '/api/socket',
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 2000,
+    })
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      setSocketConnected(true)
+      socket.emit('join_station', {
+        locationId,
+        tags: ['entertainment'],
+        terminalId: 'entertainment-kds-' + Date.now(),
+      })
+    })
+
+    socket.on('disconnect', () => {
+      setSocketConnected(false)
+    })
+
+    // Entertainment-specific events trigger immediate refresh
+    socket.on('entertainment:status-changed', () => {
+      fetchStatus()
+    })
+
+    // Order events can also affect entertainment (session start/stop)
+    socket.on('orders:list-changed', () => {
+      fetchStatus()
+    })
+
+    return () => {
+      socket.disconnect()
+      socketRef.current = null
+    }
+  }, [locationId, fetchStatus])
+
+  // Initial load + conditional fallback polling (only when socket disconnected)
+  useEffect(() => {
+    if (!locationId) return
+
+    // Always fetch on mount
+    fetchStatus()
+
+    // Only poll if socket is NOT connected (fallback safety net)
+    if (!socketConnected) {
       const interval = setInterval(fetchStatus, REFRESH_INTERVAL)
 
-      // Also refresh when page becomes visible (user switches back to tab)
       const handleVisibilityChange = () => {
         if (document.visibilityState === 'visible') {
           fetchStatus()
         }
       }
 
-      // Refresh when window gets focus
       const handleFocus = () => {
         fetchStatus()
       }
@@ -106,7 +144,7 @@ export default function EntertainmentKDSPage() {
         window.removeEventListener('focus', handleFocus)
       }
     }
-  }, [locationId, fetchStatus])
+  }, [locationId, fetchStatus, socketConnected])
 
   // Handle opening a tab
   const handleOpenTab = (orderId: string) => {
@@ -345,8 +383,12 @@ export default function EntertainmentKDSPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold">Entertainment Center</h1>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-gray-400 flex items-center gap-2">
               {employee?.location?.name} - Last updated: {lastRefresh.toLocaleTimeString()}
+              <span
+                className={`inline-block w-2 h-2 rounded-full ${socketConnected ? 'bg-green-400' : 'bg-yellow-400'}`}
+                title={socketConnected ? 'Live updates' : 'Polling fallback'}
+              />
             </p>
           </div>
 

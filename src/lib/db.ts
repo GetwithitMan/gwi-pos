@@ -8,10 +8,27 @@ const globalForPrisma = globalThis as unknown as {
 }
 
 function createPrismaClient(url?: string) {
+  const baseUrl = url || process.env.DATABASE_URL || ''
+  const pooledUrl = appendPoolParams(baseUrl)
+
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
-    ...(url ? { datasources: { db: { url } } } : {}),
+    datasources: { db: { url: pooledUrl } },
   })
+}
+
+/**
+ * Append connection pool parameters to a PostgreSQL URL.
+ * - connection_limit: Max connections per client (default 5 for NUC, higher for cloud)
+ * - pool_timeout: Seconds to wait for a connection before erroring (default 10)
+ */
+function appendPoolParams(url: string): string {
+  if (!url || url.startsWith('file:')) return url // Skip for SQLite URLs (legacy/test)
+
+  const limit = parseInt(process.env.DATABASE_CONNECTION_LIMIT || '5', 10)
+  const timeout = parseInt(process.env.DATABASE_POOL_TIMEOUT || '10', 10)
+  const separator = url.includes('?') ? '&' : '?'
+  return `${url}${separator}connection_limit=${limit}&pool_timeout=${timeout}`
 }
 
 // ============================================================================
@@ -120,6 +137,26 @@ export function getDbForVenue(slug: string): PrismaClient {
   client = createPrismaClient(venueUrl)
   clients.set(slug, client)
   return client
+}
+
+/**
+ * Disconnect and remove a venue client from the cache.
+ * Call when a venue is no longer needed (e.g., admin session ends).
+ */
+export async function disconnectVenue(slug: string): Promise<void> {
+  const clients = globalForPrisma.venueClients!
+  const client = clients.get(slug)
+  if (client) {
+    await client.$disconnect()
+    clients.delete(slug)
+  }
+}
+
+/**
+ * Get the number of cached venue clients (for monitoring).
+ */
+export function getVenueClientCount(): number {
+  return globalForPrisma.venueClients?.size ?? 0
 }
 
 /**

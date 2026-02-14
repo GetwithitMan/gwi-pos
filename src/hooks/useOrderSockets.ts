@@ -14,6 +14,15 @@ type Socket = {
   disconnect: () => void
 }
 
+// Stable terminal ID — generated once per browser tab, persists across re-mounts
+let stableTerminalId: string | null = null
+function getTerminalId(): string {
+  if (!stableTerminalId) {
+    stableTerminalId = 'pos-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)
+  }
+  return stableTerminalId
+}
+
 interface UseOrderSocketsOptions {
   locationId: string | undefined
   enabled?: boolean
@@ -59,7 +68,7 @@ export function useOrderSockets(options: UseOrderSocketsOptions): { isConnected:
       socket!.emit('join_station', {
         locationId,
         tags: [],
-        terminalId: 'pos-' + Date.now(),
+        terminalId: getTerminalId(),
       })
     }
 

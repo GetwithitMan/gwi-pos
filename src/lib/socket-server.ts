@@ -135,6 +135,14 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         socket.join(`station:${stationId}`)
       }
 
+      // Clean up any previous entry for this socket (reconnection with new terminalId)
+      for (const [existingId, info] of connectedTerminals.entries()) {
+        if (info.socketId === socket.id) {
+          connectedTerminals.delete(existingId)
+          break
+        }
+      }
+
       // Track connection
       connectedTerminals.set(terminalId, {
         socketId: socket.id,
@@ -304,6 +312,22 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       console.log(`[Socket] Status:`, stats)
     }
   }, 60000) // Every minute
+
+  // Periodic cleanup of stale terminal entries (every 5 minutes)
+  setInterval(() => {
+    let cleaned = 0
+    for (const [terminalId, info] of connectedTerminals.entries()) {
+      // Check if the socket is still connected
+      const socket = socketServer.sockets.sockets.get(info.socketId)
+      if (!socket || !socket.connected) {
+        connectedTerminals.delete(terminalId)
+        cleaned++
+      }
+    }
+    if (cleaned > 0) {
+      console.log(`[Socket] Cleaned ${cleaned} stale terminal entries`)
+    }
+  }, 5 * 60 * 1000) // Every 5 minutes
 
   // Store in global so API routes can emit events (survives HMR)
   setSocketServer(socketServer)
