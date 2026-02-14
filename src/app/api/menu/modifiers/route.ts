@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { invalidateMenuCache } from '@/lib/menu-cache'
 
 // GET all modifier groups with their modifiers
 // Optional query params:
@@ -181,6 +182,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         modifiers: true
       }
     })
+
+    // Invalidate server-side menu cache
+    invalidateMenuCache(location.id)
 
     return NextResponse.json({
       id: modifierGroup.id,

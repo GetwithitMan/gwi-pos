@@ -19,8 +19,8 @@ interface MenuCacheEntry {
 
 const cache = new Map<string, MenuCacheEntry>()
 
-/** Cache TTL in milliseconds (60 seconds) */
-const CACHE_TTL = 60 * 1000
+/** Cache TTL in milliseconds (15 seconds — short enough for cross-process changes from cloud admin to appear quickly on NUC) */
+const CACHE_TTL = 15 * 1000
 
 /**
  * Build a cache key from location + optional filter params

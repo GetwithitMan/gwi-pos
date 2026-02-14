@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { invalidateMenuCache } from '@/lib/menu-cache'
 
 // GET single modifier group with modifiers
 export const GET = withVenue(async function GET(
@@ -260,6 +261,9 @@ export const PUT = withVenue(async function PUT(
       }
     })
 
+    // Invalidate server-side menu cache
+    invalidateMenuCache(modifierGroup.locationId)
+
     return NextResponse.json({
       id: updated!.id,
       name: updated!.name,
@@ -322,8 +326,14 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id } = await params
 
+    // Get locationId for cache invalidation
+    const group = await db.modifierGroup.findUnique({ where: { id }, select: { locationId: true } })
+
     // Soft delete modifier group
     await db.modifierGroup.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    // Invalidate server-side menu cache
+    if (group) invalidateMenuCache(group.locationId)
 
     return NextResponse.json({ success: true })
   } catch (error) {

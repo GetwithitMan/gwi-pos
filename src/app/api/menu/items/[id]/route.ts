@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged, dispatchMenuStockChanged } from '@/lib/socket-dispatch'
+import { invalidateMenuCache } from '@/lib/menu-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(
@@ -215,6 +216,9 @@ export const PUT = withVenue(async function PUT(
       }
     })
 
+    // Invalidate server-side menu cache
+    invalidateMenuCache(item.locationId)
+
     // Dispatch socket events for real-time updates
     const action = deletedAt ? 'deleted' : (item.deletedAt === null && deletedAt === undefined) ? 'updated' : 'restored'
 
@@ -293,6 +297,9 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await db.menuItem.update({ where: { id }, data: { deletedAt: new Date() } })
+
+    // Invalidate server-side menu cache
+    invalidateMenuCache(item.locationId)
 
     // Dispatch socket event for real-time update
     if (item) {

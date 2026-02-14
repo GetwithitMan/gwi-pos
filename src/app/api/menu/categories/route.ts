@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
+import { invalidateMenuCache } from '@/lib/menu-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List all categories for a location
@@ -81,6 +82,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ...(printerIds && { printerIds }),
       }
     })
+
+    // Invalidate server-side menu cache
+    invalidateMenuCache(location.id)
 
     // Dispatch socket event for real-time menu structure update
     dispatchMenuStructureChanged(location.id, {

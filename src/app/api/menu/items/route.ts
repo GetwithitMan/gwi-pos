@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
+import { invalidateMenuCache } from '@/lib/menu-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/menu/items - Fetch menu items, optionally filtered by category
@@ -274,6 +275,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         comboPrintMode: comboPrintMode || null,
       }
     })
+
+    // Invalidate server-side menu cache so next GET returns fresh data
+    invalidateMenuCache(category.locationId)
 
     // Dispatch socket event for real-time menu updates
     dispatchMenuItemChanged(category.locationId, {
