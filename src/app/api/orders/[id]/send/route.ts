@@ -7,13 +7,15 @@ import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/bat
 import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
 import { printKitchenTicketsForManifests } from '@/lib/print-template-factory'
 import { withVenue } from '@/lib/with-venue'
+import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 
 // POST /api/orders/[id]/send - Send order items to kitchen
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withTiming(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const timing = getTimingFromRequest(request)
     const { id } = await params
 
     // Parse optional itemIds from body for selective firing (per-item delays)
@@ -28,6 +30,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Get the order with items
+    timing.start('db-fetch')
     const order = await db.order.findFirst({
       where: { id, deletedAt: null },
       include: {
@@ -41,6 +44,8 @@ export const POST = withVenue(async function POST(
         }
       }
     })
+
+    timing.end('db-fetch', 'Fetch order')
 
     if (!order) {
       return NextResponse.json(
@@ -116,6 +121,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Transition draft → open on first send (so Open Orders panel sees it)
+    timing.start('db-update')
     if (order.status === 'draft') {
       await db.order.update({
         where: { id },
@@ -148,6 +154,8 @@ export const POST = withVenue(async function POST(
         await startEntertainmentSession(menuItemId, order.id, itemId, now, sessionEnd)
       }
     }
+
+    timing.end('db-update', 'Batch status updates')
 
     // Route order to stations using tag-based routing engine
     const routingResult = await OrderRouter.resolveRouting(order.id, updatedItemIds)
@@ -239,4 +247,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}, 'orders-send'))

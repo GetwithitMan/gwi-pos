@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getAllMenuItemsStockStatus } from '@/lib/stock-status'
 import { withVenue } from '@/lib/with-venue'
-import { createServerTiming } from '@/lib/perf-timing'
+import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
 
 // Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-export const GET = withVenue(async function GET(request: NextRequest) {
-  const timing = createServerTiming()
-  timing.start('total')
+export const GET = withVenue(withTiming(async function GET(request: NextRequest) {
+  const timing = getTimingFromRequest(request)
 
   try {
     const { searchParams } = new URL(request.url)
@@ -25,8 +24,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       const cached = getMenuCache(cacheKey)
       if (cached) {
         timing.add('cache', 0, 'Hit')
-        timing.end('total')
-        return timing.apply(NextResponse.json(cached))
+        return NextResponse.json(cached)
       }
     }
 
@@ -258,8 +256,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       setMenuCache(cacheKey, responseData)
     }
 
-    timing.end('total')
-    return timing.apply(NextResponse.json(responseData))
+    return NextResponse.json(responseData)
   } catch (error) {
     console.error('Failed to fetch menu:', error)
     return NextResponse.json(
@@ -267,4 +264,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}, 'menu-load'))

@@ -11,10 +11,12 @@ import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-response
 import { getLocationSettings } from '@/lib/location-cache'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 
 // POST - Create a new order
-export const POST = withVenue(async function POST(request: NextRequest) {
+export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
   try {
+    const timing = getTimingFromRequest(request)
     const body = await request.json()
 
     // Validate request body
@@ -55,6 +57,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         initialSeatTimestamps[i.toString()] = now
       }
 
+      timing.start('db-draft')
       const order = await db.order.create({
         data: {
           locationId,
@@ -82,6 +85,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
         },
       })
+
+      timing.end('db-draft', 'Draft order create')
 
       // Fire-and-forget audit log
       db.auditLog.create({
@@ -276,6 +281,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Create the order
     // Initialize seat management (Skill 121)
+    timing.start('db')
     const initialSeatCount = guestCount || 1
     const initialSeatTimestamps: Record<string, string> = {}
     const now = new Date().toISOString()
@@ -334,6 +340,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    timing.end('db', 'Order create with items')
 
     // Audit log: order created
     await db.auditLog.create({
@@ -398,7 +406,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     return apiError.internalError('Failed to create order', ERROR_CODES.INTERNAL_ERROR)
   }
-})
+}, 'orders-create'))
 
 // GET - List orders with pagination (for order history, kitchen display, etc.)
 export const GET = withVenue(async function GET(request: NextRequest) {

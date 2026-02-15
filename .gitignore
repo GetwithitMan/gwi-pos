@@ -2,6 +2,7 @@
 
 # build artifacts
 /server.js
+/ws-server.js
 
 # dependencies
 /node_modules

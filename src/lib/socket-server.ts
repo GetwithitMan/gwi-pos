@@ -22,6 +22,27 @@ import type { Server as SocketServer, Socket } from 'socket.io'
 // Dynamic import for socket.io (optional dependency)
 let io: typeof import('socket.io').Server | null = null
 
+/**
+ * Send emit request to standalone ws-server via HTTP IPC.
+ * Used when Socket.io runs in a separate process (WS_STANDALONE=true).
+ */
+async function emitViaIPC(payload: { type: string; target: string | string[]; event: string; data: unknown }): Promise<boolean> {
+  const wsUrl = process.env.WS_SERVER_URL
+  if (!wsUrl) return false
+  try {
+    const res = await fetch(`${wsUrl}/internal/emit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(2000), // 2s timeout for local IPC
+    })
+    return res.ok
+  } catch {
+    console.warn('[Socket] IPC to ws-server failed')
+    return false
+  }
+}
+
 interface JoinStationPayload {
   locationId: string
   tags: string[]
@@ -82,7 +103,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
   const Server = socketModule.Server
 
   const socketServer = new Server(httpServer, {
-    path: '/api/socket',
+    path: process.env.SOCKET_PATH || '/api/socket',
     cors: {
       origin: process.env.NODE_ENV === 'development' ? '*' : process.env.ALLOWED_ORIGINS?.split(','),
       methods: ['GET', 'POST'],
@@ -355,44 +376,38 @@ export function getSocketServer(): SocketServer | null {
  * Emit event from API route (helper function)
  */
 export async function emitToRoom(room: string, event: string, data: unknown): Promise<boolean> {
-  if (!globalForSocket.socketServer) {
-    console.warn('[Socket] Server not initialized, cannot emit')
-    return false
+  if (globalForSocket.socketServer) {
+    globalForSocket.socketServer.to(room).emit(event, data)
+    return true
   }
-
-  globalForSocket.socketServer.to(room).emit(event, data)
-  return true
+  return emitViaIPC({ type: 'room', target: room, event, data })
 }
 
 /**
  * Emit to multiple tag rooms (for order routing)
  */
 export async function emitToTags(tags: string[], event: string, data: unknown): Promise<boolean> {
-  if (!globalForSocket.socketServer) {
-    console.warn('[Socket] Server not initialized, cannot emit')
-    return false
+  if (globalForSocket.socketServer) {
+    tags.forEach((tag) => {
+      globalForSocket.socketServer!.to(`tag:${tag}`).emit(event, data)
+    })
+    return true
   }
-
-  tags.forEach((tag) => {
-    globalForSocket.socketServer!.to(`tag:${tag}`).emit(event, data)
-  })
-  return true
+  return emitViaIPC({ type: 'tags', target: tags, event, data })
 }
 
 /**
  * Emit to location room (global alerts)
  */
 export async function emitToLocation(locationId: string, event: string, data: unknown): Promise<boolean> {
-  if (!globalForSocket.socketServer) {
-    console.warn('[Socket] Server not initialized, cannot emit')
-    return false
+  if (globalForSocket.socketServer) {
+    const room = `location:${locationId}`
+    const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
+    console.log(`[Socket] emitToLocation: ${event} → ${room} (${roomSockets?.size ?? 0} clients)`)
+    globalForSocket.socketServer.to(room).emit(event, data)
+    return true
   }
-
-  const room = `location:${locationId}`
-  const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
-  console.log(`[Socket] emitToLocation: ${event} → ${room} (${roomSockets?.size ?? 0} clients)`)
-  globalForSocket.socketServer.to(room).emit(event, data)
-  return true
+  return emitViaIPC({ type: 'location', target: locationId, event, data })
 }
 
 /**

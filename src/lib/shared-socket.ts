@@ -38,10 +38,13 @@ export function getTerminalId(): string {
  */
 export function getSharedSocket(): Socket {
   if (!sharedSocket) {
-    const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL
+    const serverUrl = wsUrl || process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin
+    // Standalone ws-server uses /ws path; monolithic uses /api/socket
+    const socketPath = wsUrl ? '/ws' : '/api/socket'
 
     sharedSocket = io(serverUrl, {
-      path: '/api/socket',
+      path: socketPath,
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,

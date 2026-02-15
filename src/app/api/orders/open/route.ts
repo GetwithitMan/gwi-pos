@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 
 // Force dynamic rendering - never cache this endpoint
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // GET - List all open orders (any type)
-export const GET = withVenue(async function GET(request: NextRequest) {
+export const GET = withVenue(withTiming(async function GET(request: NextRequest) {
   try {
+    const timing = getTimingFromRequest(request)
     const searchParams = request.nextUrl.searchParams
     const locationId = searchParams.get('locationId')
     const employeeId = searchParams.get('employeeId')
@@ -24,6 +26,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Summary mode: lightweight response for sidebar/list views
     const summary = searchParams.get('summary') === 'true'
     if (summary) {
+      timing.start('db')
       const summaryOrders = await db.order.findMany({
         where: {
           locationId,
@@ -89,6 +92,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         orderBy: { createdAt: 'desc' },
       })
+
+      timing.end('db', 'Summary query')
 
       return NextResponse.json({
         orders: summaryOrders.map(o => ({
@@ -167,6 +172,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     }
 
+    timing.start('db')
     const orders = await db.order.findMany({
       where: {
         locationId,
@@ -222,6 +228,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     })
+
+    timing.end('db', 'Full orders query')
 
     // Get waitlist entries linked to these orders
     const orderIds = orders.map(o => o.id)
@@ -379,4 +387,4 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       { status: 500 }
     )
   }
-})
+}, 'orders-open'))

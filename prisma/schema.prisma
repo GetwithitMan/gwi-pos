@@ -237,6 +237,7 @@ model Location {
   healthChecks    HealthCheck[]
 
   // Fleet Management (Skill 345)
+  serverRegistrationTokens ServerRegistrationToken[]
 
   @@index([organizationId])
 }
@@ -471,6 +472,7 @@ model Employee {
   @@unique([locationId, pin])
   @@index([locationId])
   @@index([roleId])
+  @@index([locationId, isActive])
 }
 
 // ============================================
@@ -1101,6 +1103,7 @@ model Modifier {
   @@index([childModifierGroupId])
   @@index([linkedBottleProductId])
   @@index([linkedMenuItemId])
+  @@index([locationId, linkedMenuItemId])
 }
 
 model MenuItemModifierGroup {
@@ -1360,6 +1363,7 @@ model Table {
   @@index([sectionId])
   @@index([status])
   @@index([virtualGroupId])
+  @@index([locationId, status])
 }
 
 // ============================================
@@ -1672,6 +1676,7 @@ model Order {
   @@index([offlineId])
   @@index([locationId, status])
   @@index([locationId, status, createdAt])
+  @@index([locationId, createdAt])
 }
 
 model OrderItem {
@@ -1908,6 +1913,7 @@ model Payment {
   @@index([employeeId])
   @@index([isOfflineCapture])
   @@index([needsReconciliation])
+  @@index([locationId, createdAt])
 }
 
 // Sync Audit Entry - Tracks all sync events for idempotency audit log
@@ -4587,6 +4593,7 @@ model MenuItemIngredient {
   @@unique([menuItemId, ingredientId])
   @@index([locationId])
   @@index([menuItemId])
+  @@index([locationId, ingredientId])
 }
 
 // ============================================
@@ -6320,4 +6327,36 @@ model HealthCheck {
   @@index([checkType])
   @@index([status])
   @@index([createdAt])
+}
+
+// ============================================
+// FLEET MANAGEMENT (Skill 345)
+// ============================================
+
+enum RegistrationTokenStatus {
+  PENDING
+  USED
+  EXPIRED
+  REVOKED
+}
+
+model ServerRegistrationToken {
+  id         String   @id @default(cuid())
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  token     String                  @unique
+  status    RegistrationTokenStatus @default(PENDING)
+  expiresAt DateTime
+
+  usedAt             DateTime?
+  usedByFingerprint  String?
+  usedByServerNodeId String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  syncedAt  DateTime?
+
+  @@index([locationId])
 }

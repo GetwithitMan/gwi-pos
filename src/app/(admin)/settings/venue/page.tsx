@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { Button } from '@/components/ui/button'
@@ -38,11 +38,31 @@ export default function VenueSettingsPage() {
   const [hasChanges, setHasChanges] = useState(false)
   const [original, setOriginal] = useState({ name: '', address: '', phone: '', timezone: 'America/New_York' })
 
+  // NUC Registration
+  const [regCode, setRegCode] = useState<string | null>(null)
+  const [regStatus, setRegStatus] = useState<'none' | 'active' | 'expired' | 'used' | 'revoked'>('none')
+  const [regExpiresAt, setRegExpiresAt] = useState<string | null>(null)
+  const [isGenerating, setIsGenerating] = useState(false)
+
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login')
     }
   }, [isAuthenticated, router])
+
+  const loadRegCode = useCallback(async () => {
+    try {
+      const res = await fetch('/api/location/registration-code')
+      if (res.ok) {
+        const { data } = await res.json()
+        setRegCode(data.code)
+        setRegStatus(data.status)
+        setRegExpiresAt(data.expiresAt)
+      }
+    } catch {
+      // Non-critical — don't toast on load failure
+    }
+  }, [])
 
   useEffect(() => {
     async function loadLocation() {
@@ -68,7 +88,8 @@ export default function VenueSettingsPage() {
       }
     }
     loadLocation()
-  }, [])
+    loadRegCode()
+  }, [loadRegCode])
 
   useEffect(() => {
     setHasChanges(
@@ -111,6 +132,41 @@ export default function VenueSettingsPage() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  const handleGenerateCode = async () => {
+    setIsGenerating(true)
+    try {
+      const res = await fetch('/api/location/registration-code', { method: 'POST' })
+      if (res.ok) {
+        const { data } = await res.json()
+        setRegCode(data.code)
+        setRegStatus(data.status)
+        setRegExpiresAt(data.expiresAt)
+        toast.success('Registration code generated — expires in 24 hours')
+      } else {
+        toast.error('Failed to generate registration code')
+      }
+    } catch {
+      toast.error('Failed to generate registration code')
+    } finally {
+      setIsGenerating(false)
+    }
+  }
+
+  const handleCopyCode = () => {
+    if (regCode) {
+      navigator.clipboard.writeText(regCode).catch(() => {})
+      toast.success('Code copied')
+    }
+  }
+
+  const formatExpiry = (iso: string): string => {
+    const diff = new Date(iso).getTime() - Date.now()
+    if (diff <= 0) return 'Expired'
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+    return `${hours}h ${minutes}m`
   }
 
   if (isLoading) {
@@ -217,6 +273,70 @@ export default function VenueSettingsPage() {
                   </option>
                 ))}
               </select>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* NUC Registration */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>NUC Registration</CardTitle>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                regStatus === 'active' ? 'bg-green-100 text-green-700' :
+                regStatus === 'expired' ? 'bg-red-100 text-red-700' :
+                regStatus === 'used' ? 'bg-gray-200 text-gray-600' :
+                'bg-gray-100 text-gray-500'
+              }`}>
+                {regStatus === 'active' ? 'Active' :
+                 regStatus === 'expired' ? 'Expired' :
+                 regStatus === 'used' ? 'Used' :
+                 regStatus === 'revoked' ? 'Revoked' :
+                 'No Code'}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 bg-gray-50 border rounded px-4 py-3 font-mono text-2xl tracking-widest text-center select-all">
+                  {regCode || '\u2014'}
+                </div>
+                {regCode && regStatus === 'active' && (
+                  <Button variant="outline" onClick={handleCopyCode} className="shrink-0">
+                    Copy
+                  </Button>
+                )}
+              </div>
+
+              {regExpiresAt && regStatus === 'active' && (
+                <p className="text-sm text-gray-500">
+                  Expires in {formatExpiry(regExpiresAt)}
+                </p>
+              )}
+              {regStatus === 'expired' && (
+                <p className="text-sm text-red-500">
+                  Code has expired. Generate a new one.
+                </p>
+              )}
+
+              <Button
+                variant={regStatus === 'active' ? 'outline' : 'primary'}
+                onClick={handleGenerateCode}
+                disabled={isGenerating}
+                isLoading={isGenerating}
+                className="w-full"
+              >
+                {isGenerating ? 'Generating...' :
+                 regStatus === 'active' ? 'Regenerate Code' : 'Generate Code'}
+              </Button>
+
+              <p className="text-xs text-gray-400">
+                Use this code during NUC installation:{' '}
+                <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-500">
+                  curl -sSL https://www.thepasspos.com/installer.run | sudo bash
+                </code>
+              </p>
             </div>
           </CardContent>
         </Card>

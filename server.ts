@@ -40,14 +40,17 @@ async function main() {
     }
   })
 
-  // Initialize Socket.io on the same HTTP server
-  // This stores the instance in globalThis so API routes can emit events
-  try {
-    await initializeSocketServer(httpServer)
-    console.log(`[Server] Socket.io initialized on path /api/socket`)
-  } catch (err) {
-    console.error('[Server] Failed to initialize Socket.io:', err)
-    // Continue without sockets — POS will fall back to polling
+  // Initialize Socket.io (skip if standalone ws-server handles sockets)
+  if (process.env.WS_STANDALONE === 'true') {
+    console.log(`[Server] Socket.io disabled (WS_STANDALONE=true, using ws-server on ${process.env.WS_SERVER_URL || 'localhost:3001'})`)
+  } else {
+    try {
+      await initializeSocketServer(httpServer)
+      console.log(`[Server] Socket.io initialized on path ${process.env.SOCKET_PATH || '/api/socket'}`)
+    } catch (err) {
+      console.error('[Server] Failed to initialize Socket.io:', err)
+      // Continue without sockets — POS will fall back to polling
+    }
   }
 
   httpServer.listen(port, () => {

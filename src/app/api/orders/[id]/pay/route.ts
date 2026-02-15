@@ -17,6 +17,7 @@ import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
+import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -134,17 +135,19 @@ const PaymentRequestSchema = z.object({
 })
 
 // POST - Process payment for order
-export const POST = withVenue(async function POST(
+export const POST = withVenue(withTiming(async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: orderId } = await params
+  const timing = getTimingFromRequest(request)
   let body: Record<string, unknown> = {}
   try {
     body = await request.json()
 
     // Single query for order — replaces separate zero-check, idempotency, and main fetch queries
     // Includes items/employee/table so we can build receipt data in the response (avoids second fetch)
+    timing.start('db-fetch')
     const order = await db.order.findUnique({
       where: { id: orderId },
       include: {
@@ -156,6 +159,8 @@ export const POST = withVenue(async function POST(
         table: { select: { id: true, name: true } },
       },
     })
+
+    timing.end('db-fetch', 'Fetch order')
 
     if (!order) {
       return NextResponse.json(
@@ -817,6 +822,7 @@ export const POST = withVenue(async function POST(
     }
 
     // Create default payments + update order status atomically
+    timing.start('db-pay')
     await db.$transaction(async (tx) => {
       for (const record of pendingDefaultRecords) {
         const created = await tx.payment.create({ data: record as Parameters<typeof tx.payment.create>[0]['data'] })
@@ -864,6 +870,7 @@ export const POST = withVenue(async function POST(
         })
       }
     })
+    timing.end('db-pay', 'Payment transaction')
 
     // If order is fully paid, reset entertainment items and table status
     if (updateData.status === 'paid') {
@@ -1109,4 +1116,4 @@ export const POST = withVenue(async function POST(
       { status: 500 }
     )
   }
-})
+}, 'orders-pay'))
