@@ -489,6 +489,13 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-15 — Split Check Redesign, Skills 350-351)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 350 | Split Check Screen Redesign | Complete rewrite of split check interface. Replaced `SplitTicketManager` with `useSplitCheck` hook (621 lines) + `SplitCheckScreen` component. 4 split modes: By Seat (auto-assigns by seat number), Custom (manual tap assignment), Even (N-way equal split), Business/Pleasure (category-based). Select-then-tap interaction model (no drag-and-drop). Fractional item splitting: split 1 item across 2-4 checks with penny-exact rounding ($25 ÷ 3 = $8.34, $8.33, $8.33). Client-side editing, single atomic POST on Save. API extended with `splitItems` array for fractional splits. `getAssignments()` excludes fractionally-split items to prevent double-counting. |
+| 351 | Split Ticket Visibility & Navigation | Floor plan integration for split orders. Snapshot API extended: `status: { in: ['open', 'split'] }`, lightweight `splitOrders` sub-select. `FloorPlanTable` type extended with `status` and `splitOrders` array. TableNode shows violet badge "N splits" when table has split orders. Split-aware table tap: shows `SplitTicketsOverview` instead of OrderPanel for split tables. OrderPanel header: "Split 31-1 (1/3)" with ← → navigation arrows between splits. Merge-back: `DELETE /api/orders/[id]/split-tickets`, disabled if any split has payments. Transfer integration: wired `ItemTransferModal` with sub-menu (Transfer Items / Transfer Table / Transfer to Tab). |
+
 ## Recently Completed (2026-02-15 — Per-Seat Colors, Check Cards & Seat Filtering, Skills 348-349)
 
 | Skill | Name | What Was Built |
@@ -1035,6 +1042,16 @@ These skills emerged during development and are now part of the system:
 |-------|------|--------|--------|--------------|-------|
 | 326 | Complete Combine Removal | DONE | Floor Plan | - | Removed ALL combine/virtual-group code. 116 files, -16,211 lines. Tables standalone only. API routes return 410 Gone. |
 | 327 | Cash Rounding Pipeline Fix | DONE | Payments, Reports | 88 | Fixed dual rounding system sync (priceRounding vs cashRounding). Payment validation, artifact detection, roundingAdjustment storage, daily report tracking. |
+| 328 | Seat Management Fixes | DONE | Floor Plan, Orders | 121, 206 | Add seat after send, seatNumber persistence on items, extra seats restore on reopen |
+| 348 | Per-Seat Color System | DONE | Floor Plan, Orders | 206, 328 | 8-color palette in seat-utils.ts, colors on floor plan seats, order panel badges, group headers, seat picker buttons. Temp seats use same colors (no more orange dashed). |
+| 349 | Per-Seat Check Cards & Seat Filtering | DONE | Orders, Floor Plan | 348, 11 | Auto seat-grouped check cards with per-seat subtotals, seat filter bar on floor plan seat tap, pre-split foundation. |
+
+### Split Tickets (93, 350-351)
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 93 | Split Ticket View | DONE | Orders | 30, 88 | Create multiple tickets from one order (30-1, 30-2), hybrid pricing with proportional discounts |
+| 350 | Split Check Screen Redesign | DONE | Orders, Floor Plan | 93, 348, 349 | New useSplitCheck hook + SplitCheckScreen with 4 modes (By Seat, Custom, Even, B/P). Select-then-tap interaction. Fractional item splitting (split 1 item across 2-4 checks). Client-side editing, atomic POST on save. Deleted old SplitTicketManager/Card. |
+| 351 | Split Ticket Visibility & Navigation | DONE | Orders, Floor Plan | 350, 348, 71 | Snapshot API extended for split status. Violet badge on floor plan ("N splits"). SplitTicketsOverview right panel. Split navigation (← →) in OrderPanel header. Merge-back (DELETE) if no payments. Transfer integration (items/table/tab sub-menu). |
 
 ---
 
