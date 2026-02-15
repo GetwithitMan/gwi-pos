@@ -374,6 +374,11 @@ fi
 
 header "Installing Dependencies"
 
+# Ensure cron is installed (needed for heartbeat + backup jobs)
+apt-get install -y cron 2>/dev/null || true
+systemctl enable cron 2>/dev/null || true
+systemctl start cron 2>/dev/null || true
+
 # Install Chromium (try both package names)
 apt-get install -y chromium-browser 2>/dev/null \
   || apt-get install -y chromium 2>/dev/null \
@@ -473,21 +478,24 @@ fi
 if [[ "$STATION_ROLE" == "server" ]]; then
   header "Installing POS Application"
 
-  # Build clone URL with deploy token if available
-  CLONE_URL="$GIT_REPO"
+  # Set up git credential store so deploy token stays out of remote URL
+  CRED_FILE="$APP_BASE/.git-credentials"
   if [[ -n "${DEPLOY_TOKEN:-}" ]] && [[ "${DEPLOY_TOKEN:-}" != "null" ]]; then
-    CLONE_URL="https://${DEPLOY_TOKEN}@github.com/GetwithitMan/gwi-pos.git"
-    log "Using deploy token for repo access."
+    log "Configuring deploy token via git credential store."
+    echo "https://${DEPLOY_TOKEN}:x-oauth-basic@github.com" > "$CRED_FILE"
+    chmod 600 "$CRED_FILE"
+    chown "$POSUSER":"$POSUSER" "$CRED_FILE"
   else
     log "No deploy token — using public repo URL."
   fi
 
-  # Clone or update
+  # Clone or update (remote URL is always clean — no token embedded)
   if [[ -d "$APP_DIR/.git" ]]; then
     log "Updating existing app code..."
     sudo -u "$POSUSER" bash -c "
       cd '$APP_DIR'
-      git remote set-url origin '$CLONE_URL' 2>/dev/null || true
+      git config credential.helper 'store --file=$CRED_FILE'
+      git remote set-url origin '$GIT_REPO' 2>/dev/null || true
       git fetch --all
       git reset --hard origin/main
     "
@@ -495,7 +503,14 @@ if [[ "$STATION_ROLE" == "server" ]]; then
     log "Cloning app from repository..."
     mkdir -p "$APP_DIR"
     chown "$POSUSER":"$POSUSER" "$APP_BASE"
-    sudo -u "$POSUSER" git clone "$CLONE_URL" "$APP_DIR"
+    sudo -u "$POSUSER" bash -c "
+      git config --global credential.helper 'store --file=$CRED_FILE'
+      git clone '$GIT_REPO' '$APP_DIR'
+      cd '$APP_DIR'
+      git config credential.helper 'store --file=$CRED_FILE'
+    "
+    # Remove global credential helper (keep it repo-local only)
+    sudo -u "$POSUSER" git config --global --unset credential.helper 2>/dev/null || true
   fi
 
   # Copy env files into app directory
@@ -508,7 +523,7 @@ if [[ "$STATION_ROLE" == "server" ]]; then
     cd '$APP_DIR'
     npm ci --production=false
     npx prisma generate
-    npx prisma db push --accept-data-loss 2>/dev/null || npx prisma db push
+    npx prisma migrate deploy 2>/dev/null || npx prisma db push
     npm run build
   "
 
@@ -851,7 +866,7 @@ function handleForceUpdate(payload) {
     return { ok: false, error: 'npm install failed', steps: steps }
   }
   step('prisma generate', 'npx prisma generate', true, 60)
-  step('prisma db push', 'npx prisma db push --accept-data-loss', true, 60)
+  step('prisma migrate', 'npx prisma migrate deploy', true, 60)
   if (!step('build', 'npm run build', false, 300)) {
     return { ok: false, error: 'build failed', steps: steps }
   }
