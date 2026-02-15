@@ -70,16 +70,35 @@ else
 fi
 
 # Resolve service user (the non-root user who will run services)
-POSUSER="${SUDO_USER:-}"
+# Supports: --user <name> flag, SUDO_USER, or auto-detect UID 1000
+POSUSER=""
+for arg in "$@"; do
+  if [[ "$prev_arg" == "--user" ]]; then POSUSER="$arg"; break; fi
+  prev_arg="$arg"
+done
+
+if [[ -z "$POSUSER" ]]; then
+  POSUSER="${SUDO_USER:-}"
+fi
+
 if [[ -z "$POSUSER" ]] || [[ "$POSUSER" == "root" ]]; then
-  # Try to find a non-root user with a home directory
+  # Auto-detect: list non-root users with UID >= 1000 and a real home dir
   POSUSER=$(getent passwd 1000 | cut -d: -f1 || echo "")
   if [[ -z "$POSUSER" ]]; then
-    err "Cannot determine service user. Run with: sudo -u <username> bash installer.run"
+    err "Cannot determine service user."
+    err "Run with: curl -sSL ... | sudo bash -s -- --user <username>"
     exit 1
   fi
+  warn "Auto-detected service user: $POSUSER (UID 1000)"
+  warn "If this is wrong, re-run with: --user <correct-username>"
 fi
+
 POSUSER_HOME=$(eval echo "~$POSUSER")
+if [[ ! -d "$POSUSER_HOME" ]]; then
+  err "Home directory for '$POSUSER' does not exist: $POSUSER_HOME"
+  err "Create the user first or specify a different one with --user <name>"
+  exit 1
+fi
 log "Service user: $POSUSER (home: $POSUSER_HOME)"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -283,28 +302,45 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
   log "Registration successful! Server node: $SERVER_NODE_ID"
 
   # ── Decrypt secrets using RSA private key (OAEP-SHA256) ──
+  # MC encrypts with: crypto.publicEncrypt({ key, oaepHash: 'sha256', padding: RSA_PKCS1_OAEP_PADDING })
+  # NUC decrypts with matching: openssl pkeyutl with OAEP + SHA-256 for both digest and MGF1
   decrypt_rsa() {
     local encrypted_b64="$1"
+    local label="$2"
     if [[ -z "$encrypted_b64" ]] || [[ "$encrypted_b64" == "null" ]]; then
       echo ""
       return
     fi
-    echo "$encrypted_b64" | base64 -d 2>/dev/null | openssl pkeyutl -decrypt \
+    local decrypted
+    decrypted=$(echo "$encrypted_b64" | base64 -d 2>/dev/null | openssl pkeyutl -decrypt \
       -inkey "$KEY_DIR/private.pem" \
       -pkeyopt rsa_padding_mode:oaep \
       -pkeyopt rsa_oaep_md:sha256 \
-      -pkeyopt rsa_mgf1_md:sha256 2>/dev/null || echo ""
+      -pkeyopt rsa_mgf1_md:sha256 2>&1) || {
+      warn "  RSA decrypt failed for: ${label:-unknown}"
+      warn "  This may indicate a padding mismatch between MC and NUC."
+      warn "  Expected: RSA-OAEP with SHA-256 digest + SHA-256 MGF1"
+      echo ""
+      return
+    }
+    echo "$decrypted"
   }
 
   log "Decrypting secrets..."
-  SERVER_API_KEY=$(decrypt_rsa "$ENCRYPTED_API_KEY")
-  DATABASE_URL=$(decrypt_rsa "$ENCRYPTED_DB_URL")
-  DIRECT_URL=$(decrypt_rsa "$ENCRYPTED_DIRECT_URL")
-  DEPLOY_TOKEN=$(decrypt_rsa "$ENCRYPTED_DEPLOY_TOKEN")
+  SERVER_API_KEY=$(decrypt_rsa "$ENCRYPTED_API_KEY" "serverApiKey")
+  DATABASE_URL=$(decrypt_rsa "$ENCRYPTED_DB_URL" "databaseUrl")
+  DIRECT_URL=$(decrypt_rsa "$ENCRYPTED_DIRECT_URL" "directUrl")
+  DEPLOY_TOKEN=$(decrypt_rsa "$ENCRYPTED_DEPLOY_TOKEN" "deployToken")
 
   if [[ -z "$SERVER_API_KEY" ]]; then
-    err "Failed to decrypt server API key. The RSA keypair may be incompatible."
-    err "Try deleting $KEY_DIR and re-running the installer."
+    err "Failed to decrypt server API key."
+    err ""
+    err "Possible causes:"
+    err "  1. RSA padding mismatch — MC must use OAEP with SHA-256 (oaepHash: 'sha256')"
+    err "  2. Key rotation — MC encrypted with a different public key than this NUC's"
+    err "  3. Corrupted response — base64 data was truncated or malformed"
+    err ""
+    err "Fix: delete $KEY_DIR and re-run the installer to generate a new keypair."
     exit 1
   fi
 
@@ -350,7 +386,10 @@ elif [[ "$STATION_ROLE" == "server" ]]; then
   # Already registered — load values from existing .env
   log "Using existing registration from $ENV_FILE"
   while IFS= read -r line; do
-    line="${line%%#*}"
+    # Skip blank lines and lines starting with #
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    # Strip leading whitespace only (preserve # in values like DB passwords)
     line="${line#"${line%%[![:space:]]*}"}"
     [[ -z "$line" ]] && continue
     key="${line%%=*}"; val="${line#*=}"
@@ -436,9 +475,25 @@ EOSQL
   # Allow local connections with password
   PG_HBA=$(sudo -u postgres psql -t -c "SHOW hba_file;" | tr -d '[:space:]')
   if ! grep -q "$DB_USER" "$PG_HBA" 2>/dev/null; then
-    # Add md5 auth for our user before the default entries
-    sed -i "/^local.*all.*all/i local   $DB_NAME   $DB_USER   md5" "$PG_HBA"
+    log "Adding $DB_USER to pg_hba.conf..."
+    # Append a clearly marked block (safer than sed insert which can break on format differences)
+    cat >> "$PG_HBA" <<HBAEOF
+
+# GWI POS — added by installer.run
+local   $DB_NAME   $DB_USER   md5
+host    $DB_NAME   $DB_USER   127.0.0.1/32   md5
+HBAEOF
     systemctl reload postgresql
+  fi
+
+  # Verify database connection works
+  if sudo -u "$POSUSER" PGPASSWORD="$DB_PASSWORD" psql -h localhost -U "$DB_USER" -d "$DB_NAME" -c "SELECT 1" >/dev/null 2>&1; then
+    log "Database connection verified."
+  else
+    err "Cannot connect to PostgreSQL as $DB_USER."
+    err "Check pg_hba.conf at: $PG_HBA"
+    err "Ensure the line 'local $DB_NAME $DB_USER md5' exists."
+    exit 1
   fi
 
   # Create .pgpass for passwordless pg_dump in backups/cron
@@ -558,6 +613,33 @@ SyslogIdentifier=pulse-pos
 WantedBy=multi-user.target
 SVCEOF
 
+  # ── Kiosk preflight: verify X11 session is available ──
+  KIOSK_OK=true
+  CHROMIUM_BIN=""
+  if command -v chromium-browser >/dev/null 2>&1; then
+    CHROMIUM_BIN="chromium-browser"
+  elif command -v chromium >/dev/null 2>&1; then
+    CHROMIUM_BIN="chromium"
+  else
+    warn "Chromium not found — kiosk mode will not work."
+    KIOSK_OK=false
+  fi
+
+  # Check for Wayland vs X11
+  if [[ "$KIOSK_OK" == "true" ]]; then
+    SESSION_TYPE=$(loginctl show-session $(loginctl list-sessions --no-legend | awk '{print $1}' | head -1) -p Type --value 2>/dev/null || echo "unknown")
+    if [[ "$SESSION_TYPE" == "wayland" ]]; then
+      warn "Wayland session detected. GWI POS kiosk requires X11."
+      warn "Reconfigure Ubuntu for X11 auto-login, then re-run the installer."
+      warn "  1. Edit /etc/gdm3/custom.conf and set: WaylandEnable=false"
+      warn "  2. Reboot and re-run the installer."
+      KIOSK_OK=false
+    elif [[ "$SESSION_TYPE" == "unknown" ]]; then
+      warn "No active graphical session detected."
+      warn "Ensure auto-login is configured for '$POSUSER' before rebooting."
+    fi
+  fi
+
   # pulse-kiosk.service — Chromium in kiosk mode
   cat > /etc/systemd/system/pulse-kiosk.service <<SVCEOF
 [Unit]
@@ -570,7 +652,7 @@ User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito --check-for-update-interval=31536000 http://localhost:3000
+ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito --check-for-update-interval=31536000 http://localhost:3000
 Restart=always
 RestartSec=5
 
@@ -946,17 +1028,25 @@ function connectStream() {
           // End of event
           if (evt.event === 'command' && evt.data) {
             processCommand(evt.data)
+          } else if (evt.data) {
+            log('[SSE] Ignoring non-command event: ' + (evt.event || 'none'))
           }
           evt = {}
           continue
         }
         var ci = line.indexOf(': ')
-        if (ci < 0) continue
+        if (ci < 0) {
+          // SSE field without ": " separator — log for debugging
+          if (line.trim().length > 0) {
+            log('[SSE] Unparseable line: ' + line.slice(0, 200))
+          }
+          continue
+        }
         var field = line.slice(0, ci)
         var value = line.slice(ci + 2)
         if (field === 'id') evt.id = value
         else if (field === 'event') evt.event = value
-        else if (field === 'data') evt.data = value
+        else if (field === 'data') evt.data = (evt.data ? evt.data + '\n' + value : value)  // support multi-line data
       }
     })
 
@@ -1037,6 +1127,16 @@ fi  # end server role
 if [[ "$STATION_ROLE" == "terminal" ]]; then
   header "Configuring Terminal Kiosk"
 
+  # Detect Chromium binary
+  TERM_CHROMIUM="chromium-browser"
+  if command -v chromium-browser >/dev/null 2>&1; then
+    TERM_CHROMIUM="chromium-browser"
+  elif command -v chromium >/dev/null 2>&1; then
+    TERM_CHROMIUM="chromium"
+  else
+    warn "Chromium not found — kiosk may not start."
+  fi
+
   # pulse-kiosk.service — Chromium pointing at server
   cat > /etc/systemd/system/pulse-kiosk.service <<SVCEOF
 [Unit]
@@ -1048,7 +1148,7 @@ Wants=network-online.target
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
-ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito --check-for-update-interval=31536000 $SERVER_URL
+ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito --check-for-update-interval=31536000 $SERVER_URL
 Restart=always
 RestartSec=5
 
