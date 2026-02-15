@@ -807,7 +807,7 @@ BKEOF
 
     # Add cron entry (idempotent)
     CRON_LINE="0 4 * * * $BACKUP_SCRIPT"
-    (crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$BACKUP_SCRIPT"; echo "$CRON_LINE") | crontab -u "$POSUSER" -
+    ( crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" || true ; echo "$CRON_LINE" ) | crontab -u "$POSUSER" -
 
     log "Daily backup configured (4 AM, 7-day retention)."
   else
@@ -900,7 +900,7 @@ HBEOF
 
   # Add heartbeat cron (every minute, as POSUSER)
   HB_CRON="* * * * * $HB_SCRIPT"
-  (crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$HB_SCRIPT"; echo "$HB_CRON") | crontab -u "$POSUSER" -
+  ( crontab -u "$POSUSER" -l 2>/dev/null | grep -v "$HB_SCRIPT" || true ; echo "$HB_CRON" ) | crontab -u "$POSUSER" -
 
   # Run first heartbeat now
   sudo -u "$POSUSER" bash "$HB_SCRIPT" &
