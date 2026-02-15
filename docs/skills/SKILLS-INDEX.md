@@ -137,7 +137,9 @@
 | 336 | Online Ordering URL Infrastructure | DONE | Mission Control | 300, 319 | orderCode (6-char unique) + onlineOrderingEnabled on CloudLocation, auto-generate on create, VenueUrlCard UI with toggle + copy, path-based URL pattern |
 | 337 | Multi-Tenant DB Routing | DONE | Mission Control | 300, 330 | AsyncLocalStorage + withVenue() wrapper for all 348 POS API routes. 3-tier Proxy resolution: request context → headers → master. Per-venue Neon DB via globalThis cache. |
 | 338 | Cloud Session Validation & Guard | DONE | Mission Control | 337, 330 | validate-session endpoint, useRequireAuth cloud awareness, useCloudSessionGuard layout guard, cloud sign-out button. Fixes stale locationId after DB routing changes. |
-| 345 | NUC Installer Package | DONE | Mission Control / DevOps | 302 | `installer.run` provisions Ubuntu NUCs as POS stations. Fleet registration API, PostgreSQL + systemd + kiosk + RealVNC. Server and Terminal roles. |
+| 345 | NUC Installer Package | DONE | Mission Control / DevOps | 302, 303 | `installer.run` (~1,454 lines) provisions Ubuntu/Kubuntu NUCs. RSA key exchange, heartbeat with localIp + posLocationId, sync agent, kiosk + RealVNC. Server and Terminal roles. |
+| 346 | Kiosk Exit Zone | DONE | Hardware / DevOps | 345 | Hidden 5-tap zone (top-left corner, 64×64px) to exit Chromium kiosk mode. Root layout placement, exit-kiosk API, sudoers integration. |
+| 347 | MC Heartbeat IP Display & Auto-Provisioning | DONE | Mission Control | 303, 345 | Heartbeat accepts posLocationId, auto-provisions CloudLocation. localIp displayed in admin dashboard, venue portal, portal server list. |
 
 ### Performance Overhaul (Feb 14, 2026)
 | Skill | Name | Status | Domain | Dependencies | Notes |
