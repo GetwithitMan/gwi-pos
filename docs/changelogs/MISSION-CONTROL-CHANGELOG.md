@@ -1,5 +1,118 @@
 # Mission Control Changelog
 
+## Session: February 14, 2026 (NUC Installer Hardening + Skill Documentation + Backup Server Planning)
+
+### Summary
+Full-day session focused on hardening the NUC installer (`installer.run`), fixing the kiosk exit zone, enhancing MC heartbeat with IP display and auto-provisioning, documenting all work as Skills 345-347, and planning backup server failover architecture (deferred to T-076).
+
+### NUC Installer Hardening (Skill 345 — Major Update)
+
+Multiple commits across POS and MC repos hardened the installer for reliable NUC provisioning:
+
+**POS Repo Commits:**
+- `eb630d4` — Fix: read from `/dev/tty` so prompts work with `curl | bash`
+- `7482551` — Fix: rewrite installer with correct MC registration flow
+- `3660485` — Feat: add heartbeat, sync agent, and sudoers
+- `0b8218a` — Feat: add POS desktop icon and fix launcher for Ubuntu GNOME
+- `f6b7d60` — Fix: heartbeat.sh env parser preserves `#` in values
+- `26c0571` — Fix: harden installer based on security review (6 fixes)
+- `c02fe56` — Fix: address 3rd-party security review (7 findings)
+- `02cc293` — Fix: create ~/Desktop dir if missing on fresh Ubuntu installs
+- `2502c22` — Fix: prevent installer crash in heartbeat/backup cron setup
+- `40e6df6` — Fix: comprehensive installer hardening for reliable provisioning
+
+**MC Repo Commits:**
+- `b6a1215` — Feat: unified NUC installer served at `/installer.run`
+- `3053be7` — Feat: encrypted deploy token for private repo clone
+- `a956515` — Fix: chown -R before git clone (permission denied)
+- `ba95eb6` — Fix: use Neon as primary DATABASE_URL on NUC
+- `723e98b` — Fix: add PGPASSWORD to backup script
+- `9cfde7e` — Feat: sudoers rule for kiosk exit + PGPASSWORD fix
+- `9e4dd0a` — Feat: display server IP address and auto-provision location from heartbeat
+
+### Kiosk Exit Zone (Skill 346 — New)
+- `af224ef` — Hidden 5-tap zone on login page (initial)
+- `893f493` — Moved to root layout so it works on ALL pages (login, orders, KDS, admin, etc.)
+- Component: `src/components/KioskExitZone.tsx` — 5 taps in 3 seconds triggers exit
+- API: `src/app/api/system/exit-kiosk/route.ts` — stops `pulse-kiosk` service + kills Chromium
+- Sudoers: `posuser` can run `systemctl stop pulse-kiosk` and `pkill -f chromium*` without password
+
+### MC Heartbeat IP Display & Auto-Provisioning (Skill 347 — New)
+- Heartbeat API now accepts `posLocationId` → auto-provisions CloudLocation
+- `localIp` displayed in 3 MC server management views:
+  - Admin location detail (ServerActions component)
+  - Venue admin servers page (subtitle + metrics grid)
+  - Portal server list (IP Address column, monospace)
+
+### Skill Documentation
+- `5923a1c` — docs: add Skills 346-347, update Skill 345 for installer hardening
+- Updated `docs/skills/345-INSTALLER-PACKAGE.md` — major rewrite (was ~500 lines reference, now reflects full 1,454-line installer)
+- Created `docs/skills/346-KIOSK-EXIT-ZONE.md` — 5-tap exit zone documentation
+- Created `docs/skills/347-MC-HEARTBEAT-IP-PROVISIONING.md` — heartbeat auto-provisioning + IP display
+- Updated `docs/skills/SKILLS-INDEX.md` — added entries for 346 and 347
+
+### Installer-MC Consistency Audit
+Ran 6-point comprehensive audit verifying alignment between installer and MC fleet APIs:
+1. Registration code format: UUID v4 throughout (installer regex, MC schema `@default(uuid())`, MC register route `z.string().uuid()`)
+2. Heartbeat payload fields: All match Zod schema
+3. Heartbeat auth headers: HMAC-SHA256 aligned
+4. Register request body: Fields aligned
+5. MC URLs: `app.thepasspos.com` correct
+6. Installer download URL: `gwi-pos.vercel.app/installer.run` correct
+- **Zero mismatches found**
+
+### Backup Server Failover Architecture (Research + Deferred)
+Explored both POS and MC repos for current server architecture state:
+- **No maxServers** in `hardware-limits.ts` — unlimited servers per venue
+- **No primary/backup concept** in ServerNode schema — just status enum
+- **Hardcoded IPs** for terminal→server — no mDNS, Avahi, or service discovery
+- **No PostgreSQL replication** — local pg_dump backup only
+- **Health check endpoints exist** but are informational only — no failover trigger
+- User decided to defer: added **T-076** to PM Task Board with full requirements
+
+### Task Board Update
+- `5ddb47c` — Added T-076: Backup Server Failover Architecture (P2, PM: Mission Control)
+
+### Key Files Changed
+
+**POS Repo:**
+| File | Changes |
+|------|---------|
+| `public/installer.run` | Multiple hardening fixes (~1,454 lines) |
+| `src/components/KioskExitZone.tsx` | 5-tap exit zone component |
+| `src/app/api/system/exit-kiosk/route.ts` | Kiosk exit API |
+| `src/app/layout.tsx` | KioskExitZone rendered in root layout |
+| `docs/skills/345-INSTALLER-PACKAGE.md` | Major rewrite |
+| `docs/skills/346-KIOSK-EXIT-ZONE.md` | Created |
+| `docs/skills/347-MC-HEARTBEAT-IP-PROVISIONING.md` | Created |
+| `docs/skills/SKILLS-INDEX.md` | Updated with 346, 347 |
+| `docs/PM-TASK-BOARD.md` | Added T-076 |
+
+**MC Repo:**
+| File | Changes |
+|------|---------|
+| `src/app/api/fleet/heartbeat/route.ts` | Accept posLocationId, auto-provision |
+| `src/app/venue/[slug]/admin/servers/page.tsx` | Display localIp |
+| `src/components/admin/ServerActions.tsx` | Display localIp |
+| `src/components/portal/PortalServerList.tsx` | IP Address column |
+| `src/app/portal/servers/page.tsx` | Pass localIp to PortalServerList |
+
+### New Skills Documented
+- Skill 345: NUC Installer Package (UPDATED — major rewrite)
+- Skill 346: Kiosk Exit Zone (NEW)
+- Skill 347: MC Heartbeat IP Display & Auto-Provisioning (NEW)
+
+### Cross-Domain Tasks Added
+- **T-076** → PM: Mission Control: Backup Server Failover Architecture (P2)
+
+### How to Resume
+1. Say: `PM Mode: Mission Control`
+2. Review PM Task Board for remaining tasks
+3. Key priorities: NUC Registration Code Generator (plan exists in plan file), online ordering
+4. T-076 (backup server failover) is deferred but fully scoped
+
+---
+
 ## Session: February 13, 2026 (Multi-Tenant DB Routing + Cloud Session Validation — Skills 337-338)
 
 ### Summary
