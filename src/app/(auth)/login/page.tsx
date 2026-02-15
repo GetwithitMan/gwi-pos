@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, Suspense } from 'react'
+import { useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { PinPad } from '@/components/ui/pin-pad'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -244,38 +244,9 @@ function LoginContent() {
   )
 }
 
-/** Hidden 5-tap zone in top-left corner to exit Chromium kiosk mode */
-function KioskExitZone() {
-  const tapCount = useRef(0)
-  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const handleTap = useCallback(() => {
-    tapCount.current++
-    if (tapTimer.current) clearTimeout(tapTimer.current)
-
-    if (tapCount.current >= 5) {
-      tapCount.current = 0
-      fetch('/api/system/exit-kiosk', { method: 'POST' }).catch(() => {})
-      return
-    }
-
-    // Reset after 3 seconds of no taps
-    tapTimer.current = setTimeout(() => { tapCount.current = 0 }, 3000)
-  }, [])
-
-  return (
-    <div
-      className="fixed top-0 left-0 w-16 h-16 z-50"
-      onClick={handleTap}
-      aria-hidden="true"
-    />
-  )
-}
-
 export default function LoginPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
-      <KioskExitZone />
       <Suspense fallback={
         <Card className="w-full max-w-md">
           <CardContent className="p-8 text-center">

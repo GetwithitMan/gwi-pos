@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastContainer } from "@/components/ui/ToastContainer";
 import { ErrorBoundary } from "@/lib/error-boundary";
+import { KioskExitZone } from "@/components/KioskExitZone";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,6 +33,7 @@ export default function RootLayout({
         <ErrorBoundary>
           {children}
         </ErrorBoundary>
+        <KioskExitZone />
         <ToastContainer />
       </body>
     </html>

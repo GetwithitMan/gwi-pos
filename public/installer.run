@@ -826,6 +826,7 @@ $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-pos
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop pulse-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start pulse-kiosk
 $POSUSER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart pulse-kiosk
+$POSUSER ALL=(ALL) NOPASSWD: /usr/bin/pkill -f chromium*localhost
 SUDEOF
   chmod 440 /etc/sudoers.d/gwi-pos
 
