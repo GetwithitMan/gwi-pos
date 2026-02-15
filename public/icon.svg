@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e3a5f"/>
+      <stop offset="100%" style="stop-color:#0f1f33"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- Terminal body -->
+  <rect x="96" y="72" width="320" height="280" rx="24" fill="#1e293b" stroke="#334155" stroke-width="4"/>
+  <!-- Screen -->
+  <rect x="120" y="96" width="272" height="200" rx="12" fill="url(#screen)" opacity="0.9"/>
+  <!-- Screen grid lines (POS grid) -->
+  <line x1="210" y1="96" x2="210" y2="296" stroke="#60a5fa" stroke-width="1.5" opacity="0.3"/>
+  <line x1="300" y1="96" x2="300" y2="296" stroke="#60a5fa" stroke-width="1.5" opacity="0.3"/>
+  <line x1="120" y1="163" x2="392" y2="163" stroke="#60a5fa" stroke-width="1.5" opacity="0.3"/>
+  <line x1="120" y1="230" x2="392" y2="230" stroke="#60a5fa" stroke-width="1.5" opacity="0.3"/>
+  <!-- POS grid items -->
+  <rect x="136" y="112" width="58" height="35" rx="6" fill="#60a5fa" opacity="0.5"/>
+  <rect x="226" y="112" width="58" height="35" rx="6" fill="#34d399" opacity="0.5"/>
+  <rect x="316" y="112" width="58" height="35" rx="6" fill="#f97316" opacity="0.5"/>
+  <rect x="136" y="179" width="58" height="35" rx="6" fill="#a78bfa" opacity="0.5"/>
+  <rect x="226" y="179" width="58" height="35" rx="6" fill="#60a5fa" opacity="0.5"/>
+  <rect x="316" y="179" width="58" height="35" rx="6" fill="#f472b6" opacity="0.5"/>
+  <rect x="136" y="246" width="58" height="35" rx="6" fill="#fbbf24" opacity="0.5"/>
+  <rect x="226" y="246" width="58" height="35" rx="6" fill="#34d399" opacity="0.5"/>
+  <rect x="316" y="246" width="58" height="35" rx="6" fill="#60a5fa" opacity="0.5"/>
+  <!-- Status bar -->
+  <rect x="120" y="306" width="272" height="28" rx="0 0 12 12" fill="#0f172a" opacity="0.6"/>
+  <text x="256" y="325" text-anchor="middle" font-family="sans-serif" font-size="14" font-weight="bold" fill="#94a3b8">GWI POS</text>
+  <!-- Base/stand -->
+  <rect x="196" y="368" width="120" height="16" rx="8" fill="#334155"/>
+  <rect x="176" y="384" width="160" height="12" rx="6" fill="#475569"/>
+  <!-- Dollar sign accent -->
+  <circle cx="400" cy="420" r="44" fill="#22c55e" opacity="0.9"/>
+  <text x="400" y="438" text-anchor="middle" font-family="sans-serif" font-size="44" font-weight="bold" fill="white">$</text>
+</svg>

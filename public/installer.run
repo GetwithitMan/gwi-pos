@@ -1292,21 +1292,60 @@ fi
 
 header "Creating Desktop Launcher"
 
+mkdir -p "$APP_BASE"
+
 POS_URL="http://localhost:3000"
 [[ "$STATION_ROLE" == "terminal" ]] && POS_URL="$SERVER_URL"
 
 LOCATION_NAME="${TERMINAL_NAME:-GWI POS}"
 
-# Application menu entry
+# Detect Chromium binary (may already be set from kiosk section)
+if [[ -z "${CHROMIUM_BIN:-}" ]]; then
+  if command -v chromium-browser >/dev/null 2>&1; then
+    CHROMIUM_BIN="chromium-browser"
+  elif command -v chromium >/dev/null 2>&1; then
+    CHROMIUM_BIN="chromium"
+  fi
+fi
+
+# Download icon to shared location (works for both server and terminal roles)
+POS_ICON="$APP_BASE/icon.svg"
+if [[ ! -f "$POS_ICON" ]]; then
+  curl -fsSL "https://gwi-pos.vercel.app/icon.svg" -o "$POS_ICON" 2>/dev/null || true
+fi
+if [[ ! -f "$POS_ICON" ]]; then
+  # Fall back to system icon if download fails
+  POS_ICON="web-browser"
+fi
+
+# Build Exec command: use Chromium with fullscreen if available, else xdg-open
+if [[ -n "${CHROMIUM_BIN:-}" ]]; then
+  LAUNCHER_EXEC="/usr/bin/${CHROMIUM_BIN} --start-fullscreen --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito $POS_URL"
+else
+  LAUNCHER_EXEC="xdg-open $POS_URL"
+fi
+
+# Create a launcher shell script (easy to double-click or run from terminal)
+LAUNCHER_SCRIPT="$APP_BASE/launch-pos.sh"
+cat > "$LAUNCHER_SCRIPT" <<LSEOF
+#!/usr/bin/env bash
+# GWI POS Launcher — opens the POS in fullscreen Chromium
+$LAUNCHER_EXEC &
+LSEOF
+chmod +x "$LAUNCHER_SCRIPT"
+chown "$POSUSER":"$POSUSER" "$LAUNCHER_SCRIPT"
+
+# Application menu entry (.desktop file)
 cat > /usr/share/applications/gwi-pos.desktop <<DTEOF
 [Desktop Entry]
 Type=Application
 Name=GWI POS
 Comment=Launch GWI POS — $LOCATION_NAME
-Exec=xdg-open $POS_URL
-Icon=$APP_DIR/public/icon.png
+Exec=$LAUNCHER_SCRIPT
+Icon=$POS_ICON
 Terminal=false
 Categories=Office;Utility;
+StartupNotify=true
 DTEOF
 
 # Copy to user desktop
@@ -1315,9 +1354,15 @@ if [[ -d "$DESKTOP_DIR" ]]; then
   cp /usr/share/applications/gwi-pos.desktop "$DESKTOP_DIR/" 2>/dev/null || true
   chown "$POSUSER":"$POSUSER" "$DESKTOP_DIR/gwi-pos.desktop" 2>/dev/null || true
   chmod +x "$DESKTOP_DIR/gwi-pos.desktop" 2>/dev/null || true
+
+  # Mark as trusted on GNOME (Ubuntu 22.04+) — prevents "untrusted" warning
+  if command -v gio >/dev/null 2>&1; then
+    sudo -u "$POSUSER" gio set "$DESKTOP_DIR/gwi-pos.desktop" metadata::trusted true 2>/dev/null || true
+  fi
 fi
 
-log "Desktop launcher created."
+log "Desktop launcher created: $DESKTOP_DIR/gwi-pos.desktop"
+log "  Quick launch: $LAUNCHER_SCRIPT"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Summary
