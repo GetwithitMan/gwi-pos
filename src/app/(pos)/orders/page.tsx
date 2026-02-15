@@ -310,11 +310,6 @@ export default function OrdersPage() {
 
   // Saved order state
   const [savedOrderId, setSavedOrderId] = useState<string | null>(null)
-  // Split ticket context (populated when navigating split orders)
-  const [splitContext, setSplitContext] = useState<{
-    parentId: string
-    splits: Array<{ id: string; splitIndex: number | null; displayNumber: string | null }>
-  } | null>(null)
   const [isSendingOrder, setIsSendingOrder] = useState(false)
   const [orderSent, setOrderSent] = useState(false)
 
@@ -2526,41 +2521,6 @@ export default function OrdersPage() {
             onCancelItemDelay={(itemId) => useOrderStore.getState().setItemDelay([itemId], null)}
             reopenedAt={currentOrder?.reopenedAt}
             reopenReason={currentOrder?.reopenReason}
-            splitInfo={splitContext && savedOrderId ? (() => {
-              const match = splitContext.splits.find(s => s.id === savedOrderId)
-              if (!match) return undefined
-              return {
-                displayNumber: match.displayNumber || `${(match.splitIndex ?? 0) + 1}`,
-                currentIndex: splitContext.splits.findIndex(s => s.id === savedOrderId) + 1,
-                totalSplits: splitContext.splits.length,
-                allSplitIds: splitContext.splits.map(s => s.id),
-              }
-            })() : undefined}
-            onNavigateSplit={splitContext ? (splitOrderId) => {
-              const store = useOrderStore.getState()
-              fetch(`/api/orders/${splitOrderId}`)
-                .then(res => res.ok ? res.json() : null)
-                .then(data => {
-                  if (data) {
-                    store.loadOrder({
-                      id: data.id,
-                      orderNumber: data.orderNumber,
-                      orderType: data.orderType || 'dine_in',
-                      tableId: data.tableId,
-                      tabName: data.tabName,
-                      guestCount: data.guestCount,
-                      items: data.items || [],
-                      subtotal: Number(data.subtotal) || 0,
-                      taxTotal: Number(data.taxTotal) || 0,
-                      tipTotal: Number(data.tipTotal) || 0,
-                      total: Number(data.total) || 0,
-                      notes: data.notes,
-                    })
-                  }
-                })
-                .catch(console.error)
-            } : undefined}
-            onBackToSplitOverview={splitContext ? () => setSplitContext(null) : undefined}
             hideHeader={viewMode === 'floor-plan'}
             className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0'}
           />

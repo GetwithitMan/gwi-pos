@@ -24,11 +24,11 @@ interface TableNodeProps {
     delayMinutes?: number  // e.g., 5 or 10
   }
   seatsWithItems?: Set<number>
-  onTap: () => void
-  onDragStart: () => void
+  onTap: (tableId: string) => void
+  onDragStart: (tableId: string) => void
   onDragEnd: () => void
-  onLongPress: () => void
-  onSeatTap?: (seatNumber: number) => void
+  onLongPress: (tableId: string) => void
+  onSeatTap?: (tableId: string, seatNumber: number) => void
   onSeatDrag?: (seatId: string, newRelativeX: number, newRelativeY: number) => void
   onSeatDelete?: (seatId: string) => void
 }
@@ -332,15 +332,15 @@ export const TableNode = memo(function TableNode({
     longPressTimer.current = setTimeout(() => {
       longPressFiredRef.current = true
       pointerStartPos.current = null // Prevent subsequent drag initiation
-      onLongPress()
+      onLongPress(table.id)
     }, longPressMs)
 
     // Drag tracking starts on pointer MOVE (after 8px threshold), not here
     // Editor mode: also start drag immediately for responsive feel
     if (isEditable) {
-      onDragStart()
+      onDragStart(table.id)
     }
-  }, [onDragStart, onLongPress, isLocked, isEditable])
+  }, [onDragStart, onLongPress, isLocked, isEditable, table.id])
 
   const handlePointerUp = useCallback(() => {
     if (longPressTimer.current) {
@@ -378,11 +378,11 @@ export const TableNode = memo(function TableNode({
         // Editor mode already started drag on pointer down
         if (!isEditable && !dragStartedRef.current) {
           dragStartedRef.current = true
-          onDragStart()
+          onDragStart(table.id)
         }
       }
     }
-  }, [isEditable, onDragStart])
+  }, [isEditable, onDragStart, table.id])
 
   const glowColor = statusGlowColors[table.status]
   const isReserved = table.status === 'reserved'
@@ -426,7 +426,7 @@ export const TableNode = memo(function TableNode({
         // Skip click if a drag or long-press just occurred (browser synthesizes click after pointerUp)
         if (dragStartedRef.current || longPressFiredRef.current) return
         e.stopPropagation()
-        onTap()
+        onTap(table.id)
       }}
       onPointerDown={handlePointerDown}
       onPointerUp={handlePointerUp}
@@ -653,7 +653,7 @@ export const TableNode = memo(function TableNode({
                 displayNumber={displayNumber}
                 maxDistance={Math.max(table.width, table.height) / 2 + 30}
                 onSeatDrag={onSeatDrag}
-                onSeatTap={onSeatTap}
+                onSeatTap={onSeatTap ? (seatNumber) => onSeatTap(table.id, seatNumber) : undefined}
                 onSeatDelete={onSeatDelete}
               />
             )

@@ -226,6 +226,26 @@ export function UnifiedFloorPlan({
     }
   }, [mode, selectTable, onTableSelect])
 
+  // Stable ID-based wrappers for TableNode (avoids inline closures that break React.memo)
+  const handleTableTapById = useCallback((tableId: string) => {
+    const table = tables.find(t => t.id === tableId)
+    if (table) handleTableTap(table)
+  }, [tables, handleTableTap])
+
+  const handleDragStartById = useCallback((tableId: string) => {
+    startDrag(tableId)
+  }, [startDrag])
+
+  const handleLongPressById = useCallback((tableId: string) => {
+    if (mode === 'pos') {
+      openInfoPanel(tableId)
+    }
+  }, [mode, openInfoPanel])
+
+  const handleSeatTapById = useCallback((tableId: string, seatNumber: number) => {
+    selectSeat(tableId, seatNumber)
+  }, [selectSeat])
+
   // Handle drag for table repositioning (admin mode)
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!draggedTableId || !containerRef.current) return
@@ -953,15 +973,11 @@ export function UnifiedFloorPlan({
                     showSeats={showSeats}
                     selectedSeat={selectedSeat}
                     flashMessage={flashMessage}
-                    onTap={() => handleTableTap(table)}
-                    onDragStart={() => startDrag(table.id)}
+                    onTap={handleTableTapById}
+                    onDragStart={handleDragStartById}
                     onDragEnd={endDrag}
-                    onLongPress={() => {
-                      if (mode === 'pos') {
-                        openInfoPanel(table.id)
-                      }
-                    }}
-                    onSeatTap={(seatNumber) => selectSeat(table.id, seatNumber)}
+                    onLongPress={handleLongPressById}
+                    onSeatTap={handleSeatTapById}
                     isEditable={mode === 'admin'}
                     onSeatDrag={(seatId, newX, newY) => handleSeatDrag(table.id, seatId, newX, newY)}
                     onSeatDelete={(seatId) => handleSeatDelete(table.id, seatId)}

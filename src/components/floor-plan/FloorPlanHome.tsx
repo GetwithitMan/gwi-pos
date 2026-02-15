@@ -428,33 +428,34 @@ export function FloorPlanHome({
   const orderScrollRef = useRef<HTMLDivElement>(null)
   const newestTimerRef2 = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const {
-    tables,
-    sections,
-    elements,
-    selectedTableId,
-    draggedTableId,
-    dropTargetTableId,
-    infoPanelTableId,
-    isLoading,
-    selectedSeat,
-    flashingTables,
-    setTables,
-    setSections,
-    setElements,
-    selectTable,
-    startDrag,
-    updateDragTarget,
-    endDrag,
-    openInfoPanel,
-    closeInfoPanel,
-    selectSeat,
-    clearSelectedSeat,
-    flashTableMessage,
-    clearExpiredFlashes,
-    setLoading,
-    updateTableStatus,
-  } = useFloorPlanStore()
+  // Atomic selectors — each field only triggers re-render when IT changes
+  const tables = useFloorPlanStore(s => s.tables)
+  const sections = useFloorPlanStore(s => s.sections)
+  const elements = useFloorPlanStore(s => s.elements)
+  const selectedTableId = useFloorPlanStore(s => s.selectedTableId)
+  const draggedTableId = useFloorPlanStore(s => s.draggedTableId)
+  const dropTargetTableId = useFloorPlanStore(s => s.dropTargetTableId)
+  const infoPanelTableId = useFloorPlanStore(s => s.infoPanelTableId)
+  const isLoading = useFloorPlanStore(s => s.isLoading)
+  const selectedSeat = useFloorPlanStore(s => s.selectedSeat)
+  const flashingTables = useFloorPlanStore(s => s.flashingTables)
+
+  // Actions — Zustand guarantees stable function references, no re-renders
+  const setTables = useFloorPlanStore(s => s.setTables)
+  const setSections = useFloorPlanStore(s => s.setSections)
+  const setElements = useFloorPlanStore(s => s.setElements)
+  const selectTable = useFloorPlanStore(s => s.selectTable)
+  const startDrag = useFloorPlanStore(s => s.startDrag)
+  const updateDragTarget = useFloorPlanStore(s => s.updateDragTarget)
+  const endDrag = useFloorPlanStore(s => s.endDrag)
+  const openInfoPanel = useFloorPlanStore(s => s.openInfoPanel)
+  const closeInfoPanel = useFloorPlanStore(s => s.closeInfoPanel)
+  const selectSeat = useFloorPlanStore(s => s.selectSeat)
+  const clearSelectedSeat = useFloorPlanStore(s => s.clearSelectedSeat)
+  const flashTableMessage = useFloorPlanStore(s => s.flashTableMessage)
+  const clearExpiredFlashes = useFloorPlanStore(s => s.clearExpiredFlashes)
+  const setLoading = useFloorPlanStore(s => s.setLoading)
+  const updateTableStatus = useFloorPlanStore(s => s.updateTableStatus)
 
   // No sync functions needed — Zustand store IS the source of truth
   // syncOrderToStore and syncLocalItemsToStore have been removed
@@ -1030,8 +1031,8 @@ export function FloorPlanHome({
       const prevOrderId = activeOrderId || store.currentOrder?.id
       const hasItems = (store.currentOrder?.items.length ?? 0) > 0
       if (!hasItems && prevOrderId && !isTempId(prevOrderId)) {
-        // Await cleanup so snapshot sees cleaned state before new table loads
-        await fetch(`/api/orders/${prevOrderId}/seating`, {
+        // Fire-and-forget — don't block table switch on cleanup network call
+        void fetch(`/api/orders/${prevOrderId}/seating`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'CLEANUP' }),
@@ -1859,6 +1860,24 @@ export function FloorPlanHome({
       body: JSON.stringify({ relativeX: newRelativeX, relativeY: newRelativeY }),
     }).catch(console.error)
   }, [])
+
+  // Stable TableNode callbacks — avoid inline closures that break React.memo
+  const handleTableTapById = useCallback((tableId: string) => {
+    const table = tablesRef.current.find(t => t.id === tableId)
+    if (table) handleTableTap(table)
+  }, [handleTableTap])
+
+  const handleDragStartById = useCallback((tableId: string) => {
+    startDrag(tableId)
+  }, [startDrag])
+
+  const handleLongPressById = useCallback((tableId: string) => {
+    openInfoPanel(tableId)
+  }, [openInfoPanel])
+
+  const handleSeatTapForTable = useCallback((tableId: string, seatNumber: number) => {
+    handleSeatTap(tableId, seatNumber)
+  }, [handleSeatTap])
 
   // Drag handlers hook (handles pointer move/up and ghost preview)
   const {
@@ -2775,13 +2794,11 @@ export function FloorPlanHome({
                           } : undefined}
                           seatsWithItems={table.id === activeTableId ? seatsWithItems : undefined}
                           splitCount={table.currentOrder?.splitOrders?.length}
-                          onTap={() => handleTableTap(table)}
-                          onDragStart={() => startDrag(table.id)}
+                          onTap={handleTableTapById}
+                          onDragStart={handleDragStartById}
                           onDragEnd={endDrag}
-                          onLongPress={() => {
-                            openInfoPanel(table.id)
-                          }}
-                          onSeatTap={(seatNumber) => handleSeatTap(table.id, seatNumber)}
+                          onLongPress={handleLongPressById}
+                          onSeatTap={handleSeatTapForTable}
                           onSeatDrag={handleSeatDrag}
                         />
                       )
