@@ -1042,6 +1042,15 @@ export function FloorPlanHome({
         console.error('[FloorPlanHome] Failed to load order:', error)
       }
     } else {
+      // No existing order on this table — clear any stale extra seats
+      // (extra seats only persist while an order is active)
+      setExtraSeats(prev => {
+        if (!prev.has(primaryTable.id)) return prev
+        const next = new Map(prev)
+        next.delete(primaryTable.id)
+        return next
+      })
+
       // Only clear items if we're switching between two DIFFERENT tables
       // If tapping the same table, or assigning a table after adding items with no table, preserve items
       const isSameTable = activeTableId === primaryTable.id
@@ -1489,13 +1498,11 @@ export function FloorPlanHome({
 
   // Close order panel
   const handleCloseOrderPanel = useCallback(() => {
-    // If no items were added and no order exists, clear extra seats (reset to original)
-    // This handles the case where user opens a table, maybe adds an extra seat, but then
-    // clicks away without ordering anything
-    if (inlineOrderItems.length === 0 && !activeOrderId && activeTableId) {
-      const currentTable = tablesRef.current.find(t => t.id === activeTableId)
-      // Clear extra seats for just this table
+    // Always clear extra seats when closing panel — they're restored from order data
+    // when the table is re-tapped (lines 1022-1039 restore from order.extraSeatCount)
+    if (activeTableId) {
       setExtraSeats(prev => {
+        if (!prev.has(activeTableId)) return prev
         const next = new Map(prev)
         next.delete(activeTableId)
         return next
@@ -1518,7 +1525,7 @@ export function FloorPlanHome({
     // Clear primary state LAST
     setActiveTableId(null)
     setShowOrderPanel(false)
-  }, [defaultGuestCount, inlineOrderItems.length, activeOrderId, activeTableId])
+  }, [defaultGuestCount, activeTableId])
 
   // Detect new items added → highlight + auto-scroll
   useEffect(() => {
