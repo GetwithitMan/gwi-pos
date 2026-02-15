@@ -117,7 +117,7 @@ echo "  1) Server  — Runs POS app + database + kiosk"
 echo "  2) Terminal — Kiosk only (connects to a server)"
 echo ""
 while true; do
-  read -rp "Select (1 or 2): " role_choice
+  read -rp "Select (1 or 2): " role_choice < /dev/tty
   case $role_choice in
     1) STATION_ROLE="server"; break ;;
     2) STATION_ROLE="terminal"; break ;;
@@ -137,7 +137,7 @@ if [[ -f "$ENV_FILE" ]] && grep -q "SERVER_NODE_ID=" "$ENV_FILE" && grep -q "SER
   echo "  2) Re-register with a new code"
   echo ""
   while true; do
-    read -rp "Select (1 or 2): " reg_choice
+    read -rp "Select (1 or 2): " reg_choice < /dev/tty
     case $reg_choice in
       1) break ;;
       2) ALREADY_REGISTERED=false; break ;;
@@ -153,7 +153,7 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
   echo "Enter the registration code from Mission Control."
   echo "(Generate one at: Settings > Venue > NUC Registration)"
   echo ""
-  read -rp "Registration code (UUID): " REG_CODE
+  read -rp "Registration code (UUID): " REG_CODE < /dev/tty
   if [[ -z "$REG_CODE" ]]; then
     err "Registration code is required for new server installations."
     exit 1
@@ -163,15 +163,15 @@ fi
 # 4. RealVNC (optional)
 echo ""
 echo "RealVNC Remote Access (optional — press Enter to skip)"
-read -rp "Company name (for VNC grouping): " COMPANY_NAME
-read -rp "Location / terminal name: " TERMINAL_NAME
-read -rp "RealVNC cloud connectivity token: " REALVNC_TOKEN
+read -rp "Company name (for VNC grouping): " COMPANY_NAME < /dev/tty
+read -rp "Location / terminal name: " TERMINAL_NAME < /dev/tty
+read -rp "RealVNC cloud connectivity token: " REALVNC_TOKEN < /dev/tty
 
 # 5. Terminal: server URL
 SERVER_URL=""
 if [[ "$STATION_ROLE" == "terminal" ]]; then
   echo ""
-  read -rp "Server URL (e.g., http://192.168.1.50:3000): " SERVER_URL
+  read -rp "Server URL (e.g., http://192.168.1.50:3000): " SERVER_URL < /dev/tty
   if [[ -z "$SERVER_URL" ]]; then
     err "Server URL is required for terminal stations."
     exit 1
