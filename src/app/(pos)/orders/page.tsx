@@ -2510,7 +2510,7 @@ export default function OrdersPage() {
             reopenedAt={currentOrder?.reopenedAt}
             reopenReason={currentOrder?.reopenReason}
             hideHeader={viewMode === 'floor-plan'}
-            className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0 !h-auto'}
+            className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0'}
           />
       {/* Quick Pick Strip — always visible, right side of order panel */}
         <QuickPickStrip
