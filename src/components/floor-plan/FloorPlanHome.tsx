@@ -345,6 +345,15 @@ export function FloorPlanHome({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
 
+  // Per-seat color mapping: which seats have items (for color-coding on table)
+  const seatsWithItems = useMemo(() => {
+    const set = new Set<number>()
+    for (const item of inlineOrderItems) {
+      if (item.seatNumber && item.status !== 'voided') set.add(item.seatNumber)
+    }
+    return set
+  }, [inlineOrderItems])
+
   // REMOVED: loadItemsIntoStore — all order loading now goes through store.loadOrder()
   // which is the SINGLE source of truth for mapping API items into the store format
 
@@ -2689,6 +2698,7 @@ export function FloorPlanHome({
                             hasCourses: activeOrder.coursingEnabled,
                             delayMinutes: activeOrder.pendingDelay ?? undefined,
                           } : undefined}
+                          seatsWithItems={table.id === activeTableId ? seatsWithItems : undefined}
                           onTap={() => handleTableTap(table)}
                           onDragStart={() => startDrag(table.id)}
                           onDragEnd={endDrag}

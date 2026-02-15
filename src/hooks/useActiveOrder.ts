@@ -266,13 +266,64 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
   }, [options.locationId, options.employeeId])
 
   // Add an item to the current order (local only — not saved to DB until send/pay)
+  // Track individual item save promises by temp ID (for event-based saves)
+  const pendingSavesRef = useRef<Map<string, Promise<void>>>(new Map())
+
+  // Fire-and-forget: persist a single temp-ID item to the DB immediately
+  const saveItemToDb = useCallback((tempId: string) => {
+    const store = useOrderStore.getState()
+    const order = store.currentOrder
+    if (!order?.id || isTempId(order.id)) return // no DB ID yet — safety net will catch it
+
+    const item = order.items.find(i => i.id === tempId)
+    if (!item) return
+
+    const promise = (async () => {
+      try {
+        const res = await fetch(`/api/orders/${order.id}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: [buildOrderItemPayload(item, { includeCorrelationId: true })],
+          }),
+        })
+        if (res.ok) {
+          const result = await res.json()
+          if (result.addedItems) {
+            const s = useOrderStore.getState()
+            for (const added of result.addedItems) {
+              if (added.correlationId) {
+                s.updateItemId(added.correlationId, added.id)
+              }
+            }
+          }
+          if (result.subtotal !== undefined) {
+            useOrderStore.getState().syncServerTotals({
+              subtotal: result.subtotal,
+              discountTotal: result.discountTotal ?? 0,
+              taxTotal: result.taxTotal ?? 0,
+              tipTotal: result.tipTotal,
+              total: result.total,
+            })
+          }
+        }
+      } catch {
+        // Silent — 30s safety net will retry
+      } finally {
+        pendingSavesRef.current.delete(tempId)
+      }
+    })()
+
+    pendingSavesRef.current.set(tempId, promise)
+  }, [])
+
   const addItem = useCallback((item: AddItemInput) => {
     const store = useOrderStore.getState()
     if (!store.currentOrder) {
       console.warn('[useActiveOrder] addItem called but no currentOrder — call startOrder first')
       return
     }
-    store.addItem({
+    const tempId = store.addItem({
       menuItemId: item.menuItemId,
       name: item.name,
       price: item.price,
@@ -296,7 +347,12 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       sentToKitchen: false,
       pizzaConfig: item.pizzaConfig,
     })
-  }, [])
+
+    // Event-based save: immediately persist to DB if order has DB ID
+    if (tempId) {
+      saveItemToDb(tempId)
+    }
+  }, [saveItemToDb])
 
   // Computed: any items with temp IDs (not yet in DB)
   const hasUnsavedItems = useMemo(() => {
@@ -450,51 +506,62 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     }
   }, [options.employeeId, options.locationId])
 
-  // Background autosave: periodically persist dirty items so Send/Pay is near-instant
+  // Safety-net autosave: 30s interval catches items that failed event-based save
   const autosaveInFlightRef = useRef(false)
+  const autosavePromiseRef = useRef<Promise<void> | null>(null)
+  const sendInProgressRef = useRef(false)
   useEffect(() => {
-    const interval = setInterval(async () => {
-      if (autosaveInFlightRef.current) return // skip if previous autosave still running
+    const interval = setInterval(() => {
+      if (autosaveInFlightRef.current) return
+      if (sendInProgressRef.current) return
       const store = useOrderStore.getState()
       const order = store.currentOrder
-      if (!order?.id || isTempId(order.id)) return // no DB ID yet
+      if (!order?.id || isTempId(order.id)) return
       const unsaved = order.items.filter(item => isTempId(item.id))
-      if (unsaved.length === 0) return // nothing to save
+      if (unsaved.length === 0) return
+
+      // Only save items that don't already have a pending event-based save
+      const toSave = unsaved.filter(item => !pendingSavesRef.current.has(item.id))
+      if (toSave.length === 0) return
 
       autosaveInFlightRef.current = true
-      try {
-        const res = await fetch(`/api/orders/${order.id}/items`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            items: unsaved.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
-          }),
-        })
-        if (res.ok) {
-          const result = await res.json()
-          if (result.addedItems) {
-            for (const added of result.addedItems) {
-              if (added.correlationId) {
-                store.updateItemId(added.correlationId, added.id)
+      const promise = (async () => {
+        try {
+          const res = await fetch(`/api/orders/${order.id}/items`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: toSave.map(item => buildOrderItemPayload(item, { includeCorrelationId: true })),
+            }),
+          })
+          if (res.ok) {
+            const result = await res.json()
+            if (result.addedItems) {
+              for (const added of result.addedItems) {
+                if (added.correlationId) {
+                  store.updateItemId(added.correlationId, added.id)
+                }
               }
             }
+            if (result.subtotal !== undefined) {
+              store.syncServerTotals({
+                subtotal: result.subtotal,
+                discountTotal: result.discountTotal ?? 0,
+                taxTotal: result.taxTotal ?? 0,
+                tipTotal: result.tipTotal,
+                total: result.total,
+              })
+            }
           }
-          if (result.subtotal !== undefined) {
-            store.syncServerTotals({
-              subtotal: result.subtotal,
-              discountTotal: result.discountTotal ?? 0,
-              taxTotal: result.taxTotal ?? 0,
-              tipTotal: result.tipTotal,
-              total: result.total,
-            })
-          }
+        } catch {
+          // Silent failure — Send/Pay will retry via ensureOrderInDB
+        } finally {
+          autosaveInFlightRef.current = false
+          autosavePromiseRef.current = null
         }
-      } catch {
-        // Silent failure — Send/Pay will retry via ensureOrderInDB
-      } finally {
-        autosaveInFlightRef.current = false
-      }
-    }, 5000) // every 5 seconds
+      })()
+      autosavePromiseRef.current = promise
+    }, 30000) // 30s safety net (event-based saves handle normal flow)
 
     return () => clearInterval(interval)
   }, []) // stable — reads from store directly
@@ -876,6 +943,19 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         options.onOrderSent?.(resolvedOrderId)
       } else {
         // ═══ STANDARD SEND — FIRE-AND-FORGET (INSTANT UI) ═══
+        // Block autosave from starting new work while send is active
+        sendInProgressRef.current = true
+
+        // Wait for any in-flight autosave to finish (so temp IDs are mapped)
+        if (autosavePromiseRef.current) {
+          await autosavePromiseRef.current
+        }
+
+        // Wait for any event-based item saves to finish
+        if (pendingSavesRef.current.size > 0) {
+          await Promise.all(pendingSavesRef.current.values())
+        }
+
         // Only await the draft promise (near-instant — created on table tap).
         // Items append + /send run entirely in background.
         if (draftPromiseRef.current) {
@@ -883,17 +963,17 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           draftPromiseRef.current = null
         }
 
-        // Get fresh state after draft resolution
+        // Get fresh state after draft/autosave resolution
         const store = useOrderStore.getState()
         const freshOrder = store.currentOrder
-        if (!freshOrder) return
+        if (!freshOrder) { sendInProgressRef.current = false; return }
 
         // Get DB order ID (from draft shell created on table tap)
         let resolvedOrderId = freshOrder.id && !isTempId(freshOrder.id) ? freshOrder.id : null
         if (!resolvedOrderId) {
           // Rare fallback: draft didn't complete. Block on full persist.
           resolvedOrderId = await ensureOrderInDB(employeeId)
-          if (!resolvedOrderId) return
+          if (!resolvedOrderId) { sendInProgressRef.current = false; return }
         }
 
         const pendingItems = freshOrder.items.filter(i => !i.sentToKitchen && !i.isHeld)
@@ -979,6 +1059,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             })
             .finally(() => {
               autosaveInFlightRef.current = false
+              sendInProgressRef.current = false
             })
         }
 
@@ -1004,6 +1085,11 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       toast.error('Failed to send order')
     } finally {
       setIsSending(false)
+      // Safety net: ensure sendInProgressRef is cleared even if bgChain never ran
+      // (bgChain's own .finally is the primary clear for the async case)
+      if (!autosaveInFlightRef.current) {
+        sendInProgressRef.current = false
+      }
     }
   }, [currentOrder, options, loadOrder, ensureOrderInDB])
 

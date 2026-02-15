@@ -82,6 +82,58 @@ export const SEAT_STATUS_GLOW: Record<SeatStatus, string> = {
 }
 
 /**
+ * Per-seat-number color palette (8 high-contrast colors for dark backgrounds).
+ * Seat 1 → index 0, Seat 2 → index 1, etc. Wraps via modulo.
+ */
+export const SEAT_COLORS: string[] = [
+  '#6366f1', // indigo-500
+  '#f59e0b', // amber-500
+  '#10b981', // emerald-500
+  '#ef4444', // red-500
+  '#06b6d4', // cyan-500
+  '#f97316', // orange-500
+  '#8b5cf6', // violet-500
+  '#ec4899', // pink-500
+]
+
+const SEAT_EMPTY_COLOR = '#6b7280' // gray-500
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  return {
+    r: parseInt(hex.slice(1, 3), 16),
+    g: parseInt(hex.slice(3, 5), 16),
+    b: parseInt(hex.slice(5, 7), 16),
+  }
+}
+
+/** Get the solid color for a seat number. Grey when hasItems is false. */
+export function getSeatColor(seatNumber: number, hasItems: boolean = true): string {
+  if (!hasItems) return SEAT_EMPTY_COLOR
+  return SEAT_COLORS[(seatNumber - 1) % SEAT_COLORS.length]
+}
+
+/** Get the background rgba color for a seat badge/header. */
+export function getSeatBgColor(seatNumber: number | null | undefined): string {
+  if (!seatNumber) return 'rgba(255, 255, 255, 0.05)'
+  const { r, g, b } = hexToRgb(SEAT_COLORS[(seatNumber - 1) % SEAT_COLORS.length])
+  return `rgba(${r}, ${g}, ${b}, 0.15)`
+}
+
+/** Get the text color for a seat badge/header (lightened variant). */
+export function getSeatTextColor(seatNumber: number | null | undefined): string {
+  if (!seatNumber) return '#94a3b8'
+  const { r, g, b } = hexToRgb(SEAT_COLORS[(seatNumber - 1) % SEAT_COLORS.length])
+  return `rgb(${Math.min(255, r + 80)}, ${Math.min(255, g + 80)}, ${Math.min(255, b + 80)})`
+}
+
+/** Get the border rgba for a seat badge. */
+export function getSeatBorderColor(seatNumber: number | null | undefined): string {
+  if (!seatNumber) return 'rgba(255, 255, 255, 0.1)'
+  const { r, g, b } = hexToRgb(SEAT_COLORS[(seatNumber - 1) % SEAT_COLORS.length])
+  return `rgba(${r}, ${g}, ${b}, 0.3)`
+}
+
+/**
  * Calculate per-seat balance
  */
 export function calculateSeatBalance(

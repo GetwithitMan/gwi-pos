@@ -3,6 +3,7 @@
 import { useRef, useCallback, useMemo, useState, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FloorPlanTable, TableStatus } from './use-floor-plan'
+import { getSeatColor } from '@/lib/seat-utils'
 
 interface TableNodeProps {
   table: FloorPlanTable
@@ -21,6 +22,7 @@ interface TableNodeProps {
     hasCourses?: boolean   // 🔢 coursing enabled
     delayMinutes?: number  // e.g., 5 or 10
   }
+  seatsWithItems?: Set<number>
   onTap: () => void
   onDragStart: () => void
   onDragEnd: () => void
@@ -255,6 +257,7 @@ export const TableNode = memo(function TableNode({
   flashMessage,
   isEditable = false,
   orderStatusBadges,
+  seatsWithItems,
   onTap,
   onDragStart,
   onDragEnd,
@@ -609,7 +612,8 @@ export const TableNode = memo(function TableNode({
           {databaseSeats.map((seat, index) => {
             const displayNumber = seat.seatNumber
             const isSelectedSeat = selectedSeat?.tableId === table.id && selectedSeat?.seatNumber === seat.seatNumber
-            const seatColor = '#6366f1'
+            const hasItems = seatsWithItems?.has(seat.seatNumber) ?? false
+            const seatColor = getSeatColor(seat.seatNumber, hasItems)
             const isDraggable = isEditable || seat.isTemporary
             const displayLabel = seat.label
 

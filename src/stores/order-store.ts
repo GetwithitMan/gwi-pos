@@ -214,7 +214,7 @@ interface OrderState {
   startOrder: (orderType: Order['orderType'], options?: { locationId?: string; tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
   updateOrderType: (orderType: Order['orderType'], options?: { locationId?: string; tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
   loadOrder: (orderData: LoadedOrderData) => void
-  addItem: (item: Omit<OrderItem, 'id'>) => void
+  addItem: (item: Omit<OrderItem, 'id'>) => string | null
   updateItem: (itemId: string, updates: Partial<OrderItem>) => void
   removeItem: (itemId: string) => void
   updateQuantity: (itemId: string, quantity: number) => void
@@ -412,7 +412,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
   addItem: (item) => {
     const { currentOrder } = get()
-    if (!currentOrder) return
+    if (!currentOrder) return null
 
     const newItem: OrderItem = {
       ...item,
@@ -422,6 +422,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     const updatedOrder = { ...currentOrder, items: [...currentOrder.items, newItem] }
     const totals = computeTotals(updatedOrder)
     set({ currentOrder: { ...updatedOrder, ...totals } })
+    return newItem.id
   },
 
   updateItem: (itemId, updates) => {

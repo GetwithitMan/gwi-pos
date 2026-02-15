@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, memo } from 'react'
 import { EntertainmentSessionControls } from './EntertainmentSessionControls'
 import type { UiModifier, IngredientModification } from '@/types/orders'
+import { getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
 
 export interface OrderPanelItemData {
   id: string
@@ -462,10 +463,10 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                       fontSize: '9px',
                       padding: '2px 6px',
                       borderRadius: '4px',
-                      background: 'rgba(168, 85, 247, 0.2)',
-                      color: '#c084fc',
+                      background: getSeatBgColor(item.seatNumber),
+                      color: getSeatTextColor(item.seatNumber),
                       fontWeight: 600,
-                      border: '1px solid rgba(168, 85, 247, 0.3)',
+                      border: `1px solid ${getSeatBorderColor(item.seatNumber)}`,
                       cursor: 'pointer',
                     }}
                   >
@@ -477,8 +478,8 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                       fontSize: '9px',
                       padding: '2px 6px',
                       borderRadius: '4px',
-                      background: 'rgba(168, 85, 247, 0.2)',
-                      color: '#c084fc',
+                      background: getSeatBgColor(item.seatNumber),
+                      color: getSeatTextColor(item.seatNumber),
                       fontWeight: 600,
                     }}
                   >
@@ -495,7 +496,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                       marginTop: '4px',
                       zIndex: 50,
                       background: 'rgba(30, 30, 40, 0.95)',
-                      border: '1px solid rgba(168, 85, 247, 0.3)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
                       borderRadius: '8px',
                       padding: '6px',
                       display: 'flex',
@@ -513,9 +514,9 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                           width: '28px',
                           height: '28px',
                           borderRadius: '6px',
-                          border: item.seatNumber === seat ? '2px solid #c084fc' : '1px solid rgba(255,255,255,0.1)',
-                          background: item.seatNumber === seat ? 'rgba(168, 85, 247, 0.3)' : 'rgba(255,255,255,0.05)',
-                          color: item.seatNumber === seat ? '#c084fc' : '#94a3b8',
+                          border: item.seatNumber === seat ? `2px solid ${getSeatTextColor(seat)}` : `1px solid ${getSeatBorderColor(seat)}`,
+                          background: item.seatNumber === seat ? getSeatBgColor(seat) : 'rgba(255,255,255,0.05)',
+                          color: item.seatNumber === seat ? getSeatTextColor(seat) : getSeatTextColor(seat),
                           fontSize: '11px',
                           fontWeight: 600,
                           cursor: 'pointer',

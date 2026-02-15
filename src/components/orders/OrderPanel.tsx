@@ -3,6 +3,7 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
+import { getSeatBgColor, getSeatTextColor } from '@/lib/seat-utils'
 import { OrderDelayBanner } from './OrderDelayBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import type { DatacapResult } from '@/hooks/useDatacap'
@@ -487,9 +488,9 @@ export function OrderPanel({
                 }}>
                   <span style={{
                     fontSize: '12px', fontWeight: 600,
-                    color: group.seatNumber ? '#c084fc' : '#94a3b8',
+                    color: getSeatTextColor(group.seatNumber),
                     padding: '2px 8px',
-                    background: group.seatNumber ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+                    background: getSeatBgColor(group.seatNumber),
                     borderRadius: '4px',
                   }}>
                     {group.label}
