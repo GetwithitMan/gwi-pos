@@ -12,17 +12,19 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    GWI ADMIN CONSOLE (Cloud)                     │
+│                  MISSION CONTROL (Cloud — Vercel)                │
 │  Onboard locations • Push updates • Monitor • Aggregate reports │
+│  app.thepasspos.com • Clerk B2B auth • Neon PostgreSQL          │
 └─────────────────────────────────────────────────────────────────┘
-                              ▲ Sync when online ▼
+                              ▲ Heartbeat + Sync ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                LOCAL SERVER (Ubuntu Mini PC)                     │
-│  Docker: GWI POS (Next.js) + PostgreSQL + Socket.io + Watchtower│
-│  Works 100% offline • Sub-10ms response times                   │
+│                  LOCAL SERVER (Ubuntu NUC)                       │
+│  Node.js (systemd) + Neon PostgreSQL + Socket.io                │
+│  Provisioned via installer.run • Works 100% offline             │
+│  Heartbeat (60s cron) • Sync agent (SSE) • Kiosk mode          │
 └─────────────────────────────────────────────────────────────────┘
               ▲ Local network (WiFi/Ethernet) ▼
-         Terminals (browser) + Phones/iPads (PWA)
+         Terminals (Chromium kiosk) + Phones/iPads (PWA)
 ```
 
 | Phase | What | Status |
@@ -78,10 +80,11 @@ This system is split across **two independent repositories**. Never put Mission 
 |------------|---------|---------|
 | Next.js | 16.1.5 | Framework with App Router |
 | React | 19.2.3 | UI Library |
-| TypeScript | 5.x | Type Safety |
+| TypeScript | 5.9.3 | Type Safety |
 | Tailwind CSS | 4.x | Styling |
 | Prisma | 6.19.2 | ORM |
 | PostgreSQL | Neon | Database (cloud, database-per-venue) |
+| Socket.io | 4.x | Real-time cross-terminal updates |
 | Zustand | 5.x | State Management |
 | Zod | 4.x | Validation |
 
@@ -163,6 +166,41 @@ npm run build        # Build for production
 npm start            # Start production server
 npm run lint         # Lint code
 ```
+
+### Custom Server (`server.ts`)
+
+The POS uses a **custom Node.js server** that wraps Next.js. This is required for:
+1. **Socket.io** — runs on the same HTTP server (no separate process)
+2. **Multi-tenant DB routing** — wraps every request in AsyncLocalStorage with the correct PrismaClient
+
+```
+npm run dev   → dotenv -e .env.local -- tsx -r ./preload.js server.ts
+npm start     → NODE_ENV=production node -r ./preload.js server.js
+npm run build → prisma generate && next build && node scripts/build-server.mjs
+```
+
+**`preload.js`** polyfills `globalThis.AsyncLocalStorage` for Node 20 compatibility (Next.js 16 expects it globally). Must load via `-r ./preload.js` BEFORE any imports.
+
+### Multi-Tenant DB Routing (`withVenue`)
+
+All 348 API routes are wrapped with `withVenue()` from `src/lib/with-venue.ts`:
+
+```typescript
+import { withVenue } from '@/lib/with-venue'
+
+export const GET = withVenue(async (request) => {
+  const items = await db.menuItem.findMany()  // auto-routes to venue DB
+  return NextResponse.json({ data: items })
+})
+```
+
+**How it works:**
+1. `server.ts` reads `x-venue-slug` header → sets AsyncLocalStorage context with venue PrismaClient
+2. `withVenue()` fast-path: if context already set (NUC), skips `await headers()` entirely
+3. `db.ts` Proxy reads from AsyncLocalStorage on every DB call → routes to correct Neon database
+4. No slug (local dev) → uses master client
+
+**Key files:** `server.ts`, `src/lib/with-venue.ts`, `src/lib/request-context.ts`, `src/lib/db.ts`
 
 ## Performance Rules (MANDATORY)
 
@@ -292,19 +330,35 @@ Single-screen builder with item-owned modifier groups (not shared). Left panel h
 
 ```
 gwi-pos/
+├── server.ts            # Custom server (Socket.io + multi-tenant routing)
+├── preload.js           # AsyncLocalStorage polyfill (loaded via -r flag)
 ├── prisma/              # Schema, seed, migrations
+├── public/
+│   └── installer.run    # NUC provisioning script (~1,454 lines)
 ├── src/
 │   ├── app/
 │   │   ├── (auth)/      # Login pages
 │   │   ├── (pos)/       # POS interface
 │   │   ├── (admin)/     # Admin pages
-│   │   └── api/         # API routes
+│   │   ├── (kds)/       # Kitchen Display System
+│   │   └── api/         # API routes (348 routes, all wrapped with withVenue)
 │   ├── components/      # React components
 │   ├── hooks/           # Custom hooks
 │   ├── stores/          # Zustand stores
-│   ├── lib/             # Utilities
+│   ├── lib/
+│   │   ├── db.ts        # Prisma client (3-tier Proxy: ALS → headers → master)
+│   │   ├── with-venue.ts       # Route handler wrapper for multi-tenant isolation
+│   │   ├── request-context.ts  # AsyncLocalStorage for per-request tenant context
+│   │   ├── socket-server.ts    # Socket.io server init + emitToLocation/emitToTags
+│   │   ├── shared-socket.ts    # Client-side singleton socket connection
+│   │   ├── menu-cache.ts       # In-memory menu cache (60s TTL)
+│   │   ├── location-cache.ts   # Location settings cache
+│   │   └── inventory-calculations.ts  # Deduction engine
 │   └── types/           # TypeScript types
-├── public/              # Static assets
+├── docs/
+│   ├── skills/          # Skill docs (347+ skills)
+│   ├── changelogs/      # Domain changelogs
+│   └── PM-TASK-BOARD.md # Cross-domain task board
 └── CLAUDE.md            # This file
 ```
 
@@ -409,6 +463,34 @@ Before deploying, remove all simulated payment placeholders. See `src/lib/dataca
 4. Delete `simulated-defaults.ts` and its import
 5. Verify: `grep -r "SIMULATED_DEFAULTS" src/` returns zero matches
 
+## NUC Deployment (Production)
+
+Each venue runs on an Ubuntu NUC provisioned by `public/installer.run` (~1,454 lines). One command:
+```bash
+curl -sSL https://gwi-pos.vercel.app/installer.run | sudo bash
+```
+
+### What the Installer Does
+1. **Registration** — RSA-2048 keypair + hardware fingerprint → `POST /api/fleet/register` → RSA-encrypted secrets back
+2. **PostgreSQL** — Installs PG 16, creates `pulse_pos` database (server role only)
+3. **POS App** — Git clone → `npm ci` → `prisma db push` → `npm run build` → `pulse-pos.service` (systemd)
+4. **Kiosk** — Chromium in kiosk mode via `pulse-kiosk.service` + KDE/GNOME autostart
+5. **Heartbeat** — 60s cron: HMAC-signed JSON with CPU/memory/disk/localIp/posLocationId → MC
+6. **Sync Agent** — SSE listener for cloud commands (FORCE_UPDATE, KILL_SWITCH, etc.)
+7. **Backups** — Daily `pg_dump` at 4 AM, 7-day retention
+
+### Two Station Roles
+| Role | What's Installed |
+|------|-----------------|
+| **Server** | PostgreSQL + Node.js POS + Chromium kiosk + heartbeat + sync agent + backups |
+| **Terminal** | Chromium kiosk only (points to server IP) + optional RealVNC |
+
+### Kiosk Exit Zone
+Hidden 64×64px div in top-left corner of every page. Tap 5 times in 3 seconds → calls `POST /api/system/exit-kiosk` → stops kiosk service + kills Chromium. No auth required (intentional — admin must be able to exit without PIN).
+
+**Key files:** `public/installer.run`, `src/components/KioskExitZone.tsx`, `src/app/api/system/exit-kiosk/route.ts`
+**Skill docs:** Skills 345 (Installer), 346 (Kiosk Exit), 347 (Heartbeat IP + Auto-Provisioning)
+
 ## Troubleshooting
 
 ```bash
@@ -442,7 +524,7 @@ All change history is maintained in domain changelogs and skill docs:
 - **Domain changelogs:** `/docs/changelogs/[DOMAIN]-CHANGELOG.md`
 - **Skill docs:** `/docs/skills/` (indexed in `/docs/skills/SKILLS-INDEX.md`)
 
-Key recent work: Combine features fully removed (Skill 326), seat management fixes (Skill 328), cash rounding pipeline (Skill 327), menu builder with child modifiers (Skill 123), socket layer consolidation (Skill 248), multi-tenant DB routing (Skill 337), cloud session validation (Skill 338).
+Key recent work: NUC installer package (Skill 345), kiosk exit zone (Skill 346), heartbeat IP + auto-provisioning (Skill 347), performance overhaul — 6 phases (Skills 339-344), multi-tenant DB routing (Skill 337), cloud session validation (Skill 338), combine features fully removed (Skill 326), seat management fixes (Skill 328), cash rounding pipeline (Skill 327).
 
 ## Pre-Launch Test Checklist
 
