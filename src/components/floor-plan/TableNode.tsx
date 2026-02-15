@@ -15,6 +15,7 @@ interface TableNodeProps {
   selectedSeat?: { tableId: string; seatNumber: number } | null
   flashMessage?: string | null  // Flash message to display (e.g., "OPEN ORDER")
   isEditable?: boolean  // Admin mode - allow seat dragging
+  splitCount?: number
   // Order status badges
   orderStatusBadges?: {
     hasDelay?: boolean     // ⏱ items delayed
@@ -253,6 +254,7 @@ export const TableNode = memo(function TableNode({
   selectedSeat,
   flashMessage,
   isEditable = false,
+  splitCount,
   orderStatusBadges,
   seatsWithItems,
   onTap,
@@ -602,6 +604,27 @@ export const TableNode = memo(function TableNode({
         )}
 
       </motion.div>
+
+      {/* Split ticket badge */}
+      {splitCount != null && splitCount > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: -6,
+          right: -6,
+          background: '#8b5cf6',
+          color: 'white',
+          borderRadius: '10px',
+          padding: '1px 6px',
+          fontSize: '9px',
+          fontWeight: 700,
+          border: '2px solid #1e293b',
+          zIndex: 15,
+          lineHeight: '1.4',
+          whiteSpace: 'nowrap',
+        }}>
+          {splitCount} {splitCount === 1 ? 'split' : 'splits'}
+        </div>
+      )}
 
       {/* Seat indicators from database (permanently assigned to this table) */}
       {showSeats && databaseSeats.length > 0 && (

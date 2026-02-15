@@ -35,6 +35,15 @@ export interface FloorPlanTable {
     total: number
     openedAt: string
     server: string
+    status?: string
+    splitOrders?: Array<{
+      id: string
+      splitIndex: number | null
+      displayNumber: string | null
+      total: number
+      status: string
+      isPaid: boolean
+    }>
     items?: Array<{
       id: string
       name: string

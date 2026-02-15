@@ -6,6 +6,7 @@ import { validateRequest, idSchema } from '@/lib/validations'
 import { z } from 'zod'
 import { calculateSplitTicketPricing, type OrderItemInput, type RoundingIncrement } from '@/lib/split-pricing'
 import { withVenue } from '@/lib/with-venue'
+import { emitToLocation } from '@/lib/socket-server'
 
 // ============================================
 // Validation Schemas
@@ -16,8 +17,19 @@ const splitAssignmentSchema = z.object({
   itemIds: z.array(z.string().min(1)).min(1),
 })
 
+const splitItemFractionSchema = z.object({
+  ticketIndex: z.number().int().min(1),
+  fraction: z.number().gt(0).lte(1),
+})
+
+const splitItemSchema = z.object({
+  originalItemId: z.string().min(1),
+  fractions: z.array(splitItemFractionSchema).min(2, 'At least 2 fractions required'),
+})
+
 const createSplitTicketsSchema = z.object({
   assignments: z.array(splitAssignmentSchema).min(2, 'At least 2 tickets required'),
+  splitItems: z.array(splitItemSchema).optional().default([]),
 })
 
 // ============================================
@@ -93,7 +105,17 @@ export const POST = withVenue(async function POST(
       throw new ValidationError(validation.error)
     }
 
-    const { assignments } = validation.data
+    const { assignments, splitItems } = validation.data
+
+    // Validate splitItems fractions sum to ~1.0
+    for (const si of splitItems) {
+      const fractionSum = si.fractions.reduce((sum, f) => sum + f.fraction, 0)
+      if (Math.abs(fractionSum - 1.0) > 0.02) {
+        throw new ValidationError(
+          `Fractions for item ${si.originalItemId} sum to ${fractionSum}, must be approximately 1.0`
+        )
+      }
+    }
 
     // Get the parent order with all items
     const parentOrder = await db.order.findUnique({
@@ -101,6 +123,7 @@ export const POST = withVenue(async function POST(
       include: {
         location: true,
         items: {
+          where: { deletedAt: null },
           include: { modifiers: true },
         },
       },
@@ -114,12 +137,20 @@ export const POST = withVenue(async function POST(
       throw new ValidationError('Cannot split a closed order')
     }
 
-    // Validate that all items are assigned
+    // Build set of split item IDs for quick lookup
+    const splitItemIds = new Set(splitItems.map(si => si.originalItemId))
+
+    // Validate that all non-split items are assigned, and split items are NOT in assignments
     const allItemIds = new Set(parentOrder.items.map(item => item.id))
     const assignedItemIds = new Set<string>()
 
     for (const assignment of assignments) {
       for (const itemId of assignment.itemIds) {
+        if (splitItemIds.has(itemId)) {
+          throw new ValidationError(
+            `Item ${itemId} is in both splitItems and assignments. Split items are assigned via fractions.`
+          )
+        }
         if (!allItemIds.has(itemId)) {
           throw new ValidationError(`Item ${itemId} not found in order`)
         }
@@ -130,8 +161,29 @@ export const POST = withVenue(async function POST(
       }
     }
 
+    // Validate split item IDs exist in the order
+    for (const si of splitItems) {
+      if (!allItemIds.has(si.originalItemId)) {
+        throw new ValidationError(`Split item ${si.originalItemId} not found in order`)
+      }
+      // Mark as accounted for
+      assignedItemIds.add(si.originalItemId)
+    }
+
     if (assignedItemIds.size !== allItemIds.size) {
-      throw new ValidationError('All items must be assigned to a ticket')
+      throw new ValidationError('All items must be assigned to a ticket (via assignments or splitItems)')
+    }
+
+    // Validate that splitItems fractions reference valid ticket indices
+    const validTicketIndices = new Set(assignments.map(a => a.ticketIndex))
+    for (const si of splitItems) {
+      for (const f of si.fractions) {
+        if (!validTicketIndices.has(f.ticketIndex)) {
+          throw new ValidationError(
+            `Split item ${si.originalItemId} references ticket ${f.ticketIndex} which doesn't exist in assignments`
+          )
+        }
+      }
     }
 
     // Get settings for tax rate and rounding
@@ -154,10 +206,57 @@ export const POST = withVenue(async function POST(
     // Sort assignments by ticket index
     const sortedAssignments = [...assignments].sort((a, b) => a.ticketIndex - b.ticketIndex)
 
+    // Pre-compute fractional items per ticket
+    // Map: ticketIndex -> array of { originalItem, fractionalPrice, labelIndex, totalFractions }
+    type FractionalItemEntry = {
+      originalItem: NonNullable<ReturnType<typeof itemMap.get>>
+      fractionalPrice: number
+      labelIndex: number
+      totalFractions: number
+    }
+    const fractionalItemsByTicket = new Map<number, FractionalItemEntry[]>()
+
+    for (const si of splitItems) {
+      const originalItem = itemMap.get(si.originalItemId)
+      if (!originalItem) continue
+
+      const originalPrice = Number(originalItem.price) * originalItem.quantity
+      const modifiersTotal = originalItem.modifiers.reduce(
+        (sum, m) => sum + Number(m.price) * (m.quantity || 1), 0
+      )
+      const totalItemPrice = originalPrice + modifiersTotal
+      const N = si.fractions.length
+
+      let allocatedSoFar = 0
+      for (let i = 0; i < si.fractions.length; i++) {
+        const f = si.fractions[i]
+        let fractionalPrice: number
+
+        if (i === si.fractions.length - 1) {
+          // Last fraction gets remainder to ensure exact sum
+          fractionalPrice = Math.round((totalItemPrice - allocatedSoFar) * 100) / 100
+        } else {
+          fractionalPrice = Math.floor(totalItemPrice * f.fraction * 100) / 100
+        }
+        allocatedSoFar += fractionalPrice
+
+        if (!fractionalItemsByTicket.has(f.ticketIndex)) {
+          fractionalItemsByTicket.set(f.ticketIndex, [])
+        }
+        fractionalItemsByTicket.get(f.ticketIndex)!.push({
+          originalItem,
+          fractionalPrice,
+          labelIndex: i + 1,
+          totalFractions: N,
+        })
+      }
+    }
+
     // Calculate pricing for each ticket
     interface TicketData {
       ticketIndex: number
       items: typeof parentOrder.items
+      fractionalEntries: FractionalItemEntry[]
       pricing: ReturnType<typeof calculateSplitTicketPricing>
     }
 
@@ -173,17 +272,29 @@ export const POST = withVenue(async function POST(
         .map(itemId => itemMap.get(itemId))
         .filter((item): item is NonNullable<typeof item> => item !== undefined)
 
-      // Convert to OrderItemInput format
-      const orderItemInputs: OrderItemInput[] = ticketItems.map(item => ({
-        id: item.id,
-        name: item.name,
-        quantity: item.quantity,
-        price: Number(item.price),
-        modifiers: item.modifiers.map(mod => ({
-          name: mod.name,
-          price: Number(mod.price),
+      const fractionalEntries = fractionalItemsByTicket.get(assignment.ticketIndex) || []
+
+      // Build OrderItemInput list including both whole items and fractional items
+      const orderItemInputs: OrderItemInput[] = [
+        ...ticketItems.map(item => ({
+          id: item.id,
+          name: item.name,
+          quantity: item.quantity,
+          price: Number(item.price),
+          modifiers: item.modifiers.map(mod => ({
+            name: mod.name,
+            price: Number(mod.price),
+          })),
         })),
-      }))
+        // Add fractional items as virtual items for pricing calculation
+        ...fractionalEntries.map(fe => ({
+          id: `${fe.originalItem.id}-frac-${fe.labelIndex}`,
+          name: `${fe.originalItem.name} (${fe.labelIndex}/${fe.totalFractions})`,
+          quantity: 1,
+          price: fe.fractionalPrice,
+          modifiers: [] as { name: string; price: number }[],
+        })),
+      ]
 
       const pricing = calculateSplitTicketPricing(
         orderItemInputs,
@@ -199,6 +310,7 @@ export const POST = withVenue(async function POST(
       ticketDataList.push({
         ticketIndex: assignment.ticketIndex,
         items: ticketItems,
+        fractionalEntries,
         pricing,
       })
 
@@ -211,6 +323,58 @@ export const POST = withVenue(async function POST(
 
       for (const ticketData of ticketDataList) {
         const displayNumber = `${parentOrder.orderNumber}-${ticketData.ticketIndex}`
+
+        // Build item create data: whole items + fractional items
+        const itemCreateData = [
+          // Whole items (copied as-is)
+          ...ticketData.items.map(item => ({
+            locationId: parentOrder.locationId,
+            menuItemId: item.menuItemId,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            itemTotal: item.itemTotal,
+            specialNotes: item.specialNotes,
+            seatNumber: item.seatNumber,
+            courseNumber: item.courseNumber,
+            courseStatus: item.courseStatus,
+            kitchenStatus: item.kitchenStatus,
+            modifiers: {
+              create: item.modifiers.map(mod => ({
+                locationId: parentOrder.locationId,
+                modifierId: mod.modifierId,
+                name: mod.name,
+                price: mod.price,
+                quantity: mod.quantity,
+                preModifier: mod.preModifier,
+              })),
+            },
+          })),
+          // Fractional items (new records with split pricing)
+          ...ticketData.fractionalEntries.map(fe => ({
+            locationId: parentOrder.locationId,
+            menuItemId: fe.originalItem.menuItemId,
+            name: `${fe.originalItem.name} (${fe.labelIndex}/${fe.totalFractions})`,
+            price: fe.fractionalPrice,
+            quantity: 1,
+            itemTotal: fe.fractionalPrice,
+            specialNotes: fe.originalItem.specialNotes,
+            seatNumber: fe.originalItem.seatNumber,
+            courseNumber: fe.originalItem.courseNumber,
+            courseStatus: fe.originalItem.courseStatus,
+            kitchenStatus: fe.originalItem.kitchenStatus,
+            modifiers: {
+              create: fe.originalItem.modifiers.map(mod => ({
+                locationId: parentOrder.locationId,
+                modifierId: mod.modifierId,
+                name: mod.name,
+                price: 0, // Modifier price already baked into fractionalPrice
+                quantity: mod.quantity,
+                preModifier: mod.preModifier,
+              })),
+            },
+          })),
+        ]
 
         // Create the split order
         const splitOrder = await tx.order.create({
@@ -233,29 +397,7 @@ export const POST = withVenue(async function POST(
             total: ticketData.pricing.total,
             notes: parentOrder.notes,
             items: {
-              create: ticketData.items.map(item => ({
-                locationId: parentOrder.locationId,
-                menuItemId: item.menuItemId,
-                name: item.name,
-                price: item.price,
-                quantity: item.quantity,
-                itemTotal: item.itemTotal,
-                specialNotes: item.specialNotes,
-                seatNumber: item.seatNumber,
-                courseNumber: item.courseNumber,
-                courseStatus: item.courseStatus,
-                kitchenStatus: item.kitchenStatus,
-                modifiers: {
-                  create: item.modifiers.map(mod => ({
-                    locationId: parentOrder.locationId,
-                    modifierId: mod.modifierId,
-                    name: mod.name,
-                    price: mod.price,
-                    quantity: mod.quantity,
-                    preModifier: mod.preModifier,
-                  })),
-                },
-              })),
+              create: itemCreateData,
             },
           },
           include: {
@@ -266,6 +408,19 @@ export const POST = withVenue(async function POST(
         })
 
         splits.push(splitOrder)
+      }
+
+      // Soft-delete original items that were fractionally split
+      if (splitItems.length > 0) {
+        const splitOriginalIds = splitItems.map(si => si.originalItemId)
+        await tx.orderItem.updateMany({
+          where: {
+            id: { in: splitOriginalIds },
+            orderId: id,
+            locationId: parentOrder.locationId,
+          },
+          data: { deletedAt: new Date() },
+        })
       }
 
       // Update parent order status to indicate it was split
@@ -281,6 +436,12 @@ export const POST = withVenue(async function POST(
 
       return splits
     })
+
+    // Fire-and-forget socket emit
+    void emitToLocation(parentOrder.locationId, 'orders:list-changed', {
+      orderId: id,
+      status: 'split',
+    }).catch(() => {})
 
     return NextResponse.json({
       message: 'Split tickets created successfully',
@@ -354,6 +515,16 @@ export const DELETE = withVenue(async function DELETE(
           status: 'open',
           notes: parentOrder.notes?.replace(/\n?\[Split into \d+ tickets\]/, '') || null,
         },
+      })
+
+      // Restore any soft-deleted split items
+      await tx.orderItem.updateMany({
+        where: {
+          orderId: id,
+          locationId: parentOrder.locationId,
+          deletedAt: { not: null },
+        },
+        data: { deletedAt: null },
       })
     })
 

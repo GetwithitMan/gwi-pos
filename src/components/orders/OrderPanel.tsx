@@ -122,6 +122,15 @@ export interface OrderPanelProps {
   // Seat filter (floor plan seat tap)
   filterSeatNumber?: number | null
   onClearSeatFilter?: () => void
+  // Split ticket navigation
+  splitInfo?: {
+    displayNumber: string
+    currentIndex: number
+    totalSplits: number
+    allSplitIds: string[]
+  }
+  onNavigateSplit?: (splitOrderId: string) => void
+  onBackToSplitOverview?: () => void
 }
 
 export function OrderPanel({
@@ -227,6 +236,10 @@ export function OrderPanel({
   // Seat filter
   filterSeatNumber,
   onClearSeatFilter,
+  // Split ticket navigation
+  splitInfo,
+  onNavigateSplit,
+  onBackToSplitOverview,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -669,6 +682,65 @@ export function OrderPanel({
                   <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
                     New Order
                   </h2>
+                )}
+                {splitInfo && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                    <span style={{ fontSize: '12px', color: '#a5b4fc', fontWeight: 600 }}>
+                      Split {splitInfo.displayNumber} ({splitInfo.currentIndex}/{splitInfo.totalSplits})
+                    </span>
+                    <button
+                      onClick={() => {
+                        const prevIdx = splitInfo.currentIndex - 2
+                        if (prevIdx >= 0 && onNavigateSplit) onNavigateSplit(splitInfo.allSplitIds[prevIdx])
+                      }}
+                      disabled={splitInfo.currentIndex <= 1}
+                      style={{
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '14px',
+                        border: 'none',
+                        background: splitInfo.currentIndex > 1 ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.05)',
+                        color: splitInfo.currentIndex > 1 ? '#a5b4fc' : '#475569',
+                        cursor: splitInfo.currentIndex > 1 ? 'pointer' : 'default',
+                      }}
+                    >
+                      &larr;
+                    </button>
+                    <button
+                      onClick={() => {
+                        const nextIdx = splitInfo.currentIndex
+                        if (nextIdx < splitInfo.allSplitIds.length && onNavigateSplit) onNavigateSplit(splitInfo.allSplitIds[nextIdx])
+                      }}
+                      disabled={splitInfo.currentIndex >= splitInfo.totalSplits}
+                      style={{
+                        padding: '2px 6px',
+                        borderRadius: '4px',
+                        fontSize: '14px',
+                        border: 'none',
+                        background: splitInfo.currentIndex < splitInfo.totalSplits ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.05)',
+                        color: splitInfo.currentIndex < splitInfo.totalSplits ? '#a5b4fc' : '#475569',
+                        cursor: splitInfo.currentIndex < splitInfo.totalSplits ? 'pointer' : 'default',
+                      }}
+                    >
+                      &rarr;
+                    </button>
+                    {onBackToSplitOverview && (
+                      <button
+                        onClick={onBackToSplitOverview}
+                        style={{
+                          fontSize: '11px',
+                          color: '#8b5cf6',
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          padding: '2px 4px',
+                        }}
+                      >
+                        All Splits
+                      </button>
+                    )}
+                  </div>
                 )}
                 {orderType && (
                   <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px', textTransform: 'capitalize' }}>

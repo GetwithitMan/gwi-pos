@@ -34,7 +34,7 @@ import { PaymentModal } from '@/components/payment/PaymentModal'
 import { DiscountModal } from '@/components/orders/DiscountModal'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
 import { ItemTransferModal } from '@/components/orders/ItemTransferModal'
-import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
+import { SplitCheckScreen } from '@/components/orders/SplitCheckScreen'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
@@ -310,6 +310,11 @@ export default function OrdersPage() {
 
   // Saved order state
   const [savedOrderId, setSavedOrderId] = useState<string | null>(null)
+  // Split ticket context (populated when navigating split orders)
+  const [splitContext, setSplitContext] = useState<{
+    parentId: string
+    splits: Array<{ id: string; splitIndex: number | null; displayNumber: string | null }>
+  } | null>(null)
   const [isSendingOrder, setIsSendingOrder] = useState(false)
   const [orderSent, setOrderSent] = useState(false)
 
@@ -2521,6 +2526,41 @@ export default function OrdersPage() {
             onCancelItemDelay={(itemId) => useOrderStore.getState().setItemDelay([itemId], null)}
             reopenedAt={currentOrder?.reopenedAt}
             reopenReason={currentOrder?.reopenReason}
+            splitInfo={splitContext && savedOrderId ? (() => {
+              const match = splitContext.splits.find(s => s.id === savedOrderId)
+              if (!match) return undefined
+              return {
+                displayNumber: match.displayNumber || `${(match.splitIndex ?? 0) + 1}`,
+                currentIndex: splitContext.splits.findIndex(s => s.id === savedOrderId) + 1,
+                totalSplits: splitContext.splits.length,
+                allSplitIds: splitContext.splits.map(s => s.id),
+              }
+            })() : undefined}
+            onNavigateSplit={splitContext ? (splitOrderId) => {
+              const store = useOrderStore.getState()
+              fetch(`/api/orders/${splitOrderId}`)
+                .then(res => res.ok ? res.json() : null)
+                .then(data => {
+                  if (data) {
+                    store.loadOrder({
+                      id: data.id,
+                      orderNumber: data.orderNumber,
+                      orderType: data.orderType || 'dine_in',
+                      tableId: data.tableId,
+                      tabName: data.tabName,
+                      guestCount: data.guestCount,
+                      items: data.items || [],
+                      subtotal: Number(data.subtotal) || 0,
+                      taxTotal: Number(data.taxTotal) || 0,
+                      tipTotal: Number(data.tipTotal) || 0,
+                      total: Number(data.total) || 0,
+                      notes: data.notes,
+                    })
+                  }
+                })
+                .catch(console.error)
+            } : undefined}
+            onBackToSplitOverview={splitContext ? () => setSplitContext(null) : undefined}
             hideHeader={viewMode === 'floor-plan'}
             className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0'}
           />
@@ -3151,35 +3191,22 @@ export default function OrdersPage() {
           />
         )}
 
-        {/* Split Ticket Manager */}
+        {/* Split Check Screen */}
         {showSplitTicketManager && savedOrderId && currentOrder && (
-          <SplitTicketManager
-            isOpen={showSplitTicketManager}
-            onClose={() => setShowSplitTicketManager(false)}
+          <SplitCheckScreen
             orderId={savedOrderId}
-            orderNumber={currentOrder.orderNumber || 0}
             items={currentOrder.items.map(item => ({
               id: item.id,
-              tempId: item.id,
+              seatNumber: item.seatNumber,
               name: item.name,
               price: item.price,
               quantity: item.quantity,
-              modifiers: item.modifiers.map(mod => ({
-                id: (mod.id || mod.modifierId) ?? '',
-                modifierId: mod.modifierId,
-                name: mod.name,
-                price: Number(mod.price),
-                depth: mod.depth ?? 0,
-                preModifier: mod.preModifier ?? null,
-                spiritTier: mod.spiritTier ?? null,
-                linkedBottleProductId: mod.linkedBottleProductId ?? null,
-                parentModifierId: mod.parentModifierId ?? null,
-              })),
+              categoryType: item.categoryType,
+              sentToKitchen: item.sentToKitchen,
+              isPaid: item.status === 'comped' || item.status === 'voided',
             }))}
-            orderDiscount={appliedDiscounts.reduce((sum, d) => sum + d.amount, 0)}
-            taxRate={taxRate}
-            roundTo={priceRounding.enabled ? priceRounding.increment : 'none'}
-            onSplitComplete={handleSplitTicketComplete}
+            onClose={() => setShowSplitTicketManager(false)}
+            onSplitApplied={handleSplitTicketComplete}
           />
         )}
 

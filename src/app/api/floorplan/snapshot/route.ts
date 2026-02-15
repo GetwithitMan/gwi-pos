@@ -38,10 +38,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             orderBy: { seatNumber: 'asc' },
           },
           orders: {
-            where: { status: 'open', deletedAt: null },
+            where: { status: { in: ['open', 'split'] }, deletedAt: null },
             select: {
               id: true, orderNumber: true, guestCount: true, total: true, createdAt: true,
+              status: true,
               employee: { select: { displayName: true, firstName: true, lastName: true } },
+              splitOrders: {
+                where: { deletedAt: null },
+                select: {
+                  id: true,
+                  splitIndex: true,
+                  displayNumber: true,
+                  status: true,
+                  total: true,
+                },
+                orderBy: { splitIndex: 'asc' as const },
+              },
             },
           },
         },
@@ -85,7 +97,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
       // Open orders count (lightweight aggregate)
       db.order.count({
-        where: { locationId, status: 'open', deletedAt: null },
+        where: { locationId, status: { in: ['open', 'split'] }, deletedAt: null },
       }),
     ])
     timing.end('db', 'Parallel queries')
@@ -118,6 +130,15 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           openedAt: t.orders[0].createdAt.toISOString(),
           server: t.orders[0].employee?.displayName ||
             `${t.orders[0].employee?.firstName || ''} ${t.orders[0].employee?.lastName || ''}`.trim(),
+          status: t.orders[0].status,
+          splitOrders: (t.orders[0].splitOrders || []).map((s: any) => ({
+            id: s.id,
+            splitIndex: s.splitIndex,
+            displayNumber: s.displayNumber,
+            total: Number(s.total),
+            status: s.status,
+            isPaid: s.status === 'paid',
+          })),
         } : null,
       })),
       sections: sections.map(s => ({

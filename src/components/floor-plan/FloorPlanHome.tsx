@@ -15,7 +15,8 @@ import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { StockBadge } from '@/components/menu/StockBadge'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
-import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
+import { SplitCheckScreen } from '@/components/orders/SplitCheckScreen'
+import { SplitTicketsOverview } from '@/components/orders/SplitTicketsOverview'
 import { TableOptionsPopover } from '@/components/orders/TableOptionsPopover'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { logger } from '@/lib/logger'
@@ -376,6 +377,7 @@ export function FloorPlanHome({
 
   // Split ticket manager state
   const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
+  const [showSplitOverview, setShowSplitOverview] = useState(false)
   const [splitItemId, setSplitItemId] = useState<string | null>(null)
 
   // Active seat for auto-assignment (null = "Shared")
@@ -1056,6 +1058,17 @@ export function FloorPlanHome({
     setGuestCount(totalSeats) // Set guest count based on table capacity
 
     if (primaryTable.currentOrder) {
+      // Check for split orders — show overview instead of loading parent order
+      const hasSplits = primaryTable.currentOrder.status === 'split' &&
+                        (primaryTable.currentOrder.splitOrders?.length ?? 0) > 0
+      if (hasSplits) {
+        setActiveTableId(primaryTable.id)
+        setActiveOrderId(primaryTable.currentOrder.id)
+        setShowSplitOverview(true)
+        setShowOrderPanel(false)
+        return
+      }
+
       // Load existing order items from this table
       setActiveOrderId(primaryTable.currentOrder.id)
       setActiveOrderNumber(String(primaryTable.currentOrder.orderNumber))
@@ -1146,6 +1159,67 @@ export function FloorPlanHome({
       isTableSwitchInFlightRef.current = false
     }
   }, [selectedSeat, clearSelectedSeat, getTotalSeats, activeTableId, activeOrderId])
+
+  // Handle selecting a split ticket from the overview
+  const handleSelectSplit = useCallback(async (splitOrderId: string) => {
+    setShowSplitOverview(false)
+    setShowOrderPanel(true)
+    setActiveOrderId(splitOrderId)
+
+    try {
+      const res = await fetch(`/api/orders/${splitOrderId}`)
+      if (res.ok) {
+        const data = await res.json()
+        if (data) {
+          const store = useOrderStore.getState()
+          store.loadOrder({
+            id: data.id,
+            orderNumber: data.orderNumber,
+            orderType: data.orderType || 'dine_in',
+            tableId: data.tableId || activeTableId,
+            tabName: data.tabName,
+            guestCount: data.guestCount,
+            items: data.items || [],
+            subtotal: Number(data.subtotal) || 0,
+            taxTotal: Number(data.taxTotal) || 0,
+            tipTotal: Number(data.tipTotal) || 0,
+            total: Number(data.total) || 0,
+            notes: data.notes,
+            reopenedAt: data.reopenedAt,
+            reopenReason: data.reopenReason,
+          })
+          setActiveOrderNumber(String(data.orderNumber))
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load split order:', err)
+    }
+  }, [activeTableId])
+
+  // Handle merging split tickets back into one order
+  const handleMergeBack = useCallback(async () => {
+    if (!activeOrderId) return
+    try {
+      const res = await fetch(`/api/orders/${activeOrderId}/split-tickets`, { method: 'DELETE' })
+      if (res.ok) {
+        toast.success('Splits merged back')
+        setShowSplitOverview(false)
+        setActiveOrderId(null)
+        setActiveTableId(null)
+        loadFloorPlanData(false)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Failed to merge splits')
+      }
+    } catch {
+      toast.error('Failed to merge splits')
+    }
+  }, [activeOrderId, loadFloorPlanData])
+
+  // Handle transfer table (placeholder for future enhancement)
+  const handleTransferTable = useCallback(() => {
+    toast.info('Table transfer coming soon')
+  }, [])
 
   // Handle quick order type (Takeout, Delivery, Bar Tab)
   const handleQuickOrderType = useCallback((orderType: QuickOrderType) => {
@@ -2700,6 +2774,7 @@ export function FloorPlanHome({
                             delayMinutes: activeOrder.pendingDelay ?? undefined,
                           } : undefined}
                           seatsWithItems={table.id === activeTableId ? seatsWithItems : undefined}
+                          splitCount={table.currentOrder?.splitOrders?.length}
                           onTap={() => handleTableTap(table)}
                           onDragStart={() => startDrag(table.id)}
                           onDragEnd={endDrag}
@@ -3522,44 +3597,60 @@ export function FloorPlanHome({
         />
       )}
 
-      {/* Split Ticket Manager */}
+      {/* Split Tickets Overview — shown when tapping a table with split orders */}
+      {showSplitOverview && activeOrderId && activeTableId && (() => {
+        const activeTable = tables.find(t => t.id === activeTableId)
+        if (!activeTable?.currentOrder?.splitOrders) return null
+        return (
+          <SplitTicketsOverview
+            parentOrderId={activeOrderId}
+            orderNumber={activeTable.currentOrder.orderNumber}
+            tableName={activeTable.name || ''}
+            splitOrders={activeTable.currentOrder.splitOrders}
+            onSelectSplit={handleSelectSplit}
+            onEditSplits={() => {
+              setShowSplitOverview(false)
+              setShowSplitTicketManager(true)
+            }}
+            onMergeBack={handleMergeBack}
+            onTransferItems={() => {
+              setShowSplitOverview(false)
+              toast.info('Item transfer coming soon')
+            }}
+            onTransferTable={handleTransferTable}
+            onClose={() => {
+              setShowSplitOverview(false)
+              setActiveTableId(null)
+              setActiveOrderId(null)
+            }}
+          />
+        )
+      })()}
+
+      {/* Split Check Screen */}
       {showSplitTicketManager && activeOrderId && (
-        <SplitTicketManager
+        <SplitCheckScreen
           orderId={activeOrderId}
-          isOpen={showSplitTicketManager}
+          items={inlineOrderItems.map(item => ({
+            id: item.id,
+            seatNumber: item.seatNumber,
+            name: item.name,
+            price: item.price,
+            quantity: item.quantity,
+            categoryType: item.categoryType,
+            sentToKitchen: item.sentToKitchen,
+            isPaid: item.status === 'comped' || item.status === 'voided',
+          }))}
           onClose={() => {
             setShowSplitTicketManager(false)
             setSplitItemId(null)
           }}
-          orderNumber={activeOrderNumber || ''}
-          items={inlineOrderItems.map(item => ({
-            id: item.id,
-            tempId: item.id,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            modifiers: (item.modifiers || []).map(m => ({
-        id: (m.id || m.modifierId) ?? '',
-        modifierId: m.modifierId,
-        name: m.name,
-        price: Number(m.price),
-        depth: m.depth ?? 0,
-        preModifier: m.preModifier ?? null,
-        spiritTier: m.spiritTier ?? null,
-        linkedBottleProductId: m.linkedBottleProductId ?? null,
-        parentModifierId: m.parentModifierId ?? null,
-      })),
-          }))}
-          orderDiscount={0}
-          taxRate={pricing.taxRate}
-          onSplitComplete={async () => {
-            // Refresh order data by reloading the order
+          onSplitApplied={async () => {
             if (activeOrderId) {
               try {
                 const response = await fetch(`/api/orders/${activeOrderId}`)
                 if (response.ok) {
                   const orderData = await response.json()
-                  // Reload full order via store.loadOrder — one path, no duplication
                   const store = useOrderStore.getState()
                   store.loadOrder(orderData)
                 }
@@ -3569,7 +3660,6 @@ export function FloorPlanHome({
             }
             setShowSplitTicketManager(false)
             setSplitItemId(null)
-            toast.success('Item moved to split check')
           }}
         />
       )}
