@@ -1,5 +1,25 @@
 # Orders Domain - Change Log
 
+## Session: February 15, 2026 — Per-Seat Check Cards & Seat Filtering (Skill 349)
+
+### Summary
+OrderPanel auto-groups items by seat into card-style "checks" with per-seat subtotals. Tapping a seat on the floor plan filters the order panel to that seat's items only.
+
+### What Changed
+1. **Auto seat-grouped check cards** — When 2+ seats have items, each seat renders as a bordered card with color dot, "Seat X" label, item count, and subtotal
+2. **Seat filter bar** — "Showing Seat X" indicator with "Show All" button when a seat is selected on the floor plan
+3. **Sent items grouping** — Sent-to-kitchen items also group by seat (at 70% opacity)
+4. **Pre-split foundation** — Visual groundwork for future per-seat split payment
+
+### Files Modified
+- `src/components/orders/OrderPanel.tsx` — `autoSeatGroups` memo, check card rendering, filter indicator, `filterSeatNumber`/`onClearSeatFilter` props
+- `src/app/(pos)/orders/page.tsx` — `useFloorPlanStore` for `selectedSeat`, filter logic
+
+### Skill Doc
+`docs/skills/349-PER-SEAT-CHECK-CARDS.md`
+
+---
+
 ## Session: February 10, 2026 (Per-Item Delay Fix, Held Item Fire, Codebase Cleanup)
 
 ### Summary

@@ -189,6 +189,8 @@
 | 229 | Table Combine Types | DONE | Floor Plan | 107, 117 | **REMOVED in Skill 326** — was: physical vs virtual combine |
 | 326 | Combine Removal (Full) | DONE | Floor Plan | 117, 229 | Both virtual AND physical combine fully removed from entire codebase (116 files, -16,211 lines). Tables are now standalone. API routes return 410 Gone. |
 | 328 | Seat Management Fixes | DONE | Floor Plan, Orders | 121, 206 | Add seat after send, seatNumber persistence on items, extra seats restore on reopen |
+| 348 | Per-Seat Color System | DONE | Floor Plan, Orders | 206, 328 | 8-color palette in seat-utils.ts, colors on floor plan seats, order panel badges, group headers, seat picker buttons. Temp seats use same colors (no more orange dashed). |
+| 349 | Per-Seat Check Cards & Seat Filtering | DONE | Orders, Floor Plan | 348, 11 | Auto seat-grouped check cards with per-seat subtotals, seat filter bar on floor plan seat tap, pre-split foundation. |
 
 ### Bar Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -486,6 +488,13 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-15 — Per-Seat Colors, Check Cards & Seat Filtering, Skills 348-349)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 348 | Per-Seat Color System | 8-color palette (`seat-utils.ts`): indigo, amber, emerald, red, cyan, orange, violet, pink. Colors applied to floor plan seats, order panel badges, group headers, seat picker buttons. Temporary/extra seats now use same color system (removed orange dashed styling). `getSeatColor`, `getSeatBgColor`, `getSeatTextColor`, `getSeatBorderColor` helpers. `seatsWithItems` memo drives grey-vs-colored on floor plan. |
+| 349 | Per-Seat Check Cards & Seat Filtering | OrderPanel auto-groups items into card-style checks per seat (when 2+ seats have items) with per-seat subtotals. Both pending and sent sections group by seat. Tapping a seat on floor plan filters order panel to that seat only (colored "Showing Seat X" bar + "Show All" button). Filter clears on table tap or seat deselect. Full order total always shown. Foundation for future per-seat split payment. |
 
 ## Recently Completed (2026-02-12 — Online Ordering URL Infrastructure, Deploy Fix, Skills 335-336)
 

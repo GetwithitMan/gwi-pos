@@ -1,5 +1,31 @@
 # Floor Plan Domain - Change Log
 
+## Session: February 15, 2026 — Per-Seat Colors & Uniform Seat Styling (Skills 348-349)
+
+### Summary
+Added per-seat color system and removed special orange dashed styling on temporary/extra seats. All seats now use an 8-color palette — colored when they have items, grey when empty. Seat picker buttons and floor plan seat indicators all match.
+
+### What Changed
+1. **Per-seat color palette** — `src/lib/seat-utils.ts` with 8 colors (indigo, amber, emerald, red, cyan, orange, violet, pink)
+2. **Temporary seat styling removed** — No more orange dashed borders on extra seats; they use the same color system
+3. **Seat picker buttons colored** — FloorPlanHome seat buttons (1, 2, 3, 4) use per-seat colors
+4. **Seat filter on tap** — Tapping a seat on the floor plan filters order panel to that seat's items only
+5. **Per-seat check cards** — OrderPanel auto-groups items by seat with per-seat subtotals
+
+### Files Modified
+- `src/lib/seat-utils.ts` — New: color palette and helpers
+- `src/components/floor-plan/TableNode.tsx` — DraggableSeat uses per-seat colors for all seats
+- `src/components/floor-plan/FloorPlanHome.tsx` — seatsWithItems memo, seat picker button colors
+- `src/components/orders/OrderPanel.tsx` — Auto seat groups, check card rendering, filter bar
+- `src/components/orders/OrderPanelItem.tsx` — Seat badge colors
+- `src/app/(pos)/orders/page.tsx` — Seat filter integration
+
+### Skill Docs
+- `docs/skills/348-PER-SEAT-COLOR-SYSTEM.md`
+- `docs/skills/349-PER-SEAT-CHECK-CARDS.md`
+
+---
+
 ## Session: February 12, 2026 — Seat Management Fixes (Skill 328)
 
 ### Summary
