@@ -952,7 +952,7 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     if (updateData.status === 'paid') {
-      dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id }, { async: true }).catch(() => {})
+      dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
     }
 
     // Award loyalty points if order is fully paid and has a customer

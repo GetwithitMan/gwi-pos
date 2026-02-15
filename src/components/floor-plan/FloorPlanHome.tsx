@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useFloorPlanStore, FloorPlanTable, FloorPlanElement } from './use-floor-plan'
 import { FloorPlanEntertainment } from './FloorPlanEntertainment'
@@ -8,21 +8,21 @@ import { TableNode } from './TableNode'
 import { TableInfoPanel } from './TableInfoPanel'
 import { CategoriesBar } from './CategoriesBar'
 import { RoomTabs } from './RoomTabs'
-import { RoomReorderModal } from './RoomReorderModal'
+const RoomReorderModal = lazy(() => import('./RoomReorderModal').then(m => ({ default: m.RoomReorderModal })))
 import { useFloorPlanAutoScale, useFloorPlanDrag } from './hooks'
 import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { StockBadge } from '@/components/menu/StockBadge'
-import { CompVoidModal } from '@/components/orders/CompVoidModal'
-import { SplitCheckScreen } from '@/components/orders/SplitCheckScreen'
-import { SplitTicketsOverview } from '@/components/orders/SplitTicketsOverview'
+const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
+const SplitCheckScreen = lazy(() => import('@/components/orders/SplitCheckScreen').then(m => ({ default: m.SplitCheckScreen })))
+const SplitTicketsOverview = lazy(() => import('@/components/orders/SplitTicketsOverview').then(m => ({ default: m.SplitTicketsOverview })))
 import { TableOptionsPopover } from '@/components/orders/TableOptionsPopover'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { logger } from '@/lib/logger'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
-import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
+const SharedOwnershipModal = lazy(() => import('@/components/tips/SharedOwnershipModal'))
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
@@ -178,6 +178,13 @@ interface FloorPlanHomeProps {
   // Pre-loaded menu data from parent (avoids duplicate /api/menu fetch)
   initialCategories?: Category[]
   initialMenuItems?: MenuItem[]
+  // Pre-loaded snapshot from bootstrap (avoids duplicate /api/floorplan/snapshot fetch on mount)
+  initialSnapshot?: {
+    tables: any[]
+    sections: any[]
+    elements: any[]
+    openOrdersCount: number
+  } | null
 }
 
 // Pizza order configuration (matches what pizza builder produces)
@@ -209,6 +216,7 @@ export function FloorPlanHome({
   refreshTrigger,
   initialCategories,
   initialMenuItems,
+  initialSnapshot,
 }: FloorPlanHomeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -380,6 +388,21 @@ export function FloorPlanHome({
   const [showSplitOverview, setShowSplitOverview] = useState(false)
   const [splitItemId, setSplitItemId] = useState<string | null>(null)
 
+  // Memoize split check items to avoid re-creating array every render
+  const splitCheckItems = useMemo(() => {
+    if (!showSplitTicketManager) return []
+    return inlineOrderItems.map(item => ({
+      id: item.id,
+      seatNumber: item.seatNumber,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      categoryType: item.categoryType,
+      sentToKitchen: item.sentToKitchen,
+      isPaid: item.status === 'comped' || item.status === 'voided',
+    }))
+  }, [showSplitTicketManager, inlineOrderItems])
+
   // Active seat for auto-assignment (null = "Shared")
   const [activeSeatNumber, setActiveSeatNumber] = useState<number | null>(null)
   // Source table for seat (tracks which table the seat belongs to)
@@ -456,6 +479,10 @@ export function FloorPlanHome({
   const clearExpiredFlashes = useFloorPlanStore(s => s.clearExpiredFlashes)
   const setLoading = useFloorPlanStore(s => s.setLoading)
   const updateTableStatus = useFloorPlanStore(s => s.updateTableStatus)
+  const patchTableOrder = useFloorPlanStore(s => s.patchTableOrder)
+  const removeTableOrder = useFloorPlanStore(s => s.removeTableOrder)
+  const addTableOrder = useFloorPlanStore(s => s.addTableOrder)
+  const updateSingleTableStatus = useFloorPlanStore(s => s.updateSingleTableStatus)
 
   // No sync functions needed — Zustand store IS the source of truth
   // syncOrderToStore and syncLocalItemsToStore have been removed
@@ -596,6 +623,9 @@ export function FloorPlanHome({
   // Extra seats per table (for walk-up guests before order exists)
   const [extraSeats, setExtraSeats] = useState<Map<string, number>>(new Map())
 
+  // Cache for split order data (avoids redundant fetches when switching between splits)
+  const splitCacheRef = useRef<Map<string, any>>(new Map())
+
   // FIX: Ref to always access latest tables data (avoids stale closure issues)
   const tablesRef = useRef(tables)
   tablesRef.current = tables
@@ -675,8 +705,17 @@ export function FloorPlanHome({
   }, [quickBar, menuItemColors])
 
   // Load data on mount — skip loadCategories if parent owns menu data (prop defined, even if empty while loading)
+  // Skip loadFloorPlanData if parent provided initialSnapshot from bootstrap
   useEffect(() => {
-    loadFloorPlanData() // snapshot includes openOrdersCount
+    if (initialSnapshot) {
+      setTables(initialSnapshot.tables || [])
+      setSections(initialSnapshot.sections || [])
+      setElements(initialSnapshot.elements || [])
+      setOpenOrdersCount(initialSnapshot.openOrdersCount ?? 0)
+      setLoading(false)
+    } else {
+      loadFloorPlanData() // snapshot includes openOrdersCount
+    }
     if (initialCategories === undefined) {
       loadCategories()
     }
@@ -730,39 +769,67 @@ export function FloorPlanHome({
     }
 
     const unsubs = [
-      // Floor plan layout changes from another terminal
+      // Floor plan layout changes from another terminal (structure change — full reload)
       subscribe('floor-plan:updated', () => {
-        logger.log('[FloorPlanHome] Received floor-plan:updated event, refreshing...')
+        logger.log('[FloorPlanHome] floor-plan:updated — full reload (structure change)')
         refreshAll()
       }),
       // Open orders list changed (create/send/pay/void)
-      subscribe('orders:list-changed', () => {
-        logger.log('[FloorPlanHome] Received orders:list-changed event, refreshing...')
-        refreshAll()
+      subscribe('orders:list-changed', (data) => {
+        const { trigger, tableId } = data || {}
+        logger.log(`[FloorPlanHome] orders:list-changed trigger=${trigger} tableId=${tableId}`)
+        if ((trigger === 'paid' || trigger === 'voided') && tableId) {
+          // Delta: remove order from table locally — zero network
+          removeTableOrder(tableId)
+        } else {
+          // created/transferred/reopened or no tableId — full reload
+          refreshAll()
+        }
       }),
       // New order created — table status changes
       subscribe('order:created', () => {
-        logger.log('[FloorPlanHome] Received order:created event, refreshing...')
+        logger.log('[FloorPlanHome] order:created — full reload')
         refreshAll()
       }),
       // Order updated (items added, metadata changed)
       subscribe('order:updated', () => {
-        logger.log('[FloorPlanHome] Received order:updated event, refreshing...')
+        logger.log('[FloorPlanHome] order:updated — full reload')
+        refreshAll()
+      }),
+      // Order totals changed — delta patch the table's displayed total
+      subscribe('order:totals-updated', (data) => {
+        const { orderId, totals } = data || {}
+        if (orderId && totals) {
+          // Delta: find the table with this order and patch the total
+          const currentTables = tablesRef.current
+          const table = currentTables.find(t => t.currentOrder?.id === orderId)
+          if (table) {
+            logger.log(`[FloorPlanHome] order:totals-updated — delta patch table ${table.id}`)
+            patchTableOrder(table.id, { total: totals.total })
+            return
+          }
+        }
+        // Fallback: full reload
         refreshAll()
       }),
       // Explicit table status change
-      subscribe('table:status-changed', () => {
-        logger.log('[FloorPlanHome] Received table:status-changed event, refreshing...')
-        loadFloorPlanData(false)
+      subscribe('table:status-changed', (data) => {
+        const { tableId, newStatus } = data || {}
+        if (tableId && newStatus) {
+          logger.log(`[FloorPlanHome] table:status-changed — delta patch ${tableId}`)
+          updateSingleTableStatus(tableId, newStatus)
+        } else {
+          refreshAll()
+        }
       }),
       // Payment processed — table goes back to available
       subscribe('payment:processed', () => {
-        logger.log('[FloorPlanHome] Received payment:processed event, refreshing...')
+        logger.log('[FloorPlanHome] payment:processed — full reload')
         refreshAll()
       }),
       // Entertainment session update — status glow changes
       subscribe('entertainment:session-update', () => {
-        logger.log('[FloorPlanHome] Received entertainment:session-update event, refreshing...')
+        logger.log('[FloorPlanHome] entertainment:session-update — full reload')
         loadFloorPlanData(false)
       }),
     ]
@@ -1167,13 +1234,21 @@ export function FloorPlanHome({
     setShowOrderPanel(true)
     setActiveOrderId(splitOrderId)
 
+    // Check cache first
+    const cached = splitCacheRef.current.get(splitOrderId)
+    if (cached) {
+      const store = useOrderStore.getState()
+      store.loadOrder(cached)
+      setActiveOrderNumber(String(cached.orderNumber))
+      return
+    }
+
     try {
       const res = await fetch(`/api/orders/${splitOrderId}`)
       if (res.ok) {
         const data = await res.json()
         if (data) {
-          const store = useOrderStore.getState()
-          store.loadOrder({
+          const orderData = {
             id: data.id,
             orderNumber: data.orderNumber,
             orderType: data.orderType || 'dine_in',
@@ -1188,7 +1263,11 @@ export function FloorPlanHome({
             notes: data.notes,
             reopenedAt: data.reopenedAt,
             reopenReason: data.reopenReason,
-          })
+          }
+          // Cache it
+          splitCacheRef.current.set(splitOrderId, orderData)
+          const store = useOrderStore.getState()
+          store.loadOrder(orderData)
           setActiveOrderNumber(String(data.orderNumber))
         }
       }
@@ -1204,6 +1283,7 @@ export function FloorPlanHome({
       const res = await fetch(`/api/orders/${activeOrderId}/split-tickets`, { method: 'DELETE' })
       if (res.ok) {
         toast.success('Splits merged back')
+        splitCacheRef.current.clear()
         setShowSplitOverview(false)
         setActiveOrderId(null)
         setActiveTableId(null)
@@ -3429,13 +3509,15 @@ export function FloorPlanHome({
       )}
 
       {/* Room Reorder Modal */}
-      <RoomReorderModal
-        isOpen={showRoomReorderModal}
-        onClose={() => setShowRoomReorderModal(false)}
-        rooms={sections.map(s => ({ id: s.id, name: s.name, color: s.color }))}
-        currentOrder={preferredRoomOrder}
-        onSave={handleSaveRoomOrder}
-      />
+      <Suspense fallback={null}>
+        <RoomReorderModal
+          isOpen={showRoomReorderModal}
+          onClose={() => setShowRoomReorderModal(false)}
+          rooms={sections.map(s => ({ id: s.id, name: s.name, color: s.color }))}
+          currentOrder={preferredRoomOrder}
+          onSave={handleSaveRoomOrder}
+        />
+      </Suspense>
 
       {/* Resend to Kitchen Modal */}
       {resendModal && (
@@ -3561,57 +3643,59 @@ export function FloorPlanHome({
 
       {/* Comp/Void Modal */}
       {compVoidItem && activeOrderId && employeeId && (
-        <CompVoidModal
-          isOpen={true}
-          onClose={() => setCompVoidItem(null)}
-          orderId={activeOrderId}
-          item={{
-            id: compVoidItem.id,
-            name: compVoidItem.name,
-            price: compVoidItem.price,
-            quantity: compVoidItem.quantity,
-            modifiers: compVoidItem.modifiers,
-            status: compVoidItem.status,
-          }}
-          employeeId={employeeId}
-          locationId={locationId}
-          onComplete={async (result) => {
-            const voidedItemId = compVoidItem?.id
-            setCompVoidItem(null)
+        <Suspense fallback={null}>
+          <CompVoidModal
+            isOpen={true}
+            onClose={() => setCompVoidItem(null)}
+            orderId={activeOrderId}
+            item={{
+              id: compVoidItem.id,
+              name: compVoidItem.name,
+              price: compVoidItem.price,
+              quantity: compVoidItem.quantity,
+              modifiers: compVoidItem.modifiers,
+              status: compVoidItem.status,
+            }}
+            employeeId={employeeId}
+            locationId={locationId}
+            onComplete={async (result) => {
+              const voidedItemId = compVoidItem?.id
+              setCompVoidItem(null)
 
-            // If all items were voided/comped and order was auto-closed, clear it
-            if (result.orderAutoClosed) {
-              useOrderStore.getState().clearOrder()
-              setActiveOrderId(null)
-              toast.success('Order cancelled — all items voided')
-              return
-            }
-
-            // Immediately update the voided/comped item status in the store
-            // This ensures totals recalculate without waiting for API refresh
-            if (voidedItemId) {
-              useOrderStore.getState().updateItem(voidedItemId, {
-                status: result.action === 'restore' ? 'active' as const : result.action as 'voided' | 'comped',
-              })
-            }
-
-            // Also refresh from server for full data consistency
-            if (activeOrderId) {
-              try {
-                const response = await fetch(`/api/orders/${activeOrderId}`)
-                if (response.ok) {
-                  const orderData = await response.json()
-                  // Reload full order via store.loadOrder — one path, no duplication
-                  const store = useOrderStore.getState()
-                  store.loadOrder(orderData)
-                }
-              } catch (error) {
-                console.error('Failed to refresh order:', error)
+              // If all items were voided/comped and order was auto-closed, clear it
+              if (result.orderAutoClosed) {
+                useOrderStore.getState().clearOrder()
+                setActiveOrderId(null)
+                toast.success('Order cancelled — all items voided')
+                return
               }
-            }
-            toast.success('Item comped/voided successfully')
-          }}
-        />
+
+              // Immediately update the voided/comped item status in the store
+              // This ensures totals recalculate without waiting for API refresh
+              if (voidedItemId) {
+                useOrderStore.getState().updateItem(voidedItemId, {
+                  status: result.action === 'restore' ? 'active' as const : result.action as 'voided' | 'comped',
+                })
+              }
+
+              // Also refresh from server for full data consistency
+              if (activeOrderId) {
+                try {
+                  const response = await fetch(`/api/orders/${activeOrderId}`)
+                  if (response.ok) {
+                    const orderData = await response.json()
+                    // Reload full order via store.loadOrder — one path, no duplication
+                    const store = useOrderStore.getState()
+                    store.loadOrder(orderData)
+                  }
+                } catch (error) {
+                  console.error('Failed to refresh order:', error)
+                }
+              }
+              toast.success('Item comped/voided successfully')
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Split Tickets Overview — shown when tapping a table with split orders */}
@@ -3619,77 +3703,66 @@ export function FloorPlanHome({
         const activeTable = tables.find(t => t.id === activeTableId)
         if (!activeTable?.currentOrder?.splitOrders) return null
         return (
-          <SplitTicketsOverview
-            parentOrderId={activeOrderId}
-            orderNumber={activeTable.currentOrder.orderNumber}
-            tableName={activeTable.name || ''}
-            splitOrders={activeTable.currentOrder.splitOrders}
-            onSelectSplit={handleSelectSplit}
-            onEditSplits={() => {
-              setShowSplitOverview(false)
-              setShowSplitTicketManager(true)
-            }}
-            onMergeBack={handleMergeBack}
-            onTransferItems={() => {
-              setShowSplitOverview(false)
-              toast.info('Item transfer coming soon')
-            }}
-            onTransferTable={handleTransferTable}
-            onClose={() => {
-              setShowSplitOverview(false)
-              setActiveTableId(null)
-              setActiveOrderId(null)
-            }}
-          />
+          <Suspense fallback={null}>
+            <SplitTicketsOverview
+              parentOrderId={activeOrderId}
+              orderNumber={activeTable.currentOrder.orderNumber}
+              tableName={activeTable.name || ''}
+              splitOrders={activeTable.currentOrder.splitOrders}
+              onSelectSplit={handleSelectSplit}
+              onEditSplits={() => {
+                setShowSplitOverview(false)
+                setShowSplitTicketManager(true)
+              }}
+              onMergeBack={handleMergeBack}
+              onTransferItems={() => {
+                setShowSplitOverview(false)
+                toast.info('Item transfer coming soon')
+              }}
+              onTransferTable={handleTransferTable}
+              onClose={() => {
+                setShowSplitOverview(false)
+                setActiveTableId(null)
+                setActiveOrderId(null)
+              }}
+            />
+          </Suspense>
         )
       })()}
 
       {/* Split Check Screen */}
       {showSplitTicketManager && activeOrderId && (
-        <SplitCheckScreen
-          orderId={activeOrderId}
-          items={inlineOrderItems.map(item => ({
-            id: item.id,
-            seatNumber: item.seatNumber,
-            name: item.name,
-            price: item.price,
-            quantity: item.quantity,
-            categoryType: item.categoryType,
-            sentToKitchen: item.sentToKitchen,
-            isPaid: item.status === 'comped' || item.status === 'voided',
-          }))}
-          onClose={() => {
-            setShowSplitTicketManager(false)
-            setSplitItemId(null)
-          }}
-          onSplitApplied={async () => {
-            if (activeOrderId) {
-              try {
-                const response = await fetch(`/api/orders/${activeOrderId}`)
-                if (response.ok) {
-                  const orderData = await response.json()
-                  const store = useOrderStore.getState()
-                  store.loadOrder(orderData)
-                }
-              } catch (error) {
-                console.error('Failed to refresh order:', error)
-              }
-            }
-            setShowSplitTicketManager(false)
-            setSplitItemId(null)
-          }}
-        />
+        <Suspense fallback={null}>
+          <SplitCheckScreen
+            orderId={activeOrderId}
+            items={splitCheckItems}
+            onClose={() => {
+              setShowSplitTicketManager(false)
+              setSplitItemId(null)
+            }}
+            onSplitApplied={() => {
+              // Split POST already updated server state, socket event will refresh floor plan
+              splitCacheRef.current.clear()
+              setShowSplitTicketManager(false)
+              setSplitItemId(null)
+              // Refresh floor plan data to show split badges
+              loadFloorPlanData(false)
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Shared Ownership Modal */}
       {activeOrderId && (
-        <SharedOwnershipModal
-          orderId={activeOrderId}
-          locationId={locationId}
-          employeeId={employeeId}
-          isOpen={showShareOwnership}
-          onClose={() => setShowShareOwnership(false)}
-        />
+        <Suspense fallback={null}>
+          <SharedOwnershipModal
+            orderId={activeOrderId}
+            locationId={locationId}
+            employeeId={employeeId}
+            isOpen={showShareOwnership}
+            onClose={() => setShowShareOwnership(false)}
+          />
+        </Suspense>
       )}
     </div>
   )

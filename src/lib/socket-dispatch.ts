@@ -633,6 +633,7 @@ export async function dispatchOpenOrdersChanged(
   payload: {
     trigger: 'created' | 'paid' | 'voided' | 'transferred' | 'reopened'
     orderId?: string
+    tableId?: string
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {

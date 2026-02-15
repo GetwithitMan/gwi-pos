@@ -394,7 +394,7 @@ export const POST = withVenue(async function POST(
     }, { async: true }).catch(console.error)
 
     // Dispatch open orders + floor plan update for cross-terminal table status
-    dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'created', orderId: result.updatedOrder.id }, { async: true }).catch(() => {})
+    dispatchOpenOrdersChanged(result.updatedOrder.locationId, { trigger: 'created', orderId: result.updatedOrder.id, tableId: result.updatedOrder.tableId || undefined }, { async: true }).catch(() => {})
     if (result.updatedOrder.tableId) {
       dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(() => {})
     }

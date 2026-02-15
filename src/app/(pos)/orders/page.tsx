@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   DndContext,
@@ -30,22 +30,22 @@ import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
 import { debugPizzaPricing } from '@/lib/pizza-helpers'
 import { buildPizzaModifiers, getPizzaBasePrice } from '@/lib/pizza-order-utils'
-import { PaymentModal } from '@/components/payment/PaymentModal'
-import { DiscountModal } from '@/components/orders/DiscountModal'
-import { CompVoidModal } from '@/components/orders/CompVoidModal'
-import { ItemTransferModal } from '@/components/orders/ItemTransferModal'
-import { SplitCheckScreen } from '@/components/orders/SplitCheckScreen'
+const PaymentModal = lazy(() => import('@/components/payment/PaymentModal').then(m => ({ default: m.PaymentModal })))
+const DiscountModal = lazy(() => import('@/components/orders/DiscountModal').then(m => ({ default: m.DiscountModal })))
+const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
+const ItemTransferModal = lazy(() => import('@/components/orders/ItemTransferModal').then(m => ({ default: m.ItemTransferModal })))
+const SplitCheckScreen = lazy(() => import('@/components/orders/SplitCheckScreen').then(m => ({ default: m.SplitCheckScreen })))
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
 import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
-import { ShiftCloseoutModal } from '@/components/shifts/ShiftCloseoutModal'
-import { ReceiptModal } from '@/components/receipt'
+const ShiftCloseoutModal = lazy(() => import('@/components/shifts/ShiftCloseoutModal').then(m => ({ default: m.ShiftCloseoutModal })))
+const ReceiptModal = lazy(() => import('@/components/receipt/ReceiptModal').then(m => ({ default: m.ReceiptModal })))
 import type { OrderTypeConfig, OrderCustomFields, WorkflowRules } from '@/types/order-types'
 import type { IngredientModificationType } from '@/types/orders'
-import { ModifierModal } from '@/components/modifiers/ModifierModal'
-import { PizzaBuilderModal } from '@/components/pizza/PizzaBuilderModal'
-import { EntertainmentSessionStart } from '@/components/entertainment/EntertainmentSessionStart'
+const ModifierModal = lazy(() => import('@/components/modifiers/ModifierModal').then(m => ({ default: m.ModifierModal })))
+const PizzaBuilderModal = lazy(() => import('@/components/pizza/PizzaBuilderModal').then(m => ({ default: m.PizzaBuilderModal })))
+const EntertainmentSessionStart = lazy(() => import('@/components/entertainment/EntertainmentSessionStart').then(m => ({ default: m.EntertainmentSessionStart })))
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import { FloorPlanHome } from '@/components/floor-plan'
 import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
@@ -58,8 +58,8 @@ import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { toast } from '@/stores/toast-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
-import TipAdjustmentOverlay from '@/components/tips/TipAdjustmentOverlay'
-import { CardFirstTabFlow } from '@/components/tabs/CardFirstTabFlow'
+const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentOverlay'))
+const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow').then(m => ({ default: m.CardFirstTabFlow })))
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
 export default function OrdersPage() {
@@ -95,6 +95,14 @@ export default function OrdersPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+
+  // Bootstrap snapshot data — passed to FloorPlanHome to avoid duplicate /api/floorplan/snapshot fetch
+  const [initialSnapshot, setInitialSnapshot] = useState<{
+    tables: any[]
+    sections: any[]
+    elements: any[]
+    openOrdersCount: number
+  } | null>(null)
 
   // Floor Plan integration (T019)
   // viewMode: 'floor-plan' = default HOME view, 'bartender' = speed-optimized bar view
@@ -235,6 +243,9 @@ export default function OrdersPage() {
 
   // Background items-persist promise (started when PaymentModal opens, awaited before /pay)
   const orderReadyPromiseRef = useRef<Promise<string | null> | null>(null)
+
+  // Cache for split order data (avoids redundant fetches when switching between splits)
+  const splitCacheRef = useRef<Map<string, any>>(new Map())
 
   // Receipt modal state
   const [showReceiptModal, setShowReceiptModal] = useState(false)
@@ -435,6 +446,21 @@ export default function OrdersPage() {
     return orderPanelItems.filter(item => item.seatNumber === filterSeatNumber)
   }, [orderPanelItems, filterSeatNumber])
 
+  // Memoize split check items to avoid re-creating array every render
+  const splitCheckItems = useMemo(() => {
+    if (!showSplitTicketManager || !currentOrder) return []
+    return currentOrder.items.map(item => ({
+      id: item.id,
+      seatNumber: item.seatNumber,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      categoryType: item.categoryType,
+      sentToKitchen: item.sentToKitchen,
+      isPaid: item.status === 'comped' || item.status === 'voided',
+    }))
+  }, [showSplitTicketManager, currentOrder])
+
   // Quick Pick: selection state for fast quantity setting
   const {
     selectedItemId: quickPickSelectedId,
@@ -536,14 +562,77 @@ export default function OrdersPage() {
     }
   }, [hydrated, isAuthenticated, router])
 
+  // Ref for tracking selected category (used by bootstrap + loadMenu)
+  const selectedCategoryRef = useRef(selectedCategory)
+  selectedCategoryRef.current = selectedCategory
+
+  // Session bootstrap — single fetch replaces menu + shift + orderTypes + snapshot
+  const bootstrapLoadedRef = useRef(false)
+  useEffect(() => {
+    if (!employee?.location?.id || !employee?.id || bootstrapLoadedRef.current) return
+    bootstrapLoadedRef.current = true
+
+    fetch(`/api/session/bootstrap?locationId=${employee.location.id}&employeeId=${employee.id}`)
+      .then(res => res.json())
+      .then(({ data }) => {
+        if (!data) return
+
+        // Menu data
+        if (data.menu) {
+          setCategories(data.menu.categories)
+          setMenuItems([...data.menu.items])
+          if (data.menu.categories.length > 0 && !selectedCategoryRef.current) {
+            setSelectedCategory(data.menu.categories[0].id)
+          }
+          setIsLoading(false)
+        }
+
+        // Active shift
+        if (data.shift) {
+          setCurrentShift({
+            ...data.shift,
+            employee: {
+              ...data.shift.employee,
+              roleId: employee?.role?.id,
+            },
+            locationId: employee?.location?.id,
+          })
+          setShiftChecked(true)
+        } else if (data.shift === null) {
+          // No open shift — prompt to start one
+          setShowShiftStartModal(true)
+          setShiftChecked(true)
+        }
+
+        // Order types
+        if (data.orderTypes) {
+          setOrderTypes(data.orderTypes)
+        }
+
+        // Floor plan snapshot for FloorPlanHome
+        if (data.snapshot) {
+          setInitialSnapshot(data.snapshot)
+          setOpenOrdersCount(data.snapshot.openOrdersCount ?? 0)
+        }
+      })
+      .catch(err => {
+        console.error('Bootstrap failed, falling back to individual fetches:', err)
+        // Bootstrap set the flag synchronously, so individual mount effects already skipped.
+        // Manually trigger the fallback fetches.
+        bootstrapLoadedRef.current = false
+        loadMenu()
+        loadOrderTypes()
+        checkOpenShift()
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.location?.id, employee?.id])
+
   // Load menu with cache-busting
   // NOTE: selectedCategory intentionally NOT in deps — loadMenu fetches ALL items.
   // Category filtering is done client-side (line ~2437). Including selectedCategory
   // here caused a circular re-fetch on every category click (loadMenu recreated →
   // useEffect re-ran → full /api/menu re-fetch). Use selectedCategoryRef for the
-  // initial-selection guard.
-  const selectedCategoryRef = useRef(selectedCategory)
-  selectedCategoryRef.current = selectedCategory
+  // initial-selection guard (declared above, near bootstrap effect).
 
   const loadMenu = useCallback(async () => {
     if (!employee?.location?.id) return
@@ -582,8 +671,11 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (employee?.location?.id) {
-      loadMenu()
-      loadOrderTypes()
+      // Skip menu + orderTypes if bootstrap already loaded them
+      if (!bootstrapLoadedRef.current) {
+        loadMenu()
+        loadOrderTypes()
+      }
       loadActiveSessions()
     }
   }, [employee?.location?.id, loadMenu, loadOrderTypes])
@@ -1192,6 +1284,16 @@ export default function OrdersPage() {
 
   // Handle navigating to a different split order
   const handleNavigateToSplit = async (splitOrderId: string) => {
+    // Check cache first
+    const cached = splitCacheRef.current.get(splitOrderId)
+    if (cached) {
+      loadOrder(cached)
+      setSavedOrderId(splitOrderId)
+      setOrderSent(cached.status === 'sent' || cached.status === 'in_progress')
+      setShowTabsPanel(false)
+      return
+    }
+
     try {
       const response = await fetch(`/api/orders/${splitOrderId}`)
       if (!response.ok) {
@@ -1199,8 +1301,7 @@ export default function OrdersPage() {
       }
       const orderData = await response.json()
 
-      // Load the split order into the current order state
-      loadOrder({
+      const mapped = {
         id: orderData.id,
         orderNumber: orderData.orderNumber,
         orderType: orderData.orderType,
@@ -1215,7 +1316,13 @@ export default function OrdersPage() {
         discountTotal: Number(orderData.discountTotal) || 0,
         taxTotal: Number(orderData.taxTotal) || 0,
         total: Number(orderData.total) || 0,
-      })
+      }
+
+      // Cache it
+      splitCacheRef.current.set(splitOrderId, mapped)
+
+      // Load the split order into the current order state
+      loadOrder(mapped)
 
       // Update saved order ID
       setSavedOrderId(splitOrderId)
@@ -1254,31 +1361,25 @@ export default function OrdersPage() {
   }
 
   // Handle opening split ticket manager (to create separate tickets)
-  const handleOpenSplitTicket = async () => {
+  const handleOpenSplitTicket = () => {
     if (!currentOrder?.items.length) return
 
-    // If order hasn't been saved yet, save it first
-    let orderId = savedOrderId
-    if (!orderId) {
-      setIsSendingOrder(true)
-      try {
-        orderId = await ensureOrderInDB(employee?.id)
-        if (orderId) {
-          setSavedOrderId(orderId)
-        }
-      } finally {
-        setIsSendingOrder(false)
-      }
-    }
+    // Show split screen immediately with in-memory items
+    setShowSplitTicketManager(true)
 
-    if (orderId) {
-      setShowSplitTicketManager(true)
+    // If order not saved yet, persist in background (split Save will use savedOrderId once ready)
+    if (!savedOrderId) {
+      orderReadyPromiseRef.current = ensureOrderInDB(employee?.id).then(id => {
+        if (id) setSavedOrderId(id)
+        return id
+      })
     }
   }
 
   // Handle split ticket completion
   const handleSplitTicketComplete = () => {
     // Clear the current order and reload
+    splitCacheRef.current.clear()
     clearOrder()
     setSavedOrderId(null)
     setOrderSent(false)
@@ -2603,6 +2704,7 @@ export default function OrdersPage() {
             refreshTrigger={floorPlanRefreshTrigger}
             initialCategories={categories}
             initialMenuItems={menuItems}
+            initialSnapshot={initialSnapshot}
           >
             {sharedOrderPanel}
           </FloorPlanHome>
@@ -2740,37 +2842,42 @@ export default function OrdersPage() {
             </div>
           </>
         {showModifierModal && selectedItem && (
-          <ModifierModal
-            item={selectedItem}
-            modifierGroups={itemModifierGroups}
-            loading={loadingModifiers}
-            editingItem={editingOrderItem}
-            dualPricing={dualPricing}
-            initialNotes={editingOrderItem?.specialNotes}
-            onConfirm={editingOrderItem && !inlineModifierCallbackRef.current ? handleUpdateItemWithModifiers : handleAddItemWithModifiers}
-            onCancel={() => {
-              setShowModifierModal(false)
-              setSelectedItem(null)
-              setItemModifierGroups([])
-              setEditingOrderItem(null)
-              inlineModifierCallbackRef.current = null
-            }}
-          />
+          <Suspense fallback={null}>
+            <ModifierModal
+              item={selectedItem}
+              modifierGroups={itemModifierGroups}
+              loading={loadingModifiers}
+              editingItem={editingOrderItem}
+              dualPricing={dualPricing}
+              initialNotes={editingOrderItem?.specialNotes}
+              onConfirm={editingOrderItem && !inlineModifierCallbackRef.current ? handleUpdateItemWithModifiers : handleAddItemWithModifiers}
+              onCancel={() => {
+                setShowModifierModal(false)
+                setSelectedItem(null)
+                setItemModifierGroups([])
+                setEditingOrderItem(null)
+                inlineModifierCallbackRef.current = null
+              }}
+            />
+          </Suspense>
         )}
         {showPizzaModal && selectedPizzaItem && (
-          <PizzaBuilderModal
-            item={selectedPizzaItem}
-            editingItem={editingPizzaItem}
-            onConfirm={handleAddPizzaToOrder}
-            onCancel={() => {
-              setShowPizzaModal(false)
-              setSelectedPizzaItem(null)
-              setEditingPizzaItem(null)
-              inlinePizzaCallbackRef.current = null
-            }}
-          />
+          <Suspense fallback={null}>
+            <PizzaBuilderModal
+              item={selectedPizzaItem}
+              editingItem={editingPizzaItem}
+              onConfirm={handleAddPizzaToOrder}
+              onCancel={() => {
+                setShowPizzaModal(false)
+                setSelectedPizzaItem(null)
+                setEditingPizzaItem(null)
+                inlinePizzaCallbackRef.current = null
+              }}
+            />
+          </Suspense>
         )}
         {showEntertainmentStart && entertainmentItem && (
+          <Suspense fallback={null}>
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <EntertainmentSessionStart
               itemName={entertainmentItem.name}
@@ -2797,6 +2904,7 @@ export default function OrdersPage() {
               }}
             />
           </div>
+          </Suspense>
         )}
         {showTimedRentalModal && selectedTimedItem && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -2893,78 +3001,85 @@ export default function OrdersPage() {
           </div>
         )}
         {showPaymentModal && orderToPayId && (
-          <PaymentModal
-            isOpen={showPaymentModal}
-            initialMethod={initialPayMethod}
-            onClose={() => {
-              setShowPaymentModal(false)
-              setOrderToPayId(null)
-              setInitialPayMethod(undefined)
-            }}
-            orderId={orderToPayId}
-            orderTotal={currentOrder?.total ?? 0}
-            subtotal={currentOrder?.subtotal}
-            remainingBalance={currentOrder?.total ?? 0}
-            tabCards={paymentTabCards}
-            dualPricing={dualPricing}
-            paymentSettings={paymentSettings}
-            priceRounding={priceRounding}
-            onPaymentComplete={(receiptData) => {
-              const paidId = orderToPayId
-              setShowPaymentModal(false)
-              setOrderToPayId(null)
-              setInitialPayMethod(undefined)
-              // Show receipt modal only when receiptData is provided
-              // (fire-and-forget cash payments pass no data → skip receipt)
-              if (paidId && receiptData) {
-                setPreloadedReceiptData(receiptData)
-                setReceiptOrderId(paidId)
-                setShowReceiptModal(true)
-              }
-              // Clear the order panel after payment
-              clearOrder()
-              setSavedOrderId(null)
-              setOrderSent(false)
-              setSelectedOrderType(null)
-              setOrderCustomFields({})
-              setTabsRefreshTrigger(prev => prev + 1)
-              setFloorPlanRefreshTrigger(prev => prev + 1)
-            }}
-            employeeId={employee?.id}
-            terminalId="terminal-1"
-            locationId={employee?.location?.id}
-            waitForOrderReady={async () => {
-              if (orderReadyPromiseRef.current) {
-                await orderReadyPromiseRef.current
-                orderReadyPromiseRef.current = null
-              }
-            }}
-          />
+          <Suspense fallback={null}>
+            <PaymentModal
+              isOpen={showPaymentModal}
+              initialMethod={initialPayMethod}
+              onClose={() => {
+                setShowPaymentModal(false)
+                setOrderToPayId(null)
+                setInitialPayMethod(undefined)
+              }}
+              orderId={orderToPayId}
+              orderTotal={currentOrder?.total ?? 0}
+              subtotal={currentOrder?.subtotal}
+              remainingBalance={currentOrder?.total ?? 0}
+              tabCards={paymentTabCards}
+              dualPricing={dualPricing}
+              paymentSettings={paymentSettings}
+              priceRounding={priceRounding}
+              onPaymentComplete={(receiptData) => {
+                const paidId = orderToPayId
+                setShowPaymentModal(false)
+                setOrderToPayId(null)
+                setInitialPayMethod(undefined)
+                // Show receipt modal only when receiptData is provided
+                // (fire-and-forget cash payments pass no data → skip receipt)
+                if (paidId && receiptData) {
+                  setPreloadedReceiptData(receiptData)
+                  setReceiptOrderId(paidId)
+                  setShowReceiptModal(true)
+                }
+                // Clear the order panel after payment
+                clearOrder()
+                setSavedOrderId(null)
+                setOrderSent(false)
+                setSelectedOrderType(null)
+                setOrderCustomFields({})
+                setTabsRefreshTrigger(prev => prev + 1)
+                setFloorPlanRefreshTrigger(prev => prev + 1)
+              }}
+              employeeId={employee?.id}
+              terminalId="terminal-1"
+              locationId={employee?.location?.id}
+              waitForOrderReady={async () => {
+                if (orderReadyPromiseRef.current) {
+                  await orderReadyPromiseRef.current
+                  orderReadyPromiseRef.current = null
+                }
+              }}
+            />
+          </Suspense>
         )}
-        <ReceiptModal
-          isOpen={showReceiptModal}
-          onClose={() => {
-            if (receiptOrderId) {
-              setPaidOrderId(receiptOrderId)
-            }
-            setShowReceiptModal(false)
-            setReceiptOrderId(null)
-            setPreloadedReceiptData(null)
-          }}
-          orderId={receiptOrderId}
-          locationId={employee.location?.id || ''}
-          receiptSettings={receiptSettings}
-          preloadedData={preloadedReceiptData}
-        />
-        <TipAdjustmentOverlay
-          isOpen={showTipAdjustment}
-          onClose={() => setShowTipAdjustment(false)}
-          locationId={employee?.location?.id}
-          employeeId={employee?.id}
-        />
+        <Suspense fallback={null}>
+          <ReceiptModal
+            isOpen={showReceiptModal}
+            onClose={() => {
+              if (receiptOrderId) {
+                setPaidOrderId(receiptOrderId)
+              }
+              setShowReceiptModal(false)
+              setReceiptOrderId(null)
+              setPreloadedReceiptData(null)
+            }}
+            orderId={receiptOrderId}
+            locationId={employee.location?.id || ''}
+            receiptSettings={receiptSettings}
+            preloadedData={preloadedReceiptData}
+          />
+        </Suspense>
+        <Suspense fallback={null}>
+          <TipAdjustmentOverlay
+            isOpen={showTipAdjustment}
+            onClose={() => setShowTipAdjustment(false)}
+            locationId={employee?.location?.id}
+            employeeId={employee?.id}
+          />
+        </Suspense>
 
         {/* Card-First Tab Flow Modal */}
         {showCardTabFlow && cardTabOrderId && employee && (
+          <Suspense fallback={null}>
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
             <div className="rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <CardFirstTabFlow
@@ -3038,37 +3153,42 @@ export default function OrdersPage() {
               />
             </div>
           </div>
+          </Suspense>
         )}
 
         {/* Tab Name Prompt Modal */}
         {/* Discount Modal */}
         {showDiscountModal && currentOrder && savedOrderId && employee && (
-          <DiscountModal
-            isOpen={showDiscountModal}
-            onClose={() => setShowDiscountModal(false)}
-            orderId={savedOrderId}
-            orderSubtotal={currentOrder.subtotal || 0}
-            locationId={employee.location?.id || ''}
-            employeeId={employee.id}
-            appliedDiscounts={appliedDiscounts}
-            onDiscountApplied={handleDiscountApplied}
-          />
+          <Suspense fallback={null}>
+            <DiscountModal
+              isOpen={showDiscountModal}
+              onClose={() => setShowDiscountModal(false)}
+              orderId={savedOrderId}
+              orderSubtotal={currentOrder.subtotal || 0}
+              locationId={employee.location?.id || ''}
+              employeeId={employee.id}
+              appliedDiscounts={appliedDiscounts}
+              onDiscountApplied={handleDiscountApplied}
+            />
+          </Suspense>
         )}
 
         {/* Comp/Void Modal */}
         {showCompVoidModal && (savedOrderId || orderToPayId) && compVoidItem && employee && (
-          <CompVoidModal
-            isOpen={showCompVoidModal}
-            onClose={() => {
-              setShowCompVoidModal(false)
-              setCompVoidItem(null)
-            }}
-            orderId={(savedOrderId || orderToPayId)!}
-            item={compVoidItem as OrderItem}
-            employeeId={employee.id}
-            locationId={employee.location?.id || ''}
-            onComplete={handleCompVoidComplete}
-          />
+          <Suspense fallback={null}>
+            <CompVoidModal
+              isOpen={showCompVoidModal}
+              onClose={() => {
+                setShowCompVoidModal(false)
+                setCompVoidItem(null)
+              }}
+              orderId={(savedOrderId || orderToPayId)!}
+              item={compVoidItem as OrderItem}
+              employeeId={employee.id}
+              locationId={employee.location?.id || ''}
+              onComplete={handleCompVoidComplete}
+            />
+          </Suspense>
         )}
 
         {/* Resend to Kitchen Modal */}
@@ -3118,56 +3238,51 @@ export default function OrdersPage() {
 
         {/* Item Transfer Modal */}
         {showItemTransferModal && savedOrderId && employee && (
-          <ItemTransferModal
-            isOpen={showItemTransferModal}
-            onClose={() => setShowItemTransferModal(false)}
-            currentOrderId={savedOrderId}
-            items={currentOrder?.items.map((item) => ({
-              id: item.id,
-              tempId: item.id,
-              name: item.name,
-              price: item.price,
-              quantity: item.quantity,
-              modifiers: item.modifiers.map((mod) => ({
-                name: mod.name,
-                price: mod.price,
-              })),
-              sent: item.sentToKitchen,
-            })) || []}
-            locationId={employee.location?.id || ''}
-            employeeId={employee.id}
-            onTransferComplete={async (transferredItemIds) => {
-              try {
-                const response = await fetch(`/api/orders/${savedOrderId}`)
-                if (response.ok) {
-                  const orderData = await response.json()
-                  // Pass raw API data — store.loadOrder handles all mapping
-                  loadOrder(orderData)
+          <Suspense fallback={null}>
+            <ItemTransferModal
+              isOpen={showItemTransferModal}
+              onClose={() => setShowItemTransferModal(false)}
+              currentOrderId={savedOrderId}
+              items={currentOrder?.items.map((item) => ({
+                id: item.id,
+                tempId: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                modifiers: item.modifiers.map((mod) => ({
+                  name: mod.name,
+                  price: mod.price,
+                })),
+                sent: item.sentToKitchen,
+              })) || []}
+              locationId={employee.location?.id || ''}
+              employeeId={employee.id}
+              onTransferComplete={async (transferredItemIds) => {
+                try {
+                  const response = await fetch(`/api/orders/${savedOrderId}`)
+                  if (response.ok) {
+                    const orderData = await response.json()
+                    // Pass raw API data — store.loadOrder handles all mapping
+                    loadOrder(orderData)
+                  }
+                } catch (error) {
+                  console.error('Failed to reload order:', error)
                 }
-              } catch (error) {
-                console.error('Failed to reload order:', error)
-              }
-            }}
-          />
+              }}
+            />
+          </Suspense>
         )}
 
         {/* Split Check Screen */}
-        {showSplitTicketManager && savedOrderId && currentOrder && (
-          <SplitCheckScreen
-            orderId={savedOrderId}
-            items={currentOrder.items.map(item => ({
-              id: item.id,
-              seatNumber: item.seatNumber,
-              name: item.name,
-              price: item.price,
-              quantity: item.quantity,
-              categoryType: item.categoryType,
-              sentToKitchen: item.sentToKitchen,
-              isPaid: item.status === 'comped' || item.status === 'voided',
-            }))}
-            onClose={() => setShowSplitTicketManager(false)}
-            onSplitApplied={handleSplitTicketComplete}
-          />
+        {showSplitTicketManager && currentOrder && (
+          <Suspense fallback={null}>
+            <SplitCheckScreen
+              orderId={savedOrderId || ''}
+              items={splitCheckItems}
+              onClose={() => setShowSplitTicketManager(false)}
+              onSplitApplied={handleSplitTicketComplete}
+            />
+          </Suspense>
         )}
 
         {/* Kitchen Note Editor */}
@@ -3337,16 +3452,18 @@ export default function OrdersPage() {
 
         {/* Shift Closeout Modal */}
         {currentShift && (
-          <ShiftCloseoutModal
-            isOpen={showShiftCloseoutModal}
-            onClose={() => setShowShiftCloseoutModal(false)}
-            shift={currentShift}
-            onCloseoutComplete={() => {
-              setCurrentShift(null)
-            }}
-            permissions={permissionsArray}
-            cashHandlingMode={useAuthStore.getState().workingRole?.cashHandlingMode || employee?.availableRoles?.find(r => r.isPrimary)?.cashHandlingMode || 'drawer'}
-          />
+          <Suspense fallback={null}>
+            <ShiftCloseoutModal
+              isOpen={showShiftCloseoutModal}
+              onClose={() => setShowShiftCloseoutModal(false)}
+              shift={currentShift}
+              onCloseoutComplete={() => {
+                setCurrentShift(null)
+              }}
+              permissions={permissionsArray}
+              cashHandlingMode={useAuthStore.getState().workingRole?.cashHandlingMode || employee?.availableRoles?.find(r => r.isPrimary)?.cashHandlingMode || 'drawer'}
+            />
+          </Suspense>
         )}
       </>
     )

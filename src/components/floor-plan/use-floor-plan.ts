@@ -194,6 +194,12 @@ interface FloorPlanState {
   addSeatToTable: (tableId: string, seat: FloorPlanSeat) => void
   updateSeatPosition: (tableId: string, seatIndex: number, relativeX: number, relativeY: number) => void
 
+  // Delta update actions (socket-driven, zero network)
+  patchTableOrder: (tableId: string, patch: { total?: number; status?: string; guestCount?: number; server?: string }) => void
+  removeTableOrder: (tableId: string) => void
+  addTableOrder: (tableId: string, order: FloorPlanTable['currentOrder']) => void
+  updateSingleTableStatus: (tableId: string, status: TableStatus) => void
+
   // Room/Section management actions
   addSection: (section: FloorPlanSection) => void
   updateSection: (sectionId: string, updates: Partial<FloorPlanSection>) => void
@@ -436,6 +442,48 @@ export const useFloorPlanStore = create<FloorPlanState>((set, get) => ({
         }
       }),
     })
+  },
+
+  // Delta update actions (socket-driven, zero network)
+  patchTableOrder: (tableId, patch) => {
+    const { tables } = get()
+    const idx = tables.findIndex(t => t.id === tableId)
+    if (idx === -1) return
+    const table = tables[idx]
+    if (!table.currentOrder) return
+    const updated = [...tables]
+    updated[idx] = {
+      ...table,
+      currentOrder: { ...table.currentOrder, ...patch },
+    }
+    set({ tables: updated })
+  },
+
+  removeTableOrder: (tableId) => {
+    const { tables } = get()
+    const idx = tables.findIndex(t => t.id === tableId)
+    if (idx === -1) return
+    const updated = [...tables]
+    updated[idx] = { ...tables[idx], currentOrder: null, status: 'available' as TableStatus }
+    set({ tables: updated })
+  },
+
+  addTableOrder: (tableId, order) => {
+    const { tables } = get()
+    const idx = tables.findIndex(t => t.id === tableId)
+    if (idx === -1) return
+    const updated = [...tables]
+    updated[idx] = { ...tables[idx], currentOrder: order, status: 'occupied' as TableStatus }
+    set({ tables: updated })
+  },
+
+  updateSingleTableStatus: (tableId, status) => {
+    const { tables } = get()
+    const idx = tables.findIndex(t => t.id === tableId)
+    if (idx === -1) return
+    const updated = [...tables]
+    updated[idx] = { ...tables[idx], status }
+    set({ tables: updated })
   },
 
   // Room/Section management actions

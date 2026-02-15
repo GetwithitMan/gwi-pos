@@ -245,6 +245,7 @@ export const POST = withVenue(async function POST(
     dispatchOpenOrdersChanged(order.locationId, {
       trigger: 'voided',
       orderId,
+      tableId: order.tableId || undefined,
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch open orders changed:', err)
     })

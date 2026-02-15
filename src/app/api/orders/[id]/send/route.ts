@@ -218,7 +218,7 @@ export const POST = withVenue(withTiming(async function POST(
     })
 
     // Dispatch open orders + floor plan update so all terminals refresh table status instantly
-    dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId: order.id }, { async: true }).catch(() => {})
+    dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
     dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
 
     return NextResponse.json({

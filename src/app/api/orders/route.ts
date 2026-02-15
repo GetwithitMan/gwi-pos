@@ -380,7 +380,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     }, { async: true }).catch(console.error)
 
     // Dispatch open orders list changed + floor plan update (fire-and-forget)
-    dispatchOpenOrdersChanged(locationId, { trigger: 'created', orderId: order.id }, { async: true }).catch(() => {})
+    dispatchOpenOrdersChanged(locationId, { trigger: 'created', orderId: order.id, tableId: tableId || undefined }, { async: true }).catch(() => {})
     if (tableId) {
       dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
     }

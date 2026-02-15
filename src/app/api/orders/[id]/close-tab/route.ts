@@ -176,7 +176,7 @@ export const POST = withVenue(async function POST(
       .catch(console.error)
 
     // Dispatch open orders changed so all terminals refresh (fire-and-forget)
-    dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId }, { async: true }).catch(() => {})
+    dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
 
     return NextResponse.json({
       data: {

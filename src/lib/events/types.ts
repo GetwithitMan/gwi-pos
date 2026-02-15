@@ -161,6 +161,9 @@ export interface EventMap {
   // Floor Plan
   'floor-plan:updated': FloorPlanUpdatedEvent
 
+  // Order Totals
+  'order:totals-updated': OrderTotalsUpdatedEvent
+
   // Open Orders (cross-terminal table status updates)
   'orders:list-changed': OrdersListChangedEvent
 
@@ -250,11 +253,26 @@ export interface FloorPlanUpdatedEvent {
   locationId: string
 }
 
+// Order Totals Events
+export interface OrderTotalsUpdatedEvent {
+  orderId: string
+  totals: {
+    subtotal: number
+    taxTotal: number
+    tipTotal: number
+    discountTotal: number
+    total: number
+    commissionTotal?: number
+  }
+  timestamp: string
+}
+
 // Open Orders Events
 export interface OrdersListChangedEvent {
   locationId: string
   trigger: string
   orderId?: string
+  tableId?: string
 }
 
 // Void Approval Events
