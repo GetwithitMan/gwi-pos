@@ -48,6 +48,7 @@ import { PizzaBuilderModal } from '@/components/pizza/PizzaBuilderModal'
 import { EntertainmentSessionStart } from '@/components/entertainment/EntertainmentSessionStart'
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import { FloorPlanHome } from '@/components/floor-plan'
+import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import { BartenderView } from '@/components/bartender'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
@@ -424,6 +425,15 @@ export default function OrdersPage() {
 
   // OrderPanel data mapping
   const orderPanelItems = useOrderPanelItems(menuItems)
+
+  // Seat filter: when a seat is selected on the floor plan, filter items to that seat
+  const selectedSeat = useFloorPlanStore(s => s.selectedSeat)
+  const clearSelectedSeat = useFloorPlanStore(s => s.clearSelectedSeat)
+  const filterSeatNumber = selectedSeat?.seatNumber ?? null
+  const filteredOrderPanelItems = useMemo(() => {
+    if (!filterSeatNumber) return orderPanelItems
+    return orderPanelItems.filter(item => item.seatNumber === filterSeatNumber)
+  }, [orderPanelItems, filterSeatNumber])
 
   // Quick Pick: selection state for fast quantity setting
   const {
@@ -2274,7 +2284,9 @@ export default function OrdersPage() {
             tableId={currentOrder?.tableId}
             locationId={employee.location.id}
             employeeId={employee.id}
-            items={orderPanelItems}
+            items={filteredOrderPanelItems}
+            filterSeatNumber={filterSeatNumber}
+            onClearSeatFilter={clearSelectedSeat}
             subtotal={pricing.subtotal}
             cashSubtotal={pricing.cashSubtotal}
             cardSubtotal={pricing.cardSubtotal}

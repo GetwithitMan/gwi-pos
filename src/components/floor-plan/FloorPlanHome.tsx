@@ -33,6 +33,7 @@ import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hook
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
 import { isTempId } from '@/lib/order-utils'
+import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
 import './styles/floor-plan.css'
 
 interface Category {
@@ -3181,7 +3182,7 @@ export function FloorPlanHome({
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                     <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500 }}>Assign to seat:</span>
                     {activeSeatNumber && (
-                      <span style={{ fontSize: '10px', color: '#c084fc' }}>
+                      <span style={{ fontSize: '10px', color: getSeatTextColor(activeSeatNumber) }}>
                         New items → Seat {activeSeatNumber}
                       </span>
                     )}
@@ -3228,9 +3229,9 @@ export function FloorPlanHome({
                             width: '32px',
                             height: '32px',
                             borderRadius: '6px',
-                            border: `1px solid ${activeSeatNumber === seatNum ? 'rgba(168, 85, 247, 0.5)' : 'rgba(255, 255, 255, 0.1)'}`,
-                            background: activeSeatNumber === seatNum ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-                            color: activeSeatNumber === seatNum ? '#c084fc' : '#94a3b8',
+                            border: `1px solid ${activeSeatNumber === seatNum ? getSeatBorderColor(seatNum) : getSeatBorderColor(seatNum)}`,
+                            background: activeSeatNumber === seatNum ? getSeatBgColor(seatNum) : 'rgba(255, 255, 255, 0.05)',
+                            color: activeSeatNumber === seatNum ? getSeatTextColor(seatNum) : getSeatTextColor(seatNum),
                             fontSize: '13px',
                             fontWeight: activeSeatNumber === seatNum ? 600 : 400,
                             cursor: 'pointer',

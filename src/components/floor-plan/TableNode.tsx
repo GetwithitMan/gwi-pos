@@ -181,28 +181,25 @@ function DraggableSeat({
         height: 24,
         borderRadius: '50%',
         backgroundColor: isSelectedSeat ? seatColor
-          : seat.isTemporary ? 'rgba(245, 158, 11, 0.25)'
           : isEditable ? 'rgba(99, 102, 241, 0.3)'
-          : 'rgba(255, 255, 255, 0.15)',
+          : `${seatColor}26`,
         border: isSelectedSeat ? `2px solid ${seatColor}`
-          : seat.isTemporary ? '2px dashed rgba(245, 158, 11, 0.7)'
-          : `2px solid ${isEditable ? 'rgba(99, 102, 241, 0.5)' : 'rgba(255, 255, 255, 0.3)'}`,
+          : isEditable ? '2px solid rgba(99, 102, 241, 0.5)'
+          : `2px solid ${seatColor}80`,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         fontSize: 10,
         fontWeight: 600,
         color: isSelectedSeat ? 'white'
-          : seat.isTemporary ? 'rgba(245, 158, 11, 0.9)'
           : isEditable ? '#c7d2fe'
-          : 'rgba(255, 255, 255, 0.7)',
+          : seatColor,
         cursor: isDraggable ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
         zIndex: isDragging ? 30 : isSelectedSeat ? 20 : 10,
         boxShadow: isSelectedSeat
           ? `0 0 10px ${seatColor}80`
-          : seat.isTemporary ? '0 2px 8px rgba(245, 158, 11, 0.3)'
           : isEditable ? '0 2px 8px rgba(99, 102, 241, 0.3)'
-          : '0 2px 4px rgba(0, 0, 0, 0.3)',
+          : `0 2px 6px ${seatColor}40`,
         transform: isDragging ? 'scale(1.2)' : undefined,
         touchAction: 'none',
       }}

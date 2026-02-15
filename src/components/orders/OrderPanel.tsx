@@ -3,7 +3,9 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
-import { getSeatBgColor, getSeatTextColor } from '@/lib/seat-utils'
+import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
+import { calculateItemTotal } from '@/lib/order-calculations'
+import { formatCurrency } from '@/lib/utils'
 import { OrderDelayBanner } from './OrderDelayBanner'
 import SharedOwnershipModal from '@/components/tips/SharedOwnershipModal'
 import type { DatacapResult } from '@/hooks/useDatacap'
@@ -117,6 +119,9 @@ export interface OrderPanelProps {
   // Reopened order tracking
   reopenedAt?: string | null
   reopenReason?: string | null
+  // Seat filter (floor plan seat tap)
+  filterSeatNumber?: number | null
+  onClearSeatFilter?: () => void
 }
 
 export function OrderPanel({
@@ -219,6 +224,9 @@ export function OrderPanel({
   // Reopened order tracking
   reopenedAt,
   reopenReason,
+  // Seat filter
+  filterSeatNumber,
+  onClearSeatFilter,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -283,6 +291,23 @@ export function OrderPanel({
     items.filter(item => item.sentToKitchen || (item.kitchenStatus && item.kitchenStatus !== 'pending')),
     [items]
   )
+
+  // Auto-group items by seat number when multiple seats have items (pre-split checks)
+  const autoSeatGroups = useMemo(() => {
+    const seatSet = new Set<number>()
+    for (const item of items) {
+      if (item.seatNumber && (!item.status || item.status === 'active')) seatSet.add(item.seatNumber)
+    }
+    if (seatSet.size < 2) return null // No grouping needed for 0 or 1 seat
+    const seats = Array.from(seatSet).sort((a, b) => a - b)
+    return seats.map(seatNum => {
+      const seatItems = items.filter(i => i.seatNumber === seatNum)
+      const subtotal = seatItems
+        .filter(i => !i.status || i.status === 'active')
+        .reduce((sum, i) => sum + calculateItemTotal(i), 0)
+      return { seatNumber: seatNum, items: seatItems, subtotal }
+    })
+  }, [items])
 
   // Card price multiplier for dual pricing display (e.g. 1.04 for 4%)
   const cardPriceMultiplier = cashDiscountPct && cashDiscountPct > 0 ? 1 + cashDiscountPct / 100 : undefined
@@ -472,44 +497,61 @@ export function OrderPanel({
               </div>
             )
           })()
-        ) : seatGroups && seatGroups.length > 1 ? (
-          // Seat-grouped rendering
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
-            {seatGroups.filter(group =>
-              group.items.some(item =>
-                !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
+        ) : autoSeatGroups ? (
+          // Auto seat-grouped rendering (pre-split checks)
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
+            {autoSeatGroups.map(group => {
+              const groupPending = group.items.filter(i =>
+                !i.sentToKitchen && (!i.kitchenStatus || i.kitchenStatus === 'pending')
               )
-            ).map((group) => (
-              <div key={group.label}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  marginBottom: '8px', paddingBottom: '6px',
-                  borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+              if (groupPending.length === 0) return null
+              const groupSorted = sortDirection === 'newest-top' ? [...groupPending].reverse() : groupPending
+              const seatColor = getSeatColor(group.seatNumber)
+              const seatSubtotal = groupPending
+                .filter(i => !i.status || i.status === 'active')
+                .reduce((sum, i) => sum + calculateItemTotal(i), 0)
+              return (
+                <div key={`seat-${group.seatNumber}`} style={{
+                  border: `1px solid ${getSeatBorderColor(group.seatNumber)}`,
+                  borderRadius: '8px',
+                  overflow: 'hidden',
                 }}>
-                  <span style={{
-                    fontSize: '12px', fontWeight: 600,
-                    color: getSeatTextColor(group.seatNumber),
-                    padding: '2px 8px',
+                  {/* Seat check header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 12px',
                     background: getSeatBgColor(group.seatNumber),
-                    borderRadius: '4px',
+                    borderBottom: `1px solid ${getSeatBorderColor(group.seatNumber)}`,
                   }}>
-                    {group.label}
-                  </span>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    {group.items.filter(i => !i.sentToKitchen && (!i.kitchenStatus || i.kitchenStatus === 'pending')).length} item{group.items.filter(i => !i.sentToKitchen && (!i.kitchenStatus || i.kitchenStatus === 'pending')).length !== 1 ? 's' : ''}
-                  </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{
+                        width: '8px', height: '8px', borderRadius: '50%',
+                        background: seatColor,
+                      }} />
+                      <span style={{
+                        fontSize: '12px', fontWeight: 700,
+                        color: getSeatTextColor(group.seatNumber),
+                      }}>
+                        Seat {group.seatNumber}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>
+                        {groupPending.length} item{groupPending.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '12px', fontWeight: 600,
+                      color: getSeatTextColor(group.seatNumber),
+                    }}>
+                      {formatCurrency(seatSubtotal)}
+                    </span>
+                  </div>
+                  {/* Seat items */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
+                    {groupSorted.map(renderItem)}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {(() => {
-                    const filtered = group.items.filter(item =>
-                      !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
-                    )
-                    const groupSorted = sortDirection === 'newest-top' ? [...filtered].reverse() : filtered
-                    return groupSorted.map(renderItem)
-                  })()}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         ) : (
           // Flat rendering (no seat grouping)
@@ -533,9 +575,62 @@ export function OrderPanel({
         }}>
           SENT TO KITCHEN ({sentItems.length})
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {sentItems.map(renderItem)}
-        </div>
+        {autoSeatGroups ? (
+          // Seat-grouped sent items
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {autoSeatGroups.map(group => {
+              const groupSent = group.items.filter(i =>
+                i.sentToKitchen || (i.kitchenStatus && i.kitchenStatus !== 'pending')
+              )
+              if (groupSent.length === 0) return null
+              const seatColor = getSeatColor(group.seatNumber)
+              const seatSubtotal = groupSent
+                .filter(i => !i.status || i.status === 'active')
+                .reduce((sum, i) => sum + calculateItemTotal(i), 0)
+              return (
+                <div key={`sent-seat-${group.seatNumber}`} style={{
+                  border: `1px solid ${getSeatBorderColor(group.seatNumber)}`,
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  opacity: 0.7,
+                }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '6px 12px',
+                    background: getSeatBgColor(group.seatNumber),
+                    borderBottom: `1px solid ${getSeatBorderColor(group.seatNumber)}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{
+                        width: '8px', height: '8px', borderRadius: '50%',
+                        background: seatColor,
+                      }} />
+                      <span style={{
+                        fontSize: '11px', fontWeight: 700,
+                        color: getSeatTextColor(group.seatNumber),
+                      }}>
+                        Seat {group.seatNumber}
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 600,
+                      color: getSeatTextColor(group.seatNumber),
+                    }}>
+                      {formatCurrency(seatSubtotal)}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
+                    {groupSent.map(renderItem)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {sentItems.map(renderItem)}
+          </div>
+        )}
       </div>
     )
   }
@@ -646,6 +741,46 @@ export function OrderPanel({
             </div>
           </div>
         )
+      )}
+
+      {/* Seat filter indicator */}
+      {filterSeatNumber && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '6px 20px',
+          background: getSeatBgColor(filterSeatNumber),
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              background: getSeatColor(filterSeatNumber),
+            }} />
+            <span style={{ fontSize: '13px', fontWeight: 600, color: getSeatTextColor(filterSeatNumber) }}>
+              Showing Seat {filterSeatNumber}
+            </span>
+          </div>
+          {onClearSeatFilter && (
+            <button
+              onClick={onClearSeatFilter}
+              style={{
+                fontSize: '12px',
+                color: '#94a3b8',
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: 'none',
+                borderRadius: '4px',
+                padding: '2px 10px',
+                cursor: 'pointer',
+              }}
+            >
+              Show All
+            </button>
+          )}
+        </div>
       )}
 
       {/* Items list (scrollable) */}
