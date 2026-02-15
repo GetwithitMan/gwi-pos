@@ -1348,17 +1348,17 @@ Categories=Office;Utility;
 StartupNotify=true
 DTEOF
 
-# Copy to user desktop
+# Copy to user desktop (create Desktop dir if it doesn't exist — fresh Ubuntu installs)
 DESKTOP_DIR="$POSUSER_HOME/Desktop"
-if [[ -d "$DESKTOP_DIR" ]]; then
-  cp /usr/share/applications/gwi-pos.desktop "$DESKTOP_DIR/" 2>/dev/null || true
-  chown "$POSUSER":"$POSUSER" "$DESKTOP_DIR/gwi-pos.desktop" 2>/dev/null || true
-  chmod +x "$DESKTOP_DIR/gwi-pos.desktop" 2>/dev/null || true
+mkdir -p "$DESKTOP_DIR"
+chown "$POSUSER":"$POSUSER" "$DESKTOP_DIR"
+cp /usr/share/applications/gwi-pos.desktop "$DESKTOP_DIR/"
+chown "$POSUSER":"$POSUSER" "$DESKTOP_DIR/gwi-pos.desktop"
+chmod +x "$DESKTOP_DIR/gwi-pos.desktop"
 
-  # Mark as trusted on GNOME (Ubuntu 22.04+) — prevents "untrusted" warning
-  if command -v gio >/dev/null 2>&1; then
-    sudo -u "$POSUSER" gio set "$DESKTOP_DIR/gwi-pos.desktop" metadata::trusted true 2>/dev/null || true
-  fi
+# Mark as trusted on GNOME (Ubuntu 22.04+) — prevents "untrusted" warning
+if command -v gio >/dev/null 2>&1; then
+  sudo -u "$POSUSER" gio set "$DESKTOP_DIR/gwi-pos.desktop" metadata::trusted true 2>/dev/null || true
 fi
 
 log "Desktop launcher created: $DESKTOP_DIR/gwi-pos.desktop"
