@@ -3168,7 +3168,9 @@ export function FloorPlanHome({
                 </div>
               )}
 
-              {children}
+              <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                {children}
+              </div>
         </div>
       </div>
 
