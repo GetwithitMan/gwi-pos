@@ -21,6 +21,7 @@ interface TableEditPanelProps {
   onAddSeat?: (tableId: string) => Promise<void>
   onDuplicate?: (tableId: string) => Promise<void>
   onRotate?: (tableId: string, deltaRotation: number) => Promise<void>
+  existingTableNames?: string[]
 }
 
 const SEAT_PATTERNS: { value: SeatPattern; label: string; description: string }[] = [
@@ -50,6 +51,7 @@ export function TableEditPanel({
   onAddSeat,
   onDuplicate,
   onRotate,
+  existingTableNames = [],
 }: TableEditPanelProps) {
   const [name, setName] = useState('')
   const [abbreviation, setAbbreviation] = useState('')
@@ -61,6 +63,11 @@ export function TableEditPanel({
   const [sectionId, setSectionId] = useState<string>('')
   const [isSaving, setIsSaving] = useState(false)
   const [isRegenerating, setIsRegenerating] = useState(false)
+
+  // Check for duplicate name (case-insensitive, excluding current table)
+  const isDuplicateName = name.trim() !== '' && existingTableNames.some(
+    n => n.toLowerCase() === name.trim().toLowerCase() && n.toLowerCase() !== (table?.name || '').toLowerCase()
+  )
 
   // Sync local state with table prop
   useEffect(() => {
@@ -181,11 +188,16 @@ export function TableEditPanel({
                       padding: '10px 12px',
                       borderRadius: '8px',
                       background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      border: isDuplicateName ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
                       color: '#f1f5f9',
                       fontSize: '14px',
                     }}
                   />
+                  {isDuplicateName && (
+                    <div style={{ fontSize: '11px', color: '#f87171', marginTop: '4px' }}>
+                      Name already in use
+                    </div>
+                  )}
                 </div>
                 <div style={{ width: '80px' }}>
                   <label style={{ display: 'block', fontSize: '13px', color: '#94a3b8', marginBottom: '8px' }}>
@@ -603,21 +615,21 @@ export function TableEditPanel({
             </button>
             <button
               onClick={handleSave}
-              disabled={isSaving}
+              disabled={isSaving || isDuplicateName}
               style={{
                 flex: 1,
                 padding: '12px',
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                background: isDuplicateName ? 'rgba(100, 100, 100, 0.3)' : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
                 border: 'none',
                 color: '#fff',
                 fontSize: '14px',
                 fontWeight: 500,
-                cursor: isSaving ? 'not-allowed' : 'pointer',
-                opacity: isSaving ? 0.6 : 1,
+                cursor: (isSaving || isDuplicateName) ? 'not-allowed' : 'pointer',
+                opacity: (isSaving || isDuplicateName) ? 0.6 : 1,
               }}
             >
-              {isSaving ? 'Saving...' : 'Save Changes'}
+              {isSaving ? 'Saving...' : isDuplicateName ? 'Duplicate Name' : 'Save Changes'}
             </button>
           </div>
         </motion.div>

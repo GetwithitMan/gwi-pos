@@ -20,13 +20,14 @@ interface TablePropertiesProps {
   onUpdate: (tableId: string, updates: Partial<EditorTable>) => void;
   onDelete: (tableId: string) => void;
   onRegenerateSeats: (tableId: string) => void;
+  existingTableNames?: string[];
 }
 
 // =============================================================================
 // COMPONENT
 // =============================================================================
 
-export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats }: TablePropertiesProps) {
+export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats, existingTableNames = [] }: TablePropertiesProps) {
   // Local state for editing
   const [name, setName] = useState('');
   const [abbreviation, setAbbreviation] = useState('');
@@ -77,9 +78,20 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats }
     onUpdate(table.id, updates);
   };
 
+  // Check for duplicate name (case-insensitive, excluding current table)
+  const isDuplicateName = name.trim() !== '' && existingTableNames.some(
+    n => n.toLowerCase() === name.trim().toLowerCase() && n.toLowerCase() !== (table?.name || '').toLowerCase()
+  );
+
   const handleNameChange = (newName: string) => {
     setName(newName);
-    handleUpdate({ name: newName });
+    // Only push update to server if name is not a duplicate
+    const wouldBeDuplicate = newName.trim() !== '' && existingTableNames.some(
+      n => n.toLowerCase() === newName.trim().toLowerCase() && n.toLowerCase() !== (table?.name || '').toLowerCase()
+    );
+    if (!wouldBeDuplicate) {
+      handleUpdate({ name: newName });
+    }
   };
 
   const handleAbbreviationChange = (newAbbr: string) => {
@@ -183,8 +195,16 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats }
             value={name}
             onChange={(e) => handleNameChange(e.target.value)}
             placeholder="Table name"
-            style={inputStyle}
+            style={{
+              ...inputStyle,
+              border: isDuplicateName ? '1px solid #ef4444' : '1px solid #ccc',
+            }}
           />
+          {isDuplicateName && (
+            <div style={{ fontSize: 10, color: '#ef4444', marginTop: 2 }}>
+              Name already in use
+            </div>
+          )}
         </div>
         <div style={{ flex: 1 }}>
           <label style={labelStyle}>Abbr</label>

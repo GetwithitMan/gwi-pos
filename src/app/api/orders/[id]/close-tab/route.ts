@@ -4,6 +4,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
+import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Close tab by capturing against cards
@@ -169,9 +170,13 @@ export const POST = withVenue(async function POST(
         ),
     ])
 
+    // Clean up temporary seats then dispatch floor plan update (chained so snapshot sees cleanup)
+    void cleanupTemporarySeats(orderId)
+      .then(() => dispatchFloorPlanUpdate(locationId, { async: true }))
+      .catch(console.error)
+
     // Dispatch open orders changed so all terminals refresh (fire-and-forget)
     dispatchOpenOrdersChanged(locationId, { trigger: 'paid', orderId }, { async: true }).catch(() => {})
-    dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
 
     return NextResponse.json({
       data: {

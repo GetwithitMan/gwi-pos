@@ -53,6 +53,7 @@ export interface FloorPlanSeat {
   relativeY: number
   angle: number
   seatType: string
+  isTemporary?: boolean
 }
 
 export interface FloorPlanSection {

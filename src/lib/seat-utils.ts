@@ -194,6 +194,94 @@ export function calculateSeatPositions(
 }
 
 /**
+ * Calculate orbit radius for seat positioning based on table dimensions
+ */
+export function calculateOrbitRadius(tableWidth: number, tableHeight: number): number {
+  return Math.max(tableWidth, tableHeight) / 2 + 20
+}
+
+/**
+ * Minimum center-to-center distance between seats (px).
+ * Seats render as 24×24 circles; 30px gives a 6px gap.
+ */
+const MIN_SEAT_DISTANCE = 30
+
+/**
+ * Find a collision-free position for a new seat given existing seat positions.
+ *
+ * Strategy:
+ * 1. Generate N candidate orbital slots (evenly spaced around the table)
+ * 2. Score each slot by distance to the nearest existing seat
+ * 3. Pick the slot with the largest gap (farthest from all existing seats)
+ * 4. If the best slot still collides, nudge outward along its angle until clear
+ */
+export function findCollisionFreePosition(
+  existingPositions: { x: number; y: number }[],
+  orbitRadius: number,
+  candidateCount: number = 36, // try every 10°
+): { x: number; y: number; angle: number } {
+  if (existingPositions.length === 0) {
+    // No existing seats — place at top (12 o'clock)
+    return { x: 0, y: -orbitRadius, angle: -90 }
+  }
+
+  const candidates = calculateSeatPositions(candidateCount, orbitRadius)
+
+  // Score each candidate by min distance to any existing seat
+  let bestCandidate = candidates[0]
+  let bestMinDist = -Infinity
+
+  for (const candidate of candidates) {
+    let minDist = Infinity
+    for (const existing of existingPositions) {
+      const dx = candidate.x - existing.x
+      const dy = candidate.y - existing.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < minDist) minDist = dist
+    }
+    if (minDist > bestMinDist) {
+      bestMinDist = minDist
+      bestCandidate = candidate
+    }
+  }
+
+  // If the best slot still collides, nudge outward along its angle
+  if (bestMinDist < MIN_SEAT_DISTANCE) {
+    const angle = Math.atan2(bestCandidate.y, bestCandidate.x)
+    let r = orbitRadius
+    for (let attempt = 0; attempt < 5; attempt++) {
+      r += MIN_SEAT_DISTANCE
+      const nudgedX = Math.cos(angle) * r
+      const nudgedY = Math.sin(angle) * r
+      let clear = true
+      for (const existing of existingPositions) {
+        const dx = nudgedX - existing.x
+        const dy = nudgedY - existing.y
+        if (Math.sqrt(dx * dx + dy * dy) < MIN_SEAT_DISTANCE) {
+          clear = false
+          break
+        }
+      }
+      if (clear) {
+        return {
+          x: nudgedX,
+          y: nudgedY,
+          angle: bestCandidate.angle,
+        }
+      }
+    }
+    // Fallback: just use the nudged position at max radius
+    return {
+      x: Math.cos(angle) * r,
+      y: Math.sin(angle) * r,
+      angle: bestCandidate.angle,
+    }
+  }
+
+  return bestCandidate
+}
+
+/**
  * Format currency for display
  */
 export function formatSeatBalance(amount: number): string {

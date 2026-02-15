@@ -911,6 +911,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
 
           // Fire-and-forget: append unsaved items → send to kitchen
           // Both API calls run in background — user sees instant response
+          // Block autosave while bgChain runs to prevent duplicate item creation
+          autosaveInFlightRef.current = true
           const orderId = resolvedOrderId
           const bgChain = async () => {
             let itemIdMap: Map<string, string> | null = null
@@ -974,6 +976,9 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             .catch(err => {
               console.error('[useActiveOrder] Background send failed:', err)
               toast.error('Send failed — tap Send again to retry')
+            })
+            .finally(() => {
+              autosaveInFlightRef.current = false
             })
         }
 

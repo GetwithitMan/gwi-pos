@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback, useMemo, memo } from 'react'
+import { useRef, useCallback, useMemo, useState, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { FloorPlanTable, TableStatus } from './use-floor-plan'
 
@@ -37,6 +37,211 @@ const statusGlowColors: Record<TableStatus, string> = {
   reserved: 'rgba(251, 191, 36, 0.6)',
   dirty: 'rgba(245, 158, 11, 0.6)',
   in_use: 'rgba(139, 92, 246, 0.6)',
+}
+
+/**
+ * DraggableSeat — uses pointer events for proper radial boundary constraint.
+ * Seats can only be dragged within `maxDistance` px of the table center.
+ */
+interface DraggableSeatProps {
+  seat: { id: string; seatNumber: number; label: string; x: number; y: number; angle: number; seatType: string; isTemporary: boolean }
+  tableWidth: number
+  tableHeight: number
+  tableRotation: number
+  isDraggable: boolean
+  isSelectedSeat: boolean
+  isBooth: boolean
+  isEditable: boolean
+  seatColor: string
+  displayLabel: string
+  displayNumber: number
+  maxDistance: number
+  onSeatDrag?: (seatId: string, newRelativeX: number, newRelativeY: number) => void
+  onSeatTap?: (seatNumber: number) => void
+  onSeatDelete?: (seatId: string) => void
+}
+
+function DraggableSeat({
+  seat, tableWidth, tableHeight, tableRotation, isDraggable,
+  isSelectedSeat, isBooth, isEditable, seatColor, displayLabel, displayNumber,
+  maxDistance, onSeatDrag, onSeatTap, onSeatDelete,
+}: DraggableSeatProps) {
+  const dragRef = useRef<HTMLDivElement>(null)
+  const dragStartRef = useRef<{ startX: number; startY: number; origLeft: number; origTop: number } | null>(null)
+  const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  // Long-hold gate: temp seats (POS view) require a 500ms hold before drag starts
+  const longHoldTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const [dragUnlocked, setDragUnlocked] = useState(false)
+  const needsLongHold = isDraggable && !isEditable && seat.isTemporary
+
+  const seatRelativeX = seat.x - tableWidth / 2
+  const seatRelativeY = seat.y - tableHeight / 2
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (!isDraggable) return
+    e.stopPropagation()
+    e.preventDefault()
+    const el = dragRef.current
+    if (!el) return
+    el.setPointerCapture(e.pointerId)
+    dragStartRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origLeft: seat.x - 12,
+      origTop: seat.y - 12,
+    }
+    setIsDragging(false)
+    setDragUnlocked(false)
+
+    // Temp seats in POS: require long hold before drag is enabled
+    if (needsLongHold) {
+      longHoldTimerRef.current = setTimeout(() => {
+        setDragUnlocked(true)
+      }, 500)
+    } else {
+      // Editor seats: drag immediately
+      setDragUnlocked(true)
+    }
+  }, [isDraggable, seat.x, seat.y, needsLongHold])
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragStartRef.current) return
+
+    // If long hold hasn't fired yet, check if finger moved too much (cancel hold)
+    if (!dragUnlocked && needsLongHold) {
+      const dx = e.clientX - dragStartRef.current.startX
+      const dy = e.clientY - dragStartRef.current.startY
+      if (Math.abs(dx) + Math.abs(dy) > 10) {
+        // Finger moved before hold completed — cancel drag, let it be a tap
+        if (longHoldTimerRef.current) clearTimeout(longHoldTimerRef.current)
+        longHoldTimerRef.current = null
+        dragStartRef.current = null
+      }
+      return
+    }
+
+    if (!dragUnlocked) return
+
+    const dx = e.clientX - dragStartRef.current.startX
+    const dy = e.clientY - dragStartRef.current.startY
+    if (!isDragging && Math.abs(dx) + Math.abs(dy) > 3) setIsDragging(true)
+
+    // Clamp to radial boundary from table center
+    let newRelX = seatRelativeX + dx
+    let newRelY = seatRelativeY + dy
+    const dist = Math.sqrt(newRelX * newRelX + newRelY * newRelY)
+    if (dist > maxDistance) {
+      const scale = maxDistance / dist
+      newRelX = newRelX * scale
+      newRelY = newRelY * scale
+    }
+    setDragOffset({ dx: newRelX - seatRelativeX, dy: newRelY - seatRelativeY })
+  }, [isDragging, dragUnlocked, needsLongHold, seatRelativeX, seatRelativeY, maxDistance])
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if (longHoldTimerRef.current) {
+      clearTimeout(longHoldTimerRef.current)
+      longHoldTimerRef.current = null
+    }
+
+    if (!dragStartRef.current) return
+    const el = dragRef.current
+    if (el) el.releasePointerCapture(e.pointerId)
+
+    if (isDragging && onSeatDrag && dragOffset) {
+      const newRelX = Math.round(seatRelativeX + dragOffset.dx)
+      const newRelY = Math.round(seatRelativeY + dragOffset.dy)
+      onSeatDrag(seat.id, newRelX, newRelY)
+    }
+
+    dragStartRef.current = null
+    setDragOffset(null)
+    setIsDragging(false)
+    setDragUnlocked(false)
+  }, [isDragging, onSeatDrag, dragOffset, seatRelativeX, seatRelativeY, seat.id])
+
+  const left = dragOffset ? (seat.x - 12 + dragOffset.dx) : (seat.x - 12)
+  const top = dragOffset ? (seat.y - 12 + dragOffset.dy) : (seat.y - 12)
+
+  return (
+    <motion.div
+      ref={dragRef}
+      className={`seat-indicator ${isSelectedSeat ? 'selected' : ''} ${isBooth ? 'booth-seat' : ''} ${isEditable ? 'editable' : ''}`}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      style={{
+        position: 'absolute',
+        left,
+        top,
+        width: 24,
+        height: 24,
+        borderRadius: '50%',
+        backgroundColor: isSelectedSeat ? seatColor
+          : seat.isTemporary ? 'rgba(245, 158, 11, 0.25)'
+          : isEditable ? 'rgba(99, 102, 241, 0.3)'
+          : 'rgba(255, 255, 255, 0.15)',
+        border: isSelectedSeat ? `2px solid ${seatColor}`
+          : seat.isTemporary ? '2px dashed rgba(245, 158, 11, 0.7)'
+          : `2px solid ${isEditable ? 'rgba(99, 102, 241, 0.5)' : 'rgba(255, 255, 255, 0.3)'}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 10,
+        fontWeight: 600,
+        color: isSelectedSeat ? 'white'
+          : seat.isTemporary ? 'rgba(245, 158, 11, 0.9)'
+          : isEditable ? '#c7d2fe'
+          : 'rgba(255, 255, 255, 0.7)',
+        cursor: isDraggable ? (isDragging ? 'grabbing' : 'grab') : 'pointer',
+        zIndex: isDragging ? 30 : isSelectedSeat ? 20 : 10,
+        boxShadow: isSelectedSeat
+          ? `0 0 10px ${seatColor}80`
+          : seat.isTemporary ? '0 2px 8px rgba(245, 158, 11, 0.3)'
+          : isEditable ? '0 2px 8px rgba(99, 102, 241, 0.3)'
+          : '0 2px 4px rgba(0, 0, 0, 0.3)',
+        transform: isDragging ? 'scale(1.2)' : undefined,
+        touchAction: 'none',
+      }}
+      initial={{ scale: 0 }}
+      animate={{ scale: 1 }}
+      exit={{ scale: 0 }}
+      whileHover={isDraggable ? { scale: 1.15 } : undefined}
+      onClick={(e) => {
+        e.stopPropagation()
+        if (!isDragging) onSeatTap?.(displayNumber)
+      }}
+      title={
+        isEditable
+          ? isSelectedSeat
+            ? `Seat ${displayLabel} - Arrow keys: 5px, Shift+Arrows: 20px, Del: remove`
+            : `Seat ${displayLabel} - Click to select, drag to move`
+          : `Seat ${displayLabel}`
+      }
+    >
+      <span style={{ transform: `rotate(${-tableRotation}deg)`, pointerEvents: 'none' }}>
+        {displayLabel}
+      </span>
+      {isEditable && isSelectedSeat && onSeatDelete && (
+        <motion.button
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          style={{
+            position: 'absolute', top: -8, right: -8, width: 16, height: 16,
+            borderRadius: '50%', background: '#ef4444', border: '2px solid #1e293b',
+            color: 'white', fontSize: 10, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', cursor: 'pointer', padding: 0,
+            transform: `rotate(${-tableRotation}deg)`,
+          }}
+          onClick={(e) => { e.stopPropagation(); onSeatDelete(seat.id) }}
+          title="Delete seat"
+        >
+          ×
+        </motion.button>
+      )}
+    </motion.div>
+  )
 }
 
 export const TableNode = memo(function TableNode({
@@ -101,6 +306,7 @@ export const TableNode = memo(function TableNode({
       y: table.height / 2 + seat.relativeY,
       angle: seat.angle,
       seatType: seat.seatType,
+      isTemporary: seat.isTemporary ?? false,
     }))
   }, [showSeats, table.seats, table.width, table.height])
 
@@ -183,6 +389,9 @@ export const TableNode = memo(function TableNode({
   const getShapeStyle = () => {
     switch (table.shape) {
       case 'circle':
+      case 'round':
+        return { borderRadius: '50%' }
+      case 'oval':
         return { borderRadius: '50%' }
       case 'booth':
         return { borderRadius: '12px 12px 24px 24px' }
@@ -394,18 +603,6 @@ export const TableNode = memo(function TableNode({
 
       </motion.div>
 
-      {/* Drop target indicator */}
-      <AnimatePresence>
-        {isDropTarget && (
-          <motion.div
-            className="absolute inset-[-8px] border-2 border-dashed border-green-500 rounded-2xl"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          />
-        )}
-      </AnimatePresence>
-
       {/* Seat indicators from database (permanently assigned to this table) */}
       {showSeats && databaseSeats.length > 0 && (
         <>
@@ -413,148 +610,28 @@ export const TableNode = memo(function TableNode({
             const displayNumber = seat.seatNumber
             const isSelectedSeat = selectedSeat?.tableId === table.id && selectedSeat?.seatNumber === seat.seatNumber
             const seatColor = '#6366f1'
-            // Calculate position relative to table center for drag calculations
-            const seatRelativeX = seat.x - table.width / 2
-            const seatRelativeY = seat.y - table.height / 2
-
+            const isDraggable = isEditable || seat.isTemporary
             const displayLabel = seat.label
 
             return (
-              <motion.div
+              <DraggableSeat
                 key={`seat-${seat.id}`}
-                className={`seat-indicator ${isSelectedSeat ? 'selected' : ''} ${isBooth ? 'booth-seat' : ''} ${isEditable ? 'editable' : ''}`}
-                drag={isEditable}
-                dragMomentum={false}
-                dragElastic={0}
-                dragConstraints={{
-                  // Constrain drag to ~150px from current position (prevents losing seats)
-                  left: -150,
-                  right: 150,
-                  top: -150,
-                  bottom: 150,
-                }}
-                onDragEnd={(e, info) => {
-                  if (isEditable && onSeatDrag) {
-                    // Calculate new relative position from table center
-                    let newRelativeX = Math.round(seatRelativeX + info.offset.x)
-                    let newRelativeY = Math.round(seatRelativeY + info.offset.y)
-
-                    // Constrain to max 150px from center
-                    const maxDistance = 150
-                    const distance = Math.sqrt(newRelativeX * newRelativeX + newRelativeY * newRelativeY)
-                    if (distance > maxDistance) {
-                      const scale = maxDistance / distance
-                      newRelativeX = Math.round(newRelativeX * scale)
-                      newRelativeY = Math.round(newRelativeY * scale)
-                    }
-
-                    onSeatDrag(seat.id, newRelativeX, newRelativeY)
-                  }
-                }}
-                style={{
-                  position: 'absolute',
-                  left: seat.x - 12, // Center the 24px dot
-                  top: seat.y - 12,
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  backgroundColor: isSelectedSeat ? seatColor : isEditable ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.15)',
-                  border: `2px solid ${isSelectedSeat ? seatColor : isEditable ? 'rgba(99, 102, 241, 0.5)' : 'rgba(255, 255, 255, 0.3)'}`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 10,
-                  fontWeight: 600,
-                  color: isSelectedSeat ? 'white' : isEditable ? '#c7d2fe' : 'rgba(255, 255, 255, 0.7)',
-                  cursor: isEditable ? 'grab' : 'pointer',
-                  zIndex: isSelectedSeat ? 20 : 10,
-                  boxShadow: isSelectedSeat
-                    ? `0 0 10px ${seatColor}80`
-                    : isEditable
-                      ? '0 2px 8px rgba(99, 102, 241, 0.3)'
-                      : '0 2px 4px rgba(0, 0, 0, 0.3)',
-                  // Don't rotate the seat circle - keep it as a simple circle
-                  // Text inside will counter-rotate for table rotation only
-                }}
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0 }}
-                whileHover={{ scale: 1.15 }}
-                whileTap={{ scale: 0.95 }}
-                whileDrag={{ scale: 1.2, cursor: 'grabbing' }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onSeatTap?.(displayNumber)
-                }}
-                title={
-                  isEditable
-                    ? isSelectedSeat
-                      ? `Seat ${displayLabel} - Arrow keys: 5px, Shift+Arrows: 20px, Del: remove`
-                      : `Seat ${displayLabel} - Click to select, drag to move`
-                    : `Seat ${displayLabel}`
-                }
-              >
-                {/* Counter-rotate label by table rotation only so ALL seat numbers face upright */}
-                <span style={{ transform: `rotate(${-(table.rotation || 0)}deg)` }}>
-                  {displayLabel}
-                </span>
-                {/* Delete button for selected seat in edit mode - counter-rotate to stay upright */}
-                {isEditable && isSelectedSeat && onSeatDelete && (
-                  <motion.button
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    style={{
-                      position: 'absolute',
-                      top: -8,
-                      right: -8,
-                      width: 16,
-                      height: 16,
-                      borderRadius: '50%',
-                      background: '#ef4444',
-                      border: '2px solid #1e293b',
-                      color: 'white',
-                      fontSize: 10,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: 'pointer',
-                      padding: 0,
-                      transform: `rotate(${-(table.rotation || 0)}deg)`,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onSeatDelete(seat.id)
-                    }}
-                    title="Delete seat"
-                  >
-                    ×
-                  </motion.button>
-                )}
-                {/* Keyboard hint for selected seat - counter-rotate to stay readable */}
-                {isEditable && isSelectedSeat && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 5 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    style={{
-                      position: 'absolute',
-                      bottom: -28,
-                      left: '50%',
-                      transform: `translateX(-50%) rotate(${-(table.rotation || 0)}deg)`,
-                      whiteSpace: 'nowrap',
-                      fontSize: 9,
-                      fontWeight: 500,
-                      color: '#a5b4fc',
-                      background: 'rgba(15, 23, 42, 0.95)',
-                      padding: '3px 8px',
-                      borderRadius: 4,
-                      border: '1px solid rgba(99, 102, 241, 0.3)',
-                      pointerEvents: 'none',
-                    }}
-                  >
-                    ← → ↑ ↓ move • Shift: 20px
-                  </motion.div>
-                )}
-              </motion.div>
+                seat={seat}
+                tableWidth={table.width}
+                tableHeight={table.height}
+                tableRotation={table.rotation || 0}
+                isDraggable={isDraggable}
+                isSelectedSeat={isSelectedSeat}
+                isBooth={isBooth}
+                isEditable={isEditable || false}
+                seatColor={seatColor}
+                displayLabel={displayLabel}
+                displayNumber={displayNumber}
+                maxDistance={Math.max(table.width, table.height) / 2 + 30}
+                onSeatDrag={onSeatDrag}
+                onSeatTap={onSeatTap}
+                onSeatDelete={onSeatDelete}
+              />
             )
           })}
         </>

@@ -1662,6 +1662,7 @@ model Order {
   syncAuditEntries SyncAuditEntry[]
   remoteVoidApprovals RemoteVoidApproval[]
   orderOwnerships     OrderOwnership[]
+  tempSeats           Seat[]             @relation("tempSeats")
 
   @@index([locationId])
   @@index([employeeId])
@@ -3056,6 +3057,11 @@ model Seat {
   virtualSeatNumber     Int?      // Seat number within combined group (1-13 for 8+5)
   virtualGroupCreatedAt DateTime? // When this seat joined a virtual group
 
+  // Temporary seat (created by POS when server adds extra seats)
+  isTemporary    Boolean  @default(false) // true = created by POS, not editor
+  sourceOrderId  String?                  // order that created this temp seat
+  sourceOrder    Order?   @relation("tempSeats", fields: [sourceOrderId], references: [id])
+
   // Status tracking
   status             String  @default("available") // available, occupied, reserved
   currentOrderItemId String? // Currently active order item at this seat
@@ -3080,6 +3086,7 @@ model Seat {
   @@index([locationId])
   @@index([tableId])
   @@index([virtualGroupId])
+  @@index([sourceOrderId])
 }
 
 model Event {

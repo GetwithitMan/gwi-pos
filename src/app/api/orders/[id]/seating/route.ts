@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { calculateOrbitRadius, findCollisionFreePosition } from '@/lib/seat-utils'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -16,9 +18,10 @@ import { withVenue } from '@/lib/with-venue'
 type SeatTimestamps = Record<string, string>
 
 interface SeatAction {
-  action: 'INSERT' | 'REMOVE'
-  position: number // 1-based seat position
+  action: 'INSERT' | 'REMOVE' | 'CLEANUP' | 'RESET_TABLE'
+  position?: number // 1-based seat position (required for INSERT/REMOVE)
   seatVersion?: number // For optimistic locking
+  tableId?: string // For RESET_TABLE (deletes ALL temp seats on this table)
 }
 
 interface SeatBalance {
@@ -179,16 +182,58 @@ export const POST = withVenue(async function POST(
   try {
     const { id: orderId } = await params
     const body: SeatAction = await request.json()
-    const { action, position, seatVersion } = body
+    const { action, position, seatVersion, tableId: resetTableId } = body
 
-    if (!action || !position) {
+    if (!action) {
       return NextResponse.json(
-        { error: 'Action and position are required' },
+        { error: 'Action is required' },
         { status: 400 }
       )
     }
 
-    if (position < 1) {
+    // RESET_TABLE: Remove ALL temp seats on a table regardless of which order created them
+    if (action === 'RESET_TABLE') {
+      if (!resetTableId) {
+        return NextResponse.json({ error: 'tableId is required for RESET_TABLE' }, { status: 400 })
+      }
+      const table = await db.table.findUnique({
+        where: { id: resetTableId },
+        select: { locationId: true },
+      })
+      if (!table) {
+        return NextResponse.json({ error: 'Table not found' }, { status: 404 })
+      }
+      // Delete ALL temp seats on this table (any order)
+      const deleted = await db.seat.deleteMany({
+        where: { tableId: resetTableId, isTemporary: true },
+      })
+      // Reset extraSeatCount on any open orders for this table
+      await db.order.updateMany({
+        where: { tableId: resetTableId, status: { in: ['open', 'draft'] }, extraSeatCount: { gt: 0 } },
+        data: { extraSeatCount: 0 },
+      })
+      void dispatchFloorPlanUpdate(table.locationId, { async: true }).catch(console.error)
+      return NextResponse.json({ action: 'RESET_TABLE', success: true, deletedSeats: deleted.count })
+    }
+
+    // CLEANUP: Remove all temp seats for this order (used when closing panel with no items)
+    if (action === 'CLEANUP') {
+      const { cleanupTemporarySeats } = await import('@/lib/cleanup-temp-seats')
+      await cleanupTemporarySeats(orderId)
+      // Also reset extraSeatCount on the order, and get locationId for socket dispatch
+      const cleaned = await db.order.update({
+        where: { id: orderId },
+        data: { extraSeatCount: 0 },
+        select: { locationId: true, tableId: true },
+      }).catch(() => null) // order may already be deleted
+      // Dispatch floor plan update so all terminals see temp seats removed
+      if (cleaned?.tableId) {
+        void dispatchFloorPlanUpdate(cleaned.locationId, { async: true }).catch(console.error)
+      }
+      return NextResponse.json({ action: 'CLEANUP', success: true })
+    }
+
+    if (!position || position < 1) {
       return NextResponse.json(
         { error: 'Position must be >= 1' },
         { status: 400 }
@@ -196,10 +241,11 @@ export const POST = withVenue(async function POST(
     }
 
     const result = await db.$transaction(async (tx) => {
-      // Get current order state
+      // Get current order state with table info for seat positioning
       const order = await tx.order.findUnique({
         where: { id: orderId },
         include: {
+          table: { select: { id: true, width: true, height: true, locationId: true } },
           items: {
             where: { deletedAt: null },
           },
@@ -210,7 +256,7 @@ export const POST = withVenue(async function POST(
         throw new Error('Order not found')
       }
 
-      if (order.status !== 'open') {
+      if (order.status !== 'open' && order.status !== 'draft') {
         throw new Error('Cannot modify seats on a closed order')
       }
 
@@ -272,12 +318,66 @@ export const POST = withVenue(async function POST(
           },
         })
 
+        // Create a real temporary Seat row so it renders on the floor plan
+        let warning: string | undefined
+        if (order.table) {
+          const tableId = order.table.id
+          const locationId = order.table.locationId
+
+          // Get max seatNumber for this table (handles gaps safely)
+          const maxSeat = await tx.seat.aggregate({
+            where: { tableId, deletedAt: null },
+            _max: { seatNumber: true },
+          })
+          const newSeatNumber = (maxSeat._max.seatNumber ?? 0) + 1
+
+          // Calculate collision-free position for the new seat
+          const tableWidth = order.table.width ?? 120
+          const tableHeight = order.table.height ?? 120
+          const orbitRadius = calculateOrbitRadius(tableWidth, tableHeight)
+
+          // Get positions of all existing seats to avoid collisions
+          const existingSeatRows = await tx.seat.findMany({
+            where: { tableId, deletedAt: null, isActive: true },
+            select: { relativeX: true, relativeY: true },
+          })
+          const existingPositions = existingSeatRows.map(s => ({
+            x: s.relativeX,
+            y: s.relativeY,
+          }))
+
+          const newPos = findCollisionFreePosition(existingPositions, orbitRadius)
+
+          await tx.seat.create({
+            data: {
+              locationId,
+              tableId,
+              label: String(newSeatNumber),
+              seatNumber: newSeatNumber,
+              relativeX: Math.round(newPos.x),
+              relativeY: Math.round(newPos.y),
+              angle: Math.round(newPos.angle),
+              isTemporary: true,
+              sourceOrderId: orderId,
+            },
+          })
+
+          // Soft cap warning: 2x base seat count
+          if (newTotalSeats > order.baseSeatCount * 2) {
+            warning = 'high_seat_count'
+          }
+
+          // Fire-and-forget: notify all terminals of floor plan change
+          void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
+        }
+
         return {
           action: 'INSERT',
           position,
           newTotalSeats,
           seatVersion: updatedOrder.seatVersion,
           itemsShifted: itemsToShift.length,
+          ...(warning ? { warning } : {}),
         }
 
       } else if (action === 'REMOVE') {
@@ -344,6 +444,28 @@ export const POST = withVenue(async function POST(
             seatTimestamps: newTimestamps,
           },
         })
+
+        // Delete the most recently added temp seat for this order (LIFO)
+        if (order.table) {
+          const locationId = order.table.locationId
+          const lastTempSeat = await tx.seat.findFirst({
+            where: {
+              tableId: order.table.id,
+              sourceOrderId: orderId,
+              isTemporary: true,
+              deletedAt: null,
+            },
+            orderBy: { seatNumber: 'desc' },
+          })
+
+          if (lastTempSeat) {
+            // Hard delete — temp seats are ephemeral
+            await tx.seat.delete({ where: { id: lastTempSeat.id } })
+          }
+
+          // Fire-and-forget: notify all terminals of floor plan change
+          void dispatchFloorPlanUpdate(locationId, { async: true }).catch(console.error)
+        }
 
         return {
           action: 'REMOVE',

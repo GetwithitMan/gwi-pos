@@ -135,6 +135,27 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Table not found' }, { status: 404 })
     }
 
+    // Check for duplicate table name across ALL rooms/sections in this location
+    if (name !== undefined && name !== '') {
+      const duplicate = await db.table.findFirst({
+        where: {
+          locationId,
+          name: { equals: name, mode: 'insensitive' },
+          isActive: true,
+          deletedAt: null,
+          id: { not: id },
+        },
+        select: { id: true, name: true },
+      })
+
+      if (duplicate) {
+        return NextResponse.json(
+          { error: `A table named "${duplicate.name}" already exists` },
+          { status: 409 }
+        )
+      }
+    }
+
     // Build type-safe update data
     const updateData: Prisma.TableUpdateInput = {}
 

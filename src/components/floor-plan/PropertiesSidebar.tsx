@@ -24,6 +24,7 @@ interface PropertiesSidebarProps {
   onAddSeat: (tableId: string) => void
   onRemoveSeat: (tableId: string) => void
   onResetSeats?: (tableId: string) => void
+  existingTableNames?: string[]
 }
 
 const SHAPES = [
@@ -54,9 +55,15 @@ export function PropertiesSidebar({
   onAddSeat,
   onRemoveSeat,
   onResetSeats,
+  existingTableNames = [],
 }: PropertiesSidebarProps) {
   const [localName, setLocalName] = useState(table?.name || '')
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // Check for duplicate name (case-insensitive, excluding current table)
+  const isDuplicateName = localName.trim() !== '' && existingTableNames.some(
+    n => n.toLowerCase() === localName.trim().toLowerCase() && n.toLowerCase() !== (table?.name || '').toLowerCase()
+  )
 
   // Sync local name with table name
   useEffect(() => {
@@ -65,16 +72,16 @@ export function PropertiesSidebar({
     }
   }, [table?.id, table?.name])
 
-  // Debounced name update
+  // Debounced name update — skip if duplicate
   useEffect(() => {
-    if (!table || localName === table.name) return
+    if (!table || localName === table.name || isDuplicateName) return
 
     const timeout = setTimeout(() => {
       onUpdate(table.id, { name: localName })
     }, 300)
 
     return () => clearTimeout(timeout)
-  }, [localName, table?.id, table?.name, onUpdate])
+  }, [localName, table?.id, table?.name, onUpdate, isDuplicateName])
 
   const handleShapeChange = useCallback((shape: string) => {
     if (!table) return
@@ -172,9 +179,12 @@ export function PropertiesSidebar({
                 className="w-full px-3 py-2.5 rounded-lg text-sm text-slate-200 placeholder-slate-600"
                 style={{
                   background: 'rgba(0, 0, 0, 0.3)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  border: isDuplicateName ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid rgba(255, 255, 255, 0.1)',
                 }}
               />
+              {isDuplicateName && (
+                <p className="text-[11px] text-red-400 mt-1">Name already in use</p>
+              )}
             </div>
 
             {/* Section Assignment */}

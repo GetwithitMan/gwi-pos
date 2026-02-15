@@ -86,6 +86,15 @@ export const PUT = withVenue(async function PUT(
       return NextResponse.json({ error: 'Seat not found' }, { status: 404 });
     }
 
+    // POS context: only allow moving temporary seats (permanent seats belong to editor)
+    const context = request.nextUrl.searchParams.get('context');
+    if (context === 'pos' && !currentSeat.isTemporary) {
+      return NextResponse.json(
+        { error: 'Only temporary seats can be moved from POS view' },
+        { status: 403 }
+      );
+    }
+
     const seat = await db.seat.update({
       where: { id },
       data: {

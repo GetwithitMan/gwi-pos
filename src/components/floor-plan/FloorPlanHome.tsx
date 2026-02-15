@@ -32,6 +32,7 @@ import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
 import { MenuSearchInput, MenuSearchResults } from '@/components/search'
 import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
+import { isTempId } from '@/lib/order-utils'
 import './styles/floor-plan.css'
 
 interface Category {
@@ -424,7 +425,6 @@ export function FloorPlanHome({
     dropTargetTableId,
     infoPanelTableId,
     isLoading,
-    showSeats,
     selectedSeat,
     flashingTables,
     setTables,
@@ -436,7 +436,6 @@ export function FloorPlanHome({
     endDrag,
     openInfoPanel,
     closeInfoPanel,
-    toggleShowSeats,
     selectSeat,
     clearSelectedSeat,
     flashTableMessage,
@@ -676,13 +675,16 @@ export function FloorPlanHome({
 
   // 1s heartbeat for UI timers only (flash/undo expiry) — NO data polling
   // FIX 4: Uses refs for callbacks to prevent interval restart on re-render
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null)
   useEffect(() => {
-    const heartbeat = setInterval(() => {
+    // Guard: clear any existing interval before creating a new one
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current)
+    heartbeatRef.current = setInterval(() => {
       callbacksRef.current.clearExpiredFlashes()
     }, 1000)
 
     return () => {
-      clearInterval(heartbeat)
+      if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null }
       if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current)
     }
   }, []) // Empty deps - refs keep callbacks fresh
@@ -867,8 +869,10 @@ export function FloorPlanHome({
   const snapshotPendingRef = useRef(false)
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Ref to prevent double-tap race condition on Send button
+  // Refs to prevent double-tap race conditions
   const isProcessingSendRef = useRef(false)
+  const isSeatAddInFlightRef = useRef(false)
+  const isTableSwitchInFlightRef = useRef(false)
 
   // FIX 4: Refs for heartbeat callbacks - prevents interval restart on re-render
   const callbacksRef = useRef({
@@ -974,10 +978,60 @@ export function FloorPlanHome({
   }, [])
 
 
+  // Reset table: remove ALL temp seats on this table (regardless of order)
+  const handleResetTable = useCallback((tableId: string) => {
+    // Use a dummy orderId — the RESET_TABLE action only needs the tableId
+    void fetch(`/api/orders/_/seating`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'RESET_TABLE', tableId }),
+    }).catch(() => {})
+
+    // Clear local state
+    setExtraSeats(prev => {
+      if (!prev.has(tableId)) return prev
+      const next = new Map(prev)
+      next.delete(tableId)
+      return next
+    })
+    setActiveOrderId(null)
+    setActiveOrderNumber(null)
+    setActiveTableId(null)
+    setShowOrderPanel(false)
+    useOrderStore.getState().clearOrder()
+  }, [])
+
   // Handle table tap - open order panel
   const handleTableTap = useCallback(async (table: FloorPlanTable) => {
+    // Prevent double-tap races during table switch
+    if (isTableSwitchInFlightRef.current) return
+    isTableSwitchInFlightRef.current = true
+
+    try {
     if (selectedSeat) {
       clearSelectedSeat()
+    }
+
+    // Clean up previous table's temp seats if switching to a different table with no items
+    if (activeTableId && activeTableId !== table.id) {
+      const store = useOrderStore.getState()
+      const prevOrderId = activeOrderId || store.currentOrder?.id
+      const hasItems = (store.currentOrder?.items.length ?? 0) > 0
+      if (!hasItems && prevOrderId && !isTempId(prevOrderId)) {
+        // Await cleanup so snapshot sees cleaned state before new table loads
+        await fetch(`/api/orders/${prevOrderId}/seating`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'CLEANUP' }),
+        }).catch(() => {})
+      }
+      // Clear extra seats for previous table
+      setExtraSeats(prev => {
+        if (!prev.has(activeTableId)) return prev
+        const next = new Map(prev)
+        next.delete(activeTableId)
+        return next
+      })
     }
 
     const totalSeats = getTotalSeats(table)
@@ -1078,7 +1132,10 @@ export function FloorPlanHome({
         })
       }
     }
-  }, [selectedSeat, clearSelectedSeat, getTotalSeats, activeTableId])
+    } finally {
+      isTableSwitchInFlightRef.current = false
+    }
+  }, [selectedSeat, clearSelectedSeat, getTotalSeats, activeTableId, activeOrderId])
 
   // Handle quick order type (Takeout, Delivery, Bar Tab)
   const handleQuickOrderType = useCallback((orderType: QuickOrderType) => {
@@ -1192,16 +1249,24 @@ export function FloorPlanHome({
   // Add a new seat to the table (Skill 121 - Atomic Seat Management)
   // Works with or without an active order
   const handleAddSeat = useCallback(async (tableId?: string) => {
-    const targetTableId = tableId || activeTable?.id
-    if (!targetTableId) {
-      toast.error('No table selected')
-      return
-    }
+    // Prevent double-tap: block concurrent seat additions
+    if (isSeatAddInFlightRef.current) return
+    isSeatAddInFlightRef.current = true
 
-    // If there's an active order, add seat via API
-    if (activeOrderId) {
-      try {
-        const response = await fetch(`/api/orders/${activeOrderId}/seating`, {
+    try {
+      const targetTableId = tableId || activeTable?.id
+      if (!targetTableId) {
+        toast.error('No table selected')
+        return
+      }
+
+      // Resolve the real DB order ID: prefer activeOrderId, fallback to store
+      const resolvedOrderId = activeOrderId || useOrderStore.getState().currentOrder?.id || null
+      const isSavedOrder = resolvedOrderId && !resolvedOrderId.startsWith('temp-')
+
+      // If there's a saved order, add seat via seating API (creates temp DB seat row)
+      if (isSavedOrder) {
+        const response = await fetch(`/api/orders/${resolvedOrderId}/seating`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1218,28 +1283,32 @@ export function FloorPlanHome({
         const result = await response.json()
         toast.success(`Seat ${result.position} added`)
 
-        // Update extraSeats so the seat strip UI shows the new seat immediately
+        if (result.warning === 'high_seat_count') {
+          toast.info(`This table now has ${result.newTotalSeats} seats`)
+        }
+
+        // Refresh floor plan to show the new temp seat on the table.
+        // Do NOT increment extraSeats here — the snapshot refresh will
+        // include the real temp Seat DB row in seats.length, so adding
+        // to extraSeats would double-count.
+        void loadFloorPlanData(false)
+      } else {
+        // No saved order yet - add an extra seat locally (will become real on order save)
         setExtraSeats(prev => {
           const next = new Map(prev)
           const current = next.get(targetTableId) || 0
           next.set(targetTableId, current + 1)
           return next
         })
-      } catch (err) {
-        console.error('[FloorPlanHome] Failed to add seat:', err)
-        toast.error(err instanceof Error ? err.message : 'Failed to add seat')
+        // Get next seat number
+        const newSeatNum = getTotalSeats(activeTable!) + 1
+        toast.success(`Seat ${newSeatNum} added`)
       }
-    } else {
-      // No active order - add an extra seat locally
-      setExtraSeats(prev => {
-        const next = new Map(prev)
-        const current = next.get(targetTableId) || 0
-        next.set(targetTableId, current + 1)
-        return next
-      })
-      // Get next seat number
-      const newSeatNum = getTotalSeats(activeTable!) + 1
-      toast.success(`Seat ${newSeatNum} added`)
+    } catch (err) {
+      console.error('[FloorPlanHome] Failed to add seat:', err)
+      toast.error(err instanceof Error ? err.message : 'Failed to add seat')
+    } finally {
+      isSeatAddInFlightRef.current = false
     }
   }, [activeOrderId, activeTable, getTotalSeats])
 
@@ -1498,6 +1567,20 @@ export function FloorPlanHome({
 
   // Close order panel
   const handleCloseOrderPanel = useCallback(() => {
+    // If the order has no items, clean up any temp seats that were added
+    // (user tapped table, added seats, but didn't add any food/drinks)
+    const store = useOrderStore.getState()
+    const orderId = activeOrderId || store.currentOrder?.id
+    const hasItems = (store.currentOrder?.items.length ?? 0) > 0
+    if (!hasItems && orderId && !isTempId(orderId)) {
+      // Fire-and-forget: remove temp seats and reset extraSeatCount
+      void fetch(`/api/orders/${orderId}/seating`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'CLEANUP' }),
+      }).catch(() => {})
+    }
+
     // Always clear extra seats when closing panel — they're restored from order data
     // when the table is re-tapped (lines 1022-1039 restore from order.extraSeatCount)
     if (activeTableId) {
@@ -1520,12 +1603,14 @@ export function FloorPlanHome({
     setActiveSourceTableId(null)
 
     // Clear Zustand store for cross-route persistence
-    useOrderStore.getState().clearOrder()
+    store.clearOrder()
 
     // Clear primary state LAST
     setActiveTableId(null)
     setShowOrderPanel(false)
-  }, [defaultGuestCount, activeTableId])
+
+    // Floor plan refresh happens automatically via socket dispatch from the CLEANUP API
+  }, [defaultGuestCount, activeTableId, activeOrderId])
 
   // Detect new items added → highlight + auto-scroll
   useEffect(() => {
@@ -1651,20 +1736,45 @@ export function FloorPlanHome({
     }
   }, [])
 
-  // Handle seat tap - sync both visual selection and order panel seat
-  const handleSeatTap = useCallback((tableId: string, seatNumber: number) => {
+  // Handle seat tap - open the table's order panel AND select the seat
+  // This ensures tapping a seat on the floor plan always activates the correct table context
+  const handleSeatTap = useCallback(async (tableId: string, seatNumber: number) => {
     const isAlreadySelected = selectedSeat?.tableId === tableId && selectedSeat?.seatNumber === seatNumber
 
     if (isAlreadySelected) {
+      // Deselect seat but keep table open
       clearSelectedSeat()
       setActiveSeatNumber(null)
       setActiveSourceTableId(null)
-    } else {
-      selectSeat(tableId, seatNumber)
-      setActiveSeatNumber(seatNumber)
-      setActiveSourceTableId(tableId)
+      return
     }
-  }, [selectedSeat, selectSeat, clearSelectedSeat])
+
+    // If this seat belongs to a different table than the currently active one,
+    // open that table first (same as tapping the table itself)
+    const table = tablesRef.current.find(t => t.id === tableId)
+    if (!table) return
+
+    if (activeTableId !== tableId) {
+      // Open the table — this loads the order, sets activeTableId, shows panel
+      await handleTableTap(table)
+    } else if (!showOrderPanel) {
+      setShowOrderPanel(true)
+    }
+
+    // Now select the seat (after table is active)
+    selectSeat(tableId, seatNumber)
+    setActiveSeatNumber(seatNumber)
+    setActiveSourceTableId(tableId)
+  }, [selectedSeat, selectSeat, clearSelectedSeat, activeTableId, handleTableTap, showOrderPanel])
+
+  // Handle temporary seat drag - update position via API
+  const handleSeatDrag = useCallback((seatId: string, newRelativeX: number, newRelativeY: number) => {
+    fetch(`/api/seats/${seatId}?context=pos`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ relativeX: newRelativeX, relativeY: newRelativeY }),
+    }).catch(console.error)
+  }, [])
 
   // Drag handlers hook (handles pointer move/up and ghost preview)
   const {
@@ -2380,22 +2490,6 @@ export function FloorPlanHome({
             )}
           </button>
 
-          {/* Show Seats Toggle */}
-          <button
-            className={`icon-btn ${showSeats ? 'active' : ''}`}
-            onClick={toggleShowSeats}
-            title={showSeats ? 'Hide Seats' : 'Show Seats'}
-            style={showSeats ? { background: 'rgba(99, 102, 241, 0.2)', borderColor: 'rgba(99, 102, 241, 0.4)' } : undefined}
-          >
-            <svg width="18" height="18" fill="none" stroke={showSeats ? '#a5b4fc' : 'currentColor'} viewBox="0 0 24 24">
-              <circle cx="12" cy="12" r="3" strokeWidth={2} />
-              <circle cx="12" cy="4" r="2" strokeWidth={2} />
-              <circle cx="12" cy="20" r="2" strokeWidth={2} />
-              <circle cx="4" cy="12" r="2" strokeWidth={2} />
-              <circle cx="20" cy="12" r="2" strokeWidth={2} />
-            </svg>
-          </button>
-
           {/* Settings - only shown if callback provided (permission-gated) */}
           {onOpenAdminNav && (
             <button
@@ -2586,7 +2680,7 @@ export function FloorPlanHome({
                           isDragging={draggedTableId === table.id}
                           isDropTarget={dropTargetTableId === table.id}
                           isColliding={draggedTableId === table.id && isColliding}
-                          showSeats={showSeats}
+                          showSeats={table.id === activeTableId}
                           selectedSeat={selectedSeat}
                           flashMessage={flashMessage}
                           orderStatusBadges={table.currentOrder && table.id === activeTableId ? {
@@ -2602,10 +2696,45 @@ export function FloorPlanHome({
                             openInfoPanel(table.id)
                           }}
                           onSeatTap={(seatNumber) => handleSeatTap(table.id, seatNumber)}
+                          onSeatDrag={handleSeatDrag}
                         />
                       )
                     })}
                   </AnimatePresence>
+
+                  {/* Reset Table button — shows on selected table with temp seats and no items */}
+                  {activeTableId && inlineOrderItems.length === 0 && (() => {
+                    const activeTable = tables.find(t => t.id === activeTableId)
+                    if (!activeTable) return null
+                    const hasTempSeats = activeTable.seats.some(s => s.isTemporary)
+                    if (!hasTempSeats) return null
+                    return (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleResetTable(activeTableId)
+                        }}
+                        style={{
+                          position: 'absolute',
+                          left: activeTable.posX + activeTable.width / 2,
+                          top: activeTable.posY + activeTable.height + 50,
+                          transform: 'translateX(-50%)',
+                          padding: '6px 14px',
+                          background: 'rgba(239, 68, 68, 0.2)',
+                          border: '1px solid rgba(239, 68, 68, 0.5)',
+                          borderRadius: '8px',
+                          color: '#fca5a5',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          zIndex: 20,
+                        }}
+                      >
+                        Reset Table
+                      </button>
+                    )
+                  })()}
 
                   {/* Floor Plan Elements - filtered by selected section */}
                   {elements
@@ -2697,43 +2826,7 @@ export function FloorPlanHome({
                       )
                     })}
 
-                  {/* Ghost Preview */}
-                  {ghostPreview && (
-                    <motion.div
-                      className="table-ghost-preview"
-                      initial={{ opacity: 0, scale: 0.9 }}
-                      animate={{ opacity: 0.6, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.9 }}
-                      style={{
-                        position: 'absolute',
-                        left: ghostPreview.posX,
-                        top: ghostPreview.posY,
-                        width: ghostPreview.width,
-                        height: ghostPreview.height,
-                        borderRadius: '12px',
-                        border: '2px dashed #22c55e',
-                        backgroundColor: 'rgba(34, 197, 94, 0.15)',
-                        pointerEvents: 'none',
-                        zIndex: 90,
-                      }}
-                    >
-                      <div
-                        style={{
-                          position: 'absolute',
-                          bottom: '-24px',
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          color: '#22c55e',
-                          textTransform: 'uppercase',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        Attach {ghostPreview.side}
-                      </div>
-                    </motion.div>
-                  )}
+                  {/* Ghost preview removed — table combining was removed in Skill 326 */}
                   </div>
                   {/* End of auto-scaled content wrapper */}
                 </>

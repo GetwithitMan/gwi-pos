@@ -82,7 +82,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         // Conditionally include seats
         ...(includeSeats ? {
           seats: {
-            where: { isActive: true, deletedAt: null },
+            where: { isActive: true, deletedAt: null, isTemporary: false },
             select: {
               id: true,
               label: true,
@@ -177,6 +177,24 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Location ID and name are required' },
         { status: 400 }
+      )
+    }
+
+    // Check for duplicate table name across ALL rooms/sections in this location
+    const duplicate = await db.table.findFirst({
+      where: {
+        locationId,
+        name: { equals: name, mode: 'insensitive' },
+        isActive: true,
+        deletedAt: null,
+      },
+      select: { id: true, name: true },
+    })
+
+    if (duplicate) {
+      return NextResponse.json(
+        { error: `A table named "${duplicate.name}" already exists` },
+        { status: 409 }
       )
     }
 

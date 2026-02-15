@@ -988,6 +988,7 @@ export function UnifiedFloorPlan({
           onAddSeat={handleAddSeat}
           onDuplicate={handleDuplicateTable}
           onRotate={handleTableRotate}
+          existingTableNames={tables.map(t => t.name)}
         />
       )}
 

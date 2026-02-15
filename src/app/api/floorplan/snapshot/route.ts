@@ -33,7 +33,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             where: { isActive: true, deletedAt: null },
             select: {
               id: true, label: true, seatNumber: true,
-              relativeX: true, relativeY: true, angle: true, seatType: true,
+              relativeX: true, relativeY: true, angle: true, seatType: true, isTemporary: true,
             },
             orderBy: { seatNumber: 'asc' },
           },

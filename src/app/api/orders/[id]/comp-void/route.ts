@@ -4,7 +4,8 @@ import { deductInventoryForVoidedItem, restorePrepStockForVoid, WASTE_VOID_REASO
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
-import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { withVenue } from '@/lib/with-venue'
 
 interface CompVoidRequest {
@@ -228,6 +229,17 @@ export const POST = withVenue(async function POST(
         ...(shouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
       },
     })
+
+    // Clean up temporary seats if order auto-closed, then refresh floor plan
+    if (shouldAutoClose) {
+      void cleanupTemporarySeats(orderId)
+        .then(() => {
+          if (order.tableId) {
+            return dispatchFloorPlanUpdate(order.locationId, { async: true })
+          }
+        })
+        .catch(console.error)
+    }
 
     // Dispatch real-time updates (fire-and-forget)
     dispatchOpenOrdersChanged(order.locationId, {

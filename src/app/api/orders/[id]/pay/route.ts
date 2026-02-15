@@ -13,6 +13,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { processLiquorInventory } from '@/lib/liquor-inventory'
 import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
+import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
@@ -924,6 +925,16 @@ export const POST = withVenue(withTiming(async function POST(
           data: { status: 'available' },
         })
       }
+
+      // Clean up temporary seats then dispatch floor plan update
+      // Chain: cleanup must finish BEFORE dispatch so snapshot doesn't still see temp seats
+      void cleanupTemporarySeats(orderId)
+        .then(() => {
+          if (order.tableId && updateData.status === 'paid') {
+            return dispatchFloorPlanUpdate(order.locationId, { async: true })
+          }
+        })
+        .catch(console.error)
     }
 
     // Dispatch real-time order totals update (tip changed) — fire-and-forget
@@ -942,9 +953,6 @@ export const POST = withVenue(withTiming(async function POST(
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     if (updateData.status === 'paid') {
       dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id }, { async: true }).catch(() => {})
-      if (order.tableId) {
-        dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
-      }
     }
 
     // Award loyalty points if order is fully paid and has a customer

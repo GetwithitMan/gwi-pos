@@ -1452,6 +1452,7 @@ export function FloorPlanEditor({
               onUpdate={handleTableUpdate}
               onDelete={handleTableDelete}
               onRegenerateSeats={handleRegenerateSeats}
+              existingTableNames={dbTables.map(t => t.name)}
             />
           ) : selectedEntertainmentElement ? (
             <EntertainmentProperties
