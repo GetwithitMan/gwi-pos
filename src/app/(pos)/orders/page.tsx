@@ -35,6 +35,7 @@ import { DiscountModal } from '@/components/orders/DiscountModal'
 import { CompVoidModal } from '@/components/orders/CompVoidModal'
 import { ItemTransferModal } from '@/components/orders/ItemTransferModal'
 import { SplitTicketManager } from '@/components/orders/SplitTicketManager'
+import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
 import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
@@ -3169,6 +3170,20 @@ export default function OrdersPage() {
             onSplitComplete={handleSplitTicketComplete}
           />
         )}
+
+        {/* Kitchen Note Editor */}
+        <NoteEditModal
+          isOpen={!!activeOrderFull.noteEditTarget}
+          onClose={activeOrderFull.closeNoteEditor}
+          onSave={async (note) => {
+            if (activeOrderFull.noteEditTarget?.itemId) {
+              await activeOrderFull.saveNote(activeOrderFull.noteEditTarget.itemId, note)
+            }
+            activeOrderFull.closeNoteEditor()
+          }}
+          currentNote={activeOrderFull.noteEditTarget?.currentNote}
+          itemName={activeOrderFull.noteEditTarget?.itemName}
+        />
 
         {showTabNamePrompt && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">

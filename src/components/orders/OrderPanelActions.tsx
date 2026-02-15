@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { roundToCents } from '@/lib/pricing'
 import { useDatacap, type DatacapResult } from '@/hooks/useDatacap'
 import { ReaderStatusIndicator } from '@/components/payment/ReaderStatusIndicator'
@@ -110,6 +110,11 @@ export function OrderPanelActions({
   const [tipAmount, setTipAmount] = useState(0)
   const [customTip, setCustomTip] = useState('')
   const [showCustomTip, setShowCustomTip] = useState(false)
+  // Tap-twice confirmation state (replaces window.confirm which Chrome can permanently suppress)
+  const [confirmingCancel, setConfirmingCancel] = useState(false)
+  const [confirmingClear, setConfirmingClear] = useState(false)
+  const cancelTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const clearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto-show payment processor when orderId becomes available after save
   useEffect(() => {
@@ -169,12 +174,15 @@ export function OrderPanelActions({
 
   const handleClear = () => {
     if (!hasItems) return
-    const confirmed = window.confirm(
-      'Are you sure you want to clear this order? This cannot be undone.'
-    )
-    if (confirmed) {
-      onClear?.()
+    if (!confirmingClear) {
+      setConfirmingClear(true)
+      if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
+      clearTimerRef.current = setTimeout(() => setConfirmingClear(false), 3000)
+      return
     }
+    setConfirmingClear(false)
+    if (clearTimerRef.current) clearTimeout(clearTimerRef.current)
+    onClear?.()
   }
 
   const handlePayClick = () => {
@@ -962,23 +970,33 @@ export function OrderPanelActions({
                   onCancelOrder()
                   return
                 }
-                if (window.confirm('Cancel this order? Nothing has been sent to the kitchen.')) {
-                  onCancelOrder()
+                if (!confirmingCancel) {
+                  setConfirmingCancel(true)
+                  if (cancelTimerRef.current) clearTimeout(cancelTimerRef.current)
+                  cancelTimerRef.current = setTimeout(() => setConfirmingCancel(false), 3000)
+                  return
                 }
+                setConfirmingCancel(false)
+                if (cancelTimerRef.current) clearTimeout(cancelTimerRef.current)
+                onCancelOrder()
               }}
               style={{
                 padding: '8px 12px',
                 borderRadius: '8px',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                background: 'rgba(239, 68, 68, 0.1)',
+                border: confirmingCancel
+                  ? '2px solid rgba(239, 68, 68, 0.8)'
+                  : '1px solid rgba(239, 68, 68, 0.3)',
+                background: confirmingCancel
+                  ? 'rgba(239, 68, 68, 0.25)'
+                  : 'rgba(239, 68, 68, 0.1)',
                 color: '#f87171',
                 fontSize: '12px',
-                fontWeight: 500,
+                fontWeight: confirmingCancel ? 700 : 500,
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
               }}
             >
-              Cancel Order
+              {confirmingCancel ? 'Tap again to cancel' : 'Cancel Order'}
             </button>
           )}
           {/* Clear — fallback for when Cancel Order is not wired */}
@@ -989,17 +1007,21 @@ export function OrderPanelActions({
               style={{
                 padding: '8px 12px',
                 borderRadius: '8px',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                background: 'rgba(239, 68, 68, 0.1)',
+                border: confirmingClear
+                  ? '2px solid rgba(239, 68, 68, 0.8)'
+                  : '1px solid rgba(239, 68, 68, 0.3)',
+                background: confirmingClear
+                  ? 'rgba(239, 68, 68, 0.25)'
+                  : 'rgba(239, 68, 68, 0.1)',
                 color: hasItems ? '#f87171' : '#475569',
                 fontSize: '12px',
-                fontWeight: 500,
+                fontWeight: confirmingClear ? 700 : 500,
                 cursor: hasItems ? 'pointer' : 'not-allowed',
                 transition: 'all 0.2s ease',
                 opacity: hasItems ? 1 : 0.5,
               }}
             >
-              Clear
+              {confirmingClear ? 'Tap again to clear' : 'Clear'}
             </button>
           )}
         </div>
