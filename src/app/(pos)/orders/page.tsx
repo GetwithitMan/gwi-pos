@@ -498,8 +498,7 @@ export default function OrdersPage() {
       return
     }
 
-    const delta = pendingQty - item.quantity
-    if (delta !== 0) updateQuantity(quickPickSelectedId, delta)
+    if (pendingQty !== item.quantity) updateQuantity(quickPickSelectedId, pendingQty)
 
     ordersDigitTimerRef.current = setTimeout(() => {
       ordersDigitBufferRef.current = ''
