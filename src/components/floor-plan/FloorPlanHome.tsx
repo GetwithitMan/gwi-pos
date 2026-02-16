@@ -179,6 +179,7 @@ interface FloorPlanHomeProps {
   initialCategories?: Category[]
   initialMenuItems?: MenuItem[]
   // Pre-loaded snapshot from bootstrap (avoids duplicate /api/floorplan/snapshot fetch on mount)
+  // undefined = bootstrap pending (wait), null = bootstrap failed/skipped (fetch yourself), object = hydrate
   initialSnapshot?: {
     tables: any[]
     sections: any[]
@@ -706,21 +707,23 @@ export function FloorPlanHome({
 
   // Load data on mount — skip loadCategories if parent owns menu data (prop defined, even if empty while loading)
   // Skip loadFloorPlanData if parent provided initialSnapshot from bootstrap
+  // initialSnapshot: undefined = bootstrap pending (wait), null = no bootstrap (fetch), object = hydrate
   useEffect(() => {
-    if (initialSnapshot) {
+    if (initialSnapshot && typeof initialSnapshot === 'object') {
       setTables(initialSnapshot.tables || [])
       setSections(initialSnapshot.sections || [])
       setElements(initialSnapshot.elements || [])
       setOpenOrdersCount(initialSnapshot.openOrdersCount ?? 0)
       setLoading(false)
-    } else {
+    } else if (initialSnapshot === null) {
       loadFloorPlanData() // snapshot includes openOrdersCount
     }
+    // initialSnapshot === undefined → bootstrap pending, wait for it to resolve
     if (initialCategories === undefined) {
       loadCategories()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId])
+  }, [locationId, initialSnapshot])
 
   // Socket.io: primary update mechanism for all floor plan data
   const { subscribe, isConnected } = useEvents({ locationId, autoConnect: true })

@@ -97,12 +97,13 @@ export default function OrdersPage() {
   const [isLoading, setIsLoading] = useState(true)
 
   // Bootstrap snapshot data — passed to FloorPlanHome to avoid duplicate /api/floorplan/snapshot fetch
+  // undefined = bootstrap pending (FloorPlanHome waits), null = bootstrap failed/skipped (FloorPlanHome fetches itself)
   const [initialSnapshot, setInitialSnapshot] = useState<{
     tables: any[]
     sections: any[]
     elements: any[]
     openOrdersCount: number
-  } | null>(null)
+  } | null | undefined>(undefined)
 
   // Floor Plan integration (T019)
   // viewMode: 'floor-plan' = default HOME view, 'bartender' = speed-optimized bar view
@@ -613,6 +614,8 @@ export default function OrdersPage() {
         if (data.snapshot) {
           setInitialSnapshot(data.snapshot)
           setOpenOrdersCount(data.snapshot.openOrdersCount ?? 0)
+        } else {
+          setInitialSnapshot(null) // Signal FloorPlanHome to fetch on its own
         }
       })
       .catch(err => {
@@ -620,6 +623,7 @@ export default function OrdersPage() {
         // Bootstrap set the flag synchronously, so individual mount effects already skipped.
         // Manually trigger the fallback fetches.
         bootstrapLoadedRef.current = false
+        setInitialSnapshot(null) // Signal FloorPlanHome to fetch on its own
         loadMenu()
         loadOrderTypes()
         checkOpenShift()
@@ -742,9 +746,9 @@ export default function OrdersPage() {
     }
   }
 
-  // Check for open shift on load
+  // Check for open shift on load — skip if bootstrap is handling it
   useEffect(() => {
-    if (employee?.id && employee?.location?.id && !shiftChecked) {
+    if (employee?.id && employee?.location?.id && !shiftChecked && !bootstrapLoadedRef.current) {
       checkOpenShift()
     }
   }, [employee?.id, employee?.location?.id, shiftChecked])
@@ -789,7 +793,7 @@ export default function OrdersPage() {
     clearTimeout(loadOpenOrdersCountRef.current)
     loadOpenOrdersCountRef.current = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ locationId: employee.location.id })
+        const params = new URLSearchParams({ locationId: employee.location.id, summary: 'true' })
         const response = await fetch(`/api/orders/open?${params}`)
         if (response.ok) {
           const data = await response.json()
