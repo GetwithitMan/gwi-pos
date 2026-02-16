@@ -440,7 +440,8 @@ export const POST = withVenue(async function POST(
     // Fire-and-forget socket emit
     void emitToLocation(parentOrder.locationId, 'orders:list-changed', {
       orderId: id,
-      status: 'split',
+      trigger: 'split',
+      tableId: parentOrder.tableId || undefined,
     }).catch(() => {})
 
     return NextResponse.json({

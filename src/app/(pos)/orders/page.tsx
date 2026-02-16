@@ -1380,15 +1380,16 @@ export default function OrdersPage() {
     }
   }
 
-  // Handle split ticket completion
+  // Handle split ticket completion — clear order and trigger floor plan refresh
   const handleSplitTicketComplete = () => {
-    // Clear the current order and reload
     splitCacheRef.current.clear()
     clearOrder()
     setSavedOrderId(null)
     setOrderSent(false)
     setAppliedDiscounts([])
     setShowSplitTicketManager(false)
+    // Trigger FloorPlanHome refresh so table shows split badge + overview
+    setFloorPlanRefreshTrigger(prev => prev + 1)
   }
 
   // Handle opening discount modal

@@ -19,7 +19,7 @@ export interface SplitCheckScreenProps {
     isPaid?: boolean
   }>
   onClose: () => void
-  onSplitApplied: () => void
+  onSplitApplied: (splitData?: { parentOrderId: string; splitOrders: Array<{ id: string; splitIndex: number; displayNumber: string | null; status: string; total: number; itemCount: number }> }) => void
 }
 
 const MODE_TABS: { mode: SplitMode; label: string }[] = [
@@ -97,6 +97,9 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
           const data = await res.json().catch(() => ({}))
           throw new Error(data.error || 'Split failed')
         }
+        const responseData = await res.json().catch(() => null)
+        onSplitApplied(responseData ?? undefined)
+        return
       }
       onSplitApplied()
     } catch (err) {

@@ -3743,11 +3743,16 @@ export function FloorPlanHome({
               setShowSplitTicketManager(false)
               setSplitItemId(null)
             }}
-            onSplitApplied={() => {
-              // Split POST already updated server state, socket event will refresh floor plan via deltas
+            onSplitApplied={(splitData) => {
               splitCacheRef.current.clear()
               setShowSplitTicketManager(false)
               setSplitItemId(null)
+              setShowOrderPanel(false)
+              // Refresh floor plan to get split badge on table, then show overview
+              loadFloorPlanData(false)
+              if (splitData?.splitOrders?.length) {
+                setShowSplitOverview(true)
+              }
             }}
           />
         </Suspense>
