@@ -1299,7 +1299,7 @@ export default function OrdersPage() {
     }
 
     try {
-      const response = await fetch(`/api/orders/${splitOrderId}`)
+      const response = await fetch(`/api/orders/${splitOrderId}?view=split`)
       if (!response.ok) {
         throw new Error('Failed to fetch split order')
       }

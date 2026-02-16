@@ -1247,7 +1247,7 @@ export function FloorPlanHome({
     }
 
     try {
-      const res = await fetch(`/api/orders/${splitOrderId}`)
+      const res = await fetch(`/api/orders/${splitOrderId}?view=split`)
       if (res.ok) {
         const data = await res.json()
         if (data) {
@@ -3744,12 +3744,10 @@ export function FloorPlanHome({
               setSplitItemId(null)
             }}
             onSplitApplied={() => {
-              // Split POST already updated server state, socket event will refresh floor plan
+              // Split POST already updated server state, socket event will refresh floor plan via deltas
               splitCacheRef.current.clear()
               setShowSplitTicketManager(false)
               setSplitItemId(null)
-              // Refresh floor plan data to show split badges
-              loadFloorPlanData(false)
             }}
           />
         </Suspense>

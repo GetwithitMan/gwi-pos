@@ -13,6 +13,41 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
+    const view = request.nextUrl.searchParams.get('view')
+
+    // Lightweight split view — items + modifiers + totals only (no payments, tips, entertainment)
+    if (view === 'split') {
+      const order = await db.order.findUnique({
+        where: { id },
+        select: {
+          id: true, orderNumber: true, status: true, orderType: true,
+          subtotal: true, taxTotal: true, total: true, discountTotal: true,
+          tabName: true, tableId: true, employeeId: true, locationId: true, guestCount: true,
+          baseSeatCount: true, extraSeatCount: true, notes: true,
+          parentOrderId: true,
+          createdAt: true, updatedAt: true,
+          employee: { select: { id: true, displayName: true } },
+          table: { select: { id: true, name: true } },
+          items: {
+            include: {
+              modifiers: {
+                select: {
+                  id: true, modifierId: true, name: true, price: true,
+                  depth: true, preModifier: true, linkedMenuItemId: true,
+                },
+              },
+            },
+          },
+        },
+      })
+
+      if (!order) {
+        return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
+      }
+
+      const response = mapOrderForResponse(order)
+      return NextResponse.json({ ...response, paidAmount: 0 })
+    }
 
     const order = await db.order.findUnique({
       where: { id },
