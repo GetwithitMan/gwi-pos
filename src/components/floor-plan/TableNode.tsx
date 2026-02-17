@@ -391,9 +391,6 @@ export const TableNode = memo(function TableNode({
   const getShapeStyle = () => {
     switch (table.shape) {
       case 'circle':
-      case 'round':
-        return { borderRadius: '50%' }
-      case 'oval':
         return { borderRadius: '50%' }
       case 'booth':
         return { borderRadius: '12px 12px 24px 24px' }
