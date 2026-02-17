@@ -17,7 +17,6 @@ import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/share
 const CATEGORY_TYPES = [
   { value: 'food', label: 'Food', color: '#22c55e', description: 'Kitchen items, appetizers, entrees' },
   { value: 'drinks', label: 'Drinks', color: '#3b82f6', description: 'Non-alcoholic beverages' },
-  { value: 'liquor', label: 'Liquor', color: '#8b5cf6', description: 'Beer, wine, spirits' },
   { value: 'pizza', label: 'Pizza', color: '#ef4444', description: 'Pizza items with sectional toppings builder' },
   { value: 'entertainment', label: 'Entertainment', color: '#f97316', description: 'Pool tables, darts, games - timed billing' },
   { value: 'combos', label: 'Combos', color: '#ec4899', description: 'Bundled items' },

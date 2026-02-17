@@ -70,6 +70,7 @@ function LiquorBuilderContent() {
 
   // Data state
   const [categories, setCategories] = useState<SpiritCategory[]>([])
+  const [menuCategories, setMenuCategories] = useState<{ id: string; name: string; itemCount: number }[]>([])
   const [bottles, setBottles] = useState<BottleProduct[]>([])
   const [drinks, setDrinks] = useState<any[]>([])
   const [selectedDrink, setSelectedDrink] = useState<any | null>(null)
@@ -176,6 +177,9 @@ function LiquorBuilderContent() {
       const data = await res.json()
       const liquorItems = data.items.filter((item: any) => item.categoryType === 'liquor')
       setDrinks(liquorItems)
+      // Load liquor-type menu categories (Beer, Cocktails, etc.)
+      const liquorCats = data.categories.filter((c: any) => c.categoryType === 'liquor')
+      setMenuCategories(liquorCats.map((c: any) => ({ id: c.id, name: c.name, itemCount: c.itemCount ?? 0 })))
     }
   }
 
@@ -284,7 +288,7 @@ function LiquorBuilderContent() {
   if (!isAuthenticated) return null
 
   // Check if this is a fresh setup (no data)
-  const isEmptySetup = categories.length === 0 && bottles.length === 0
+  const isEmptySetup = categories.length === 0 && bottles.length === 0 && menuCategories.length === 0
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -357,7 +361,24 @@ function LiquorBuilderContent() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-2">
-              <div className="text-[10px] uppercase text-gray-400 font-medium px-2 mb-1">Categories</div>
+              {/* Menu Categories (Beer, Cocktails, etc.) */}
+              {menuCategories.length > 0 && (
+                <>
+                  <div className="text-[10px] uppercase text-gray-400 font-medium px-2 mb-1">Menu Categories</div>
+                  {menuCategories.map(cat => (
+                    <button
+                      key={cat.id}
+                      onClick={() => { setActiveTab('drinks'); }}
+                      className="w-full text-left px-2 py-1.5 rounded text-sm flex items-center justify-between hover:bg-gray-100"
+                    >
+                      <span className="truncate">{cat.name}</span>
+                      <span className="text-xs text-gray-400">{cat.itemCount}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              {/* Spirit Categories (Vodka, Whiskey, etc.) */}
+              <div className="text-[10px] uppercase text-gray-400 font-medium px-2 mb-1 mt-3">Spirit Categories</div>
               {categories.map(cat => (
                 <button
                   key={cat.id}
