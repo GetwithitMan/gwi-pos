@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 import { formatCurrency } from '@/lib/utils'
 
 interface Customer {
@@ -56,6 +57,7 @@ export function CustomerLookupModal({
     phone: '',
   })
   const [isAdding, setIsAdding] = useState(false)
+  const [focusedField, setFocusedField] = useState<string | null>('search')
 
   useEffect(() => {
     if (isOpen && searchTerm.length >= 2) {
@@ -139,7 +141,7 @@ export function CustomerLookupModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
           <div>
@@ -157,12 +159,23 @@ export function CustomerLookupModal({
 
         {/* Search */}
         <div className="p-4 border-b">
-          <Input
-            placeholder="Search by name, phone, or email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            autoFocus
-          />
+          <div
+            onClick={() => setFocusedField('search')}
+            className={`w-full px-3 py-2 rounded-lg border transition-colors cursor-pointer min-h-[44px] ${
+              focusedField === 'search' ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+            }`}
+          >
+            {searchTerm || <span className="text-gray-400">Search by name, phone, or email...</span>}
+          </div>
+          {focusedField === 'search' && (
+            <OnScreenKeyboard
+              value={searchTerm}
+              onChange={setSearchTerm}
+              onSubmit={() => setFocusedField(null)}
+              theme="light"
+              className="mt-2"
+            />
+          )}
           <p className="text-xs text-gray-500 mt-1">
             Type at least 2 characters to search
           </p>
@@ -251,22 +264,59 @@ export function CustomerLookupModal({
               <h3 className="font-medium mb-3">Quick Add Customer</h3>
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    placeholder="First Name *"
-                    value={quickAddData.firstName}
-                    onChange={(e) => setQuickAddData({ ...quickAddData, firstName: e.target.value })}
-                  />
-                  <Input
-                    placeholder="Last Name *"
-                    value={quickAddData.lastName}
-                    onChange={(e) => setQuickAddData({ ...quickAddData, lastName: e.target.value })}
-                  />
+                  <div>
+                    <div
+                      onClick={() => setFocusedField('firstName')}
+                      className={`w-full px-3 py-2 rounded-lg border transition-colors cursor-pointer min-h-[44px] ${
+                        focusedField === 'firstName' ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+                      }`}
+                    >
+                      {quickAddData.firstName || <span className="text-gray-400">First Name *</span>}
+                    </div>
+                  </div>
+                  <div>
+                    <div
+                      onClick={() => setFocusedField('lastName')}
+                      className={`w-full px-3 py-2 rounded-lg border transition-colors cursor-pointer min-h-[44px] ${
+                        focusedField === 'lastName' ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+                      }`}
+                    >
+                      {quickAddData.lastName || <span className="text-gray-400">Last Name *</span>}
+                    </div>
+                  </div>
                 </div>
-                <Input
-                  placeholder="Phone (optional)"
-                  value={quickAddData.phone}
-                  onChange={(e) => setQuickAddData({ ...quickAddData, phone: e.target.value })}
-                />
+                {(focusedField === 'firstName' || focusedField === 'lastName') && (
+                  <OnScreenKeyboard
+                    value={focusedField === 'firstName' ? quickAddData.firstName : quickAddData.lastName}
+                    onChange={(v) => setQuickAddData({ ...quickAddData, [focusedField]: v })}
+                    onSubmit={() => {
+                      if (focusedField === 'firstName') setFocusedField('lastName')
+                      else setFocusedField('phone')
+                    }}
+                    theme="light"
+                    submitLabel="Next"
+                  />
+                )}
+                <div>
+                  <div
+                    onClick={() => setFocusedField('phone')}
+                    className={`w-full px-3 py-2 rounded-lg border transition-colors cursor-pointer min-h-[44px] ${
+                      focusedField === 'phone' ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+                    }`}
+                  >
+                    {quickAddData.phone || <span className="text-gray-400">Phone (optional)</span>}
+                  </div>
+                  {focusedField === 'phone' && (
+                    <OnScreenKeyboard
+                      value={quickAddData.phone}
+                      onChange={(v) => setQuickAddData({ ...quickAddData, phone: v })}
+                      onSubmit={() => setFocusedField(null)}
+                      mode="phone"
+                      theme="light"
+                      className="mt-2"
+                    />
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <Button
                     variant="outline"

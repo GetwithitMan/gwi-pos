@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
+import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 import { formatCurrency } from '@/lib/utils'
 
 interface NewTabModalProps {
@@ -43,6 +44,7 @@ export function NewTabModal({
   const [preAuthAmount, setPreAuthAmount] = useState(defaultPreAuthAmount)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [focusedField, setFocusedField] = useState<string | null>('tabName')
 
   const resetForm = () => {
     setTabName('')
@@ -95,18 +97,29 @@ export function NewTabModal({
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="New Tab">
+    <Modal isOpen={isOpen} onClose={handleClose} title="New Tab" size="lg">
       <div className="space-y-4">
         {/* Tab Name */}
         <div>
           <Label htmlFor="tabName">Tab Name (optional)</Label>
-          <Input
-            id="tabName"
-            value={tabName}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTabName(e.target.value)}
-            placeholder="e.g., John's Table, VIP Booth"
-            className="mt-1"
-          />
+          <div
+            onClick={() => setFocusedField('tabName')}
+            className={`mt-1 w-full px-3 py-2 rounded-lg border transition-colors cursor-pointer min-h-[44px] ${
+              focusedField === 'tabName' ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+            }`}
+          >
+            {tabName || <span className="text-gray-400">e.g., John&apos;s Table, VIP Booth</span>}
+          </div>
+          {focusedField === 'tabName' && (
+            <OnScreenKeyboard
+              value={tabName}
+              onChange={setTabName}
+              onSubmit={handleSubmit}
+              theme="light"
+              submitLabel="Start Tab"
+              className="mt-2"
+            />
+          )}
           <p className="text-xs text-gray-500 mt-1">
             Leave blank to use "Tab #{'{'}number{'}'}"
           </p>
@@ -156,17 +169,25 @@ export function NewTabModal({
               {/* Last 4 Digits */}
               <div>
                 <Label htmlFor="cardLast4">Last 4 Digits</Label>
-                <Input
-                  id="cardLast4"
-                  value={cardLast4}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-                    const val = e.target.value.replace(/\D/g, '').slice(0, 4)
-                    setCardLast4(val)
-                  }}
-                  placeholder="1234"
-                  maxLength={4}
-                  className="mt-1 text-center text-2xl tracking-widest font-mono"
-                />
+                <div
+                  onClick={() => setFocusedField('cardLast4')}
+                  className={`mt-1 w-full px-3 py-2 rounded-lg border transition-colors cursor-pointer text-center text-2xl tracking-widest font-mono min-h-[48px] ${
+                    focusedField === 'cardLast4' ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+                  }`}
+                >
+                  {cardLast4 || <span className="text-gray-400 text-base font-normal tracking-normal">1234</span>}
+                </div>
+                {focusedField === 'cardLast4' && (
+                  <OnScreenKeyboard
+                    value={cardLast4}
+                    onChange={(v) => setCardLast4(v.replace(/\D/g, '').slice(0, 4))}
+                    onSubmit={() => setFocusedField(null)}
+                    mode="numeric"
+                    theme="light"
+                    maxLength={4}
+                    className="mt-2"
+                  />
+                )}
                 <p className="text-xs text-gray-500 mt-1">
                   Simulated pre-auth (no real charge)
                 </p>

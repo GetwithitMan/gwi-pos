@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 
 interface WaitlistEntry {
   id: string
@@ -69,6 +70,7 @@ export function AddToWaitlistModal({
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [focusedField, setFocusedField] = useState<string | null>(null)
 
   // Fetch waitlist and open tabs when modal opens
   useEffect(() => {
@@ -291,27 +293,48 @@ export function AddToWaitlistModal({
             {/* Customer name */}
             <div>
               <label className="block text-sm font-bold text-gray-800 mb-1">Name *</label>
-              <Input
-                type="text"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="Customer name"
-                required
-                className="border-2 border-gray-300 font-medium"
-              />
+              <div
+                onClick={() => setFocusedField('name')}
+                className={`w-full px-3 py-2 rounded-lg border-2 transition-colors cursor-pointer min-h-[44px] font-medium ${
+                  focusedField === 'name' ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+                }`}
+              >
+                {customerName || <span className="text-gray-400">Customer name</span>}
+              </div>
+              {focusedField === 'name' && (
+                <OnScreenKeyboard
+                  value={customerName}
+                  onChange={setCustomerName}
+                  onSubmit={() => setFocusedField('phone')}
+                  theme="light"
+                  submitLabel="Next"
+                  className="mt-2"
+                />
+              )}
             </div>
 
             {/* Phone and Party Size in row */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-bold text-gray-800 mb-1">Phone</label>
-                <Input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="555-123-4567"
-                  className="border-2 border-gray-300"
-                />
+                <div
+                  onClick={() => setFocusedField('phone')}
+                  className={`w-full px-3 py-2 rounded-lg border-2 transition-colors cursor-pointer min-h-[44px] ${
+                    focusedField === 'phone' ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+                  }`}
+                >
+                  {phoneNumber || <span className="text-gray-400">555-123-4567</span>}
+                </div>
+                {focusedField === 'phone' && (
+                  <OnScreenKeyboard
+                    value={phoneNumber}
+                    onChange={setPhoneNumber}
+                    onSubmit={() => setFocusedField(null)}
+                    mode="phone"
+                    theme="light"
+                    className="mt-2"
+                  />
+                )}
               </div>
               <div>
                 <label className="block text-sm font-bold text-gray-800 mb-1">Party Size</label>

@@ -12,6 +12,7 @@ import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
 import ModeSelector from '@/components/orders/ModeSelector'
 import { OpenOrdersPanel } from '@/components/orders/OpenOrdersPanel'
+import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 
 // ============================================================================
 // TYPES
@@ -2060,29 +2061,28 @@ export function BartenderView({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-800 border border-white/10 rounded-2xl w-full max-w-md p-6"
+              className="bg-slate-800 border border-white/10 rounded-2xl w-full max-w-lg p-6"
               onClick={e => e.stopPropagation()}
             >
-              <h2 className="text-xl font-bold text-white mb-4">New Tab</h2>
+              <h2 className="text-xl font-bold text-white mb-2">Tab Name</h2>
+              <p className="text-sm text-slate-400 mb-4">
+                Enter a name for this tab {requireNameWithoutCard && <span className="text-red-400">*</span>}
+              </p>
 
-              <div className="mb-4">
-                <label className="block text-sm text-slate-400 mb-2">
-                  Tab Name {requireNameWithoutCard && <span className="text-red-400">*</span>}
-                </label>
-                <input
-                  type="text"
-                  value={newTabName}
-                  onChange={(e) => setNewTabName(e.target.value)}
-                  placeholder="Customer name or tab identifier"
-                  className="w-full px-4 py-3 bg-slate-700 border border-white/10 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500"
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      handleCreateTab()
-                    }
-                  }}
-                />
+              {/* Input display */}
+              <div className="w-full px-4 py-3 bg-slate-700 border border-white/10 rounded-lg text-white min-h-[48px] mb-3">
+                {newTabName || <span className="text-slate-400">e.g. John, Table 5, etc.</span>}
               </div>
+
+              {/* On-screen keyboard */}
+              <OnScreenKeyboard
+                value={newTabName}
+                onChange={setNewTabName}
+                onSubmit={handleCreateTab}
+                theme="dark"
+                submitLabel="Start Tab"
+                className="mb-4"
+              />
 
               <div className="flex gap-3">
                 <button
@@ -2096,7 +2096,7 @@ export function BartenderView({
                   disabled={isCreatingTab}
                   className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white font-semibold transition-colors disabled:opacity-50"
                 >
-                  {isCreatingTab ? 'Creating...' : 'Create Tab'}
+                  {isCreatingTab ? 'Creating...' : 'Start Tab'}
                 </button>
               </div>
             </motion.div>

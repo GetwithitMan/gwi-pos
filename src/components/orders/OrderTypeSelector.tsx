@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { OrderTypeConfig, WorkflowRules, OrderCustomFields, FieldDefinition } from '@/types/order-types'
+import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 
 // Icons mapping
 const ICONS: Record<string, React.ReactNode> = {
@@ -64,6 +65,7 @@ export function OrderTypeSelector({
   const [pendingOrderType, setPendingOrderType] = useState<OrderTypeConfig | null>(null)
   const [customFieldValues, setCustomFieldValues] = useState<OrderCustomFields>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [focusedField, setFocusedField] = useState<string | null>(null)
 
   // Load order types (with module-level cache)
   useEffect(() => {
@@ -163,22 +165,34 @@ export function OrderTypeSelector({
   const renderFieldInput = (fieldName: string, definition: FieldDefinition) => {
     const value = customFieldValues[fieldName] || ''
     const error = fieldErrors[fieldName]
+    const isFocused = focusedField === fieldName
 
-    const baseClass = `w-full px-3 py-2 rounded-lg border transition-colors ${
-      error ? 'border-red-400 bg-red-50' : 'border-gray-300 focus:border-blue-500'
-    } focus:outline-none`
+    const displayClass = `w-full px-3 py-2 rounded-lg border transition-colors cursor-pointer min-h-[44px] ${
+      error ? 'border-red-400 bg-red-50' : isFocused ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-gray-300 bg-white'
+    }`
 
     switch (definition.type) {
       case 'textarea':
         return (
-          <textarea
-            value={value}
-            onChange={(e) => setCustomFieldValues(prev => ({ ...prev, [fieldName]: e.target.value }))}
-            placeholder={definition.placeholder}
-            className={`${baseClass} min-h-[80px]`}
-          />
+          <div>
+            <div
+              onClick={() => setFocusedField(isFocused ? null : fieldName)}
+              className={`${displayClass} min-h-[80px] whitespace-pre-wrap`}
+            >
+              {value || <span className="text-gray-400">{definition.placeholder}</span>}
+            </div>
+            {isFocused && (
+              <OnScreenKeyboard
+                value={value}
+                onChange={(v) => setCustomFieldValues(prev => ({ ...prev, [fieldName]: v }))}
+                onSubmit={() => setFocusedField(null)}
+                theme="light"
+                className="mt-2"
+              />
+            )}
+          </div>
         )
-      case 'select':
+      case 'select': {
         // Use button grid for better touch UX
         // Dynamic column count based on options
         const optCount = definition.options?.length || 0
@@ -248,34 +262,58 @@ export function OrderTypeSelector({
             })}
           </div>
         )
+      }
       case 'time':
         return (
           <input
             type="time"
             value={value}
             onChange={(e) => setCustomFieldValues(prev => ({ ...prev, [fieldName]: e.target.value }))}
-            className={baseClass}
+            className={`w-full px-3 py-2 rounded-lg border transition-colors ${
+              error ? 'border-red-400 bg-red-50' : 'border-gray-300 focus:border-blue-500'
+            } focus:outline-none`}
           />
         )
       case 'phone':
         return (
-          <input
-            type="tel"
-            value={value}
-            onChange={(e) => setCustomFieldValues(prev => ({ ...prev, [fieldName]: e.target.value }))}
-            placeholder={definition.placeholder || '555-123-4567'}
-            className={baseClass}
-          />
+          <div>
+            <div
+              onClick={() => setFocusedField(isFocused ? null : fieldName)}
+              className={displayClass}
+            >
+              {value || <span className="text-gray-400">{definition.placeholder || '555-123-4567'}</span>}
+            </div>
+            {isFocused && (
+              <OnScreenKeyboard
+                value={value}
+                onChange={(v) => setCustomFieldValues(prev => ({ ...prev, [fieldName]: v }))}
+                onSubmit={() => setFocusedField(null)}
+                mode="phone"
+                theme="light"
+                className="mt-2"
+              />
+            )}
+          </div>
         )
       default:
         return (
-          <input
-            type="text"
-            value={value}
-            onChange={(e) => setCustomFieldValues(prev => ({ ...prev, [fieldName]: e.target.value }))}
-            placeholder={definition.placeholder}
-            className={baseClass}
-          />
+          <div>
+            <div
+              onClick={() => setFocusedField(isFocused ? null : fieldName)}
+              className={displayClass}
+            >
+              {value || <span className="text-gray-400">{definition.placeholder}</span>}
+            </div>
+            {isFocused && (
+              <OnScreenKeyboard
+                value={value}
+                onChange={(v) => setCustomFieldValues(prev => ({ ...prev, [fieldName]: v }))}
+                onSubmit={() => setFocusedField(null)}
+                theme="light"
+                className="mt-2"
+              />
+            )}
+          </div>
         )
     }
   }
