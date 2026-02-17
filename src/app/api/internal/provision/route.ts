@@ -303,7 +303,7 @@ async function seedVenueDefaults(venueDb: PrismaClient, venueName: string): Prom
         sectionId: section.id,
         name: t.name,
         capacity: 4,
-        shape: 'round',
+        shape: 'circle',
         posX: t.posX,
         posY: t.posY,
       },

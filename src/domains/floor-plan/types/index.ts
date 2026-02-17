@@ -76,13 +76,10 @@ export interface Table {
 
 export type TableShape =
   | 'square'
-  | 'round'
   | 'rectangle'
-  | 'oval'
+  | 'circle'
   | 'booth'
-  | 'bar_seat'
-  | 'high_top'
-  | 'custom'
+  | 'bar'
 
 export type TableStatus =
   | 'available'

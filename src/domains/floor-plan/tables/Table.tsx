@@ -23,7 +23,7 @@ interface TableProps {
  */
 function getShapePath(shape: TableShape, width: number, height: number): React.ReactElement {
   switch (shape) {
-    case 'round':
+    case 'circle':
       return (
         <ellipse
           cx={width / 2}
@@ -35,36 +35,6 @@ function getShapePath(shape: TableShape, width: number, height: number): React.R
           strokeWidth="2"
         />
       );
-
-    case 'oval':
-      return (
-        <ellipse
-          cx={width / 2}
-          cy={height / 2}
-          rx={width / 2}
-          ry={height / 2}
-          fill="currentColor"
-          stroke="currentColor"
-          strokeWidth="2"
-        />
-      );
-
-    case 'hexagon': {
-      const cx = width / 2;
-      const cy = height / 2;
-      const rx = width / 2;
-      const ry = height / 2;
-      const points = [
-        [cx + rx * Math.cos(0), cy + ry * Math.sin(0)],
-        [cx + rx * Math.cos(Math.PI / 3), cy + ry * Math.sin(Math.PI / 3)],
-        [cx + rx * Math.cos((2 * Math.PI) / 3), cy + ry * Math.sin((2 * Math.PI) / 3)],
-        [cx + rx * Math.cos(Math.PI), cy + ry * Math.sin(Math.PI)],
-        [cx + rx * Math.cos((4 * Math.PI) / 3), cy + ry * Math.sin((4 * Math.PI) / 3)],
-        [cx + rx * Math.cos((5 * Math.PI) / 3), cy + ry * Math.sin((5 * Math.PI) / 3)],
-      ];
-      const pathData = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]},${p[1]}`).join(' ') + ' Z';
-      return <path d={pathData} fill="currentColor" stroke="currentColor" strokeWidth="2" />;
-    }
 
     case 'square':
     case 'rectangle':

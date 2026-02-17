@@ -17,7 +17,7 @@ import { SEAT_RADIUS, SEAT_DEFAULT_OFFSET, ANGLE } from '@/lib/floorplan/constan
 // TYPES
 // =============================================================================
 
-export type TableShape = 'rectangle' | 'square' | 'round' | 'oval' | 'booth';
+export type TableShape = 'rectangle' | 'square' | 'circle' | 'booth' | 'bar';
 export type SeatPattern =
   | 'all_around'
   | 'two_sides'
@@ -63,11 +63,8 @@ export function generateSeatPositions(
   const { shape, pattern } = params;
 
   // Route to shape-specific generator
-  if (shape === 'round') {
-    return generateRoundSeats(params);
-  }
-
-  if (shape === 'oval') {
+  if (shape === 'circle') {
+    // Use elliptical generator (handles both perfect circles and ovals via width/height)
     return generateOvalSeats(params);
   }
 

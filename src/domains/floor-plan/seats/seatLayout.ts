@@ -24,18 +24,17 @@ export function generateSeatPositions(
   tableHeight: number
 ): SeatPosition[] {
   switch (shape) {
-    case 'round':
-    case 'oval':
+    case 'circle':
       return generateCircularSeats(count, tableWidth, tableHeight);
 
     case 'square':
     case 'rectangle':
       return generateRectangularSeats(count, tableWidth, tableHeight);
 
-    case 'hexagon':
-      return generateHexagonSeats(count, tableWidth, tableHeight);
+    case 'booth':
+      return generateCircularSeats(count, tableWidth, tableHeight);
 
-    case 'custom':
+    case 'bar':
     default:
       // Default to circular distribution
       return generateCircularSeats(count, tableWidth, tableHeight);

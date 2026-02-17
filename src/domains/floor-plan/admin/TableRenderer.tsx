@@ -287,10 +287,8 @@ export function TableRenderer({
     };
 
     switch (table.shape) {
-      case 'round':
+      case 'circle':
         return <RoundTableShape {...shapeProps} />;
-      case 'oval':
-        return <OvalTableShape {...shapeProps} />;
       case 'booth':
         return <BoothTableShape {...shapeProps} />;
       case 'bar':

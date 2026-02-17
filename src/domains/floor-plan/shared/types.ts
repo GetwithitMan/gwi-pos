@@ -137,7 +137,7 @@ export type ObjectType =
 
 export type ObjectCategory = 'seatable' | 'entertainment' | 'decorative' | 'service';
 
-export type TableShape = 'square' | 'rectangle' | 'round' | 'oval' | 'hexagon' | 'custom';
+export type TableShape = 'square' | 'rectangle' | 'circle' | 'booth' | 'bar';
 
 export interface EntertainmentConfig {
   hourlyRate: number;

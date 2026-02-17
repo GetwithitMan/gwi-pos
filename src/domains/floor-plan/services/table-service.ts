@@ -150,12 +150,10 @@ function mapPrismaTableToDomain(prismaTable: any): Table {
 function mapShape(dbShape: string): TableShape {
   const shapeMap: Record<string, TableShape> = {
     'rectangle': 'rectangle',
-    'circle': 'round',
+    'circle': 'circle',
     'square': 'square',
     'booth': 'booth',
-    'bar': 'bar_seat',
-    'oval': 'oval',
-    'high_top': 'high_top',
+    'bar': 'bar',
   }
   return shapeMap[dbShape] || 'rectangle'
 }

@@ -165,7 +165,6 @@ function calculateSeatPositions(
 
   switch (shape) {
     case 'circle':
-    case 'round':
       // Distribute evenly around circle
       for (let i = 0; i < capacity; i++) {
         const angle = (i / capacity) * 360
@@ -190,7 +189,6 @@ function calculateSeatPositions(
       break
 
     case 'bar':
-    case 'bar_seat':
       // Seats on one side only
       for (let i = 0; i < capacity; i++) {
         positions.push({

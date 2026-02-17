@@ -46,7 +46,7 @@ export const POST = withVenue(async function POST(
 
     // Generate seat positions using params object
     const seatPositions = generateSeatPositions({
-      shape: (table.shape as 'rectangle' | 'square' | 'round' | 'oval' | 'booth') || 'rectangle',
+      shape: (table.shape as 'rectangle' | 'square' | 'circle' | 'booth' | 'bar') || 'rectangle',
       pattern: finalPattern,
       capacity: finalCount,
       width: table.width,

@@ -224,7 +224,7 @@ export function getFixtureTypeMetadata(type: FixtureType): FixtureTypeMetadata {
 // TABLE TYPES (for Editor Layer)
 // =============================================================================
 
-export type TableShape = 'square' | 'rectangle' | 'round' | 'oval' | 'booth' | 'bar';
+export type TableShape = 'square' | 'rectangle' | 'circle' | 'booth' | 'bar';
 
 export type SeatPattern = 'all_around' | 'front_only' | 'three_sides' | 'two_sides' | 'inside';
 
@@ -290,22 +290,13 @@ export const TABLE_SHAPES: TableTypeMetadata[] = [
     icon: '▭',
   },
   {
-    shape: 'round',
+    shape: 'circle',
     label: 'Round (4-top)',
     defaultWidth: 80,
     defaultHeight: 80,
     defaultCapacity: 4,
     defaultSeatPattern: 'all_around',
     icon: '⬤',
-  },
-  {
-    shape: 'oval',
-    label: 'Oval (8-top)',
-    defaultWidth: 160,
-    defaultHeight: 100,
-    defaultCapacity: 8,
-    defaultSeatPattern: 'all_around',
-    icon: '⬭',
   },
   {
     shape: 'booth',

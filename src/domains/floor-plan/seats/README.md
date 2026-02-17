@@ -14,7 +14,7 @@
 import { SeatAPI, Seat } from '@/domains/floor-plan/seats';
 
 // Generate seats for a table
-const seats = SeatAPI.generateSeatsForTable('table_1', 8, 'round');
+const seats = SeatAPI.generateSeatsForTable('table_1', 8, 'circle');
 
 // Query seats
 const occupied = SeatAPI.getOccupiedSeats('table_1');

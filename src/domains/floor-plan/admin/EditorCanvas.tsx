@@ -1340,11 +1340,9 @@ export function EditorCanvas({
               return { minWidth: 80, minHeight: 30 };  // Wide and short
             case 'booth':
               return { minWidth: 60, minHeight: 80 };  // Taller than wide
-            case 'round':
+            case 'circle':
             case 'square':
               return { minWidth: 50, minHeight: 50 };  // Equal dimensions
-            case 'oval':
-              return { minWidth: 60, minHeight: 40 };  // Slightly wide
             case 'rectangle':
             default:
               return { minWidth: 60, minHeight: 40 };
@@ -1361,7 +1359,7 @@ export function EditorCanvas({
         let newPosX = resizeStartPos.x;
         let newPosY = resizeStartPos.y;
 
-        const maintainAspect = currentTable.shape === 'round' || currentTable.shape === 'square';
+        const maintainAspect = currentTable.shape === 'circle' || currentTable.shape === 'square';
 
         switch (resizeHandle) {
           case 'se':
@@ -2690,7 +2688,7 @@ export function EditorCanvas({
                 width: table.width,
                 height: table.height,
                 border: '2px dashed rgba(239, 68, 68, 0.7)',
-                borderRadius: table.shape === 'round' ? '50%' : 8,
+                borderRadius: table.shape === 'circle' ? '50%' : 8,
                 transform: `rotate(${rotation}deg)`,
                 transformOrigin: 'center center',
                 pointerEvents: 'none',
@@ -2707,7 +2705,7 @@ export function EditorCanvas({
                 width: table.width + SEAT_BOUNDARY_DISTANCE * 2,
                 height: table.height + SEAT_BOUNDARY_DISTANCE * 2,
                 border: '2px dashed rgba(59, 130, 246, 0.5)',
-                borderRadius: table.shape === 'round' ? '50%' : 12,
+                borderRadius: table.shape === 'circle' ? '50%' : 12,
                 transform: `rotate(${rotation}deg)`,
                 transformOrigin: 'center center',
                 pointerEvents: 'none',
@@ -2724,7 +2722,7 @@ export function EditorCanvas({
                 width: table.width + SEAT_BOUNDARY_DISTANCE * 2,
                 height: table.height + SEAT_BOUNDARY_DISTANCE * 2,
                 backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                borderRadius: table.shape === 'round' ? '50%' : 12,
+                borderRadius: table.shape === 'circle' ? '50%' : 12,
                 transform: `rotate(${rotation}deg)`,
                 transformOrigin: 'center center',
                 pointerEvents: 'none',

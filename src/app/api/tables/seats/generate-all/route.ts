@@ -85,7 +85,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       // Generate seat positions using library function
       const baseSeatPositions = generateSeatPositionsFromLib({
-        shape: table.shape as 'rectangle' | 'square' | 'round' | 'oval' | 'booth',
+        shape: table.shape as 'rectangle' | 'square' | 'circle' | 'booth' | 'bar',
         pattern: libraryPattern,
         capacity: table.capacity,
         width: table.width,

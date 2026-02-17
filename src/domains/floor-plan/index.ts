@@ -136,11 +136,8 @@ export const ENTERTAINMENT_TYPES = [
 
 export const TABLE_SHAPES = [
   'square',
-  'round',
   'rectangle',
-  'oval',
+  'circle',
   'booth',
-  'bar_seat',
-  'high_top',
-  'custom',
+  'bar',
 ] as const

@@ -58,7 +58,7 @@ export const POST = withVenue(async function POST(
     const rightClearance = getDynamicClearance(availableSpace?.right, baseClearance);
 
     // Handle round/oval tables differently
-    const isRoundTable = table.shape === 'round' || table.shape === 'oval';
+    const isRoundTable = table.shape === 'circle';
 
     // Update each seat's position using edge-relative positioning
     const updatedSeats = await Promise.all(
@@ -81,7 +81,7 @@ export const POST = withVenue(async function POST(
 
           // For oval, use ellipse formula; for round, use circle
           let newRadius: number;
-          if (table.shape === 'oval') {
+          if (table.width !== table.height) {
             // Ellipse: maintain position on ellipse perimeter + clearance
             newRadius = Math.sqrt(
               Math.pow(newHalfW * Math.cos(currentAngle), 2) +
