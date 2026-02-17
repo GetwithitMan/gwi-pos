@@ -2054,16 +2054,16 @@ export function BartenderView({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-800 border border-white/10 rounded-2xl w-full max-w-lg p-6"
+              className="bg-slate-800 border border-white/10 rounded-2xl w-full max-w-2xl p-6 max-h-[95vh] overflow-y-auto"
               onClick={e => e.stopPropagation()}
             >
               <h2 className="text-xl font-bold text-white mb-2">Tab Name</h2>
-              <p className="text-sm text-slate-400 mb-4">
+              <p className="text-sm text-slate-400 mb-3">
                 Enter a name for this tab {requireNameWithoutCard && <span className="text-red-400">*</span>}
               </p>
 
               {/* Input display */}
-              <div className="w-full px-4 py-3 bg-slate-700 border border-white/10 rounded-lg text-white min-h-[48px] mb-3">
+              <div className="w-full px-4 py-3 bg-slate-700 border border-white/10 rounded-lg text-white min-h-[48px] mb-3 text-lg">
                 {newTabName || <span className="text-slate-400">e.g. John, Table 5, etc.</span>}
               </div>
 
@@ -2074,12 +2074,12 @@ export function BartenderView({
                 onSubmit={handleCreateTab}
                 theme="dark"
                 submitLabel="Start Tab"
-                className="mb-4"
+                className="mb-3"
               />
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => setShowNewTabModal(false)}
+                  onClick={() => { setShowNewTabModal(false); pendingSendAfterTabRef.current = false }}
                   className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-white font-medium transition-colors"
                 >
                   Cancel
