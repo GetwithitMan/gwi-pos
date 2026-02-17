@@ -150,6 +150,7 @@
 | 342 | PostgreSQL-Only DevOps | DONE | DevOps | - | Remove all SQLite refs from Docker/scripts/docs. Connection pooling. Zero SQLite references in codebase. |
 | 343 | Socket & State Hardening | DONE | Global | 340 | 150ms event debouncing, delta open orders, conditional 30s polling, location/menu caches, connectedTerminals leak fix. |
 | 344 | Order Flow Performance (P0) | DONE | Orders/Payments | 339, 340, 341 | PaymentModal instant open, fire-and-forget cash, floor plan snapshot coalescing, draft pre-creation, 5s background autosave. |
+| 357 | POS Overhaul Phase 6 | DONE | Orders/Performance | 339-344 | React.memo (4 components), 47 atomic selectors, delta sockets, optimistic splits, ~13K dead code removed, client caching. |
 
 ### POS Inventory (Non-MC)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -367,7 +368,7 @@
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
 | Mission Control (Phase 2) | 22 | 0 | 8 | 30 | 73% |
-| Performance Overhaul | 6 | 0 | 0 | 6 | 100% |
+| Performance Overhaul | 7 | 0 | 0 | 7 | 100% |
 | **TOTAL** | **205** | **7** | **24** | **236** | **91%** |
 
 ### Parallel Development Groups (Remaining)
@@ -488,6 +489,19 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-17 — POS Overhaul Phase 6, Unified Header, Batch Splits, Installer Fixes, Skills 357-364)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 357 | POS Overhaul — Performance Phase 6 | React.memo on OrderPanel, QuickPickStrip, UnifiedPOSHeader, OrderPanelActions. 47 Zustand atomic selector fixes. UnifiedFloorPlan delta socket handlers (3 events → zero-network). Optimistic SplitCheckScreen with snapshot rollback. ~13K lines dead code removed (18 components, 3 hooks, src/bridges/, src/domains/). Client caching: useOrderSettings 5min TTL, DiscountModal, OrderTypeSelector. |
+| 358 | Unified POS Header Component | Extracted ~700 lines from FloorPlanHome into shared UnifiedPOSHeader.tsx. Rendered once in orders/page.tsx above both floor plan and bartender views. Employee dropdown, view mode tabs, settings gear, search bar, Open Orders badge. Ref callbacks for cross-view communication. BartenderView header removed (~30 lines). |
+| 359 | Batch Pay All Splits API | New `POST /api/orders/[id]/pay-all-splits` endpoint. Atomic batch payment for all unpaid split children. Two-step confirmation modal: Cash (direct API) or Card (DatacapPaymentProcessor → API with card details). Fixed split parent $0.00 in OpenOrdersPanel (getDisplayTotal sums children). Fixed bar mode savedOrderId sync via onSelectedTabChange. |
+| 360 | Terminal Private IP Recognition | Added `isLocalNetworkHost()` to middleware. Recognizes RFC 1918 (10.x, 172.16-31.x, 192.168.x), loopback (127.x, ::1). Terminals on LAN now correctly route to local DB instead of cloud Neon. |
+| 361 | Default Port Migration | Changed default port 3000 → 3005 across 9 files (server.ts, installer.run, playwright, seed, etc.) to avoid PM2/service conflicts. |
+| 362 | Kiosk Systemd Service Hardening | 3-commit fix: Restart=always → on-failure (prevented duplicate tabs), removed pkill -f self-match bug, removed killall dependency. Added --no-first-run, --disable-features=TranslateUI. Both server and terminal kiosk services. |
+| 363 | Installer HTTP Auto-Prepend | Auto-prepend `http://` for bare IP input (e.g., `172.16.1.254:3000`). Also fixed `.env` copy failure on re-install (`cp: same file` with set -euo pipefail). |
+| 364 | EOD Stale Order Management | PLANNED: T-077 (P1) auto-cancel $0 drafts at shift close, roll forward orders with balances. T-078 (P2) admin UI to view/manage stale orders across days. Context: 63 orphaned orders found during testing. |
 
 ## Recently Completed (2026-02-16 — Shape Standardization, Optimistic Updates & Split Payment Fix, Skills 354-356)
 
@@ -1072,6 +1086,14 @@ These skills emerged during development and are now part of the system:
 | 354 | Table Shape Standardization | DONE | Floor Plan | 326 | Unified 18 files to 5 DB-canonical shapes (rectangle, circle, square, booth, bar). Removed round, oval, hexagon, bar_seat, high_top, custom. Ellipse detection via width !== height. |
 | 355 | Optimistic Floor Plan Updates | DONE | Floor Plan, Orders | 344 | Replaced blocking loadFloorPlanData with instant Zustand patches for seat add (addSeatToTable) and send-to-kitchen (addTableOrder). 1-5s delay → instant. |
 | 356 | Split Payment Bug Fix | DONE | Orders, Payments | 352 | Fixed orphaned items: parent zeroed after split, pay route blocks split parents, "Pay All" pays children via loop. Prevents undercharging. |
+| 357 | POS Overhaul — Performance Phase 6 | DONE | Orders, Performance | 339-344 | React.memo, 47 atomic selectors, delta sockets, optimistic splits, ~13K lines dead code removed, client caching. |
+| 358 | Unified POS Header | DONE | Orders, UI | - | Extracted ~700 lines from FloorPlanHome into shared UnifiedPOSHeader.tsx. One header for floor plan + bartender views. |
+| 359 | Batch Pay All Splits API | DONE | Orders, Payments | 356 | POST /api/orders/[id]/pay-all-splits — atomic batch payment with Datacap card integration. Fixed $0.00 display for split parents. |
+| 360 | Terminal Private IP Recognition | DONE | Deployment | 345 | isLocalNetworkHost() in middleware for RFC 1918 IPs. Terminals route to local DB correctly. |
+| 361 | Default Port Migration | DONE | Deployment | - | Port 3000 → 3005 across 9 files. Avoids PM2/service conflicts. |
+| 362 | Kiosk Service Hardening | DONE | Deployment, Hardware | 345, 346 | Fixed duplicate tabs (Restart=on-failure), pkill self-match, killall missing. Both server + terminal kiosk. |
+| 363 | Installer HTTP Auto-Prepend | DONE | Deployment | 345 | Auto-prepend http:// for bare IPs. Fixed .env copy failure on re-install. |
+| 364 | EOD Stale Order Management | PLANNED | Orders | - | T-077: auto-cancel $0 drafts at shift close. T-078: admin UI for stale orders. |
 
 ---
 
