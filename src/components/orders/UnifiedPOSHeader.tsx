@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MenuSearchResults } from '@/components/search'
+import type { OrderTypeConfig } from '@/types/order-types'
 
 interface SearchMenuItem {
   id: string
@@ -31,7 +32,8 @@ export interface UnifiedPOSHeaderProps {
   viewMode: 'floor-plan' | 'bartender'
   onViewModeChange: (mode: 'floor-plan' | 'bartender') => void
   activeOrderType: string | null
-  onQuickOrderType: (type: 'takeout' | 'delivery') => void
+  onQuickOrderType: (type: string) => void
+  orderTypes?: OrderTypeConfig[]
   onTablesClick: () => void
   onSwitchUser?: () => void
   onOpenTimeClock?: () => void
@@ -67,6 +69,7 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   onViewModeChange,
   activeOrderType,
   onQuickOrderType,
+  orderTypes,
   onTablesClick,
   onSwitchUser,
   onOpenTimeClock,
@@ -128,6 +131,14 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [searchQuery, onSearchClear])
+
+  const defaultOrderTypes: Pick<OrderTypeConfig, 'slug' | 'name' | 'color' | 'isActive'>[] = [
+    { slug: 'dine_in', name: 'Dine In', color: '#6366f1', isActive: true },
+    { slug: 'takeout', name: 'Takeout', color: '#22c55e', isActive: true },
+    { slug: 'delivery', name: 'Delivery', color: '#6366f1', isActive: true },
+    { slug: 'bar_tab', name: 'Bar Tab', color: '#6366f1', isActive: true },
+  ]
+  const resolvedOrderTypes = orderTypes && orderTypes.length > 0 ? orderTypes : defaultOrderTypes
 
   const isTablesActive = viewMode === 'floor-plan' && !activeOrderType
 
@@ -211,10 +222,27 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
 
       {/* ── Nav Tabs ── */}
       <div style={{ display: 'flex', gap: '3px', flexShrink: 0 }}>
-        <NavTab active={isTablesActive} onClick={() => { onViewModeChange('floor-plan'); onTablesClick() }}>Tables</NavTab>
-        <NavTab active={activeOrderType === 'takeout'} accent="green" onClick={() => { onViewModeChange('floor-plan'); onQuickOrderType('takeout') }}>Takeout</NavTab>
-        <NavTab active={activeOrderType === 'delivery'} onClick={() => { onViewModeChange('floor-plan'); onQuickOrderType('delivery') }}>Delivery</NavTab>
-        <NavTab active={viewMode === 'bartender'} onClick={() => onViewModeChange('bartender')}>Bar Mode</NavTab>
+        {(resolvedOrderTypes).filter(ot => ot.isActive).map(ot => {
+          const isDineIn = ot.slug === 'dine_in'
+          const isBarTab = ot.slug === 'bar_tab'
+          const displayName = isDineIn ? 'Tables' : isBarTab ? 'Bar' : ot.name
+          const isActive = isDineIn ? isTablesActive : isBarTab ? viewMode === 'bartender' : activeOrderType === ot.slug
+
+          return (
+            <NavTab
+              key={ot.slug}
+              active={isActive}
+              accentColor={ot.color}
+              onClick={() => {
+                if (isDineIn) { onViewModeChange('floor-plan'); onTablesClick() }
+                else if (isBarTab) { onViewModeChange('bartender') }
+                else { onViewModeChange('floor-plan'); onQuickOrderType(ot.slug) }
+              }}
+            >
+              {displayName}
+            </NavTab>
+          )
+        })}
       </div>
 
       {/* ── Gear Dropdown ── */}
@@ -414,14 +442,35 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function NavTab({ active, accent, onClick, children }: {
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : null
+}
+
+function lightenHex(hex: string, amount: number): string {
+  const rgb = hexToRgb(hex)
+  if (!rgb) return hex
+  const r = Math.min(255, rgb.r + Math.round((255 - rgb.r) * amount))
+  const g = Math.min(255, rgb.g + Math.round((255 - rgb.g) * amount))
+  const b = Math.min(255, rgb.b + Math.round((255 - rgb.b) * amount))
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
+}
+
+function NavTab({ active, accentColor, onClick, children }: {
   active: boolean
-  accent?: 'green'
+  accentColor?: string
   onClick: () => void
   children: React.ReactNode
 }) {
-  const colors = accent === 'green'
-    ? { activeBg: 'rgba(34, 197, 94, 0.2)', activeBorder: 'rgba(34, 197, 94, 0.5)', activeText: '#86efac' }
+  const defaultColor = '#6366f1' // indigo
+  const baseColor = accentColor || defaultColor
+  const rgb = hexToRgb(baseColor)
+  const colors = rgb
+    ? {
+        activeBg: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.2)`,
+        activeBorder: `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, 0.5)`,
+        activeText: lightenHex(baseColor, 0.5),
+      }
     : { activeBg: 'rgba(99, 102, 241, 0.2)', activeBorder: 'rgba(99, 102, 241, 0.5)', activeText: '#a5b4fc' }
 
   return (

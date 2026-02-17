@@ -19,6 +19,7 @@ import { TableOptionsPopover } from '@/components/orders/TableOptionsPopover'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { logger } from '@/lib/logger'
 import type { PizzaOrderConfig } from '@/types'
+import type { OrderTypeConfig } from '@/types/order-types'
 import { toast } from '@/stores/toast-store'
 const SharedOwnershipModal = lazy(() => import('@/components/tips/SharedOwnershipModal'))
 import { useOrderStore } from '@/stores/order-store'
@@ -131,7 +132,7 @@ interface OpenOrder {
 type ViewMode = 'tables' | 'menu'
 
 // Order type for quick order buttons
-type QuickOrderType = 'takeout' | 'delivery' | 'bar_tab'
+type QuickOrderType = string
 
 interface FloorPlanHomeProps {
   locationId: string
@@ -147,7 +148,7 @@ interface FloorPlanHomeProps {
   isEditingCategories?: boolean
   isEditingMenuItems?: boolean
   // Ref registration for quick order type from parent header
-  onRegisterQuickOrderType?: (fn: (orderType: 'takeout' | 'delivery') => void) => void
+  onRegisterQuickOrderType?: (fn: (orderType: string) => void) => void
   onRegisterTablesClick?: (fn: () => void) => void
   // Open orders count reporting (for unified header badge)
   onOpenOrdersCountChange?: (count: number) => void
@@ -182,6 +183,7 @@ interface FloorPlanHomeProps {
     elements: any[]
     openOrdersCount: number
   } | null
+  orderTypes?: OrderTypeConfig[]
 }
 
 // Pizza order configuration (matches what pizza builder produces)
@@ -211,6 +213,7 @@ export function FloorPlanHome({
   initialCategories,
   initialMenuItems,
   initialSnapshot,
+  orderTypes,
 }: FloorPlanHomeProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -264,6 +267,12 @@ export function FloorPlanHome({
   const [activeOrderNumber, setActiveOrderNumber] = useState<string | null>(null)
   const [activeOrderType, setActiveOrderType] = useState<string | null>(null)
   const [showOrderPanel, setShowOrderPanel] = useState(false)
+
+  // Derived: does the current order type require a table?
+  const activeOTConfig = orderTypes?.find(ot => ot.slug === (activeOrderType || 'dine_in'))
+  const requiresTable = activeOTConfig?.workflowRules?.requireTableSelection ?? (activeOrderType === null || activeOrderType === 'dine_in')
+  const tableRequiredButMissing = requiresTable && !activeTableId
+
   const [isSendingOrder, setIsSendingOrder] = useState(false)
   const [pendingPayAfterSave, setPendingPayAfterSave] = useState(false)
   const [guestCount, setGuestCount] = useState(defaultGuestCount)
@@ -1006,6 +1015,10 @@ export function FloorPlanHome({
   // Uses refs for stable callback (no recreation on state change = no Framer Motion re-evals)
   // Filters from allMenuItems client-side instead of making per-category API calls
   const handleCategoryClick = useCallback((categoryId: string | null) => {
+    if (tableRequiredButMissing) {
+      toast.warning('Tap a table on the floor plan to start an order')
+      return
+    }
     if (!categoryId) {
       // "All" was clicked - show tables
       setSelectedCategoryId(null)
@@ -1245,6 +1258,10 @@ export function FloorPlanHome({
 
   // Handle quick bar item click - add to order
   const handleQuickBarItemClick = useCallback(async (itemId: string) => {
+    if (tableRequiredButMissing) {
+      toast.warning('Tap a table on the floor plan to start an order')
+      return
+    }
     // Find the item in quickBarItems to get full info
     const qbItem = quickBarItems.find(i => i.id === itemId)
     if (!qbItem) return
@@ -2442,6 +2459,32 @@ export function FloorPlanHome({
             minHeight: 0,
           }}
         >
+          {tableRequiredButMissing && (!activeOrderType || activeOrderType === 'dine_in') ? (
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '40px 20px',
+              textAlign: 'center',
+              color: '#94a3b8',
+            }}>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+              <p style={{ fontSize: '16px', fontWeight: 600, color: '#e2e8f0', marginTop: '16px', marginBottom: '8px' }}>
+                Tap a table to start
+              </p>
+              <p style={{ fontSize: '13px', color: '#64748b', lineHeight: '1.5' }}>
+                Select a table on the floor plan to begin a dine-in order
+              </p>
+            </div>
+          ) : (
+            <>
               {/* Order Panel Header - Fixed, doesn't scroll */}
               <div
                 style={{
@@ -2708,6 +2751,8 @@ export function FloorPlanHome({
               <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                 {children}
               </div>
+            </>
+          )}
         </div>
       </div>
 

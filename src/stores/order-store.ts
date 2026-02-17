@@ -322,14 +322,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     }
 
     // Update order type while preserving items
+    // Use 'in' check so passing { tableId: undefined } explicitly clears the field
     set({
       currentOrder: {
         ...currentOrder,
         orderType,
-        orderTypeId: options.orderTypeId ?? currentOrder.orderTypeId,
-        tableId: options.tableId ?? currentOrder.tableId,
-        tableName: options.tableName ?? currentOrder.tableName,
-        tabName: options.tabName ?? currentOrder.tabName,
+        orderTypeId: 'orderTypeId' in options ? options.orderTypeId : currentOrder.orderTypeId,
+        tableId: 'tableId' in options ? options.tableId : currentOrder.tableId,
+        tableName: 'tableName' in options ? options.tableName : currentOrder.tableName,
+        tabName: 'tabName' in options ? options.tabName : currentOrder.tabName,
         guestCount: options.guestCount ?? currentOrder.guestCount,
         customFields: options.customFields ?? currentOrder.customFields,
       },

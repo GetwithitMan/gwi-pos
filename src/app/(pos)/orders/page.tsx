@@ -358,7 +358,7 @@ export default function OrdersPage() {
   })
 
   // Ref callbacks for UnifiedPOSHeader → FloorPlanHome communication
-  const quickOrderTypeRef = useRef<((orderType: 'takeout' | 'delivery') => void) | null>(null)
+  const quickOrderTypeRef = useRef<((orderType: string) => void) | null>(null)
   const tablesClickRef = useRef<(() => void) | null>(null)
 
   // Split chips state — persists while navigating between sibling splits
@@ -2708,6 +2708,7 @@ export default function OrdersPage() {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
         <UnifiedPOSHeader
+          orderTypes={orderTypes}
           employeeName={employee.displayName}
           employeeRole={employee.role?.name}
           viewMode={viewMode}
@@ -2755,6 +2756,7 @@ export default function OrdersPage() {
         />
         {viewMode === 'floor-plan' && (
           <FloorPlanHome
+            orderTypes={orderTypes}
             locationId={employee.location.id}
             employeeId={employee.id}
             isEditingFavorites={isEditingFavorites}
