@@ -1,5 +1,33 @@
 # Floor Plan Domain - Change Log
 
+## Session: February 16, 2026 — Shape Standardization & Optimistic Updates (Skills 354-355)
+
+### Summary
+Standardized all table shape references to 5 DB-canonical values across 18 files. Replaced blocking snapshot fetches with instant optimistic UI updates for seat addition and send-to-kitchen.
+
+### What Changed
+
+#### Skill 354: Table Shape Standardization
+1. **Unified shape vocabulary** — Removed `round`, `oval`, `hexagon`, `bar_seat`, `high_top`, `custom` from all domain types, editor code, seat generation, and API routes
+2. **5 canonical shapes** — `rectangle`, `circle`, `square`, `booth`, `bar` (matching Prisma schema)
+3. **Ellipse detection** — Changed from `shape === 'oval'` to `width !== height` in seat reflow
+4. **18 files modified** — Types, services, editor, seat layout, API routes, provision seed data
+
+#### Skill 355: Optimistic Floor Plan Updates
+1. **Seat addition instant** — `handleAddSeat` uses `addSeatToTable()` with computed orbit position instead of blocking `loadFloorPlanData()`
+2. **Send-to-kitchen instant** — `handleSendToKitchen` uses `addTableOrder()` to mark table occupied before clearing UI
+3. **Both views updated** — FloorPlanHome.tsx and orders/page.tsx
+
+### Commits
+- `ed3a917` fix: standardize table shapes to DB-canonical values across entire codebase
+- `0625843` perf: optimistic UI updates for seat addition and send-to-kitchen
+
+### Skill Docs
+- `docs/skills/354-table-shape-standardization.md`
+- `docs/skills/355-optimistic-floor-plan-updates.md`
+
+---
+
 ## Session: February 15, 2026 — Per-Seat Colors & Uniform Seat Styling (Skills 348-349)
 
 ### Summary

@@ -489,6 +489,14 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-16 — Shape Standardization, Optimistic Updates & Split Payment Fix, Skills 354-356)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 354 | Table Shape Standardization | Unified all table shape references across 18 files to 5 DB-canonical values: `rectangle`, `circle`, `square`, `booth`, `bar`. Removed `round`, `oval`, `hexagon`, `bar_seat`, `high_top`, `custom`. Ellipse detection now uses `width !== height` instead of `shape === 'oval'`. |
+| 355 | Optimistic Floor Plan Updates | Replaced blocking `loadFloorPlanData()` calls with instant Zustand store patches. Seat addition uses `addSeatToTable()` with computed orbit position. Send-to-kitchen uses `addTableOrder()` to mark table occupied immediately. Both FloorPlanHome and orders/page.tsx updated. |
+| 356 | Split Payment Bug Fix | Fixed 3 bugs causing orphaned items: (1) split creation now soft-deletes ALL parent items and zeros parent totals, (2) pay route blocks `status='split'` orders, (3) "Pay All" pays first unpaid child split (starts payment loop) instead of parent. Button shows aggregate unpaid total and appears even after partial payments. |
+
 ## Recently Completed (2026-02-16 — Single Live Split Board & UI Hardening, Skills 352-353)
 
 | Skill | Name | What Was Built |
@@ -1053,7 +1061,7 @@ These skills emerged during development and are now part of the system:
 | 348 | Per-Seat Color System | DONE | Floor Plan, Orders | 206, 328 | 8-color palette in seat-utils.ts, colors on floor plan seats, order panel badges, group headers, seat picker buttons. Temp seats use same colors (no more orange dashed). |
 | 349 | Per-Seat Check Cards & Seat Filtering | DONE | Orders, Floor Plan | 348, 11 | Auto seat-grouped check cards with per-seat subtotals, seat filter bar on floor plan seat tap, pre-split foundation. |
 
-### Split Tickets (93, 350-353)
+### Split Tickets (93, 350-353, 356)
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
 | 93 | Split Ticket View | DONE | Orders | 30, 88 | Create multiple tickets from one order (30-1, 30-2), hybrid pricing with proportional discounts |
@@ -1061,6 +1069,9 @@ These skills emerged during development and are now part of the system:
 | 351 | Split Ticket Visibility & Navigation | DONE | Orders, Floor Plan | 350, 348, 71 | Snapshot API extended for split status. Violet badge on floor plan ("N splits"). SplitTicketsOverview right panel. Split navigation (← →) in OrderPanel header. Merge-back (DELETE) if no payments. Transfer integration (items/table/tab sub-menu). |
 | 352 | Single Live Split Board | DONE | Orders, Floor Plan | 350, 351 | Unified edit/manage into one live board. Create/delete checks via API, split chips header in order panel, in-place payment loop (returns to split board after paying), "Pay All" button, auto-merge on last check delete, socket-driven real-time updates. |
 | 353 | Order Panel UI Hardening | DONE | Orders | 349 | Fixed bare "0" on sent items (React falsy-number gotcha on resendCount/seatNumber), fixed selection collapse on sent items (useQuickPick cleanup effect), layout tightening, TypeScript build errors (TableNode shape union, OpenOrdersPanel trigger narrowing). |
+| 354 | Table Shape Standardization | DONE | Floor Plan | 326 | Unified 18 files to 5 DB-canonical shapes (rectangle, circle, square, booth, bar). Removed round, oval, hexagon, bar_seat, high_top, custom. Ellipse detection via width !== height. |
+| 355 | Optimistic Floor Plan Updates | DONE | Floor Plan, Orders | 344 | Replaced blocking loadFloorPlanData with instant Zustand patches for seat add (addSeatToTable) and send-to-kitchen (addTableOrder). 1-5s delay → instant. |
+| 356 | Split Payment Bug Fix | DONE | Orders, Payments | 352 | Fixed orphaned items: parent zeroed after split, pay route blocks split parents, "Pay All" pays children via loop. Prevents undercharging. |
 
 ---
 

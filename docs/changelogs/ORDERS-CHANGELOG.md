@@ -1,5 +1,29 @@
 # Orders Domain - Change Log
 
+## Session: February 16, 2026 — Split Payment Bug Fix (Skill 356)
+
+### Summary
+Fixed critical split ticket payment bug that caused orphaned/unpaid items and potential undercharging.
+
+### What Changed
+
+#### Skill 356: Split Payment Bug Fix
+1. **Parent zeroed after split** — Split creation now soft-deletes ALL parent items (not just fractional) and sets parent totals to $0. Parent becomes empty shell with `status='split'`.
+2. **Pay route blocks split parents** — Added guard: `status === 'split'` → 400 error. Prevents direct payment of parent's stale totals.
+3. **"Pay All" pays children** — Changed from `onPaySplit(parentOrderId)` to `onPaySplit(unpaidSplits[0].id)`. Uses existing `splitParentToReturnTo` payment loop to cycle through all unpaid splits.
+4. **Button improvements** — Shows aggregate unpaid total `Pay All ($XX.XX)`. Appears even after partial payments.
+
+### Root Cause
+Split creation copied items to children but left originals on parent with stale totals. "Pay All" passed `parentOrderId` to payment — paying the parent's snapshot instead of the actual split totals. Items added post-split were orphaned.
+
+### Commits
+- `3219f2a` fix: prevent split parent from being paid directly, zero parent after split
+
+### Skill Docs
+- `docs/skills/356-split-payment-bug-fix.md`
+
+---
+
 ## Session: February 16, 2026 — Single Live Split Board & UI Hardening (Skills 352-353)
 
 ### Summary
