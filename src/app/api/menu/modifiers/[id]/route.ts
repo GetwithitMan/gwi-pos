@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET single modifier group with modifiers
 export const GET = withVenue(async function GET(
@@ -264,6 +265,9 @@ export const PUT = withVenue(async function PUT(
     // Invalidate server-side menu cache
     invalidateMenuCache(modifierGroup.locationId)
 
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId: modifierGroup.locationId, domain: 'menu', action: 'updated', entityId: id })
+
     return NextResponse.json({
       id: updated!.id,
       name: updated!.name,
@@ -333,7 +337,11 @@ export const DELETE = withVenue(async function DELETE(
     await db.modifierGroup.update({ where: { id }, data: { deletedAt: new Date() } })
 
     // Invalidate server-side menu cache
-    if (group) invalidateMenuCache(group.locationId)
+    if (group) {
+      invalidateMenuCache(group.locationId)
+      // Notify cloud → NUC sync
+      void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'deleted', entityId: id })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // Table status validation
@@ -264,6 +265,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(locationId, { async: true })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId, domain: 'floorplan', action: 'created', entityId: table.id })
 
     return NextResponse.json({
       table: {

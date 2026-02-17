@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPin } from '@/lib/auth'
 import { createEmployeeSchema, validateRequest } from '@/lib/validations'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List employees for a location with pagination
@@ -152,6 +153,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId, domain: 'employees', action: 'created', entityId: employee.id })
 
     return NextResponse.json({
       id: employee.id,

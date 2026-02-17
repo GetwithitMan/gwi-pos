@@ -2,6 +2,7 @@ import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
 import { softDeleteData } from '@/lib/floorplan/queries'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get a single section
@@ -104,6 +105,9 @@ export const PUT = withVenue(async function PUT(
 
     dispatchFloorPlanUpdate(locationId, { async: true })
 
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated', entityId: id })
+
     return NextResponse.json({ section })
   } catch (error) {
     console.error('[sections/[id]] PUT error:', error)
@@ -155,6 +159,9 @@ export const DELETE = withVenue(async function DELETE(
     })
 
     dispatchFloorPlanUpdate(locationId, { async: true })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId, domain: 'floorplan', action: 'deleted', entityId: id })
 
     return NextResponse.json({ success: true, tablesMovedToNoSection: tablesInSection })
   } catch (error) {

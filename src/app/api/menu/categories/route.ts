@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List all categories for a location
@@ -94,6 +95,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch category created event:', err)
     })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId: location.id, domain: 'menu', action: 'created', entityId: category.id })
 
     return NextResponse.json({
       id: category.id,

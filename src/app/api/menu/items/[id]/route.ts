@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged, dispatchMenuStockChanged } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(
@@ -248,6 +249,9 @@ export const PUT = withVenue(async function PUT(
       })
     }
 
+    // Notify cloud → NUC sync for real-time updates
+    void notifyDataChanged({ locationId: item.locationId, domain: 'menu', action: 'updated', entityId: item.id })
+
     return NextResponse.json({
       id: item.id,
       categoryId: item.categoryId,
@@ -309,6 +313,9 @@ export const DELETE = withVenue(async function DELETE(
       }, { async: true }).catch(err => {
         console.error('Failed to dispatch menu item deleted event:', err)
       })
+
+      // Notify cloud → NUC sync for real-time updates
+      void notifyDataChanged({ locationId: item.locationId, domain: 'menu', action: 'deleted', entityId: id })
     }
 
     return NextResponse.json({ success: true })

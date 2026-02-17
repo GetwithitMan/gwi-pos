@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 
 // GET all modifier groups with their modifiers
 // Optional query params:
@@ -185,6 +186,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Invalidate server-side menu cache
     invalidateMenuCache(location.id)
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId: location.id, domain: 'menu', action: 'created', entityId: modifierGroup.id })
 
     return NextResponse.json({
       id: modifierGroup.id,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 export const PUT = withVenue(async function PUT(
@@ -49,6 +50,9 @@ export const PUT = withVenue(async function PUT(
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch category updated event:', err)
     })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'updated', entityId: category.id })
 
     return NextResponse.json({
       id: category.id,
@@ -112,6 +116,9 @@ export const DELETE = withVenue(async function DELETE(
       }, { async: true }).catch(err => {
         console.error('Failed to dispatch category deleted event:', err)
       })
+
+      // Notify cloud → NUC sync
+      void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'deleted', entityId: id })
     }
 
     return NextResponse.json({ success: true })

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List all sections for a location
@@ -100,6 +101,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     dispatchFloorPlanUpdate(locationId, { async: true })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId, domain: 'floorplan', action: 'created', entityId: section.id })
 
     return NextResponse.json({
       section: {

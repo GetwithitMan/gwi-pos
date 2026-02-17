@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // Category types that map to liquor/food tax-inclusive flags
@@ -150,6 +151,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         settings: updatedSettings as object,
       },
     })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId: location.id, domain: 'settings', action: 'updated' })
 
     return NextResponse.json({
       locationId: location.id,

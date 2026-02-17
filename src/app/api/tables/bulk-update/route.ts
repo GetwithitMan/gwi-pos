@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { normalizeCoord } from '@/lib/table-geometry'
 import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 interface TablePositionUpdate {
@@ -75,6 +76,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // Notify POS terminals of bulk position updates
     dispatchFloorPlanUpdate(locationId, { async: true })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated' })
 
     return NextResponse.json({
       success: true,

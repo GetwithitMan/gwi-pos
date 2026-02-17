@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hashPin } from '@/lib/auth'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get employee details
@@ -254,6 +255,9 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId: existing.locationId, domain: 'employees', action: 'updated', entityId: id })
+
     return NextResponse.json({
       id: employee.id,
       firstName: employee.firstName,
@@ -322,6 +326,9 @@ export const DELETE = withVenue(async function DELETE(
       where: { id },
       data: { isActive: false },
     })
+
+    // Notify cloud → NUC sync
+    void notifyDataChanged({ locationId: employee.locationId, domain: 'employees', action: 'deleted', entityId: id })
 
     return NextResponse.json({ success: true })
   } catch (error) {

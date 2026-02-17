@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
+import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/menu/items - Fetch menu items, optionally filtered by category
@@ -294,6 +295,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }, { async: true }).catch(err => {
       console.error('Failed to dispatch menu item created event:', err)
     })
+
+    // Notify cloud → NUC sync for real-time updates
+    void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'created', entityId: item.id })
 
     return NextResponse.json({
       id: item.id,
