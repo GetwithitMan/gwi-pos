@@ -735,13 +735,15 @@ After=graphical.target pulse-pos.service
 Wants=pulse-pos.service
 
 [Service]
+Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
+ExecStartPre=/bin/bash -c 'pkill -f chromium || true'
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito --check-for-update-interval=31536000 http://localhost:3000
-Restart=always
-RestartSec=5
+ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --incognito --check-for-update-interval=31536000 --no-sandbox http://localhost:3000
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=graphical.target
@@ -1257,6 +1259,10 @@ if [[ "$STATION_ROLE" == "terminal" ]]; then
     warn "Chromium not found — kiosk may not start."
   fi
 
+  # Kill any existing Chromium instances before starting kiosk
+  pkill -f "$TERM_CHROMIUM" 2>/dev/null || true
+  sleep 1
+
   # pulse-kiosk.service — Chromium pointing at server
   cat > /etc/systemd/system/pulse-kiosk.service <<SVCEOF
 [Unit]
@@ -1265,12 +1271,15 @@ After=graphical.target network-online.target
 Wants=network-online.target
 
 [Service]
+Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
-ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --incognito --check-for-update-interval=31536000 $SERVER_URL
-Restart=always
-RestartSec=5
+ExecStartPre=/bin/bash -c 'pkill -f chromium || true'
+ExecStartPre=/bin/sleep 2
+ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --incognito --check-for-update-interval=31536000 --no-sandbox $SERVER_URL
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=graphical.target
