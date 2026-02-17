@@ -196,15 +196,20 @@ read -rp "RealVNC cloud connectivity token: " REALVNC_TOKEN < /dev/tty
 SERVER_URL=""
 if [[ "$STATION_ROLE" == "terminal" ]]; then
   echo ""
-  read -rp "Server URL (e.g., http://192.168.1.50:3000): " SERVER_URL < /dev/tty
+  read -rp "Server URL (e.g., 192.168.1.50:3000): " SERVER_URL < /dev/tty
   if [[ -z "$SERVER_URL" ]]; then
     err "Server URL is required for terminal stations."
     exit 1
   fi
+  # Auto-prepend http:// if user just typed an IP or hostname
+  if [[ ! "$SERVER_URL" =~ ^https?:// ]]; then
+    SERVER_URL="http://$SERVER_URL"
+    log "Using: $SERVER_URL"
+  fi
   # Validate URL format (prevent injection into systemd ExecStart)
   URL_REGEX='^https?://[A-Za-z0-9._:-]+(/[A-Za-z0-9._/-]*)?$'
   if [[ ! "$SERVER_URL" =~ $URL_REGEX ]]; then
-    err "Invalid server URL format. Must be http:// or https:// with valid hostname."
+    err "Invalid server URL format. Example: 192.168.1.50:3000"
     exit 1
   fi
 fi
