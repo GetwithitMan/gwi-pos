@@ -256,7 +256,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                 : 'rgba(255, 255, 255, 0.08)'
             }`,
         borderRadius: '10px',
-        cursor: (onClick && !isSent) || (onSelect && !isSent) ? 'pointer' : 'default',
+        cursor: (onClick && !isSent) || onSelect ? 'pointer' : 'default',
         transition: 'all 0.3s ease',
         boxShadow: isNewest
           ? '0 0 12px rgba(34, 197, 94, 0.2)'
@@ -271,19 +271,20 @@ export const OrderPanelItem = memo(function OrderPanelItem({
         margin: isSelected ? '-1px' : undefined,
       }}
       onClick={() => {
+        // Toggle selection for all items (sent items show Resend/Comp/Void when selected)
+        onSelect?.(item.id)
         if (!isSent) {
-          onSelect?.(item.id)
           onClick?.(item)
         }
       }}
       onMouseEnter={(e) => {
-        if ((onClick || onSelect) && !isSent && !isSelected) {
+        if ((onClick || onSelect) && !isSelected) {
           e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)'
           e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.15)'
         }
       }}
       onMouseLeave={(e) => {
-        if (!isSent && !isSelected) {
+        if (!isSelected) {
           e.currentTarget.style.background = isNewest ? 'rgba(34, 197, 94, 0.12)' : 'rgba(255, 255, 255, 0.03)'
           e.currentTarget.style.borderColor = isNewest ? 'rgba(34, 197, 94, 0.5)' : 'rgba(255, 255, 255, 0.08)'
         }
@@ -528,7 +529,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                         {seat}
                       </button>
                     ))}
-                    {item.seatNumber && (
+                    {item.seatNumber != null && item.seatNumber > 0 && (
                       <button
                         onClick={() => { onSeatChange(item.id, null); setShowSeatPicker(false) }}
                         style={{
@@ -555,7 +556,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             )}
 
             {/* Course Badge */}
-            {item.courseNumber && (
+            {item.courseNumber != null && item.courseNumber > 0 && (
               <span
                 style={{
                   fontSize: '9px',
@@ -850,55 +851,54 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             )}
         </div>
 
-        {/* Price + Delete (two-column: delete sits under price) */}
-        <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-          {isCompedOrVoided ? (
-            <>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: isVoided ? '#f87171' : '#60a5fa' }}>
-                $0.00
-              </div>
-              <div style={{ fontSize: '10px', color: '#64748b', textDecoration: 'line-through', marginTop: '-2px' }}>
-                ${originalPrice.toFixed(2)}
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
-                ${totalPrice.toFixed(2)}
-              </div>
-              {item.quantity > 1 && (
-                <div style={{ fontSize: '10px', color: '#64748b', marginTop: '-2px' }}>
-                  ${(totalPrice / item.quantity).toFixed(2)} ea
-                </div>
-              )}
-            </>
-          )}
-          {/* Delete button — under price for pending items */}
+        {/* Delete + Price (inline row) */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
           {showControls && !isSent && onRemove && (
             <button
               onClick={(e) => { e.stopPropagation(); onRemove(item.id) }}
               style={{
-                padding: '4px',
+                padding: '3px',
                 background: 'rgba(239, 68, 68, 0.1)',
                 border: '1px solid rgba(239, 68, 68, 0.2)',
                 borderRadius: '5px', color: '#f87171', cursor: 'pointer',
-                marginTop: '2px',
               }}
               title="Remove item"
             >
-              <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
           )}
+          <div style={{ textAlign: 'right' }}>
+            {isCompedOrVoided ? (
+              <>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: isVoided ? '#f87171' : '#60a5fa' }}>
+                  $0.00
+                </div>
+                <div style={{ fontSize: '10px', color: '#64748b', textDecoration: 'line-through', marginTop: '-2px' }}>
+                  ${originalPrice.toFixed(2)}
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
+                  ${totalPrice.toFixed(2)}
+                </div>
+                {item.quantity > 1 && (
+                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '-2px' }}>
+                    ${(totalPrice / item.quantity).toFixed(2)} ea
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
       </div>
 
-      {/* Action Controls Row — for SENT items only */}
-      {showControls && (
+      {/* Action Controls Row — for SENT items, only when selected */}
+      {showControls && isSelected && (
         <div style={{ marginTop: '6px' }}>
-          {/* SENT ITEMS: Edit Mods + Resend + Comp/Void + Split */}
           {isSent && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               {/* Edit Mods hidden after send — must void and re-ring to change */}

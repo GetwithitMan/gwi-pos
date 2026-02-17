@@ -3258,6 +3258,24 @@ export function FloorPlanHome({
                   </div>
                 </div>
 
+                {/* Hide (close order panel) button */}
+                <button
+                  onClick={handleCloseOrderPanel}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(100, 116, 139, 0.3)',
+                    background: 'rgba(100, 116, 139, 0.1)',
+                    color: '#94a3b8',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  Hide
+                </button>
+
                 {/* Fire Next Course button — shown when coursing is enabled and there are unfired courses */}
                 {activeOrder.coursingEnabled && (() => {
                   // Find the next unfired course
@@ -3305,77 +3323,92 @@ export function FloorPlanHome({
               {/* Split Chips Header (replaces seat strip when table has splits) */}
               {hasSplitChips ? (
                 <div style={{
-                  padding: '10px 20px',
+                  padding: '8px 20px',
                   borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
                   background: 'rgba(15,23,42,0.98)',
                   flexShrink: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12,
                 }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{
-                      fontSize: 11, color: '#64748b', fontWeight: 500,
+                      fontSize: 10, color: '#64748b', fontWeight: 500,
                       textTransform: 'uppercase', letterSpacing: '0.06em',
                     }}>
                       Split Checks
                     </span>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {splitChips.map(split => (
-                        <button
-                          key={split.id}
-                          type="button"
-                          onClick={async () => {
-                            const success = await fetchAndLoadSplitOrder(split.id, activeTableId ?? undefined)
-                            if (success) {
-                              setActiveOrderId(split.id)
-                              if (onOpenPayment) onOpenPayment(split.id)
-                            } else {
-                              toast.error('Failed to load split order')
-                            }
-                          }}
-                          style={{
-                            padding: '4px 8px', borderRadius: 6,
-                            border: `1px solid ${split.isPaid ? 'rgba(34,197,94,0.5)' : 'rgba(148,163,184,0.5)'}`,
-                            background: split.isPaid ? 'rgba(34,197,94,0.12)' : 'rgba(15,23,42,0.9)',
-                            color: split.isPaid ? '#4ade80' : '#e2e8f0',
-                            fontSize: 11, fontWeight: split.isPaid ? 600 : 500,
-                            display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-                          }}
-                        >
-                          <span>{split.label}</span>
-                          <span style={{ opacity: 0.8 }}>${split.total.toFixed(2)}</span>
-                          {split.isPaid && (
-                            <span style={{
-                              fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em',
-                              padding: '1px 4px', borderRadius: 4, background: 'rgba(34,197,94,0.25)',
-                            }}>
-                              Paid
-                            </span>
-                          )}
-                        </button>
-                      ))}
+                    <div style={{ display: 'flex', gap: 5 }}>
+                    {splitChips.some(s => !s.isPaid) && onOpenPayment && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!activeOrderId) return
+                          if (onOpenPayment) onOpenPayment(activeOrderId)
+                        }}
+                        style={{
+                          padding: '3px 8px', borderRadius: 6,
+                          border: '1px solid rgba(34,197,94,0.5)',
+                          background: 'rgba(34,197,94,0.15)',
+                          color: '#4ade80', fontSize: 11, fontWeight: 600,
+                          cursor: 'pointer', whiteSpace: 'nowrap',
+                        }}
+                      >
+                        Pay All
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!activeOrderId) return
+                        setSplitManageMode(true)
+                        setShowSplitTicketManager(true)
+                        setShowOrderPanel(false)
+                      }}
+                      style={{
+                        padding: '3px 8px', borderRadius: 6,
+                        border: '1px solid rgba(168,85,247,0.5)',
+                        background: 'rgba(168,85,247,0.15)',
+                        color: '#e9d5ff', fontSize: 11, fontWeight: 600,
+                        cursor: 'pointer', whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Manage Splits
+                    </button>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!activeOrderId) return
-                      setSplitManageMode(true)
-                      setShowSplitTicketManager(true)
-                      setShowOrderPanel(false)
-                    }}
-                    style={{
-                      padding: '6px 12px', borderRadius: 6,
-                      border: '1px solid rgba(168,85,247,0.6)',
-                      background: 'rgba(168,85,247,0.18)',
-                      color: '#e9d5ff', fontSize: 11, fontWeight: 600,
-                      cursor: 'pointer', whiteSpace: 'nowrap',
-                    }}
-                  >
-                    Manage Splits
-                  </button>
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+                    {splitChips.map(split => (
+                      <button
+                        key={split.id}
+                        type="button"
+                        onClick={async () => {
+                          const success = await fetchAndLoadSplitOrder(split.id, activeTableId ?? undefined)
+                          if (success) {
+                            setActiveOrderId(split.id)
+                          } else {
+                            toast.error('Failed to load split order')
+                          }
+                        }}
+                        style={{
+                          padding: '3px 7px', borderRadius: 6,
+                          border: `1px solid ${split.isPaid ? 'rgba(34,197,94,0.5)' : 'rgba(148,163,184,0.3)'}`,
+                          background: split.isPaid ? 'rgba(34,197,94,0.12)' : 'rgba(15,23,42,0.9)',
+                          color: split.isPaid ? '#4ade80' : '#e2e8f0',
+                          fontSize: 11, fontWeight: split.isPaid ? 600 : 500,
+                          display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                        }}
+                      >
+                        <span>{split.label}</span>
+                        <span style={{ opacity: 0.7 }}>${split.total.toFixed(2)}</span>
+                        {split.isPaid && (
+                          <span style={{
+                            fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.05em',
+                            padding: '1px 3px', borderRadius: 3, background: 'rgba(34,197,94,0.25)',
+                          }}>
+                            Paid
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : activeTable && getTotalSeats(activeTable) > 0 ? (
                 <div
