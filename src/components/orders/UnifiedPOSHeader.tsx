@@ -140,7 +140,7 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   ]
   const resolvedOrderTypes = orderTypes && orderTypes.length > 0 ? orderTypes : defaultOrderTypes
 
-  const isTablesActive = viewMode === 'floor-plan' && !activeOrderType
+  const isTablesActive = viewMode === 'floor-plan' && (!activeOrderType || activeOrderType === 'dine_in')
 
   return (
     <header style={{
