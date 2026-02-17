@@ -196,7 +196,7 @@
 ### Bar Features
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
-| 20 | Bar Tabs | PARTIAL | Orders | 02 | Create, view, edit, pay tabs. **NEEDS: Improved UI for bartender workflow, quick tab creation from floor plan**. Re-Auth flow done (Skill 247). |
+| 20 | Bar Tabs | DONE | Orders | 02 | Create, view, edit, pay tabs. Re-Auth flow (Skill 247). Bar renamed from "Bar Mode". Send prompts for tab name with keyboard (Skill 369). Dynamic tab from admin config (Skill 367). |
 | 247 | Tab Incremental Auth | DONE | Payments | 120, 21 | Re-Auth button (no card re-tap), IncrementalAuthByRecordNo via Datacap, configurable tip buffer %, admin settings UI, force vs auto modes |
 | 21 | Pre-auth | DONE | Payments | 30 | Card hold on tab open |
 | 22 | Tab Transfer | DONE | Orders | 20 | Move tabs between employees, audit log |
@@ -489,6 +489,16 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-17 — Real-Time Sync, Order Types Overhaul, On-Screen Keyboard, Skills 365-369)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 365 | Cloud-to-Terminal Real-Time Sync | Fixed 3-bug chain: FLEET_NOTIFY_SECRET trailing newline (401), posLocationId→CloudLocation.id mismatch (500), installer chown -R. Full sync chain verified: cloud edit → POS Vercel → MC notify → FleetCommand → SSE → NUC → Socket.io → terminals. |
+| 366 | Duplicate Order Prevention | Ref-based `sendInProgressRef` guard at top of `handleSendToKitchen`. React state too slow for multi-tap; ref is synchronous. Voided orphaned duplicate orders. |
+| 367 | Dynamic Order Type Tabs | Replaced hardcoded header tabs with dynamic tabs from admin config. Table selection enforcement for dine_in. NavTab accentColor. Order type conversion on mode switch. Tables tab active state fix. useOrderTypes hook. |
+| 368 | On-Screen Virtual Keyboard | QWERTY/numeric/phone keyboard for kiosk terminals (no physical keyboard). Dark + light themes. Integrated into BartenderView, NewTabModal, OrderTypeSelector, CustomerLookupModal, AddToWaitlistModal. |
+| 369 | Bar Send Tab Name Prompt | Send in bar mode shows tab name modal with keyboard instead of silently failing. pendingSendAfterTabRef tracks send-triggered modals. Extracted sendItemsToTab() shared helper. |
 
 ## Recently Completed (2026-02-17 — POS Overhaul Phase 6, Unified Header, Batch Splits, Installer Fixes, Skills 357-364)
 
@@ -1094,6 +1104,11 @@ These skills emerged during development and are now part of the system:
 | 362 | Kiosk Service Hardening | DONE | Deployment, Hardware | 345, 346 | Fixed duplicate tabs (Restart=on-failure), pkill self-match, killall missing. Both server + terminal kiosk. |
 | 363 | Installer HTTP Auto-Prepend | DONE | Deployment | 345 | Auto-prepend http:// for bare IPs. Fixed .env copy failure on re-install. |
 | 364 | EOD Stale Order Management | PLANNED | Orders | - | T-077: auto-cancel $0 drafts at shift close. T-078: admin UI for stale orders. |
+| 365 | Cloud-to-Terminal Real-Time Sync | DONE | Mission Control, Deployment | 345, 347 | Fixed 3-bug sync chain: FLEET_NOTIFY_SECRET trim, posLocationId lookup, installer chown -R. |
+| 366 | Duplicate Order Prevention | DONE | Orders | 02, 07 | Ref-based sendInProgressRef guard. React state too slow for multi-tap. |
+| 367 | Dynamic Order Type Tabs | DONE | Orders, UI | 358, 09 | Dynamic header tabs from admin config. Table enforcement for dine_in. NavTab accentColor. isTablesActive fix. |
+| 368 | On-Screen Virtual Keyboard | DONE | UI, Hardware | 345 | QWERTY/numeric/phone keyboard for kiosk. Dark+light themes. 5 dialog integrations. |
+| 369 | Bar Send Tab Name Prompt | DONE | Orders, Tabs | 20, 368 | Send shows tab name modal with keyboard. pendingSendAfterTabRef. sendItemsToTab shared helper. |
 
 ---
 

@@ -1,5 +1,42 @@
 # Mission Control Changelog
 
+## Session: February 17, 2026 — Cloud-to-Terminal Real-Time Sync + Team Member Fix (Skill 365)
+
+### Summary
+Fixed the full cloud-to-terminal real-time sync chain (3 sequential bugs), fixed NUC installer permission issue, and fixed location team member add in MC admin.
+
+### What Changed
+
+#### Skill 365: Cloud-to-Terminal Real-Time Data Sync
+1. **FLEET_NOTIFY_SECRET 401** — Both Vercel projects had trailing `\n` in env var. Added `.trim()` to both POS (`cloud-notify.ts`) and MC (`notify/route.ts`).
+2. **Prisma FK violation 500** — POS sent its own `locationId` but MC needs `CloudLocation.id`. Added lookup by `posLocationId` field in notify route.
+3. **Installer clone permission denied** — Changed `chown` to `chown -R` for APP_BASE in `installer.run`.
+4. **Full sync chain verified working**: Cloud admin edit → POS Vercel → MC notify → FleetCommand → SSE → NUC sync agent → cache-invalidate → Socket.io → terminals.
+
+#### MC Admin: Location Team Member Fix
+- Made `clerkUserId` optional in `AddTeamMemberSchema` (form doesn't send it)
+- Added email-based lookup for existing users (`findFirst` with OR on clerkUserId and email)
+- Generate placeholder `pending_{email}` clerkUserId for new users (updated when they sign in via Clerk)
+
+### Files Modified
+
+**POS Repo:**
+| File | Changes |
+|------|---------|
+| `src/lib/cloud-notify.ts` | `.trim()` on FLEET_NOTIFY_SECRET and MC_BASE_URL |
+| `public/installer.run` | `chown -R` fix for APP_BASE |
+
+**MC Repo:**
+| File | Changes |
+|------|---------|
+| `src/app/api/fleet/commands/notify/route.ts` | `.trim()` secret, lookup CloudLocation by posLocationId |
+| `src/app/api/admin/locations/[id]/team/route.ts` | clerkUserId optional, email lookup, placeholder ID |
+
+### Skill Docs
+- `docs/skills/365-CLOUD-TO-TERMINAL-REALTIME-SYNC.md`
+
+---
+
 ## Session: February 14, 2026 (NUC Installer Hardening + Skill Documentation + Backup Server Planning)
 
 ### Summary

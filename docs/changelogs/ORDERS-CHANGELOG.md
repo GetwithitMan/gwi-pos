@@ -1,5 +1,60 @@
 # Orders Domain - Change Log
 
+## Session: February 17, 2026 — Order Types Overhaul, Duplicate Prevention, Bar Send Fix (Skills 366-367, 369)
+
+### Summary
+Major order types overhaul: dynamic header tabs from admin config, table selection enforcement for dine_in, on-screen keyboard for kiosk terminals, and bar send flow fixed to prompt for tab name. Also fixed duplicate order creation from rapid send taps.
+
+### What Changed
+
+#### Skill 366: Duplicate Order Prevention
+1. **Ref-based send guard** — Added `sendInProgressRef` check at top of `handleSendToKitchen` in `useActiveOrder.ts`. React state `setIsSending(true)` was too slow; multiple taps entered the handler before re-render.
+2. **Voided orphaned duplicates** — Cleaned up 2 duplicate orders in NUC database created during testing.
+
+#### Skill 367: Dynamic Order Type Tabs & Table Selection Enforcement
+1. **Dynamic header tabs** — `UnifiedPOSHeader.tsx` renders tabs from `orderTypes` prop instead of hardcoded tabs. `dine_in` → "Tables", `bar_tab` → "Bar", others → `ot.name`.
+2. **NavTab accent colors** — Per-type hex colors from admin config via `accentColor` prop.
+3. **Table selection enforcement** — `FloorPlanHome.tsx` blocks item addition (`handleCategoryClick`, `handleQuickBarItemClick`) when `workflowRules.requireTableSelection` is true and no table selected. Shows "Tap a table to start" overlay.
+4. **Order type conversion** — `order-store.ts` `updateOrderType()` supports explicit field clearing via `'in' checks` for tableId/tableName/tabName.
+5. **Tables tab active state** — Fixed `isTablesActive` to include `activeOrderType === 'dine_in'` (was only `!activeOrderType`).
+6. **useOrderTypes hook** — New `src/hooks/useOrderTypes.ts` fetches order types with `SYSTEM_ORDER_TYPES` fallback.
+
+#### Skill 369: Bar Send Tab Name Prompt
+1. **Send shows tab modal** — `handleSend` in BartenderView now shows tab name modal with keyboard when no tab selected (was silently creating nameless tab or doing nothing).
+2. **Post-tab send** — `pendingSendAfterTabRef` tracks whether send triggered the modal. After tab creation, items auto-sent to kitchen.
+3. **Extracted `sendItemsToTab()`** — Shared helper for send logic used by both direct send and post-tab-creation paths.
+
+### Commits
+- `91dd93e` — feat: dynamic order type tabs, table enforcement, order type conversion
+- `d22fdc5` — feat: on-screen virtual keyboard for kiosk terminals
+- `e67bc1f` — fix: Tables tab not highlighting when active
+- `b67d292` — fix: bar send shows tab name prompt with keyboard
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/hooks/useActiveOrder.ts` | sendInProgressRef guard for duplicate send prevention |
+| `src/hooks/useOrderTypes.ts` | NEW — fetch order types hook |
+| `src/components/orders/UnifiedPOSHeader.tsx` | Dynamic tabs, NavTab accentColor, isTablesActive fix |
+| `src/components/floor-plan/FloorPlanHome.tsx` | Table enforcement, overlay, widened QuickOrderType |
+| `src/stores/order-store.ts` | updateOrderType explicit field clearing |
+| `src/app/(pos)/orders/page.tsx` | Wire orderTypes, widen quickOrderTypeRef |
+| `src/components/bartender/BartenderView.tsx` | Tab name prompt on send, sendItemsToTab, keyboard integration |
+| `src/components/ui/on-screen-keyboard.tsx` | NEW — virtual keyboard component |
+| `src/components/ui/keyboard-layouts.ts` | NEW — QWERTY/numeric/phone key layouts |
+| `src/components/tabs/NewTabModal.tsx` | Keyboard integration for tab name + card last 4 |
+| `src/components/orders/OrderTypeSelector.tsx` | Keyboard integration for custom fields |
+| `src/components/customers/CustomerLookupModal.tsx` | Keyboard integration for search + quick add |
+| `src/components/entertainment/AddToWaitlistModal.tsx` | Keyboard integration for name + phone |
+
+### Skill Docs
+- `docs/skills/366-DUPLICATE-ORDER-PREVENTION.md`
+- `docs/skills/367-DYNAMIC-ORDER-TYPE-TABS.md`
+- `docs/skills/369-BAR-SEND-TAB-NAME-PROMPT.md`
+
+---
+
 ## Session: February 16, 2026 — Split Payment Bug Fix (Skill 356)
 
 ### Summary
