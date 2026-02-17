@@ -455,7 +455,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             )}
 
             {/* Seat Badge — clickable when onSeatChange + maxSeats provided */}
-            {(item.seatNumber || (onSeatChange && maxSeats)) && (
+            {(item.seatNumber != null && item.seatNumber > 0 || (onSeatChange && maxSeats)) && (
               <span style={{ position: 'relative', display: 'inline-block' }}>
                 {onSeatChange && maxSeats ? (
                   <button
@@ -576,7 +576,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
             )}
 
             {/* Resend Count Badge */}
-            {item.resendCount && item.resendCount > 0 && (
+            {item.resendCount != null && item.resendCount > 0 && (
               <span
                 style={{
                   fontSize: '9px',

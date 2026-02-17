@@ -38,13 +38,14 @@ export function useQuickPick(items: OrderPanelItemData[]) {
     }
   }, [items.length])
 
-  // Clear items from selection if they were sent to kitchen or removed
+  // Clear items from selection if they were removed from the order
+  // (sent items stay selectable so user can access Resend/Comp/Void)
   useEffect(() => {
     if (selectedItemIds.size === 0) return
+    const itemIds = new Set(items.map(i => i.id))
     const validIds = new Set<string>()
     for (const id of selectedItemIds) {
-      const item = items.find(i => i.id === id)
-      if (item && !item.sentToKitchen) {
+      if (itemIds.has(id)) {
         validIds.add(id)
       }
     }
