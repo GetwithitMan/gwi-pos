@@ -12,7 +12,7 @@ import crypto from 'crypto'
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN
 const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'
 
 // Initialize Twilio client (lazy)
 let twilioClient: twilio.Twilio | null = null

@@ -196,7 +196,7 @@ read -rp "RealVNC cloud connectivity token: " REALVNC_TOKEN < /dev/tty
 SERVER_URL=""
 if [[ "$STATION_ROLE" == "terminal" ]]; then
   echo ""
-  read -rp "Server URL (e.g., 192.168.1.50:3000): " SERVER_URL < /dev/tty
+  read -rp "Server URL (e.g., 192.168.1.50:3005): " SERVER_URL < /dev/tty
   if [[ -z "$SERVER_URL" ]]; then
     err "Server URL is required for terminal stations."
     exit 1
@@ -209,7 +209,7 @@ if [[ "$STATION_ROLE" == "terminal" ]]; then
   # Validate URL format (prevent injection into systemd ExecStart)
   URL_REGEX='^https?://[A-Za-z0-9._:-]+(/[A-Za-z0-9._/-]*)?$'
   if [[ ! "$SERVER_URL" =~ $URL_REGEX ]]; then
-    err "Invalid server URL format. Example: 192.168.1.50:3000"
+    err "Invalid server URL format. Example: 192.168.1.50:3005"
     exit 1
   fi
 fi
@@ -740,7 +740,7 @@ User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
 ExecStartPre=/bin/sleep 5
-ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --incognito --check-for-update-interval=31536000 http://localhost:3000
+ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --incognito --check-for-update-interval=31536000 http://localhost:3005
 Restart=on-failure
 RestartSec=10
 
@@ -758,7 +758,7 @@ SVCEOF
   # Wait for POS to be ready before starting kiosk
   log "Waiting for POS to start..."
   for i in $(seq 1 30); do
-    if curl -fsS http://localhost:3000/api/health >/dev/null 2>&1; then
+    if curl -fsS http://localhost:3005/api/health >/dev/null 2>&1; then
       log "POS is ready!"
       break
     fi
@@ -1341,7 +1341,7 @@ header "Creating Desktop Launcher"
 
 mkdir -p "$APP_BASE"
 
-POS_URL="http://localhost:3000"
+POS_URL="http://localhost:3005"
 [[ "$STATION_ROLE" == "terminal" ]] && POS_URL="$SERVER_URL"
 
 LOCATION_NAME="${TERMINAL_NAME:-GWI POS}"
@@ -1425,7 +1425,7 @@ echo -e "  ${GREEN}Role:${NC}     $STATION_ROLE"
 echo -e "  ${GREEN}Location:${NC} $LOCATION_NAME"
 
 if [[ "$STATION_ROLE" == "server" ]]; then
-  echo -e "  ${GREEN}POS URL:${NC}  http://localhost:3000"
+  echo -e "  ${GREEN}POS URL:${NC}  http://localhost:3005"
   if [[ "$USE_LOCAL_PG" == "true" ]]; then
     echo -e "  ${GREEN}Database:${NC} PostgreSQL (local)"
     echo -e "  ${GREEN}Backups:${NC}  $BACKUP_DIR (daily 4 AM, 7-day retention)"

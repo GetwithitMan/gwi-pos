@@ -17,7 +17,7 @@ import { getDbForVenue, masterClient } from './src/lib/db'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
-const port = parseInt(process.env.PORT || '3000', 10)
+const port = parseInt(process.env.PORT || '3005', 10)
 
 async function main() {
   const app = next({ dev, hostname, port })

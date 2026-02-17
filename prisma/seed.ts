@@ -42,7 +42,7 @@ async function main() {
       name: 'Simulated Card Reader',
       serialNumber: 'SIM-001-DEV',
       ipAddress: 'localhost',
-      port: 3000,
+      port: 3005,
       verificationType: 'IP_ONLY',
       isActive: true,
       isOnline: true,

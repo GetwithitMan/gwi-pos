@@ -42,7 +42,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Fire-and-forget: card recognition (Phase 8)
     if (response.cmdStatus === 'Approved' && response.cardholderIdHash) {
-      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/card-profiles`, {
+      fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3005'}/api/card-profiles`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

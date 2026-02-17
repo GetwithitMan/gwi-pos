@@ -283,7 +283,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       if (firstItem?.orderId) {
         // Print the resend items to kitchen
         try {
-          await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/print/kitchen`, {
+          await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3005'}/api/print/kitchen`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

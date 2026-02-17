@@ -7,11 +7,11 @@
  *
  * Usage:
  *   npx tsx scripts/load-test.ts
- *   npx tsx scripts/load-test.ts --url http://192.168.1.50:3000
+ *   npx tsx scripts/load-test.ts --url http://192.168.1.50:3005
  *   npx tsx scripts/load-test.ts --concurrency 100 --rounds 3
  *
  * Flags:
- *   --url          Base URL (default: http://localhost:3000)
+ *   --url          Base URL (default: http://localhost:3005)
  *   --concurrency  Max concurrent requests per scenario (default: 50)
  *   --rounds       Repeat all scenarios N times (default: 1)
  */
@@ -28,7 +28,7 @@ function getArg(name: string, fallback: string): string {
   return fallback
 }
 
-const BASE_URL = getArg('url', 'http://localhost:3000').replace(/\/+$/, '')
+const BASE_URL = getArg('url', 'http://localhost:3005').replace(/\/+$/, '')
 const CONCURRENCY = parseInt(getArg('concurrency', '50'), 10)
 const ROUNDS = parseInt(getArg('rounds', '1'), 10)
 
