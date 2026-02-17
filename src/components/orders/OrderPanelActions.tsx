@@ -43,7 +43,6 @@ interface OrderPanelActionsProps {
   onHide?: () => void  // Hide the order panel (dismiss empty tab)
   hasSentItems?: boolean  // Whether any items have been sent to kitchen
   onPaymentModeChange?: (mode: 'cash' | 'card') => void
-  viewMode?: 'floor-plan' | 'bartender' | 'legacy'
   hasActiveTab?: boolean  // Current order already has a tab started (card on file)
   requireCardForTab?: boolean  // Setting: must swipe/chip card before tab can be sent
   tabCardLast4?: string  // Last 4 digits of card on the active tab
@@ -60,6 +59,7 @@ interface OrderPanelActionsProps {
   hasTaxInclusiveItems?: boolean
   roundingAdjustment?: number  // Rounding applied (positive = rounded up, negative = down)
   onSplit?: () => void
+  orderType?: string  // 'bar_tab', 'dine_in', etc. — table orders show Send instead of Start Tab
 }
 
 export function OrderPanelActions({
@@ -89,7 +89,6 @@ export function OrderPanelActions({
   onHide,
   hasSentItems = false,
   onPaymentModeChange,
-  viewMode = 'legacy',
   hasActiveTab = false,
   requireCardForTab = false,
   tabCardLast4,
@@ -105,6 +104,7 @@ export function OrderPanelActions({
   hasTaxInclusiveItems,
   roundingAdjustment,
   onSplit,
+  orderType,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
@@ -543,79 +543,54 @@ export function OrderPanelActions({
         flexShrink: 0,
       }}
     >
-      {/* ── TOP ROW: Send / Start Tab ─────────────────────────── */}
-      {viewMode === 'bartender' ? (
-        // Bartender mode: Start a Tab / Add to Tab (purple)
-        onStartTab && hasItems ? (() => {
-          const needsCard = requireCardForTab && !hasActiveTab
-          const label = isSending
-            ? 'Authorizing...'
-            : hasActiveTab && tabCardLast4
-            ? `Re-Auth •••${tabCardLast4}`
-            : hasActiveTab
-            ? '+ Add to Tab'
-            : needsCard
-            ? '💳 Start a Tab'
-            : 'Start a Tab'
-          return (
-            <>
-              <button
-                onClick={hasPendingItems ? onStartTab : undefined}
-                disabled={!hasPendingItems || isSending}
-                style={{
-                  width: '100%',
-                  padding: '14px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: hasPendingItems && !isSending
-                    ? (hasActiveTab ? '#7c3aed' : '#8b5cf6')
-                    : 'rgba(255, 255, 255, 0.08)',
-                  color: hasPendingItems && !isSending ? '#ffffff' : '#64748b',
-                  fontSize: '15px',
-                  fontWeight: 700,
-                  cursor: hasPendingItems && !isSending ? 'pointer' : 'not-allowed',
-                  transition: 'all 0.2s ease',
-                  opacity: !hasPendingItems ? 0.4 : 1,
-                  marginBottom: needsCard && hasPendingItems ? '2px' : '10px',
-                  boxShadow: hasPendingItems && !isSending ? '0 0 20px rgba(139, 92, 246, 0.3)' : 'none',
-                }}
-              >
-                {label}
-              </button>
-              {needsCard && hasPendingItems && (
-                <div style={{ fontSize: '10px', color: '#a78bfa', textAlign: 'center', marginBottom: '8px' }}>
-                  Insert chip to pre-authorize — sends to tab after approved
-                </div>
-              )}
-            </>
-          )
-        })() : null
-      ) : (
-        // Floor plan / legacy: Send button (orange)
-        onSend && hasPendingItems ? (
-          <button
-            onClick={onSend}
-            disabled={!hasPendingItems || isSending}
-            style={{
-              width: '100%',
-              padding: '14px',
-              borderRadius: '10px',
-              border: 'none',
-              background: hasPendingItems && !isSending ? '#ea580c' : 'rgba(255, 255, 255, 0.08)',
-              color: hasPendingItems && !isSending ? '#ffffff' : '#64748b',
-              fontSize: '15px',
-              fontWeight: 700,
-              cursor: hasPendingItems && !isSending ? 'pointer' : 'not-allowed',
-              transition: 'all 0.2s ease',
-              opacity: !hasPendingItems ? 0.4 : 1,
-              marginBottom: '10px',
-              boxShadow: hasPendingItems && !isSending ? '0 0 20px rgba(234, 88, 12, 0.3)' : 'none',
-            }}
-          >
-            {isSending ? 'Sending...' : 'Send'}
-          </button>
-        ) : null
-      )}
+      {/* ── PRIMARY ACTION: One context-aware button ─────────── */}
+      {/* Rule: bar_tab + tab not started → "Start Tab" (purple, calls onStartTab)
+               everything else              → "Send"      (orange, calls onSend)    */}
+      {(() => {
+        const isNewTab = orderType === 'bar_tab' && !hasActiveTab && !hasSentItems
+        const handler = isNewTab ? onStartTab : onSend
+        if (!handler || !hasPendingItems) return null
+
+        const needsCard = isNewTab && requireCardForTab
+        const label = isSending
+          ? (isNewTab ? 'Authorizing...' : 'Sending...')
+          : isNewTab
+          ? (needsCard ? 'Start Tab' : 'Start Tab')
+          : 'Send'
+        const bg = isNewTab ? '#8b5cf6' : '#ea580c'
+        const glow = isNewTab ? 'rgba(139, 92, 246, 0.3)' : 'rgba(234, 88, 12, 0.3)'
+
+        return (
+          <>
+            <button
+              onClick={hasPendingItems ? handler : undefined}
+              disabled={!hasPendingItems || isSending}
+              style={{
+                width: '100%',
+                padding: '14px',
+                borderRadius: '10px',
+                border: 'none',
+                background: hasPendingItems && !isSending ? bg : 'rgba(255, 255, 255, 0.08)',
+                color: hasPendingItems && !isSending ? '#ffffff' : '#64748b',
+                fontSize: '15px',
+                fontWeight: 700,
+                cursor: hasPendingItems && !isSending ? 'pointer' : 'not-allowed',
+                transition: 'all 0.2s ease',
+                opacity: !hasPendingItems ? 0.4 : 1,
+                marginBottom: needsCard && hasPendingItems ? '2px' : '10px',
+                boxShadow: hasPendingItems && !isSending ? `0 0 20px ${glow}` : 'none',
+              }}
+            >
+              {needsCard && '💳 '}{label}
+            </button>
+            {needsCard && hasPendingItems && (
+              <div style={{ fontSize: '10px', color: '#a78bfa', textAlign: 'center', marginBottom: '8px' }}>
+                Insert chip to pre-authorize — sends to tab after approved
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {/* Cash/Card Toggle - Compact */}
       {hasItems && hasDualPricing && (
@@ -1003,6 +978,28 @@ export function OrderPanelActions({
             </button>
           )}
         </div>
+      )}
+
+      {/* Hide / Dismiss — always available to go back to the floor plan / tab list */}
+      {onHide && (
+        <button
+          onClick={onHide}
+          style={{
+            width: '100%',
+            padding: '10px',
+            borderRadius: '8px',
+            border: '1px solid rgba(148, 163, 184, 0.15)',
+            background: 'rgba(148, 163, 184, 0.05)',
+            color: '#64748b',
+            fontSize: '12px',
+            fontWeight: 500,
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+            marginTop: hasItems ? '0' : '10px',
+          }}
+        >
+          Hide
+        </button>
       )}
     </div>
   )

@@ -189,6 +189,11 @@ export const POST = withVenue(async function POST(
       throw new ValidationError('Cannot split a closed or already-split order')
     }
 
+    // Prevent splitting a child split order (no nested splits)
+    if (parentOrder.parentOrderId) {
+      throw new ValidationError('Cannot split a child split order — only the original order can be split')
+    }
+
     // Build set of split item IDs for quick lookup
     const splitItemIds = new Set(splitItems.map(si => si.originalItemId))
 

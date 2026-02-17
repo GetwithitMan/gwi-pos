@@ -24,6 +24,7 @@ export interface OrderPanelProps {
   orderNumber?: number | string | null
   orderType?: string
   tabName?: string
+  tableName?: string
   tableId?: string
   locationId?: string
   items: OrderPanelItemData[]
@@ -72,7 +73,6 @@ export interface OrderPanelProps {
   // Seat grouping
   seatGroups?: SeatGroup[]
   // OrderPanelActions pass-through props
-  viewMode?: 'floor-plan' | 'bartender' | 'legacy'
   hasActiveTab?: boolean
   requireCardForTab?: boolean
   tabCardLast4?: string
@@ -131,6 +131,16 @@ export interface OrderPanelProps {
   }
   onNavigateSplit?: (splitOrderId: string) => void
   onBackToSplitOverview?: () => void
+  // Split chips (for showing all split checks in the header)
+  splitChips?: {
+    id: string
+    label: string
+    isPaid: boolean
+    total: number
+  }[]
+  onSplitChipSelect?: (splitOrderId: string) => void
+  onManageSplits?: () => void
+  onPayAll?: () => void
 }
 
 export function OrderPanel({
@@ -138,6 +148,7 @@ export function OrderPanel({
   orderNumber,
   orderType,
   tabName,
+  tableName,
   tableId,
   locationId,
   items,
@@ -186,7 +197,6 @@ export function OrderPanel({
   // Seat grouping
   seatGroups,
   // OrderPanelActions pass-through
-  viewMode,
   hasActiveTab,
   requireCardForTab,
   tabCardLast4,
@@ -240,6 +250,11 @@ export function OrderPanel({
   splitInfo,
   onNavigateSplit,
   onBackToSplitOverview,
+  // Split chips
+  splitChips,
+  onSplitChipSelect,
+  onManageSplits,
+  onPayAll,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -251,6 +266,14 @@ export function OrderPanel({
 
   // Sort direction: 'newest-bottom' (default, newest appended at bottom) or 'newest-top' (newest at top)
   const [sortDirection, setSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
+
+  // Condensed view: combine like items visually
+  const [condensedView, setCondensedView] = useState(false)
+  // Track which condensed groups are expanded by the user
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+
+  // Check overview popover (table name click)
+  const [showCheckOverview, setShowCheckOverview] = useState(false)
 
   // Track newest item for highlight + auto-scroll
   const [newestItemId, setNewestItemId] = useState<string | null>(null)
@@ -359,6 +382,146 @@ export function OrderPanel({
     />
   )
 
+  // Build a match key for condensing like items
+  const getCondenseKey = (item: OrderPanelItemData): string => {
+    const mods = (item.modifiers || [])
+      .map(m => `${m.name}|${m.price}|${m.preModifier || ''}`)
+      .sort()
+      .join(';')
+    return `${item.name}|${item.price}|${mods}`
+  }
+
+  // Condense like items into groups (purely visual — never mutates store)
+  const condenseItems = (itemList: OrderPanelItemData[]): (OrderPanelItemData & { _childIds?: string[] })[] => {
+    if (!condensedView) return itemList
+
+    const groups = new Map<string, { representative: OrderPanelItemData; childIds: string[]; totalQty: number }>()
+    const result: (OrderPanelItemData & { _childIds?: string[] })[] = []
+
+    for (const item of itemList) {
+      // Never group voided/comped items — they need individual visibility
+      if (item.status === 'voided' || item.status === 'comped') {
+        result.push(item)
+        continue
+      }
+      const key = getCondenseKey(item)
+      if (expandedGroups.has(key)) {
+        // User expanded this group — show individually
+        result.push(item)
+        continue
+      }
+      const existing = groups.get(key)
+      if (existing) {
+        existing.childIds.push(item.id)
+        existing.totalQty += item.quantity
+      } else {
+        groups.set(key, { representative: item, childIds: [item.id], totalQty: item.quantity })
+      }
+    }
+
+    // Build condensed items from groups
+    for (const [, group] of groups) {
+      if (group.childIds.length === 1) {
+        result.push(group.representative)
+      } else {
+        result.push({
+          ...group.representative,
+          quantity: group.totalQty,
+          _childIds: group.childIds,
+        })
+      }
+    }
+
+    return result
+  }
+
+  // Render a condensed item (with expand affordance)
+  const renderCondensedItem = (item: OrderPanelItemData & { _childIds?: string[] }) => {
+    if (!item._childIds) return renderItem(item)
+
+    const key = getCondenseKey(item)
+    return (
+      <div key={item.id} style={{ position: 'relative' }}>
+        {renderItem(item)}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            setExpandedGroups(prev => {
+              const next = new Set(prev)
+              next.add(key)
+              return next
+            })
+          }}
+          style={{
+            position: 'absolute', top: '4px', right: '4px',
+            fontSize: '9px', color: '#818cf8', background: 'rgba(99,102,241,0.15)',
+            border: '1px solid rgba(99,102,241,0.3)', borderRadius: '4px',
+            padding: '1px 5px', cursor: 'pointer', fontWeight: 600,
+          }}
+        >
+          {item._childIds.length} items
+        </button>
+      </div>
+    )
+  }
+
+  // Render items with condensing support
+  const renderItemList = (itemList: OrderPanelItemData[]) => {
+    const condensed = condenseItems(itemList)
+    return condensed.map(item =>
+      (item as any)._childIds ? renderCondensedItem(item as any) : renderItem(item)
+    )
+  }
+
+  // Check overview: aggregate items by name for summary (fetches all splits if split order)
+  const [checkOverviewItems, setCheckOverviewItems] = useState<{ name: string; qty: number; total: number }[]>([])
+  const [checkOverviewTotal, setCheckOverviewTotal] = useState(0)
+
+  useEffect(() => {
+    if (!showCheckOverview) return
+    if (splitInfo && splitInfo.allSplitIds.length > 0) {
+      // Fetch ALL split order items for full-table overview
+      Promise.all(
+        splitInfo.allSplitIds.map(id =>
+          fetch(`/api/orders/${id}`).then(r => r.ok ? r.json() : null).catch(() => null)
+        )
+      ).then(results => {
+        const groups = new Map<string, { name: string; qty: number; total: number }>()
+        let tot = 0
+        for (const result of results) {
+          // API returns order directly (no data wrapper)
+          const order = result?.data ?? result
+          if (!order?.items) continue
+          tot += Number(order.total ?? 0)
+          for (const item of order.items) {
+            if (item.status === 'voided' || item.status === 'comped') continue
+            const price = Number(item.price ?? 0)
+            const qty = item.quantity ?? 1
+            const itemTotal = price * qty + (item.modifiers || []).reduce((s: number, m: any) => s + Number(m.price ?? 0) * qty, 0)
+            const existing = groups.get(item.name)
+            if (existing) { existing.qty += qty; existing.total += itemTotal }
+            else groups.set(item.name, { name: item.name, qty, total: itemTotal })
+          }
+        }
+        setCheckOverviewItems(Array.from(groups.values()).sort((a, b) => b.qty - a.qty))
+        setCheckOverviewTotal(tot)
+      })
+    } else {
+      // No splits — use current order items
+      const groups = new Map<string, { name: string; qty: number; total: number }>()
+      for (const item of items) {
+        if (item.status === 'voided' || item.status === 'comped') continue
+        const existing = groups.get(item.name)
+        if (existing) { existing.qty += item.quantity; existing.total += calculateItemTotal(item) }
+        else groups.set(item.name, { name: item.name, qty: item.quantity, total: calculateItemTotal(item) })
+      }
+      setCheckOverviewItems(Array.from(groups.values()).sort((a, b) => b.qty - a.qty))
+      setCheckOverviewTotal(total)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showCheckOverview, splitInfo?.allSplitIds?.length])
+
   const renderPendingItems = () => {
     if (pendingItems.length === 0) return null
     const sorted = sortPendingItems(pendingItems)
@@ -376,6 +539,24 @@ export function OrderPanel({
         }}>
           <span>PENDING ({pendingItems.length})</span>
           <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            {/* Condense toggle */}
+            <button
+              onClick={() => {
+                setCondensedView(v => !v)
+                if (condensedView) setExpandedGroups(new Set())
+              }}
+              title={condensedView ? 'Expand all items' : 'Combine like items'}
+              style={{
+                background: condensedView ? 'rgba(99,102,241,0.2)' : 'rgba(255, 255, 255, 0.06)',
+                border: `1px solid ${condensedView ? 'rgba(99,102,241,0.4)' : 'rgba(255, 255, 255, 0.12)'}`,
+                borderRadius: '4px', color: condensedView ? '#a5b4fc' : '#94a3b8', cursor: 'pointer',
+                padding: '2px 6px', fontSize: '10px', lineHeight: 1, fontWeight: 600,
+                display: 'flex', alignItems: 'center', gap: '3px',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {condensedView ? '⊞' : '⊟'}
+            </button>
             {/* Sort toggle */}
             <button
               onClick={() => setSortDirection(d => d === 'newest-bottom' ? 'newest-top' : 'newest-bottom')}
@@ -450,7 +631,7 @@ export function OrderPanel({
                         </span>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {courseItems.map(renderItem)}
+                        {renderItemList(courseItems)}
                       </div>
                       {/* Course delay status (fire controls are in the gutter strip) */}
                       {courseNum > 1 && delay?.firedAt && (
@@ -502,7 +683,7 @@ export function OrderPanel({
                       </span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {unassigned.map(renderItem)}
+                      {renderItemList(unassigned)}
                     </div>
                   </div>
                 )}
@@ -559,7 +740,7 @@ export function OrderPanel({
                   </div>
                   {/* Seat items */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
-                    {groupSorted.map(renderItem)}
+                    {renderItemList(groupSorted)}
                   </div>
                 </div>
               )
@@ -568,7 +749,7 @@ export function OrderPanel({
         ) : (
           // Flat rendering (no seat grouping)
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
-            {sorted.map(renderItem)}
+            {renderItemList(sorted)}
           </div>
         )}
       </div>
@@ -632,7 +813,7 @@ export function OrderPanel({
                     </span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
-                    {groupSent.map(renderItem)}
+                    {renderItemList(groupSent)}
                   </div>
                 </div>
               )
@@ -640,7 +821,7 @@ export function OrderPanel({
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {sentItems.map(renderItem)}
+            {renderItemList(sentItems)}
           </div>
         )}
       </div>
@@ -666,21 +847,120 @@ export function OrderPanel({
             }}
           >
             <div className="flex items-center justify-between">
-              <div>
-                {orderNumber && (
-                  <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
+              <div style={{ position: 'relative' }}>
+                {tableName ? (
+                  <>
+                    <h2
+                      onClick={() => hasItems && setShowCheckOverview(v => !v)}
+                      style={{
+                        fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0,
+                        cursor: hasItems ? 'pointer' : 'default',
+                        display: 'inline-flex', alignItems: 'center', gap: '4px',
+                      }}
+                    >
+                      {tableName}
+                      {hasItems && (
+                        <svg width="10" height="10" fill="none" stroke="#64748b" viewBox="0 0 24 24" style={{ opacity: 0.6 }}>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      )}
+                    </h2>
+                    {orderNumber && (
+                      <p style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                        Order #{orderNumber}
+                      </p>
+                    )}
+                  </>
+                ) : orderNumber ? (
+                  <h2
+                    onClick={() => hasItems && setShowCheckOverview(v => !v)}
+                    style={{
+                      fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0,
+                      cursor: hasItems ? 'pointer' : 'default',
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                    }}
+                  >
                     Order #{orderNumber}
+                    {hasItems && (
+                      <svg width="10" height="10" fill="none" stroke="#64748b" viewBox="0 0 24 24" style={{ opacity: 0.6 }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
                   </h2>
-                )}
-                {tabName && !orderNumber && (
-                  <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
+                ) : tabName ? (
+                  <h2
+                    onClick={() => hasItems && setShowCheckOverview(v => !v)}
+                    style={{
+                      fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0,
+                      cursor: hasItems ? 'pointer' : 'default',
+                      display: 'inline-flex', alignItems: 'center', gap: '4px',
+                    }}
+                  >
                     {tabName}
+                    {hasItems && (
+                      <svg width="10" height="10" fill="none" stroke="#64748b" viewBox="0 0 24 24" style={{ opacity: 0.6 }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
                   </h2>
-                )}
-                {!orderNumber && !tabName && (
+                ) : (
                   <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
                     New Order
                   </h2>
+                )}
+                {/* Check Overview Popover */}
+                {showCheckOverview && (hasItems || (splitInfo && splitInfo.allSplitIds.length > 0)) && (
+                  <>
+                    <div
+                      style={{ position: 'fixed', inset: 0, zIndex: 49 }}
+                      onClick={() => setShowCheckOverview(false)}
+                    />
+                    <div style={{
+                      position: 'absolute', top: '100%', left: 0, marginTop: '6px',
+                      background: 'rgba(15,23,42,0.98)', border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '8px', padding: '12px 16px', zIndex: 50,
+                      minWidth: '220px', maxWidth: '300px', maxHeight: '300px', overflowY: 'auto',
+                      boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                    }}>
+                      <div style={{
+                        fontSize: '10px', fontWeight: 700, color: '#64748b',
+                        textTransform: 'uppercase', letterSpacing: '0.06em',
+                        marginBottom: '8px', paddingBottom: '6px',
+                        borderBottom: '1px solid rgba(255,255,255,0.08)',
+                      }}>
+                        {splitInfo ? 'Table Overview (All Checks)' : 'Check Overview'}
+                      </div>
+                      {checkOverviewItems.length > 0 ? (
+                        <>
+                          {checkOverviewItems.map(g => (
+                            <div key={g.name} style={{
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              padding: '3px 0', fontSize: '13px',
+                            }}>
+                              <span style={{ color: '#e2e8f0' }}>
+                                <span style={{ color: '#94a3b8', fontWeight: 600, marginRight: '4px' }}>{g.qty}x</span>
+                                {g.name}
+                              </span>
+                              <span style={{ color: '#94a3b8', fontWeight: 500, marginLeft: '12px', whiteSpace: 'nowrap' }}>
+                                {formatCurrency(g.total)}
+                              </span>
+                            </div>
+                          ))}
+                          <div style={{
+                            display: 'flex', justifyContent: 'space-between',
+                            marginTop: '8px', paddingTop: '6px',
+                            borderTop: '1px solid rgba(255,255,255,0.08)',
+                            fontSize: '13px', fontWeight: 700,
+                          }}>
+                            <span style={{ color: '#e2e8f0' }}>Total</span>
+                            <span style={{ color: '#f1f5f9' }}>{formatCurrency(checkOverviewTotal)}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: '12px', color: '#64748b', padding: '4px 0' }}>Loading...</div>
+                      )}
+                    </div>
+                  </>
                 )}
                 {splitInfo && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
@@ -814,6 +1094,85 @@ export function OrderPanel({
         )
       )}
 
+      {/* Split Chips (visible in OrderPanel header when order has splits) */}
+      {splitChips && splitChips.length > 0 && !hideHeader && (
+        <div style={{
+          padding: '8px 20px 10px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          background: 'rgba(255, 255, 255, 0.02)',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{
+              fontSize: 10, color: '#64748b', fontWeight: 500,
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+            }}>
+              Split Checks
+            </span>
+            <div style={{ display: 'flex', gap: 5 }}>
+              {splitChips.some(s => !s.isPaid) && onPayAll && (
+                <button
+                  type="button"
+                  onClick={onPayAll}
+                  style={{
+                    padding: '3px 8px', borderRadius: 6,
+                    border: '1px solid rgba(34,197,94,0.5)',
+                    background: 'rgba(34,197,94,0.15)',
+                    color: '#4ade80', fontSize: 11, fontWeight: 600,
+                    cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
+                >
+                  Pay All
+                </button>
+              )}
+              {onManageSplits && (
+                <button
+                  type="button"
+                  onClick={onManageSplits}
+                  style={{
+                    padding: '3px 8px', borderRadius: 6,
+                    border: '1px solid rgba(168,85,247,0.5)',
+                    background: 'rgba(168,85,247,0.15)',
+                    color: '#e9d5ff', fontSize: 11, fontWeight: 600,
+                    cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
+                >
+                  Manage Splits
+                </button>
+              )}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+            {splitChips.map(split => (
+              <button
+                key={split.id}
+                type="button"
+                onClick={() => onSplitChipSelect?.(split.id)}
+                style={{
+                  padding: '3px 7px', borderRadius: 6,
+                  border: `1px solid ${split.id === orderId ? 'rgba(99,102,241,0.7)' : split.isPaid ? 'rgba(34,197,94,0.5)' : 'rgba(148,163,184,0.3)'}`,
+                  background: split.id === orderId ? 'rgba(99,102,241,0.25)' : split.isPaid ? 'rgba(34,197,94,0.12)' : 'rgba(15,23,42,0.9)',
+                  color: split.id === orderId ? '#a5b4fc' : split.isPaid ? '#4ade80' : '#e2e8f0',
+                  fontSize: 11, fontWeight: split.id === orderId || split.isPaid ? 600 : 500,
+                  display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                }}
+              >
+                <span>{split.label}</span>
+                <span style={{ opacity: 0.7 }}>${split.total.toFixed(2)}</span>
+                {split.isPaid && (
+                  <span style={{
+                    fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.05em',
+                    padding: '1px 3px', borderRadius: 3, background: 'rgba(34,197,94,0.25)',
+                  }}>
+                    Paid
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Seat filter indicator */}
       {filterSeatNumber && (
         <div style={{
@@ -936,7 +1295,6 @@ export function OrderPanel({
           onStartTab={onStartTab}
           onOtherPayment={onOtherPayment}
           onDiscount={onDiscount}
-          viewMode={viewMode}
           hasActiveTab={hasActiveTab}
           requireCardForTab={requireCardForTab}
           tabCardLast4={tabCardLast4}
@@ -962,6 +1320,7 @@ export function OrderPanel({
           autoShowPayment={autoShowPayment}
           onAutoShowPaymentHandled={onAutoShowPaymentHandled}
           onSplit={onItemSplit ? () => onItemSplit('') : undefined}
+          orderType={orderType}
         />
       </div>
 

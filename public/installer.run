@@ -633,6 +633,8 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   log "App code ready at $APP_DIR"
 
   # Copy env files into app directory (always — ensures .env.local stays in sync)
+  # Remove existing symlinks/files first to avoid "same file" error on re-install
+  rm -f "$APP_DIR/.env" "$APP_DIR/.env.local"
   cp "$ENV_FILE" "$APP_DIR/.env"
   cp "$ENV_FILE" "$APP_DIR/.env.local"
   chown "$POSUSER":"$POSUSER" "$APP_DIR/.env" "$APP_DIR/.env.local"

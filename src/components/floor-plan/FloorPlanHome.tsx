@@ -29,10 +29,10 @@ import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { useEvents } from '@/lib/events'
-import { useMenuSearch } from '@/hooks/useMenuSearch'
+// useMenuSearch lifted to orders/page.tsx (UnifiedPOSHeader)
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
-import { MenuSearchInput, MenuSearchResults } from '@/components/search'
+// MenuSearchInput, MenuSearchResults lifted to UnifiedPOSHeader
 import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
 import { isTempId } from '@/lib/order-utils'
 import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
@@ -139,24 +139,19 @@ type QuickOrderType = 'takeout' | 'delivery' | 'bar_tab'
 interface FloorPlanHomeProps {
   locationId: string
   employeeId: string
-  employeeName: string
-  employeeRole?: string
-  onLogout: () => void
-  onOpenTimeClock?: () => void
-  onSwitchUser?: () => void
-  onOpenSettings?: () => void
-  onOpenAdminNav?: () => void
-  isManager?: boolean
   // Payment and modifier callbacks
   onOpenPayment?: (orderId: string) => void
   onOpenCardFirst?: (orderId: string) => void
   onOpenModifiers?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void, existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void
-  // Open Orders panel
-  onOpenOrdersPanel?: () => void
-  // Tabs page (for bartenders)
-  onOpenTabs?: () => void
-  // Switch to bartender view (speed-optimized for bar tabs)
-  onSwitchToBartenderView?: () => void
+  // Editing modes (controlled by UnifiedPOSHeader gear dropdown)
+  isEditingFavorites?: boolean
+  isEditingCategories?: boolean
+  isEditingMenuItems?: boolean
+  // Ref registration for quick order type from parent header
+  onRegisterQuickOrderType?: (fn: (orderType: 'takeout' | 'delivery') => void) => void
+  onRegisterTablesClick?: (fn: () => void) => void
+  // Open orders count reporting (for unified header badge)
+  onOpenOrdersCountChange?: (count: number) => void
   // Guest count for seat assignment (from table or default)
   defaultGuestCount?: number
   // Timed rental/entertainment modal callback
@@ -194,20 +189,15 @@ interface FloorPlanHomeProps {
 export function FloorPlanHome({
   locationId,
   employeeId,
-  employeeName,
-  employeeRole,
-  onLogout,
-  onOpenTimeClock,
-  onSwitchUser,
-  onOpenSettings,
-  onOpenAdminNav,
-  isManager = false,
   onOpenPayment,
   onOpenCardFirst,
   onOpenModifiers,
-  onOpenOrdersPanel,
-  onOpenTabs,
-  onSwitchToBartenderView,
+  isEditingFavorites: isEditingFavoritesProp = false,
+  isEditingCategories: isEditingCategoriesProp = false,
+  isEditingMenuItems: isEditingMenuItemsProp = false,
+  onRegisterQuickOrderType,
+  onRegisterTablesClick,
+  onOpenOrdersCountChange,
   defaultGuestCount = 4,
   onOpenTimedRental,
   onOpenPizzaBuilder,
@@ -259,14 +249,12 @@ export function FloorPlanHome({
   const allMenuItemsRef = useRef(allMenuItems)
   allMenuItemsRef.current = allMenuItems
 
-  // Open orders count
+  // Open orders count — also reported to parent for UnifiedPOSHeader badge
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
+  useEffect(() => {
+    onOpenOrdersCountChange?.(openOrdersCount)
+  }, [openOrdersCount, onOpenOrdersCountChange])
 
-  // Employee dropdown
-  const [showEmployeeDropdown, setShowEmployeeDropdown] = useState(false)
-
-  // Settings dropdown
-  const [showSettingsDropdown, setShowSettingsDropdown] = useState(false)
   const [showTableOptions, setShowTableOptions] = useState(false)
   const [showShareOwnership, setShowShareOwnership] = useState(false)
 
@@ -293,6 +281,16 @@ export function FloorPlanHome({
       })
     }
   }, [onRegisterDeselectTable])
+
+  // Register tables click handler for UnifiedPOSHeader
+  useEffect(() => {
+    if (onRegisterTablesClick) {
+      onRegisterTablesClick(() => {
+        setViewMode('tables')
+        setSelectedCategoryId(null)
+      })
+    }
+  }, [onRegisterTablesClick])
 
   // Restore active table from store when remounting (e.g., after switching back from bar mode)
   useEffect(() => {
@@ -495,13 +493,6 @@ export function FloorPlanHome({
   // syncOrderToStore and syncLocalItemsToStore have been removed
 
   // Switch to Bar Mode — items already live in Zustand store, no sync needed
-  const handleSwitchToBartenderView = useCallback(() => {
-    if (onSwitchToBartenderView) {
-      onSwitchToBartenderView()
-    }
-  }, [onSwitchToBartenderView])
-
-
   // Auto-scaling hook (fits floor plan to container)
   const {
     containerSize,
@@ -536,29 +527,10 @@ export function FloorPlanHome({
     permissions: { posLayout: ['customize_personal'] }, // Servers can customize their own layout
   })
 
-  // Editing modes (for settings dropdown options)
-  const [isEditingFavorites, setIsEditingFavorites] = useState(false)
-  const [isEditingCategories, setIsEditingCategories] = useState(false)
-  const [isEditingMenuItems, setIsEditingMenuItems] = useState(false)
-
-  // Menu search
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-  const {
-    query: searchQuery,
-    setQuery: setSearchQuery,
-    isSearching,
-    results: searchResults,
-    clearSearch
-  } = useMenuSearch({
-    locationId,
-    menuItems: menuItems.map(item => ({
-      id: item.id,
-      name: item.name,
-      price: Number(item.price),
-      categoryId: item.categoryId,
-    })),
-    enabled: true  // Panel is always visible, search always enabled
-  })
+  // Editing modes (controlled by UnifiedPOSHeader, passed as props)
+  const isEditingFavorites = isEditingFavoritesProp
+  const isEditingCategories = isEditingCategoriesProp
+  const isEditingMenuItems = isEditingMenuItemsProp
 
   // Sort sections based on employee's preferred room order
   const sortedSections = useMemo(() => {
@@ -1277,19 +1249,18 @@ export function FloorPlanHome({
     setShowOrderPanel(true)
   }, [])
 
+  // Register quick order type handler for UnifiedPOSHeader
+  useEffect(() => {
+    if (onRegisterQuickOrderType) {
+      onRegisterQuickOrderType(handleQuickOrderType)
+    }
+  }, [onRegisterQuickOrderType, handleQuickOrderType])
+
   // Handle menu item tap - add to order
   // Handle menu item tap — delegates to the ordering engine
   const handleMenuItemTap = engine.handleMenuItemTap
 
-  // Handle search result selection
-  const handleSearchSelect = useCallback((item: { id: string; name: string; price: number; categoryId: string }) => {
-    // Find full menu item data
-    const fullItem = menuItems.find(m => m.id === item.id)
-    if (fullItem) {
-      handleMenuItemTap(fullItem)
-    }
-    clearSearch()
-  }, [menuItems, clearSearch, handleMenuItemTap])
+  // handleSearchSelect lifted to orders/page.tsx (UnifiedPOSHeader)
 
   // Handle quick bar item click - add to order
   const handleQuickBarItemClick = useCallback(async (itemId: string) => {
@@ -1979,10 +1950,7 @@ export function FloorPlanHome({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (searchQuery) {
-          // Escape clears search if active
-          clearSearch()
-        } else if (viewMode === 'menu') {
+        if (viewMode === 'menu') {
           // Escape in menu mode goes back to tables
           setSelectedCategoryId(null)
           setViewMode('tables')
@@ -1993,705 +1961,20 @@ export function FloorPlanHome({
           handleCloseOrderPanel()
         }
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        const searchInput = searchContainerRef.current?.querySelector('input')
-        searchInput?.focus()
-      }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [viewMode, closeInfoPanel, selectTable, handleCloseOrderPanel, searchQuery, clearSearch])
-
-  // Close search results on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
-        if (searchQuery) clearSearch()
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [searchQuery, clearSearch])
-
-  // Close employee dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setShowEmployeeDropdown(false)
-    if (showEmployeeDropdown) {
-      document.addEventListener('click', handleClickOutside)
-      return () => document.removeEventListener('click', handleClickOutside)
-    }
-  }, [showEmployeeDropdown])
-
-  // Close settings dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = () => setShowSettingsDropdown(false)
-    if (showSettingsDropdown) {
-      document.addEventListener('click', handleClickOutside)
-      return () => document.removeEventListener('click', handleClickOutside)
-    }
-  }, [showSettingsDropdown])
+  }, [viewMode, closeInfoPanel, selectTable, handleCloseOrderPanel])
 
   const selectedCategory = categories.find(c => c.id === selectedCategoryId)
 
   return (
     <div
       className="floor-plan-container floor-plan-home"
-      style={{ height: '100vh', maxHeight: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+      style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
     >
-      {/* Header */}
-      <header className="floor-plan-header">
-        <div className="floor-plan-header-left">
-          {/* Employee Menu Dropdown */}
-          <div style={{ position: 'relative', zIndex: 100 }}>
-            <button
-              className="employee-dropdown-trigger"
-              onClick={(e) => {
-                e.stopPropagation()
-                setShowEmployeeDropdown(!showEmployeeDropdown)
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '8px 12px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '10px',
-                color: '#f1f5f9',
-                cursor: 'pointer',
-                fontSize: '14px',
-                fontWeight: 500,
-              }}
-            >
-              <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span>{employeeName}</span>
-              <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ opacity: 0.6 }}>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {/* Dropdown Menu */}
-            <AnimatePresence>
-              {showEmployeeDropdown && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    marginTop: '4px',
-                    minWidth: '200px',
-                    background: 'rgba(15, 23, 42, 0.98)',
-                    border: '1px solid rgba(255, 255, 255, 0.1)',
-                    borderRadius: '12px',
-                    padding: '8px 0',
-                    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
-                    zIndex: 1000,
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* Employee Info */}
-                  <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#f1f5f9' }}>{employeeName}</div>
-                    {employeeRole && (
-                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{employeeRole}</div>
-                    )}
-                  </div>
-
-                  {/* Menu Items */}
-                  <div style={{ padding: '4px 0' }}>
-                    {onSwitchUser && (
-                      <button
-                        onClick={() => {
-                          setShowEmployeeDropdown(false)
-                          onSwitchUser()
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          width: '100%',
-                          padding: '10px 16px',
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#e2e8f0',
-                          fontSize: '13px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        Switch User
-                      </button>
-                    )}
-
-                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
-
-                    {/* Crew Hub Links */}
-                    <a
-                      href="/crew"
-                      onClick={() => setShowEmployeeDropdown(false)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-                        padding: '10px 16px', background: 'transparent', border: 'none',
-                        color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left', textDecoration: 'none',
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      Crew Hub
-                    </a>
-                    <a
-                      href="/crew/shift"
-                      onClick={() => setShowEmployeeDropdown(false)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-                        padding: '10px 16px', background: 'transparent', border: 'none',
-                        color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left', textDecoration: 'none',
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                      My Shift
-                    </a>
-                    <a
-                      href="/crew/tip-bank"
-                      onClick={() => setShowEmployeeDropdown(false)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-                        padding: '10px 16px', background: 'transparent', border: 'none',
-                        color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left', textDecoration: 'none',
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Tip Bank
-                    </a>
-                    <a
-                      href="/crew/tip-group"
-                      onClick={() => setShowEmployeeDropdown(false)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-                        padding: '10px 16px', background: 'transparent', border: 'none',
-                        color: '#e2e8f0', fontSize: '13px', cursor: 'pointer', textAlign: 'left', textDecoration: 'none',
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      Tip Group
-                    </a>
-
-                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
-
-                    {onOpenSettings && (
-                      <button
-                        onClick={() => {
-                          setShowEmployeeDropdown(false)
-                          onOpenSettings()
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          width: '100%',
-                          padding: '10px 16px',
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#e2e8f0',
-                          fontSize: '13px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        Settings
-                      </button>
-                    )}
-
-                    {onSwitchToBartenderView && (
-                      <button
-                        onClick={() => {
-                          setShowEmployeeDropdown(false)
-                          handleSwitchToBartenderView()
-                        }}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px',
-                          width: '100%',
-                          padding: '10px 16px',
-                          background: 'transparent',
-                          border: 'none',
-                          color: '#818cf8',
-                          fontSize: '13px',
-                          cursor: 'pointer',
-                          textAlign: 'left' as const,
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                        </svg>
-                        Bar Mode
-                      </button>
-                    )}
-
-                    <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
-
-                    <button
-                      onClick={() => {
-                        setShowEmployeeDropdown(false)
-                        if (onOpenTimeClock) {
-                          onOpenTimeClock()
-                        } else {
-                          onLogout()
-                        }
-                      }}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        width: '100%',
-                        padding: '10px 16px',
-                        background: 'transparent',
-                        border: 'none',
-                        color: '#f87171',
-                        fontSize: '13px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                      Clock Out
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Quick Order Type Buttons */}
-          <div style={{ display: 'flex', gap: '8px', marginLeft: '16px' }}>
-            {/* Tables Button - Returns to floor plan view */}
-            <button
-              onClick={() => {
-                setViewMode('tables')
-                setSelectedCategoryId(null)
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 14px',
-                background: viewMode === 'tables' && !activeOrderType ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                border: `1px solid ${viewMode === 'tables' && !activeOrderType ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
-                borderRadius: '8px',
-                color: viewMode === 'tables' && !activeOrderType ? '#a5b4fc' : '#94a3b8',
-                fontSize: '13px',
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-              </svg>
-              Tables
-            </button>
-
-            <button
-              onClick={() => handleQuickOrderType('takeout')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 14px',
-                background: activeOrderType === 'takeout' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                border: `1px solid ${activeOrderType === 'takeout' ? 'rgba(34, 197, 94, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
-                borderRadius: '8px',
-                color: activeOrderType === 'takeout' ? '#86efac' : '#94a3b8',
-                fontSize: '13px',
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8" />
-              </svg>
-              Takeout
-            </button>
-
-            <button
-              onClick={() => handleQuickOrderType('delivery')}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '8px 14px',
-                background: activeOrderType === 'delivery' ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                border: `1px solid ${activeOrderType === 'delivery' ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
-                borderRadius: '8px',
-                color: activeOrderType === 'delivery' ? '#a5b4fc' : '#94a3b8',
-                fontSize: '13px',
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
-              </svg>
-              Delivery
-            </button>
-
-            {onSwitchToBartenderView && (
-              <button
-                onClick={() => handleSwitchToBartenderView()}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 14px',
-                  background: 'rgba(255, 255, 255, 0.03)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '8px',
-                  color: '#94a3b8',
-                  fontSize: '13px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                }}
-              >
-                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                Bar Mode
-              </button>
-            )}
-
-            {/* Gear Settings Button */}
-            <div style={{ position: 'relative', marginLeft: '8px' }}>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setShowSettingsDropdown(!showSettingsDropdown)
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '8px',
-                  background: showSettingsDropdown ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.03)',
-                  border: `1px solid ${showSettingsDropdown ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.08)'}`,
-                  borderRadius: '8px',
-                  color: showSettingsDropdown ? '#a5b4fc' : '#94a3b8',
-                  cursor: 'pointer',
-                }}
-                title="Layout Settings"
-              >
-                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </button>
-
-              {/* Settings Dropdown */}
-              <AnimatePresence>
-                {showSettingsDropdown && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    style={{
-                      position: 'absolute',
-                      top: '100%',
-                      left: 0,
-                      marginTop: '4px',
-                      minWidth: '220px',
-                      background: 'rgba(15, 23, 42, 0.98)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '12px',
-                      padding: '8px 0',
-                      boxShadow: '0 10px 40px rgba(0, 0, 0, 0.5)',
-                      zIndex: 1000,
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {canCustomize && (
-                      <>
-                        {/* Show/Hide Quick Bar Toggle */}
-                        <button
-                          onClick={() => {
-                            toggleQuickBar()
-                            setShowSettingsDropdown(false)
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            padding: '10px 16px',
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#e2e8f0',
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <svg width="16" height="16" fill="none" stroke={quickBarEnabled ? '#22c55e' : '#94a3b8'} viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                          </svg>
-                          {quickBarEnabled ? '✓ Quick Bar Enabled' : 'Enable Quick Bar'}
-                        </button>
-
-                        <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
-
-                        {/* Edit Favorites */}
-                        <button
-                          onClick={() => {
-                            setIsEditingFavorites(!isEditingFavorites)
-                            setIsEditingCategories(false)
-                            setIsEditingMenuItems(false)
-                            setShowSettingsDropdown(false)
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            padding: '10px 16px',
-                            background: isEditingFavorites ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                            border: 'none',
-                            color: isEditingFavorites ? '#a5b4fc' : '#e2e8f0',
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                          onMouseEnter={(e) => { if (!isEditingFavorites) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)' }}
-                          onMouseLeave={(e) => { if (!isEditingFavorites) e.currentTarget.style.background = 'transparent' }}
-                        >
-                          <svg width="16" height="16" fill={isEditingFavorites ? '#a5b4fc' : '#94a3b8'} viewBox="0 0 20 20">
-                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                          </svg>
-                          {isEditingFavorites ? '✓ Done Editing Favorites' : 'Edit Favorites'}
-                        </button>
-
-                        {/* Reorder Categories */}
-                        <button
-                          onClick={() => {
-                            setIsEditingCategories(!isEditingCategories)
-                            setIsEditingFavorites(false)
-                            setIsEditingMenuItems(false)
-                            setShowSettingsDropdown(false)
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            padding: '10px 16px',
-                            background: isEditingCategories ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                            border: 'none',
-                            color: isEditingCategories ? '#a5b4fc' : '#e2e8f0',
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                          onMouseEnter={(e) => { if (!isEditingCategories) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)' }}
-                          onMouseLeave={(e) => { if (!isEditingCategories) e.currentTarget.style.background = 'transparent' }}
-                        >
-                          <svg width="16" height="16" fill="none" stroke={isEditingCategories ? '#a5b4fc' : '#94a3b8'} viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                          </svg>
-                          {isEditingCategories ? '✓ Done Reordering' : 'Reorder Categories'}
-                        </button>
-
-                        {/* Customize Item Colors */}
-                        <button
-                          onClick={() => {
-                            setIsEditingMenuItems(!isEditingMenuItems)
-                            setIsEditingFavorites(false)
-                            setIsEditingCategories(false)
-                            setShowSettingsDropdown(false)
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            padding: '10px 16px',
-                            background: isEditingMenuItems ? 'rgba(168, 85, 247, 0.15)' : 'transparent',
-                            border: 'none',
-                            color: isEditingMenuItems ? '#c4b5fd' : '#e2e8f0',
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                          onMouseEnter={(e) => { if (!isEditingMenuItems) e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)' }}
-                          onMouseLeave={(e) => { if (!isEditingMenuItems) e.currentTarget.style.background = 'transparent' }}
-                        >
-                          <svg width="16" height="16" fill="none" stroke={isEditingMenuItems ? '#c4b5fd' : '#94a3b8'} viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                          </svg>
-                          {isEditingMenuItems ? '✓ Done Customizing Items' : 'Customize Item Colors'}
-                        </button>
-
-                        <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.1)', margin: '4px 0' }} />
-
-                        {/* Reset All Category Colors */}
-                        <button
-                          onClick={() => {
-                            resetAllCategoryColors()
-                            setShowSettingsDropdown(false)
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            padding: '10px 16px',
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#f87171',
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(248, 113, 113, 0.1)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                          </svg>
-                          Reset All Category Colors
-                        </button>
-
-                        {/* Reset All Item Styles */}
-                        <button
-                          onClick={() => {
-                            resetAllMenuItemStyles()
-                            setShowSettingsDropdown(false)
-                          }}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            width: '100%',
-                            padding: '10px 16px',
-                            background: 'transparent',
-                            border: 'none',
-                            color: '#f87171',
-                            fontSize: '13px',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(248, 113, 113, 0.1)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                          </svg>
-                          Reset All Item Styles
-                        </button>
-                      </>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-        </div>
-
-        <div className="floor-plan-header-right">
-          {/* Open Orders Button */}
-          <button
-            onClick={onOpenOrdersPanel}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '8px 16px',
-              background: openOrdersCount > 0 ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.03)',
-              border: `1px solid ${openOrdersCount > 0 ? 'rgba(99, 102, 241, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
-              borderRadius: '10px',
-              color: openOrdersCount > 0 ? '#a5b4fc' : '#94a3b8',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-            Open Orders
-            {openOrdersCount > 0 && (
-              <span
-                style={{
-                  background: 'rgba(99, 102, 241, 0.3)',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  fontSize: '12px',
-                  fontWeight: 700,
-                }}
-              >
-                {openOrdersCount}
-              </span>
-            )}
-          </button>
-
-          {/* Settings - only shown if callback provided (permission-gated) */}
-          {onOpenAdminNav && (
-            <button
-              className="icon-btn"
-              onClick={onOpenAdminNav}
-              title="Settings"
-              style={{
-                background: 'rgba(59, 130, 246, 0.2)',
-                border: '1px solid rgba(59, 130, 246, 0.4)',
-                borderRadius: '8px',
-                padding: '8px',
-              }}
-            >
-              <svg width="22" height="22" fill="none" stroke="#3b82f6" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-          )}
-        </div>
-      </header>
+      {/* Header removed — now rendered by UnifiedPOSHeader in orders/page.tsx */}
 
       {/* Content below header: Order panel (left) + Main content (right) */}
       <div style={{ display: 'flex', flexDirection: 'row-reverse', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -2708,26 +1991,7 @@ export function FloorPlanHome({
             />
           )}
 
-          {/* Menu Search Bar - always visible */}
-          <div className="px-4 py-2 bg-gray-900/50 border-b border-gray-800/50" ref={searchContainerRef}>
-            <div className="relative max-w-xl">
-              <MenuSearchInput
-                value={searchQuery}
-                onChange={setSearchQuery}
-                onClear={clearSearch}
-                placeholder="Search menu items or ingredients... (⌘K)"
-                isSearching={isSearching}
-              />
-              <MenuSearchResults
-                results={searchResults}
-                query={searchQuery}
-                isSearching={isSearching}
-                onSelectItem={handleSearchSelect}
-                onClose={clearSearch}
-                cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
-              />
-            </div>
-          </div>
+          {/* Search bar moved to UnifiedPOSHeader */}
 
           {/* Categories Bar */}
           <CategoriesBar
@@ -3255,10 +2519,16 @@ export function FloorPlanHome({
                     onCoursingToggle={activeOrder.setCoursingEnabled}
                     guestCount={guestCount}
                     onGuestCountChange={setGuestCount}
+                    orderItems={inlineOrderItems}
+                    orderTotal={useOrderStore.getState().currentOrder?.total ?? 0}
+                    splitOrderIds={hasSplitChips ? splitChips.map(s => s.id) : undefined}
                   />
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                     {activeOrderNumber && (
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>
+                      <span
+                        onClick={() => setShowTableOptions(!showTableOptions)}
+                        style={{ fontSize: '12px', color: '#64748b', cursor: 'pointer' }}
+                      >
                         Order #{activeOrderNumber}
                       </span>
                     )}
@@ -3424,10 +2694,10 @@ export function FloorPlanHome({
                         }}
                         style={{
                           padding: '3px 7px', borderRadius: 6,
-                          border: `1px solid ${split.isPaid ? 'rgba(34,197,94,0.5)' : 'rgba(148,163,184,0.3)'}`,
-                          background: split.isPaid ? 'rgba(34,197,94,0.12)' : 'rgba(15,23,42,0.9)',
-                          color: split.isPaid ? '#4ade80' : '#e2e8f0',
-                          fontSize: 11, fontWeight: split.isPaid ? 600 : 500,
+                          border: `1px solid ${split.id === activeOrderId ? 'rgba(99,102,241,0.7)' : split.isPaid ? 'rgba(34,197,94,0.5)' : 'rgba(148,163,184,0.3)'}`,
+                          background: split.id === activeOrderId ? 'rgba(99,102,241,0.25)' : split.isPaid ? 'rgba(34,197,94,0.12)' : 'rgba(15,23,42,0.9)',
+                          color: split.id === activeOrderId ? '#a5b4fc' : split.isPaid ? '#4ade80' : '#e2e8f0',
+                          fontSize: 11, fontWeight: split.id === activeOrderId || split.isPaid ? 600 : 500,
                           display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
                         }}
                       >

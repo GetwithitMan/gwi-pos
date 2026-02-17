@@ -74,9 +74,6 @@ const POUR_SIZE_CONFIG: Record<string, { label: string; short: string; color: st
 interface BartenderViewProps {
   locationId: string
   employeeId: string
-  employeeName: string
-  onLogout: () => void
-  onOpenTimeClock?: () => void
   onOpenPayment?: (orderId: string) => void
   onOpenModifiers?: (
     item: MenuItem,
@@ -84,7 +81,6 @@ interface BartenderViewProps {
     existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[],
     existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
   ) => void
-  onSwitchToFloorPlan?: () => void
   onOpenCompVoid?: (item: { id: string; name: string; quantity: number; price: number; modifiers: { id: string; name: string; price: number }[]; status?: string; voidReason?: string }) => void
   employeePermissions?: string[]
   // Settings
@@ -99,6 +95,8 @@ interface BartenderViewProps {
   onRegisterDeselectTab?: (fn: () => void) => void
   // External refresh trigger (e.g., parent increments after payment)
   refreshTrigger?: number
+  // Notify parent when a tab is selected/deselected so savedOrderId stays in sync
+  onSelectedTabChange?: (tabId: string | null) => void
 }
 
 // Menu sections - bar, food, or entertainment (standalone)
@@ -234,12 +232,8 @@ const getItemOrderKey = (employeeId: string, categoryId: string) => `bartender_i
 export function BartenderView({
   locationId,
   employeeId,
-  employeeName,
-  onLogout,
-  onOpenTimeClock,
   onOpenPayment,
   onOpenModifiers,
-  onSwitchToFloorPlan,
   onOpenCompVoid,
   employeePermissions = [],
   requireNameWithoutCard = false,
@@ -248,6 +242,7 @@ export function BartenderView({
   children,
   onRegisterDeselectTab,
   refreshTrigger: externalRefreshTrigger,
+  onSelectedTabChange,
 }: BartenderViewProps) {
   // ---------------------------------------------------------------------------
   // HOOKS
@@ -825,6 +820,9 @@ export function BartenderView({
       if (loadedTabIdRef.current === selectedTabId) return
       loadedTabIdRef.current = selectedTabId
 
+      // Notify parent so savedOrderId stays in sync (fixes split pay-all in bar mode)
+      onSelectedTabChange?.(selectedTabId)
+
       // Fetch order details and load into store
       fetch(`/api/orders/${selectedTabId}?locationId=${locationId}`)
         .then(res => res.ok ? res.json() : null)
@@ -836,6 +834,8 @@ export function BartenderView({
             id: order.id,
             orderNumber: order.orderNumber,
             orderType: order.orderType || 'bar_tab',
+            tableId: order.tableId || undefined,
+            tableName: order.table?.name || undefined,
             tabName: order.tabName || undefined,
             guestCount: order.guestCount || 1,
             status: order.status || 'open',
@@ -852,6 +852,7 @@ export function BartenderView({
     } else {
       if (loadedTabIdRef.current !== null) {
         loadedTabIdRef.current = null
+        onSelectedTabChange?.(null)
         useOrderStore.getState().clearOrder()
       }
     }
@@ -861,12 +862,7 @@ export function BartenderView({
   // HANDLERS
   // ---------------------------------------------------------------------------
 
-  // Switch to floor plan — no sync needed, store IS the source of truth
-  const handleSwitchToFloorPlan = useCallback(() => {
-    if (onSwitchToFloorPlan) {
-      onSwitchToFloorPlan()
-    }
-  }, [onSwitchToFloorPlan])
+  // handleSwitchToFloorPlan removed — view switching now in UnifiedPOSHeader
 
   const handleSelectTab = useCallback((tabId: string) => {
     setSelectedTabId(tabId)
@@ -1189,37 +1185,13 @@ export function BartenderView({
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="h-screen bg-slate-900 flex flex-col overflow-hidden">
-      {/* ====== TOP BAR ====== */}
-      <header className="flex-shrink-0 bg-slate-800/50 border-b border-white/10 px-4 py-2">
-        <div className="flex items-center justify-between">
-          {/* Left: Employee name */}
-          <div className="flex items-center gap-3">
-            <span className="text-slate-400 text-sm">{employeeName}</span>
-          </div>
+    <div className="flex-1 min-h-0 bg-slate-900 flex flex-col overflow-hidden">
+      {/* Header removed — now rendered by UnifiedPOSHeader in orders/page.tsx */}
 
-          {/* Center: BAR / FOOD / ENT Buttons */}
-          <ModeSelector value={menuSection} onChange={setMenuSection} />
-
-          {/* Right: Navigation */}
-          <div className="flex items-center gap-2">
-            {onSwitchToFloorPlan && (
-              <button
-                onClick={handleSwitchToFloorPlan}
-                className="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
-              >
-                Floor Plan
-              </button>
-            )}
-            <button
-              onClick={onOpenTimeClock || onLogout}
-              className="px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
-            >
-              Clock Out
-            </button>
-          </div>
-        </div>
-      </header>
+      {/* BAR / FOOD / ENT sub-navigation */}
+      <div className="flex-shrink-0 bg-slate-800/50 border-b border-white/10 px-4 py-2 flex justify-center">
+        <ModeSelector value={menuSection} onChange={setMenuSection} />
+      </div>
 
       {/* ====== MAIN CONTENT (row-reverse: OrderPanel left, Menu center, Tabs right) ====== */}
       <div className="flex-1 flex flex-row-reverse overflow-hidden">

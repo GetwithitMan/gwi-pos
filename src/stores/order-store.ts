@@ -139,6 +139,8 @@ interface Order {
   // Reopened order tracking
   reopenedAt?: string | null
   reopenReason?: string | null
+  // Order status (open, split, paid, etc.)
+  status?: string
 }
 
 interface LoadedOrderData {
@@ -406,6 +408,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         commissionTotal: 0,
         reopenedAt: orderData.reopenedAt || null,
         reopenReason: orderData.reopenReason || null,
+        status: orderData.status,
       },
     })
   },

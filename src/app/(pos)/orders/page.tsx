@@ -51,11 +51,15 @@ import { FloorPlanHome } from '@/components/floor-plan'
 import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import { BartenderView } from '@/components/bartender'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
+import { UnifiedPOSHeader } from '@/components/orders/UnifiedPOSHeader'
+import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
 import { useQuickPick } from '@/hooks/useQuickPick'
 import { useOrderPanelCallbacks } from '@/hooks/useOrderPanelCallbacks'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { toast } from '@/stores/toast-store'
+import { DatacapPaymentProcessor } from '@/components/payment/DatacapPaymentProcessor'
+import type { DatacapResult } from '@/hooks/useDatacap'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
 const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentOverlay'))
@@ -307,6 +311,12 @@ export default function OrdersPage() {
   const [splitManageMode, setSplitManageMode] = useState(false)
   const [editingChildSplit, setEditingChildSplit] = useState(false)
   const [splitParentToReturnTo, setSplitParentToReturnTo] = useState<string | null>(null)
+  const [payAllSplitsQueue, setPayAllSplitsQueue] = useState<string[]>([]) // Auto-cycle remaining split IDs
+  const [showPayAllSplitsConfirm, setShowPayAllSplitsConfirm] = useState(false)
+  const [payAllSplitsTotal, setPayAllSplitsTotal] = useState(0)
+  const [payAllSplitsParentId, setPayAllSplitsParentId] = useState<string | null>(null)
+  const [payAllSplitsProcessing, setPayAllSplitsProcessing] = useState(false)
+  const [payAllSplitsStep, setPayAllSplitsStep] = useState<'confirm' | 'datacap_card'>('confirm')
 
   // Tabs panel state
   const [showTabsPanel, setShowTabsPanel] = useState(false)
@@ -336,6 +346,58 @@ export default function OrdersPage() {
 
   // Open orders count for badge
   const [openOrdersCount, setOpenOrdersCount] = useState(0)
+
+  // Menu search (lifted from FloorPlanHome for UnifiedPOSHeader)
+  const menuSearch = useMenuSearch({
+    locationId: employee?.location?.id,
+    menuItems: menuItems as any,
+  })
+
+  // Ref callbacks for UnifiedPOSHeader → FloorPlanHome communication
+  const quickOrderTypeRef = useRef<((orderType: 'takeout' | 'delivery') => void) | null>(null)
+  const tablesClickRef = useRef<(() => void) | null>(null)
+
+  // Split chips state — persists while navigating between sibling splits
+  const [orderSplitChips, setOrderSplitChips] = useState<{ id: string; label: string; isPaid: boolean; total: number }[]>([])
+  const [splitParentId, setSplitParentId] = useState<string | null>(null)
+
+  // Fetch split chips when a split parent order is loaded, or clear when leaving split context
+  useEffect(() => {
+    const orderId = currentOrder?.id
+    const status = currentOrder?.status
+    if (!orderId) {
+      setOrderSplitChips([])
+      setSplitParentId(null)
+      return
+    }
+    // If current order IS the split parent
+    if (status === 'split') {
+      setSplitParentId(orderId)
+      fetch(`/api/orders/${orderId}/split-tickets`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          const splits = data?.splitOrders || data?.data?.splitOrders || []
+          setOrderSplitChips(splits.map((s: any, idx: number) => ({
+            id: s.id,
+            label: s.displayNumber || `Check ${idx + 1}`,
+            isPaid: s.status === 'paid',
+            total: Number(s.total ?? 0),
+          })))
+        })
+        .catch(() => setOrderSplitChips([]))
+      return
+    }
+    // If current order is a sibling split (its ID is in the chips list), keep chips visible
+    if (splitParentId && orderSplitChips.some(c => c.id === orderId)) {
+      return // Don't clear — we're navigating between splits
+    }
+    // Otherwise, leaving split context entirely
+    if (orderSplitChips.length > 0) {
+      setOrderSplitChips([])
+      setSplitParentId(null)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentOrder?.id, currentOrder?.status])
 
   // Item notes modal state (for quick note editing)
   const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
@@ -1172,6 +1234,13 @@ export default function OrdersPage() {
 
   // Payment handlers
   const handleOpenPayment = async () => {
+    // Split parent → route to split manager (parent total is $0, children have the money)
+    if (currentOrder?.status === 'split') {
+      setSplitManageMode(true)
+      setShowSplitTicketManager(true)
+      return
+    }
+
     // Allow payment if there are items OR if the order has a total (split orders)
     const hasItems = currentOrder?.items.length && currentOrder.items.length > 0
     const hasSplitTotal = currentOrder?.total && currentOrder.total > 0 && !hasItems
@@ -1205,6 +1274,55 @@ export default function OrdersPage() {
       .catch(() => setPaymentTabCards([]))
 
     setShowPaymentModal(true)
+  }
+
+  // Pay All Splits — clean up after successful batch pay
+  const cleanupAfterPayAllSplits = () => {
+    setShowPayAllSplitsConfirm(false)
+    setPayAllSplitsParentId(null)
+    setPayAllSplitsTotal(0)
+    setPayAllSplitsStep('confirm')
+    setShowSplitTicketManager(false)
+    setSplitManageMode(false)
+    clearOrder()
+    setSavedOrderId(null)
+    setOrderSent(false)
+    setFloorPlanRefreshTrigger(prev => prev + 1)
+    setTabsRefreshTrigger(prev => prev + 1)
+  }
+
+  // Pay All Splits — call batch API (used for cash directly, and after Datacap success for card)
+  const callPayAllSplitsAPI = async (method: string, cardDetails?: {
+    cardBrand?: string; cardLast4?: string; authCode?: string;
+    datacapRecordNo?: string; datacapRefNumber?: string; datacapSequenceNo?: string;
+    entryMethod?: string; amountAuthorized?: number;
+  }) => {
+    if (!payAllSplitsParentId) return
+    setPayAllSplitsProcessing(true)
+    try {
+      const res = await fetch(`/api/orders/${payAllSplitsParentId}/pay-all-splits`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          method,
+          employeeId: employee?.id,
+          terminalId: 'terminal-1',
+          ...cardDetails,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed' }))
+        toast.error(err.error || 'Failed to pay all splits')
+        return
+      }
+      const data = await res.json()
+      toast.success(`All ${data.splitsPaid} splits paid — $${data.totalAmount.toFixed(2)}`)
+      cleanupAfterPayAllSplits()
+    } catch {
+      toast.error('Failed to pay all splits')
+    } finally {
+      setPayAllSplitsProcessing(false)
+    }
   }
 
   const handleReceiptClose = () => {
@@ -1881,6 +1999,25 @@ export default function OrdersPage() {
     }
   }
 
+  // Handle search result selection from UnifiedPOSHeader
+  const handleSearchSelect = useCallback((item: { id: string; name: string; price: number; categoryId: string }) => {
+    // Find full menu item data
+    const fullItem = menuItems.find((m: any) => m.id === item.id)
+    if (fullItem) {
+      // Add item to order via the ordering engine (works for both floor plan and bartender)
+      const { addItem } = useOrderStore.getState()
+      addItem({
+        menuItemId: fullItem.id,
+        name: fullItem.name,
+        price: fullItem.price,
+        quantity: 1,
+        modifiers: [],
+        categoryType: (fullItem as any).categoryType,
+      })
+    }
+    menuSearch.clearSearch()
+  }, [menuItems, menuSearch])
+
   // Handle opening entertainment session start modal
   // Shared handler for opening modifier modal from FloorPlanHome/BartenderView inline ordering
   // Called by useOrderingEngine via onOpenModifiers(item, onComplete, existingModifiers, existingIngredientMods)
@@ -2257,6 +2394,7 @@ export default function OrdersPage() {
             orderNumber={currentOrder?.orderNumber}
             orderType={currentOrder?.orderType || (viewMode === 'bartender' ? 'bar_tab' : undefined)}
             tabName={currentOrder?.tabName}
+            tableName={currentOrder?.tableName}
             tableId={currentOrder?.tableId}
             locationId={employee.location.id}
             employeeId={employee.id}
@@ -2279,12 +2417,18 @@ export default function OrdersPage() {
             onItemEditModifiers={panelCallbacks.onItemEditModifiers}
             onItemCompVoid={panelCallbacks.onItemCompVoid}
             onItemResend={panelCallbacks.onItemResend}
-            onItemSplit={editingChildSplit ? undefined : panelCallbacks.onItemSplit}
+            onItemSplit={editingChildSplit || orderSplitChips.some(c => c.id === currentOrder?.id) ? undefined : panelCallbacks.onItemSplit}
             onItemSeatChange={panelCallbacks.onItemSeatChange}
             expandedItemId={panelCallbacks.expandedItemId}
             onItemToggleExpand={panelCallbacks.onItemToggleExpand}
             onSend={handleSendToKitchen}
             onPay={async (method) => {
+              // Split parent → route to split manager (parent total is $0, children have the money)
+              if (useOrderStore.getState().currentOrder?.status === 'split') {
+                setSplitManageMode(true)
+                setShowSplitTicketManager(true)
+                return
+              }
               // Ensure order is saved to DB before opening payment
               const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id || await ensureOrderInDB(employee?.id)
               if (orderId) {
@@ -2309,7 +2453,6 @@ export default function OrdersPage() {
               }
             }}
             isSending={isSendingOrder}
-            viewMode={viewMode === 'floor-plan' ? 'floor-plan' : viewMode === 'bartender' ? 'bartender' : 'legacy'}
             hasActiveTab={!!(tabCardInfo?.cardLast4 || currentOrder?.tabName)}
             requireCardForTab={requireCardForTab}
             tabCardLast4={tabCardInfo?.cardLast4}
@@ -2499,6 +2642,46 @@ export default function OrdersPage() {
             reopenReason={currentOrder?.reopenReason}
             hideHeader={viewMode === 'floor-plan'}
             className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0'}
+            splitChips={orderSplitChips.length > 0 ? orderSplitChips : undefined}
+            onSplitChipSelect={orderSplitChips.length > 0 ? async (splitId) => {
+              // Fetch and load the selected split order
+              try {
+                const res = await fetch(`/api/orders/${splitId}`)
+                if (!res.ok) return
+                const order = await res.json()
+                const store = useOrderStore.getState()
+                store.loadOrder({
+                  id: order.id,
+                  orderNumber: order.orderNumber,
+                  orderType: order.orderType || 'dine_in',
+                  tableId: order.tableId || undefined,
+                  tableName: order.table?.name || undefined,
+                  tabName: order.tabName || undefined,
+                  guestCount: order.guestCount || 1,
+                  status: order.status || 'open',
+                  items: order.items || [],
+                  subtotal: Number(order.subtotal) || 0,
+                  taxTotal: Number(order.taxTotal) || 0,
+                  total: Number(order.total) || 0,
+                })
+                setSavedOrderId(splitId)
+              } catch (err) {
+                console.error('Failed to load split order:', err)
+              }
+            } : undefined}
+            onManageSplits={orderSplitChips.length > 0 ? () => {
+              setSplitManageMode(true)
+              setShowSplitTicketManager(true)
+            } : undefined}
+            onPayAll={orderSplitChips.length > 0 ? () => {
+              const unpaid = orderSplitChips.filter(c => !c.isPaid)
+              if (unpaid.length === 0) return
+              const parentId = splitParentId || savedOrderId || currentOrder?.id || ''
+              const combinedTotal = unpaid.reduce((sum, c) => sum + c.total, 0)
+              setPayAllSplitsParentId(parentId)
+              setPayAllSplitsTotal(combinedTotal)
+              setShowPayAllSplitsConfirm(true)
+            } : undefined}
           />
       {/* Quick Pick Strip — always visible, right side of order panel */}
         <QuickPickStrip
@@ -2539,31 +2722,74 @@ export default function OrdersPage() {
 
   if ((viewMode === 'floor-plan' || viewMode === 'bartender') && employee.location?.id) {
     return (
-      <>
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <UnifiedPOSHeader
+          employeeName={employee.displayName}
+          employeeRole={employee.role?.name}
+          viewMode={viewMode}
+          onViewModeChange={(mode) => {
+            const order = useOrderStore.getState().currentOrder
+            if (mode === 'bartender') {
+              if (order?.orderType === 'bar_tab') setMode('bar')
+              setViewMode('bartender')
+            } else {
+              if (order?.id && order.tableId) {
+                setOrderToLoad({ id: order.id, orderNumber: order.orderNumber || 0, orderType: order.orderType })
+              }
+              if (order?.orderType !== 'bar_tab') setMode('food')
+              setViewMode('floor-plan')
+            }
+          }}
+          activeOrderType={currentOrder?.orderType || null}
+          onQuickOrderType={(type) => quickOrderTypeRef.current?.(type)}
+          onTablesClick={() => tablesClickRef.current?.()}
+          onSwitchUser={() => { logout() }}
+          onOpenTimeClock={() => setShowTimeClockModal(true)}
+          onLogout={logout}
+          onOpenSettings={() => setShowDisplaySettings(true)}
+          onOpenAdminNav={canAccessAdmin ? () => router.push('/settings') : undefined}
+          canCustomize={canCustomize}
+          quickBarEnabled={quickBarEnabled}
+          onToggleQuickBar={() => updateLayoutSetting('quickPickEnabled', !quickBarEnabled)}
+          isEditingFavorites={isEditingFavorites}
+          onToggleEditFavorites={() => setIsEditingFavorites(!isEditingFavorites)}
+          isEditingCategories={isEditingCategories}
+          onToggleEditCategories={() => setIsEditingCategories(!isEditingCategories)}
+          isEditingMenuItems={isEditingMenuItems}
+          onToggleEditMenuItems={() => setIsEditingMenuItems(!isEditingMenuItems)}
+          onResetAllCategoryColors={resetAllCategoryColors}
+          onResetAllMenuItemStyles={resetAllMenuItemStyles}
+          openOrdersCount={openOrdersCount}
+          onOpenOrdersPanel={() => { setShowTabsPanel(true) }}
+          searchQuery={menuSearch.query}
+          onSearchChange={menuSearch.setQuery}
+          onSearchClear={menuSearch.clearSearch}
+          searchResults={menuSearch.results || { directMatches: [], ingredientMatches: [], totalMatches: 0 }}
+          isSearching={menuSearch.isSearching}
+          onSearchSelect={handleSearchSelect}
+          cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
+        />
         {viewMode === 'floor-plan' && (
           <FloorPlanHome
             locationId={employee.location.id}
             employeeId={employee.id}
-            employeeName={employee.displayName}
-            employeeRole={employee.role?.name}
-            isManager={canAccessAdmin}
-            onLogout={logout}
-            onOpenTimeClock={() => setShowTimeClockModal(true)}
-            onSwitchUser={() => { logout() }}
-            onOpenSettings={() => setShowDisplaySettings(true)}
-            onOpenAdminNav={canAccessAdmin ? () => router.push('/settings') : undefined}
-            onSwitchToBartenderView={() => {
-              // Preserve current order context when switching views
-              const order = useOrderStore.getState().currentOrder
-              if (order?.orderType === 'bar_tab') setMode('bar')
-              setViewMode('bartender')
-            }}
+            isEditingFavorites={isEditingFavorites}
+            isEditingCategories={isEditingCategories}
+            isEditingMenuItems={isEditingMenuItems}
+            onRegisterQuickOrderType={(fn) => { quickOrderTypeRef.current = fn }}
+            onRegisterTablesClick={(fn) => { tablesClickRef.current = fn }}
+            onOpenOrdersCountChange={setOpenOrdersCount}
             onOpenPayment={(orderId) => {
+              // Split parent → route to split manager
+              if (useOrderStore.getState().currentOrder?.status === 'split') {
+                setSplitManageMode(true)
+                setShowSplitTicketManager(true)
+                return
+              }
               setOrderToPayId(orderId)
               setShowPaymentModal(true)
             }}
             onOpenModifiers={handleOpenModifiersShared as any}
-            onOpenOrdersPanel={() => { setShowTabsPanel(true) }}
             onOpenCardFirst={(orderId) => {
               setCardTabOrderId(orderId)
               setShowCardTabFlow(true)
@@ -2592,20 +2818,8 @@ export default function OrdersPage() {
           <BartenderView
             locationId={employee.location.id}
             employeeId={employee.id}
-            employeeName={employee.displayName}
             employeePermissions={permissionsArray}
             onRegisterDeselectTab={(fn) => { bartenderDeselectTabRef.current = fn }}
-            onLogout={logout}
-            onOpenTimeClock={() => setShowTimeClockModal(true)}
-            onSwitchToFloorPlan={() => {
-              // Preserve current order context when switching views
-              const order = useOrderStore.getState().currentOrder
-              if (order?.id && order.tableId) {
-                setOrderToLoad({ id: order.id, orderNumber: order.orderNumber || 0, orderType: order.orderType })
-              }
-              if (order?.orderType !== 'bar_tab') setMode('food')
-              setViewMode('floor-plan')
-            }}
             onOpenCompVoid={(item) => {
               const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId
               if (!orderId) {
@@ -2630,15 +2844,21 @@ export default function OrdersPage() {
               setShowCompVoidModal(true)
             }}
             onOpenPayment={(orderId) => {
+              // Split parent → route to split manager
+              if (useOrderStore.getState().currentOrder?.status === 'split') {
+                setSplitManageMode(true)
+                setShowSplitTicketManager(true)
+                return
+              }
               setOrderToPayId(orderId)
               setShowPaymentModal(true)
             }}
             onOpenModifiers={handleOpenModifiersShared as any}
             requireNameWithoutCard={false}
-            tapCardBehavior="close"
             refreshTrigger={tabsRefreshTrigger}
             initialCategories={categories}
             initialMenuItems={menuItems}
+            onSelectedTabChange={(tabId) => setSavedOrderId(tabId)}
           >
             {sharedOrderPanel}
           </BartenderView>
@@ -2882,6 +3102,7 @@ export default function OrdersPage() {
         {showPaymentModal && orderToPayId && (
           <Suspense fallback={null}>
             <PaymentModal
+              key={orderToPayId}
               isOpen={showPaymentModal}
               initialMethod={initialPayMethod}
               onClose={() => {
@@ -2902,22 +3123,43 @@ export default function OrdersPage() {
                 setShowPaymentModal(false)
                 setOrderToPayId(null)
                 setInitialPayMethod(undefined)
-                // Show receipt modal only when receiptData is provided
-                // (fire-and-forget cash payments pass no data → skip receipt)
-                if (paidId && receiptData) {
-                  setPreloadedReceiptData(receiptData)
-                  setReceiptOrderId(paidId)
-                  setShowReceiptModal(true)
-                }
-                // If we were paying a split child, return to split manage mode
+
+                // If we were paying a split child...
                 if (splitParentToReturnTo) {
+                  // Auto-cycle: if more splits queued from "Pay All", pay the next one
+                  if (payAllSplitsQueue.length > 0) {
+                    const nextSplitId = payAllSplitsQueue[0]
+                    setPayAllSplitsQueue(prev => prev.slice(1))
+                    clearOrder()
+                    setOrderToPayId(nextSplitId)
+                    setShowPaymentModal(true)
+                    // Skip receipt for intermediate splits — keep cycling
+                    setFloorPlanRefreshTrigger(prev => prev + 1)
+                    setTabsRefreshTrigger(prev => prev + 1)
+                    return
+                  }
+                  // Queue empty — all splits paid. Show receipt for last split only.
+                  if (paidId && receiptData) {
+                    setPreloadedReceiptData(receiptData)
+                    setReceiptOrderId(paidId)
+                    setShowReceiptModal(true)
+                  }
                   setSavedOrderId(splitParentToReturnTo)
                   setSplitManageMode(true)
                   setShowSplitTicketManager(true)
                   setSplitParentToReturnTo(null)
+                  setPayAllSplitsQueue([])
                   clearOrder()
                   setFloorPlanRefreshTrigger(prev => prev + 1)
+                  setTabsRefreshTrigger(prev => prev + 1)
                   return
+                }
+
+                // Non-split payment: show receipt if provided
+                if (paidId && receiptData) {
+                  setPreloadedReceiptData(receiptData)
+                  setReceiptOrderId(paidId)
+                  setShowReceiptModal(true)
                 }
                 // Clear the order panel after payment
                 clearOrder()
@@ -3181,11 +3423,20 @@ export default function OrdersPage() {
                 setFloorPlanRefreshTrigger(prev => prev + 1)
               }}
               onPaySplit={(splitId) => {
-                setSplitParentToReturnTo(savedOrderId || '')
+                const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
+                setSplitParentToReturnTo(parentId)
                 setShowSplitTicketManager(false)
                 setSplitManageMode(false)
+                clearOrder()
                 setOrderToPayId(splitId)
                 setShowPaymentModal(true)
+              }}
+              onPayAllSplits={(splitIds, combinedTotal) => {
+                if (splitIds.length === 0) return
+                const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
+                setPayAllSplitsParentId(parentId)
+                setPayAllSplitsTotal(combinedTotal)
+                setShowPayAllSplitsConfirm(true)
               }}
               onAddCard={(splitId) => {
                 setShowSplitTicketManager(false)
@@ -3224,6 +3475,77 @@ export default function OrdersPage() {
           currentNote={activeOrderFull.noteEditTarget?.currentNote}
           itemName={activeOrderFull.noteEditTarget?.itemName}
         />
+
+        {/* Pay All Splits Confirmation */}
+        {showPayAllSplitsConfirm && payAllSplitsParentId && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className={`rounded-2xl shadow-2xl w-full overflow-hidden ${payAllSplitsStep === 'datacap_card' ? 'max-w-md' : 'max-w-sm'}`} style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              {payAllSplitsStep === 'confirm' && (
+                <div className="p-6">
+                  <h3 className="text-lg font-bold text-white mb-1">Pay All Splits</h3>
+                  <p className="text-slate-400 text-sm mb-4">
+                    {orderSplitChips.filter(c => !c.isPaid).length} unpaid checks
+                  </p>
+                  <div className="rounded-xl p-4 mb-5" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-300 text-sm">Total</span>
+                      <span className="text-2xl font-bold text-white">${payAllSplitsTotal.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => callPayAllSplitsAPI('cash')}
+                      disabled={payAllSplitsProcessing}
+                      className="flex-1 py-3 rounded-xl font-bold text-white transition-all"
+                      style={{ background: payAllSplitsProcessing ? 'rgba(34,197,94,0.3)' : 'rgba(34,197,94,0.8)' }}
+                    >
+                      {payAllSplitsProcessing ? 'Processing...' : 'Cash'}
+                    </button>
+                    <button
+                      onClick={() => setPayAllSplitsStep('datacap_card')}
+                      disabled={payAllSplitsProcessing}
+                      className="flex-1 py-3 rounded-xl font-bold text-white transition-all"
+                      style={{ background: payAllSplitsProcessing ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.8)' }}
+                    >
+                      Card
+                    </button>
+                  </div>
+                </div>
+              )}
+              {payAllSplitsStep === 'datacap_card' && employee?.location?.id && (
+                <div className="p-4">
+                  <DatacapPaymentProcessor
+                    orderId={payAllSplitsParentId}
+                    amount={payAllSplitsTotal}
+                    subtotal={payAllSplitsTotal}
+                    terminalId="terminal-1"
+                    employeeId={employee.id}
+                    locationId={employee.location.id}
+                    onSuccess={(result) => {
+                      callPayAllSplitsAPI('credit', {
+                        cardBrand: result.cardBrand,
+                        cardLast4: result.cardLast4,
+                        authCode: result.authCode,
+                        datacapRecordNo: result.recordNo,
+                        datacapRefNumber: result.refNumber,
+                        datacapSequenceNo: result.sequenceNo,
+                        entryMethod: result.entryMethod,
+                        amountAuthorized: result.amountAuthorized,
+                      })
+                    }}
+                    onCancel={() => setPayAllSplitsStep('confirm')}
+                  />
+                </div>
+              )}
+              <button
+                onClick={() => { setShowPayAllSplitsConfirm(false); setPayAllSplitsParentId(null); setPayAllSplitsStep('confirm') }}
+                className="w-full py-3 text-slate-400 text-sm font-medium border-t border-white/10 hover:bg-white/5 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {showTabNamePrompt && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -3391,7 +3713,7 @@ export default function OrdersPage() {
             />
           </Suspense>
         )}
-      </>
+      </div>
     )
   }
 

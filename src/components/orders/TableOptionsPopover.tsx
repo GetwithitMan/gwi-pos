@@ -1,6 +1,14 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
+import { formatCurrency } from '@/lib/utils'
+
+interface CheckOverviewItem {
+  name: string
+  quantity: number
+  price: number
+  status?: string
+}
 
 interface TableOptionsPopoverProps {
   isOpen: boolean
@@ -10,11 +18,16 @@ interface TableOptionsPopoverProps {
   onCoursingToggle: (enabled: boolean) => void
   guestCount: number
   onGuestCountChange: (count: number) => void
+  /** Order items for check overview (non-split orders) */
+  orderItems?: CheckOverviewItem[]
+  orderTotal?: number
+  /** Split order IDs — when provided, fetches items from all splits for full-table overview */
+  splitOrderIds?: string[]
 }
 
 /**
  * Small dark popover that appears when user taps the table name in the header.
- * Provides quick access to coursing toggle and guest count.
+ * Provides quick access to coursing toggle, guest count, and check overview.
  */
 export function TableOptionsPopover({
   isOpen,
@@ -24,8 +37,75 @@ export function TableOptionsPopover({
   onCoursingToggle,
   guestCount,
   onGuestCountChange,
+  orderItems,
+  orderTotal,
+  splitOrderIds,
 }: TableOptionsPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null)
+
+  // State for fetched split items
+  const [splitItems, setSplitItems] = useState<CheckOverviewItem[]>([])
+  const [splitTotal, setSplitTotal] = useState(0)
+  const [loadingSplits, setLoadingSplits] = useState(false)
+
+  // Fetch all split order items when popover opens with split IDs
+  useEffect(() => {
+    if (!isOpen) return
+    if (!splitOrderIds || splitOrderIds.length === 0) {
+      setSplitItems([])
+      setSplitTotal(0)
+      return
+    }
+    setLoadingSplits(true)
+    Promise.all(
+      splitOrderIds.map(id =>
+        fetch(`/api/orders/${id}`).then(r => r.ok ? r.json() : null).catch(() => null)
+      )
+    ).then(results => {
+      const items: CheckOverviewItem[] = []
+      let total = 0
+      for (const result of results) {
+        // API returns order directly (no data wrapper)
+        const order = result?.data ?? result
+        if (!order?.items) continue
+        total += Number(order.total ?? 0)
+        for (const item of order.items) {
+          items.push({
+            name: item.name,
+            quantity: item.quantity ?? 1,
+            price: Number(item.price ?? 0),
+            status: item.status,
+          })
+        }
+      }
+      setSplitItems(items)
+      setSplitTotal(total)
+      setLoadingSplits(false)
+    })
+  }, [isOpen, splitOrderIds?.join(',')])
+
+  // Use split items when available, otherwise use direct orderItems
+  const effectiveItems = (splitOrderIds && splitOrderIds.length > 0) ? splitItems : (orderItems || [])
+  const effectiveTotal = (splitOrderIds && splitOrderIds.length > 0) ? splitTotal : (orderTotal ?? 0)
+  const hasSplits = !!(splitOrderIds && splitOrderIds.length > 0)
+  const isLoading = hasSplits && loadingSplits
+
+  // Aggregate items by name for check overview
+  const overviewGroups = useMemo(() => {
+    if (effectiveItems.length === 0) return []
+    const groups = new Map<string, { name: string; qty: number; total: number }>()
+    for (const item of effectiveItems) {
+      if (item.status === 'voided' || item.status === 'comped') continue
+      const existing = groups.get(item.name)
+      if (existing) {
+        existing.qty += item.quantity
+        existing.total += item.price * item.quantity
+      } else {
+        groups.set(item.name, { name: item.name, qty: item.quantity, total: item.price * item.quantity })
+      }
+    }
+    return Array.from(groups.values()).sort((a, b) => b.qty - a.qty)
+  }, [effectiveItems])
 
   // Close on click outside
   useEffect(() => {
@@ -57,6 +137,8 @@ export function TableOptionsPopover({
 
   if (!isOpen) return null
 
+  const showOverview = overviewGroups.length > 0 || isLoading
+
   return (
     <div
       ref={popoverRef}
@@ -87,6 +169,51 @@ export function TableOptionsPopover({
       }}>
         {tableName} Options
       </div>
+
+      {/* Check Overview */}
+      {showOverview && (
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{
+            fontSize: '10px', fontWeight: 700, color: '#64748b',
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+            marginBottom: '6px',
+          }}>
+            {hasSplits ? 'Table Overview (All Checks)' : 'Check Overview'}
+          </div>
+          {isLoading ? (
+            <div style={{ fontSize: '11px', color: '#64748b', padding: '4px 0' }}>Loading all checks...</div>
+          ) : (
+            <>
+              <div style={{ maxHeight: '160px', overflowY: 'auto' }}>
+                {overviewGroups.map(g => (
+                  <div key={g.name} style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '2px 0', fontSize: '12px',
+                  }}>
+                    <span style={{ color: '#e2e8f0' }}>
+                      <span style={{ color: '#94a3b8', fontWeight: 600, marginRight: '3px' }}>{g.qty}x</span>
+                      {g.name}
+                    </span>
+                    <span style={{ color: '#94a3b8', fontWeight: 500, marginLeft: '8px', whiteSpace: 'nowrap' }}>
+                      {formatCurrency(g.total)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div style={{
+                display: 'flex', justifyContent: 'space-between',
+                marginTop: '6px', paddingTop: '4px',
+                borderTop: '1px solid rgba(255,255,255,0.08)',
+                fontSize: '12px', fontWeight: 700,
+              }}>
+                <span style={{ color: '#e2e8f0' }}>Total</span>
+                <span style={{ color: '#f1f5f9' }}>{formatCurrency(effectiveTotal)}</span>
+              </div>
+            </>
+          )}
+          <div style={{ height: '1px', background: 'rgba(255, 255, 255, 0.08)', margin: '10px 0' }} />
+        </div>
+      )}
 
       {/* Coursing Toggle */}
       <div style={{

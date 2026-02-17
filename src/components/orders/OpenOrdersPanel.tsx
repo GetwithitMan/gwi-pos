@@ -152,6 +152,14 @@ const ORDER_TYPE_CONFIG: Record<string, { icon: string; label: string; color: st
   call_in: { icon: '📞', label: 'Call-in', color: 'bg-teal-100 text-teal-800', darkColor: 'bg-teal-600/30 text-teal-300 border-teal-500/30' },
 }
 
+/** For split parents, display the sum of children's totals (parent.total is $0) */
+function getDisplayTotal(order: OpenOrder): number {
+  if (order.hasSplits && order.splits && order.splits.length > 0) {
+    return order.splits.reduce((sum, s) => sum + s.total, 0)
+  }
+  return order.total
+}
+
 function getOrderTypeDisplay(order: OpenOrder, dark: boolean): { icon: string; label: string; color: string } {
   if (order.orderTypeConfig) {
     const iconMap: Record<string, string> = {
@@ -349,8 +357,8 @@ export function OpenOrdersPanel({
       case 'oldest': return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
       case 'alpha_first': return nameA.localeCompare(nameB)
       case 'alpha_last': return nameB.localeCompare(nameA)
-      case 'total_high': return b.total - a.total
-      case 'total_low': return a.total - b.total
+      case 'total_high': return getDisplayTotal(b) - getDisplayTotal(a)
+      case 'total_low': return getDisplayTotal(a) - getDisplayTotal(b)
       case 'employee': return a.employee.name.localeCompare(b.employee.name)
       default: return 0
     }
@@ -480,7 +488,7 @@ export function OpenOrdersPanel({
             )}
           </div>
           <span className={`font-bold text-sm ${dark ? 'text-green-400' : 'text-gray-900'}`}>
-            {formatCurrency(order.total)}
+            {formatCurrency(getDisplayTotal(order))}
           </span>
           {viewMode === 'open' && (
             <button
@@ -561,7 +569,7 @@ export function OpenOrdersPanel({
           </div>
           <div className="ml-2 text-right">
             <span className={`font-bold text-lg ${isPaidOrClosed ? (dark ? 'text-green-400' : 'text-green-700') : (dark ? 'text-green-400' : 'text-gray-900')}`}>
-              {formatCurrency(order.total)}
+              {formatCurrency(getDisplayTotal(order))}
             </span>
             {isPaidOrClosed && (
               <div className={`text-xs font-bold ${dark ? 'text-green-400' : 'text-green-600'}`}>PAID</div>

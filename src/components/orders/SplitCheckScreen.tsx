@@ -26,6 +26,7 @@ export interface SplitCheckScreenProps {
   mode?: 'edit' | 'manage'
   parentOrderId?: string
   onPaySplit?: (splitOrderId: string) => void
+  onPayAllSplits?: (splitOrderIds: string[], combinedTotal: number) => void
   onAddCard?: (splitOrderId: string) => void
   onAddItems?: (splitOrderId: string) => void
 }
@@ -72,6 +73,7 @@ export function SplitCheckScreen({
   mode: initialMode = 'edit',
   parentOrderId,
   onPaySplit,
+  onPayAllSplits,
   onAddCard,
   onAddItems,
 }: SplitCheckScreenProps) {
@@ -88,6 +90,7 @@ export function SplitCheckScreen({
         parentOrderId={parentOrderId}
         onClose={onClose}
         onPaySplit={onPaySplit}
+        onPayAllSplits={onPayAllSplits}
         onAddCard={onAddCard}
         onAddItems={onAddItems}
         onMergeBack={() => {
@@ -118,6 +121,7 @@ function SplitUnifiedView({
   parentOrderId,
   onClose,
   onPaySplit,
+  onPayAllSplits,
   onAddCard,
   onAddItems,
   onMergeBack,
@@ -125,6 +129,7 @@ function SplitUnifiedView({
   parentOrderId: string
   onClose: () => void
   onPaySplit?: (splitOrderId: string) => void
+  onPayAllSplits?: (splitOrderIds: string[], combinedTotal: number) => void
   onAddCard?: (splitOrderId: string) => void
   onAddItems?: (splitOrderId: string) => void
   onMergeBack: () => void
@@ -386,14 +391,17 @@ function SplitUnifiedView({
   const totalAmount = splits.reduce((sum, s) => sum + s.total, 0)
   const unpaidTotal = splits.filter(s => !s.isPaid).reduce((sum, s) => sum + s.total, 0)
 
-  // Pay All: pay the first unpaid split — the existing splitParentToReturnTo
-  // pattern in orders/page.tsx returns to this screen after each payment,
-  // so the user cycles through all unpaid splits automatically.
+  // Pay All: send all unpaid split IDs + combined total to parent for batch payment
   const handlePayAll = useCallback(() => {
     const unpaidSplits = splits.filter(s => !s.isPaid)
-    if (unpaidSplits.length === 0 || !onPaySplit) return
-    onPaySplit(unpaidSplits[0].id)
-  }, [splits, onPaySplit])
+    if (unpaidSplits.length === 0) return
+    if (onPayAllSplits) {
+      const total = unpaidSplits.reduce((sum, s) => sum + s.total, 0)
+      onPayAllSplits(unpaidSplits.map(s => s.id), total)
+    } else if (onPaySplit) {
+      onPaySplit(unpaidSplits[0].id)
+    }
+  }, [splits, onPaySplit, onPayAllSplits])
 
   // Find the selected item details for the action bar
   const selectedItemInfo = useMemo(() => {

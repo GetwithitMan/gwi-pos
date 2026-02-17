@@ -531,7 +531,10 @@ export const TableNode = memo(function TableNode({
                 #{table.currentOrder.orderNumber} · {table.currentOrder.guestCount} guests
               </div>
               <div className="table-node-total" style={{ fontSize: `${infoFontSize + 2}px` }}>
-                ${table.currentOrder.total.toFixed(2)}
+                ${(table.currentOrder.splitOrders && table.currentOrder.splitOrders.length > 0
+                  ? table.currentOrder.splitOrders.reduce((sum: number, s: any) => sum + (Number(s.total) || 0), 0)
+                  : table.currentOrder.total
+                ).toFixed(2)}
               </div>
               {/* Order status badges (delay, held, coursed) */}
               {orderStatusBadges && (orderStatusBadges.hasDelay || orderStatusBadges.hasHeld || orderStatusBadges.hasCourses) && (
