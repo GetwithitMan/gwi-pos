@@ -12,6 +12,14 @@ export interface SplitCheckCardProps {
   onCardTap: (checkId: string) => void
   onDeleteCheck?: () => void
   canDelete: boolean
+  // Manage mode props
+  manageMode?: boolean
+  isPaid?: boolean
+  cardInfo?: { last4: string; brand: string } | null
+  onPay?: () => void
+  onAddCard?: () => void
+  onAddItems?: () => void
+  onPrint?: () => void
 }
 
 export const SplitCheckCard = memo(function SplitCheckCard({
@@ -22,45 +30,61 @@ export const SplitCheckCard = memo(function SplitCheckCard({
   onCardTap,
   onDeleteCheck,
   canDelete,
+  manageMode,
+  isPaid,
+  cardInfo,
+  onPay,
+  onAddCard,
+  onAddItems,
+  onPrint,
 }: SplitCheckCardProps) {
   const headerBg = check.seatNumber
     ? getSeatBgColor(check.seatNumber)
     : `rgba(${hexToRgbValues(check.color)}, 0.15)`
 
-  const activeItemCount = check.items.filter(i => !i.isPaid).length
+  const paidStatus = isPaid ?? false
 
   return (
     <div
       style={{
-        background: isDropTarget
-          ? 'rgba(40, 40, 56, 0.95)'
-          : 'rgba(30, 30, 46, 0.95)',
+        background: paidStatus
+          ? 'rgba(20, 40, 30, 0.95)'
+          : manageMode
+            ? 'rgba(30, 30, 46, 0.95)'
+            : isDropTarget
+              ? 'rgba(40, 40, 56, 0.95)'
+              : 'rgba(30, 30, 46, 0.95)',
         borderRadius: '16px',
-        border: isDropTarget
-          ? `2px dashed ${check.color}`
-          : `1px solid ${check.color}40`,
+        border: paidStatus
+          ? '2px solid rgba(34, 197, 94, 0.4)'
+          : isDropTarget
+            ? `2px dashed ${check.color}`
+            : `1px solid ${check.color}40`,
         boxShadow: isDropTarget
           ? `0 0 20px ${check.color}30`
           : '0 2px 8px rgba(0, 0, 0, 0.3)',
-        minWidth: '200px',
+        minWidth: manageMode ? '260px' : '200px',
+        maxWidth: manageMode ? '340px' : undefined,
+        flex: manageMode ? '1 1 280px' : undefined,
         flexShrink: 0,
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: 'column' as const,
         overflow: 'hidden',
         transition: 'border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease',
+        opacity: paidStatus ? 0.75 : 1,
       }}
     >
       {/* Header */}
       <div
-        onClick={() => onCardTap(check.id)}
+        onClick={() => !manageMode && onCardTap(check.id)}
         style={{
-          background: headerBg,
+          background: paidStatus ? 'rgba(34, 197, 94, 0.15)' : headerBg,
           padding: '10px 14px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          cursor: 'pointer',
-          borderBottom: `1px solid ${check.color}20`,
+          cursor: manageMode ? 'default' : 'pointer',
+          borderBottom: `1px solid ${paidStatus ? 'rgba(34, 197, 94, 0.2)' : check.color + '20'}`,
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -70,7 +94,7 @@ export const SplitCheckCard = memo(function SplitCheckCard({
               width: '12px',
               height: '12px',
               borderRadius: '50%',
-              background: check.color,
+              background: paidStatus ? '#22c55e' : check.color,
               flexShrink: 0,
             }}
           />
@@ -78,16 +102,55 @@ export const SplitCheckCard = memo(function SplitCheckCard({
             style={{
               fontSize: '14px',
               fontWeight: 700,
-              color: check.seatNumber
-                ? getSeatTextColor(check.seatNumber)
-                : '#e2e8f0',
+              color: paidStatus
+                ? '#4ade80'
+                : check.seatNumber
+                  ? getSeatTextColor(check.seatNumber)
+                  : '#e2e8f0',
             }}
           >
             {check.label}
           </span>
+          {paidStatus && (
+            <span
+              style={{
+                fontSize: '10px',
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: '10px',
+                background: 'rgba(34, 197, 94, 0.2)',
+                color: '#4ade80',
+                letterSpacing: '0.5px',
+              }}
+            >
+              PAID
+            </span>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Card info badge */}
+          {cardInfo && (
+            <span
+              style={{
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 7px',
+                borderRadius: '10px',
+                background: 'rgba(59, 130, 246, 0.15)',
+                color: '#60a5fa',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '3px',
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+                <line x1="1" y1="10" x2="23" y2="10" />
+              </svg>
+              {cardInfo.last4}
+            </span>
+          )}
           {/* Item count badge */}
           {check.items.length > 0 && (
             <span
@@ -106,15 +169,15 @@ export const SplitCheckCard = memo(function SplitCheckCard({
           {/* Subtotal */}
           <span
             style={{
-              fontSize: '13px',
+              fontSize: '14px',
               fontWeight: 700,
-              color: '#e2e8f0',
+              color: paidStatus ? '#4ade80' : '#e2e8f0',
             }}
           >
             ${check.subtotal.toFixed(2)}
           </span>
-          {/* Delete button */}
-          {canDelete && check.items.length === 0 && onDeleteCheck && (
+          {/* Delete button (edit mode only) */}
+          {!manageMode && canDelete && check.items.length === 0 && onDeleteCheck && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -133,19 +196,8 @@ export const SplitCheckCard = memo(function SplitCheckCard({
               }}
               title="Delete check"
             >
-              <svg
-                width="14"
-                height="14"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                />
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
           )}
@@ -154,11 +206,11 @@ export const SplitCheckCard = memo(function SplitCheckCard({
 
       {/* Items list */}
       <div
-        onClick={() => onCardTap(check.id)}
+        onClick={() => !manageMode && onCardTap(check.id)}
         style={{
           flex: 1,
           padding: '6px 0',
-          cursor: isDropTarget ? 'pointer' : 'default',
+          cursor: !manageMode && isDropTarget ? 'pointer' : 'default',
           minHeight: '40px',
         }}
       >
@@ -192,37 +244,16 @@ export const SplitCheckCard = memo(function SplitCheckCard({
                   padding: '8px 14px',
                   cursor: item.isPaid ? 'default' : 'pointer',
                   opacity: item.isPaid ? 0.4 : 1,
-                  background: isSelected
-                    ? `${check.color}15`
-                    : 'transparent',
-                  borderLeft: isSelected
-                    ? `3px solid ${check.color}`
-                    : '3px solid transparent',
-                  boxShadow: isSelected
-                    ? `inset 0 0 12px ${check.color}10`
-                    : 'none',
+                  background: isSelected ? `${check.color}15` : 'transparent',
+                  borderLeft: isSelected ? `3px solid ${check.color}` : '3px solid transparent',
+                  boxShadow: isSelected ? `inset 0 0 12px ${check.color}10` : 'none',
                   transition: 'background 0.15s ease, border-left 0.15s ease',
                 }}
               >
                 {/* Left: name with quantity and fraction */}
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    flex: 1,
-                    minWidth: 0,
-                  }}
-                >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, minWidth: 0 }}>
                   {item.quantity > 1 && (
-                    <span
-                      style={{
-                        fontSize: '12px',
-                        fontWeight: 700,
-                        color: '#a78bfa',
-                        flexShrink: 0,
-                      }}
-                    >
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#a78bfa', flexShrink: 0 }}>
                       {item.quantity}x
                     </span>
                   )}
@@ -286,15 +317,7 @@ export const SplitCheckCard = memo(function SplitCheckCard({
                 </div>
 
                 {/* Right: price */}
-                <span
-                  style={{
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    color: '#e2e8f0',
-                    flexShrink: 0,
-                    marginLeft: '8px',
-                  }}
-                >
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#e2e8f0', flexShrink: 0, marginLeft: '8px' }}>
                   ${item.price.toFixed(2)}
                 </span>
               </div>
@@ -302,6 +325,102 @@ export const SplitCheckCard = memo(function SplitCheckCard({
           })
         )}
       </div>
+
+      {/* Action buttons (manage mode only) */}
+      {manageMode && (
+        <div
+          style={{
+            display: 'flex',
+            gap: '6px',
+            padding: '8px 10px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+        >
+          {!paidStatus && onPay && (
+            <button
+              onClick={onPay}
+              style={{
+                flex: 1,
+                padding: '10px 8px',
+                borderRadius: '10px',
+                fontSize: '13px',
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: 'rgba(34, 197, 94, 0.15)',
+                color: '#4ade80',
+                transition: 'background 0.15s ease',
+              }}
+            >
+              Pay
+            </button>
+          )}
+          {!paidStatus && onAddCard && (
+            <button
+              onClick={onAddCard}
+              style={{
+                flex: 1,
+                padding: '10px 8px',
+                borderRadius: '10px',
+                fontSize: '13px',
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: 'rgba(59, 130, 246, 0.15)',
+                color: '#60a5fa',
+                transition: 'background 0.15s ease',
+              }}
+            >
+              {cardInfo ? 'Swap Card' : 'Add Card'}
+            </button>
+          )}
+          {!paidStatus && onAddItems && (
+            <button
+              onClick={onAddItems}
+              style={{
+                flex: 1,
+                padding: '10px 8px',
+                borderRadius: '10px',
+                fontSize: '13px',
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: 'rgba(99, 102, 241, 0.15)',
+                color: '#a5b4fc',
+                transition: 'background 0.15s ease',
+              }}
+            >
+              + Items
+            </button>
+          )}
+          {onPrint && (
+            <button
+              onClick={onPrint}
+              style={{
+                flex: paidStatus ? 1 : undefined,
+                padding: '10px 8px',
+                borderRadius: '10px',
+                fontSize: '13px',
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: '#94a3b8',
+                transition: 'background 0.15s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+              }}
+            >
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm0-16h6a2 2 0 012 2v2H7V5a2 2 0 012-2z" />
+              </svg>
+              Print
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 })

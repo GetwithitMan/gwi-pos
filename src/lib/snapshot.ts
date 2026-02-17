@@ -49,6 +49,7 @@ export interface SnapshotTable {
       total: number
       status: string
       isPaid: boolean
+      card: { last4: string; brand: string } | null
     }[]
   } | null
 }
@@ -127,7 +128,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
           orderBy: { seatNumber: 'asc' },
         },
         orders: {
-          where: { status: { in: ['open', 'split'] }, deletedAt: null },
+          where: { status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null },
           select: {
             id: true, orderNumber: true, guestCount: true, total: true, createdAt: true,
             status: true,
@@ -140,6 +141,12 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
                 displayNumber: true,
                 status: true,
                 total: true,
+                cards: {
+                  where: { status: 'authorized', deletedAt: null },
+                  select: { cardLast4: true, cardType: true },
+                  take: 1,
+                  orderBy: { createdAt: 'desc' as const },
+                },
               },
               orderBy: { splitIndex: 'asc' as const },
             },
@@ -184,9 +191,9 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
       orderBy: { sortOrder: 'asc' },
     }),
 
-    // Open orders count (lightweight aggregate)
+    // Open orders count (lightweight aggregate — exclude child splits)
     db.order.count({
-      where: { locationId, status: { in: ['open', 'split'] }, deletedAt: null },
+      where: { locationId, status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null },
     }),
   ])
 
@@ -225,6 +232,10 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
           total: Number(s.total),
           status: s.status,
           isPaid: s.status === 'paid',
+          card: s.cards?.[0] ? {
+            last4: s.cards[0].cardLast4,
+            brand: s.cards[0].cardType,
+          } : null,
         })),
       } : null,
     })),

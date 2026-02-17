@@ -256,7 +256,7 @@ export const POST = withVenue(async function POST(
         throw new Error('Order not found')
       }
 
-      if (order.status !== 'open' && order.status !== 'draft') {
+      if (!['open', 'draft', 'sent', 'in_progress'].includes(order.status)) {
         throw new Error('Cannot modify seats on a closed order')
       }
 

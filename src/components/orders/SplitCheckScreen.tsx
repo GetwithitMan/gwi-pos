@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useSplitCheck, type SplitMode } from '@/hooks/useSplitCheck'
 import { SplitCheckCard } from './SplitCheckCard'
 import { SEAT_COLORS } from '@/lib/seat-utils'
 import { toast } from '@/stores/toast-store'
+import { useOrderStore } from '@/stores/order-store'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 
 export interface SplitCheckScreenProps {
   orderId: string
@@ -20,6 +22,12 @@ export interface SplitCheckScreenProps {
   }>
   onClose: () => void
   onSplitApplied: (splitData?: { parentOrderId: string; splitOrders: Array<{ id: string; splitIndex: number; displayNumber: string | null; status: string; total: number; itemCount: number }> }) => void
+  // Manage mode props
+  mode?: 'edit' | 'manage'
+  parentOrderId?: string
+  onPaySplit?: (splitOrderId: string) => void
+  onAddCard?: (splitOrderId: string) => void
+  onAddItems?: (splitOrderId: string) => void
 }
 
 const MODE_TABS: { mode: SplitMode; label: string }[] = [
@@ -29,7 +37,639 @@ const MODE_TABS: { mode: SplitMode; label: string }[] = [
   { mode: 'bp', label: 'B/P' },
 ]
 
-export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: SplitCheckScreenProps) {
+// -----------------------------------------------------------
+// Managed split data shape (from API)
+// -----------------------------------------------------------
+interface ManagedSplit {
+  id: string
+  splitIndex: number | null
+  displayNumber: string | null
+  status: string
+  subtotal: number
+  total: number
+  isPaid: boolean
+  card: { last4: string; brand: string } | null
+  items: Array<{
+    id: string
+    name: string
+    price: number
+    quantity: number
+    isSentToKitchen?: boolean
+    isPaid?: boolean
+    fractionLabel?: string
+    modifiers?: Array<{ name: string; price: number; preModifier?: string | null }>
+  }>
+}
+
+// -----------------------------------------------------------
+// Main SplitCheckScreen — unified single screen
+// -----------------------------------------------------------
+export function SplitCheckScreen({
+  orderId,
+  items,
+  onClose,
+  onSplitApplied,
+  mode: initialMode = 'edit',
+  parentOrderId,
+  onPaySplit,
+  onAddCard,
+  onAddItems,
+}: SplitCheckScreenProps) {
+  const [currentMode, setCurrentMode] = useState(initialMode)
+
+  useEffect(() => {
+    setCurrentMode(initialMode)
+  }, [initialMode])
+
+  // Manage Mode — unified view with item move + actions
+  if (currentMode === 'manage' && parentOrderId) {
+    return (
+      <SplitUnifiedView
+        parentOrderId={parentOrderId}
+        onClose={onClose}
+        onPaySplit={onPaySplit}
+        onAddCard={onAddCard}
+        onAddItems={onAddItems}
+        onMergeBack={() => {
+          onClose()
+          onSplitApplied()
+        }}
+      />
+    )
+  }
+
+  // Edit Mode — initial split creation
+  return (
+    <SplitEditMode
+      orderId={orderId}
+      items={items}
+      onClose={onClose}
+      onSplitApplied={onSplitApplied}
+    />
+  )
+}
+
+// -----------------------------------------------------------
+// Unified View — one screen for managing existing splits
+// Shows check cards with items, allows moving items between
+// checks, pay, add card, add items, merge back.
+// -----------------------------------------------------------
+function SplitUnifiedView({
+  parentOrderId,
+  onClose,
+  onPaySplit,
+  onAddCard,
+  onAddItems,
+  onMergeBack,
+}: {
+  parentOrderId: string
+  onClose: () => void
+  onPaySplit?: (splitOrderId: string) => void
+  onAddCard?: (splitOrderId: string) => void
+  onAddItems?: (splitOrderId: string) => void
+  onMergeBack: () => void
+}) {
+  const [splits, setSplits] = useState<ManagedSplit[]>([])
+  const [loading, setLoading] = useState(true)
+  const [merging, setMerging] = useState(false)
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [selectedFromSplitId, setSelectedFromSplitId] = useState<string | null>(null)
+  const [movingItem, setMovingItem] = useState(false)
+  const [showSplitPicker, setShowSplitPicker] = useState(false)
+  const [splittingItem, setSplittingItem] = useState(false)
+  const isSplitActionInFlightRef = useRef(false)
+
+  // Fetch split data
+  const loadSplits = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`)
+      if (!res.ok) throw new Error('Failed to load splits')
+      const data = await res.json()
+      setSplits((data.splitOrders || []).map((s: any) => ({
+        id: s.id,
+        splitIndex: s.splitIndex,
+        displayNumber: s.displayNumber,
+        status: s.status,
+        subtotal: s.subtotal || s.total,
+        total: s.total,
+        isPaid: s.isPaid || s.status === 'paid',
+        card: s.card || null,
+        items: (s.items || []).map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          isSentToKitchen: item.isSent,
+          isPaid: item.status === 'paid',
+          fractionLabel: item.fractionLabel,
+          modifiers: item.modifiers,
+        })),
+      })))
+    } catch (err) {
+      toast.error('Failed to load split tickets')
+    } finally {
+      setLoading(false)
+    }
+  }, [parentOrderId])
+
+  useEffect(() => {
+    loadSplits()
+  }, [loadSplits])
+
+  // Socket listener: auto-refresh when another terminal modifies a displayed split
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const splitsRef = useRef(splits)
+  splitsRef.current = splits
+
+  useEffect(() => {
+    const socket = getSharedSocket()
+
+    const debouncedRefresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        loadSplits()
+      }, 200)
+    }
+
+    const onOrdersChanged = (data: any) => {
+      const { orderId } = data || {}
+      // Refresh if the event is for the parent or any displayed split
+      if (orderId === parentOrderId || splitsRef.current.some(s => s.id === orderId)) {
+        debouncedRefresh()
+      }
+    }
+
+    const onPaymentProcessed = (data: any) => {
+      const { orderId } = data || {}
+      if (orderId === parentOrderId || splitsRef.current.some(s => s.id === orderId)) {
+        debouncedRefresh()
+      }
+    }
+
+    socket.on('orders:list-changed', onOrdersChanged)
+    socket.on('payment:processed', onPaymentProcessed)
+
+    return () => {
+      socket.off('orders:list-changed', onOrdersChanged)
+      socket.off('payment:processed', onPaymentProcessed)
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      releaseSharedSocket()
+    }
+  }, [parentOrderId, loadSplits])
+
+  // Move item between splits via API
+  const handleMoveItem = useCallback(async (toSplitId: string) => {
+    if (!selectedItemId || !selectedFromSplitId || movingItem) return
+    if (selectedFromSplitId === toSplitId) return
+    if (isSplitActionInFlightRef.current) return
+    isSplitActionInFlightRef.current = true
+
+    setMovingItem(true)
+    try {
+      const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: selectedItemId,
+          fromSplitId: selectedFromSplitId,
+          toSplitId,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Move failed')
+      }
+      // Reload splits to reflect changes
+      setSelectedItemId(null)
+      setSelectedFromSplitId(null)
+      await loadSplits()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to move item')
+    } finally {
+      setMovingItem(false)
+      isSplitActionInFlightRef.current = false
+    }
+  }, [selectedItemId, selectedFromSplitId, movingItem, parentOrderId, loadSplits])
+
+  // Split a single item into N fractions across checks
+  const handleSplitItem = useCallback(async (ways: number) => {
+    if (!selectedItemId || !selectedFromSplitId || splittingItem) return
+    if (isSplitActionInFlightRef.current) return
+    isSplitActionInFlightRef.current = true
+    setSplittingItem(true)
+    setShowSplitPicker(false)
+    try {
+      const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'splitItem',
+          itemId: selectedItemId,
+          fromSplitId: selectedFromSplitId,
+          ways,
+        }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Split failed')
+      }
+      setSelectedItemId(null)
+      setSelectedFromSplitId(null)
+      toast.success(`Item split ${ways} ways`)
+      await loadSplits()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to split item')
+    } finally {
+      setSplittingItem(false)
+      isSplitActionInFlightRef.current = false
+    }
+  }, [selectedItemId, selectedFromSplitId, splittingItem, parentOrderId, loadSplits])
+
+  // Merge all splits back to parent
+  const handleMergeBack = useCallback(async () => {
+    if (merging) return
+    const hasPaidSplits = splits.some(s => s.isPaid)
+    if (hasPaidSplits) {
+      toast.error('Cannot merge back — some splits are already paid')
+      return
+    }
+    setMerging(true)
+    try {
+      const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Merge failed')
+      }
+      toast.success('Splits merged back')
+      onMergeBack()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Merge failed')
+    } finally {
+      setMerging(false)
+    }
+  }, [merging, splits, parentOrderId, onMergeBack])
+
+  const handleItemTap = useCallback((itemId: string, splitId: string) => {
+    if (selectedItemId === itemId) {
+      // Deselect
+      setSelectedItemId(null)
+      setSelectedFromSplitId(null)
+    } else {
+      setSelectedItemId(itemId)
+      setSelectedFromSplitId(splitId)
+    }
+  }, [selectedItemId])
+
+  const handleCardTap = useCallback((checkId: string) => {
+    if (selectedItemId && selectedFromSplitId && selectedFromSplitId !== checkId) {
+      handleMoveItem(checkId)
+    }
+  }, [selectedItemId, selectedFromSplitId, handleMoveItem])
+
+  const allPaid = splits.length > 0 && splits.every(s => s.isPaid)
+  const paidCount = splits.filter(s => s.isPaid).length
+  const totalAmount = splits.reduce((sum, s) => sum + s.total, 0)
+
+  // Find the selected item details for the action bar
+  const selectedItemInfo = useMemo(() => {
+    if (!selectedItemId) return null
+    for (const split of splits) {
+      const item = split.items.find(i => i.id === selectedItemId)
+      if (item) return { ...item, splitId: split.id, splitLabel: split.displayNumber }
+    }
+    return null
+  }, [selectedItemId, splits])
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        background: 'rgba(0, 0, 0, 0.95)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Top Bar */}
+      <div
+        style={{
+          padding: '12px 16px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          flexShrink: 0,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '18px', fontWeight: 700, color: '#e2e8f0' }}>
+              Split Checks
+            </span>
+            <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+              {splits.length} checks
+              {paidCount > 0 && ` (${paidCount} paid)`}
+            </span>
+            <span style={{ fontSize: '14px', fontWeight: 600, color: '#a5b4fc' }}>
+              Total: ${totalAmount.toFixed(2)}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {selectedItemId && (
+              <span style={{ fontSize: '12px', color: '#a5b4fc', fontStyle: 'italic' }}>
+                Tap a check to move item
+              </span>
+            )}
+            {splits.length > 0 && (
+              <button
+                onClick={() => {
+                  for (const split of splits) {
+                    fetch('/api/print/receipt', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ orderId: split.id, type: 'check' }),
+                    }).catch(() => {})
+                  }
+                  toast.success(`Printing ${splits.length} checks`)
+                }}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  color: '#94a3b8',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                }}
+              >
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm0-16h6a2 2 0 012 2v2H7V5a2 2 0 012-2z" />
+                </svg>
+                Print All
+              </button>
+            )}
+            {!allPaid && (
+              <button
+                onClick={handleMergeBack}
+                disabled={merging || splits.some(s => s.isPaid)}
+                style={{
+                  padding: '7px 14px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  background: splits.some(s => s.isPaid) ? 'rgba(255, 255, 255, 0.05)' : 'rgba(239, 68, 68, 0.15)',
+                  color: splits.some(s => s.isPaid) ? '#64748b' : '#f87171',
+                  cursor: splits.some(s => s.isPaid) ? 'default' : 'pointer',
+                  opacity: merging ? 0.5 : 1,
+                }}
+              >
+                {merging ? 'Merging...' : 'Merge Back'}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                fontSize: '20px',
+                fontWeight: 400,
+                border: 'none',
+                background: 'rgba(255, 255, 255, 0.08)',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Split Cards Grid */}
+      <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: '#94a3b8', fontSize: '15px' }}>
+            Loading splits...
+          </div>
+        ) : splits.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '60px 0', color: '#94a3b8', fontSize: '15px' }}>
+            No splits found
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            {splits.map((split, idx) => {
+              const isSource = selectedFromSplitId === split.id
+              const isDropTarget = !!selectedItemId && !isSource && !split.isPaid
+              return (
+                <SplitCheckCard
+                  key={split.id}
+                  check={{
+                    id: split.id,
+                    label: split.displayNumber || `Check ${(split.splitIndex ?? idx + 1)}`,
+                    color: SEAT_COLORS[idx % SEAT_COLORS.length],
+                    items: split.items.map(item => ({
+                      id: item.id,
+                      originalItemId: item.id,
+                      name: item.name,
+                      price: item.price,
+                      quantity: item.quantity,
+                      fraction: 1,
+                      fractionLabel: item.fractionLabel,
+                      isSentToKitchen: item.isSentToKitchen ?? false,
+                      isPaid: item.isPaid ?? false,
+                    })),
+                    subtotal: split.total,
+                  }}
+                  isDropTarget={isDropTarget}
+                  selectedItemId={isSource ? selectedItemId : null}
+                  onItemTap={(itemId) => {
+                    if (split.isPaid) return
+                    handleItemTap(itemId, split.id)
+                  }}
+                  onCardTap={(checkId) => handleCardTap(checkId)}
+                  canDelete={false}
+                  manageMode={true}
+                  isPaid={split.isPaid}
+                  cardInfo={split.card}
+                  onPay={() => {
+                    if (isSplitActionInFlightRef.current) return
+                    isSplitActionInFlightRef.current = true
+                    try { onPaySplit?.(split.id) } finally { isSplitActionInFlightRef.current = false }
+                  }}
+                  onAddCard={() => onAddCard?.(split.id)}
+                  onAddItems={() => {
+                    if (isSplitActionInFlightRef.current) return
+                    isSplitActionInFlightRef.current = true
+                    try { onAddItems?.(split.id) } finally { isSplitActionInFlightRef.current = false }
+                  }}
+                  onPrint={() => {
+                    fetch('/api/print/receipt', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ orderId: split.id, type: 'check' }),
+                    }).catch(() => {})
+                    toast.success(`Printing ${split.displayNumber || `Check ${(split.splitIndex ?? idx + 1)}`}`)
+                  }}
+                />
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Floating action bar when item selected */}
+      {selectedItemInfo && (
+        <div
+          style={{
+            padding: '12px 20px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+            background: 'rgba(15, 15, 25, 0.98)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
+              {selectedItemInfo.name}
+            </span>
+            <span style={{ fontSize: '13px', color: '#94a3b8' }}>
+              ${selectedItemInfo.price.toFixed(2)}
+            </span>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>
+              from {selectedItemInfo.splitLabel}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <span style={{ fontSize: '13px', color: '#a5b4fc', alignSelf: 'center' }}>
+              {movingItem ? 'Moving...' : splittingItem ? 'Splitting...' : 'Tap a check to move'}
+            </span>
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setShowSplitPicker(prev => !prev)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  border: '1px solid rgba(168, 85, 247, 0.4)',
+                  background: 'rgba(168, 85, 247, 0.15)',
+                  color: '#c084fc',
+                  cursor: 'pointer',
+                }}
+              >
+                Split Item
+              </button>
+              {showSplitPicker && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '44px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'rgba(30, 30, 46, 0.98)',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '10px',
+                    padding: '6px',
+                    display: 'flex',
+                    gap: '4px',
+                    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  }}
+                >
+                  {[2, 3, 4, 5, 6].map(n => (
+                    <button
+                      key={n}
+                      onClick={() => handleSplitItem(n)}
+                      style={{
+                        width: '44px',
+                        height: '40px',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: 700,
+                        border: 'none',
+                        background: 'rgba(168, 85, 247, 0.15)',
+                        color: '#c084fc',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => {
+                setSelectedItemId(null)
+                setSelectedFromSplitId(null)
+                setShowSplitPicker(false)
+              }}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 600,
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                background: 'transparent',
+                color: '#94a3b8',
+                cursor: 'pointer',
+              }}
+            >
+              Deselect
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Bottom summary bar (when all paid) */}
+      {allPaid && splits.length > 0 && (
+        <div
+          style={{
+            padding: '16px 20px',
+            borderTop: '1px solid rgba(34, 197, 94, 0.3)',
+            background: 'rgba(34, 197, 94, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '12px',
+          }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          <span style={{ fontSize: '16px', fontWeight: 700, color: '#4ade80' }}>
+            All checks paid — ${totalAmount.toFixed(2)}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -----------------------------------------------------------
+// Edit Mode — initial split creation (By Seat / Custom / Even / B/P)
+// -----------------------------------------------------------
+function SplitEditMode({
+  orderId,
+  items,
+  onClose,
+  onSplitApplied,
+}: {
+  orderId: string
+  items: SplitCheckScreenProps['items']
+  onClose: () => void
+  onSplitApplied: SplitCheckScreenProps['onSplitApplied']
+}) {
   const {
     checks,
     splitMode,
@@ -53,7 +693,6 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
   const [saving, setSaving] = useState(false)
   const [splitPickerItemId, setSplitPickerItemId] = useState<string | null>(null)
 
-  // Find the selected item for the floating bar
   const selectedItem = useMemo(() => {
     if (!selectedItemId) return null
     for (const check of checks) {
@@ -71,6 +710,8 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
     if (saving) return
     if (splitMode !== 'even' && (hasIntegrityIssue || checks.length < 2)) return
     setSaving(true)
+    // Backup current order state for rollback on failure
+    const backup = JSON.parse(JSON.stringify(useOrderStore.getState().currentOrder))
     try {
       if (splitMode === 'even') {
         const res = await fetch(`/api/orders/${orderId}/split`, {
@@ -103,6 +744,10 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
       }
       onSplitApplied()
     } catch (err) {
+      // Restore order state on failure so UI stays consistent
+      if (backup) {
+        useOrderStore.getState().loadOrder(backup)
+      }
       toast.error(err instanceof Error ? err.message : 'Split failed')
     } finally {
       setSaving(false)
@@ -111,7 +756,6 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
 
   const handleCardTap = useCallback((checkId: string) => {
     if (selectedItemId) {
-      // Find which check the selected item is in
       const sourceCheck = checks.find(c => c.items.some(i => i.id === selectedItemId))
       if (sourceCheck && sourceCheck.id !== checkId) {
         moveItemToCheck(checkId)
@@ -123,7 +767,6 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
     if (selectedItemId) {
       moveItemToNewCheck()
     }
-    // If no item selected, do nothing (can't create empty check without an item to move)
   }, [selectedItemId, moveItemToNewCheck])
 
   const handleSplitItemSelect = useCallback((ways: number) => {
@@ -329,11 +972,7 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
                 onItemTap={selectItem}
                 onCardTap={handleCardTap}
                 canDelete={checks.length > 1}
-                onDeleteCheck={() => {
-                  // Move all items from this check to the first other check, then remove
-                  // The hook doesn't have a delete check method, so we move items individually
-                  // For simplicity: if check is empty, we just ignore (SplitCheckCard only shows delete for empty checks)
-                }}
+                onDeleteCheck={() => {}}
               />
             ))}
 
@@ -392,11 +1031,9 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            transform: 'translateY(0)',
             transition: 'transform 0.2s ease',
           }}
         >
-          {/* Left: Item name + price */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{ fontSize: '14px', fontWeight: 600, color: '#e2e8f0' }}>
               {selectedItem.name}
@@ -406,7 +1043,6 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
             </span>
           </div>
 
-          {/* Center: Split Item */}
           <div style={{ position: 'relative' }}>
             <button
               onClick={() => setSplitPickerItemId(prev => prev === selectedItemId ? null : selectedItemId)}
@@ -424,7 +1060,6 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
               Split Item ▾
             </button>
 
-            {/* Split picker dropdown */}
             {splitPickerItemId === selectedItemId && (
               <div
                 style={{
@@ -464,7 +1099,6 @@ export function SplitCheckScreen({ orderId, items, onClose, onSplitApplied }: Sp
             )}
           </div>
 
-          {/* Right: Deselect */}
           <button
             onClick={() => {
               selectItem(null)

@@ -345,7 +345,6 @@ export function OrderPanel({
       onEditModifiers={onItemEditModifiers}
       onCompVoid={onItemCompVoid}
       onResend={onItemResend}
-      onSplit={onItemSplit}
       isExpanded={expandedItemId === item.id}
       onToggleExpand={onItemToggleExpand}
       maxSeats={maxSeats}
@@ -962,6 +961,7 @@ export function OrderPanel({
           onSaveOrderFirst={onSaveOrderFirst}
           autoShowPayment={autoShowPayment}
           onAutoShowPaymentHandled={onAutoShowPaymentHandled}
+          onSplit={onItemSplit ? () => onItemSplit('') : undefined}
         />
       </div>
 

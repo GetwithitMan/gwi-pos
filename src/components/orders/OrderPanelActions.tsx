@@ -59,6 +59,7 @@ interface OrderPanelActionsProps {
   onAutoShowPaymentHandled?: () => void
   hasTaxInclusiveItems?: boolean
   roundingAdjustment?: number  // Rounding applied (positive = rounded up, negative = down)
+  onSplit?: () => void
 }
 
 export function OrderPanelActions({
@@ -103,6 +104,7 @@ export function OrderPanelActions({
   onAutoShowPaymentHandled,
   hasTaxInclusiveItems,
   roundingAdjustment,
+  onSplit,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
   const [showTotalDetails, setShowTotalDetails] = useState(false)
@@ -940,8 +942,26 @@ export function OrderPanelActions({
       </div>
 
       {/* Secondary actions */}
-      {hasItems && (onDiscount || onClear || onCancelOrder) && (
-        <div style={{ display: 'grid', gridTemplateColumns: onDiscount ? '1fr 1fr' : '1fr', gap: '8px' }}>
+      {hasItems && (onDiscount || onClear || onCancelOrder || onSplit) && (
+        <div style={{ display: 'grid', gridTemplateColumns: [onSplit, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onSplit, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
+          {onSplit && (
+            <button
+              onClick={onSplit}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '8px',
+                border: '1px solid rgba(168, 85, 247, 0.3)',
+                background: 'rgba(168, 85, 247, 0.1)',
+                color: '#c084fc',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              Split
+            </button>
+          )}
           {onDiscount && (
             <button
               onClick={onDiscount}

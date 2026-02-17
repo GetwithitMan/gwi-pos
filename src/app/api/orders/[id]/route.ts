@@ -171,7 +171,7 @@ export const PUT = withVenue(async function PUT(
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
     }
 
-    if (existingOrder.status !== 'open' && existingOrder.status !== 'draft') {
+    if (!['open', 'draft', 'sent', 'in_progress', 'split'].includes(existingOrder.status)) {
       return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
     }
 
@@ -292,7 +292,7 @@ export const PATCH = withVenue(async function PATCH(
       return apiError.notFound('Order not found', ERROR_CODES.ORDER_NOT_FOUND)
     }
 
-    if (existing.status !== 'open' && existing.status !== 'draft') {
+    if (!['open', 'draft', 'sent', 'in_progress', 'split'].includes(existing.status)) {
       return apiError.conflict('Cannot modify a closed order', ERROR_CODES.ORDER_CLOSED)
     }
 

@@ -30,7 +30,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
       const summaryOrders = await db.order.findMany({
         where: {
           locationId,
-          status: { in: ['open', 'sent', 'in_progress'] },
+          status: { in: ['open', 'sent', 'in_progress', 'split'] },
           deletedAt: null,
           ...(employeeId ? { employeeId } : {}),
           ...(orderType ? { orderType } : {}),
@@ -85,6 +85,17 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           },
           items: {
             select: { isHeld: true, quantity: true },
+          },
+          splitOrders: {
+            where: { deletedAt: null },
+            select: {
+              id: true,
+              splitIndex: true,
+              displayNumber: true,
+              status: true,
+              total: true,
+            },
+            orderBy: { splitIndex: 'asc' },
           },
           _count: {
             select: { items: true },
@@ -163,9 +174,16 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           entertainment: [],
           hasActiveEntertainment: false,
           items: [],
-          hasSplits: false,
-          splitCount: 0,
-          splits: [],
+          hasSplits: ((o as any).splitOrders?.length ?? 0) > 0,
+          splitCount: (o as any).splitOrders?.length ?? 0,
+          splits: ((o as any).splitOrders || []).map((s: any) => ({
+            id: s.id,
+            splitIndex: s.splitIndex,
+            displayNumber: s.displayNumber || `${o.orderNumber}-${s.splitIndex}`,
+            total: Number(s.total),
+            status: s.status,
+            isPaid: s.status === 'paid',
+          })),
         })),
         count: summaryOrders.length,
         summary: true,
@@ -176,7 +194,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const orders = await db.order.findMany({
       where: {
         locationId,
-        status: { in: ['open', 'sent', 'in_progress'] },
+        status: { in: ['open', 'sent', 'in_progress', 'split'] },
         ...(employeeId ? { employeeId } : {}),
         ...(orderType ? { orderType } : {}),
       },

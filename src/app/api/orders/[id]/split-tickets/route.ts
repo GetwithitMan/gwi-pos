@@ -47,12 +47,41 @@ export const GET = withVenue(async function GET(
       where: { id },
       include: {
         splitOrders: {
+          where: { deletedAt: null },
           include: {
             items: {
-              include: { modifiers: true },
+              select: {
+                id: true,
+                name: true,
+                price: true,
+                quantity: true,
+                itemTotal: true,
+                status: true,
+                seatNumber: true,
+                isCompleted: true,
+                specialNotes: true,
+                modifiers: {
+                  select: {
+                    id: true,
+                    name: true,
+                    price: true,
+                    preModifier: true,
+                  },
+                },
+              },
             },
             employee: {
               select: { id: true, displayName: true, firstName: true, lastName: true },
+            },
+            cards: {
+              where: { status: 'authorized', deletedAt: null },
+              select: { cardLast4: true, cardType: true },
+              take: 1,
+              orderBy: { createdAt: 'desc' },
+            },
+            payments: {
+              where: { status: 'completed' },
+              select: { totalAmount: true },
             },
           },
           orderBy: { splitIndex: 'asc' },
@@ -76,10 +105,33 @@ export const GET = withVenue(async function GET(
         taxTotal: Number(split.taxTotal),
         total: Number(split.total),
         itemCount: split.items.length,
+        isPaid: split.status === 'paid',
+        paidAmount: split.payments.reduce((sum, p) => sum + Number(p.totalAmount), 0),
         employee: {
           id: split.employee.id,
           name: split.employee.displayName || `${split.employee.firstName} ${split.employee.lastName}`,
         },
+        card: split.cards[0] ? {
+          last4: split.cards[0].cardLast4,
+          brand: split.cards[0].cardType,
+        } : null,
+        items: split.items.map(item => ({
+          id: item.id,
+          name: item.name,
+          price: Number(item.price),
+          quantity: item.quantity,
+          itemTotal: Number(item.itemTotal),
+          status: item.status,
+          seatNumber: item.seatNumber,
+          isSent: item.isCompleted,
+          specialNotes: item.specialNotes,
+          modifiers: item.modifiers.map(mod => ({
+            id: mod.id,
+            name: mod.name,
+            price: Number(mod.price),
+            preModifier: mod.preModifier,
+          })),
+        })),
       })),
     })
   } catch (error) {
@@ -133,8 +185,8 @@ export const POST = withVenue(async function POST(
       throw new NotFoundError('Order')
     }
 
-    if (parentOrder.status !== 'open') {
-      throw new ValidationError('Cannot split a closed order')
+    if (!['open', 'sent', 'in_progress'].includes(parentOrder.status)) {
+      throw new ValidationError('Cannot split a closed or already-split order')
     }
 
     // Build set of split item IDs for quick lookup
@@ -461,6 +513,228 @@ export const POST = withVenue(async function POST(
     }, { status: 201 })
   } catch (error) {
     return handleApiError(error, 'Failed to create split tickets')
+  }
+})
+
+// ============================================
+// PATCH - Move an item between split tickets
+// ============================================
+
+export const PATCH = withVenue(async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const body = await request.json()
+    const { action, itemId, fromSplitId, toSplitId, ways } = body
+
+    // Split item into fractions across checks
+    if (action === 'splitItem') {
+      if (!itemId || !fromSplitId || !ways || ways < 2 || ways > 10) {
+        throw new ValidationError('itemId, fromSplitId, and ways (2-10) are required')
+      }
+
+      const parentOrder = await db.order.findUnique({
+        where: { id },
+        include: {
+          location: true,
+          splitOrders: {
+            where: { deletedAt: null },
+            include: {
+              items: { where: { deletedAt: null }, include: { modifiers: true } },
+              payments: { where: { status: 'completed' } },
+            },
+          },
+        },
+      })
+      if (!parentOrder) throw new NotFoundError('Order')
+
+      const sourceSplit = parentOrder.splitOrders.find(s => s.id === fromSplitId)
+      if (!sourceSplit) throw new ValidationError('Source split not found')
+      if (sourceSplit.payments.length > 0) throw new ValidationError('Cannot split items on a paid check')
+
+      const item = sourceSplit.items.find(i => i.id === itemId)
+      if (!item) throw new ValidationError('Item not found in source split')
+
+      const settings = parentOrder.location.settings as {
+        tax?: { defaultRate?: number }
+        priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
+      } | null
+      const taxRate = getLocationTaxRate(settings)
+
+      const fullPrice = Number(item.price) * item.quantity
+      const fractionPrice = Math.floor((fullPrice / ways) * 100) / 100
+      const lastFractionPrice = Math.round((fullPrice - fractionPrice * (ways - 1)) * 100) / 100
+
+      // Get all non-source splits (unpaid) to distribute fractions
+      const targetSplits = parentOrder.splitOrders.filter(s => s.id !== fromSplitId && s.payments.length === 0)
+
+      await db.$transaction(async (tx) => {
+        // Update original item to first fraction
+        await tx.orderItem.update({
+          where: { id: itemId },
+          data: {
+            price: fractionPrice,
+            itemTotal: fractionPrice,
+            specialNotes: item.specialNotes
+              ? `${item.specialNotes} (1/${ways})`
+              : `(1/${ways})`,
+          },
+        })
+
+        // Create fraction copies for remaining ways
+        for (let i = 1; i < ways; i++) {
+          const price = i === ways - 1 ? lastFractionPrice : fractionPrice
+          // Place in next available split, or keep in source if not enough splits
+          const targetSplit = targetSplits[i - 1] || sourceSplit
+          await tx.orderItem.create({
+            data: {
+              locationId: parentOrder.locationId,
+              orderId: targetSplit.id,
+              menuItemId: item.menuItemId,
+              name: item.name,
+              price: price,
+              quantity: item.quantity,
+              itemTotal: price,
+              seatNumber: item.seatNumber,
+              courseNumber: item.courseNumber,
+              status: item.status,
+              specialNotes: item.specialNotes
+                ? `${item.specialNotes} (${i + 1}/${ways})`
+                : `(${i + 1}/${ways})`,
+              isCompleted: item.isCompleted,
+              modifiers: {
+                create: item.modifiers.map(mod => ({
+                  modifierId: mod.modifierId,
+                  name: mod.name,
+                  price: 0,
+                  preModifier: mod.preModifier,
+                  depth: mod.depth,
+                  location: { connect: { id: parentOrder.locationId } },
+                })),
+              },
+            },
+          })
+        }
+
+        // Recalculate totals on all affected splits
+        for (const split of parentOrder.splitOrders) {
+          if (split.payments.length > 0) continue
+          const freshItems = await tx.orderItem.findMany({
+            where: { orderId: split.id, deletedAt: null },
+          })
+          const subtotal = freshItems.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0)
+          const tax = Math.round(subtotal * taxRate * 100) / 100
+          await tx.order.update({
+            where: { id: split.id },
+            data: {
+              subtotal,
+              taxTotal: tax,
+              total: Math.round((subtotal + tax) * 100) / 100,
+            },
+          })
+        }
+      })
+
+      void emitToLocation(parentOrder.locationId, 'orders:list-changed', {
+        orderId: id,
+        trigger: 'split',
+        tableId: parentOrder.tableId || undefined,
+      }).catch(() => {})
+
+      return NextResponse.json({ message: `Item split ${ways} ways` })
+    }
+
+    // Move item between splits (default action)
+    if (!itemId || !fromSplitId || !toSplitId) {
+      throw new ValidationError('itemId, fromSplitId, and toSplitId are required')
+    }
+
+    if (fromSplitId === toSplitId) {
+      throw new ValidationError('Cannot move item to the same split')
+    }
+
+    // Verify parent order exists and has splits
+    const parentOrder = await db.order.findUnique({
+      where: { id },
+      include: {
+        location: true,
+        splitOrders: {
+          where: { deletedAt: null, id: { in: [fromSplitId, toSplitId] } },
+          include: {
+            items: { where: { deletedAt: null } },
+            payments: { where: { status: 'completed' } },
+          },
+        },
+      },
+    })
+
+    if (!parentOrder) throw new NotFoundError('Order')
+
+    const fromSplit = parentOrder.splitOrders.find(s => s.id === fromSplitId)
+    const toSplit = parentOrder.splitOrders.find(s => s.id === toSplitId)
+
+    if (!fromSplit) throw new ValidationError('Source split not found')
+    if (!toSplit) throw new ValidationError('Destination split not found')
+    if (fromSplit.payments.length > 0) throw new ValidationError('Cannot move items from a paid split')
+    if (toSplit.payments.length > 0) throw new ValidationError('Cannot move items to a paid split')
+
+    // Verify item exists in source split
+    const item = fromSplit.items.find(i => i.id === itemId)
+    if (!item) throw new ValidationError('Item not found in source split')
+
+    // Move item and recalculate totals
+    const settings = parentOrder.location.settings as {
+      tax?: { defaultRate?: number }
+      priceRounding?: { enabled?: boolean; increment?: RoundingIncrement }
+    } | null
+    const taxRate = getLocationTaxRate(settings)
+
+    await db.$transaction(async (tx) => {
+      // Move item to destination split
+      await tx.orderItem.update({
+        where: { id: itemId },
+        data: { orderId: toSplitId },
+      })
+
+      // Recalculate source split totals
+      const fromItems = fromSplit.items.filter(i => i.id !== itemId)
+      const fromSubtotal = fromItems.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0)
+      const fromTax = Math.round(fromSubtotal * taxRate * 100) / 100
+      await tx.order.update({
+        where: { id: fromSplitId },
+        data: {
+          subtotal: fromSubtotal,
+          taxTotal: fromTax,
+          total: Math.round((fromSubtotal + fromTax) * 100) / 100,
+        },
+      })
+
+      // Recalculate destination split totals
+      const toItems = [...toSplit.items, item]
+      const toSubtotal = toItems.reduce((sum, i) => sum + Number(i.price) * i.quantity, 0)
+      const toTax = Math.round(toSubtotal * taxRate * 100) / 100
+      await tx.order.update({
+        where: { id: toSplitId },
+        data: {
+          subtotal: toSubtotal,
+          taxTotal: toTax,
+          total: Math.round((toSubtotal + toTax) * 100) / 100,
+        },
+      })
+    })
+
+    // Fire-and-forget socket emit
+    void emitToLocation(parentOrder.locationId, 'orders:list-changed', {
+      orderId: id,
+      trigger: 'split',
+      tableId: parentOrder.tableId || undefined,
+    }).catch(() => {})
+
+    return NextResponse.json({ message: 'Item moved successfully' })
+  } catch (error) {
+    return handleApiError(error, 'Failed to move split item')
   }
 })
 

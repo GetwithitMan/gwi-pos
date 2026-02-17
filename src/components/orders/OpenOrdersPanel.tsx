@@ -101,6 +101,17 @@ interface OpenOrder {
   courseMode?: string | null
   reopenedAt?: string | null
   reopenReason?: string | null
+  parentOrderId?: string | null
+  hasSplits?: boolean
+  splitCount?: number
+  splits?: {
+    id: string
+    splitIndex: number | null
+    displayNumber: string
+    total: number
+    status: string
+    isPaid: boolean
+  }[]
 }
 
 interface OpenOrdersPanelProps {
@@ -197,8 +208,14 @@ export function OpenOrdersPanel({
     if (viewMode !== 'open') return
     const { trigger, orderId } = data
     if (orderId && (trigger === 'paid' || trigger === 'voided')) {
-      // Delta: remove closed/voided order from local state (no fetch)
-      setOrders(prev => prev.filter(o => o.id !== orderId))
+      // Check if this is a split child being paid — refresh to update parent's split tabs
+      const isSplitChild = orders.some(o => o.splits?.some(s => s.id === orderId))
+      if (isSplitChild || trigger === 'split') {
+        loadOrders() // Need to refresh parent's split data
+      } else {
+        // Delta: remove closed/voided order from local state (no fetch)
+        setOrders(prev => prev.filter(o => o.id !== orderId))
+      }
     } else {
       // Created/transferred/reopened — need full data
       loadOrders()
@@ -294,8 +311,10 @@ export function OpenOrdersPanel({
     }
   }
 
-  // Sort and filter
-  const displayOrders = viewMode === 'open' ? orders : closedOrders
+  // Sort and filter — hide split children from top-level list (they nest under parent)
+  const displayOrders = viewMode === 'open'
+    ? orders.filter(o => !o.parentOrderId)  // Hide split children
+    : closedOrders
   let filteredOrders = [...displayOrders]
 
   if (filter === 'mine' && employeeId) {
@@ -536,7 +555,7 @@ export function OpenOrdersPanel({
             )}
             <p className={`text-xs mt-1 ${dark ? 'text-slate-400' : 'text-gray-500'}`}>
               #{order.displayNumber || order.orderNumber}
-              {order.isSplitTicket && <span className="ml-1 text-blue-500">(split)</span>}
+              {order.hasSplits && <span className={`ml-1 ${dark ? 'text-indigo-400' : 'text-indigo-600'}`}>({order.splitCount} splits)</span>}
               {' • '}{order.employee.name} • {formatTime(order.createdAt)}
             </p>
           </div>
@@ -591,6 +610,49 @@ export function OpenOrdersPanel({
             </span>
           )}
         </div>
+
+        {/* Split ticket tabs — nested under parent */}
+        {order.hasSplits && order.splits && order.splits.length > 0 && (
+          <div className={`mb-2 flex gap-1 flex-wrap ${dark ? 'border-t border-white/5 pt-2' : 'border-t border-gray-100 pt-2'}`}>
+            {order.splits.map(split => (
+              <button
+                key={split.id}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  // Create a minimal order object to open this split
+                  const splitOrder: OpenOrder = {
+                    ...order,
+                    id: split.id,
+                    displayNumber: split.displayNumber,
+                    orderNumber: order.orderNumber,
+                    isSplitTicket: true,
+                    parentOrderId: order.id,
+                    total: split.total,
+                    status: split.status,
+                    hasSplits: false,
+                    splits: [],
+                    splitCount: 0,
+                    items: [],
+                    itemCount: 0,
+                    paidAmount: split.isPaid ? split.total : 0,
+                  }
+                  onSelectOrder(splitOrder)
+                }}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1.5 ${
+                  split.isPaid
+                    ? (dark ? 'bg-green-600/15 border-green-500/30 text-green-400' : 'bg-green-50 border-green-300 text-green-700')
+                    : (dark ? 'bg-indigo-600/15 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/25' : 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100')
+                }`}
+              >
+                <span>{split.displayNumber}</span>
+                <span className="font-bold">{formatCurrency(split.total)}</span>
+                {split.isPaid && (
+                  <span className={`text-[9px] font-bold ${dark ? 'text-green-400' : 'text-green-600'}`}>PAID</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Pre-auth / Tab card info */}
         {order.hasPreAuth && order.preAuth && (

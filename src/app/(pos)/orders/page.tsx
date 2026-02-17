@@ -245,9 +245,6 @@ export default function OrdersPage() {
   // Background items-persist promise (started when PaymentModal opens, awaited before /pay)
   const orderReadyPromiseRef = useRef<Promise<string | null> | null>(null)
 
-  // Cache for split order data (avoids redundant fetches when switching between splits)
-  const splitCacheRef = useRef<Map<string, any>>(new Map())
-
   // Receipt modal state
   const [showReceiptModal, setShowReceiptModal] = useState(false)
   const [receiptOrderId, setReceiptOrderId] = useState<string | null>(null)
@@ -258,12 +255,6 @@ export default function OrdersPage() {
 
   // Floor plan refresh trigger - increment to force FloorPlanHome to refresh
   const [floorPlanRefreshTrigger, setFloorPlanRefreshTrigger] = useState(0)
-
-  // Split check modal state
-  const [showSplitModal, setShowSplitModal] = useState(false)
-  const [splitPaymentAmount, setSplitPaymentAmount] = useState<number | null>(null)
-  const [evenSplitAmounts, setEvenSplitAmounts] = useState<{ splitNumber: number; amount: number }[] | null>(null)
-  const [currentSplitIndex, setCurrentSplitIndex] = useState(0)
 
   // Discount modal state
   const [showDiscountModal, setShowDiscountModal] = useState(false)
@@ -313,6 +304,8 @@ export default function OrdersPage() {
 
   // Split Ticket Manager state
   const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
+  const [splitManageMode, setSplitManageMode] = useState(false)
+  const [editingChildSplit, setEditingChildSplit] = useState(false)
 
   // Tabs panel state
   const [showTabsPanel, setShowTabsPanel] = useState(false)
@@ -510,7 +503,23 @@ export default function OrdersPage() {
       setResendNote('')
       setResendModal({ itemId, itemName })
     },
-    onOpenSplit: () => {
+    onOpenSplit: async () => {
+      // Check if order already has splits — if so, open manage mode
+      setEditingChildSplit(false)
+      const orderId = savedOrderId || useOrderStore.getState().currentOrder?.id
+      if (orderId) {
+        try {
+          const res = await fetch(`/api/orders/${orderId}/split-tickets`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data.splitOrders && data.splitOrders.length > 0) {
+              setSplitManageMode(true)
+              setShowSplitTicketManager(true)
+              return
+            }
+          }
+        } catch { /* ignore — fall through to edit mode */ }
+      }
       setShowSplitTicketManager(true)
     },
   })
@@ -1226,144 +1235,6 @@ export default function OrdersPage() {
     setTabsRefreshTrigger(prev => prev + 1)
   }
 
-  // Handle split check result
-  const handleSplitComplete = (result: {
-    type: 'even' | 'by_item' | 'by_seat' | 'by_table' | 'custom_amount' | 'split_item'
-    originalOrderId: string
-    splits?: { splitNumber: number; amount: number }[]
-    newOrderId?: string
-    newOrderNumber?: number
-    splitAmount?: number
-    itemSplits?: { itemId: string; itemName: string; splitNumber: number; amount: number }[]
-    seatSplits?: { seatNumber: number; total: number; splitOrderId: string }[]
-    tableSplits?: { tableId: string; tableName: string; total: number; splitOrderId: string }[]
-  }) => {
-    setShowSplitModal(false)
-
-    if (result.type === 'even' && result.splits) {
-      // Store the split amounts and start payment flow
-      setEvenSplitAmounts(result.splits)
-      setCurrentSplitIndex(0)
-      setSplitPaymentAmount(result.splits[0].amount)
-      setOrderToPayId(result.originalOrderId)
-      setShowPaymentModal(true)
-    } else if (result.type === 'split_item' && result.splits) {
-      // Split single item among guests - same payment flow as even split
-      setEvenSplitAmounts(result.splits)
-      setCurrentSplitIndex(0)
-      setSplitPaymentAmount(result.splits[0].amount)
-      setOrderToPayId(result.originalOrderId)
-      setShowPaymentModal(true)
-    } else if (result.type === 'by_item') {
-      // Reload the current order to reflect changes
-      toast.success(`New check #${result.newOrderNumber} created with selected items`)
-      setTabsRefreshTrigger(prev => prev + 1)
-      // Clear current order since items were moved
-      clearOrder()
-      setSavedOrderId(null)
-    } else if (result.type === 'by_seat' && result.seatSplits) {
-      // Split by seat - multiple checks created
-      const seatCount = result.seatSplits.length
-      toast.success(`${seatCount} separate checks created (one per seat)`)
-      setTabsRefreshTrigger(prev => prev + 1)
-      // Clear current order since items were moved to seat-specific checks
-      clearOrder()
-      setSavedOrderId(null)
-    } else if (result.type === 'by_table' && result.tableSplits) {
-      // Split by table - multiple checks created
-      const tableCount = result.tableSplits.length
-      const tableNames = result.tableSplits.map(s => s.tableName).join(', ')
-      toast.success(`${tableCount} separate checks created (one per table: ${tableNames})`)
-      setTabsRefreshTrigger(prev => prev + 1)
-      // Clear current order since items were moved to table-specific checks
-      clearOrder()
-      setSavedOrderId(null)
-    } else if (result.type === 'custom_amount' && result.splitAmount) {
-      // Open payment modal with custom amount
-      setSplitPaymentAmount(result.splitAmount)
-      setOrderToPayId(result.originalOrderId)
-      setShowPaymentModal(true)
-    }
-  }
-
-  // Handle navigating to a different split order
-  const handleNavigateToSplit = async (splitOrderId: string) => {
-    // Check cache first
-    const cached = splitCacheRef.current.get(splitOrderId)
-    if (cached) {
-      loadOrder(cached)
-      setSavedOrderId(splitOrderId)
-      setOrderSent(cached.status === 'sent' || cached.status === 'in_progress')
-      setShowTabsPanel(false)
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/orders/${splitOrderId}?view=split`)
-      if (!response.ok) {
-        throw new Error('Failed to fetch split order')
-      }
-      const orderData = await response.json()
-
-      const mapped = {
-        id: orderData.id,
-        orderNumber: orderData.orderNumber,
-        orderType: orderData.orderType,
-        tableId: orderData.tableId || undefined,
-        tableName: orderData.tableName || undefined,
-        tabName: orderData.tabName || undefined,
-        guestCount: orderData.guestCount || 1,
-        status: orderData.status,
-        // store.loadOrder handles all item field mapping — one path, no duplication
-        items: orderData.items || [],
-        subtotal: Number(orderData.subtotal) || 0,
-        discountTotal: Number(orderData.discountTotal) || 0,
-        taxTotal: Number(orderData.taxTotal) || 0,
-        total: Number(orderData.total) || 0,
-      }
-
-      // Cache it
-      splitCacheRef.current.set(splitOrderId, mapped)
-
-      // Load the split order into the current order state
-      loadOrder(mapped)
-
-      // Update saved order ID
-      setSavedOrderId(splitOrderId)
-      setOrderSent(orderData.status === 'sent' || orderData.status === 'in_progress')
-
-      // Close the tabs panel if open
-      setShowTabsPanel(false)
-    } catch (error) {
-      console.error('Failed to navigate to split order:', error)
-      toast.error('Failed to load split order')
-    }
-  }
-
-  // Handle opening split check
-  const handleOpenSplit = async () => {
-    if (!currentOrder?.items.length) return
-
-    // If order hasn't been saved yet, save it first
-    let orderId = savedOrderId
-    if (!orderId) {
-      setIsSendingOrder(true)
-      try {
-        orderId = await ensureOrderInDB(employee?.id)
-        if (orderId) {
-          setSavedOrderId(orderId)
-        }
-      } finally {
-        setIsSendingOrder(false)
-      }
-    }
-
-    if (orderId) {
-      setOrderToPayId(orderId)
-      setShowSplitModal(true)
-    }
-  }
-
   // Handle opening split ticket manager (to create separate tickets)
   const handleOpenSplitTicket = () => {
     if (!currentOrder?.items.length) return
@@ -1378,18 +1249,6 @@ export default function OrdersPage() {
         return id
       })
     }
-  }
-
-  // Handle split ticket completion — clear order and trigger floor plan refresh
-  const handleSplitTicketComplete = () => {
-    splitCacheRef.current.clear()
-    clearOrder()
-    setSavedOrderId(null)
-    setOrderSent(false)
-    setAppliedDiscounts([])
-    setShowSplitTicketManager(false)
-    // Trigger FloorPlanHome refresh so table shows split badge + overview
-    setFloorPlanRefreshTrigger(prev => prev + 1)
   }
 
   // Handle opening discount modal
@@ -1556,11 +1415,6 @@ export default function OrdersPage() {
   const handleResend = async (item: OrderPanelItemData) => {
     // sharedResend already calls loadOrder() internally
     await sharedResend(item.id)
-  }
-
-  const handleSplit = async (itemId: string) => {
-    // Open split ticket manager
-    await handleOpenSplitTicket()
   }
 
   // handleToggleExpand now comes from useActiveOrder hook — no local function needed
@@ -2409,7 +2263,7 @@ export default function OrdersPage() {
             onItemEditModifiers={panelCallbacks.onItemEditModifiers}
             onItemCompVoid={panelCallbacks.onItemCompVoid}
             onItemResend={panelCallbacks.onItemResend}
-            onItemSplit={panelCallbacks.onItemSplit}
+            onItemSplit={editingChildSplit ? undefined : panelCallbacks.onItemSplit}
             onItemSeatChange={panelCallbacks.onItemSeatChange}
             expandedItemId={panelCallbacks.expandedItemId}
             onItemToggleExpand={panelCallbacks.onItemToggleExpand}
@@ -2694,6 +2548,10 @@ export default function OrdersPage() {
             }}
             onOpenModifiers={handleOpenModifiersShared as any}
             onOpenOrdersPanel={() => { setShowTabsPanel(true) }}
+            onOpenCardFirst={(orderId) => {
+              setCardTabOrderId(orderId)
+              setShowCardTabFlow(true)
+            }}
             onOpenTimedRental={handleOpenTimedRental}
             onOpenPizzaBuilder={(item, onComplete) => {
               inlinePizzaCallbackRef.current = onComplete
@@ -3279,13 +3137,47 @@ export default function OrdersPage() {
         )}
 
         {/* Split Check Screen */}
-        {showSplitTicketManager && currentOrder && (
+        {showSplitTicketManager && (currentOrder || splitManageMode) && (
           <Suspense fallback={null}>
             <SplitCheckScreen
+              mode={splitManageMode ? 'manage' : 'edit'}
               orderId={savedOrderId || ''}
-              items={splitCheckItems}
-              onClose={() => setShowSplitTicketManager(false)}
-              onSplitApplied={handleSplitTicketComplete}
+              parentOrderId={splitManageMode ? savedOrderId || '' : undefined}
+              items={splitManageMode ? [] : splitCheckItems}
+              onClose={() => {
+                setShowSplitTicketManager(false)
+                setSplitManageMode(false)
+              }}
+              onSplitApplied={() => {
+                // After creating splits in edit mode, switch to manage mode
+                setSplitManageMode(true)
+                setFloorPlanRefreshTrigger(prev => prev + 1)
+              }}
+              onPaySplit={(splitId) => {
+                setShowSplitTicketManager(false)
+                setOrderToPayId(splitId)
+                setShowPaymentModal(true)
+              }}
+              onAddCard={(splitId) => {
+                setShowSplitTicketManager(false)
+                setCardTabOrderId(splitId)
+                setShowCardTabFlow(true)
+              }}
+              onAddItems={async (splitId) => {
+                setShowSplitTicketManager(false)
+                setSplitManageMode(false)
+                setEditingChildSplit(true)
+                try {
+                  const res = await fetch(`/api/orders/${splitId}?view=split`)
+                  if (res.ok) {
+                    const { data } = await res.json()
+                    useOrderStore.getState().loadOrder(data)
+                    setSavedOrderId(splitId)
+                  }
+                } catch (err) {
+                  console.error('Failed to load split order', err)
+                }
+              }}
             />
           </Suspense>
         )}
