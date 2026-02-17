@@ -462,24 +462,27 @@ export const POST = withVenue(async function POST(
         splits.push(splitOrder)
       }
 
-      // Soft-delete original items that were fractionally split
-      if (splitItems.length > 0) {
-        const splitOriginalIds = splitItems.map(si => si.originalItemId)
-        await tx.orderItem.updateMany({
-          where: {
-            id: { in: splitOriginalIds },
-            orderId: id,
-            locationId: parentOrder.locationId,
-          },
-          data: { deletedAt: new Date() },
-        })
-      }
+      // Soft-delete ALL parent items — they've been copied to split children.
+      // Previously only fractionally-split items were deleted, leaving whole
+      // items on the parent with stale totals. This caused "Pay All" to pay
+      // the parent's snapshot instead of the real split totals.
+      await tx.orderItem.updateMany({
+        where: {
+          orderId: id,
+          locationId: parentOrder.locationId,
+          deletedAt: null,
+        },
+        data: { deletedAt: new Date() },
+      })
 
-      // Update parent order status to indicate it was split
+      // Update parent: status='split', zero out totals (children own all items now)
       await tx.order.update({
         where: { id: parentOrder.id },
         data: {
           status: 'split',
+          subtotal: 0,
+          taxTotal: 0,
+          total: 0,
           notes: parentOrder.notes
             ? `${parentOrder.notes}\n[Split into ${splits.length} tickets]`
             : `[Split into ${splits.length} tickets]`,

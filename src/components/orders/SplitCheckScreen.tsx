@@ -384,6 +384,16 @@ function SplitUnifiedView({
   const allPaid = splits.length > 0 && splits.every(s => s.isPaid)
   const paidCount = splits.filter(s => s.isPaid).length
   const totalAmount = splits.reduce((sum, s) => sum + s.total, 0)
+  const unpaidTotal = splits.filter(s => !s.isPaid).reduce((sum, s) => sum + s.total, 0)
+
+  // Pay All: pay the first unpaid split — the existing splitParentToReturnTo
+  // pattern in orders/page.tsx returns to this screen after each payment,
+  // so the user cycles through all unpaid splits automatically.
+  const handlePayAll = useCallback(() => {
+    const unpaidSplits = splits.filter(s => !s.isPaid)
+    if (unpaidSplits.length === 0 || !onPaySplit) return
+    onPaySplit(unpaidSplits[0].id)
+  }, [splits, onPaySplit])
 
   // Find the selected item details for the action bar
   const selectedItemInfo = useMemo(() => {
@@ -467,9 +477,9 @@ function SplitUnifiedView({
                 Print All
               </button>
             )}
-            {!splits.some(s => s.isPaid) && onPaySplit && (
+            {splits.some(s => !s.isPaid) && onPaySplit && (
               <button
-                onClick={() => onPaySplit(parentOrderId)}
+                onClick={handlePayAll}
                 style={{
                   padding: '8px 16px',
                   borderRadius: '10px',
@@ -481,7 +491,7 @@ function SplitUnifiedView({
                   color: '#4ade80',
                 }}
               >
-                Pay All
+                Pay All (${unpaidTotal.toFixed(2)})
               </button>
             )}
             {!allPaid && (

@@ -246,6 +246,14 @@ export const POST = withVenue(withTiming(async function POST(
       )
     }
 
+    // Block direct payment of split parent orders — pay individual splits instead
+    if (order.status === 'split') {
+      return NextResponse.json(
+        { error: 'Cannot pay a split parent order directly. Pay individual split checks instead.' },
+        { status: 400 }
+      )
+    }
+
     // Get settings for rounding
     const settings = parseSettings(order.location.settings)
 
