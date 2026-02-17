@@ -1,5 +1,58 @@
 # Orders Domain - Change Log
 
+## Session: February 16, 2026 — Single Live Split Board & UI Hardening (Skills 352-353)
+
+### Summary
+Unified split ticket system into a single live board with real-time editing. Fixed critical UI bugs in order panel: bare "0" rendering, selection collapse, and TypeScript build errors.
+
+### What Changed
+
+#### Skill 352: Single Live Split Board
+1. **Create-check API** — `POST /api/orders/[id]/split-tickets/create-check` creates empty split with next splitIndex (max 20)
+2. **Delete-check API** — `DELETE /api/orders/[id]/split-tickets/[splitId]` removes empty split, auto-merges if last remaining
+3. **Live board editing** — Card-tap-to-move in manage mode, delete empty checks, "+ New Check" card
+4. **Split chips header** — Order panel shows chip buttons per split (with totals and PAID badges) instead of seat strip
+5. **Payment loop** — `splitParentToReturnTo` state returns to split board after paying each check
+6. **"Pay All" button** — Pays parent order directly when no individual splits are paid yet
+7. **Floor plan refresh** — `floorPlanRefreshTrigger` fires on split screen close
+
+#### Skill 353: Order Panel UI Hardening
+1. **Bare "0" fix** — `resendCount` (primary), `seatNumber` wrapper, `seatNumber` picker all guarded with `!= null && > 0`
+2. **Selection collapse fix** — `useQuickPick` cleanup effect no longer filters sent items, only items removed from order
+3. **Layout** — Inline print/delete, hide controls until selected, pointer cursor for sent items with `onSelect`
+4. **TypeScript fixes** — Removed `'round'`/`'oval'` from TableNode shape switch, removed unreachable `'split'` trigger comparison in OpenOrdersPanel
+
+### Commits
+- `03d5410` feat: single live split board — create/delete checks, split chips header, payment loop
+- `dd77c56` refactor: split flow cleanup — remove dead code, add robustness, centralize helpers
+- `9e14ed7` fix: refresh floor plan on split screen close so chips update immediately
+- `1bbcd75` fix: show split tickets overview after splitting, fix split accessibility
+- `7cd8a53` perf: add ?view=split lightweight endpoint, remove redundant reload after split save
+- `dfbb7e2` fix: eliminate duplicate fetches from bootstrap race condition
+- `65821a9` fix: tighten order panel layout — inline print/delete, hide actions until selected
+- `5d1cd8e` fix: eliminate bare "0" on sent items and fix selection collapse
+- `0ad18fd` fix: remove invalid 'round' and 'oval' cases from table shape switch
+- `dac0e18` fix: remove unreachable split trigger comparison in OpenOrdersPanel
+- `0930c39` chore: remove temporary code export and review files
+
+### Files Modified
+- `src/components/orders/SplitCheckScreen.tsx` — Create/delete check handlers, "+ New Check" card, "Pay All"
+- `src/components/orders/SplitCheckCard.tsx` — Enable card-tap + delete in manage mode
+- `src/components/floor-plan/FloorPlanHome.tsx` — Split chips header, payment loop, refresh on close
+- `src/app/(pos)/orders/page.tsx` — Split chips, payment loop
+- `src/components/orders/OrderPanelItem.tsx` — Falsy-number guards, layout, cursor
+- `src/hooks/useQuickPick.ts` — Selection cleanup for sent items
+- `src/components/floor-plan/TableNode.tsx` — Remove invalid shape cases
+- `src/components/orders/OpenOrdersPanel.tsx` — Remove unreachable comparison
+- `src/app/api/orders/[id]/split-tickets/create-check/route.ts` — NEW
+- `src/app/api/orders/[id]/split-tickets/[splitId]/route.ts` — NEW
+
+### Skill Docs
+- `docs/skills/352-SINGLE-LIVE-SPLIT-BOARD.md`
+- `docs/skills/353-ORDER-PANEL-UI-HARDENING.md`
+
+---
+
 ## Session: February 15, 2026 — Per-Seat Check Cards & Seat Filtering (Skill 349)
 
 ### Summary

@@ -489,6 +489,13 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-16 — Single Live Split Board & UI Hardening, Skills 352-353)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 352 | Single Live Split Board | Unified split ticket system from two-phase wizard into one live board. New API: `POST create-check` (empty split), `DELETE [splitId]` (remove empty split with auto-merge). SplitUnifiedView enhancements: card-tap-to-move in manage mode, delete empty checks, "+ New Check" card with smart item move. Split chips header in order panel (replaces seat strip for split tables). In-place payment loop via `splitParentToReturnTo` state. "Pay All" button for full-order payment. Auto-exit when all paid. Floor plan refresh on split screen close. Lightweight `?view=split` endpoint. Bootstrap race condition fix. 11 commits across 2 sessions. |
+| 353 | Order Panel UI Hardening | Fixed 3 instances of React falsy-number gotcha: `resendCount` (primary culprit — API returns 0 for unsent items), `seatNumber` wrapper, `seatNumber` picker. Fixed `useQuickPick` selection collapse: cleanup effect was filtering out sent items, preventing Resend/Comp/Void access. Layout: inline print/delete, hide controls until selected, pointer cursor for sent items. Fixed 2 TypeScript build errors blocking Vercel: `TableNode` invalid `'round'`/`'oval'` shape cases, `OpenOrdersPanel` unreachable `'split'` trigger comparison. |
+
 ## Recently Completed (2026-02-15 — Split Check Redesign, Skills 350-351)
 
 | Skill | Name | What Was Built |
@@ -1046,12 +1053,14 @@ These skills emerged during development and are now part of the system:
 | 348 | Per-Seat Color System | DONE | Floor Plan, Orders | 206, 328 | 8-color palette in seat-utils.ts, colors on floor plan seats, order panel badges, group headers, seat picker buttons. Temp seats use same colors (no more orange dashed). |
 | 349 | Per-Seat Check Cards & Seat Filtering | DONE | Orders, Floor Plan | 348, 11 | Auto seat-grouped check cards with per-seat subtotals, seat filter bar on floor plan seat tap, pre-split foundation. |
 
-### Split Tickets (93, 350-351)
+### Split Tickets (93, 350-353)
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
 | 93 | Split Ticket View | DONE | Orders | 30, 88 | Create multiple tickets from one order (30-1, 30-2), hybrid pricing with proportional discounts |
 | 350 | Split Check Screen Redesign | DONE | Orders, Floor Plan | 93, 348, 349 | New useSplitCheck hook + SplitCheckScreen with 4 modes (By Seat, Custom, Even, B/P). Select-then-tap interaction. Fractional item splitting (split 1 item across 2-4 checks). Client-side editing, atomic POST on save. Deleted old SplitTicketManager/Card. |
 | 351 | Split Ticket Visibility & Navigation | DONE | Orders, Floor Plan | 350, 348, 71 | Snapshot API extended for split status. Violet badge on floor plan ("N splits"). SplitTicketsOverview right panel. Split navigation (← →) in OrderPanel header. Merge-back (DELETE) if no payments. Transfer integration (items/table/tab sub-menu). |
+| 352 | Single Live Split Board | DONE | Orders, Floor Plan | 350, 351 | Unified edit/manage into one live board. Create/delete checks via API, split chips header in order panel, in-place payment loop (returns to split board after paying), "Pay All" button, auto-merge on last check delete, socket-driven real-time updates. |
+| 353 | Order Panel UI Hardening | DONE | Orders | 349 | Fixed bare "0" on sent items (React falsy-number gotcha on resendCount/seatNumber), fixed selection collapse on sent items (useQuickPick cleanup effect), layout tightening, TypeScript build errors (TableNode shape union, OpenOrdersPanel trigger narrowing). |
 
 ---
 
