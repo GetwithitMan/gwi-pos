@@ -26,6 +26,15 @@ const MAIN_HOSTNAMES = new Set([
   'www.ordercontrolcenter.com',
 ])
 
+/** Check if hostname is a private/local IP (terminals connecting to NUC server) */
+function isLocalNetworkHost(hostname: string): boolean {
+  // IPv4 private ranges: 10.x, 172.16-31.x, 192.168.x, 127.x
+  if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.)/.test(hostname)) return true
+  // IPv6 loopback
+  if (hostname === '::1') return true
+  return false
+}
+
 /** Parent domains that support venue subdomains */
 const VENUE_PARENT_DOMAINS = [
   '.ordercontrolcenter.com',
@@ -139,7 +148,7 @@ export async function middleware(request: NextRequest) {
   // ═══════════════════════════════════════════════════════════
   let localVenueSlug: string | null = null
 
-  if (!MAIN_HOSTNAMES.has(hostname) && !isVercelPreview(hostname)) {
+  if (!MAIN_HOSTNAMES.has(hostname) && !isVercelPreview(hostname) && !isLocalNetworkHost(hostname)) {
     localVenueSlug = extractVenueSlug(hostname)
 
     if (!localVenueSlug) {
