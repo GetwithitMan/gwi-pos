@@ -739,7 +739,6 @@ Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
-ExecStartPre=-/usr/bin/killall chromium-browser chromium
 ExecStartPre=/bin/sleep 5
 ExecStart=/usr/bin/${CHROMIUM_BIN:-chromium-browser} --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --incognito --check-for-update-interval=31536000 http://localhost:3000
 Restart=on-failure
@@ -1275,7 +1274,6 @@ Type=simple
 User=$POSUSER
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=$POSUSER_HOME/.Xauthority
-ExecStartPre=-/usr/bin/killall chromium-browser chromium
 ExecStartPre=/bin/sleep 2
 ExecStart=/usr/bin/$TERM_CHROMIUM --kiosk --noerrdialogs --disable-infobars --disable-session-crashed-bubble --no-first-run --disable-features=TranslateUI --incognito --check-for-update-interval=31536000 $SERVER_URL
 Restart=on-failure
