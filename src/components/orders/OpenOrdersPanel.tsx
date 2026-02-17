@@ -7,6 +7,7 @@ import { formatCurrency } from '@/lib/utils'
 import { formatCardDisplay } from '@/lib/payment'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
 import { ClosedOrderActionsModal } from './ClosedOrderActionsModal'
+import { toast } from '@/stores/toast-store'
 
 interface OpenOrder {
   id: string
@@ -99,6 +100,12 @@ interface OpenOrder {
   hasCoursingEnabled?: boolean
   hasDelayedItems?: boolean
   courseMode?: string | null
+  ageMinutes?: number
+  isRolledOver?: boolean
+  rolledOverAt?: string | null
+  rolledOverFrom?: string | null
+  isCaptureDeclined?: boolean
+  captureRetryCount?: number
   reopenedAt?: string | null
   reopenReason?: string | null
   parentOrderId?: string | null
@@ -152,6 +159,24 @@ const ORDER_TYPE_CONFIG: Record<string, { icon: string; label: string; color: st
   call_in: { icon: '📞', label: 'Call-in', color: 'bg-teal-100 text-teal-800', darkColor: 'bg-teal-600/30 text-teal-300 border-teal-500/30' },
 }
 
+function getAgeBadge(order: { ageMinutes?: number; isRolledOver?: boolean }, dark: boolean) {
+  const age = order.ageMinutes
+  if (age == null) return null
+  if (order.isRolledOver) {
+    const days = Math.floor(age / 1440)
+    return { text: days > 0 ? `${days}d ago` : 'Rolled Over', cls: dark ? 'bg-red-600/40 text-red-300' : 'bg-red-100 text-red-800' }
+  }
+  if (age < 60) return { text: `${age}m`, cls: dark ? 'bg-emerald-600/30 text-emerald-300' : 'bg-emerald-100 text-emerald-700' }
+  if (age < 240) {
+    const h = Math.floor(age / 60); const m = age % 60
+    return { text: m > 0 ? `${h}h ${m}m` : `${h}h`, cls: dark ? 'bg-yellow-600/30 text-yellow-300' : 'bg-yellow-100 text-yellow-700' }
+  }
+  if (age < 480) {
+    return { text: `${Math.floor(age / 60)}h`, cls: dark ? 'bg-orange-600/30 text-orange-300' : 'bg-orange-100 text-orange-700' }
+  }
+  return { text: `${Math.floor(age / 60)}h`, cls: dark ? 'bg-red-600/30 text-red-300' : 'bg-red-100 text-red-700' }
+}
+
 /** For split parents, display the sum of children's totals (parent.total is $0) */
 function getDisplayTotal(order: OpenOrder): number {
   if (order.hasSplits && order.splits && order.splits.length > 0) {
@@ -197,12 +222,14 @@ export function OpenOrdersPanel({
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [showSortMenu, setShowSortMenu] = useState(false)
+  const [ageFilter, setAgeFilter] = useState<'all' | 'today' | 'previous' | 'declined'>('all')
   const [viewStyle, setViewStyle] = useState<'card' | 'condensed'>('card')
   const [datePreset, setDatePreset] = useState<DatePreset>('today')
   const [closedOrderModalOrder, setClosedOrderModalOrder] = useState<OpenOrder | null>(null)
   const [closedCursor, setClosedCursor] = useState<string | null>(null)
   const [hasMoreClosed, setHasMoreClosed] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [bulkProcessing, setBulkProcessing] = useState(false)
 
   const dark = isExpanded || forceDark
 
@@ -330,6 +357,14 @@ export function OpenOrdersPanel({
   }
   if (typeFilter) {
     filteredOrders = filteredOrders.filter(o => o.orderType === typeFilter)
+  }
+  // Age filter
+  if (ageFilter === 'previous') {
+    filteredOrders = filteredOrders.filter(o => o.isRolledOver)
+  } else if (ageFilter === 'today') {
+    filteredOrders = filteredOrders.filter(o => !o.isRolledOver)
+  } else if (ageFilter === 'declined') {
+    filteredOrders = filteredOrders.filter(o => o.isCaptureDeclined)
   }
   if (searchQuery.trim()) {
     const query = searchQuery.toLowerCase().trim()
@@ -617,6 +652,15 @@ export function OpenOrdersPanel({
               🔓 Reopened
             </span>
           )}
+          {(() => {
+            const badge = getAgeBadge(order, dark)
+            return badge ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge.cls}`}>{badge.text}</span> : null
+          })()}
+          {order.isCaptureDeclined && (
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse ${dark ? 'bg-red-600/40 text-red-300' : 'bg-red-100 text-red-700'}`}>
+              Card Declined
+            </span>
+          )}
         </div>
 
         {/* Split ticket tabs — nested under parent */}
@@ -843,6 +887,28 @@ export function OpenOrdersPanel({
           Mine
         </button>
 
+        {/* Age filter pills */}
+        {viewMode === 'open' && (
+          <>
+            <div className={`w-px h-6 mx-1 ${dark ? 'bg-white/10' : 'bg-gray-200'}`} />
+            <div className="flex gap-1">
+              {(['all', 'today', 'previous', 'declined'] as const).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setAgeFilter(f)}
+                  className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                    ageFilter === f
+                      ? dark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white'
+                      : dark ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'previous' ? 'Previous Day' : 'Declined'}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
         <div className="flex-1" />
 
         {/* View style toggle */}
@@ -970,6 +1036,80 @@ export function OpenOrdersPanel({
         </div>
       ) : (
         <>
+          {/* Bulk actions for rolled-over orders */}
+          {viewMode === 'open' && (() => {
+            const rolledOverOrders = filteredOrders.filter((o: any) => o.isRolledOver)
+            if (rolledOverOrders.length === 0) return null
+            return (
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg mb-2 ${isExpanded ? 'col-span-full' : ''} ${dark ? 'bg-red-900/20 border border-red-800/30' : 'bg-red-50 border border-red-200'}`}>
+                <span className={`text-xs font-medium ${dark ? 'text-red-300' : 'text-red-700'}`}>
+                  {rolledOverOrders.length} rolled-over order{rolledOverOrders.length !== 1 ? 's' : ''}
+                </span>
+                <div className="flex gap-1.5 ml-auto">
+                  <button
+                    disabled={bulkProcessing}
+                    onClick={async () => {
+                      if (!confirm(`Void ${rolledOverOrders.length} rolled-over order(s)?`)) return
+                      setBulkProcessing(true)
+                      try {
+                        const res = await fetch('/api/orders/bulk-action', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            orderIds: rolledOverOrders.map((o: any) => o.id),
+                            action: 'void',
+                            employeeId,
+                            reason: 'Bulk void from open orders panel',
+                          }),
+                        })
+                        if (res.ok) {
+                          toast.success(`Voided ${rolledOverOrders.length} order(s)`)
+                          loadOrders()
+                        } else {
+                          const err = await res.json()
+                          toast.error(err.error || 'Failed to void orders')
+                        }
+                      } catch { toast.error('Failed to void orders') }
+                      setBulkProcessing(false)
+                    }}
+                    className={`px-2 py-1 rounded text-[10px] font-medium ${dark ? 'bg-red-700 hover:bg-red-600 text-white' : 'bg-red-600 hover:bg-red-500 text-white'} disabled:opacity-50`}
+                  >
+                    Void All
+                  </button>
+                  <button
+                    disabled={bulkProcessing}
+                    onClick={async () => {
+                      setBulkProcessing(true)
+                      try {
+                        const res = await fetch('/api/orders/bulk-action', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            orderIds: rolledOverOrders.map((o: any) => o.id),
+                            action: 'transfer',
+                            employeeId,
+                            toEmployeeId: employeeId,
+                            reason: 'Bulk transfer from open orders panel',
+                          }),
+                        })
+                        if (res.ok) {
+                          toast.success(`Transferred ${rolledOverOrders.length} order(s) to you`)
+                          loadOrders()
+                        } else {
+                          const err = await res.json()
+                          toast.error(err.error || 'Failed to transfer')
+                        }
+                      } catch { toast.error('Failed to transfer orders') }
+                      setBulkProcessing(false)
+                    }}
+                    className={`px-2 py-1 rounded text-[10px] font-medium ${dark ? 'bg-zinc-600 hover:bg-zinc-500 text-white' : 'bg-zinc-600 hover:bg-zinc-500 text-white'} disabled:opacity-50`}
+                  >
+                    Transfer to Me
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
           {filteredOrders.map(order => renderOrderCard(order))}
           {viewMode === 'closed' && hasMoreClosed && (
             <div className={`${isExpanded ? 'col-span-full' : ''} text-center py-3`}>

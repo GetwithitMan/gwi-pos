@@ -19,6 +19,7 @@ interface TabOrder {
   employeeId: string
   employeeName: string
   status: 'open' | 'closed' | 'void'
+  tabStatus?: string | null
   items: {
     id: string
     name: string
@@ -27,7 +28,7 @@ interface TabOrder {
   }[]
 }
 
-type FilterOption = 'all' | 'mine' | 'over50' | 'over1hr'
+type FilterOption = 'all' | 'mine' | 'over50' | 'over1hr' | 'declined'
 type SortOption = 'recent' | 'oldest' | 'highest' | 'lowest' | 'name'
 
 export default function TabsPage() {
@@ -125,6 +126,7 @@ export default function TabsPage() {
       // Category filter
       if (filter === 'mine' && tab.employeeId !== employee?.id) return false
       if (filter === 'over50' && tab.total < 50) return false
+      if (filter === 'declined' && tab.tabStatus !== 'declined_capture') return false
       if (filter === 'over1hr') {
         const openedAt = new Date(tab.openedAt)
         const hourAgo = new Date(Date.now() - 60 * 60 * 1000)
@@ -253,6 +255,7 @@ export default function TabsPage() {
                 { id: 'mine', label: 'Mine' },
                 { id: 'over50', label: 'Over $50' },
                 { id: 'over1hr', label: 'Over 1hr' },
+                { id: 'declined', label: 'Declined' },
               ].map((opt) => (
                 <button
                   key={opt.id}

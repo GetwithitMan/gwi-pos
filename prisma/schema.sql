@@ -1,6 +1,9 @@
 -- CreateSchema
 CREATE SCHEMA IF NOT EXISTS "public";
 
+-- CreateEnum
+CREATE TYPE "RegistrationTokenStatus" AS ENUM ('PENDING', 'USED', 'EXPIRED', 'REVOKED');
+
 -- CreateTable
 CREATE TABLE "Organization" (
     "id" TEXT NOT NULL,
@@ -16,6 +19,7 @@ CREATE TABLE "Location" (
     "id" TEXT NOT NULL,
     "organizationId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "slug" TEXT,
     "address" TEXT,
     "phone" TEXT,
     "timezone" TEXT NOT NULL DEFAULT 'America/New_York',
@@ -745,6 +749,11 @@ CREATE TABLE "Order" (
     "isWalkout" BOOLEAN NOT NULL DEFAULT false,
     "walkoutAt" TIMESTAMP(3),
     "walkoutMarkedBy" TEXT,
+    "rolledOverAt" TIMESTAMP(3),
+    "rolledOverFrom" TEXT,
+    "captureDeclinedAt" TIMESTAMP(3),
+    "captureRetryCount" INTEGER NOT NULL DEFAULT 0,
+    "lastCaptureError" TEXT,
     "currentCourse" INTEGER NOT NULL DEFAULT 1,
     "courseMode" TEXT NOT NULL DEFAULT 'off',
     "offlineId" TEXT,
@@ -1583,6 +1592,8 @@ CREATE TABLE "Seat" (
     "virtualGroupId" TEXT,
     "virtualSeatNumber" INTEGER,
     "virtualGroupCreatedAt" TIMESTAMP(3),
+    "isTemporary" BOOLEAN NOT NULL DEFAULT false,
+    "sourceOrderId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'available',
     "currentOrderItemId" TEXT,
     "lastOccupiedAt" TIMESTAMP(3),
@@ -3438,6 +3449,27 @@ CREATE TABLE "HealthCheck" (
     CONSTRAINT "HealthCheck_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "ServerRegistrationToken" (
+    "id" TEXT NOT NULL,
+    "locationId" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
+    "status" "RegistrationTokenStatus" NOT NULL DEFAULT 'PENDING',
+    "expiresAt" TIMESTAMP(3) NOT NULL,
+    "usedAt" TIMESTAMP(3),
+    "usedByFingerprint" TEXT,
+    "usedByServerNodeId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+    "deletedAt" TIMESTAMP(3),
+    "syncedAt" TIMESTAMP(3),
+
+    CONSTRAINT "ServerRegistrationToken_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
+
 -- CreateIndex
 CREATE INDEX "Location_organizationId_idx" ON "Location"("organizationId");
 
@@ -3464,6 +3496,9 @@ CREATE INDEX "Employee_locationId_idx" ON "Employee"("locationId");
 
 -- CreateIndex
 CREATE INDEX "Employee_roleId_idx" ON "Employee"("roleId");
+
+-- CreateIndex
+CREATE INDEX "Employee_locationId_isActive_idx" ON "Employee"("locationId", "isActive");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Employee_locationId_pin_key" ON "Employee"("locationId", "pin");
@@ -3544,6 +3579,9 @@ CREATE INDEX "Category_sortOrder_idx" ON "Category"("sortOrder");
 CREATE INDEX "Category_categoryType_idx" ON "Category"("categoryType");
 
 -- CreateIndex
+CREATE INDEX "Category_locationId_isActive_deletedAt_idx" ON "Category"("locationId", "isActive", "deletedAt");
+
+-- CreateIndex
 CREATE INDEX "MenuItem_locationId_idx" ON "MenuItem"("locationId");
 
 -- CreateIndex
@@ -3554,6 +3592,9 @@ CREATE INDEX "MenuItem_prepStationId_idx" ON "MenuItem"("prepStationId");
 
 -- CreateIndex
 CREATE INDEX "MenuItem_isActive_showOnPOS_idx" ON "MenuItem"("isActive", "showOnPOS");
+
+-- CreateIndex
+CREATE INDEX "MenuItem_locationId_isActive_deletedAt_idx" ON "MenuItem"("locationId", "isActive", "deletedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MenuItem_locationId_sku_key" ON "MenuItem"("locationId", "sku");
@@ -3578,6 +3619,9 @@ CREATE INDEX "Modifier_linkedBottleProductId_idx" ON "Modifier"("linkedBottlePro
 
 -- CreateIndex
 CREATE INDEX "Modifier_linkedMenuItemId_idx" ON "Modifier"("linkedMenuItemId");
+
+-- CreateIndex
+CREATE INDEX "Modifier_locationId_linkedMenuItemId_idx" ON "Modifier"("locationId", "linkedMenuItemId");
 
 -- CreateIndex
 CREATE INDEX "MenuItemModifierGroup_locationId_idx" ON "MenuItemModifierGroup"("locationId");
@@ -3632,6 +3676,12 @@ CREATE INDEX "Table_status_idx" ON "Table"("status");
 
 -- CreateIndex
 CREATE INDEX "Table_virtualGroupId_idx" ON "Table"("virtualGroupId");
+
+-- CreateIndex
+CREATE INDEX "Table_locationId_status_idx" ON "Table"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "Table_locationId_isActive_deletedAt_idx" ON "Table"("locationId", "isActive", "deletedAt");
 
 -- CreateIndex
 CREATE INDEX "VirtualGroup_locationId_idx" ON "VirtualGroup"("locationId");
@@ -3709,6 +3759,24 @@ CREATE INDEX "Order_parentOrderId_idx" ON "Order"("parentOrderId");
 CREATE INDEX "Order_offlineId_idx" ON "Order"("offlineId");
 
 -- CreateIndex
+CREATE INDEX "Order_locationId_status_idx" ON "Order"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "Order_locationId_status_createdAt_idx" ON "Order"("locationId", "status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "Order_locationId_createdAt_idx" ON "Order"("locationId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "Order_tableId_status_deletedAt_idx" ON "Order"("tableId", "status", "deletedAt");
+
+-- CreateIndex
+CREATE INDEX "Order_locationId_status_openedAt_idx" ON "Order"("locationId", "status", "openedAt");
+
+-- CreateIndex
+CREATE INDEX "Order_locationId_tabStatus_idx" ON "Order"("locationId", "tabStatus");
+
+-- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
 
 -- CreateIndex
@@ -3719,6 +3787,12 @@ CREATE INDEX "OrderItem_menuItemId_idx" ON "OrderItem"("menuItemId");
 
 -- CreateIndex
 CREATE INDEX "OrderItem_kitchenStatus_idx" ON "OrderItem"("kitchenStatus");
+
+-- CreateIndex
+CREATE INDEX "OrderItem_orderId_kitchenStatus_idx" ON "OrderItem"("orderId", "kitchenStatus");
+
+-- CreateIndex
+CREATE INDEX "OrderItem_orderId_status_idx" ON "OrderItem"("orderId", "status");
 
 -- CreateIndex
 CREATE INDEX "OrderItemModifier_locationId_idx" ON "OrderItemModifier"("locationId");
@@ -3755,6 +3829,9 @@ CREATE INDEX "Payment_isOfflineCapture_idx" ON "Payment"("isOfflineCapture");
 
 -- CreateIndex
 CREATE INDEX "Payment_needsReconciliation_idx" ON "Payment"("needsReconciliation");
+
+-- CreateIndex
+CREATE INDEX "Payment_locationId_createdAt_idx" ON "Payment"("locationId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "SyncAuditEntry_locationId_idx" ON "SyncAuditEntry"("locationId");
@@ -4117,6 +4194,9 @@ CREATE INDEX "Seat_tableId_idx" ON "Seat"("tableId");
 CREATE INDEX "Seat_virtualGroupId_idx" ON "Seat"("virtualGroupId");
 
 -- CreateIndex
+CREATE INDEX "Seat_sourceOrderId_idx" ON "Seat"("sourceOrderId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Seat_tableId_seatNumber_key" ON "Seat"("tableId", "seatNumber");
 
 -- CreateIndex
@@ -4181,6 +4261,9 @@ CREATE INDEX "TaxRule_locationId_idx" ON "TaxRule"("locationId");
 
 -- CreateIndex
 CREATE INDEX "TaxRule_isActive_idx" ON "TaxRule"("isActive");
+
+-- CreateIndex
+CREATE INDEX "TaxRule_locationId_isActive_isInclusive_idx" ON "TaxRule"("locationId", "isActive", "isInclusive");
 
 -- CreateIndex
 CREATE INDEX "InventoryTransaction_locationId_idx" ON "InventoryTransaction"("locationId");
@@ -4475,6 +4558,9 @@ CREATE INDEX "MenuItemIngredient_locationId_idx" ON "MenuItemIngredient"("locati
 
 -- CreateIndex
 CREATE INDEX "MenuItemIngredient_menuItemId_idx" ON "MenuItemIngredient"("menuItemId");
+
+-- CreateIndex
+CREATE INDEX "MenuItemIngredient_locationId_ingredientId_idx" ON "MenuItemIngredient"("locationId", "ingredientId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MenuItemIngredient_menuItemId_ingredientId_key" ON "MenuItemIngredient"("menuItemId", "ingredientId");
@@ -4932,6 +5018,12 @@ CREATE INDEX "HealthCheck_status_idx" ON "HealthCheck"("status");
 -- CreateIndex
 CREATE INDEX "HealthCheck_createdAt_idx" ON "HealthCheck"("createdAt");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "ServerRegistrationToken_token_key" ON "ServerRegistrationToken"("token");
+
+-- CreateIndex
+CREATE INDEX "ServerRegistrationToken_locationId_idx" ON "ServerRegistrationToken"("locationId");
+
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -5375,6 +5467,9 @@ ALTER TABLE "Seat" ADD CONSTRAINT "Seat_locationId_fkey" FOREIGN KEY ("locationI
 
 -- AddForeignKey
 ALTER TABLE "Seat" ADD CONSTRAINT "Seat_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "Table"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Seat" ADD CONSTRAINT "Seat_sourceOrderId_fkey" FOREIGN KEY ("sourceOrderId") REFERENCES "Order"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Event" ADD CONSTRAINT "Event_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -5876,4 +5971,7 @@ ALTER TABLE "PerformanceLog" ADD CONSTRAINT "PerformanceLog_locationId_fkey" FOR
 
 -- AddForeignKey
 ALTER TABLE "HealthCheck" ADD CONSTRAINT "HealthCheck_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServerRegistrationToken" ADD CONSTRAINT "ServerRegistrationToken_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 

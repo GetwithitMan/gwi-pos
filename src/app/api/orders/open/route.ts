@@ -15,6 +15,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const locationId = searchParams.get('locationId')
     const employeeId = searchParams.get('employeeId')
     const orderType = searchParams.get('orderType') // optional filter
+    const rolledOver = searchParams.get('rolledOver')
+    const minAge = searchParams.get('minAge')
 
     if (!locationId) {
       return NextResponse.json(
@@ -34,6 +36,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           deletedAt: null,
           ...(employeeId ? { employeeId } : {}),
           ...(orderType ? { orderType } : {}),
+          ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),
+          ...(minAge ? { openedAt: { lt: new Date(Date.now() - parseInt(minAge) * 60000) } } : {}),
         },
         select: {
           id: true,
@@ -62,6 +66,11 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           preAuthLast4: true,
           preAuthAmount: true,
           preAuthExpiresAt: true,
+          tabStatus: true,
+          rolledOverAt: true,
+          rolledOverFrom: true,
+          captureDeclinedAt: true,
+          captureRetryCount: true,
           table: {
             select: { id: true, name: true, section: { select: { name: true } } },
           },
@@ -123,7 +132,13 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           } : null,
           customFields: o.customFields as Record<string, string> | null,
           tabName: o.tabName,
-          tabStatus: (o as Record<string, unknown>).tabStatus || null,
+          tabStatus: o.tabStatus || null,
+          ageMinutes: Math.floor((Date.now() - new Date(o.openedAt || o.createdAt).getTime()) / 60000),
+          isRolledOver: !!o.rolledOverAt,
+          rolledOverAt: o.rolledOverAt?.toISOString?.() || null,
+          rolledOverFrom: o.rolledOverFrom || null,
+          isCaptureDeclined: o.tabStatus === 'declined_capture',
+          captureRetryCount: o.captureRetryCount || 0,
           cardholderName: (o as { cards?: { cardholderName: string | null }[] }).cards?.[0]?.cardholderName || null,
           tableName: o.table?.name || null,
           tableId: o.tableId,
@@ -197,6 +212,8 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         status: { in: ['open', 'sent', 'in_progress', 'split'] },
         ...(employeeId ? { employeeId } : {}),
         ...(orderType ? { orderType } : {}),
+        ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),
+        ...(minAge ? { openedAt: { lt: new Date(Date.now() - parseInt(minAge) * 60000) } } : {}),
       },
       include: {
         employee: {
@@ -315,6 +332,12 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         customFields: order.customFields as Record<string, string> | null,
         tabName: order.tabName,
         tabStatus: (order as Record<string, unknown>).tabStatus || null,
+        ageMinutes: Math.floor((Date.now() - new Date(order.openedAt || order.createdAt).getTime()) / 60000),
+        isRolledOver: !!(order as any).rolledOverAt,
+        rolledOverAt: (order as any).rolledOverAt?.toISOString?.() || null,
+        rolledOverFrom: (order as any).rolledOverFrom || null,
+        isCaptureDeclined: (order as any).tabStatus === 'declined_capture',
+        captureRetryCount: (order as any).captureRetryCount || 0,
         cardholderName: (order as { cards?: { cardholderName: string | null }[] }).cards?.[0]?.cardholderName || null,
         tableName: order.table?.name || null,  // Convenience field for display
         tableId: order.tableId,

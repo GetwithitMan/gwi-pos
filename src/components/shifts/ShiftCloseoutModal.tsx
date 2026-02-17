@@ -134,6 +134,9 @@ export function ShiftCloseoutModal({
   const [tipsDeclared, setTipsDeclared] = useState<string>('')
   const [notes, setNotes] = useState('')
 
+  // Open orders block state
+  const [openOrderBlock, setOpenOrderBlock] = useState<{ count: number } | null>(null)
+
   // Closeout result
   const [closeoutResult, setCloseoutResult] = useState<{
     variance: number
@@ -183,6 +186,7 @@ export function ShiftCloseoutModal({
       setTipsDeclared('')
       setNotes('')
       setCloseoutResult(null)
+      setOpenOrderBlock(null)
       setViewedSummaryFirst(false)
       setError(null)
       // Reset tip sharing state
@@ -485,6 +489,10 @@ export function ShiftCloseoutModal({
 
       if (!response.ok) {
         const data = await response.json()
+        if (response.status === 409 && data.requiresManagerOverride) {
+          setOpenOrderBlock({ count: data.openOrderCount })
+          return
+        }
         throw new Error(data.error || 'Failed to close shift')
       }
 
@@ -1175,6 +1183,92 @@ export function ShiftCloseoutModal({
                         </p>
                       </div>
                     </Card>
+                  )}
+
+                  {openOrderBlock && (
+                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+                      <h3 className="text-amber-800 font-bold text-sm mb-1">Open Orders Must Be Closed</h3>
+                      <p className="text-amber-700 text-xs mb-3">
+                        You have {openOrderBlock.count} open order{openOrderBlock.count !== 1 ? 's' : ''}. Close or transfer them before ending your shift.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            onClose()
+                            window.location.href = '/orders'
+                          }}
+                          className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium rounded transition-colors"
+                        >
+                          Go to Open Orders
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setOpenOrderBlock(null)
+                            setIsLoading(true)
+                            setError(null)
+                            try {
+                              const cashToSubmit = mode === 'none' ? 0 : actualCash
+                              const tipDistribution = {
+                                grossTips: parseFloat(tipsDeclared) || 0,
+                                tipOutTotal: totalTipOuts + totalCustomShares,
+                                netTips,
+                                roleTipOuts: calculatedTipOuts.map(t => ({
+                                  ruleId: t.ruleId,
+                                  toRoleId: t.toRoleId,
+                                  amount: t.amount
+                                })),
+                                customShares: customTipShares.map(s => ({
+                                  toEmployeeId: s.toEmployeeId,
+                                  amount: s.amount
+                                }))
+                              }
+                              const overrideRes = await fetch(`/api/shifts/${shift.id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  action: 'close',
+                                  employeeId: shift.employee.id,
+                                  actualCash: cashToSubmit,
+                                  cashHandlingMode: mode,
+                                  tipsDeclared: parseFloat(tipsDeclared) || 0,
+                                  notes,
+                                  blindMode: !viewedSummaryFirst,
+                                  tipDistribution,
+                                  forceClose: true,
+                                }),
+                              })
+                              if (overrideRes.ok) {
+                                const data = await overrideRes.json()
+                                toast.success('Shift closed. Open orders transferred to you.')
+                                setCloseoutResult({
+                                  variance: data.shift.variance,
+                                  expectedCash: data.shift.expectedCash,
+                                  actualCash: data.shift.actualCash,
+                                  message: data.message,
+                                })
+                                setStep('complete')
+                                onCloseoutComplete({
+                                  variance: data.shift.variance,
+                                  summary: data.summary,
+                                })
+                              } else {
+                                const err = await overrideRes.json()
+                                toast.error(err.error || 'Failed to override')
+                                setOpenOrderBlock({ count: openOrderBlock.count })
+                              }
+                            } catch {
+                              toast.error('Failed to close shift')
+                              setOpenOrderBlock({ count: openOrderBlock.count })
+                            } finally {
+                              setIsLoading(false)
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-gray-600 hover:bg-gray-500 text-white text-xs font-medium rounded transition-colors"
+                        >
+                          Manager Override
+                        </button>
+                      </div>
+                    </div>
                   )}
 
                   <div className="flex gap-2">

@@ -224,6 +224,14 @@ export interface BarTabSettings {
 
   // Tab Management
   tabTimeoutMinutes: number            // Show timeout warning after X minutes of inactivity
+
+  // Shift Close Validation
+  requireCloseTabsBeforeShift: boolean  // Block shift close if employee has open orders
+  managerExemptFromTabClose: boolean    // Managers can close shift with open tabs
+
+  // Declined Capture
+  maxCaptureRetries: number             // Max retry attempts before walkout flag (default: 3)
+  autoFlagWalkoutAfterDeclines: boolean // Auto-create walkout after max retries
 }
 
 export interface POSDisplaySettings {
@@ -509,6 +517,10 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     pullCustomerFromCard: true,      // Auto-fill name when card is used
     allowNameOnlyTab: true,          // Allow tabs with just a name
     tabTimeoutMinutes: 240,          // 4 hours default timeout warning
+    requireCloseTabsBeforeShift: true,   // Block shift close with open orders
+    managerExemptFromTabClose: true,     // Managers can override
+    maxCaptureRetries: 3,                // Max capture retries before walkout
+    autoFlagWalkoutAfterDeclines: true,  // Auto-flag walkout after max retries
   },
   posDisplay: {
     menuItemSize: 'normal',

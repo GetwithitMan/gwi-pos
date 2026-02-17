@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 
 /**
  * POST /api/eod/reset
@@ -88,6 +89,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }
 
+    const now = new Date()
+
     // Execute the reset in a transaction
     await db.$transaction(async (tx) => {
       // 1. Reset all tables to 'available' status (except those with open orders)
@@ -151,6 +154,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           })
         }
         stats.orphanedOrdersClosed = staleOpenOrders.length
+
+        // Mark stale orders as rolled over
+        await tx.order.updateMany({
+          where: { id: { in: staleOpenOrders.map((o: any) => o.id) } },
+          data: {
+            rolledOverAt: now,
+            rolledOverFrom: `EOD reset${employeeId ? ` by employee ${employeeId}` : ''}`,
+          },
+        })
       }
 
       // 3. Create master audit log for EOD reset
@@ -169,6 +181,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
     })
+
+    // Notify all terminals about rolled-over orders
+    if (staleOpenOrders.length > 0) {
+      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})
+    }
 
     return NextResponse.json({
       success: true,

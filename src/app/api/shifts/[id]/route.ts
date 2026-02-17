@@ -4,6 +4,7 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
+import { parseSettings } from '@/lib/settings'
 
 // GET - Get shift details with sales summary
 export const GET = withVenue(async function GET(
@@ -89,13 +90,14 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const { action, actualCash, tipsDeclared, notes, tipDistribution, employeeId: requestingEmployeeId, cashHandlingMode } = body as {
+    const { action, actualCash, tipsDeclared, notes, tipDistribution, employeeId: requestingEmployeeId, cashHandlingMode, forceClose } = body as {
       action: 'close' | 'update'
       actualCash?: number
       tipsDeclared?: number
       notes?: string
       employeeId?: string
       cashHandlingMode?: string
+      forceClose?: boolean
       tipDistribution?: {
         grossTips: number
         tipOutTotal: number
@@ -140,6 +142,49 @@ export const PUT = withVenue(async function PUT(
           { error: 'Shift is already closed' },
           { status: 400 }
         )
+      }
+
+      // Check if employee has open orders (requireCloseTabsBeforeShift setting)
+      const locationForSettings = await db.location.findFirst({
+        where: { id: shift.locationId },
+        select: { settings: true },
+      })
+      const locSettings = parseSettings(locationForSettings?.settings)
+      const requireClose = locSettings.barTabs?.requireCloseTabsBeforeShift ?? true
+
+      if (requireClose) {
+        const openOrderCount = await db.order.count({
+          where: {
+            locationId: shift.locationId,
+            employeeId: shift.employeeId,
+            status: { in: ['open', 'sent', 'in_progress', 'split'] },
+            deletedAt: null,
+          },
+        })
+
+        if (openOrderCount > 0) {
+          // Manager override: transfer orders and proceed
+          if (forceClose && requestingEmployeeId !== shift.employeeId) {
+            await db.order.updateMany({
+              where: {
+                locationId: shift.locationId,
+                employeeId: shift.employeeId,
+                status: { in: ['open', 'sent', 'in_progress', 'split'] },
+                deletedAt: null,
+              },
+              data: { employeeId: requestingEmployeeId },
+            })
+          } else {
+            return NextResponse.json(
+              {
+                error: 'Cannot close shift with open orders',
+                openOrderCount,
+                requiresManagerOverride: true,
+              },
+              { status: 409 }
+            )
+          }
+        }
       }
 
       // For 'none' cash handling mode, actual cash is always 0 (no cash handled)

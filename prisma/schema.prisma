@@ -1638,6 +1638,13 @@ model Order {
   walkoutAt       DateTime?
   walkoutMarkedBy String?   // Employee who marked as walkout
 
+  // Tab Rollover & Declined Capture
+  rolledOverAt       DateTime?   // Set when order crosses business day boundary
+  rolledOverFrom     String?     // "Shift: {shiftId}" or "EOD reset by {name}"
+  captureDeclinedAt  DateTime?   // When last capture attempt was declined
+  captureRetryCount  Int         @default(0) // Number of capture retry attempts
+  lastCaptureError   String?     // Last decline reason text
+
   // Coursing (T013)
   currentCourse Int    @default(1) // Currently active course
   courseMode    String @default("off") // 'off' | 'manual' | 'auto'
@@ -1680,6 +1687,8 @@ model Order {
   @@index([locationId, status, createdAt])
   @@index([locationId, createdAt])
   @@index([tableId, status, deletedAt])
+  @@index([locationId, status, openedAt])
+  @@index([locationId, tabStatus])
 }
 
 model OrderItem {

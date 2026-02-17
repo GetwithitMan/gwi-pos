@@ -111,10 +111,41 @@ export const POST = withVenue(async function POST(
     }
 
     if (!capturedCard || !captureResult) {
+      // Track the declined capture
+      await db.order.update({
+        where: { id: orderId },
+        data: {
+          tabStatus: 'declined_capture',
+          captureDeclinedAt: new Date(),
+          captureRetryCount: { increment: 1 },
+          lastCaptureError: 'All cards failed to capture',
+        },
+      })
+
+      // Check if auto-walkout threshold reached
+      const updatedOrder = await db.order.findUnique({
+        where: { id: orderId },
+        select: { captureRetryCount: true },
+      })
+      const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 3
+      const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? true
+      if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
+        await db.order.update({
+          where: { id: orderId },
+          data: { isWalkout: true, walkoutAt: new Date() },
+        })
+      }
+
+      // Notify all terminals
+      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
+
       return NextResponse.json({
         data: {
           success: false,
           error: 'All cards failed to capture',
+          tabStatus: 'declined_capture',
+          retryCount: updatedOrder?.captureRetryCount || 1,
+          maxRetries,
         },
       })
     }
@@ -124,6 +155,34 @@ export const POST = withVenue(async function POST(
     const error = parseError(response)
 
     if (!approved) {
+      // Track the declined capture
+      await db.order.update({
+        where: { id: orderId },
+        data: {
+          tabStatus: 'declined_capture',
+          captureDeclinedAt: new Date(),
+          captureRetryCount: { increment: 1 },
+          lastCaptureError: error?.text || 'Capture declined',
+        },
+      })
+
+      // Check if auto-walkout threshold reached
+      const updatedOrder = await db.order.findUnique({
+        where: { id: orderId },
+        select: { captureRetryCount: true },
+      })
+      const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 3
+      const autoWalkout = locSettings.barTabs?.autoFlagWalkoutAfterDeclines ?? true
+      if (autoWalkout && updatedOrder && updatedOrder.captureRetryCount >= maxRetries) {
+        await db.order.update({
+          where: { id: orderId },
+          data: { isWalkout: true, walkoutAt: new Date() },
+        })
+      }
+
+      // Notify all terminals
+      dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any, orderId }, { async: true }).catch(() => {})
+
       return NextResponse.json({
         data: {
           success: false,
@@ -132,6 +191,9 @@ export const POST = withVenue(async function POST(
           error: error
             ? { code: error.code, message: error.text, isRetryable: error.isRetryable }
             : { code: 'DECLINED', message: 'Capture declined', isRetryable: true },
+          tabStatus: 'declined_capture',
+          retryCount: updatedOrder?.captureRetryCount || 1,
+          maxRetries,
         },
       })
     }
