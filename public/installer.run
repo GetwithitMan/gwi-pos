@@ -325,7 +325,11 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
 
   # ── Parse response ──
   SERVER_NODE_ID=$(echo "$REG_RESPONSE" | jq -r '.data.serverNodeId // empty')
-  LOCATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.locationId // empty')
+  # posLocationId is the POS-side Location.id (used for query filtering)
+  # locationId is the MC CloudLocation.id (used for fleet management)
+  POS_LOCATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.posLocationId // empty')
+  MC_LOCATION_ID=$(echo "$REG_RESPONSE" | jq -r '.data.locationId // empty')
+  LOCATION_ID="${POS_LOCATION_ID:-$MC_LOCATION_ID}"
   ENCRYPTED_API_KEY=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedApiKey // empty')
   ENCRYPTED_DB_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedDatabaseUrl // empty')
   ENCRYPTED_DIRECT_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedDirectUrl // empty')
