@@ -309,6 +309,61 @@ function SplitUnifiedView({
     }
   }, [merging, splits, parentOrderId, onMergeBack])
 
+  const handleCreateCheck = useCallback(async () => {
+    if (isSplitActionInFlightRef.current) return
+    isSplitActionInFlightRef.current = true
+    try {
+      const res = await fetch(`/api/orders/${parentOrderId}/split-tickets/create-check`, { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to create check')
+      }
+      const newCheck = await res.json()
+      // If item selected, move it to the new check
+      if (selectedItemId && selectedFromSplitId) {
+        await fetch(`/api/orders/${parentOrderId}/split-tickets`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            itemId: selectedItemId,
+            fromSplitId: selectedFromSplitId,
+            toSplitId: newCheck.id,
+          }),
+        })
+        setSelectedItemId(null)
+        setSelectedFromSplitId(null)
+      }
+      await loadSplits()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create check')
+    } finally {
+      isSplitActionInFlightRef.current = false
+    }
+  }, [parentOrderId, selectedItemId, selectedFromSplitId, loadSplits])
+
+  const handleDeleteCheck = useCallback(async (splitId: string) => {
+    if (isSplitActionInFlightRef.current) return
+    isSplitActionInFlightRef.current = true
+    try {
+      const res = await fetch(`/api/orders/${parentOrderId}/split-tickets/${splitId}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Failed to delete check')
+      }
+      const data = await res.json()
+      if (data.merged) {
+        // Last split auto-merged back to parent — close split view
+        onMergeBack()
+      } else {
+        await loadSplits()
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete check')
+    } finally {
+      isSplitActionInFlightRef.current = false
+    }
+  }, [parentOrderId, loadSplits, onMergeBack])
+
   const handleItemTap = useCallback((itemId: string, splitId: string) => {
     if (selectedItemId === itemId) {
       // Deselect
@@ -377,7 +432,7 @@ function SplitUnifiedView({
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {selectedItemId && (
               <span style={{ fontSize: '12px', color: '#a5b4fc', fontStyle: 'italic' }}>
-                Tap a check to move item
+                Tap a check or + New Check to move item
               </span>
             )}
             {splits.length > 0 && (
@@ -410,6 +465,23 @@ function SplitUnifiedView({
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4H7v4a2 2 0 002 2zm0-16h6a2 2 0 012 2v2H7V5a2 2 0 012-2z" />
                 </svg>
                 Print All
+              </button>
+            )}
+            {!splits.some(s => s.isPaid) && onPaySplit && (
+              <button
+                onClick={() => onPaySplit(parentOrderId)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: 'rgba(34, 197, 94, 0.15)',
+                  color: '#4ade80',
+                }}
+              >
+                Pay All
               </button>
             )}
             {!allPaid && (
@@ -496,7 +568,8 @@ function SplitUnifiedView({
                     handleItemTap(itemId, split.id)
                   }}
                   onCardTap={(checkId) => handleCardTap(checkId)}
-                  canDelete={false}
+                  canDelete={true}
+                  onDeleteCheck={() => handleDeleteCheck(split.id)}
                   manageMode={true}
                   isPaid={split.isPaid}
                   cardInfo={split.card}
@@ -522,6 +595,25 @@ function SplitUnifiedView({
                 />
               )
             })}
+            {/* + New Check card */}
+            <div
+              onClick={handleCreateCheck}
+              style={{
+                minWidth: '200px',
+                minHeight: '120px',
+                border: '2px dashed rgba(255,255,255,0.2)',
+                borderRadius: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                flexShrink: 0,
+                background: selectedItemId ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                transition: 'background 0.2s ease, border-color 0.2s ease',
+              }}
+            >
+              <span style={{ fontSize: '24px', color: '#64748b' }}>+ New Check</span>
+            </div>
           </div>
         )}
       </div>
@@ -552,7 +644,7 @@ function SplitUnifiedView({
           </div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <span style={{ fontSize: '13px', color: '#a5b4fc', alignSelf: 'center' }}>
-              {movingItem ? 'Moving...' : splittingItem ? 'Splitting...' : 'Tap a check to move'}
+              {movingItem ? 'Moving...' : splittingItem ? 'Splitting...' : 'Tap a check or + New Check to move'}
             </span>
             <div style={{ position: 'relative' }}>
               <button

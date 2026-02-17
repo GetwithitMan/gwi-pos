@@ -306,6 +306,7 @@ export default function OrdersPage() {
   const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
   const [splitManageMode, setSplitManageMode] = useState(false)
   const [editingChildSplit, setEditingChildSplit] = useState(false)
+  const [splitParentToReturnTo, setSplitParentToReturnTo] = useState<string | null>(null)
 
   // Tabs panel state
   const [showTabsPanel, setShowTabsPanel] = useState(false)
@@ -984,7 +985,6 @@ export default function OrdersPage() {
     const validation = validateBeforeSend()
     if (!validation.valid) {
       if (validation.message === 'TABLE_REQUIRED') {
-        toast.warning('Please select a table for this order')
         toast.warning('Please select a table from the floor plan')
         return
       }
@@ -2893,6 +2893,16 @@ export default function OrdersPage() {
                   setReceiptOrderId(paidId)
                   setShowReceiptModal(true)
                 }
+                // If we were paying a split child, return to split manage mode
+                if (splitParentToReturnTo) {
+                  setSavedOrderId(splitParentToReturnTo)
+                  setSplitManageMode(true)
+                  setShowSplitTicketManager(true)
+                  setSplitParentToReturnTo(null)
+                  clearOrder()
+                  setFloorPlanRefreshTrigger(prev => prev + 1)
+                  return
+                }
                 // Clear the order panel after payment
                 clearOrder()
                 setSavedOrderId(null)
@@ -3154,7 +3164,9 @@ export default function OrdersPage() {
                 setFloorPlanRefreshTrigger(prev => prev + 1)
               }}
               onPaySplit={(splitId) => {
+                setSplitParentToReturnTo(savedOrderId || '')
                 setShowSplitTicketManager(false)
+                setSplitManageMode(false)
                 setOrderToPayId(splitId)
                 setShowPaymentModal(true)
               }}

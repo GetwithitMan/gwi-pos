@@ -391,6 +391,7 @@ export function FloorPlanHome({
   const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
   const [splitManageMode, setSplitManageMode] = useState(false)
   const [splitItemId, setSplitItemId] = useState<string | null>(null)
+  const [splitParentToReturnTo, setSplitParentToReturnTo] = useState<string | null>(null)
 
   // Memoize split check items to avoid re-creating array every render
   const splitCheckItems = useMemo(() => {
@@ -658,6 +659,19 @@ export function FloorPlanHome({
 
   // Get the active table object
   const activeTable = activeTableId ? tables.find(t => t.id === activeTableId) || null : null
+
+  // Detect split chips for the active table's order
+  const activeTableData = activeTableId ? tables.find((t: any) => t.id === activeTableId) : null
+  const hasSplitChips = activeTableData?.currentOrder?.status === 'split' &&
+    (activeTableData?.currentOrder?.splitOrders?.length ?? 0) > 0
+  const splitChips = hasSplitChips
+    ? activeTableData!.currentOrder!.splitOrders!.map((s: any, idx: number) => ({
+        id: s.id as string,
+        label: (s.displayNumber || `Check ${idx + 1}`) as string,
+        isPaid: !!(s.isPaid || s.status === 'paid'),
+        total: Number(s.total ?? 0),
+      }))
+    : []
 
   // Quick bar items with full data
   const [quickBarItems, setQuickBarItems] = useState<{
@@ -1129,13 +1143,19 @@ export function FloorPlanHome({
     setActiveSeatNumber(null) // Reset active seat when switching tables
     setActiveSourceTableId(null) // Reset source table too
     setGuestCount(totalSeats) // Set guest count based on table capacity
-    if (primaryTable.currentOrder) {
+    // Treat closed/paid/cancelled orders as "no active order" — start fresh
+    const orderStatus = primaryTable.currentOrder?.status
+    const isActiveOrder = primaryTable.currentOrder &&
+      ['open', 'draft', 'sent', 'in_progress', 'split'].includes(orderStatus || '')
+
+    if (isActiveOrder) {
+      const currentOrder = primaryTable.currentOrder!
       // Check for split orders — go straight to SplitCheckScreen manage mode
-      const hasSplits = primaryTable.currentOrder.status === 'split' &&
-                        (primaryTable.currentOrder.splitOrders?.length ?? 0) > 0
+      const hasSplits = orderStatus === 'split' &&
+                        (currentOrder.splitOrders?.length ?? 0) > 0
       if (hasSplits) {
-        setActiveOrderId(primaryTable.currentOrder.id)
-        setActiveOrderNumber(String(primaryTable.currentOrder.orderNumber))
+        setActiveOrderId(currentOrder.id)
+        setActiveOrderNumber(String(currentOrder.orderNumber))
         setSplitManageMode(true)
         setShowSplitTicketManager(true)
         setShowOrderPanel(false)
@@ -1143,18 +1163,18 @@ export function FloorPlanHome({
       }
 
       // Load existing order items from this table
-      setActiveOrderId(primaryTable.currentOrder.id)
-      setActiveOrderNumber(String(primaryTable.currentOrder.orderNumber))
+      setActiveOrderId(currentOrder.id)
+      setActiveOrderNumber(String(currentOrder.orderNumber))
       try {
-        const res = await fetch(`/api/orders/${primaryTable.currentOrder.id}`)
+        const res = await fetch(`/api/orders/${currentOrder.id}`)
         if (res.ok) {
           const data = await res.json()
           // Use loadOrder to atomically set tableId + items in Zustand store
           // store.loadOrder handles ALL item field mapping — one path, no duplication
           const store = useOrderStore.getState()
           store.loadOrder({
-            id: primaryTable.currentOrder.id,
-            orderNumber: data.orderNumber ?? primaryTable.currentOrder.orderNumber,
+            id: currentOrder.id,
+            orderNumber: data.orderNumber ?? currentOrder.orderNumber,
             orderType: data.orderType || 'dine_in',
             tableId: data.tableId || primaryTable.id,
             tabName: data.tabName,
@@ -1797,6 +1817,18 @@ export function FloorPlanHome({
       }
     }
 
+    // If we were paying a split child, return to split manage mode
+    if (splitParentToReturnTo) {
+      setActiveOrderId(splitParentToReturnTo)
+      setSplitManageMode(true)
+      setShowSplitTicketManager(true)
+      setShowOrderPanel(false)
+      setSplitParentToReturnTo(null)
+      useOrderStore.getState().clearOrder()
+      loadFloorPlanData()
+      return
+    }
+
     // Clear the order panel (same as handleCloseOrderPanel)
     // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
     setActiveOrderId(null)
@@ -1814,7 +1846,7 @@ export function FloorPlanHome({
 
     // Refresh floor plan to show updated table status
     loadFloorPlanData() // snapshot includes count
-  }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData])
+  }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData, splitParentToReturnTo])
 
   // Note: Ghost preview calculation is now handled by useFloorPlanDrag hook
 
@@ -3270,8 +3302,82 @@ export function FloorPlanHome({
                 })()}
               </div>
 
-              {/* Seat Selection Buttons */}
-              {activeTable && getTotalSeats(activeTable) > 0 ? (
+              {/* Split Chips Header (replaces seat strip when table has splits) */}
+              {hasSplitChips ? (
+                <div style={{
+                  padding: '10px 20px',
+                  borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                  background: 'rgba(15,23,42,0.98)',
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <span style={{
+                      fontSize: 11, color: '#64748b', fontWeight: 500,
+                      textTransform: 'uppercase', letterSpacing: '0.06em',
+                    }}>
+                      Split Checks
+                    </span>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {splitChips.map(split => (
+                        <button
+                          key={split.id}
+                          type="button"
+                          onClick={async () => {
+                            const success = await fetchAndLoadSplitOrder(split.id, activeTableId ?? undefined)
+                            if (success) {
+                              setActiveOrderId(split.id)
+                              if (onOpenPayment) onOpenPayment(split.id)
+                            } else {
+                              toast.error('Failed to load split order')
+                            }
+                          }}
+                          style={{
+                            padding: '4px 8px', borderRadius: 6,
+                            border: `1px solid ${split.isPaid ? 'rgba(34,197,94,0.5)' : 'rgba(148,163,184,0.5)'}`,
+                            background: split.isPaid ? 'rgba(34,197,94,0.12)' : 'rgba(15,23,42,0.9)',
+                            color: split.isPaid ? '#4ade80' : '#e2e8f0',
+                            fontSize: 11, fontWeight: split.isPaid ? 600 : 500,
+                            display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                          }}
+                        >
+                          <span>{split.label}</span>
+                          <span style={{ opacity: 0.8 }}>${split.total.toFixed(2)}</span>
+                          {split.isPaid && (
+                            <span style={{
+                              fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.05em',
+                              padding: '1px 4px', borderRadius: 4, background: 'rgba(34,197,94,0.25)',
+                            }}>
+                              Paid
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!activeOrderId) return
+                      setSplitManageMode(true)
+                      setShowSplitTicketManager(true)
+                      setShowOrderPanel(false)
+                    }}
+                    style={{
+                      padding: '6px 12px', borderRadius: 6,
+                      border: '1px solid rgba(168,85,247,0.6)',
+                      background: 'rgba(168,85,247,0.18)',
+                      color: '#e9d5ff', fontSize: 11, fontWeight: 600,
+                      cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Manage Splits
+                  </button>
+                </div>
+              ) : activeTable && getTotalSeats(activeTable) > 0 ? (
                 <div
                   style={{
                     padding: '10px 20px',
@@ -3657,8 +3763,10 @@ export function FloorPlanHome({
               }
             }}
             onPaySplit={(splitId) => {
+              setSplitParentToReturnTo(activeOrderId)
               setShowSplitTicketManager(false)
               setSplitManageMode(false)
+              setActiveOrderId(splitId)
               if (onOpenPayment) {
                 onOpenPayment(splitId)
               }

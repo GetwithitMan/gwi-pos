@@ -76,14 +76,14 @@ export const SplitCheckCard = memo(function SplitCheckCard({
     >
       {/* Header */}
       <div
-        onClick={() => !manageMode && onCardTap(check.id)}
+        onClick={() => onCardTap(check.id)}
         style={{
           background: paidStatus ? 'rgba(34, 197, 94, 0.15)' : headerBg,
           padding: '10px 14px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          cursor: manageMode ? 'default' : 'pointer',
+          cursor: (isDropTarget || !manageMode) ? 'pointer' : 'default',
           borderBottom: `1px solid ${paidStatus ? 'rgba(34, 197, 94, 0.2)' : check.color + '20'}`,
         }}
       >
@@ -177,7 +177,7 @@ export const SplitCheckCard = memo(function SplitCheckCard({
             ${check.subtotal.toFixed(2)}
           </span>
           {/* Delete button (edit mode only) */}
-          {!manageMode && canDelete && check.items.length === 0 && onDeleteCheck && (
+          {((!manageMode && canDelete) || (manageMode && !paidStatus)) && check.items.length === 0 && onDeleteCheck && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
@@ -206,7 +206,7 @@ export const SplitCheckCard = memo(function SplitCheckCard({
 
       {/* Items list */}
       <div
-        onClick={() => !manageMode && onCardTap(check.id)}
+        onClick={() => onCardTap(check.id)}
         style={{
           flex: 1,
           padding: '6px 0',
