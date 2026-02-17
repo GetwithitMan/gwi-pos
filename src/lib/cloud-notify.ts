@@ -18,8 +18,8 @@ interface NotifyParams {
 }
 
 export function notifyDataChanged(params: NotifyParams): void {
-  const mcBaseUrl = process.env.MC_BASE_URL
-  const secret = process.env.FLEET_NOTIFY_SECRET
+  const mcBaseUrl = process.env.MC_BASE_URL?.trim()
+  const secret = process.env.FLEET_NOTIFY_SECRET?.trim()
 
   // On NUC, these env vars don't exist — Socket.io handles it locally
   if (!mcBaseUrl || !secret) return

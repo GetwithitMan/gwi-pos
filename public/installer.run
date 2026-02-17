@@ -624,7 +624,7 @@ if [[ "$STATION_ROLE" == "server" ]]; then
   else
     log "Cloning app from repository..."
     mkdir -p "$APP_DIR"
-    chown "$POSUSER":"$POSUSER" "$APP_BASE"
+    chown -R "$POSUSER":"$POSUSER" "$APP_BASE"
     if ! sudo -u "$POSUSER" bash -c "
       git config --global credential.helper 'store --file=$CRED_FILE'
       git clone '$GIT_REPO' '$APP_DIR'

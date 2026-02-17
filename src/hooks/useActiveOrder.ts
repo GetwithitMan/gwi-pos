@@ -807,6 +807,10 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
   //   - Course 2+ with delays: record startedAt in store (client timer starts)
   //   - Course 2+ without delays: also fire immediately
   const handleSendToKitchen = useCallback(async (employeeId?: string) => {
+    // Ref-based guard: prevents duplicate sends when button is tapped rapidly
+    // (React state `isSending` only updates after re-render — too slow for multi-tap)
+    if (sendInProgressRef.current) return
+
     if (!currentOrder) {
       toast.error('No active order to send')
       return
@@ -818,6 +822,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
       return
     }
 
+    sendInProgressRef.current = true
     setIsSending(true)
 
     try {
@@ -943,8 +948,7 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         options.onOrderSent?.(resolvedOrderId)
       } else {
         // ═══ STANDARD SEND — FIRE-AND-FORGET (INSTANT UI) ═══
-        // Block autosave from starting new work while send is active
-        sendInProgressRef.current = true
+        // (sendInProgressRef already set at top of handleSendToKitchen)
 
         // Wait for any in-flight autosave to finish (so temp IDs are mapped)
         if (autosavePromiseRef.current) {
