@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
-import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { usePricing } from '@/hooks/usePricing'
 import { getDualPrices } from '@/lib/pricing'
 import { useOrderStore } from '@/stores/order-store'
@@ -86,6 +85,8 @@ interface BartenderViewProps {
   // Settings
   requireNameWithoutCard?: boolean
   tapCardBehavior?: 'close' | 'tab' | 'prompt'
+  // Dual pricing from parent (avoids duplicate useOrderSettings call)
+  dualPricing?: { enabled: boolean; cashDiscountPercent: number; applyToCredit: boolean; applyToDebit: boolean; showSavingsMessage: boolean }
   // Pre-loaded menu data from parent (avoids duplicate /api/menu fetch)
   initialCategories?: Category[]
   initialMenuItems?: MenuItem[]
@@ -237,6 +238,7 @@ export function BartenderView({
   onOpenCompVoid,
   employeePermissions = [],
   requireNameWithoutCard = false,
+  dualPricing = { enabled: true, cashDiscountPercent: 4.0, applyToCredit: true, applyToDebit: true, showSavingsMessage: true },
   initialCategories,
   initialMenuItems,
   children,
@@ -244,11 +246,6 @@ export function BartenderView({
   refreshTrigger: externalRefreshTrigger,
   onSelectedTabChange,
 }: BartenderViewProps) {
-  // ---------------------------------------------------------------------------
-  // HOOKS
-  // ---------------------------------------------------------------------------
-  const { dualPricing } = useOrderSettings()
-
   // ---------------------------------------------------------------------------
   // STATE
   // ---------------------------------------------------------------------------

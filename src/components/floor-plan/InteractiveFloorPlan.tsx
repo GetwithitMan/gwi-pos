@@ -23,26 +23,24 @@ export function InteractiveFloorPlan({
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const {
-    tables,
-    sections,
-    viewportX,
-    viewportY,
-    zoom,
-    selectedTableId,
-    isLoading,
-    error,
-    setTables,
-    setSections,
-    setZoom,
-    pan,
-    zoomIn,
-    zoomOut,
-    resetView,
-    selectTable,
-    setLoading,
-    setError,
-  } = useFloorPlanStore()
+  const tables = useFloorPlanStore(s => s.tables)
+  const sections = useFloorPlanStore(s => s.sections)
+  const viewportX = useFloorPlanStore(s => s.viewportX)
+  const viewportY = useFloorPlanStore(s => s.viewportY)
+  const zoom = useFloorPlanStore(s => s.zoom)
+  const selectedTableId = useFloorPlanStore(s => s.selectedTableId)
+  const isLoading = useFloorPlanStore(s => s.isLoading)
+  const error = useFloorPlanStore(s => s.error)
+  const setTables = useFloorPlanStore(s => s.setTables)
+  const setSections = useFloorPlanStore(s => s.setSections)
+  const setZoom = useFloorPlanStore(s => s.setZoom)
+  const pan = useFloorPlanStore(s => s.pan)
+  const zoomIn = useFloorPlanStore(s => s.zoomIn)
+  const zoomOut = useFloorPlanStore(s => s.zoomOut)
+  const resetView = useFloorPlanStore(s => s.resetView)
+  const selectTable = useFloorPlanStore(s => s.selectTable)
+  const setLoading = useFloorPlanStore(s => s.setLoading)
+  const setError = useFloorPlanStore(s => s.setError)
 
   // Drag state for pointer tracking
   const isPanning = useRef(false)

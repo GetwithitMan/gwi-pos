@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect, type CSSProperties } from 'react'
+import { useState, useCallback, useRef, useEffect, memo, type CSSProperties } from 'react'
 
 interface QuickPickStripProps {
   selectedItemId?: string | null
@@ -34,7 +34,7 @@ interface QuickPickStripProps {
  *   ─── separator ─── (when coursing enabled)
  *   C1, C2, C3... course assignment buttons
  */
-export function QuickPickStrip({
+export const QuickPickStrip = memo(function QuickPickStrip({
   selectedItemId,
   selectedItemQty,
   selectedCount = 0,
@@ -322,7 +322,7 @@ export function QuickPickStrip({
       )}
     </div>
   )
-}
+})
 
 // ── Subcomponents ──
 

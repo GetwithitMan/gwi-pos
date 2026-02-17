@@ -52,32 +52,37 @@ export function UnifiedFloorPlan({
   // Auto-scaling state for floor plan
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
 
-  const {
-    tables,
-    sections,
-    selectedTableId,
-    draggedTableId,
-    dropTargetTableId,
-    infoPanelTableId,
-    isLoading,
-    showSeats,
-    selectedSeat,
-    flashingTables,
-    setTables,
-    setSections,
-    selectTable,
-    startDrag,
-    updateDragTarget,
-    endDrag,
-    openInfoPanel,
-    closeInfoPanel,
-    toggleShowSeats,
-    selectSeat,
-    clearSelectedSeat,
-    flashTableMessage,
-    clearExpiredFlashes,
-    setLoading,
-  } = useFloorPlanStore()
+  const tables = useFloorPlanStore(s => s.tables)
+  const sections = useFloorPlanStore(s => s.sections)
+  const selectedTableId = useFloorPlanStore(s => s.selectedTableId)
+  const draggedTableId = useFloorPlanStore(s => s.draggedTableId)
+  const dropTargetTableId = useFloorPlanStore(s => s.dropTargetTableId)
+  const infoPanelTableId = useFloorPlanStore(s => s.infoPanelTableId)
+  const isLoading = useFloorPlanStore(s => s.isLoading)
+  const showSeats = useFloorPlanStore(s => s.showSeats)
+  const selectedSeat = useFloorPlanStore(s => s.selectedSeat)
+  const flashingTables = useFloorPlanStore(s => s.flashingTables)
+  const setTables = useFloorPlanStore(s => s.setTables)
+  const setSections = useFloorPlanStore(s => s.setSections)
+  const selectTable = useFloorPlanStore(s => s.selectTable)
+  const startDrag = useFloorPlanStore(s => s.startDrag)
+  const updateDragTarget = useFloorPlanStore(s => s.updateDragTarget)
+  const endDrag = useFloorPlanStore(s => s.endDrag)
+  const openInfoPanel = useFloorPlanStore(s => s.openInfoPanel)
+  const closeInfoPanel = useFloorPlanStore(s => s.closeInfoPanel)
+  const toggleShowSeats = useFloorPlanStore(s => s.toggleShowSeats)
+  const selectSeat = useFloorPlanStore(s => s.selectSeat)
+  const clearSelectedSeat = useFloorPlanStore(s => s.clearSelectedSeat)
+  const flashTableMessage = useFloorPlanStore(s => s.flashTableMessage)
+  const clearExpiredFlashes = useFloorPlanStore(s => s.clearExpiredFlashes)
+  const setLoading = useFloorPlanStore(s => s.setLoading)
+  const patchTableOrder = useFloorPlanStore(s => s.patchTableOrder)
+  const removeTableOrder = useFloorPlanStore(s => s.removeTableOrder)
+  const updateSingleTableStatus = useFloorPlanStore(s => s.updateSingleTableStatus)
+
+  // Ref for stale closure avoidance in socket callbacks
+  const tablesRef = useRef(tables)
+  tablesRef.current = tables
 
   const { isConnected, subscribe } = useEvents({ locationId })
 
@@ -86,15 +91,67 @@ export function UnifiedFloorPlan({
     loadFloorPlanData()
   }, [locationId, roomId])
 
-  // Socket-driven updates for floor plan data
+  // Socket-driven updates with delta patterns (avoid full reload when possible)
   useEffect(() => {
     if (!isConnected) return
     const unsubs: (() => void)[] = []
-    unsubs.push(subscribe('order:created', () => loadFloorPlanData()))
-    unsubs.push(subscribe('order:updated', () => loadFloorPlanData()))
-    unsubs.push(subscribe('table:status-changed', () => loadFloorPlanData()))
-    unsubs.push(subscribe('floor-plan:updated', () => loadFloorPlanData()))
-    unsubs.push(subscribe('orders:list-changed', () => loadFloorPlanData()))
+
+    // Floor plan layout changes from another terminal (structure change — full reload)
+    unsubs.push(subscribe('floor-plan:updated', () => {
+      logger.log('[UnifiedFloorPlan] floor-plan:updated — full reload (structure change)')
+      loadFloorPlanData()
+    }))
+
+    // Open orders list changed (create/send/pay/void)
+    unsubs.push(subscribe('orders:list-changed', (data: any) => {
+      const { trigger, tableId } = data || {}
+      logger.log(`[UnifiedFloorPlan] orders:list-changed trigger=${trigger} tableId=${tableId}`)
+      if ((trigger === 'paid' || trigger === 'voided') && tableId) {
+        // Delta: remove order from table locally — zero network
+        removeTableOrder(tableId)
+      } else {
+        loadFloorPlanData()
+      }
+    }))
+
+    // New order created — table status changes
+    unsubs.push(subscribe('order:created', () => {
+      logger.log('[UnifiedFloorPlan] order:created — full reload')
+      loadFloorPlanData()
+    }))
+
+    // Order updated (items added, metadata changed)
+    unsubs.push(subscribe('order:updated', () => {
+      logger.log('[UnifiedFloorPlan] order:updated — full reload')
+      loadFloorPlanData()
+    }))
+
+    // Order totals changed — delta patch the table's displayed total
+    unsubs.push(subscribe('order:totals-updated', (data: any) => {
+      const { orderId, totals } = data || {}
+      if (orderId && totals) {
+        const currentTables = tablesRef.current
+        const table = currentTables.find((t: any) => t.currentOrder?.id === orderId)
+        if (table) {
+          logger.log(`[UnifiedFloorPlan] order:totals-updated — delta patch table ${table.id}`)
+          patchTableOrder(table.id, { total: totals.total })
+          return
+        }
+      }
+      loadFloorPlanData()
+    }))
+
+    // Explicit table status change
+    unsubs.push(subscribe('table:status-changed', (data: any) => {
+      const { tableId, newStatus } = data || {}
+      if (tableId && newStatus) {
+        logger.log(`[UnifiedFloorPlan] table:status-changed — delta patch ${tableId}`)
+        updateSingleTableStatus(tableId, newStatus)
+      } else {
+        loadFloorPlanData()
+      }
+    }))
+
     return () => unsubs.forEach(u => u())
   }, [isConnected, subscribe])
 

@@ -15,14 +15,11 @@ import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { StockBadge } from '@/components/menu/StockBadge'
 const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
-const SplitCheckScreen = lazy(() => import('@/components/orders/SplitCheckScreen').then(m => ({ default: m.SplitCheckScreen })))
-// SplitTicketsOverview removed — replaced by SplitCheckScreen manage mode
 import { TableOptionsPopover } from '@/components/orders/TableOptionsPopover'
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { logger } from '@/lib/logger'
 import type { PizzaOrderConfig } from '@/types'
 import { toast } from '@/stores/toast-store'
-import { fetchAndLoadSplitOrder } from '@/lib/split-order-loader'
 const SharedOwnershipModal = lazy(() => import('@/components/tips/SharedOwnershipModal'))
 import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
@@ -142,6 +139,8 @@ interface FloorPlanHomeProps {
   // Payment and modifier callbacks
   onOpenPayment?: (orderId: string) => void
   onOpenCardFirst?: (orderId: string) => void
+  // Split manager callback — opens SplitCheckScreen in manage mode (owned by orders/page.tsx)
+  onOpenSplitManager?: (orderId: string) => void
   onOpenModifiers?: (item: MenuItem, onComplete: (modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], ingredientModifications?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void, existingModifiers?: { id: string; name: string; price: number; depth?: number; preModifier?: string | null }[], existingIngredientMods?: { ingredientId: string; name: string; modificationType: string; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]) => void
   // Editing modes (controlled by UnifiedPOSHeader gear dropdown)
   isEditingFavorites?: boolean
@@ -191,6 +190,7 @@ export function FloorPlanHome({
   employeeId,
   onOpenPayment,
   onOpenCardFirst,
+  onOpenSplitManager,
   onOpenModifiers,
   isEditingFavorites: isEditingFavoritesProp = false,
   isEditingCategories: isEditingCategoriesProp = false,
@@ -385,27 +385,7 @@ export function FloorPlanHome({
     menuItemId?: string
   } | null>(null)
 
-  // Split ticket manager state
-  const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
-  const [splitManageMode, setSplitManageMode] = useState(false)
-  const [splitItemId, setSplitItemId] = useState<string | null>(null)
-  const [splitParentToReturnTo, setSplitParentToReturnTo] = useState<string | null>(null)
-
-  // Memoize split check items to avoid re-creating array every render
-  const splitCheckItems = useMemo(() => {
-    if (!showSplitTicketManager) return []
-    const items = useOrderStore.getState().currentOrder?.items || []
-    return items.map(item => ({
-      id: item.id,
-      seatNumber: item.seatNumber,
-      name: item.name,
-      price: item.price,
-      quantity: item.quantity,
-      categoryType: item.categoryType,
-      sentToKitchen: item.sentToKitchen,
-      isPaid: item.status === 'comped' || item.status === 'voided',
-    }))
-  }, [showSplitTicketManager, activeOrder.items])
+  // Split ticket manager state removed — SplitCheckScreen is now owned by orders/page.tsx
 
   // Active seat for auto-assignment (null = "Shared")
   const [activeSeatNumber, setActiveSeatNumber] = useState<number | null>(null)
@@ -944,7 +924,6 @@ export function FloorPlanHome({
   const isProcessingSendRef = useRef(false)
   const isSeatAddInFlightRef = useRef(false)
   const isTableSwitchInFlightRef = useRef(false)
-  const splitActionInFlightRef = useRef(false)
 
   // FIX 4: Refs for heartbeat callbacks - prevents interval restart on re-render
   const callbacksRef = useRef({
@@ -1129,8 +1108,10 @@ export function FloorPlanHome({
       if (hasSplits) {
         setActiveOrderId(currentOrder.id)
         setActiveOrderNumber(String(currentOrder.orderNumber))
-        setSplitManageMode(true)
-        setShowSplitTicketManager(true)
+        // Route to parent's SplitCheckScreen (owned by orders/page.tsx)
+        if (onOpenSplitManager) {
+          onOpenSplitManager(currentOrder.id)
+        }
         setShowOrderPanel(false)
         return
       }
@@ -1823,18 +1804,6 @@ export function FloorPlanHome({
       }
     }
 
-    // If we were paying a split child, return to split manage mode
-    if (splitParentToReturnTo) {
-      setActiveOrderId(splitParentToReturnTo)
-      setSplitManageMode(true)
-      setShowSplitTicketManager(true)
-      setShowOrderPanel(false)
-      setSplitParentToReturnTo(null)
-      useOrderStore.getState().clearOrder()
-      loadFloorPlanData()
-      return
-    }
-
     // Clear the order panel (same as handleCloseOrderPanel)
     // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
     setActiveOrderId(null)
@@ -1852,7 +1821,7 @@ export function FloorPlanHome({
 
     // Refresh floor plan to show updated table status
     loadFloorPlanData() // snapshot includes count
-  }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData, splitParentToReturnTo])
+  }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData])
 
   // Note: Ghost preview calculation is now handled by useFloorPlanDrag hook
 
@@ -2625,97 +2594,7 @@ export function FloorPlanHome({
                 })()}
               </div>
 
-              {/* Split Chips Header (replaces seat strip when table has splits) */}
-              {hasSplitChips ? (
-                <div style={{
-                  padding: '8px 20px',
-                  borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-                  background: 'rgba(15,23,42,0.98)',
-                  flexShrink: 0,
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{
-                      fontSize: 10, color: '#64748b', fontWeight: 500,
-                      textTransform: 'uppercase', letterSpacing: '0.06em',
-                    }}>
-                      Split Checks
-                    </span>
-                    <div style={{ display: 'flex', gap: 5 }}>
-                    {splitChips.some(s => !s.isPaid) && onOpenPayment && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!activeOrderId) return
-                          if (onOpenPayment) onOpenPayment(activeOrderId)
-                        }}
-                        style={{
-                          padding: '3px 8px', borderRadius: 6,
-                          border: '1px solid rgba(34,197,94,0.5)',
-                          background: 'rgba(34,197,94,0.15)',
-                          color: '#4ade80', fontSize: 11, fontWeight: 600,
-                          cursor: 'pointer', whiteSpace: 'nowrap',
-                        }}
-                      >
-                        Pay All
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!activeOrderId) return
-                        setSplitManageMode(true)
-                        setShowSplitTicketManager(true)
-                        setShowOrderPanel(false)
-                      }}
-                      style={{
-                        padding: '3px 8px', borderRadius: 6,
-                        border: '1px solid rgba(168,85,247,0.5)',
-                        background: 'rgba(168,85,247,0.15)',
-                        color: '#e9d5ff', fontSize: 11, fontWeight: 600,
-                        cursor: 'pointer', whiteSpace: 'nowrap',
-                      }}
-                    >
-                      Manage Splits
-                    </button>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
-                    {splitChips.map(split => (
-                      <button
-                        key={split.id}
-                        type="button"
-                        onClick={async () => {
-                          const success = await fetchAndLoadSplitOrder(split.id, activeTableId ?? undefined)
-                          if (success) {
-                            setActiveOrderId(split.id)
-                          } else {
-                            toast.error('Failed to load split order')
-                          }
-                        }}
-                        style={{
-                          padding: '3px 7px', borderRadius: 6,
-                          border: `1px solid ${split.id === activeOrderId ? 'rgba(99,102,241,0.7)' : split.isPaid ? 'rgba(34,197,94,0.5)' : 'rgba(148,163,184,0.3)'}`,
-                          background: split.id === activeOrderId ? 'rgba(99,102,241,0.25)' : split.isPaid ? 'rgba(34,197,94,0.12)' : 'rgba(15,23,42,0.9)',
-                          color: split.id === activeOrderId ? '#a5b4fc' : split.isPaid ? '#4ade80' : '#e2e8f0',
-                          fontSize: 11, fontWeight: split.id === activeOrderId || split.isPaid ? 600 : 500,
-                          display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
-                        }}
-                      >
-                        <span>{split.label}</span>
-                        <span style={{ opacity: 0.7 }}>${split.total.toFixed(2)}</span>
-                        {split.isPaid && (
-                          <span style={{
-                            fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.05em',
-                            padding: '1px 3px', borderRadius: 3, background: 'rgba(34,197,94,0.25)',
-                          }}>
-                            Paid
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : activeTable && getTotalSeats(activeTable) > 0 ? (
+              {activeTable && getTotalSeats(activeTable) > 0 ? (
                 <div
                   style={{
                     padding: '10px 20px',
@@ -3073,70 +2952,6 @@ export function FloorPlanHome({
         </Suspense>
       )}
 
-      {/* Split Check Screen (Edit Mode or Manage Mode) */}
-      {showSplitTicketManager && activeOrderId && (
-        <Suspense fallback={null}>
-          <SplitCheckScreen
-            mode={splitManageMode ? 'manage' : 'edit'}
-            orderId={activeOrderId}
-            parentOrderId={splitManageMode ? activeOrderId : undefined}
-            items={splitManageMode ? [] : splitCheckItems}
-            onClose={() => {
-              setShowSplitTicketManager(false)
-              setSplitManageMode(false)
-              setSplitItemId(null)
-              loadFloorPlanData(false) // refresh snapshot so split chips update
-            }}
-            onSplitApplied={(splitData) => {
-              if (splitData?.splitOrders?.length) {
-                // After creating splits, stay in manage mode
-                setSplitManageMode(true)
-                loadFloorPlanData(false)
-              } else {
-                // Merge back or no splits — close everything
-                setShowSplitTicketManager(false)
-                setSplitManageMode(false)
-                setSplitItemId(null)
-                setShowOrderPanel(false)
-                loadFloorPlanData(false)
-              }
-            }}
-            onPaySplit={(splitId) => {
-              setSplitParentToReturnTo(activeOrderId)
-              setShowSplitTicketManager(false)
-              setSplitManageMode(false)
-              setActiveOrderId(splitId)
-              if (onOpenPayment) {
-                onOpenPayment(splitId)
-              }
-            }}
-            onAddCard={(splitId) => {
-              setShowSplitTicketManager(false)
-              setSplitManageMode(false)
-              if (onOpenCardFirst) {
-                onOpenCardFirst(splitId)
-              }
-            }}
-            onAddItems={async (splitId) => {
-              if (splitActionInFlightRef.current) return
-              splitActionInFlightRef.current = true
-              try {
-                // Close split view, load split order via shared helper
-                setShowSplitTicketManager(false)
-                setSplitManageMode(false)
-                setActiveOrderId(splitId)
-                setShowOrderPanel(true)
-                const success = await fetchAndLoadSplitOrder(splitId, activeTableId ?? undefined)
-                if (!success) {
-                  toast.error('Failed to load split order')
-                }
-              } finally {
-                splitActionInFlightRef.current = false
-              }
-            }}
-          />
-        </Suspense>
-      )}
 
       {/* Shared Ownership Modal */}
       {activeOrderId && (

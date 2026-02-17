@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 import { roundToCents } from '@/lib/pricing'
 import { useDatacap, type DatacapResult } from '@/hooks/useDatacap'
 import { ReaderStatusIndicator } from '@/components/payment/ReaderStatusIndicator'
@@ -62,7 +62,7 @@ interface OrderPanelActionsProps {
   orderType?: string  // 'bar_tab', 'dine_in', etc. — table orders show Send instead of Start Tab
 }
 
-export function OrderPanelActions({
+export const OrderPanelActions = memo(function OrderPanelActions({
   hasItems,
   hasPendingItems,
   isSending = false,
@@ -1003,4 +1003,4 @@ export function OrderPanelActions({
       )}
     </div>
   )
-}
+})

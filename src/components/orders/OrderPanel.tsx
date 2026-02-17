@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect, useMemo } from 'react'
+import { useRef, useState, useEffect, useMemo, useCallback, memo } from 'react'
 import { OrderPanelItem, type OrderPanelItemData } from './OrderPanelItem'
 import { OrderPanelActions } from './OrderPanelActions'
 import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
@@ -143,7 +143,7 @@ export interface OrderPanelProps {
   onPayAll?: () => void
 }
 
-export function OrderPanel({
+export const OrderPanel = memo(function OrderPanel({
   orderId,
   orderNumber,
   orderType,
@@ -349,7 +349,7 @@ export function OrderPanel({
   const cardPriceMultiplier = cashDiscountPct && cashDiscountPct > 0 ? 1 + cashDiscountPct / 100 : undefined
 
   // Shared item renderer — ensures identical rendering everywhere
-  const renderItem = (item: OrderPanelItemData) => (
+  const renderItem = useCallback((item: OrderPanelItemData) => (
     <OrderPanelItem
       key={item.id}
       item={item}
@@ -380,7 +380,7 @@ export function OrderPanel({
       onCancelItemDelay={onCancelItemDelay}
       cardPriceMultiplier={cardPriceMultiplier}
     />
-  )
+  ), [locationId, showItemControls, showEntertainmentTimers, onItemClick, onItemRemove, onQuantityChange, onSessionEnded, onTimerStarted, onTimeExtended, onItemHoldToggle, onItemNoteEdit, onItemCourseChange, onItemEditModifiers, onItemCompVoid, onItemResend, expandedItemId, onItemToggleExpand, maxSeats, maxCourses, onItemSeatChange, newestItemId, selectedItemIds, selectedItemId, onItemSelect, onFireItem, onCancelItemDelay, cardPriceMultiplier])
 
   // Build a match key for condensing like items
   const getCondenseKey = (item: OrderPanelItemData): string => {
@@ -1095,7 +1095,7 @@ export function OrderPanel({
       )}
 
       {/* Split Chips (visible in OrderPanel header when order has splits) */}
-      {splitChips && splitChips.length > 0 && !hideHeader && (
+      {splitChips && splitChips.length > 0 && (
         <div style={{
           padding: '8px 20px 10px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
@@ -1336,4 +1336,4 @@ export function OrderPanel({
       )}
     </div>
   )
-}
+})

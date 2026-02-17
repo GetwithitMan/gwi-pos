@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { MenuSearchResults } from '@/components/search'
 
@@ -60,7 +60,7 @@ export interface UnifiedPOSHeaderProps {
   cardPriceMultiplier?: number
 }
 
-export function UnifiedPOSHeader({
+export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
   employeeName,
   employeeRole,
   viewMode,
@@ -410,7 +410,7 @@ export function UnifiedPOSHeader({
       )}
     </header>
   )
-}
+})
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 

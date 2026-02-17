@@ -30,6 +30,7 @@ import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
 import { debugPizzaPricing } from '@/lib/pizza-helpers'
 import { buildPizzaModifiers, getPizzaBasePrice } from '@/lib/pizza-order-utils'
+import { fetchAndLoadSplitOrder } from '@/lib/split-order-loader'
 const PaymentModal = lazy(() => import('@/components/payment/PaymentModal').then(m => ({ default: m.PaymentModal })))
 const DiscountModal = lazy(() => import('@/components/orders/DiscountModal').then(m => ({ default: m.DiscountModal })))
 const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
@@ -68,10 +69,13 @@ import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderCon
 
 export default function OrdersPage() {
   const router = useRouter()
-  const { employee, isAuthenticated, logout } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const logout = useAuthStore(s => s.logout)
   const currentOrder = useOrderStore(s => s.currentOrder)
   const { startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore.getState()
-  const { hasDevAccess, setHasDevAccess } = useDevStore()
+  const hasDevAccess = useDevStore(s => s.hasDevAccess)
+  const setHasDevAccess = useDevStore(s => s.setHasDevAccess)
 
   // Hydration guard: Zustand persist middleware starts with defaults (isAuthenticated=false)
   // before rehydrating from localStorage. Without this guard, the auth redirect fires
@@ -2644,29 +2648,9 @@ export default function OrdersPage() {
             className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0'}
             splitChips={orderSplitChips.length > 0 ? orderSplitChips : undefined}
             onSplitChipSelect={orderSplitChips.length > 0 ? async (splitId) => {
-              // Fetch and load the selected split order
-              try {
-                const res = await fetch(`/api/orders/${splitId}`)
-                if (!res.ok) return
-                const order = await res.json()
-                const store = useOrderStore.getState()
-                store.loadOrder({
-                  id: order.id,
-                  orderNumber: order.orderNumber,
-                  orderType: order.orderType || 'dine_in',
-                  tableId: order.tableId || undefined,
-                  tableName: order.table?.name || undefined,
-                  tabName: order.tabName || undefined,
-                  guestCount: order.guestCount || 1,
-                  status: order.status || 'open',
-                  items: order.items || [],
-                  subtotal: Number(order.subtotal) || 0,
-                  taxTotal: Number(order.taxTotal) || 0,
-                  total: Number(order.total) || 0,
-                })
+              const success = await fetchAndLoadSplitOrder(splitId, currentOrder?.tableId ?? undefined)
+              if (success) {
                 setSavedOrderId(splitId)
-              } catch (err) {
-                console.error('Failed to load split order:', err)
               }
             } : undefined}
             onManageSplits={orderSplitChips.length > 0 ? () => {
@@ -2789,6 +2773,11 @@ export default function OrdersPage() {
               setOrderToPayId(orderId)
               setShowPaymentModal(true)
             }}
+            onOpenSplitManager={(orderId) => {
+              setSavedOrderId(orderId)
+              setSplitManageMode(true)
+              setShowSplitTicketManager(true)
+            }}
             onOpenModifiers={handleOpenModifiersShared as any}
             onOpenCardFirst={(orderId) => {
               setCardTabOrderId(orderId)
@@ -2819,6 +2808,7 @@ export default function OrdersPage() {
             locationId={employee.location.id}
             employeeId={employee.id}
             employeePermissions={permissionsArray}
+            dualPricing={dualPricing}
             onRegisterDeselectTab={(fn) => { bartenderDeselectTabRef.current = fn }}
             onOpenCompVoid={(item) => {
               const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId

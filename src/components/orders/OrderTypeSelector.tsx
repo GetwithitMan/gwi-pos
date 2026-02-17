@@ -37,6 +37,10 @@ const ICONS: Record<string, React.ReactNode> = {
   ),
 }
 
+// Module-level cache — order types don't change during a shift
+let cachedOrderTypes: OrderTypeConfig[] | null = null
+let orderTypeCacheLocationId: string | null = null
+
 interface OrderTypeSelectorProps {
   locationId: string
   selectedType?: string | null
@@ -61,14 +65,24 @@ export function OrderTypeSelector({
   const [customFieldValues, setCustomFieldValues] = useState<OrderCustomFields>({})
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
-  // Load order types
+  // Load order types (with module-level cache)
   useEffect(() => {
     async function loadOrderTypes() {
+      // Use cached types if available for same location
+      if (cachedOrderTypes && orderTypeCacheLocationId === locationId) {
+        setOrderTypes(cachedOrderTypes)
+        setIsLoading(false)
+        return
+      }
+
       try {
         const response = await fetch(`/api/order-types?locationId=${locationId}`)
         if (response.ok) {
           const data = await response.json()
-          setOrderTypes(data.orderTypes || [])
+          const types = data.orderTypes || []
+          setOrderTypes(types)
+          cachedOrderTypes = types
+          orderTypeCacheLocationId = locationId
         }
       } catch (error) {
         console.error('Failed to load order types:', error)

@@ -222,14 +222,37 @@ function SplitUnifiedView({
     }
   }, [parentOrderId, loadSplits])
 
-  // Move item between splits via API
+  // Move item between splits — optimistic update
   const handleMoveItem = useCallback(async (toSplitId: string) => {
     if (!selectedItemId || !selectedFromSplitId || movingItem) return
     if (selectedFromSplitId === toSplitId) return
     if (isSplitActionInFlightRef.current) return
     isSplitActionInFlightRef.current = true
 
+    // Optimistic: move item in local state immediately
+    const snapshot = splits.map(s => ({ ...s, items: [...s.items] }))
+    const fromSplit = splits.find(s => s.id === selectedFromSplitId)
+    const movedItem = fromSplit?.items.find(i => i.id === selectedItemId)
+    if (movedItem) {
+      setSplits(prev => prev.map(s => {
+        if (s.id === selectedFromSplitId) {
+          const remaining = s.items.filter(i => i.id !== selectedItemId)
+          const newTotal = remaining.reduce((sum, i) => sum + i.price * i.quantity, 0)
+          return { ...s, items: remaining, total: newTotal, subtotal: newTotal }
+        }
+        if (s.id === toSplitId) {
+          const updated = [...s.items, movedItem]
+          const newTotal = updated.reduce((sum, i) => sum + i.price * i.quantity, 0)
+          return { ...s, items: updated, total: newTotal, subtotal: newTotal }
+        }
+        return s
+      }))
+    }
+    setSelectedItemId(null)
+    setSelectedFromSplitId(null)
     setMovingItem(true)
+
+    // Fire API in background
     try {
       const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`, {
         method: 'PATCH',
@@ -244,17 +267,17 @@ function SplitUnifiedView({
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Move failed')
       }
-      // Reload splits to reflect changes
-      setSelectedItemId(null)
-      setSelectedFromSplitId(null)
+      // Refresh with server truth
       await loadSplits()
     } catch (err) {
+      // Rollback on error
+      setSplits(snapshot)
       toast.error(err instanceof Error ? err.message : 'Failed to move item')
     } finally {
       setMovingItem(false)
       isSplitActionInFlightRef.current = false
     }
-  }, [selectedItemId, selectedFromSplitId, movingItem, parentOrderId, loadSplits])
+  }, [selectedItemId, selectedFromSplitId, movingItem, splits, parentOrderId, loadSplits])
 
   // Split a single item into N fractions across checks
   const handleSplitItem = useCallback(async (ways: number) => {
@@ -263,14 +286,22 @@ function SplitUnifiedView({
     isSplitActionInFlightRef.current = true
     setSplittingItem(true)
     setShowSplitPicker(false)
+
+    // Clear selection immediately for instant feedback
+    const capturedItemId = selectedItemId
+    const capturedFromSplitId = selectedFromSplitId
+    setSelectedItemId(null)
+    setSelectedFromSplitId(null)
+    toast.success(`Item split ${ways} ways`)
+
     try {
       const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'splitItem',
-          itemId: selectedItemId,
-          fromSplitId: selectedFromSplitId,
+          itemId: capturedItemId,
+          fromSplitId: capturedFromSplitId,
           ways,
         }),
       })
@@ -278,19 +309,17 @@ function SplitUnifiedView({
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Split failed')
       }
-      setSelectedItemId(null)
-      setSelectedFromSplitId(null)
-      toast.success(`Item split ${ways} ways`)
       await loadSplits()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to split item')
+      await loadSplits()
     } finally {
       setSplittingItem(false)
       isSplitActionInFlightRef.current = false
     }
   }, [selectedItemId, selectedFromSplitId, splittingItem, parentOrderId, loadSplits])
 
-  // Merge all splits back to parent
+  // Merge all splits back to parent — optimistic close
   const handleMergeBack = useCallback(async () => {
     if (merging) return
     const hasPaidSplits = splits.some(s => s.isPaid)
@@ -299,24 +328,69 @@ function SplitUnifiedView({
       return
     }
     setMerging(true)
-    try {
-      const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`, { method: 'DELETE' })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || 'Merge failed')
-      }
-      toast.success('Splits merged back')
-      onMergeBack()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Merge failed')
-    } finally {
-      setMerging(false)
-    }
+    // Optimistic: close the view immediately
+    toast.success('Splits merged back')
+    onMergeBack()
+
+    // Fire API in background
+    fetch(`/api/orders/${parentOrderId}/split-tickets`, { method: 'DELETE' })
+      .then(res => {
+        if (!res.ok) return res.json().catch(() => ({})).then(d => { throw new Error(d.error || 'Merge failed') })
+      })
+      .catch(err => {
+        toast.error(err instanceof Error ? err.message : 'Merge failed — please try again')
+      })
   }, [merging, splits, parentOrderId, onMergeBack])
 
   const handleCreateCheck = useCallback(async () => {
     if (isSplitActionInFlightRef.current) return
     isSplitActionInFlightRef.current = true
+
+    // Optimistic: add temp check to local state immediately
+    const tempId = `temp-${Date.now()}`
+    const tempCheck: ManagedSplit = {
+      id: tempId,
+      splitIndex: splits.length + 1,
+      displayNumber: `Check ${splits.length + 1}`,
+      status: 'open',
+      subtotal: 0,
+      total: 0,
+      isPaid: false,
+      card: null,
+      items: [],
+    }
+    const snapshot = splits.map(s => ({ ...s, items: [...s.items] }))
+
+    // If item selected, optimistically move it to the new check
+    const capturedItemId = selectedItemId
+    const capturedFromSplitId = selectedFromSplitId
+    if (capturedItemId && capturedFromSplitId) {
+      const fromSplit = splits.find(s => s.id === capturedFromSplitId)
+      const movedItem = fromSplit?.items.find(i => i.id === capturedItemId)
+      if (movedItem) {
+        tempCheck.items = [movedItem]
+        tempCheck.total = movedItem.price * movedItem.quantity
+        tempCheck.subtotal = tempCheck.total
+        setSplits(prev => [
+          ...prev.map(s => {
+            if (s.id === capturedFromSplitId) {
+              const remaining = s.items.filter(i => i.id !== capturedItemId)
+              const newTotal = remaining.reduce((sum, i) => sum + i.price * i.quantity, 0)
+              return { ...s, items: remaining, total: newTotal, subtotal: newTotal }
+            }
+            return s
+          }),
+          tempCheck,
+        ])
+      } else {
+        setSplits(prev => [...prev, tempCheck])
+      }
+      setSelectedItemId(null)
+      setSelectedFromSplitId(null)
+    } else {
+      setSplits(prev => [...prev, tempCheck])
+    }
+
     try {
       const res = await fetch(`/api/orders/${parentOrderId}/split-tickets/create-check`, { method: 'POST' })
       if (!res.ok) {
@@ -324,31 +398,59 @@ function SplitUnifiedView({
         throw new Error(data.error || 'Failed to create check')
       }
       const newCheck = await res.json()
-      // If item selected, move it to the new check
-      if (selectedItemId && selectedFromSplitId) {
+      // If item was selected, move it on the server too
+      if (capturedItemId && capturedFromSplitId) {
         await fetch(`/api/orders/${parentOrderId}/split-tickets`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            itemId: selectedItemId,
-            fromSplitId: selectedFromSplitId,
+            itemId: capturedItemId,
+            fromSplitId: capturedFromSplitId,
             toSplitId: newCheck.id,
           }),
         })
-        setSelectedItemId(null)
-        setSelectedFromSplitId(null)
       }
+      // Refresh with server truth
       await loadSplits()
     } catch (err) {
+      // Rollback on error
+      setSplits(snapshot)
       toast.error(err instanceof Error ? err.message : 'Failed to create check')
     } finally {
       isSplitActionInFlightRef.current = false
     }
-  }, [parentOrderId, selectedItemId, selectedFromSplitId, loadSplits])
+  }, [parentOrderId, selectedItemId, selectedFromSplitId, splits, loadSplits])
 
   const handleDeleteCheck = useCallback(async (splitId: string) => {
     if (isSplitActionInFlightRef.current) return
     isSplitActionInFlightRef.current = true
+
+    // Optimistic: remove the check from local state immediately
+    const snapshot = splits.map(s => ({ ...s, items: [...s.items] }))
+    const deletedCheck = splits.find(s => s.id === splitId)
+    const remainingAfterDelete = splits.filter(s => s.id !== splitId)
+
+    // If this would leave only 1 split, it'll auto-merge on server
+    if (remainingAfterDelete.length <= 1) {
+      setSplits([])
+      onMergeBack()
+    } else {
+      // Move deleted check's items to the first remaining check
+      if (deletedCheck && deletedCheck.items.length > 0) {
+        const targetId = remainingAfterDelete[0].id
+        setSplits(remainingAfterDelete.map(s => {
+          if (s.id === targetId) {
+            const merged = [...s.items, ...deletedCheck.items]
+            const newTotal = merged.reduce((sum, i) => sum + i.price * i.quantity, 0)
+            return { ...s, items: merged, total: newTotal, subtotal: newTotal }
+          }
+          return s
+        }))
+      } else {
+        setSplits(remainingAfterDelete)
+      }
+    }
+
     try {
       const res = await fetch(`/api/orders/${parentOrderId}/split-tickets/${splitId}`, { method: 'DELETE' })
       if (!res.ok) {
@@ -357,17 +459,18 @@ function SplitUnifiedView({
       }
       const data = await res.json()
       if (data.merged) {
-        // Last split auto-merged back to parent — close split view
         onMergeBack()
       } else {
         await loadSplits()
       }
     } catch (err) {
+      // Rollback on error
+      setSplits(snapshot)
       toast.error(err instanceof Error ? err.message : 'Failed to delete check')
     } finally {
       isSplitActionInFlightRef.current = false
     }
-  }, [parentOrderId, loadSplits, onMergeBack])
+  }, [parentOrderId, splits, loadSplits, onMergeBack])
 
   const handleItemTap = useCallback((itemId: string, splitId: string) => {
     if (selectedItemId === itemId) {

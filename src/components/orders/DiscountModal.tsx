@@ -21,6 +21,10 @@ interface DiscountRule {
   isActive: boolean
 }
 
+// Module-level cache — discount rules rarely change during a shift
+let cachedDiscountRules: DiscountRule[] | null = null
+let discountCacheLocationId: string | null = null
+
 interface AppliedDiscount {
   id: string
   name: string
@@ -84,6 +88,13 @@ export function DiscountModal({
   }, [isOpen])
 
   const loadDiscountRules = async () => {
+    // Use cached rules if available for same location
+    if (cachedDiscountRules && discountCacheLocationId === locationId) {
+      setDiscountRules(cachedDiscountRules)
+      setIsLoading(false)
+      return
+    }
+
     setIsLoading(true)
     try {
       const params = new URLSearchParams({
@@ -94,7 +105,11 @@ export function DiscountModal({
       const response = await fetch(`/api/discounts?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setDiscountRules(data.discounts || [])
+        const rules = data.discounts || []
+        setDiscountRules(rules)
+        // Cache for subsequent opens
+        cachedDiscountRules = rules
+        discountCacheLocationId = locationId
       }
     } catch (err) {
       console.error('Failed to load discount rules:', err)

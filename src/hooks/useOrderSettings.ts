@@ -67,59 +67,149 @@ const DEFAULT_PRICE_ROUNDING: PriceRoundingSettings = {
   applyToCard: false,
 }
 
+// Module-level cache — shared across all useOrderSettings() consumers
+interface SettingsCache {
+  dualPricing: DualPricingSettings
+  paymentSettings: PaymentSettings
+  priceRounding: PriceRoundingSettings
+  taxRate: number
+  taxInclusiveLiquor: boolean
+  taxInclusiveFood: boolean
+  receiptSettings: Partial<ReceiptSettings>
+  requireCardForTab: boolean
+}
+let cachedSettings: SettingsCache | null = null
+let cacheTime = 0
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+let inflight: Promise<SettingsCache | null> | null = null
+
 export function useOrderSettings() {
-  const [dualPricing, setDualPricing] = useState<DualPricingSettings>(DEFAULT_DUAL_PRICING)
-  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>(DEFAULT_PAYMENT_SETTINGS)
-  const [priceRounding, setPriceRounding] = useState<PriceRoundingSettings>(DEFAULT_PRICE_ROUNDING)
-  const [taxRate, setTaxRate] = useState(0)
-  const [taxInclusiveLiquor, setTaxInclusiveLiquor] = useState(false)
-  const [taxInclusiveFood, setTaxInclusiveFood] = useState(false)
-  const [receiptSettings, setReceiptSettings] = useState<Partial<ReceiptSettings>>({})
-  const [requireCardForTab, setRequireCardForTab] = useState(false)
-  const [isLoading, setIsLoading] = useState(true)
+  const [dualPricing, setDualPricing] = useState<DualPricingSettings>(
+    cachedSettings?.dualPricing ?? DEFAULT_DUAL_PRICING
+  )
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>(
+    cachedSettings?.paymentSettings ?? DEFAULT_PAYMENT_SETTINGS
+  )
+  const [priceRounding, setPriceRounding] = useState<PriceRoundingSettings>(
+    cachedSettings?.priceRounding ?? DEFAULT_PRICE_ROUNDING
+  )
+  const [taxRate, setTaxRate] = useState(cachedSettings?.taxRate ?? 0)
+  const [taxInclusiveLiquor, setTaxInclusiveLiquor] = useState(cachedSettings?.taxInclusiveLiquor ?? false)
+  const [taxInclusiveFood, setTaxInclusiveFood] = useState(cachedSettings?.taxInclusiveFood ?? false)
+  const [receiptSettings, setReceiptSettings] = useState<Partial<ReceiptSettings>>(
+    cachedSettings?.receiptSettings ?? {}
+  )
+  const [requireCardForTab, setRequireCardForTab] = useState(cachedSettings?.requireCardForTab ?? false)
+  const [isLoading, setIsLoading] = useState(!cachedSettings)
+
+  const applySettings = (settings: any) => {
+    const result: SettingsCache = {
+      dualPricing: settings.dualPricing || DEFAULT_DUAL_PRICING,
+      paymentSettings: settings.payments || DEFAULT_PAYMENT_SETTINGS,
+      priceRounding: settings.priceRounding || DEFAULT_PRICE_ROUNDING,
+      taxRate: 0,
+      taxInclusiveLiquor: false,
+      taxInclusiveFood: false,
+      receiptSettings: settings.receipts || {},
+      requireCardForTab: settings.barTabs?.requireCardForTab ?? false,
+    }
+
+    if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
+      result.taxRate = settings.tax.defaultRate / 100
+    }
+    if (settings.tax?.taxInclusiveLiquor !== undefined) {
+      result.taxInclusiveLiquor = settings.tax.taxInclusiveLiquor
+    }
+    if (settings.tax?.taxInclusiveFood !== undefined) {
+      result.taxInclusiveFood = settings.tax.taxInclusiveFood
+    }
+
+    // Push to order store so calculateTotals() uses real location rate
+    useOrderStore.getState().setEstimatedTaxRate(result.taxRate)
+    // Push to seat-utils so seat balance calculations use real rate
+    setLocationTaxRate(result.taxRate)
+
+    // Update module cache
+    cachedSettings = result
+    cacheTime = Date.now()
+
+    // Update component state
+    setDualPricing(result.dualPricing)
+    setPaymentSettings(result.paymentSettings)
+    setPriceRounding(result.priceRounding)
+    setTaxRate(result.taxRate)
+    setTaxInclusiveLiquor(result.taxInclusiveLiquor)
+    setTaxInclusiveFood(result.taxInclusiveFood)
+    setReceiptSettings(result.receiptSettings)
+    setRequireCardForTab(result.requireCardForTab)
+  }
 
   const loadSettings = async () => {
-    try {
-      const response = await fetch('/api/settings')
-      if (response.ok) {
-        const data = await response.json()
-        const settings = data.settings || data
-
-        if (settings.dualPricing) {
-          setDualPricing(settings.dualPricing)
-        }
-        if (settings.priceRounding) {
-          setPriceRounding(settings.priceRounding)
-        }
-        if (typeof settings.tax?.defaultRate === 'number' && settings.tax.defaultRate >= 0) {
-          const rate = settings.tax.defaultRate / 100
-          setTaxRate(rate)
-          // Push to order store so calculateTotals() uses real location rate
-          useOrderStore.getState().setEstimatedTaxRate(rate)
-          // Push to seat-utils so seat balance calculations use real rate
-          setLocationTaxRate(rate)
-        }
-        if (settings.tax?.taxInclusiveLiquor !== undefined) {
-          setTaxInclusiveLiquor(settings.tax.taxInclusiveLiquor)
-        }
-        if (settings.tax?.taxInclusiveFood !== undefined) {
-          setTaxInclusiveFood(settings.tax.taxInclusiveFood)
-        }
-        if (settings.payments) {
-          setPaymentSettings(settings.payments)
-        }
-        if (settings.receipts) {
-          setReceiptSettings(settings.receipts)
-        }
-        if (settings.barTabs?.requireCardForTab !== undefined) {
-          setRequireCardForTab(settings.barTabs.requireCardForTab)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load settings:', error)
-    } finally {
+    // Check module cache (skip on explicit reload)
+    if (cachedSettings && Date.now() - cacheTime < CACHE_TTL) {
+      applySettings({
+        dualPricing: cachedSettings.dualPricing,
+        payments: cachedSettings.paymentSettings,
+        priceRounding: cachedSettings.priceRounding,
+        tax: {
+          defaultRate: cachedSettings.taxRate * 100,
+          taxInclusiveLiquor: cachedSettings.taxInclusiveLiquor,
+          taxInclusiveFood: cachedSettings.taxInclusiveFood,
+        },
+        receipts: cachedSettings.receiptSettings,
+        barTabs: { requireCardForTab: cachedSettings.requireCardForTab },
+      })
       setIsLoading(false)
+      return
     }
+
+    // Deduplicate concurrent fetches
+    if (inflight) {
+      const result = await inflight
+      if (result) {
+        applySettings({
+          dualPricing: result.dualPricing,
+          payments: result.paymentSettings,
+          priceRounding: result.priceRounding,
+          tax: {
+            defaultRate: result.taxRate * 100,
+            taxInclusiveLiquor: result.taxInclusiveLiquor,
+            taxInclusiveFood: result.taxInclusiveFood,
+          },
+          receipts: result.receiptSettings,
+          barTabs: { requireCardForTab: result.requireCardForTab },
+        })
+      }
+      setIsLoading(false)
+      return
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const response = await fetch('/api/settings')
+        if (response.ok) {
+          const data = await response.json()
+          const settings = data.settings || data
+          applySettings(settings)
+          return cachedSettings
+        }
+      } catch (error) {
+        console.error('Failed to load settings:', error)
+      } finally {
+        setIsLoading(false)
+        inflight = null
+      }
+      return null
+    })()
+    inflight = fetchPromise
+    await fetchPromise
+  }
+
+  const forceReload = async () => {
+    // Bust cache for explicit reloads
+    cachedSettings = null
+    cacheTime = 0
+    await loadSettings()
   }
 
   useEffect(() => {
@@ -136,6 +226,6 @@ export function useOrderSettings() {
     receiptSettings,
     requireCardForTab,
     isLoading,
-    reloadSettings: loadSettings,
+    reloadSettings: forceReload,
   }
 }
