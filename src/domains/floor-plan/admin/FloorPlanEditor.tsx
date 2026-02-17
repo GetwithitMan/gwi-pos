@@ -734,38 +734,67 @@ export function FloorPlanEditor({
     }
   }, [locationId, selectedRoomId]);
 
-  // Handle table creation
+  // Handle table creation — retries with incremented name on duplicate (409)
   const handleTableCreate = useCallback(
     async (tableData: Omit<EditorTable, 'id'>) => {
       if (!useDatabase || !locationId) return;
 
-      try {
-        const response = await fetch('/api/tables', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            locationId,
-            sectionId: selectedRoomId,
-            name: tableData.name,
-            abbreviation: tableData.abbreviation,
-            capacity: tableData.capacity,
-            posX: tableData.posX,
-            posY: tableData.posY,
-            width: tableData.width,
-            height: tableData.height,
-            rotation: tableData.rotation,
-            shape: tableData.shape,
-            seatPattern: tableData.seatPattern,
-            skipSeatGeneration: true,
-          }),
-        });
+      let name = tableData.name;
+      let abbreviation = tableData.abbreviation;
+      let attempts = 0;
+      const MAX_ATTEMPTS = 50;
 
-        if (response.ok) {
-          await fetchTables();
-          setRefreshKey((prev) => prev + 1);
+      while (attempts < MAX_ATTEMPTS) {
+        try {
+          const response = await fetch('/api/tables', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              locationId,
+              sectionId: selectedRoomId,
+              name,
+              abbreviation,
+              capacity: tableData.capacity,
+              posX: tableData.posX,
+              posY: tableData.posY,
+              width: tableData.width,
+              height: tableData.height,
+              rotation: tableData.rotation,
+              shape: tableData.shape,
+              seatPattern: tableData.seatPattern,
+              skipSeatGeneration: true,
+            }),
+          });
+
+          if (response.ok) {
+            await fetchTables();
+            setRefreshKey((prev) => prev + 1);
+            return;
+          }
+
+          if (response.status === 409) {
+            // Duplicate name — increment and retry
+            attempts++;
+            const match = name.match(/^(.+?)(\d+)$/);
+            if (match) {
+              const num = parseInt(match[2], 10) + 1;
+              name = `${match[1]}${num}`;
+              abbreviation = `T${num}`;
+            } else {
+              name = `${name} ${attempts + 1}`;
+              abbreviation = `${abbreviation}${attempts + 1}`;
+            }
+            continue;
+          }
+
+          // Other error
+          const errData = await response.json().catch(() => ({}));
+          console.error('Failed to create table:', errData.error || response.statusText);
+          return;
+        } catch (error) {
+          console.error('Failed to create table:', error);
+          return;
         }
-      } catch (error) {
-        console.error('Failed to create table:', error);
       }
     },
     [useDatabase, locationId, selectedRoomId, fetchTables]
