@@ -489,6 +489,7 @@ export function FloorPlanHome({
   const removeTableOrder = useFloorPlanStore(s => s.removeTableOrder)
   const addTableOrder = useFloorPlanStore(s => s.addTableOrder)
   const updateSingleTableStatus = useFloorPlanStore(s => s.updateSingleTableStatus)
+  const addSeatToTable = useFloorPlanStore(s => s.addSeatToTable)
 
   // No sync functions needed — Zustand store IS the source of truth
   // syncOrderToStore and syncLocalItemsToStore have been removed
@@ -1403,11 +1404,26 @@ export function FloorPlanHome({
           toast.info(`This table now has ${result.newTotalSeats} seats`)
         }
 
-        // Refresh floor plan to show the new temp seat on the table.
-        // Do NOT increment extraSeats here — the snapshot refresh will
-        // include the real temp Seat DB row in seats.length, so adding
-        // to extraSeats would double-count.
-        void loadFloorPlanData(false)
+        // Optimistic update: add the seat to the store immediately
+        // so the UI renders it without waiting for a full snapshot reload.
+        // The socket-driven snapshot refresh will reconcile with the real DB data.
+        if (activeTable) {
+          const existingSeats = activeTable.seats || []
+          const newSeatNumber = existingSeats.length + 1
+          const orbitRadius = Math.max(activeTable.width, activeTable.height) / 2 + 20
+          const angle = (newSeatNumber - 1) * (360 / (existingSeats.length + 1))
+          const radians = (angle - 90) * Math.PI / 180
+          addSeatToTable(targetTableId, {
+            id: `temp-seat-${Date.now()}`,
+            label: String(newSeatNumber),
+            seatNumber: newSeatNumber,
+            relativeX: Math.round(orbitRadius * Math.cos(radians)),
+            relativeY: Math.round(orbitRadius * Math.sin(radians)),
+            angle: Math.round(angle),
+            seatType: 'standard',
+            isTemporary: true,
+          })
+        }
       } else {
         // No saved order yet - add an extra seat locally (will become real on order save)
         setExtraSeats(prev => {
@@ -1426,7 +1442,7 @@ export function FloorPlanHome({
     } finally {
       isSeatAddInFlightRef.current = false
     }
-  }, [activeOrderId, activeTable, getTotalSeats])
+  }, [activeOrderId, activeTable, getTotalSeats, addSeatToTable])
 
   // Save modifier changes to API and update local state
   const handleSaveModifierChanges = useCallback(async (
@@ -1588,6 +1604,25 @@ export function FloorPlanHome({
         })
       }
 
+      // Optimistic: update table status to 'occupied' immediately so the
+      // floor plan tile turns blue the instant we close the panel, instead of
+      // waiting 1-5s for the full snapshot to return.
+      const sentOrderId = store.currentOrder?.id
+      const sentOrderNumber = store.currentOrder?.orderNumber
+      if (activeTableId && sentOrderId) {
+        addTableOrder(activeTableId, {
+          id: sentOrderId,
+          orderNumber: sentOrderNumber || 0,
+          guestCount: inlineOrderItems.length,
+          total: store.currentOrder?.subtotal || 0,
+          openedAt: new Date().toISOString(),
+          server: employeeId || '',
+          status: 'sent',
+        })
+      } else if (activeTableId) {
+        updateSingleTableStatus(activeTableId, 'occupied')
+      }
+
       // Return to floor plan view IMMEDIATELY — don't block on background refreshes
       setActiveOrderId(null)
       setActiveOrderNumber(null)
@@ -1606,7 +1641,7 @@ export function FloorPlanHome({
       isProcessingSendRef.current = false
       setIsSendingOrder(false)
     }
-  }, [inlineOrderItems, activeOrder.handleSendToKitchen, employeeId, activeTableId])
+  }, [inlineOrderItems, activeOrder.handleSendToKitchen, employeeId, activeTableId, addTableOrder, updateSingleTableStatus])
 
   // Save order to DB without sending to kitchen (for Pay before Send flow)
   const handleSaveOrderForPayment = useCallback(async () => {

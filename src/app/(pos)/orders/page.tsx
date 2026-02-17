@@ -435,6 +435,7 @@ export default function OrdersPage() {
   // Seat filter: when a seat is selected on the floor plan, filter items to that seat
   const selectedSeat = useFloorPlanStore(s => s.selectedSeat)
   const clearSelectedSeat = useFloorPlanStore(s => s.clearSelectedSeat)
+  const addTableOrder = useFloorPlanStore(s => s.addTableOrder)
   const filterSeatNumber = selectedSeat?.seatNumber ?? null
   const filteredOrderPanelItems = useMemo(() => {
     if (!filterSeatNumber) return orderPanelItems
@@ -1016,6 +1017,21 @@ export default function OrdersPage() {
       const orderId = useOrderStore.getState().currentOrder?.id || savedOrderId
       if (orderId) {
         const orderNum = orderId.slice(-6).toUpperCase()
+
+        // Optimistic: mark table as occupied immediately so floor plan
+        // tile turns blue without waiting for full snapshot reload
+        const sentTableId = useOrderStore.getState().currentOrder?.tableId
+        if (sentTableId) {
+          addTableOrder(sentTableId, {
+            id: orderId,
+            orderNumber: parseInt(orderNum, 10) || 0,
+            guestCount: currentOrder?.items.length || 0,
+            total: currentOrder?.subtotal || 0,
+            openedAt: new Date().toISOString(),
+            server: employee?.id || '',
+            status: 'sent',
+          })
+        }
 
         // Clear UI IMMEDIATELY — don't block on print
         clearOrder()
