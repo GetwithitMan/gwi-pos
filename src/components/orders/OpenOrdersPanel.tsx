@@ -210,7 +210,7 @@ export function OpenOrdersPanel({
     if (orderId && (trigger === 'paid' || trigger === 'voided')) {
       // Check if this is a split child being paid — refresh to update parent's split tabs
       const isSplitChild = orders.some(o => o.splits?.some(s => s.id === orderId))
-      if (isSplitChild || trigger === 'split') {
+      if (isSplitChild) {
         loadOrders() // Need to refresh parent's split data
       } else {
         // Delta: remove closed/voided order from local state (no fetch)
