@@ -3157,6 +3157,7 @@ export default function OrdersPage() {
               onClose={() => {
                 setShowSplitTicketManager(false)
                 setSplitManageMode(false)
+                setFloorPlanRefreshTrigger(prev => prev + 1) // refresh so split chips update
               }}
               onSplitApplied={() => {
                 // After creating splits in edit mode, switch to manage mode

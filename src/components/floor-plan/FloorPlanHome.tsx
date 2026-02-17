@@ -3747,6 +3747,7 @@ export function FloorPlanHome({
               setShowSplitTicketManager(false)
               setSplitManageMode(false)
               setSplitItemId(null)
+              loadFloorPlanData(false) // refresh snapshot so split chips update
             }}
             onSplitApplied={(splitData) => {
               if (splitData?.splitOrders?.length) {
