@@ -242,9 +242,10 @@ export default function MenuManagementPage() {
 
       if (menuResponse.ok) {
         const data = await menuResponse.json()
-        // Filter out liquor and drinks categories - they belong in Liquor Builder
+        // Filter out liquor categories - they belong in Liquor Builder
+        // Drinks (soft drinks, non-alcoholic) stay in the regular menu
         const foodCategories = data.categories.filter((c: Category) =>
-          c.categoryType !== 'liquor' && c.categoryType !== 'drinks'
+          c.categoryType !== 'liquor'
         )
         setCategories(foodCategories)
         // Force new array reference to ensure React re-renders
