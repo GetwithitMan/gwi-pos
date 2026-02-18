@@ -745,10 +745,18 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 **Impact:** Tabs can hold multiple cards. Existing cards shown on card payment step. Bright orange "Add Card to Tab" button on both screens. Bartender picks which card to charge.
 **Commits:** `682ce72` → `9114cd2` → `90d14ff` → `355ac1b` → `67ab2a8` → `80adef7`
 
+### Hotfix — Deleted Items Reappearing (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 60 | Filter soft-deleted items from order API includes (5 routes) | team-lead | ✅ |
+
+**Root cause:** Prisma `$extends` middleware only filters top-level queries, not nested `include` relations. Items with `deletedAt` set were returned by the API and reloaded into local state.
+**Commit:** `737484c`
+
 ### Wave 6F+ — Remaining Backlog
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 60 | Response format normalization | P2 | 68+ routes |
+| 61 | Response format normalization | P2 | 68+ routes |
 
 ---
 
@@ -773,4 +781,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 6E COMPLETE — 59/59 tasks complete, 500+ individual fixes applied across 105+ files*
+*Last updated: Wave 6E + Hotfix COMPLETE — 60/60 tasks complete, 505+ individual fixes applied across 108+ files*
