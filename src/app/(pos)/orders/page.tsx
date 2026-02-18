@@ -78,7 +78,7 @@ export default function OrdersPage() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const logout = useAuthStore(s => s.logout)
   const currentOrder = useOrderStore(s => s.currentOrder)
-  const { startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity, clearOrder } = useOrderStore.getState()
+  const { startOrder, updateOrderType, loadOrder, addItem, updateItem, removeItem, updateQuantity } = useOrderStore.getState()
   const hasDevAccess = useDevStore(s => s.hasDevAccess)
   const setHasDevAccess = useDevStore(s => s.setHasDevAccess)
 
@@ -102,6 +102,7 @@ export default function OrdersPage() {
     handleResend: sharedResend,
     handleToggleExpand,
     ensureOrderInDB,
+    clearOrder,
   } = activeOrderFull
 
   const [categories, setCategories] = useState<Category[]>([])
@@ -615,7 +616,7 @@ export default function OrdersPage() {
 
     if (pendingQty === 0) {
       ordersDigitBufferRef.current = ''
-      removeItem(quickPickSelectedId)
+      activeOrderFull.handleRemoveItem(quickPickSelectedId)
       return
     }
 
@@ -624,7 +625,7 @@ export default function OrdersPage() {
     ordersDigitTimerRef.current = setTimeout(() => {
       ordersDigitBufferRef.current = ''
     }, 600)
-  }, [quickPickSelectedId, updateQuantity, removeItem])
+  }, [quickPickSelectedId, updateQuantity, activeOrderFull])
 
   // Clear digit buffer on selection change
   useEffect(() => {

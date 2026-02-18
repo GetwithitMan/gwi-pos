@@ -53,8 +53,9 @@ export function useOrderPanelCallbacks({
   }, [engine])
 
   const onItemRemove = useCallback((itemId: string) => {
-    useOrderStore.getState().removeItem(itemId)
-  }, [])
+    // Delete from DB + local state (not just local)
+    activeOrder.handleRemoveItem(itemId)
+  }, [activeOrder])
 
   const onQuantityChange = useCallback((itemId: string, delta: number) => {
     const store = useOrderStore.getState()
@@ -62,11 +63,12 @@ export function useOrderPanelCallbacks({
     if (!item) return
     const newQty = item.quantity + delta
     if (newQty <= 0) {
-      store.removeItem(itemId)
+      // Delete from DB + local state (not just local)
+      activeOrder.handleRemoveItem(itemId)
     } else {
       store.updateItem(itemId, { quantity: newQty })
     }
-  }, [])
+  }, [activeOrder])
 
   const onItemHoldToggle = useCallback((itemId: string) => {
     const store = useOrderStore.getState()
