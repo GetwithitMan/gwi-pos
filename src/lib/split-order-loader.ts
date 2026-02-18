@@ -20,6 +20,7 @@ export async function fetchAndLoadSplitOrder(
       tableId: d.tableId || tableId || '',
       tabName: d.tabName,
       guestCount: d.guestCount || 1,
+      status: d.status,
       items: d.items || [],
       subtotal: Number(d.subtotal ?? 0),
       taxTotal: Number(d.taxTotal ?? 0),

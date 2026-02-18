@@ -38,6 +38,8 @@ export interface OrderPanelItemData {
   wasMade?: boolean
   // Ingredient modifications (No, Lite, Extra, On Side, Swap)
   ingredientModifications?: IngredientModification[]
+  // Split label for grouped display (e.g. "68-1")
+  splitLabel?: string
 }
 
 interface OrderPanelItemProps {

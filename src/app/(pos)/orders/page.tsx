@@ -53,6 +53,7 @@ import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import { BartenderView } from '@/components/bartender'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import { UnifiedPOSHeader } from '@/components/orders/UnifiedPOSHeader'
+import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
 import { useQuickPick } from '@/hooks/useQuickPick'
@@ -391,9 +392,10 @@ export default function OrdersPage() {
         .catch(() => setOrderSplitChips([]))
       return
     }
-    // If current order is a sibling split (its ID is in the chips list), keep chips visible
-    if (splitParentId && orderSplitChips.some(c => c.id === orderId)) {
-      return // Don't clear — we're navigating between splits
+    // If we have a splitParentId, we're in split context — keep chips visible
+    // (covers navigating between sibling splits AND newly created splits)
+    if (splitParentId) {
+      return
     }
     // Otherwise, leaving split context entirely
     if (orderSplitChips.length > 0) {
@@ -1561,8 +1563,19 @@ export default function OrdersPage() {
     await sharedSeatChange(itemId, seat)
   }
 
+  // Flash split chips to draw attention when user tries to add items to a split parent
+  const [splitChipsFlashing, setSplitChipsFlashing] = useState(false)
+
   const handleAddItem = async (item: MenuItem) => {
     if (!item.isAvailable) return
+
+    // Block adding items directly to a split parent — must select a split first
+    if (currentOrder?.status === 'split' && orderSplitChips.length > 0) {
+      toast.warning('Select a split check or add a new one')
+      setSplitChipsFlashing(true)
+      setTimeout(() => setSplitChipsFlashing(false), 1500)
+      return
+    }
 
     // Handle combo items
     if (item.itemType === 'combo') {
@@ -2577,19 +2590,68 @@ export default function OrdersPage() {
                 }
               }
 
-              // ── New tab (no existing order or no card on file) → card auth flow ──
+              // ── New tab (no existing order or no card on file) ──
               const currentStore = useOrderStore.getState()
               if (currentStore.currentOrder && currentStore.currentOrder.orderType !== 'bar_tab') {
                 currentStore.updateOrderType('bar_tab')
               }
 
-              const orderId = existingOrderId || await ensureOrderInDB(employee?.id)
-              if (orderId) {
-                setSavedOrderId(orderId)
-                setCardTabOrderId(orderId)
-                setShowCardTabFlow(true)
+              if (requireCardForTab) {
+                // Card required → card auth flow
+                const orderId = existingOrderId || await ensureOrderInDB(employee?.id)
+                if (orderId) {
+                  setSavedOrderId(orderId)
+                  setCardTabOrderId(orderId)
+                  setShowCardTabFlow(true)
+                } else {
+                  toast.error('Failed to save order — please try again')
+                }
               } else {
-                toast.error('Failed to save order — please try again')
+                // Card NOT required → show tab name prompt with keyboard
+                // (reader stays in ready mode — if card is tapped it will be picked up)
+                setTabNameInput('')
+                setTabNameCallback(() => async () => {
+                  // After name is entered, save order with items and send to kitchen
+                  const store = useOrderStore.getState()
+                  const tabName = store.currentOrder?.tabName
+                  if (!tabName) return
+                  setIsSendingOrder(true)
+                  try {
+                    // Ensure order + all items are in DB
+                    const orderId = await ensureOrderInDB(employee?.id)
+                    if (!orderId) {
+                      toast.error('Failed to save order')
+                      return
+                    }
+                    setSavedOrderId(orderId)
+
+                    // Update tabName on the server (ensureOrderInDB may have created it without the name)
+                    await fetch(`/api/orders/${orderId}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ tabName }),
+                    })
+
+                    // Use the shared send hook — handles item appending, delays, coursing
+                    await activeOrderFull.handleSendToKitchen(employee?.id)
+
+                    toast.success('Order sent to kitchen')
+                    clearOrder()
+                    setSavedOrderId(null)
+                    setOrderSent(false)
+                    setSelectedOrderType(null)
+                    setOrderCustomFields({})
+                    setTabsRefreshTrigger(prev => prev + 1)
+                    // Stay in bar mode — start fresh bar_tab order
+                    startOrder('bar_tab')
+                  } catch (err) {
+                    console.error('[onStartTab] Send failed:', err)
+                    toast.error('Failed to send to kitchen')
+                  } finally {
+                    setIsSendingOrder(false)
+                  }
+                })
+                setShowTabNamePrompt(true)
               }
             }}
             onOtherPayment={async () => {
@@ -2647,6 +2709,33 @@ export default function OrdersPage() {
             hideHeader={viewMode === 'floor-plan'}
             className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0'}
             splitChips={orderSplitChips.length > 0 ? orderSplitChips : undefined}
+            splitChipsFlashing={splitChipsFlashing}
+            onAddSplit={orderSplitChips.length > 0 ? async () => {
+              const parentId = splitParentId || currentOrder?.id
+              if (!parentId) return
+              try {
+                const res = await fetch(`/api/orders/${parentId}/split-tickets/create-check`, { method: 'POST' })
+                if (!res.ok) {
+                  toast.error('Failed to create new split')
+                  return
+                }
+                const newSplit = await res.json()
+                // Add to chips and load the new split
+                setOrderSplitChips(prev => [...prev, {
+                  id: newSplit.id,
+                  label: newSplit.displayNumber,
+                  isPaid: false,
+                  total: 0,
+                }])
+                const success = await fetchAndLoadSplitOrder(newSplit.id, currentOrder?.tableId ?? undefined)
+                if (success) {
+                  setSavedOrderId(newSplit.id)
+                }
+                toast.success(`Split ${newSplit.displayNumber} created`)
+              } catch {
+                toast.error('Failed to create new split')
+              }
+            } : undefined}
             onSplitChipSelect={orderSplitChips.length > 0 ? async (splitId) => {
               const success = await fetchAndLoadSplitOrder(splitId, currentOrder?.tableId ?? undefined)
               if (success) {
@@ -2715,14 +2804,26 @@ export default function OrdersPage() {
           onViewModeChange={(mode) => {
             const order = useOrderStore.getState().currentOrder
             if (mode === 'bartender') {
-              if (order?.orderType === 'bar_tab') setMode('bar')
+              setMode('bar')
               setViewMode('bartender')
+              // Ensure order type is bar_tab when switching to bartender view
+              if (order && order.orderType !== 'bar_tab') {
+                updateOrderType('bar_tab')
+              } else if (!order) {
+                startOrder('bar_tab')
+              }
             } else {
               if (order?.id && order.tableId) {
                 setOrderToLoad({ id: order.id, orderNumber: order.orderNumber || 0, orderType: order.orderType })
               }
-              if (order?.orderType !== 'bar_tab') setMode('food')
+              setMode('food')
               setViewMode('floor-plan')
+              // Clear any bar_tab order so floor plan starts clean
+              // FloorPlanHome will handle order creation when a table is tapped
+              // Guard: don't clear split orders (would orphan child tickets)
+              if (order?.orderType === 'bar_tab' && order?.status !== 'split') {
+                clearOrder()
+              }
             }
           }}
           activeOrderType={currentOrder?.orderType || null}
@@ -3401,8 +3502,8 @@ export default function OrdersPage() {
           <Suspense fallback={null}>
             <SplitCheckScreen
               mode={splitManageMode ? 'manage' : 'edit'}
-              orderId={savedOrderId || ''}
-              parentOrderId={splitManageMode ? savedOrderId || '' : undefined}
+              orderId={splitManageMode ? (splitParentId || savedOrderId || '') : (savedOrderId || '')}
+              parentOrderId={splitManageMode ? (splitParentId || savedOrderId || '') : undefined}
               items={splitManageMode ? [] : splitCheckItems}
               onClose={() => {
                 setShowSplitTicketManager(false)
@@ -3541,7 +3642,7 @@ export default function OrdersPage() {
 
         {showTabNamePrompt && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="rounded-2xl shadow-2xl w-full max-w-sm p-6" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div className="rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[95vh] overflow-y-auto" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
               {tabCardInfo?.cardLast4 ? (
                 <>
                   <h3 className="text-lg font-bold text-white mb-2">Tab Started</h3>
@@ -3555,46 +3656,39 @@ export default function OrdersPage() {
                     )}
                   </div>
                   <p className="text-sm text-gray-400 mb-3">Add a nickname? (shown above cardholder name)</p>
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="e.g. Blue shirt, Patio group..."
-                    value={tabNameInput}
-                    onChange={(e) => setTabNameInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const store = useOrderStore.getState()
-                        if (store.currentOrder && tabNameInput.trim()) {
-                          store.currentOrder.tabName = `${tabNameInput.trim()} — ${tabCardInfo.cardholderName || ''}`
+                  <div
+                    className="w-full px-4 py-3 rounded-xl text-lg min-h-[48px] flex items-center"
+                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: tabNameInput ? 'white' : 'rgba(255,255,255,0.4)' }}
+                  >
+                    {tabNameInput || 'e.g. Blue shirt, Patio group...'}
+                  </div>
+                  <div className="mt-3">
+                    <OnScreenKeyboard
+                      value={tabNameInput}
+                      onChange={setTabNameInput}
+                      onSubmit={() => {
+                        if (tabNameInput.trim()) {
+                          const fullName = tabCardInfo.cardholderName
+                            ? `${tabNameInput.trim()} — ${tabCardInfo.cardholderName}`
+                            : tabNameInput.trim()
+                          useOrderStore.getState().updateOrderType('bar_tab', { tabName: fullName })
                         }
                         setShowTabNamePrompt(false)
+                        setTabNameInput('')
                         tabNameCallback?.()
-                      }
-                    }}
-                    className="w-full px-4 py-3 rounded-xl text-white text-lg"
-                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
-                  />
+                        setTabNameCallback(null)
+                      }}
+                      theme="dark"
+                      submitLabel="Send to Tab"
+                    />
+                  </div>
                   <div className="flex gap-3 mt-4">
                     <button
-                      onClick={() => { setShowTabNamePrompt(false); tabNameCallback?.() }}
+                      onClick={() => { setShowTabNamePrompt(false); setTabNameInput(''); tabNameCallback?.(); setTabNameCallback(null) }}
                       className="flex-1 py-3 rounded-xl text-gray-300 font-semibold"
                       style={{ background: 'rgba(255,255,255,0.08)' }}
                     >
                       Skip
-                    </button>
-                    <button
-                      onClick={() => {
-                        const store = useOrderStore.getState()
-                        if (store.currentOrder && tabNameInput.trim()) {
-                          store.currentOrder.tabName = `${tabNameInput.trim()} — ${tabCardInfo.cardholderName || ''}`
-                        }
-                        setShowTabNamePrompt(false)
-                        tabNameCallback?.()
-                      }}
-                      className="flex-1 py-3 rounded-xl text-white font-bold"
-                      style={{ background: tabNameInput.trim() ? '#8b5cf6' : 'rgba(255,255,255,0.1)', opacity: tabNameInput.trim() ? 1 : 0.5 }}
-                    >
-                      Send to Tab
                     </button>
                   </div>
                 </>
@@ -3602,44 +3696,35 @@ export default function OrdersPage() {
                 <>
                   <h3 className="text-lg font-bold text-white mb-1">Tab Name</h3>
                   <p className="text-sm text-gray-400 mb-4">Enter a name for this tab</p>
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="e.g. John, Table 5, etc."
-                    value={tabNameInput}
-                    onChange={(e) => setTabNameInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && tabNameInput.trim()) {
-                        const store = useOrderStore.getState()
-                        if (store.currentOrder) { store.currentOrder.tabName = tabNameInput.trim() }
+                  <div
+                    className="w-full px-4 py-3 rounded-xl text-lg min-h-[48px] flex items-center"
+                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: tabNameInput ? 'white' : 'rgba(255,255,255,0.4)' }}
+                  >
+                    {tabNameInput || 'e.g. John, Table 5, etc.'}
+                  </div>
+                  <div className="mt-3">
+                    <OnScreenKeyboard
+                      value={tabNameInput}
+                      onChange={setTabNameInput}
+                      onSubmit={() => {
+                        if (!tabNameInput.trim()) return
+                        useOrderStore.getState().updateOrderType('bar_tab', { tabName: tabNameInput.trim() })
                         setShowTabNamePrompt(false)
+                        setTabNameInput('')
                         tabNameCallback?.()
-                      }
-                    }}
-                    className="w-full px-4 py-3 rounded-xl text-white text-lg"
-                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)' }}
-                  />
+                        setTabNameCallback(null)
+                      }}
+                      theme="dark"
+                      submitLabel="Start Tab"
+                    />
+                  </div>
                   <div className="flex gap-3 mt-4">
                     <button
-                      onClick={() => { setShowTabNamePrompt(false); setTabNameCallback(null) }}
+                      onClick={() => { setShowTabNamePrompt(false); setTabNameInput(''); setTabNameCallback(null) }}
                       className="flex-1 py-3 rounded-xl text-gray-400 font-semibold"
                       style={{ background: 'rgba(255,255,255,0.05)' }}
                     >
                       Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (!tabNameInput.trim()) return
-                        const store = useOrderStore.getState()
-                        if (store.currentOrder) { store.currentOrder.tabName = tabNameInput.trim() }
-                        setShowTabNamePrompt(false)
-                        tabNameCallback?.()
-                      }}
-                      disabled={!tabNameInput.trim()}
-                      className="flex-1 py-3 rounded-xl text-white font-bold"
-                      style={{ background: tabNameInput.trim() ? '#8b5cf6' : 'rgba(255,255,255,0.1)', opacity: tabNameInput.trim() ? 1 : 0.5 }}
-                    >
-                      Start Tab
                     </button>
                   </div>
                 </>

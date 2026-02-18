@@ -141,6 +141,8 @@ export interface OrderPanelProps {
   onSplitChipSelect?: (splitOrderId: string) => void
   onManageSplits?: () => void
   onPayAll?: () => void
+  splitChipsFlashing?: boolean
+  onAddSplit?: () => void
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -255,6 +257,8 @@ export const OrderPanel = memo(function OrderPanel({
   onSplitChipSelect,
   onManageSplits,
   onPayAll,
+  splitChipsFlashing,
+  onAddSplit,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -343,6 +347,26 @@ export const OrderPanel = memo(function OrderPanel({
         .reduce((sum, i) => sum + calculateItemTotal(i), 0)
       return { seatNumber: seatNum, items: seatItems, subtotal }
     })
+  }, [items])
+
+  // Auto-group items by split label when viewing a split parent order
+  const splitGroups = useMemo(() => {
+    const hasSplitLabels = items.some(i => i.splitLabel)
+    if (!hasSplitLabels) return null
+    const labelMap = new Map<string, OrderPanelItemData[]>()
+    for (const item of items) {
+      const label = item.splitLabel || 'Unsplit'
+      const existing = labelMap.get(label) || []
+      existing.push(item)
+      labelMap.set(label, existing)
+    }
+    return Array.from(labelMap.entries()).map(([label, groupItems]) => ({
+      label,
+      items: groupItems,
+      subtotal: groupItems
+        .filter(i => !i.status || i.status === 'active')
+        .reduce((sum, i) => sum + calculateItemTotal(i), 0),
+    }))
   }, [items])
 
   // Card price multiplier for dual pricing display (e.g. 1.04 for 4%)
@@ -690,6 +714,55 @@ export const OrderPanel = memo(function OrderPanel({
               </div>
             )
           })()
+        ) : splitGroups ? (
+          // Split-grouped rendering (viewing split parent with all child items)
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
+            {splitGroups.map(group => {
+              const groupItems = group.items
+              if (groupItems.length === 0) return null
+              return (
+                <div key={`split-${group.label}`} style={{
+                  border: '1px solid rgba(139, 92, 246, 0.3)',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                }}>
+                  {/* Split check header */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    background: 'rgba(139, 92, 246, 0.08)',
+                    borderBottom: '1px solid rgba(139, 92, 246, 0.2)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{
+                        width: '8px', height: '8px', borderRadius: '50%',
+                        background: '#8b5cf6',
+                      }} />
+                      <span style={{
+                        fontSize: '12px', fontWeight: 700,
+                        color: '#c4b5fd',
+                      }}>
+                        Check {group.label}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#64748b' }}>
+                        {groupItems.length} item{groupItems.length !== 1 ? 's' : ''}
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '12px', fontWeight: 600,
+                      color: '#c4b5fd',
+                    }}>
+                      {formatCurrency(group.subtotal)}
+                    </span>
+                  </div>
+                  {/* Split items */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
+                    {renderItemList(groupItems)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         ) : autoSeatGroups ? (
           // Auto seat-grouped rendering (pre-split checks)
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '20px' }}>
@@ -768,7 +841,54 @@ export const OrderPanel = memo(function OrderPanel({
         }}>
           SENT TO KITCHEN ({sentItems.length})
         </div>
-        {autoSeatGroups ? (
+        {splitGroups ? (
+          // Split-grouped sent items
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {splitGroups.map(group => {
+              const groupSent = group.items.filter(i =>
+                i.sentToKitchen || (i.kitchenStatus && i.kitchenStatus !== 'pending')
+              )
+              if (groupSent.length === 0) return null
+              return (
+                <div key={`sent-split-${group.label}`} style={{
+                  border: '1px solid rgba(139, 92, 246, 0.2)',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  opacity: 0.7,
+                }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '6px 12px',
+                    background: 'rgba(139, 92, 246, 0.06)',
+                    borderBottom: '1px solid rgba(139, 92, 246, 0.15)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{
+                        width: '8px', height: '8px', borderRadius: '50%',
+                        background: '#8b5cf6',
+                      }} />
+                      <span style={{
+                        fontSize: '11px', fontWeight: 700,
+                        color: '#c4b5fd',
+                      }}>
+                        Check {group.label}
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '11px', fontWeight: 600,
+                      color: '#c4b5fd',
+                    }}>
+                      {formatCurrency(group.subtotal)}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
+                    {renderItemList(groupSent)}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ) : autoSeatGroups ? (
           // Seat-grouped sent items
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {autoSeatGroups.map(group => {
@@ -1142,7 +1262,16 @@ export const OrderPanel = memo(function OrderPanel({
               )}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
+          <div style={{
+            display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4,
+            animation: splitChipsFlashing ? 'splitChipsFlash 0.3s ease-in-out 3' : undefined,
+          }}>
+            <style>{`
+              @keyframes splitChipsFlash {
+                0%, 100% { background: transparent; }
+                50% { background: rgba(168, 85, 247, 0.2); }
+              }
+            `}</style>
             {splitChips.map(split => (
               <button
                 key={split.id}
@@ -1169,6 +1298,22 @@ export const OrderPanel = memo(function OrderPanel({
                 )}
               </button>
             ))}
+            {onAddSplit && (
+              <button
+                type="button"
+                onClick={onAddSplit}
+                style={{
+                  padding: '3px 7px', borderRadius: 6,
+                  border: '1px dashed rgba(168,85,247,0.5)',
+                  background: 'rgba(168,85,247,0.08)',
+                  color: '#c084fc',
+                  fontSize: 11, fontWeight: 600,
+                  display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer',
+                }}
+              >
+                + New
+              </button>
+            )}
           </div>
         </div>
       )}

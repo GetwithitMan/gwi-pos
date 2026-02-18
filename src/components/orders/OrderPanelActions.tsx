@@ -553,9 +553,9 @@ export const OrderPanelActions = memo(function OrderPanelActions({
 
         const needsCard = isNewTab && requireCardForTab
         const label = isSending
-          ? (isNewTab ? 'Authorizing...' : 'Sending...')
+          ? (needsCard ? 'Authorizing...' : 'Sending...')
           : isNewTab
-          ? (needsCard ? 'Start Tab' : 'Start Tab')
+          ? (needsCard ? '💳 Start Tab' : 'Start Tab')
           : 'Send'
         const bg = isNewTab ? '#8b5cf6' : '#ea580c'
         const glow = isNewTab ? 'rgba(139, 92, 246, 0.3)' : 'rgba(234, 88, 12, 0.3)'
@@ -581,7 +581,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
                 boxShadow: hasPendingItems && !isSending ? `0 0 20px ${glow}` : 'none',
               }}
             >
-              {needsCard && '💳 '}{label}
+              {label}
             </button>
             {needsCard && hasPendingItems && (
               <div style={{ fontSize: '10px', color: '#a78bfa', textAlign: 'center', marginBottom: '8px' }}>
@@ -615,6 +615,25 @@ export const OrderPanelActions = memo(function OrderPanelActions({
               ${cashTotal.toFixed(2)}
             </div>
           </button>
+          {onPrintCheck && (
+            <button
+              onClick={onPrintCheck}
+              style={{
+                padding: '8px 12px',
+                background: 'rgba(234, 179, 8, 0.12)',
+                border: '1px solid rgba(234, 179, 8, 0.3)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                textAlign: 'center',
+                transition: 'all 0.15s ease',
+                color: '#fbbf24',
+                fontSize: '11px',
+                fontWeight: 600,
+              }}
+            >
+              🧾 Print
+            </button>
+          )}
           <button
             onClick={() => handlePaymentModeChange('card')}
             style={{
@@ -796,23 +815,22 @@ export const OrderPanelActions = memo(function OrderPanelActions({
             💵 Cash
           </button>
         )}
-        {onPrintCheck && hasItems && (
+        {onOtherPayment && hasItems && (
           <button
-            onClick={onPrintCheck}
+            onClick={onOtherPayment}
             style={{
-              flex: 1,
-              padding: '14px',
+              padding: '14px 10px',
               borderRadius: '10px',
-              background: 'rgba(234, 179, 8, 0.12)',
-              border: '1px solid rgba(234, 179, 8, 0.3)',
-              color: '#fbbf24',
-              fontSize: '14px',
+              border: '1px solid rgba(148, 163, 184, 0.25)',
+              background: 'rgba(148, 163, 184, 0.1)',
+              color: '#94a3b8',
+              fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer',
               transition: 'all 0.2s ease',
             }}
           >
-            🧾 Print
+            Other
           </button>
         )}
         {onPay && (
@@ -857,26 +875,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
       </div>
 
       {/* Secondary actions */}
-      {hasItems && (onDiscount || onClear || onCancelOrder || onSplit || onOtherPayment) && (
-        <div style={{ display: 'grid', gridTemplateColumns: [onOtherPayment, onSplit, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onOtherPayment, onSplit, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
-          {onOtherPayment && (
-            <button
-              onClick={onOtherPayment}
-              style={{
-                padding: '8px 12px',
-                borderRadius: '8px',
-                border: '1px solid rgba(148, 163, 184, 0.25)',
-                background: 'rgba(148, 163, 184, 0.1)',
-                color: '#94a3b8',
-                fontSize: '12px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              Other
-            </button>
-          )}
+      {hasItems && (onDiscount || onClear || onCancelOrder || onSplit) && (
+        <div style={{ display: 'grid', gridTemplateColumns: [onSplit, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onSplit, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
           {onSplit && (
             <button
               onClick={onSplit}
@@ -980,27 +980,6 @@ export const OrderPanelActions = memo(function OrderPanelActions({
         </div>
       )}
 
-      {/* Hide / Dismiss — always available to go back to the floor plan / tab list */}
-      {onHide && (
-        <button
-          onClick={onHide}
-          style={{
-            width: '100%',
-            padding: '10px',
-            borderRadius: '8px',
-            border: '1px solid rgba(148, 163, 184, 0.15)',
-            background: 'rgba(148, 163, 184, 0.05)',
-            color: '#64748b',
-            fontSize: '12px',
-            fontWeight: 500,
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-            marginTop: hasItems ? '0' : '10px',
-          }}
-        >
-          Hide
-        </button>
-      )}
     </div>
   )
 })

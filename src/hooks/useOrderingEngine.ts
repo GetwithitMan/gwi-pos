@@ -12,6 +12,7 @@
 
 import { useCallback, useState, useRef } from 'react'
 import { useOrderStore } from '@/stores/order-store'
+import { toast } from '@/stores/toast-store'
 import type { PizzaOrderConfig } from '@/types'
 
 // ============================================================================
@@ -320,6 +321,13 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
    * and either adds directly or triggers a modal via pendingItem / onOpen* callbacks.
    */
   const handleMenuItemTap = useCallback(async (item: EngineMenuItem) => {
+    // Block adding items to a split parent — must select a split first
+    const currentStatus = useOrderStore.getState().currentOrder?.status
+    if (currentStatus === 'split') {
+      toast.warning('Select a split check or add a new one')
+      return
+    }
+
     // 1. Timed rental → open rate picker
     if (item.itemType === 'timed_rental') {
       if (onOpenTimedRental) {

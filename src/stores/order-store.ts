@@ -101,6 +101,8 @@ interface OrderItem {
   pizzaConfig?: PizzaOrderConfigStore
   // Category type for tax-inclusive pricing
   categoryType?: string
+  // Split label for grouped display (e.g. "68-1")
+  splitLabel?: string
 }
 
 export interface CourseDelay {
@@ -197,6 +199,8 @@ interface LoadedOrderData {
     })[]
     // Pizza configuration
     pizzaConfig?: PizzaOrderConfigStore
+    // Split label for grouped display (e.g. "68-1")
+    splitLabel?: string
   }[]
   subtotal: number
   discountTotal?: number
@@ -388,6 +392,8 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       })),
       // Pizza configuration
       pizzaConfig: item.pizzaConfig,
+      // Split label for grouped display
+      splitLabel: item.splitLabel,
     }))
 
     set({

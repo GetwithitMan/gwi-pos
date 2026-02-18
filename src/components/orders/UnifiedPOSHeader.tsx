@@ -235,7 +235,7 @@ export const UnifiedPOSHeader = memo(function UnifiedPOSHeader({
               accentColor={ot.color}
               onClick={() => {
                 if (isDineIn) { onViewModeChange('floor-plan'); onTablesClick() }
-                else if (isBarTab) { onViewModeChange('bartender') }
+                else if (isBarTab) { onViewModeChange('bartender'); onQuickOrderType(ot.slug) }
                 else { onViewModeChange('floor-plan'); onQuickOrderType(ot.slug) }
               }}
             >

@@ -105,6 +105,7 @@ type InlineOrderItem = {
   delayMinutes?: number | null
   delayStartedAt?: string | null
   delayFiredAt?: string | null
+  splitLabel?: string
   ingredientModifications?: {
     ingredientId: string
     name: string
@@ -362,6 +363,7 @@ export function FloorPlanHome({
       voidReason: item.voidReason,
       wasMade: item.wasMade,
       categoryType: item.categoryType,
+      splitLabel: item.splitLabel,
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items]) // Re-derive when hook items change (hook subscribes to store)
@@ -860,6 +862,52 @@ export function FloorPlanHome({
 
         // Load the full order into Zustand store — store.loadOrder handles all item mapping
         const store = useOrderStore.getState()
+
+        // If split parent, fetch all child split items and merge them for combined view
+        let mergedItems = data.items || []
+        let mergedSubtotal = Number(data.subtotal) || 0
+        let mergedTax = Number(data.taxTotal) || 0
+        let mergedTip = Number(data.tipTotal) || 0
+        let mergedTotal = Number(data.total) || 0
+
+        if (data.status === 'split') {
+          try {
+            const splitRes = await fetch(`/api/orders/${orderToLoad.id}/split-tickets`)
+            if (splitRes.ok) {
+              const splitData = await splitRes.json()
+              const splits = splitData.splitOrders || []
+              if (Array.isArray(splits) && splits.length > 0) {
+                mergedItems = []
+                mergedSubtotal = 0
+                mergedTax = 0
+                mergedTip = 0
+                mergedTotal = 0
+                for (const split of splits) {
+                  const label = split.displayNumber || split.orderNumber
+                  for (const item of (split.items || [])) {
+                    mergedItems.push({
+                      ...item,
+                      menuItemId: item.menuItemId || item.id,
+                      kitchenStatus: item.isSent || item.isCompleted ? 'sent' : 'pending',
+                      modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; preModifier?: string }) => ({
+                        ...m,
+                        modifierId: m.id,
+                      })),
+                      splitLabel: String(label),
+                    })
+                  }
+                  mergedSubtotal += Number(split.subtotal) || 0
+                  mergedTax += Number(split.taxTotal) || 0
+                  mergedTip += Number(split.tipTotal) || 0
+                  mergedTotal += Number(split.total) || 0
+                }
+              }
+            }
+          } catch (err) {
+            console.error('[FloorPlanHome] Failed to fetch split tickets:', err)
+          }
+        }
+
         store.loadOrder({
           id: orderToLoad.id,
           orderNumber: data.orderNumber ?? orderToLoad.orderNumber,
@@ -867,12 +915,13 @@ export function FloorPlanHome({
           tableId: data.tableId || orderToLoad.tableId,
           tabName: data.tabName,
           guestCount: data.guestCount || 1,
-          items: data.items || [],
-          subtotal: Number(data.subtotal) || 0,
+          status: data.status,
+          items: mergedItems,
+          subtotal: mergedSubtotal,
           discountTotal: Number(data.discountTotal) || 0,
-          taxTotal: Number(data.taxTotal) || 0,
-          tipTotal: Number(data.tipTotal) || 0,
-          total: Number(data.total) || 0,
+          taxTotal: mergedTax,
+          tipTotal: mergedTip,
+          total: mergedTotal,
         })
 
         // Notify parent that order is loaded
@@ -1014,8 +1063,12 @@ export function FloorPlanHome({
   // Handle category click - toggle between tables and menu view
   // Uses refs for stable callback (no recreation on state change = no Framer Motion re-evals)
   // Filters from allMenuItems client-side instead of making per-category API calls
+  // Use a ref so the useCallback closure always sees the latest value
+  const tableRequiredButMissingRef = useRef(tableRequiredButMissing)
+  tableRequiredButMissingRef.current = tableRequiredButMissing
+
   const handleCategoryClick = useCallback((categoryId: string | null) => {
-    if (tableRequiredButMissing) {
+    if (tableRequiredButMissingRef.current) {
       toast.warning('Tap a table on the floor plan to start an order')
       return
     }
@@ -1115,21 +1168,8 @@ export function FloorPlanHome({
 
     if (isActiveOrder) {
       const currentOrder = primaryTable.currentOrder!
-      // Check for split orders — go straight to SplitCheckScreen manage mode
-      const hasSplits = orderStatus === 'split' &&
-                        (currentOrder.splitOrders?.length ?? 0) > 0
-      if (hasSplits) {
-        setActiveOrderId(currentOrder.id)
-        setActiveOrderNumber(String(currentOrder.orderNumber))
-        // Route to parent's SplitCheckScreen (owned by orders/page.tsx)
-        if (onOpenSplitManager) {
-          onOpenSplitManager(currentOrder.id)
-        }
-        setShowOrderPanel(false)
-        return
-      }
 
-      // Load existing order items from this table
+      // Load existing order items from this table (including split parents)
       setActiveOrderId(currentOrder.id)
       setActiveOrderNumber(String(currentOrder.orderNumber))
       try {
@@ -1139,6 +1179,53 @@ export function FloorPlanHome({
           // Use loadOrder to atomically set tableId + items in Zustand store
           // store.loadOrder handles ALL item field mapping — one path, no duplication
           const store = useOrderStore.getState()
+
+          // If split parent, fetch all child split items and merge them for combined view
+          let mergedItems = data.items || []
+          let mergedSubtotal = Number(data.subtotal) || 0
+          let mergedTax = Number(data.taxTotal) || 0
+          let mergedTip = Number(data.tipTotal) || 0
+          let mergedTotal = Number(data.total) || 0
+
+          if (data.status === 'split') {
+            try {
+              const splitRes = await fetch(`/api/orders/${currentOrder.id}/split-tickets`)
+              if (splitRes.ok) {
+                const splitData = await splitRes.json()
+                const splits = splitData.splitOrders || []
+                if (Array.isArray(splits) && splits.length > 0) {
+                  mergedItems = []
+                  mergedSubtotal = 0
+                  mergedTax = 0
+                  mergedTip = 0
+                  mergedTotal = 0
+                  for (const split of splits) {
+                    const label = split.displayNumber || split.orderNumber
+                    for (const item of (split.items || [])) {
+                      mergedItems.push({
+                        ...item,
+                        menuItemId: item.menuItemId || item.id,
+                        sentToKitchen: true,
+                        kitchenStatus: 'sent',
+                        modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; preModifier?: string }) => ({
+                          ...m,
+                          modifierId: m.id,
+                        })),
+                        splitLabel: String(label),
+                      })
+                    }
+                    mergedSubtotal += Number(split.subtotal) || 0
+                    mergedTax += Number(split.taxTotal) || 0
+                    mergedTip += Number(split.tipTotal) || 0
+                    mergedTotal += Number(split.total) || 0
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('[FloorPlanHome] Failed to fetch split tickets:', err)
+            }
+          }
+
           store.loadOrder({
             id: currentOrder.id,
             orderNumber: data.orderNumber ?? currentOrder.orderNumber,
@@ -1146,11 +1233,12 @@ export function FloorPlanHome({
             tableId: data.tableId || primaryTable.id,
             tabName: data.tabName,
             guestCount: data.guestCount || totalSeats,
-            items: data.items || [],
-            subtotal: Number(data.subtotal) || 0,
-            taxTotal: Number(data.taxTotal) || 0,
-            tipTotal: Number(data.tipTotal) || 0,
-            total: Number(data.total) || 0,
+            status: data.status,
+            items: mergedItems,
+            subtotal: mergedSubtotal,
+            taxTotal: mergedTax,
+            tipTotal: mergedTip,
+            total: mergedTotal,
             notes: data.notes,
             reopenedAt: data.reopenedAt,
             reopenReason: data.reopenReason,
@@ -1258,7 +1346,7 @@ export function FloorPlanHome({
 
   // Handle quick bar item click - add to order
   const handleQuickBarItemClick = useCallback(async (itemId: string) => {
-    if (tableRequiredButMissing) {
+    if (tableRequiredButMissingRef.current) {
       toast.warning('Tap a table on the floor plan to start an order')
       return
     }
@@ -2637,7 +2725,7 @@ export function FloorPlanHome({
                 })()}
               </div>
 
-              {activeTable && getTotalSeats(activeTable) > 0 ? (
+              {activeTable && getTotalSeats(activeTable) > 0 && !hasSplitChips ? (
                 <div
                   style={{
                     padding: '10px 20px',
