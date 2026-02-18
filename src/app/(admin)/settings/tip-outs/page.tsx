@@ -55,7 +55,7 @@ interface TipOutRule {
 }
 
 export default function TipOutsSettingsPage() {
-  const { employee } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
   const [rules, setRules] = useState<TipOutRule[]>([])
   const [roles, setRoles] = useState<Role[]>([])
   const [isLoading, setIsLoading] = useState(true)

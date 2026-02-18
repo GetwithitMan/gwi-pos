@@ -16,7 +16,8 @@ interface ShiftReport {
 
 export default function CrewShiftReportPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
   const [report, setReport] = useState<ShiftReport | null>(null)
   const [loading, setLoading] = useState(true)

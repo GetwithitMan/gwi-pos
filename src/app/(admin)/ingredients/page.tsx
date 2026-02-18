@@ -9,7 +9,8 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 
 export default function IngredientsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   useEffect(() => {
     if (!isAuthenticated) {

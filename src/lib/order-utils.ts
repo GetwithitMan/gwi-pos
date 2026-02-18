@@ -61,6 +61,7 @@ interface StoreOrderItem {
   isHeld?: boolean
   delayMinutes?: number | null
   blockTimeMinutes?: number | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   pizzaConfig?: any
   sourceTableId?: string
 }
@@ -83,8 +84,8 @@ export function buildOrderItemPayload(item: StoreOrderItem, options?: { includeC
       price: Number(mod.price),
       depth: mod.depth ?? 0,
       preModifier: mod.preModifier ?? null,
-      spiritTier: (mod as any).spiritTier ?? null,
-      linkedBottleProductId: (mod as any).linkedBottleProductId ?? null,
+      spiritTier: mod.spiritTier ?? null,
+      linkedBottleProductId: mod.linkedBottleProductId ?? null,
       parentModifierId: mod.parentModifierId ?? null,
     })),
     ingredientModifications: item.ingredientModifications?.map(ing => ({
@@ -165,8 +166,10 @@ export function isReopened(order: ReopenableOrder | null | undefined): boolean {
 
 export interface MergedOrderData {
   /** Raw API response (top-level order) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   raw: any
   /** Merged items (from split children if split, otherwise from order itself) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   items: any[]
   subtotal: number
   taxTotal: number

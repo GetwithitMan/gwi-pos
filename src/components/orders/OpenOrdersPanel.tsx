@@ -233,9 +233,30 @@ export function OpenOrdersPanel({
 
   const dark = isExpanded || forceDark
 
+  const loadOrders = useCallback(async () => {
+    if (!locationId) return
+    try {
+      const response = await fetch(`/api/orders/open?locationId=${locationId}&summary=true`, {
+        cache: 'no-store',
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setOrders(data.orders)
+      }
+    } catch (error) {
+      console.error('Failed to load orders:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [locationId])
+
   useEffect(() => {
     if (locationId) loadOrders()
-  }, [locationId, refreshTrigger])
+  }, [locationId, refreshTrigger, loadOrders])
+
+  // Ref to avoid stale closure when reading orders inside socket handler
+  const ordersRef = useRef(orders)
+  ordersRef.current = orders
 
   // Socket-based real-time open orders updates (replaces 3s polling)
   // Delta updates: "paid"/"voided" remove from list locally; others trigger full refresh
@@ -244,7 +265,7 @@ export function OpenOrdersPanel({
     const { trigger, orderId } = data
     if (orderId && (trigger === 'paid' || trigger === 'voided')) {
       // Check if this is a split child being paid — refresh to update parent's split tabs
-      const isSplitChild = orders.some(o => o.splits?.some(s => s.id === orderId))
+      const isSplitChild = ordersRef.current.some(o => o.splits?.some(s => s.id === orderId))
       if (isSplitChild) {
         loadOrders() // Need to refresh parent's split data
       } else {
@@ -255,7 +276,7 @@ export function OpenOrdersPanel({
       // Created/transferred/reopened — need full data
       loadOrders()
     }
-  }, [viewMode])
+  }, [viewMode, loadOrders])
 
   useOrderSockets({
     locationId,
@@ -271,7 +292,7 @@ export function OpenOrdersPanel({
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [locationId, viewMode])
+  }, [locationId, viewMode, loadOrders])
 
   useEffect(() => {
     if (locationId && viewMode === 'closed') {
@@ -280,23 +301,6 @@ export function OpenOrdersPanel({
       loadClosedOrders(null)
     }
   }, [locationId, viewMode, datePreset])
-
-  const loadOrders = async () => {
-    if (!locationId) return
-    try {
-      const response = await fetch(`/api/orders/open?locationId=${locationId}&summary=true`, {
-        cache: 'no-store',
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setOrders(data.orders)
-      }
-    } catch (error) {
-      console.error('Failed to load orders:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const loadClosedOrders = async (cursor: string | null) => {
     if (!locationId) return

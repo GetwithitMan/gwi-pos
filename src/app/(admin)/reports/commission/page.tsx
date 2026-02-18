@@ -40,7 +40,8 @@ interface CommissionReport {
 
 export default function CommissionReportPage() {
   const router = useRouter()
-  const { isAuthenticated, employee } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const employee = useAuthStore(s => s.employee)
   const [report, setReport] = useState<CommissionReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [startDate, setStartDate] = useState(() => {

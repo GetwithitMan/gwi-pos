@@ -60,7 +60,8 @@ function SettingsCard({ title, children }: { title: string; children: React.Reac
 
 export default function ReceiptSettingsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)

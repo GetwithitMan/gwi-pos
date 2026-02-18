@@ -29,7 +29,8 @@ interface Category {
 
 export default function TaxRulesPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<TaxRule>({
     apiBase: '/api/tax-rules',

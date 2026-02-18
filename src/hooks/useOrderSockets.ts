@@ -4,8 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { getSharedSocket, releaseSharedSocket, getTerminalId } from '@/lib/shared-socket'
 
 // Socket.io client type
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SocketCallback = (...args: any[]) => void
+type SocketCallback = (...args: unknown[]) => void
 type Socket = {
   connected: boolean
   emit: (event: string, data?: unknown) => void

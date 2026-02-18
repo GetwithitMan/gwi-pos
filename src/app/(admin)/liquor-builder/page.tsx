@@ -64,7 +64,8 @@ type TabType = 'bottles' | 'drinks' | 'modifiers'
 function LiquorBuilderContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [activeTab, setActiveTab] = useState<TabType>('bottles')
   const [isLoading, setIsLoading] = useState(true)
   const [pendingItemId, setPendingItemId] = useState<string | null>(null)

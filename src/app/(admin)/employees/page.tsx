@@ -36,7 +36,8 @@ interface Employee {
 
 export default function EmployeesPage() {
   const router = useRouter()
-  const { employee: currentEmployee, isAuthenticated } = useAuthStore()
+  const currentEmployee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [roles, setRoles] = useState<Role[]>([])
   const [isPageLoading, setIsPageLoading] = useState(true)
   const [showInactive, setShowInactive] = useState(false)

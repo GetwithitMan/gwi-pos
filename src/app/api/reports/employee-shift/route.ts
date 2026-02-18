@@ -133,88 +133,85 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const locationIdToUse = shift?.locationId || locationId!
 
-    // Fetch all orders for this employee during the shift
-    const orders = await db.order.findMany({
-      where: {
-        locationId: locationIdToUse,
-        employeeId: employee.id,
-        createdAt: { gte: shiftStart, lte: shiftEnd },
-        status: { in: ['completed', 'closed', 'paid'] },
-      },
-      include: {
-        items: {
-          include: {
-            menuItem: {
-              include: {
-                category: true,
+    // Fetch all shift data in parallel (all queries are independent)
+    const [orders, voidedOrders, voidLogs, tipOutsReceived, tipOutsGiven] = await Promise.all([
+      // Completed/paid orders for this employee
+      db.order.findMany({
+        where: {
+          locationId: locationIdToUse,
+          employeeId: employee.id,
+          createdAt: { gte: shiftStart, lte: shiftEnd },
+          status: { in: ['completed', 'closed', 'paid'] },
+        },
+        include: {
+          items: {
+            include: {
+              menuItem: {
+                include: {
+                  category: true,
+                },
+              },
+            },
+          },
+          payments: true,
+          discounts: {
+            include: {
+              discountRule: true,
+            },
+          },
+        },
+      }),
+      // Voided orders
+      db.order.findMany({
+        where: {
+          locationId: locationIdToUse,
+          employeeId: employee.id,
+          createdAt: { gte: shiftStart, lte: shiftEnd },
+          status: 'voided',
+        },
+        include: {
+          items: {
+            include: {
+              menuItem: {
+                include: {
+                  category: true,
+                },
               },
             },
           },
         },
-        payments: true,
-        discounts: {
-          include: {
-            discountRule: true,
-          },
+      }),
+      // Void logs
+      db.voidLog.findMany({
+        where: {
+          locationId: locationIdToUse,
+          employeeId: employee.id,
+          createdAt: { gte: shiftStart, lte: shiftEnd },
         },
-      },
-    })
-
-    // Fetch voided orders for this employee
-    const voidedOrders = await db.order.findMany({
-      where: {
-        locationId: locationIdToUse,
-        employeeId: employee.id,
-        createdAt: { gte: shiftStart, lte: shiftEnd },
-        status: 'voided',
-      },
-      include: {
-        items: {
-          include: {
-            menuItem: {
-              include: {
-                category: true,
-              },
-            },
-          },
+      }),
+      // Tip-out credits received (Skill 273)
+      db.tipLedgerEntry.findMany({
+        where: {
+          employeeId: employee.id,
+          locationId: locationIdToUse,
+          sourceType: 'ROLE_TIPOUT',
+          type: 'CREDIT',
+          deletedAt: null,
+          createdAt: { gte: shiftStart, lte: shiftEnd },
         },
-      },
-    })
-
-    // Fetch void logs for this employee
-    const voidLogs = await db.voidLog.findMany({
-      where: {
-        locationId: locationIdToUse,
-        employeeId: employee.id,
-        createdAt: { gte: shiftStart, lte: shiftEnd },
-      },
-    })
-
-    // Migrated from legacy TipShare (Skill 273)
-    // Fetch tip-out credits received by this employee from TipLedgerEntry
-    const tipOutsReceived = await db.tipLedgerEntry.findMany({
-      where: {
-        employeeId: employee.id,
-        locationId: locationIdToUse,
-        sourceType: 'ROLE_TIPOUT',
-        type: 'CREDIT',
-        deletedAt: null,
-        createdAt: { gte: shiftStart, lte: shiftEnd },
-      },
-    })
-
-    // Migrated from legacy TipShare (Skill 273)
-    // Fetch tip-out debits given by this employee from TipLedgerEntry
-    const tipOutsGiven = await db.tipLedgerEntry.findMany({
-      where: {
-        employeeId: employee.id,
-        locationId: locationIdToUse,
-        sourceType: 'ROLE_TIPOUT',
-        type: 'DEBIT',
-        deletedAt: null,
-        createdAt: { gte: shiftStart, lte: shiftEnd },
-      },
-    })
+      }),
+      // Tip-out debits given (Skill 273)
+      db.tipLedgerEntry.findMany({
+        where: {
+          employeeId: employee.id,
+          locationId: locationIdToUse,
+          sourceType: 'ROLE_TIPOUT',
+          type: 'DEBIT',
+          deletedAt: null,
+          createdAt: { gte: shiftStart, lte: shiftEnd },
+        },
+      }),
+    ])
 
     // Resolve counterparty employees for the tip-out detail lines.
     // Each DEBIT has a paired CREDIT (and vice versa) sharing the same sourceId.
@@ -224,28 +221,35 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ...tipOutsGiven.map(e => e.sourceId).filter(Boolean),
     ] as string[]
 
-    // For received (CREDITs), the counterparty is the DEBIT with the same sourceId
-    // For given (DEBITs), the counterparty is the CREDIT with the same sourceId
-    const counterpartyEntries = allSourceIds.length > 0
-      ? await db.tipLedgerEntry.findMany({
-          where: {
-            sourceId: { in: allSourceIds },
-            sourceType: 'ROLE_TIPOUT',
-            deletedAt: null,
-            employeeId: { not: employee.id },
-          },
-          include: {
-            employee: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                displayName: true,
+    // Fetch counterparty entries and categories in parallel
+    const [counterpartyEntries, categories] = await Promise.all([
+      // For received (CREDITs), the counterparty is the DEBIT with the same sourceId
+      // For given (DEBITs), the counterparty is the CREDIT with the same sourceId
+      allSourceIds.length > 0
+        ? db.tipLedgerEntry.findMany({
+            where: {
+              sourceId: { in: allSourceIds },
+              sourceType: 'ROLE_TIPOUT',
+              deletedAt: null,
+              employeeId: { not: employee.id },
+            },
+            include: {
+              employee: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  displayName: true,
+                },
               },
             },
-          },
-        })
-      : []
+          })
+        : Promise.resolve([] as Array<Awaited<ReturnType<typeof db.tipLedgerEntry.findMany>>[number] & { employee: { id: string; firstName: string; lastName: string; displayName: string | null } }>),
+      // Categories for grouping
+      db.category.findMany({
+        where: { locationId: locationIdToUse },
+      }),
+    ])
 
     // Build sourceId -> counterparty employee lookup
     const counterpartyBySourceId = new Map<string, { id: string; firstName: string; lastName: string; displayName: string | null }>()
@@ -254,11 +258,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         counterpartyBySourceId.set(entry.sourceId, entry.employee)
       }
     }
-
-    // Fetch categories
-    const categories = await db.category.findMany({
-      where: { locationId: locationIdToUse },
-    })
 
     // ============================================
     // CALCULATE REVENUE

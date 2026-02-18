@@ -31,6 +31,7 @@ interface FixtureLike {
   posY: number
   width: number
   height: number
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   geometry?: any
   thickness?: number
 }

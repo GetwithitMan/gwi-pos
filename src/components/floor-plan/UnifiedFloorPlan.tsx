@@ -103,7 +103,7 @@ export function UnifiedFloorPlan({
     }))
 
     // Open orders list changed (create/send/pay/void)
-    unsubs.push(subscribe('orders:list-changed', (data: any) => {
+    unsubs.push(subscribe('orders:list-changed', (data: { trigger?: string; tableId?: string }) => {
       const { trigger, tableId } = data || {}
       logger.log(`[UnifiedFloorPlan] orders:list-changed trigger=${trigger} tableId=${tableId}`)
       if ((trigger === 'paid' || trigger === 'voided') && tableId) {
@@ -127,11 +127,11 @@ export function UnifiedFloorPlan({
     }))
 
     // Order totals changed — delta patch the table's displayed total
-    unsubs.push(subscribe('order:totals-updated', (data: any) => {
+    unsubs.push(subscribe('order:totals-updated', (data: { orderId?: string; totals?: { total: number } }) => {
       const { orderId, totals } = data || {}
       if (orderId && totals) {
         const currentTables = tablesRef.current
-        const table = currentTables.find((t: any) => t.currentOrder?.id === orderId)
+        const table = currentTables.find((t) => t.currentOrder?.id === orderId)
         if (table) {
           logger.log(`[UnifiedFloorPlan] order:totals-updated — delta patch table ${table.id}`)
           patchTableOrder(table.id, { total: totals.total })
@@ -142,11 +142,11 @@ export function UnifiedFloorPlan({
     }))
 
     // Explicit table status change
-    unsubs.push(subscribe('table:status-changed', (data: any) => {
+    unsubs.push(subscribe('table:status-changed', (data: { tableId?: string; newStatus?: string }) => {
       const { tableId, newStatus } = data || {}
       if (tableId && newStatus) {
         logger.log(`[UnifiedFloorPlan] table:status-changed — delta patch ${tableId}`)
-        updateSingleTableStatus(tableId, newStatus)
+        updateSingleTableStatus(tableId, newStatus as import('./use-floor-plan').TableStatus)
       } else {
         loadFloorPlanData()
       }

@@ -63,7 +63,8 @@ interface Pagination {
 
 export default function InventoryItemsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [items, setItems] = useState<InventoryItem[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [isLoading, setIsLoading] = useState(true)

@@ -34,7 +34,9 @@ type SortOption = 'recent' | 'oldest' | 'highest' | 'lowest' | 'name'
 
 export default function TabsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated, logout } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const logout = useAuthStore(s => s.logout)
   const [tabs, setTabs] = useState<TabOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')

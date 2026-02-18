@@ -78,7 +78,8 @@ interface Reservation {
 
 export default function ReservationReportsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [statusBreakdown, setStatusBreakdown] = useState<StatusBreakdown[]>([])
   const [byDayOfWeek, setByDayOfWeek] = useState<DayOfWeek[]>([])

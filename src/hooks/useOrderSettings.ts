@@ -102,7 +102,14 @@ export function useOrderSettings() {
   const [requireCardForTab, setRequireCardForTab] = useState(cachedSettings?.requireCardForTab ?? false)
   const [isLoading, setIsLoading] = useState(!cachedSettings)
 
-  const applySettings = (settings: any) => {
+  const applySettings = (settings: {
+    dualPricing?: DualPricingSettings
+    payments?: PaymentSettings
+    priceRounding?: PriceRoundingSettings
+    tax?: { defaultRate?: number; taxInclusiveLiquor?: boolean; taxInclusiveFood?: boolean }
+    receipts?: Partial<ReceiptSettings>
+    barTabs?: { requireCardForTab?: boolean }
+  }) => {
     const result: SettingsCache = {
       dualPricing: settings.dualPricing || DEFAULT_DUAL_PRICING,
       paymentSettings: settings.payments || DEFAULT_PAYMENT_SETTINGS,

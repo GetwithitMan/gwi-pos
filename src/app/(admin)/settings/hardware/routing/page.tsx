@@ -47,7 +47,7 @@ interface PrintDestination {
 
 export default function RoutingPage() {
   const router = useRouter()
-  const { isAuthenticated } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [isLoading, setIsLoading] = useState(true)
   const [categories, setCategories] = useState<Category[]>([])
   const [printers, setPrinters] = useState<Printer[]>([])

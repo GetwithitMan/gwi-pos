@@ -8,7 +8,9 @@ import { Modal } from '@/components/ui/modal'
 
 export default function CrewHubPage() {
   const router = useRouter()
-  const { employee, isAuthenticated, logout } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const logout = useAuthStore(s => s.logout)
   const [currentTime, setCurrentTime] = useState(new Date())
   const [clockStatus, setClockStatus] = useState<{
     clockedIn: boolean

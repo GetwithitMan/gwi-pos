@@ -27,7 +27,7 @@ interface LocationData {
 
 export default function VenueSettingsPage() {
   const router = useRouter()
-  const { isAuthenticated } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)

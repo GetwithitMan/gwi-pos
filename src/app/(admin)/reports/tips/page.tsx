@@ -65,7 +65,8 @@ type TabType = 'summary' | 'shares' | 'banked'
 
 export default function TipsReportPage() {
   const router = useRouter()
-  const { isAuthenticated, employee } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const employee = useAuthStore(s => s.employee)
   const [report, setReport] = useState<TipsReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('summary')

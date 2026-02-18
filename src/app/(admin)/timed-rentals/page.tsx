@@ -83,7 +83,8 @@ function TimedRentalsContent() {
   const searchParams = useSearchParams()
   const itemIdFromUrl = searchParams.get('item')
 
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
   const { isConnected, subscribe } = useEvents({ locationId })
   const [sessions, setSessions] = useState<TimedSession[]>([])

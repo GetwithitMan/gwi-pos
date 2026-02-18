@@ -53,7 +53,8 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 
 export default function EventsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
 
   const [events, setEvents] = useState<Event[]>([])

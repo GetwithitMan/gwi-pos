@@ -33,7 +33,8 @@ const PAYMENT_TERMS = [
 
 export default function VendorsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   // Search/filter state (kept separate from CRUD hook)
   const [search, setSearch] = useState('')

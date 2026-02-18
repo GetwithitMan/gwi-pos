@@ -43,60 +43,63 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     if (orderType) additionalFilters.orderType = orderType
     if (tableId) additionalFilters.tableId = tableId
 
-    // Get completed/paid orders with all related data
-    const orders = await db.order.findMany({
-      where: {
-        locationId,
-        ...dateFilter,
-        ...additionalFilters,
-        status: { in: ['completed', 'paid'] },
-      },
-      include: {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
+    // Fetch orders and reference data in parallel (all independent)
+    const [orders, categories, tables, sections] = await Promise.all([
+      // Completed/paid orders with all related data
+      db.order.findMany({
+        where: {
+          locationId,
+          ...dateFilter,
+          ...additionalFilters,
+          status: { in: ['completed', 'paid'] },
         },
-        table: {
-          select: { id: true, name: true, sectionId: true },
-        },
-        items: {
-          include: {
-            menuItem: {
-              select: { id: true, name: true, categoryId: true },
+        include: {
+          employee: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+          table: {
+            select: { id: true, name: true, sectionId: true },
+          },
+          items: {
+            include: {
+              menuItem: {
+                select: { id: true, name: true, categoryId: true },
+              },
+              modifiers: {
+                select: { id: true, name: true, price: true, modifierId: true },
+              },
             },
-            modifiers: {
-              select: { id: true, name: true, price: true, modifierId: true },
+          },
+          payments: true,
+          discounts: {
+            include: {
+              discountRule: {
+                select: { id: true, name: true },
+              },
             },
           },
         },
-        payments: true,
-        discounts: {
-          include: {
-            discountRule: {
-              select: { id: true, name: true },
-            },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+        orderBy: { createdAt: 'desc' },
+      }),
+      // Categories for grouping
+      db.category.findMany({
+        where: { locationId },
+        select: { id: true, name: true },
+      }),
+      // Tables for grouping
+      db.table.findMany({
+        where: { locationId },
+        select: { id: true, name: true, sectionId: true },
+      }),
+      // Sections for grouping
+      db.section.findMany({
+        where: { locationId },
+        select: { id: true, name: true },
+      }),
+    ])
 
-    // Get categories and tables for grouping
-    const categories = await db.category.findMany({
-      where: { locationId },
-      select: { id: true, name: true },
-    })
     const categoryMap = new Map(categories.map(c => [c.id, c.name]))
-
-    const tables = await db.table.findMany({
-      where: { locationId },
-      select: { id: true, name: true, sectionId: true },
-    })
     const tableMap = new Map(tables.map(t => [t.id, t.name]))
-
-    const sections = await db.section.findMany({
-      where: { locationId },
-      select: { id: true, name: true },
-    })
     const sectionMap = new Map(sections.map(s => [s.id, s.name]))
 
     // Initialize summary stats

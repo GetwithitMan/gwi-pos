@@ -67,8 +67,8 @@ export interface ErrorCaptureData {
   customerId?: string
 
   // Technical Context
-  requestBody?: any // Will be sanitized
-  responseBody?: any
+  requestBody?: unknown // Will be sanitized
+  responseBody?: unknown
   queryParams?: Record<string, string>
 
   // Performance
@@ -121,7 +121,7 @@ function getBrowserInfo(): BrowserInfo | undefined {
 /**
  * Sanitize sensitive data from request/response bodies
  */
-function sanitizeData(data: any): string | undefined {
+function sanitizeData(data: unknown): string | undefined {
   if (!data) return undefined
 
   try {
@@ -133,15 +133,16 @@ function sanitizeData(data: any): string | undefined {
       'cvv', 'ssn', 'bankAccount', 'routingNumber',
     ]
 
-    function removeSensitive(obj: any) {
+    function removeSensitive(obj: unknown) {
       if (typeof obj !== 'object' || obj === null) return
+      const record = obj as Record<string, unknown>
 
-      for (const key in obj) {
+      for (const key in record) {
         const lowerKey = key.toLowerCase()
         if (sensitiveKeys.some(s => lowerKey.includes(s))) {
-          obj[key] = '[REDACTED]'
-        } else if (typeof obj[key] === 'object') {
-          removeSensitive(obj[key])
+          record[key] = '[REDACTED]'
+        } else if (typeof record[key] === 'object') {
+          removeSensitive(record[key])
         }
       }
     }

@@ -36,7 +36,8 @@ interface PrepItemsByParent {
 }
 
 export default function Quick86Page() {
-  const { employee, locationId } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const locationId = useAuthStore(s => s.locationId)
   const [items, setItems] = useState<Ingredient86Status[]>([])
   const [quickList, setQuickList] = useState<Ingredient86Status[]>([])
   const [byCategory, setByCategory] = useState<CategoryGroup>({})

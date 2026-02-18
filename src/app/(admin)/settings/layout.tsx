@@ -25,7 +25,10 @@ function isCloudMode(): boolean {
  * shows a spinner, preventing any page from using stale data.
  */
 function useCloudSessionGuard() {
-  const { employee, locationId, isAuthenticated, login } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const locationId = useAuthStore(s => s.locationId)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const login = useAuthStore(s => s.login)
   const [ready, setReady] = useState(false)
   const checkedRef = useRef(false)
 

@@ -16,7 +16,8 @@ const REFRESH_INTERVAL = 30000 // 30s fallback only when socket disconnected
 
 export default function EntertainmentKDSPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const [items, setItems] = useState<EntertainmentItem[]>([])
   const [allWaitlist, setAllWaitlist] = useState<WaitlistEntry[]>([])

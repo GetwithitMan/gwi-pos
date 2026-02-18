@@ -70,7 +70,8 @@ interface ReportData {
 
 export default function ProductMixReportPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
 
   const [report, setReport] = useState<ReportData | null>(null)

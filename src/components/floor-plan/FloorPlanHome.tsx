@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useFloorPlanStore, FloorPlanTable, FloorPlanElement } from './use-floor-plan'
+import { useFloorPlanStore, FloorPlanTable, FloorPlanSection, FloorPlanElement } from './use-floor-plan'
 import { FloorPlanEntertainment } from './FloorPlanEntertainment'
 import { TableNode } from './TableNode'
 import { TableInfoPanel } from './TableInfoPanel'
@@ -179,9 +179,9 @@ interface FloorPlanHomeProps {
   // Pre-loaded snapshot from bootstrap (avoids duplicate /api/floorplan/snapshot fetch on mount)
   // undefined = bootstrap pending (wait), null = bootstrap failed/skipped (fetch yourself), object = hydrate
   initialSnapshot?: {
-    tables: any[]
-    sections: any[]
-    elements: any[]
+    tables: FloorPlanTable[]
+    sections: FloorPlanSection[]
+    elements: FloorPlanElement[]
     openOrdersCount: number
   } | null
   orderTypes?: OrderTypeConfig[]
@@ -387,6 +387,17 @@ export function FloorPlanHome({
     }
     return set
   }, [inlineOrderItems])
+
+  // Memoized order status badges for the active table's TableNode (avoids inline object in render loop)
+  const activeOrderStatusBadges = useMemo(() => {
+    if (!activeTableId) return undefined
+    return {
+      hasDelay: !!(activeOrder.pendingDelay && activeOrder.pendingDelay > 0),
+      hasHeld: inlineOrderItems.some(i => !i.sentToKitchen && i.isHeld),
+      hasCourses: activeOrder.coursingEnabled,
+      delayMinutes: activeOrder.pendingDelay ?? undefined,
+    }
+  }, [activeTableId, activeOrder.pendingDelay, activeOrder.coursingEnabled, inlineOrderItems])
 
   // REMOVED: loadItemsIntoStore — all order loading now goes through store.loadOrder()
   // which is the SINGLE source of truth for mapping API items into the store format
@@ -1903,12 +1914,7 @@ export function FloorPlanHome({
                           showSeats={table.id === activeTableId}
                           selectedSeat={selectedSeat}
                           flashMessage={flashMessage}
-                          orderStatusBadges={table.currentOrder && table.id === activeTableId ? {
-                            hasDelay: !!(activeOrder.pendingDelay && activeOrder.pendingDelay > 0),
-                            hasHeld: inlineOrderItems.some(i => !i.sentToKitchen && i.isHeld),
-                            hasCourses: activeOrder.coursingEnabled,
-                            delayMinutes: activeOrder.pendingDelay ?? undefined,
-                          } : undefined}
+                          orderStatusBadges={table.currentOrder && table.id === activeTableId ? activeOrderStatusBadges : undefined}
                           seatsWithItems={table.id === activeTableId ? seatsWithItems : undefined}
                           splitCount={table.currentOrder?.splitOrders?.length}
                           onTap={handleTableTapById}

@@ -62,7 +62,8 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
 
 export default function HouseAccountsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<HouseAccount>({
     apiBase: '/api/house-accounts',

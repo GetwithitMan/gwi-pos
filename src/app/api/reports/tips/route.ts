@@ -68,30 +68,111 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       tipOutFilter.employeeId = employeeId
     }
 
-    const tipOutEntries = await db.tipLedgerEntry.findMany({
-      where: tipOutFilter,
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-            role: { select: { name: true } },
+    // Build banked tip filter
+    const bankedTipFilter: Prisma.TipLedgerEntryWhereInput = {
+      locationId,
+      deletedAt: null,
+      sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP', 'PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
+      ...dateFilter,
+    }
+    if (employeeId) {
+      bankedTipFilter.employeeId = employeeId
+    }
+
+    // Build ledger balance filter
+    const ledgerBalanceFilter: Prisma.TipLedgerWhereInput = {
+      locationId,
+      deletedAt: null,
+    }
+    if (employeeId) {
+      ledgerBalanceFilter.employeeId = employeeId
+    }
+
+    // Build shifts filter
+    const shiftsFilter: Prisma.ShiftWhereInput = {
+      locationId,
+      status: 'closed',
+      grossTips: { not: null },
+    }
+    if (startDate || endDate) {
+      const endedAtFilter: Prisma.DateTimeNullableFilter = {}
+      if (startDate) {
+        const startRange = getBusinessDayRange(startDate, dayStartTime)
+        endedAtFilter.gte = startRange.start
+      }
+      if (endDate) {
+        const endRange = getBusinessDayRange(endDate, dayStartTime)
+        endedAtFilter.lte = endRange.end
+      }
+      shiftsFilter.endedAt = endedAtFilter
+    }
+    if (employeeId) {
+      shiftsFilter.employeeId = employeeId
+    }
+
+    // Fetch all four independent queries in parallel
+    const [tipOutEntries, bankedEntries, ledgerBalances, shifts] = await Promise.all([
+      // Tip-out entries
+      db.tipLedgerEntry.findMany({
+        where: tipOutFilter,
+        include: {
+          employee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+              role: { select: { name: true } },
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
+        orderBy: { createdAt: 'desc' },
+      }),
+      // Banked tips
+      db.tipLedgerEntry.findMany({
+        where: bankedTipFilter,
+        include: {
+          employee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+              role: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      // Ledger balances
+      db.tipLedger.findMany({
+        where: ledgerBalanceFilter,
+        select: { employeeId: true, currentBalanceCents: true },
+      }),
+      // Shifts with tip data
+      db.shift.findMany({
+        where: shiftsFilter,
+        include: {
+          employee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+              role: { select: { name: true } },
+            },
+          },
+        },
+        orderBy: { endedAt: 'desc' },
+      }),
+    ])
 
-    // When filtering by employeeId, we only get that employee's side of the tip-out.
-    // We need the counterpart entries (paired by sourceId) to show from/to names.
+    // Fetch counterpart entries if filtering by employee (depends on tipOutEntries)
     const tipOutSourceIds = tipOutEntries
       .map(e => e.sourceId)
       .filter((id): id is string => id !== null)
     const uniqueSourceIds = [...new Set(tipOutSourceIds)]
 
-    // Fetch all ROLE_TIPOUT entries for these sourceIds so we can pair DEBIT <-> CREDIT
     let allTipOutEntries = tipOutEntries
     if (employeeId && uniqueSourceIds.length > 0) {
       const counterparts = await db.tipLedgerEntry.findMany({
@@ -157,86 +238,6 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         creditEntry: entry,
       })
     }
-
-    // ── Banked tips: query TipLedgerEntry for DIRECT_TIP, TIP_GROUP, and payouts ──
-    // CREDIT entries with DIRECT_TIP/TIP_GROUP = tips earned (banked)
-    // DEBIT entries with PAYOUT_CASH/PAYOUT_PAYROLL = tips collected/paid out
-    const bankedTipFilter: Prisma.TipLedgerEntryWhereInput = {
-      locationId,
-      deletedAt: null,
-      sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP', 'PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
-      ...dateFilter,
-    }
-    if (employeeId) {
-      bankedTipFilter.employeeId = employeeId
-    }
-
-    const bankedEntries = await db.tipLedgerEntry.findMany({
-      where: bankedTipFilter,
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-            role: { select: { name: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    // Fetch current ledger balances for summary
-    const ledgerBalanceFilter: Prisma.TipLedgerWhereInput = {
-      locationId,
-      deletedAt: null,
-    }
-    if (employeeId) {
-      ledgerBalanceFilter.employeeId = employeeId
-    }
-    const ledgerBalances = await db.tipLedger.findMany({
-      where: ledgerBalanceFilter,
-      select: { employeeId: true, currentBalanceCents: true },
-    })
-
-    // Get shifts with tip data for summary
-    const shiftsFilter: Prisma.ShiftWhereInput = {
-      locationId,
-      status: 'closed',
-      grossTips: { not: null },
-    }
-    if (startDate || endDate) {
-      const endedAtFilter: Prisma.DateTimeNullableFilter = {}
-      if (startDate) {
-        const startRange = getBusinessDayRange(startDate, dayStartTime)
-        endedAtFilter.gte = startRange.start
-      }
-      if (endDate) {
-        const endRange = getBusinessDayRange(endDate, dayStartTime)
-        endedAtFilter.lte = endRange.end
-      }
-      shiftsFilter.endedAt = endedAtFilter
-    }
-    if (employeeId) {
-      shiftsFilter.employeeId = employeeId
-    }
-
-    const shifts = await db.shift.findMany({
-      where: shiftsFilter,
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-            role: { select: { name: true } },
-          },
-        },
-      },
-      orderBy: { endedAt: 'desc' },
-    })
 
     // Calculate employee summaries
     const employeeSummaries = new Map<string, {

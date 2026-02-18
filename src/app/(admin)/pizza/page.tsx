@@ -116,7 +116,7 @@ type TabType = 'config' | 'sizes' | 'crusts' | 'sauces' | 'cheeses' | 'toppings'
 
 export default function PizzaAdminPage() {
   const router = useRouter()
-  const { isAuthenticated } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [activeTab, setActiveTab] = useState<TabType>('sizes')
   const [isLoading, setIsLoading] = useState(true)
 

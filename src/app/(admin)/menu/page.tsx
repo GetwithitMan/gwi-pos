@@ -194,7 +194,8 @@ function normalizePourSizes(data: Record<string, number | { label: string; multi
 
 export default function MenuManagementPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [categories, setCategories] = useState<Category[]>([])
   const [items, setItems] = useState<MenuItem[]>([])
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])

@@ -59,7 +59,8 @@ interface PayStub {
 
 export default function PayrollPage() {
   const router = useRouter()
-  const { isAuthenticated, employee } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const employee = useAuthStore(s => s.employee)
   const [periods, setPeriods] = useState<PayrollPeriod[]>([])
   const [selectedPeriod, setSelectedPeriod] = useState<PayrollPeriod | null>(null)
   const [payStubs, setPayStubs] = useState<PayStub[]>([])

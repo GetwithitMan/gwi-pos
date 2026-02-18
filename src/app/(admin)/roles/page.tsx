@@ -26,7 +26,8 @@ interface Role {
 
 export default function RolesPage() {
   const router = useRouter()
-  const { employee: currentEmployee, isAuthenticated } = useAuthStore()
+  const currentEmployee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<Role>({
     apiBase: '/api/roles',

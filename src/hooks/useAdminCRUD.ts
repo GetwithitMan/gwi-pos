@@ -8,6 +8,7 @@ interface UseAdminCRUDConfig<T> {
   locationId: string | undefined
   resourceName?: string
   getId?: (item: T) => string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   parseResponse?: (data: any) => T[]
   onSaveSuccess?: () => void
   onDeleteSuccess?: () => void
@@ -35,7 +36,7 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
     apiBase,
     locationId,
     resourceName = 'item',
-    getId = (item: T) => (item as any).id,
+    getId = (item: T) => (item as Record<string, unknown>).id as string,
     parseResponse,
     onSaveSuccess,
     onDeleteSuccess,
@@ -49,6 +50,7 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
   const [modalError, setModalError] = useState<string | null>(null)
   const hasLoadedRef = useRef(false)
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const defaultParseResponse = useCallback((data: any): T[] => {
     const pluralKey = resourceName + 's'
     return data[pluralKey] || data.data || data

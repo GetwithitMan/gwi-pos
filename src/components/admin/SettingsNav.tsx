@@ -192,7 +192,8 @@ const settingsSections: SettingsSection[] = [
 
 export function SettingsNav() {
   const pathname = usePathname()
-  const { employee, logout } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const logout = useAuthStore(s => s.logout)
   const permissions = employee?.permissions || []
   const userIsAdmin = isAdmin(permissions)
 

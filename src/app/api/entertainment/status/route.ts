@@ -70,104 +70,111 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ],
     })
 
-    // For items that are in use, get the linked order info
-    const elementsWithOrders = await Promise.all(
-      elements.map(async (element) => {
-        let currentOrder = null
-        let timeInfo = null
+    // Batch-fetch all linked orders instead of N+1 individual queries
+    const orderIds = elements
+      .filter(el => el.status === 'in_use' && el.currentOrderId)
+      .map(el => el.currentOrderId!)
 
-        if (element.status === 'in_use' && element.currentOrderId) {
-          const order = await db.order.findUnique({
-            where: { id: element.currentOrderId },
-            select: {
-              id: true,
-              tabName: true,
-              orderNumber: true,
-              displayNumber: true,
-              openedAt: true,
-            },
-          })
+    const linkedOrders = orderIds.length > 0
+      ? await db.order.findMany({
+          where: { id: { in: orderIds } },
+          select: {
+            id: true,
+            tabName: true,
+            orderNumber: true,
+            displayNumber: true,
+            openedAt: true,
+          },
+        })
+      : []
 
-          if (order) {
-            const now = new Date()
+    const orderMap = new Map(linkedOrders.map(o => [o.id, o]))
 
-            currentOrder = {
-              orderId: order.id,
-              tabName: order.tabName || `Order #${order.displayNumber || order.orderNumber}`,
-              orderNumber: order.orderNumber,
-              displayNumber: order.displayNumber,
+    const now = new Date()
+    const elementsWithOrders = elements.map((element) => {
+      let currentOrder = null
+      let timeInfo = null
+
+      if (element.status === 'in_use' && element.currentOrderId) {
+        const order = orderMap.get(element.currentOrderId)
+
+        if (order) {
+          currentOrder = {
+            orderId: order.id,
+            tabName: order.tabName || `Order #${order.displayNumber || order.orderNumber}`,
+            orderNumber: order.orderNumber,
+            displayNumber: order.displayNumber,
+          }
+
+          // Calculate time info
+          if (element.sessionExpiresAt) {
+            const expiresAt = new Date(element.sessionExpiresAt)
+            const remaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60))
+
+            timeInfo = {
+              type: 'block',
+              startedAt: element.sessionStartedAt?.toISOString(),
+              expiresAt: element.sessionExpiresAt.toISOString(),
+              minutesRemaining: remaining,
+              isExpired: remaining <= 0,
+              isExpiringSoon: remaining > 0 && remaining <= 10,
             }
+          } else if (element.sessionStartedAt) {
+            // Per-minute billing - calculate elapsed
+            const startedAt = element.sessionStartedAt
+            const elapsed = Math.floor((now.getTime() - startedAt.getTime()) / 1000 / 60)
 
-            // Calculate time info
-            if (element.sessionExpiresAt) {
-              const expiresAt = new Date(element.sessionExpiresAt)
-              const remaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000 / 60))
-
-              timeInfo = {
-                type: 'block',
-                startedAt: element.sessionStartedAt?.toISOString(),
-                expiresAt: element.sessionExpiresAt.toISOString(),
-                minutesRemaining: remaining,
-                isExpired: remaining <= 0,
-                isExpiringSoon: remaining > 0 && remaining <= 10,
-              }
-            } else if (element.sessionStartedAt) {
-              // Per-minute billing - calculate elapsed
-              const startedAt = element.sessionStartedAt
-              const elapsed = Math.floor((now.getTime() - startedAt.getTime()) / 1000 / 60)
-
-              timeInfo = {
-                type: 'per_minute',
-                startedAt: startedAt.toISOString(),
-                minutesElapsed: elapsed,
-              }
+            timeInfo = {
+              type: 'per_minute',
+              startedAt: startedAt.toISOString(),
+              minutesElapsed: elapsed,
             }
           }
         }
+      }
 
-        // Timed pricing from linked menu item (Json column, already an object)
-        const timedPricing = element.linkedMenuItem?.timedPricing ?? null
+      // Timed pricing from linked menu item (Json column, already an object)
+      const timedPricing = element.linkedMenuItem?.timedPricing ?? null
 
-        return {
-          id: element.id,
-          name: element.name,
-          abbreviation: element.abbreviation,
-          visualType: element.visualType,
-          sectionId: element.sectionId,
-          section: element.section,
-          posX: element.posX,
-          posY: element.posY,
-          width: element.width,
-          height: element.height,
-          status: element.status || 'available',
-          currentOrder,
-          currentOrderId: element.currentOrderId,
-          timeInfo,
-          waitlistCount: element.waitlistEntries.length,
-          waitlist: element.waitlistEntries.map((w) => ({
-            id: w.id,
-            customerName: w.customerName,
-            phone: w.phone,
-            partySize: w.partySize,
-            position: w.position,
-            status: w.status,
-            notes: w.notes,
-            elementId: element.id,
-            requestedAt: w.requestedAt.toISOString(),
-            waitMinutes: Math.floor((new Date().getTime() - w.requestedAt.getTime()) / 1000 / 60),
-          })),
-          // Linked menu item for pricing
-          linkedMenuItem: element.linkedMenuItem ? {
-            id: element.linkedMenuItem.id,
-            name: element.linkedMenuItem.name,
-            price: Number(element.linkedMenuItem.price),
-            blockTimeMinutes: element.linkedMenuItem.blockTimeMinutes,
-            timedPricing,
-            minimumMinutes: element.linkedMenuItem.minimumMinutes,
-          } : null,
-        }
-      })
-    )
+      return {
+        id: element.id,
+        name: element.name,
+        abbreviation: element.abbreviation,
+        visualType: element.visualType,
+        sectionId: element.sectionId,
+        section: element.section,
+        posX: element.posX,
+        posY: element.posY,
+        width: element.width,
+        height: element.height,
+        status: element.status || 'available',
+        currentOrder,
+        currentOrderId: element.currentOrderId,
+        timeInfo,
+        waitlistCount: element.waitlistEntries.length,
+        waitlist: element.waitlistEntries.map((w) => ({
+          id: w.id,
+          customerName: w.customerName,
+          phone: w.phone,
+          partySize: w.partySize,
+          position: w.position,
+          status: w.status,
+          notes: w.notes,
+          elementId: element.id,
+          requestedAt: w.requestedAt.toISOString(),
+          waitMinutes: Math.floor((now.getTime() - w.requestedAt.getTime()) / 1000 / 60),
+        })),
+        // Linked menu item for pricing
+        linkedMenuItem: element.linkedMenuItem ? {
+          id: element.linkedMenuItem.id,
+          name: element.linkedMenuItem.name,
+          price: Number(element.linkedMenuItem.price),
+          blockTimeMinutes: element.linkedMenuItem.blockTimeMinutes,
+          timedPricing,
+          minimumMinutes: element.linkedMenuItem.minimumMinutes,
+        } : null,
+      }
+    })
 
     const response = NextResponse.json({
       elements: elementsWithOrders,

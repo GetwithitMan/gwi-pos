@@ -49,7 +49,8 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function ReservationsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
 
   // useAdminCRUD for modal state and list state management

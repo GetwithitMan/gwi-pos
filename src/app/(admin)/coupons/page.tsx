@@ -31,7 +31,8 @@ interface Coupon {
 
 export default function CouponsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<Coupon>({
     apiBase: '/api/coupons',

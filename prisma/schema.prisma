@@ -290,6 +290,7 @@ model Customer {
   @@unique([locationId, phone])
   @@index([locationId])
   @@index([lastName, firstName])
+  @@index([locationId, isActive, deletedAt])
 }
 
 // ============================================
@@ -473,6 +474,7 @@ model Employee {
   @@index([locationId])
   @@index([roleId])
   @@index([locationId, isActive])
+  @@index([locationId, isActive, deletedAt])
 }
 
 // ============================================
@@ -549,6 +551,7 @@ model TimeClockEntry {
   @@index([locationId])
   @@index([employeeId])
   @@index([clockIn])
+  @@index([locationId, employeeId, clockOut])
 }
 
 // ============================================
@@ -614,6 +617,9 @@ model Shift {
   @@index([startedAt])
   @@index([timeClockEntryId])
   @@index([drawerId])
+  @@index([locationId, status])
+  @@index([locationId, startedAt])
+  @@index([locationId, employeeId, status])
 }
 
 model Drawer {
@@ -794,6 +800,7 @@ model Category {
   @@index([sortOrder])
   @@index([categoryType])
   @@index([locationId, isActive, deletedAt])
+  @@index([locationId, sortOrder])
 }
 
 model MenuItem {
@@ -946,6 +953,7 @@ model MenuItem {
   @@index([prepStationId])
   @@index([isActive, showOnPOS])
   @@index([locationId, isActive, deletedAt])
+  @@index([locationId, isActive])
 }
 
 model ModifierGroup {
@@ -1127,6 +1135,8 @@ model MenuItemModifierGroup {
 
   @@unique([menuItemId, modifierGroupId])
   @@index([locationId])
+  @@index([modifierGroupId])
+  @@index([menuItemId])
 }
 
 // ============================================
@@ -1365,6 +1375,7 @@ model Table {
   @@index([virtualGroupId])
   @@index([locationId, status])
   @@index([locationId, isActive, deletedAt])
+  @@index([locationId, sectionId])
 }
 
 // ============================================
@@ -1689,6 +1700,9 @@ model Order {
   @@index([tableId, status, deletedAt])
   @@index([locationId, status, openedAt])
   @@index([locationId, tabStatus])
+  @@index([locationId, status, closedAt])
+  @@index([locationId, orderType, status])
+  @@index([locationId, paidAt])
 }
 
 model OrderItem {
@@ -1783,6 +1797,7 @@ model OrderItem {
   @@index([kitchenStatus])
   @@index([orderId, kitchenStatus])
   @@index([orderId, status])
+  @@index([orderId, status, deletedAt])
 }
 
 model OrderItemModifier {
@@ -1926,6 +1941,10 @@ model Payment {
   @@index([isOfflineCapture])
   @@index([needsReconciliation])
   @@index([locationId, createdAt])
+  @@index([locationId, paymentMethod, createdAt])
+  @@index([locationId, status, createdAt])
+  @@index([shiftId])
+  @@index([drawerId])
 }
 
 // Sync Audit Entry - Tracks all sync events for idempotency audit log
@@ -1968,6 +1987,7 @@ model SyncAuditEntry {
   @@index([status])
   @@index([createdAt])
   @@index([idempotencyKey])
+  @@index([locationId, idempotencyKey])
 }
 
 // ============================================
@@ -2022,6 +2042,7 @@ model Coupon {
   @@index([locationId])
   @@index([code])
   @@index([isActive])
+  @@index([locationId, isActive, validUntil])
 }
 
 model CouponRedemption {
@@ -2107,6 +2128,7 @@ model Reservation {
   @@index([status])
   @@index([tableId])
   @@index([customerId])
+  @@index([locationId, reservationDate, status])
 }
 
 // ============================================
@@ -2153,6 +2175,7 @@ model DiscountRule {
 
   @@index([locationId])
   @@index([isActive, isAutomatic])
+  @@index([locationId, isActive])
 }
 
 model OrderDiscount {
@@ -2297,6 +2320,7 @@ model VoidLog {
   @@index([orderId])
   @@index([employeeId])
   @@index([createdAt])
+  @@index([locationId, createdAt])
 }
 
 // ============================================
@@ -2387,6 +2411,7 @@ model AuditLog {
   @@index([employeeId])
   @@index([action])
   @@index([createdAt])
+  @@index([locationId, createdAt])
 }
 
 // ============================================
@@ -2681,6 +2706,8 @@ model TipGroupMembership {
   @@index([groupId])
   @@index([employeeId])
   @@index([status])
+  @@index([locationId])
+  @@index([locationId, status])
 }
 
 model TipGroupSegment {
@@ -2699,6 +2726,7 @@ model TipGroupSegment {
 
   @@index([groupId])
   @@index([startedAt])
+  @@index([locationId])
 }
 
 // ============================================
@@ -3567,6 +3595,7 @@ model InventoryItem {
   @@index([itemType])
   @@index([revenueCenter])
   @@index([category])
+  @@index([locationId, category])
 }
 
 // Links inventory items to storage locations (item can be in multiple locations)
@@ -3590,6 +3619,7 @@ model InventoryItemStorage {
   @@unique([inventoryItemId, storageLocationId])
   @@index([locationId])
   @@index([storageLocationId])
+  @@index([inventoryItemId])
 }
 
 // Prep items - made from inventory items
@@ -3716,6 +3746,8 @@ model MenuItemRecipeIngredient {
 
   @@index([locationId])
   @@index([recipeId])
+  @@index([inventoryItemId])
+  @@index([prepItemId])
 }
 
 // Links modifiers to inventory for tracking
@@ -3743,6 +3775,8 @@ model ModifierInventoryLink {
   syncedAt  DateTime?
 
   @@index([locationId])
+  @@index([inventoryItemId])
+  @@index([prepItemId])
 }
 
 // Inventory count session
@@ -3853,6 +3887,7 @@ model InventoryItemTransaction {
   @@index([inventoryItemId])
   @@index([type])
   @@index([createdAt])
+  @@index([inventoryItemId, createdAt])
 }
 
 // Vendor management
@@ -3962,6 +3997,7 @@ model InvoiceLineItem {
 
   @@index([locationId])
   @@index([invoiceId])
+  @@index([inventoryItemId])
 }
 
 // Waste log for non-void waste
@@ -3991,6 +4027,7 @@ model WasteLogEntry {
   @@index([locationId])
   @@index([wasteDate])
   @@index([reason])
+  @@index([inventoryItemId])
 }
 
 // Settings for inventory management
@@ -5175,6 +5212,7 @@ model PrintJob {
   @@index([status])
   @@index([printerId])
   @@index([createdAt])
+  @@index([locationId, status])
 }
 
 // ============================================
@@ -6377,4 +6415,5 @@ model ServerRegistrationToken {
   syncedAt  DateTime?
 
   @@index([locationId])
+  @@index([locationId, status, expiresAt])
 }

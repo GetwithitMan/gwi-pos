@@ -72,7 +72,8 @@ interface PaymentBreakdown {
 
 export default function OrderHistoryPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [orders, setOrders] = useState<Order[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [statusBreakdown, setStatusBreakdown] = useState<StatusBreakdown[]>([])

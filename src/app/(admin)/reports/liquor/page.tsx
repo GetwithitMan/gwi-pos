@@ -108,7 +108,8 @@ const TIER_BAR_COLORS: Record<string, string> = {
 
 export default function LiquorReportPage() {
   const router = useRouter()
-  const { isAuthenticated, employee } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const employee = useAuthStore(s => s.employee)
   const [report, setReport] = useState<LiquorReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('overview')

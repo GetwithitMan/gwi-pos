@@ -31,7 +31,7 @@ interface PaymentModalProps {
   tipSettings?: TipSettings
   paymentSettings: PaymentSettings
   priceRounding?: PriceRoundingSettings
-  onPaymentComplete: (receiptData?: any) => void
+  onPaymentComplete: (receiptData?: Record<string, unknown>) => void
   employeeId?: string
   terminalId?: string  // Required for Datacap integration
   locationId?: string  // Required for Datacap integration

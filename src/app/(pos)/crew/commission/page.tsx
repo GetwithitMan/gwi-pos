@@ -38,7 +38,8 @@ function getDefaultDateRange() {
 
 export default function CrewCommissionReportPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [dateRange, setDateRange] = useState(getDefaultDateRange)
   const [report, setReport] = useState<CommissionReport | null>(null)
   const [loading, setLoading] = useState(true)

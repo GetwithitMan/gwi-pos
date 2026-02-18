@@ -15,7 +15,7 @@ export const logger = {
    * Development-only warning logs
    * Silent in production
    */
-  warn: (...args: any[]) => {
+  warn: (...args: unknown[]) => {
     if (isDev) {
       console.warn(...args)
     }
@@ -25,7 +25,7 @@ export const logger = {
    * Development-only info logs
    * Silent in production
    */
-  log: (...args: any[]) => {
+  log: (...args: unknown[]) => {
     if (isDev) {
       console.log(...args)
     }
@@ -35,7 +35,7 @@ export const logger = {
    * Error logs (always logged, even in production)
    * Use for errors that need observability
    */
-  error: (...args: any[]) => {
+  error: (...args: unknown[]) => {
     console.error(...args)
   },
 
@@ -43,7 +43,7 @@ export const logger = {
    * Development-only debug logs
    * Silent in production
    */
-  debug: (...args: any[]) => {
+  debug: (...args: unknown[]) => {
     if (isDev) {
       console.debug(...args)
     }

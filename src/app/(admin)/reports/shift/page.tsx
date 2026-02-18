@@ -136,7 +136,8 @@ interface Employee {
 function EmployeeShiftReportContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { isAuthenticated, employee: currentEmployee } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const currentEmployee = useAuthStore(s => s.employee)
 
   const [report, setReport] = useState<EmployeeShiftReport | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])

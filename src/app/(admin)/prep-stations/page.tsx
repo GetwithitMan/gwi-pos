@@ -49,7 +49,8 @@ const COLORS = [
 
 export default function PrepStationsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<PrepStation>({
     apiBase: '/api/prep-stations',

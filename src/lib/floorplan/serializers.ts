@@ -15,7 +15,25 @@ interface SerializeOrderOptions {
   includeModifiers?: boolean;
 }
 
-export function serializeCurrentOrder(order: any, opts: SerializeOrderOptions = {}) {
+interface SerializableOrder {
+  id: string;
+  orderNumber: number;
+  guestCount: number;
+  total: number | string;
+  createdAt: Date | string;
+  employee?: Employee | null;
+  items?: SerializableOrderItem[];
+}
+
+interface SerializableOrderItem {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number | string;
+  modifiers?: { name: string; price: number | string }[];
+}
+
+export function serializeCurrentOrder(order: SerializableOrder | null | undefined, opts: SerializeOrderOptions = {}) {
   if (!order) return null;
 
   const base = {
@@ -23,7 +41,7 @@ export function serializeCurrentOrder(order: any, opts: SerializeOrderOptions = 
     orderNumber: order.orderNumber,
     guestCount: order.guestCount,
     total: Number(order.total),
-    openedAt: order.createdAt?.toISOString?.() || order.createdAt,
+    openedAt: order.createdAt instanceof Date ? order.createdAt.toISOString() : order.createdAt,
     server: formatServerName(order.employee ?? null),
   };
 
@@ -31,13 +49,13 @@ export function serializeCurrentOrder(order: any, opts: SerializeOrderOptions = 
 
   return {
     ...base,
-    items: order.items.map((item: any) => ({
+    items: order.items.map((item: SerializableOrderItem) => ({
       id: item.id,
       name: item.name,
       quantity: item.quantity,
       price: Number(item.price),
       ...(opts.includeModifiers && item.modifiers ? {
-        modifiers: item.modifiers.map((m: any) => ({
+        modifiers: item.modifiers.map((m) => ({
           name: m.name,
           price: Number(m.price),
         })),
@@ -52,7 +70,38 @@ interface SerializeTableOptions {
   includeOrderModifiers?: boolean;
 }
 
-export function serializeTable(table: any, opts: SerializeTableOptions = {}) {
+interface SerializableTable {
+  id: string;
+  name: string;
+  abbreviation: string | null;
+  posX: number | null;
+  posY: number | null;
+  width: number | null;
+  height: number | null;
+  rotation: number | null;
+  shape: string | null;
+  seatPattern: string | null;
+  status: string;
+  section?: { id: string; name: string; color: string | null } | null;
+  _count?: { seats: number };
+  seats?: SerializableSeat[];
+  isLocked: boolean;
+  orders?: SerializableOrder[];
+}
+
+interface SerializableSeat {
+  id: string;
+  tableId: string;
+  label: string | null;
+  seatNumber: number;
+  relativeX: number | null;
+  relativeY: number | null;
+  angle: number | null;
+  seatType: string | null;
+  isActive: boolean;
+}
+
+export function serializeTable(table: SerializableTable, opts: SerializeTableOptions = {}) {
   const firstOrder = table.orders?.[0];
 
   return {
@@ -84,7 +133,7 @@ export function serializeTable(table: any, opts: SerializeTableOptions = {}) {
   };
 }
 
-export function serializeSeat(seat: any) {
+export function serializeSeat(seat: SerializableSeat) {
   return {
     id: seat.id,
     tableId: seat.tableId,

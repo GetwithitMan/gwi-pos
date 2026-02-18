@@ -32,7 +32,8 @@ interface DiscountRule {
 
 export default function DiscountsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<DiscountRule>({
     apiBase: '/api/discounts',

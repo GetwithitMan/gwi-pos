@@ -74,7 +74,8 @@ interface PayrollReport {
 
 export default function PayrollReportPage() {
   const router = useRouter()
-  const { isAuthenticated, employee } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const employee = useAuthStore(s => s.employee)
   const [report, setReport] = useState<PayrollReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null)

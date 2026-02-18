@@ -24,7 +24,7 @@ import { requestStore, getRequestPrisma } from './request-context'
 import { getDbForVenue, masterClient } from './db'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RouteHandler = (...args: any[]) => Promise<Response> | Response
+type RouteHandler = (request: any, context?: any) => Promise<Response> | Response
 
 export function withVenue(handler: RouteHandler): RouteHandler {
   return async (request, context) => {

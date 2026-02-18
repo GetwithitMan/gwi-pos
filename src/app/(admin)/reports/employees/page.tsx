@@ -61,7 +61,8 @@ interface EmployeeReport {
 
 export default function EmployeeReportsPage() {
   const router = useRouter()
-  const { isAuthenticated, employee } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const employee = useAuthStore(s => s.employee)
   const [report, setReport] = useState<EmployeeReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [startDate, setStartDate] = useState(() => {

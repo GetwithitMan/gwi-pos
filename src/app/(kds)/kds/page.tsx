@@ -120,7 +120,8 @@ function KDSContent() {
   const searchParams = useSearchParams()
   const screenParam = searchParams.get('screen') // Can be slug or ID
   const stationParam = searchParams.get('station') // Legacy station filter
-  const { employee, isAuthenticated: isEmployeeAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isEmployeeAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   // Authentication state
   const [authState, setAuthState] = useState<AuthState>('checking')
@@ -433,7 +434,7 @@ function KDSContent() {
     }
   }, [screenConfig, stationParam, showCompleted, deviceToken])
 
-  const handleBumpItem = async (itemId: string) => {
+  const handleBumpItem = useCallback(async (itemId: string) => {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
@@ -450,9 +451,9 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to bump item:', error)
     }
-  }
+  }, [deviceToken, loadOrders])
 
-  const handleBumpOrder = async (order: KDSOrder) => {
+  const handleBumpOrder = useCallback(async (order: KDSOrder) => {
     const incompleteItemIds = order.items
       .filter(item => !item.isCompleted)
       .map(item => item.id)
@@ -475,9 +476,9 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to bump order:', error)
     }
-  }
+  }, [deviceToken, loadOrders])
 
-  const handleUncompleteItem = async (itemId: string) => {
+  const handleUncompleteItem = useCallback(async (itemId: string) => {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
       if (deviceToken) headers['x-device-token'] = deviceToken
@@ -494,7 +495,7 @@ function KDSContent() {
     } catch (error) {
       console.error('Failed to uncomplete item:', error)
     }
-  }
+  }, [deviceToken, loadOrders])
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {

@@ -41,7 +41,8 @@ interface PrepItem {
 
 export default function DailyCountsSettingsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [prepItems, setPrepItems] = useState<PrepItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)

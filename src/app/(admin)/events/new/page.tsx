@@ -41,7 +41,8 @@ const TICKETING_MODES = [
 
 export default function CreateEventPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
 
   const [saving, setSaving] = useState(false)

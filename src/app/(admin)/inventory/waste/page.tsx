@@ -45,7 +45,8 @@ const STORAGE_UNITS = ['oz', 'lb', 'g', 'kg', 'ml', 'L', 'each', 'slice', 'porti
 
 export default function WastePage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   // useAdminCRUD for modal state; custom load due to date-range query params
   const crud = useAdminCRUD<WasteEntry>({

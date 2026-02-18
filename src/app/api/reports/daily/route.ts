@@ -50,168 +50,170 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       date = new Date(current.date + 'T12:00:00')
     }
 
-    // Fetch all orders for the day
-    const orders = await db.order.findMany({
-      where: {
-        locationId,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-        status: { in: ['completed', 'closed', 'paid'] },
-      },
-      include: {
-        items: {
-          include: {
-            menuItem: {
-              include: {
-                category: true,
+    // Fetch all daily data in parallel (all queries are independent)
+    const [
+      orders,
+      voidedOrders,
+      voidLogs,
+      timeEntries,
+      paidInOuts,
+      giftCardTransactions,
+      tipsBankedToday,
+      tipsCollectedToday,
+      tipSharesDistributed,
+      categories,
+    ] = await Promise.all([
+      // Completed/paid orders
+      db.order.findMany({
+        where: {
+          locationId,
+          createdAt: { gte: startOfDay, lte: endOfDay },
+          status: { in: ['completed', 'closed', 'paid'] },
+        },
+        include: {
+          items: {
+            include: {
+              menuItem: {
+                include: {
+                  category: true,
+                },
+              },
+            },
+          },
+          payments: true,
+          discounts: {
+            include: {
+              discountRule: true,
+            },
+          },
+          employee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
+        },
+      }),
+      // Voided orders
+      db.order.findMany({
+        where: {
+          locationId,
+          createdAt: { gte: startOfDay, lte: endOfDay },
+          status: 'voided',
+        },
+        include: {
+          items: {
+            include: {
+              menuItem: {
+                include: {
+                  category: true,
+                },
               },
             },
           },
         },
-        payments: true,
-        discounts: {
-          include: {
-            discountRule: true,
-          },
+      }),
+      // Void logs
+      db.voidLog.findMany({
+        where: {
+          locationId,
+          createdAt: { gte: startOfDay, lte: endOfDay },
         },
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
+      }),
+      // Time clock entries for labor
+      db.timeClockEntry.findMany({
+        where: {
+          locationId,
+          clockIn: { gte: startOfDay, lte: endOfDay },
         },
-      },
-    })
-
-    // Fetch voided orders separately
-    const voidedOrders = await db.order.findMany({
-      where: {
-        locationId,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-        status: 'voided',
-      },
-      include: {
-        items: {
-          include: {
-            menuItem: {
-              include: {
-                category: true,
-              },
+        include: {
+          employee: {
+            include: {
+              role: true,
             },
           },
         },
-      },
-    })
-
-    // Fetch void logs for the day
-    const voidLogs = await db.voidLog.findMany({
-      where: {
-        locationId,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-    })
-
-    // Fetch time clock entries for labor calculation
-    const timeEntries = await db.timeClockEntry.findMany({
-      where: {
-        locationId,
-        clockIn: { gte: startOfDay, lte: endOfDay },
-      },
-      include: {
-        employee: {
-          include: {
-            role: true,
+      }),
+      // Paid in/out
+      db.paidInOut.findMany({
+        where: {
+          locationId,
+          createdAt: { gte: startOfDay, lte: endOfDay },
+        },
+      }),
+      // Gift card transactions
+      db.giftCardTransaction.findMany({
+        where: {
+          locationId,
+          createdAt: { gte: startOfDay, lte: endOfDay },
+        },
+      }),
+      // Tips BANKED today (Skill 273)
+      db.tipLedgerEntry.findMany({
+        where: {
+          locationId,
+          type: 'CREDIT',
+          sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
+          deletedAt: null,
+          createdAt: { gte: startOfDay, lte: endOfDay },
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
           },
         },
-      },
-    })
-
-    // Fetch paid in/out for the day
-    const paidInOuts = await db.paidInOut.findMany({
-      where: {
-        locationId,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-    })
-
-    // Fetch gift card transactions
-    const giftCardTransactions = await db.giftCardTransaction.findMany({
-      where: {
-        locationId,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-    })
-
-    // Migrated from legacy TipBank/TipShare (Skill 273)
-    // Tips BANKED today = credits from direct tips and tip groups
-    const tipsBankedToday = await db.tipLedgerEntry.findMany({
-      where: {
-        locationId,
-        type: 'CREDIT',
-        sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
-        deletedAt: null,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
+      }),
+      // Tips COLLECTED today (Skill 273)
+      db.tipLedgerEntry.findMany({
+        where: {
+          locationId,
+          type: 'DEBIT',
+          sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
+          deletedAt: null,
+          createdAt: { gte: startOfDay, lte: endOfDay },
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
           },
         },
-      },
-    })
-
-    // Migrated from legacy TipBank/TipShare (Skill 273)
-    // Tips COLLECTED today = debits from cash payouts or payroll payouts
-    const tipsCollectedToday = await db.tipLedgerEntry.findMany({
-      where: {
-        locationId,
-        type: 'DEBIT',
-        sourceType: { in: ['PAYOUT_CASH', 'PAYOUT_PAYROLL'] },
-        deletedAt: null,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
+      }),
+      // Tip shares distributed today (Skill 273)
+      db.tipLedgerEntry.findMany({
+        where: {
+          locationId,
+          sourceType: 'ROLE_TIPOUT',
+          deletedAt: null,
+          createdAt: { gte: startOfDay, lte: endOfDay },
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
           },
         },
-      },
-    })
-
-    // Migrated from legacy TipBank/TipShare (Skill 273)
-    // Tip shares distributed today = role tip-out entries (credits = received, debits = given)
-    const tipSharesDistributed = await db.tipLedgerEntry.findMany({
-      where: {
-        locationId,
-        sourceType: 'ROLE_TIPOUT',
-        deletedAt: null,
-        createdAt: { gte: startOfDay, lte: endOfDay },
-      },
-      include: {
-        employee: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            displayName: true,
-          },
-        },
-      },
-    })
-
-    // Fetch categories for grouping
-    const categories = await db.category.findMany({
-      where: { locationId },
-    })
+      }),
+      // Categories for grouping
+      db.category.findMany({
+        where: { locationId },
+      }),
+    ])
 
     // ============================================
     // CALCULATE REVENUE

@@ -53,7 +53,7 @@ const EntertainmentSessionStart = lazy(() => import('@/components/entertainment/
 const TimedRentalStartModal = lazy(() => import('@/components/entertainment/TimedRentalStartModal').then(m => ({ default: m.TimedRentalStartModal })))
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import { FloorPlanHome } from '@/components/floor-plan'
-import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
+import { useFloorPlanStore, type FloorPlanTable, type FloorPlanSection, type FloorPlanElement } from '@/components/floor-plan/use-floor-plan'
 import { BartenderView } from '@/components/bartender'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import { UnifiedPOSHeader } from '@/components/orders/UnifiedPOSHeader'
@@ -116,9 +116,9 @@ export default function OrdersPage() {
   // Bootstrap snapshot data — passed to FloorPlanHome to avoid duplicate /api/floorplan/snapshot fetch
   // undefined = bootstrap pending (FloorPlanHome waits), null = bootstrap failed/skipped (FloorPlanHome fetches itself)
   const [initialSnapshot, setInitialSnapshot] = useState<{
-    tables: any[]
-    sections: any[]
-    elements: any[]
+    tables: FloorPlanTable[]
+    sections: FloorPlanSection[]
+    elements: FloorPlanElement[]
     openOrdersCount: number
   } | null | undefined>(undefined)
 

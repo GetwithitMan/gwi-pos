@@ -150,7 +150,7 @@ function SplitUnifiedView({
       const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`)
       if (!res.ok) throw new Error('Failed to load splits')
       const data = await res.json()
-      setSplits((data.splitOrders || []).map((s: any) => ({
+      setSplits((data.splitOrders || []).map((s: { id: string; splitIndex: number; displayNumber: string | null; status: string; subtotal?: number; total: number; isPaid?: boolean; card?: { last4: string; brand: string } | null; items?: { id: string; name: string; price: number; quantity: number; isSent?: boolean; status?: string; fractionLabel?: string; modifiers?: unknown[] }[] }) => ({
         id: s.id,
         splitIndex: s.splitIndex,
         displayNumber: s.displayNumber,
@@ -159,7 +159,7 @@ function SplitUnifiedView({
         total: s.total,
         isPaid: s.isPaid || s.status === 'paid',
         card: s.card || null,
-        items: (s.items || []).map((item: any) => ({
+        items: (s.items || []).map((item) => ({
           id: item.id,
           name: item.name,
           price: item.price,
@@ -199,7 +199,7 @@ function SplitUnifiedView({
       }, 200)
     }
 
-    const onOrdersChanged = (data: any) => {
+    const onOrdersChanged = (data: { orderId?: string } | undefined) => {
       const { orderId } = data || {}
       // Refresh if the event is for the parent or any displayed split
       if (orderId === parentOrderId || splitsRef.current.some(s => s.id === orderId)) {
@@ -207,7 +207,7 @@ function SplitUnifiedView({
       }
     }
 
-    const onPaymentProcessed = (data: any) => {
+    const onPaymentProcessed = (data: { orderId?: string } | undefined) => {
       const { orderId } = data || {}
       if (orderId === parentOrderId || splitsRef.current.some(s => s.id === orderId)) {
         debouncedRefresh()

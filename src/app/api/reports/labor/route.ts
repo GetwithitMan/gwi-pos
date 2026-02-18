@@ -38,48 +38,50 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Build employee filter
     const employeeFilter = employeeId ? { employeeId } : {}
 
-    // Get time clock entries
-    const entries = await db.timeClockEntry.findMany({
-      where: {
-        locationId,
-        ...dateFilter,
-        ...employeeFilter,
-        clockOut: { not: null }, // Only completed shifts
-      },
-      include: {
-        employee: {
-          select: {
-            id: true,
-            displayName: true,
-            firstName: true,
-            lastName: true,
-            hourlyRate: true,
-            role: {
-              select: { name: true },
+    // Fetch time entries and employees in parallel (independent queries)
+    const [entries, employees] = await Promise.all([
+      // Time clock entries
+      db.timeClockEntry.findMany({
+        where: {
+          locationId,
+          ...dateFilter,
+          ...employeeFilter,
+          clockOut: { not: null }, // Only completed shifts
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              displayName: true,
+              firstName: true,
+              lastName: true,
+              hourlyRate: true,
+              role: {
+                select: { name: true },
+              },
             },
           },
         },
-      },
-      orderBy: { clockIn: 'desc' },
-    })
-
-    // Get employees for the location (including those with no entries)
-    const employees = await db.employee.findMany({
-      where: {
-        locationId,
-        isActive: true,
-      },
-      select: {
-        id: true,
-        displayName: true,
-        firstName: true,
-        lastName: true,
-        hourlyRate: true,
-        role: {
-          select: { name: true },
+        orderBy: { clockIn: 'desc' },
+      }),
+      // All active employees (including those with no entries)
+      db.employee.findMany({
+        where: {
+          locationId,
+          isActive: true,
         },
-      },
-    })
+        select: {
+          id: true,
+          displayName: true,
+          firstName: true,
+          lastName: true,
+          hourlyRate: true,
+          role: {
+            select: { name: true },
+          },
+        },
+      }),
+    ])
 
     // Initialize summary stats
     let totalRegularHours = 0

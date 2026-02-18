@@ -104,7 +104,8 @@ function getDefaultDateRange() {
 
 export default function CrewTipBankPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [dateRange, setDateRange] = useState(getDefaultDateRange)
   const [sourceTypeFilter, setSourceTypeFilter] = useState<SourceType | ''>('')
   const [data, setData] = useState<LedgerResponse | null>(null)

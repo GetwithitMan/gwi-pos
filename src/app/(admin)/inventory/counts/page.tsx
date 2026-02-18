@@ -70,7 +70,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 
 export default function CountsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const crud = useAdminCRUD<InventoryCount>({
     apiBase: '/api/inventory/counts',

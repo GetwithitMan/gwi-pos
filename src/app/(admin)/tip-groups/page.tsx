@@ -62,7 +62,9 @@ function splitModeLabel(mode: string): string {
 
 export default function TipGroupsPage() {
   const router = useRouter()
-  const { employee, locationId, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const locationId = useAuthStore(s => s.locationId)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const [groups, setGroups] = useState<TipGroup[]>([])
   const [total, setTotal] = useState(0)

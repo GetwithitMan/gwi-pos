@@ -67,7 +67,7 @@ function getTerminalLiveStatus(terminal: TerminalStatus): 'online' | 'stale' | '
 }
 
 export default function HardwareDashboard() {
-  const { employee } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
   const locationId = employee?.location?.id
   const { isConnected } = useEvents({ locationId })
   const [printers, setPrinters] = useState<PrinterStatus[]>([])

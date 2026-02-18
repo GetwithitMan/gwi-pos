@@ -9,7 +9,8 @@ import { useAuthStore } from '@/stores/auth-store'
 
 export default function BeverageInventoryPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   useEffect(() => {
     if (!isAuthenticated) {

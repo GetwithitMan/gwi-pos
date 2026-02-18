@@ -53,7 +53,7 @@ type PageParams = {
 export default function EmployeePaymentPage({ params }: { params: Promise<PageParams> }) {
   const { id: employeeId } = use(params)
   const router = useRouter()
-  const { isAuthenticated } = useAuthStore()
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [employee, setEmployee] = useState<EmployeePaymentInfo | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)

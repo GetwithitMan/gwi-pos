@@ -57,7 +57,8 @@ interface Summary {
 
 export default function CouponReportsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [summary, setSummary] = useState<Summary | null>(null)
   const [coupons, setCoupons] = useState<CouponStat[]>([])
   const [dailyTrend, setDailyTrend] = useState<DailyTrend[]>([])

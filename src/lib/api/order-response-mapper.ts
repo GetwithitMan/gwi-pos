@@ -1,11 +1,100 @@
 /**
+ * Order Response Mapper
+ *
+ * Maps Prisma DB results to clean API response shapes.
+ * These functions intentionally accept `any` for the DB input because Prisma
+ * returns complex intersection types with Decimal fields that vary based on
+ * the `include`/`select` used in each query. The output shapes are well-typed.
+ */
+
+/** Mapped order item shape returned by the API */
+export interface MappedOrderItem {
+  id: string
+  correlationId?: string
+  menuItemId: string
+  name: string
+  price: number
+  quantity: number
+  itemTotal: number
+  seatNumber: number | null
+  courseNumber: number | null
+  courseStatus: string | null
+  sentAt: Date | null
+  kitchenStatus: string | null
+  isHeld: boolean
+  delayMinutes: number | null
+  delayStartedAt: Date | null
+  isCompleted: boolean
+  completedAt: Date | null
+  resendCount: number
+  lastResentAt: Date | null
+  resendNote: string | null
+  status: string
+  voidReason: string | null
+  wasMade: boolean | null
+  specialNotes: string | null
+  modifiers: MappedModifier[]
+  pizzaConfig: MappedPizzaConfig | null
+  blockTimeMinutes: number | null
+  blockTimeStartedAt: Date | null
+  blockTimeExpiresAt: Date | null
+  ingredientModifications: MappedIngredientMod[]
+  createdAt: Date
+}
+
+interface MappedModifier {
+  id: string
+  modifierId: string | null
+  name: string
+  price: number
+  quantity: number
+  preModifier: string | null
+  depth: number
+  spiritTier: string | null
+  linkedBottleProductId: string | null
+}
+
+interface MappedIngredientMod {
+  id: string
+  ingredientId: string
+  ingredientName: string
+  modificationType: string
+  priceAdjustment: number
+  swappedToModifierId: string | null
+  swappedToModifierName: string | null
+}
+
+interface MappedPizzaConfig {
+  sizeId: string
+  crustId: string
+  sauceId: string | null
+  cheeseId: string | null
+  sauceAmount: string
+  cheeseAmount: string
+  toppings: unknown[]
+  sauces?: unknown[]
+  cheeses?: unknown[]
+  cookingInstructions: string | null
+  cutStyle: string | null
+  totalPrice: number
+  priceBreakdown: {
+    sizePrice: number
+    crustPrice: number
+    saucePrice: number
+    cheesePrice: number
+    toppingsPrice: number
+  }
+}
+
+/**
  * Maps database OrderItem with modifiers to API response format.
  * Ensures ALL modifier fields are included in responses.
  *
- * @param item - Database OrderItem record
+ * @param item - Database OrderItem record (Prisma result with includes)
  * @param correlationId - Optional correlation ID to echo back for client-side tracking
  */
-export function mapOrderItemForResponse(item: any, correlationId?: string) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapOrderItemForResponse(item: any, correlationId?: string): MappedOrderItem {
   return {
     id: item.id,
     correlationId: correlationId,  // ✅ FIX-003: Echo back if provided
@@ -31,14 +120,14 @@ export function mapOrderItemForResponse(item: any, correlationId?: string) {
     voidReason: item.voidReason || null,
     wasMade: item.wasMade ?? null,
     specialNotes: item.specialNotes,
-    modifiers: item.modifiers?.map((mod: any) => ({
+    modifiers: item.modifiers?.map((mod: Record<string, unknown>) => ({
       id: mod.id,
       modifierId: mod.modifierId,
       name: mod.name,
       price: Number(mod.price),
       quantity: mod.quantity,
       preModifier: mod.preModifier,       // ✅ Include
-      depth: mod.depth ?? 0,               // ✅ Include
+      depth: (mod.depth as number) ?? 0,  // ✅ Include
       spiritTier: mod.spiritTier,         // ✅ Include
       linkedBottleProductId: mod.linkedBottleProductId,  // ✅ Include
       // NOTE: parentModifierId missing from schema - needs migration
@@ -68,7 +157,7 @@ export function mapOrderItemForResponse(item: any, correlationId?: string) {
     blockTimeMinutes: item.blockTimeMinutes,
     blockTimeStartedAt: item.blockTimeStartedAt,
     blockTimeExpiresAt: item.blockTimeExpiresAt,
-    ingredientModifications: item.ingredientModifications?.map((ing: any) => ({
+    ingredientModifications: item.ingredientModifications?.map((ing: Record<string, unknown>) => ({
       id: ing.id,
       ingredientId: ing.ingredientId,
       ingredientName: ing.ingredientName,
@@ -81,7 +170,36 @@ export function mapOrderItemForResponse(item: any, correlationId?: string) {
   }
 }
 
-export function mapOrderForResponse(order: any) {
+/** Mapped order shape returned by the API */
+export interface MappedOrder {
+  id: string
+  orderNumber: number
+  status: string
+  orderType: string
+  tableId: string | null
+  tableName: string | null
+  tabName: string | null
+  guestCount: number
+  customerId: string | null
+  employeeId: string
+  employee?: { id: string; name: string }
+  items: MappedOrderItem[]
+  subtotal: number
+  discountTotal: number
+  taxTotal: number
+  tipTotal: number
+  total: number
+  discounts: unknown[]
+  payments: unknown[]
+  notes: string | null
+  createdAt: Date
+  updatedAt: Date
+  reopenedAt: Date | null
+  reopenReason: string | null
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function mapOrderForResponse(order: any): MappedOrder {
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -97,7 +215,7 @@ export function mapOrderForResponse(order: any) {
       id: order.employee.id,
       name: order.employee.displayName || `${order.employee.firstName} ${order.employee.lastName}`,
     } : undefined,
-    items: order.items?.map(mapOrderItemForResponse) || [],
+    items: order.items?.map((item: unknown) => mapOrderItemForResponse(item)) || [],
     subtotal: Number(order.subtotal),
     discountTotal: Number(order.discountTotal),
     taxTotal: Number(order.taxTotal),

@@ -10,7 +10,8 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 
 export default function OrderTypesPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [orderTypes, setOrderTypes] = useState<OrderTypeConfig[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [editingType, setEditingType] = useState<OrderTypeConfig | null>(null)

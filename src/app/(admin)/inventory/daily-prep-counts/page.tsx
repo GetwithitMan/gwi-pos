@@ -65,7 +65,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }>
 
 export default function DailyPrepCountsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [prepItems, setPrepItems] = useState<PrepItem[]>([])
   const [counts, setCounts] = useState<DailyPrepCount[]>([])
   const [isLoading, setIsLoading] = useState(true)

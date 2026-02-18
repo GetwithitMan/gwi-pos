@@ -36,7 +36,8 @@ interface ReportCategory {
 
 export default function ReportsHubPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [stats, setStats] = useState<TodayStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 

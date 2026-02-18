@@ -54,7 +54,8 @@ interface EmployeeOption {
 
 export default function TipGroupPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
 
   const [groups, setGroups] = useState<TipGroupInfo[]>([])
   const [myGroup, setMyGroup] = useState<TipGroupInfo | null>(null)

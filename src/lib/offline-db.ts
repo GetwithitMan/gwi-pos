@@ -10,8 +10,8 @@ export interface PendingOrder {
     tableId?: string
     orderTypeId?: string
     employeeId: string
-    items: any[]
-    customFields?: any
+    items: Record<string, unknown>[]
+    customFields?: Record<string, unknown>
   }
   timestamp: string
   attempts: number

@@ -33,7 +33,8 @@ type TabType = 'summary' | 'daily' | 'hourly' | 'categories' | 'items' | 'employ
 
 export default function SalesReportPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [report, setReport] = useState<SalesReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('summary')

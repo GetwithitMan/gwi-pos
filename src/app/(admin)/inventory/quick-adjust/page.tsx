@@ -51,7 +51,8 @@ const STOCK_COLORS: Record<StockLevel, { bg: string; text: string; border: strin
 
 export default function QuickStockAdjustPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [items, setItems] = useState<StockItem[]>([])
   const [byCategory, setByCategory] = useState<Record<string, StockItem[]>>({})
   const [isLoading, setIsLoading] = useState(true)

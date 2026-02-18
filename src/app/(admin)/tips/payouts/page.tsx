@@ -39,7 +39,8 @@ interface PayoutHistoryEntry {
 
 export default function TipPayoutsPage() {
   const router = useRouter()
-  const { employee, isAuthenticated } = useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const locationId = employee?.location?.id
 
   // ──── State ────
