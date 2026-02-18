@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { BasicPrintSettings } from '@/types/print-settings'
-import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print-settings'
+import { type BasicPrintSettings, DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print'
 
 interface PrintSettingsEditorProps {
   settings: BasicPrintSettings

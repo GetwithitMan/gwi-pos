@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
-import { PizzaPrintSettings } from '@/types/pizza-print-settings'
+import { PizzaPrintSettings } from '@/types/print'
 import { PizzaPrintSettingsEditor } from '@/components/hardware/PizzaPrintSettingsEditor'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 

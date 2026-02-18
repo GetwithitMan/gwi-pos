@@ -13,19 +13,17 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
  */
 
 import type { TemplateType } from '@/types/routing'
-import type {
-  PrintTemplateSettings,
-  ElementConfig,
-  DividerConfig,
-  AlertRule,
-} from '@/types/print-template-settings'
 import {
+  type PrintTemplateSettings,
+  type ElementConfig,
+  type DividerConfig,
+  type AlertRule,
+  type GlobalReceiptSettings,
   DEFAULT_HEADER_ELEMENTS,
   DEFAULT_ALERTS,
   DEFAULT_PRINT_TEMPLATE_SETTINGS,
-} from '@/types/print-template-settings'
-import type { GlobalReceiptSettings } from '@/types/receipt-settings'
-import { DEFAULT_GLOBAL_RECEIPT_SETTINGS } from '@/types/receipt-settings'
+  DEFAULT_GLOBAL_RECEIPT_SETTINGS,
+} from '@/types/print'
 
 // Re-export types for consumers
 export type { PrintTemplateSettings, ElementConfig, DividerConfig, AlertRule }

@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import type { ReceiptSettings } from '@/lib/settings'
-import type { GlobalReceiptSettings } from '@/types/receipt-settings'
-import { DEFAULT_GLOBAL_RECEIPT_SETTINGS } from '@/types/receipt-settings'
+import { type GlobalReceiptSettings, DEFAULT_GLOBAL_RECEIPT_SETTINGS } from '@/types/print'
 
 // ────────────────────────────────────────────
 // Toggle Component

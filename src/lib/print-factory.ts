@@ -29,14 +29,14 @@ import {
   text,
 } from '@/lib/escpos/commands'
 import type { TemplateType, RoutedItem, OrderContext, PizzaItemData } from '@/types/routing'
-import type { PizzaPrintSettings } from '@/types/pizza-print-settings'
-import type {
-  PrintTemplateSettings,
-  ElementConfig,
-  DividerConfig,
-  AlertRule,
-} from '@/types/print-template-settings'
-import { mergePrintTemplateSettings } from '@/types/print-template-settings'
+import {
+  type PizzaPrintSettings,
+  type PrintTemplateSettings,
+  type ElementConfig,
+  type DividerConfig,
+  type AlertRule,
+  mergePrintTemplateSettings,
+} from '@/types/print'
 
 // Print data structure for templates
 export interface PrintTemplateData {

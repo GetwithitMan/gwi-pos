@@ -1,8 +1,7 @@
 // Location Settings Types and Defaults
 // Skill 09: Features & Config
 
-import type { GlobalReceiptSettings } from '@/types/receipt-settings'
-import { DEFAULT_GLOBAL_RECEIPT_SETTINGS, mergeGlobalReceiptSettings } from '@/types/receipt-settings'
+import { type GlobalReceiptSettings, DEFAULT_GLOBAL_RECEIPT_SETTINGS, mergeGlobalReceiptSettings } from '@/types/print'
 export type { GlobalReceiptSettings }
 
 export interface DualPricingSettings {

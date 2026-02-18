@@ -10,7 +10,7 @@ import {
   ESCPOS,
   PAPER_WIDTH,
 } from '@/lib/escpos/commands'
-import { PrinterSettings } from '@/types/printer-settings'
+import { PrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 
 // POST print test page

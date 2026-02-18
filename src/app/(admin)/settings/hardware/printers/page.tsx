@@ -5,10 +5,8 @@ import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { PrinterSettingsEditor } from '@/components/hardware/PrinterSettingsEditor'
 import { ReceiptVisualEditor, type PrintTemplateSettings as VisualEditorSettings } from '@/components/hardware/ReceiptVisualEditor'
-import type { PrinterSettings } from '@/types/printer-settings'
+import { type PrinterSettings, type GlobalReceiptSettings, DEFAULT_GLOBAL_RECEIPT_SETTINGS } from '@/types/print'
 import type { TemplateType } from '@/types/routing'
-import type { GlobalReceiptSettings } from '@/types/receipt-settings'
-import { DEFAULT_GLOBAL_RECEIPT_SETTINGS } from '@/types/receipt-settings'
 
 interface Printer {
   id: string

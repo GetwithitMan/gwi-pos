@@ -14,8 +14,7 @@ import {
   ESCPOS,
   PAPER_WIDTH,
 } from '@/lib/escpos/commands'
-import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS } from '@/types/pizza-print-settings'
-import { PrinterSettings, getDefaultPrinterSettings } from '@/types/printer-settings'
+import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 
 interface PrintKitchenRequest {

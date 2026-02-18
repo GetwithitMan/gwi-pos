@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { PrinterSettings, DEFAULT_THERMAL_SETTINGS, DEFAULT_IMPACT_SETTINGS } from '@/types/printer-settings'
+import { PrinterSettings, DEFAULT_THERMAL_SETTINGS, DEFAULT_IMPACT_SETTINGS } from '@/types/print'
 
 interface PrinterSettingsEditorProps {
   settings: PrinterSettings | null

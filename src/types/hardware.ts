@@ -1,6 +1,6 @@
 // Hardware Management Types
 
-import type { BasicPrintSettings } from './print-settings'
+import type { BasicPrintSettings } from './print'
 
 // ============================================
 // PRINTER TYPES

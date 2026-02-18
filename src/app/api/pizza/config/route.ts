@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationId } from '@/lib/location-cache'
-import { PizzaPrintSettings } from '@/types/pizza-print-settings'
+import { PizzaPrintSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza/config - Get pizza configuration for location

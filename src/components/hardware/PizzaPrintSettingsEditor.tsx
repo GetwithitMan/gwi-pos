@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PIZZA_PRINT_PRESETS } from '@/types/pizza-print-settings'
+import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PIZZA_PRINT_PRESETS } from '@/types/print'
 
 interface PizzaPrintSettingsEditorProps {
   settings: PizzaPrintSettings | null
