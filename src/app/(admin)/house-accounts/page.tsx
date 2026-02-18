@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAuthStore } from '@/stores/auth-store'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface HouseAccount {
   id: string
@@ -57,17 +60,47 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
 }
 
 export default function HouseAccountsPage() {
-  const [accounts, setAccounts] = useState<HouseAccount[]>([])
-  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const { employee, isAuthenticated } = useAuthStore()
+
+  const crud = useAdminCRUD<HouseAccount>({
+    apiBase: '/api/house-accounts',
+    locationId: employee?.location?.id,
+    resourceName: 'account',
+    parseResponse: (data) => Array.isArray(data) ? data : data.accounts || data.data || [],
+  })
+
+  const {
+    items: accounts,
+    isLoading: loading,
+    showModal,
+    editingItem: editingAccount,
+    isSaving,
+    modalError,
+    loadItems: loadAccounts,
+    openAddModal,
+    openEditModal: crudOpenEditModal,
+    closeModal,
+    handleSave,
+    handleDelete,
+  } = crud
+
+  // Search/filter state (client-side)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [showCreateModal, setShowCreateModal] = useState(false)
+
+  // Account detail state
   const [selectedAccount, setSelectedAccount] = useState<HouseAccount | null>(null)
   const [accountTransactions, setAccountTransactions] = useState<HouseAccountTransaction[]>([])
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [showEditModal, setShowEditModal] = useState(false)
 
-  // Create/Edit form
+  // Payment modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false)
+  const [paymentAmount, setPaymentAmount] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState('check')
+  const [paymentReference, setPaymentReference] = useState('')
+  const [paymentNotes, setPaymentNotes] = useState('')
+
+  // Form state
   const [formName, setFormName] = useState('')
   const [formContactName, setFormContactName] = useState('')
   const [formEmail, setFormEmail] = useState('')
@@ -79,39 +112,36 @@ export default function HouseAccountsPage() {
   const [formTaxExempt, setFormTaxExempt] = useState(false)
   const [formTaxId, setFormTaxId] = useState('')
 
-  // Payment form
-  const [paymentAmount, setPaymentAmount] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState('check')
-  const [paymentReference, setPaymentReference] = useState('')
-  const [paymentNotes, setPaymentNotes] = useState('')
-
-  const locationId = 'default-location' // In a real app, get from context
-
+  // Auth guard
   useEffect(() => {
-    loadAccounts()
-  }, [statusFilter])
-
-  async function loadAccounts() {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({ locationId })
-      if (statusFilter !== 'all') {
-        params.append('status', statusFilter)
-      }
-      if (searchTerm) {
-        params.append('search', searchTerm)
-      }
-      const response = await fetch(`/api/house-accounts?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setAccounts(data)
-      }
-    } catch (error) {
-      console.error('Failed to load house accounts:', error)
-    } finally {
-      setLoading(false)
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/house-accounts')
     }
-  }
+  }, [isAuthenticated, router])
+
+  // Load on mount
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadAccounts()
+    }
+  }, [employee?.location?.id, loadAccounts])
+
+  // Client-side filtering
+  const filteredAccounts = useMemo(() => {
+    let filtered = accounts
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(a => a.status === statusFilter)
+    }
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase()
+      filtered = filtered.filter(a =>
+        a.name.toLowerCase().includes(term) ||
+        a.contactName?.toLowerCase().includes(term) ||
+        a.email?.toLowerCase().includes(term)
+      )
+    }
+    return filtered
+  }, [accounts, statusFilter, searchTerm])
 
   async function loadAccountDetails(account: HouseAccount) {
     setSelectedAccount(account)
@@ -126,67 +156,72 @@ export default function HouseAccountsPage() {
     }
   }
 
-  async function handleCreateAccount(e: React.FormEvent) {
-    e.preventDefault()
-    try {
-      const response = await fetch('/api/house-accounts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          name: formName,
-          contactName: formContactName || null,
-          email: formEmail || null,
-          phone: formPhone || null,
-          address: formAddress || null,
-          creditLimit: parseFloat(formCreditLimit) || 0,
-          paymentTerms: isNaN(parseInt(formPaymentTerms)) ? 30 : parseInt(formPaymentTerms),
-          billingCycle: formBillingCycle,
-          taxExempt: formTaxExempt,
-          taxId: formTaxId || null,
-        }),
-      })
-
-      if (response.ok) {
-        setShowCreateModal(false)
-        resetForm()
-        loadAccounts()
-      }
-    } catch (error) {
-      console.error('Failed to create account:', error)
-    }
+  function populateForm(account: HouseAccount) {
+    setFormName(account.name)
+    setFormContactName(account.contactName || '')
+    setFormEmail(account.email || '')
+    setFormPhone(account.phone || '')
+    setFormAddress(account.address || '')
+    setFormCreditLimit(account.creditLimit.toString())
+    setFormPaymentTerms(account.paymentTerms.toString())
+    setFormBillingCycle(account.billingCycle)
+    setFormTaxExempt(account.taxExempt)
+    setFormTaxId(account.taxId || '')
   }
 
-  async function handleUpdateAccount(e: React.FormEvent) {
+  function resetForm() {
+    setFormName('')
+    setFormContactName('')
+    setFormEmail('')
+    setFormPhone('')
+    setFormAddress('')
+    setFormCreditLimit('')
+    setFormPaymentTerms('30')
+    setFormBillingCycle('monthly')
+    setFormTaxExempt(false)
+    setFormTaxId('')
+  }
+
+  function resetPaymentForm() {
+    setPaymentAmount('')
+    setPaymentMethod('check')
+    setPaymentReference('')
+    setPaymentNotes('')
+  }
+
+  function handleOpenEditModal(account: HouseAccount) {
+    populateForm(account)
+    crudOpenEditModal(account)
+  }
+
+  async function handleSubmitForm(e: React.FormEvent) {
     e.preventDefault()
-    if (!selectedAccount) return
+    if (!employee?.location?.id) return
 
-    try {
-      const response = await fetch(`/api/house-accounts/${selectedAccount.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: formName,
-          contactName: formContactName || null,
-          email: formEmail || null,
-          phone: formPhone || null,
-          address: formAddress || null,
-          creditLimit: parseFloat(formCreditLimit) || 0,
-          paymentTerms: isNaN(parseInt(formPaymentTerms)) ? 30 : parseInt(formPaymentTerms),
-          billingCycle: formBillingCycle,
-          taxExempt: formTaxExempt,
-          taxId: formTaxId || null,
-        }),
-      })
+    const payload: Record<string, unknown> = {
+      name: formName,
+      contactName: formContactName || null,
+      email: formEmail || null,
+      phone: formPhone || null,
+      address: formAddress || null,
+      creditLimit: parseFloat(formCreditLimit) || 0,
+      paymentTerms: isNaN(parseInt(formPaymentTerms)) ? 30 : parseInt(formPaymentTerms),
+      billingCycle: formBillingCycle,
+      taxExempt: formTaxExempt,
+      taxId: formTaxId || null,
+    }
 
-      if (response.ok) {
-        setShowEditModal(false)
-        resetForm()
-        loadAccounts()
+    // Include locationId only for create
+    if (!editingAccount) {
+      payload.locationId = employee.location.id
+    }
+
+    const ok = await handleSave(payload)
+    if (ok) {
+      resetForm()
+      if (selectedAccount && editingAccount?.id === selectedAccount.id) {
         loadAccountDetails(selectedAccount)
       }
-    } catch (error) {
-      console.error('Failed to update account:', error)
     }
   }
 
@@ -239,40 +274,6 @@ export default function HouseAccountsPage() {
     }
   }
 
-  function openEditModal(account: HouseAccount) {
-    setFormName(account.name)
-    setFormContactName(account.contactName || '')
-    setFormEmail(account.email || '')
-    setFormPhone(account.phone || '')
-    setFormAddress(account.address || '')
-    setFormCreditLimit(account.creditLimit.toString())
-    setFormPaymentTerms(account.paymentTerms.toString())
-    setFormBillingCycle(account.billingCycle)
-    setFormTaxExempt(account.taxExempt)
-    setFormTaxId(account.taxId || '')
-    setShowEditModal(true)
-  }
-
-  function resetForm() {
-    setFormName('')
-    setFormContactName('')
-    setFormEmail('')
-    setFormPhone('')
-    setFormAddress('')
-    setFormCreditLimit('')
-    setFormPaymentTerms('30')
-    setFormBillingCycle('monthly')
-    setFormTaxExempt(false)
-    setFormTaxId('')
-  }
-
-  function resetPaymentForm() {
-    setPaymentAmount('')
-    setPaymentMethod('check')
-    setPaymentReference('')
-    setPaymentNotes('')
-  }
-
   // Calculate totals
   const totalOwed = accounts
     .filter(a => a.status === 'active')
@@ -284,7 +285,10 @@ export default function HouseAccountsPage() {
         title="House Accounts"
         subtitle={<>Total Outstanding: <span className="font-medium text-red-600">{formatCurrency(totalOwed)}</span></>}
         actions={
-          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+          <Button variant="primary" onClick={() => {
+            resetForm()
+            openAddModal()
+          }}>
             New Account
           </Button>
         }
@@ -325,11 +329,11 @@ export default function HouseAccountsPage() {
           <Card className="p-4">
             {loading ? (
               <div className="text-center py-8 text-gray-500">Loading...</div>
-            ) : accounts.length === 0 ? (
+            ) : filteredAccounts.length === 0 ? (
               <div className="text-center py-8 text-gray-500">No house accounts found</div>
             ) : (
               <div className="divide-y">
-                {accounts.map((account) => (
+                {filteredAccounts.map((account) => (
                   <div
                     key={account.id}
                     className={`p-4 cursor-pointer hover:bg-gray-50 ${
@@ -459,7 +463,7 @@ export default function HouseAccountsPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => openEditModal(selectedAccount)}
+                  onClick={() => handleOpenEditModal(selectedAccount)}
                 >
                   Edit
                 </Button>
@@ -512,12 +516,19 @@ export default function HouseAccountsPage() {
       </div>
       </div>
 
-      {/* Create Modal */}
-      {showCreateModal && (
+      {/* Create/Edit Modal */}
+      {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">Create House Account</h2>
-            <form onSubmit={handleCreateAccount} className="space-y-4">
+            <h2 className="text-xl font-bold mb-4">
+              {editingAccount ? 'Edit Account' : 'Create House Account'}
+            </h2>
+            {modalError && (
+              <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                {modalError}
+              </div>
+            )}
+            <form onSubmit={handleSubmitForm} className="space-y-4">
               <div>
                 <label className="text-sm font-medium block mb-1">Account Name *</label>
                 <input
@@ -649,160 +660,14 @@ export default function HouseAccountsPage() {
                   variant="outline"
                   className="flex-1"
                   onClick={() => {
-                    setShowCreateModal(false)
+                    closeModal()
                     resetForm()
                   }}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" variant="primary" className="flex-1">
-                  Create Account
-                </Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Modal */}
-      {showEditModal && selectedAccount && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">Edit Account</h2>
-            <form onSubmit={handleUpdateAccount} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium block mb-1">Account Name *</label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium block mb-1">Contact Name</label>
-                <input
-                  type="text"
-                  value={formContactName}
-                  onChange={(e) => setFormContactName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium block mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={formEmail}
-                    onChange={(e) => setFormEmail(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium block mb-1">Phone</label>
-                  <input
-                    type="tel"
-                    value={formPhone}
-                    onChange={(e) => setFormPhone(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium block mb-1">Address</label>
-                <textarea
-                  value={formAddress}
-                  onChange={(e) => setFormAddress(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  rows={2}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium block mb-1">Credit Limit</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2 text-gray-500">$</span>
-                    <input
-                      type="number"
-                      value={formCreditLimit}
-                      onChange={(e) => setFormCreditLimit(e.target.value)}
-                      className="w-full pl-7 pr-3 py-2 border rounded-lg"
-                      step="0.01"
-                      min="0"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-sm font-medium block mb-1">Payment Terms</label>
-                  <select
-                    value={formPaymentTerms}
-                    onChange={(e) => setFormPaymentTerms(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  >
-                    <option value="0">Due on receipt</option>
-                    <option value="7">Net 7</option>
-                    <option value="15">Net 15</option>
-                    <option value="30">Net 30</option>
-                    <option value="45">Net 45</option>
-                    <option value="60">Net 60</option>
-                    <option value="90">Net 90</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium block mb-1">Billing Cycle</label>
-                <select
-                  value={formBillingCycle}
-                  onChange={(e) => setFormBillingCycle(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                >
-                  <option value="monthly">Monthly</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="on_demand">On Demand</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={formTaxExempt}
-                    onChange={(e) => setFormTaxExempt(e.target.checked)}
-                    className="rounded"
-                  />
-                  <span className="text-sm">Tax Exempt</span>
-                </label>
-                {formTaxExempt && (
-                  <input
-                    type="text"
-                    value={formTaxId}
-                    onChange={(e) => setFormTaxId(e.target.value)}
-                    className="flex-1 px-3 py-1 border rounded-lg text-sm"
-                    placeholder="Tax Exempt ID"
-                  />
-                )}
-              </div>
-
-              <div className="flex gap-2 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setShowEditModal(false)
-                    resetForm()
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" className="flex-1">
-                  Save Changes
+                <Button type="submit" variant="primary" className="flex-1" disabled={isSaving}>
+                  {isSaving ? 'Saving...' : editingAccount ? 'Save Changes' : 'Create Account'}
                 </Button>
               </div>
             </form>

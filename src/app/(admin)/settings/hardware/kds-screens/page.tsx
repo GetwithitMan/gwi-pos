@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface PrepStation {
   id: string
@@ -79,6 +80,8 @@ const DEFAULT_FORM_DATA: FormData = {
 }
 
 export default function KDSScreensPage() {
+  const employee = useAuthStore(s => s.employee)
+  const locationId = employee?.location?.id
   const [screens, setScreens] = useState<KDSScreen[]>([])
   const [prepStations, setPrepStations] = useState<PrepStation[]>([])
   const [loading, setLoading] = useState(true)
@@ -91,10 +94,11 @@ export default function KDSScreensPage() {
   const [copySuccess, setCopySuccess] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
+    if (!locationId) return
     try {
       const [screensRes, stationsRes] = await Promise.all([
-        fetch('/api/hardware/kds-screens?locationId=loc-1'),
-        fetch('/api/prep-stations?locationId=loc-1'),
+        fetch(`/api/hardware/kds-screens?locationId=${locationId}`),
+        fetch(`/api/prep-stations?locationId=${locationId}`),
       ])
 
       if (screensRes.ok) {
@@ -111,7 +115,7 @@ export default function KDSScreensPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [locationId])
 
   useEffect(() => {
     fetchData()
@@ -164,7 +168,7 @@ export default function KDSScreensPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          locationId: 'loc-1',
+          locationId,
         }),
       })
 

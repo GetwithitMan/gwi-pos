@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface StorageLocation {
   id: string
@@ -69,9 +70,24 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
 export default function CountsPage() {
   const router = useRouter()
   const { employee, isAuthenticated } = useAuthStore()
-  const [counts, setCounts] = useState<InventoryCount[]>([])
+
+  const crud = useAdminCRUD<InventoryCount>({
+    apiBase: '/api/inventory/counts',
+    locationId: employee?.location?.id,
+    resourceName: 'count',
+    parseResponse: (data) => data.counts || [],
+  })
+
+  const {
+    items: allCounts,
+    isLoading,
+    showModal: showNewModal,
+    loadItems,
+    openAddModal,
+    closeModal,
+  } = crud
+
   const [storageLocations, setStorageLocations] = useState<StorageLocation[]>([])
-  const [isLoading, setIsLoading] = useState(true)
 
   // Selected count for detail view
   const [selectedCountId, setSelectedCountId] = useState<string | null>(null)
@@ -81,52 +97,31 @@ export default function CountsPage() {
   // Count entries being edited
   const [editedItems, setEditedItems] = useState<Record<string, string>>({})
 
-  // Filter
+  // Filter (client-side)
   const [statusFilter, setStatusFilter] = useState('')
 
-  // New count modal
-  const [showNewModal, setShowNewModal] = useState(false)
+  const counts = useMemo(() => {
+    if (!statusFilter) return allCounts
+    return allCounts.filter(c => c.status === statusFilter)
+  }, [allCounts, statusFilter])
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login?redirect=/inventory/counts')
       return
     }
-    loadData()
   }, [isAuthenticated, router])
 
-  const loadData = async () => {
-    if (!employee?.location?.id) return
-    setIsLoading(true)
-
-    try {
-      const [countsRes, locationsRes] = await Promise.all([
-        fetch(`/api/inventory/counts?locationId=${employee.location.id}${statusFilter ? `&status=${statusFilter}` : ''}`),
-        fetch(`/api/inventory/storage-locations?locationId=${employee.location.id}`),
-      ])
-
-      if (countsRes.ok) {
-        const data = await countsRes.json()
-        setCounts(data.counts || [])
-      }
-      if (locationsRes.ok) {
-        const data = await locationsRes.json()
-        setStorageLocations(data.storageLocations || [])
-      }
-    } catch (error) {
-      console.error('Failed to load data:', error)
-      toast.error('Failed to load counts')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Reload when filter changes
+  // Load counts + storage locations
   useEffect(() => {
     if (employee?.location?.id) {
-      loadData()
+      loadItems()
+      fetch(`/api/inventory/storage-locations?locationId=${employee.location.id}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => { if (data) setStorageLocations(data.storageLocations || []) })
+        .catch(() => {})
     }
-  }, [statusFilter])
+  }, [employee?.location?.id, loadItems])
 
   // Load count detail
   useEffect(() => {
@@ -181,7 +176,7 @@ export default function CountsPage() {
       if (res.ok) {
         toast.success(`Saved ${itemUpdates.length} item(s)`)
         loadCountDetail(countDetail.id)
-        loadData() // Refresh list
+        loadItems() // Refresh list
       } else {
         toast.error('Failed to save counts')
       }
@@ -211,7 +206,7 @@ export default function CountsPage() {
       if (res.ok) {
         toast.success('Count completed')
         loadCountDetail(countDetail.id)
-        loadData()
+        loadItems()
       } else {
         toast.error('Failed to complete count')
       }
@@ -237,7 +232,7 @@ export default function CountsPage() {
       if (res.ok) {
         toast.success('Count approved - inventory updated')
         loadCountDetail(countDetail.id)
-        loadData()
+        loadItems()
       } else {
         toast.error('Failed to approve count')
       }
@@ -301,7 +296,7 @@ export default function CountsPage() {
         subtitle="Physical inventory counts and reconciliation"
         breadcrumbs={[{ label: 'Inventory', href: '/inventory' }]}
         actions={
-          <Button size="sm" onClick={() => setShowNewModal(true)}>
+          <Button size="sm" onClick={openAddModal}>
             + New Count
           </Button>
         }
@@ -527,10 +522,10 @@ export default function CountsPage() {
           locationId={employee?.location?.id || ''}
           employeeId={employee?.id || ''}
           storageLocations={storageLocations}
-          onClose={() => setShowNewModal(false)}
+          onClose={closeModal}
           onCreated={(countId) => {
-            setShowNewModal(false)
-            loadData()
+            closeModal()
+            loadItems()
             setSelectedCountId(countId)
           }}
         />

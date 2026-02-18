@@ -77,12 +77,13 @@ export default function HardwareDashboard() {
   const [loading, setLoading] = useState(true)
 
   const fetchStatus = useCallback(async () => {
+    if (!locationId) return
     try {
       const [printersRes, kdsRes, terminalsRes, readersRes] = await Promise.all([
-        fetch('/api/hardware/printers?locationId=loc-1'),
-        fetch('/api/hardware/kds-screens?locationId=loc-1'),
-        fetch('/api/hardware/terminals?locationId=loc-1'),
-        fetch('/api/hardware/payment-readers?locationId=loc-1'),
+        fetch(`/api/hardware/printers?locationId=${locationId}`),
+        fetch(`/api/hardware/kds-screens?locationId=${locationId}`),
+        fetch(`/api/hardware/terminals?locationId=${locationId}`),
+        fetch(`/api/hardware/payment-readers?locationId=${locationId}`),
       ])
 
       if (printersRes.ok) {
@@ -109,7 +110,7 @@ export default function HardwareDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [locationId])
 
   useEffect(() => {
     fetchStatus()

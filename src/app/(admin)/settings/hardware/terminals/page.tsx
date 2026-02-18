@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { TerminalFailoverManager } from '@/components/hardware/TerminalFailoverManager'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface Printer {
   id: string
@@ -35,12 +36,12 @@ interface Role {
   name: string
 }
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // Printer roles that can be skipped
 const SKIP_TAGS = ['bar', 'kitchen', 'pizza', 'entertainment']
 
 export default function TerminalsPage() {
+  const employee = useAuthStore(s => s.employee)
+  const locationId = employee?.location?.id
   const [terminals, setTerminals] = useState<Terminal[]>([])
   const [printers, setPrinters] = useState<Printer[]>([])
   const [roles, setRoles] = useState<Role[]>([])
@@ -50,11 +51,12 @@ export default function TerminalsPage() {
   const [pairingCode, setPairingCode] = useState<{ code: string; terminalId: string; expiresAt: string } | null>(null)
 
   const fetchData = useCallback(async () => {
+    if (!locationId) return
     try {
       const [terminalsRes, printersRes, rolesRes] = await Promise.all([
-        fetch(`/api/hardware/terminals?locationId=${DEFAULT_LOCATION_ID}`),
-        fetch(`/api/hardware/printers?locationId=${DEFAULT_LOCATION_ID}&role=receipt`),
-        fetch(`/api/employees/roles?locationId=${DEFAULT_LOCATION_ID}`),
+        fetch(`/api/hardware/terminals?locationId=${locationId}`),
+        fetch(`/api/hardware/printers?locationId=${locationId}&role=receipt`),
+        fetch(`/api/employees/roles?locationId=${locationId}`),
       ])
 
       if (terminalsRes.ok) {
@@ -76,7 +78,7 @@ export default function TerminalsPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [locationId])
 
   useEffect(() => {
     fetchData()

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { PrinterSettingsEditor } from '@/components/hardware/PrinterSettingsEditor'
+import { useAuthStore } from '@/stores/auth-store'
 import { ReceiptVisualEditor, type PrintTemplateSettings as VisualEditorSettings } from '@/components/hardware/ReceiptVisualEditor'
 import { type PrinterSettings, type GlobalReceiptSettings, DEFAULT_GLOBAL_RECEIPT_SETTINGS } from '@/types/print'
 import type { TemplateType } from '@/types/routing'
@@ -51,6 +52,8 @@ const DEFAULT_FORM_DATA: PrinterFormData = {
 }
 
 export default function PrintersPage() {
+  const employee = useAuthStore(s => s.employee)
+  const locationId = employee?.location?.id
   const [printers, setPrinters] = useState<Printer[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -65,8 +68,9 @@ export default function PrintersPage() {
   const [globalReceiptSettings, setGlobalReceiptSettings] = useState<GlobalReceiptSettings>(DEFAULT_GLOBAL_RECEIPT_SETTINGS)
 
   const fetchPrinters = useCallback(async () => {
+    if (!locationId) return
     try {
-      const res = await fetch('/api/hardware/printers?locationId=loc-1')
+      const res = await fetch(`/api/hardware/printers?locationId=${locationId}`)
       if (res.ok) {
         const data = await res.json()
         setPrinters(data.printers || [])
@@ -76,7 +80,7 @@ export default function PrintersPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [locationId])
 
   // Fetch global receipt settings from location
   const fetchGlobalSettings = useCallback(async () => {
@@ -146,7 +150,7 @@ export default function PrintersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          locationId: 'loc-1',
+          locationId,
         }),
       })
 

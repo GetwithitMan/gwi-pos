@@ -33,11 +33,12 @@ export default function SettingsPage() {
     hasPermission(employee?.permissions || [], PERMISSIONS.ADMIN)
 
   const loadHardwareStatus = useCallback(async () => {
+    if (!locationId) return
     try {
       const [terminalsRes, printersRes, kdsRes] = await Promise.all([
-        fetch('/api/hardware/terminals?locationId=loc-1'),
-        fetch('/api/hardware/printers?locationId=loc-1'),
-        fetch('/api/hardware/kds-screens?locationId=loc-1'),
+        fetch(`/api/hardware/terminals?locationId=${locationId}`),
+        fetch(`/api/hardware/printers?locationId=${locationId}`),
+        fetch(`/api/hardware/kds-screens?locationId=${locationId}`),
       ])
 
       if (terminalsRes.ok) {
@@ -55,7 +56,7 @@ export default function SettingsPage() {
     } catch (error) {
       console.error('Failed to load hardware status:', error)
     }
-  }, [])
+  }, [locationId])
 
   useEffect(() => {
     loadSettings()

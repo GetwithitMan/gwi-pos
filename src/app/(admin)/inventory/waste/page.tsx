@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface InventoryItem {
   id: string
@@ -44,6 +45,22 @@ const STORAGE_UNITS = ['oz', 'lb', 'g', 'kg', 'ml', 'L', 'each', 'slice', 'porti
 export default function WastePage() {
   const router = useRouter()
   const { employee, isAuthenticated } = useAuthStore()
+
+  // useAdminCRUD for modal state; custom load due to date-range query params
+  const crud = useAdminCRUD<WasteEntry>({
+    apiBase: '/api/inventory/waste',
+    locationId: employee?.location?.id,
+    resourceName: 'waste entry',
+    parseResponse: (data) => data.entries || [],
+  })
+
+  const {
+    showModal,
+    openAddModal,
+    closeModal,
+  } = crud
+
+  // Custom load state (date/reason query params not supported by hook's loadItems)
   const [entries, setEntries] = useState<WasteEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -58,9 +75,6 @@ export default function WastePage() {
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split('T')[0]
   })
-
-  // Modal
-  const [showModal, setShowModal] = useState(false)
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -154,7 +168,7 @@ export default function WastePage() {
         subtitle="Track and manage inventory waste"
         breadcrumbs={[{ label: 'Inventory', href: '/inventory' }]}
         actions={
-          <Button onClick={() => setShowModal(true)}>
+          <Button onClick={openAddModal}>
             + Log Waste
           </Button>
         }
@@ -310,8 +324,8 @@ export default function WastePage() {
         <WasteEntryModal
           locationId={employee?.location?.id || ''}
           employeeId={employee?.id || ''}
-          onClose={() => setShowModal(false)}
-          onSave={() => { setShowModal(false); loadWaste() }}
+          onClose={closeModal}
+          onSave={() => { closeModal(); loadWaste() }}
         />
       )}
     </div>

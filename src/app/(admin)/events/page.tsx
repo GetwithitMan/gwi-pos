@@ -1,9 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 
 interface PricingTier {
@@ -33,8 +35,6 @@ interface Event {
   createdAt: string
 }
 
-const LOCATION_ID = 'loc_default'
-
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
   on_sale: 'bg-green-50 text-green-700',
@@ -52,17 +52,30 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
 }
 
 export default function EventsPage() {
+  const router = useRouter()
+  const { employee, isAuthenticated } = useAuthStore()
+  const locationId = employee?.location?.id
+
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<string>('upcoming')
 
   useEffect(() => {
-    fetchEvents()
-  }, [filter])
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/events')
+    }
+  }, [isAuthenticated, router])
+
+  useEffect(() => {
+    if (locationId) {
+      fetchEvents()
+    }
+  }, [filter, locationId])
 
   async function fetchEvents() {
+    if (!locationId) return
     try {
-      const params = new URLSearchParams({ locationId: LOCATION_ID })
+      const params = new URLSearchParams({ locationId })
       if (filter === 'upcoming') {
         params.set('upcoming', 'true')
       } else if (filter !== 'all') {

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface ProductMixItem {
   menuItemId: string
@@ -66,9 +68,11 @@ interface ReportData {
   }
 }
 
-const LOCATION_ID = 'loc_default'
-
 export default function ProductMixReportPage() {
+  const router = useRouter()
+  const { employee, isAuthenticated } = useAuthStore()
+  const locationId = employee?.location?.id
+
   const [report, setReport] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
   const [startDate, setStartDate] = useState(() => {
@@ -80,14 +84,23 @@ export default function ProductMixReportPage() {
   const [view, setView] = useState<'items' | 'categories' | 'hourly' | 'pairings'>('items')
 
   useEffect(() => {
-    fetchReport()
-  }, [startDate, endDate])
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/reports/product-mix')
+    }
+  }, [isAuthenticated, router])
+
+  useEffect(() => {
+    if (locationId) {
+      fetchReport()
+    }
+  }, [startDate, endDate, locationId])
 
   async function fetchReport() {
+    if (!locationId) return
     setLoading(true)
     try {
       const res = await fetch(
-        `/api/reports/product-mix?locationId=${LOCATION_ID}&startDate=${startDate}&endDate=${endDate}`
+        `/api/reports/product-mix?locationId=${locationId}&startDate=${startDate}&endDate=${endDate}`
       )
       const data = await res.json()
       setReport(data)

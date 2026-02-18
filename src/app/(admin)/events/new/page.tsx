@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface PricingTierInput {
   name: string
@@ -13,8 +14,6 @@ interface PricingTierInput {
   quantityAvailable: number | null
   maxPerOrder: number | null
 }
-
-const LOCATION_ID = 'loc_default'
 
 const DEFAULT_TIER: PricingTierInput = {
   name: '',
@@ -42,8 +41,17 @@ const TICKETING_MODES = [
 
 export default function CreateEventPage() {
   const router = useRouter()
+  const { employee, isAuthenticated } = useAuthStore()
+  const locationId = employee?.location?.id
+
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/events/new')
+    }
+  }, [isAuthenticated, router])
 
   const [form, setForm] = useState({
     name: '',
@@ -97,7 +105,7 @@ export default function CreateEventPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
-          locationId: LOCATION_ID,
+          locationId,
           pricingTiers: validTiers.map((tier, index) => ({
             ...tier,
             sortOrder: index,
