@@ -70,10 +70,16 @@ import { useSplitTickets } from '@/hooks/useSplitTickets'
 import { useShiftManagement } from '@/hooks/useShiftManagement'
 import { useTimedRentals } from '@/hooks/useTimedRentals'
 import { useItemOperations } from '@/hooks/useItemOperations'
+import { usePaymentFlow } from '@/hooks/usePaymentFlow'
+import { useModifierModal } from '@/hooks/useModifierModal'
+import { useComboBuilder } from '@/hooks/useComboBuilder'
+import { useCardTabFlow } from '@/hooks/useCardTabFlow'
+import { useTabsPanel } from '@/hooks/useTabsPanel'
+import { usePizzaBuilder } from '@/hooks/usePizzaBuilder'
 const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentOverlay'))
 const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow').then(m => ({ default: m.CardFirstTabFlow })))
 const TabNamePromptModal = lazy(() => import('@/components/tabs/TabNamePromptModal').then(m => ({ default: m.TabNamePromptModal })))
-import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
+import type { Category, MenuItem, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
 // DEFERRED: Replace with dynamic terminal ID from device provisioning — tracked in PM-TASK-BOARD.md
 // For now, uses the seeded terminal.
@@ -157,19 +163,14 @@ export default function OrdersPage() {
   const canAccessAdmin = isManager ||
     permissionsArray.some(p => p.startsWith('reports.') || p.startsWith('settings.') || p.startsWith('tips.'))
 
-  // Modifier selection state
-  const [showModifierModal, setShowModifierModal] = useState(false)
-  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
-  const [itemModifierGroups, setItemModifierGroups] = useState<ModifierGroup[]>([])
-  const [loadingModifiers, setLoadingModifiers] = useState(false)
-  const [editingOrderItem, setEditingOrderItem] = useState<{
-    id: string
-    menuItemId: string
-    modifiers: { id: string; name: string; price: number; depth: number; parentModifierId?: string }[]
-    ingredientModifications?: { ingredientId: string; name: string; modificationType: 'no' | 'lite' | 'on_side' | 'extra' | 'swap'; priceAdjustment: number; swappedTo?: { modifierId: string; name: string; price: number } }[]
-    specialNotes?: string
-    pizzaConfig?: PizzaOrderConfig
-  } | null>(null)
+  // Modifier selection state (extracted to useModifierModal hook)
+  const {
+    showModifierModal, setShowModifierModal,
+    selectedItem, setSelectedItem,
+    itemModifierGroups, setItemModifierGroups,
+    loadingModifiers, setLoadingModifiers,
+    editingOrderItem, setEditingOrderItem,
+  } = useModifierModal()
 
   // Ref for handleOpenModifiersShared — defined later but needed by useOrderingEngine
   const handleOpenModifiersSharedRef = useRef<((...args: any[]) => void) | null>(null)
@@ -181,13 +182,12 @@ export default function OrdersPage() {
   // T023: Inline ordering pizza builder callback ref
   const inlinePizzaCallbackRef = useRef<((config: PizzaOrderConfig) => void) | null>(null)
 
-  // Pizza builder state
-  const [showPizzaModal, setShowPizzaModal] = useState(false)
-  const [selectedPizzaItem, setSelectedPizzaItem] = useState<MenuItem | null>(null)
-  const [editingPizzaItem, setEditingPizzaItem] = useState<{
-    id: string
-    pizzaConfig?: PizzaOrderConfig
-  } | null>(null)
+  // Pizza builder state (extracted to usePizzaBuilder hook)
+  const {
+    showPizzaModal, setShowPizzaModal,
+    selectedPizzaItem, setSelectedPizzaItem,
+    editingPizzaItem, setEditingPizzaItem,
+  } = usePizzaBuilder()
 
   // Settings loaded from API via custom hook
   const { dualPricing, paymentSettings, priceRounding, taxRate, receiptSettings, taxInclusiveLiquor, taxInclusiveFood, requireCardForTab } = useOrderSettings()
@@ -229,7 +229,16 @@ export default function OrdersPage() {
     permissions: hasLayoutPermission ? { posLayout: ['customize_personal'] } : undefined,
   })
 
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('card')
+  // Payment flow state (extracted to usePaymentFlow hook)
+  const {
+    paymentMethod, setPaymentMethod,
+    showPaymentModal, setShowPaymentModal,
+    initialPayMethod, setInitialPayMethod,
+    orderToPayId, setOrderToPayId,
+    paymentTabCards, setPaymentTabCards,
+    showDiscountModal, setShowDiscountModal,
+    appliedDiscounts, setAppliedDiscounts,
+  } = usePaymentFlow()
 
   // Unified pricing calculations
   const pricing = usePricing({
@@ -254,12 +263,6 @@ export default function OrdersPage() {
     textColor?: string | null
   }[]>([])
 
-  // Payment modal state
-  const [showPaymentModal, setShowPaymentModal] = useState(false)
-  const [initialPayMethod, setInitialPayMethod] = useState<'cash' | 'credit' | undefined>(undefined)
-  const [orderToPayId, setOrderToPayId] = useState<string | null>(null)
-  const [paymentTabCards, setPaymentTabCards] = useState<Array<{ id: string; cardType: string; cardLast4: string; cardholderName?: string | null; authAmount: number; isDefault: boolean }>>([])
-
   // Order to load into FloorPlanHome (for editing from Open Orders panel)
   const [orderToLoad, setOrderToLoad] = useState<{ id: string; orderNumber: number; tableId?: string; tableName?: string; tabName?: string; orderType: string } | null>(null)
 
@@ -282,29 +285,16 @@ export default function OrdersPage() {
   // Floor plan refresh trigger - increment to force FloorPlanHome to refresh
   const [floorPlanRefreshTrigger, setFloorPlanRefreshTrigger] = useState(0)
 
-  // Discount modal state
-  const [showDiscountModal, setShowDiscountModal] = useState(false)
-  const [appliedDiscounts, setAppliedDiscounts] = useState<{ id: string; name: string; amount: number; percent?: number | null }[]>([])
-
   // Tab name prompt state
   const [showTabNamePrompt, setShowTabNamePrompt] = useState(false)
   const [tabNameCallback, setTabNameCallback] = useState<(() => void) | null>(null)
 
-  // Card-first tab flow state
-  const [showCardTabFlow, setShowCardTabFlow] = useState(false)
-  const [cardTabOrderId, setCardTabOrderId] = useState<string | null>(null)
-  const [tabCardInfo, setTabCardInfo] = useState<{ cardholderName?: string; cardLast4?: string; cardType?: string } | null>(null)
-
-  // Clear tab card info only when order transitions FROM something TO null
-  // (not when currentOrder is already null — avoids race with async order loading)
-  const prevOrderRef = useRef(currentOrder)
-  useEffect(() => {
-    if (prevOrderRef.current && !currentOrder) {
-      setTabCardInfo(null)
-      setCardTabOrderId(null)
-    }
-    prevOrderRef.current = currentOrder
-  }, [currentOrder])
+  // Card-first tab flow state (extracted to useCardTabFlow hook)
+  const {
+    showCardTabFlow, setShowCardTabFlow,
+    cardTabOrderId, setCardTabOrderId,
+    tabCardInfo, setTabCardInfo,
+  } = useCardTabFlow(currentOrder)
 
   // Comp/Void + Resend modal state (extracted to useItemOperations hook)
   const {
@@ -336,11 +326,13 @@ export default function OrdersPage() {
     splitChipsFlashing, setSplitChipsFlashing,
   } = useSplitTickets()
 
-  // Tabs panel state
-  const [showTabsPanel, setShowTabsPanel] = useState(false)
-  const [isTabManagerExpanded, setIsTabManagerExpanded] = useState(false)
-  const [showTipAdjustment, setShowTipAdjustment] = useState(false)
-  const [tabsRefreshTrigger, setTabsRefreshTrigger] = useState(0)
+  // Tabs panel state (extracted to useTabsPanel hook)
+  const {
+    showTabsPanel, setShowTabsPanel,
+    isTabManagerExpanded, setIsTabManagerExpanded,
+    showTipAdjustment, setShowTipAdjustment,
+    tabsRefreshTrigger, setTabsRefreshTrigger,
+  } = useTabsPanel()
 
   // Saved order state
   const [savedOrderId, setSavedOrderId] = useState<string | null>(null)
@@ -440,50 +432,13 @@ export default function OrdersPage() {
     shiftChecked, setShiftChecked,
   } = useShiftManagement()
 
-  // Combo selection state
-  const [showComboModal, setShowComboModal] = useState(false)
-  const [selectedComboItem, setSelectedComboItem] = useState<MenuItem | null>(null)
-  const [comboTemplate, setComboTemplate] = useState<{
-    id: string
-    basePrice: number
-    comparePrice?: number | null
-    components: {
-      id: string
-      slotName: string
-      displayName: string
-      isRequired: boolean
-      minSelections: number
-      maxSelections: number
-      menuItemId?: string | null
-      menuItem?: {
-        id: string
-        name: string
-        price: number
-        modifierGroups?: {
-          modifierGroup: {
-            id: string
-            name: string
-            displayName?: string | null
-            minSelections: number
-            maxSelections: number
-            isRequired: boolean
-            modifiers: {
-              id: string
-              name: string
-              price: number
-              childModifierGroupId?: string | null
-            }[]
-          }
-        }[]
-      } | null
-      itemPriceOverride?: number | null
-      modifierPriceOverrides?: Record<string, number> | null
-      // Legacy fields
-      options: { id: string; menuItemId: string; name: string; upcharge: number; isAvailable: boolean }[]
-    }[]
-  } | null>(null)
-  // comboSelections maps componentId -> groupId -> modifierIds
-  const [comboSelections, setComboSelections] = useState<Record<string, Record<string, string[]>>>({})
+  // Combo selection state (extracted to useComboBuilder hook)
+  const {
+    showComboModal, setShowComboModal,
+    selectedComboItem, setSelectedComboItem,
+    comboTemplate, setComboTemplate,
+    comboSelections, setComboSelections,
+  } = useComboBuilder()
 
   // Timed rental & entertainment state (extracted to useTimedRentals hook)
   const {
