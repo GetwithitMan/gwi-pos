@@ -16,6 +16,7 @@ import {
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
 import { useDevStore } from '@/stores/dev-store'
@@ -37,6 +38,7 @@ const DiscountModal = lazy(() => import('@/components/orders/DiscountModal').the
 const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
 const ItemTransferModal = lazy(() => import('@/components/orders/ItemTransferModal').then(m => ({ default: m.ItemTransferModal })))
 const SplitCheckScreen = lazy(() => import('@/components/orders/SplitCheckScreen').then(m => ({ default: m.SplitCheckScreen })))
+const PayAllSplitsModal = lazy(() => import('@/components/orders/PayAllSplitsModal').then(m => ({ default: m.PayAllSplitsModal })))
 import { NoteEditModal } from '@/components/orders/NoteEditModal'
 import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
 import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
@@ -48,25 +50,25 @@ import type { IngredientModificationType } from '@/types/orders'
 const ModifierModal = lazy(() => import('@/components/modifiers/ModifierModal').then(m => ({ default: m.ModifierModal })))
 const PizzaBuilderModal = lazy(() => import('@/components/pizza/PizzaBuilderModal').then(m => ({ default: m.PizzaBuilderModal })))
 const EntertainmentSessionStart = lazy(() => import('@/components/entertainment/EntertainmentSessionStart').then(m => ({ default: m.EntertainmentSessionStart })))
+const TimedRentalStartModal = lazy(() => import('@/components/entertainment/TimedRentalStartModal').then(m => ({ default: m.TimedRentalStartModal })))
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import { FloorPlanHome } from '@/components/floor-plan'
 import { useFloorPlanStore } from '@/components/floor-plan/use-floor-plan'
 import { BartenderView } from '@/components/bartender'
 import { OrderPanel, type OrderPanelItemData } from '@/components/orders/OrderPanel'
 import { UnifiedPOSHeader } from '@/components/orders/UnifiedPOSHeader'
-import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 import { useMenuSearch } from '@/hooks/useMenuSearch'
 import { QuickPickStrip } from '@/components/orders/QuickPickStrip'
 import { useQuickPick } from '@/hooks/useQuickPick'
 import { useOrderPanelCallbacks } from '@/hooks/useOrderPanelCallbacks'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { toast } from '@/stores/toast-store'
-import { DatacapPaymentProcessor } from '@/components/payment/DatacapPaymentProcessor'
 import type { DatacapResult } from '@/hooks/useDatacap'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
 const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentOverlay'))
 const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow').then(m => ({ default: m.CardFirstTabFlow })))
+const TabNamePromptModal = lazy(() => import('@/components/tabs/TabNamePromptModal').then(m => ({ default: m.TabNamePromptModal })))
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
 // TODO: Replace with dynamic terminal ID from device provisioning or localStorage
@@ -277,7 +279,6 @@ export default function OrdersPage() {
 
   // Tab name prompt state
   const [showTabNamePrompt, setShowTabNamePrompt] = useState(false)
-  const [tabNameInput, setTabNameInput] = useState('')
   const [tabNameCallback, setTabNameCallback] = useState<(() => void) | null>(null)
 
   // Card-first tab flow state
@@ -1069,7 +1070,6 @@ export default function OrdersPage() {
       }
       if (validation.message === 'TAB_NAME_REQUIRED') {
         // Show tab name prompt, then retry send after name is entered
-        setTabNameInput('')
         setTabNameCallback(() => () => handleSendToKitchen())
         setShowTabNamePrompt(true)
         return
@@ -1896,22 +1896,24 @@ export default function OrdersPage() {
   }
 
   // Handle starting a timed rental session
-  const handleStartTimedSession = async () => {
+  const handleStartTimedSession = async (rateType?: 'per15Min' | 'per30Min' | 'perHour') => {
     if (!selectedTimedItem || !employee?.location?.id) return
+
+    const effectiveRateType = rateType || selectedRateType
 
     const pricing = selectedTimedItem.timedPricing as { per15Min?: number; per30Min?: number; perHour?: number; minimum?: number } | null
 
     // Get the rate - try selected type first, then fall back
     let rateAmount = selectedTimedItem.price
     if (pricing) {
-      rateAmount = pricing[selectedRateType] || pricing.perHour || pricing.per30Min || pricing.per15Min || selectedTimedItem.price
+      rateAmount = pricing[effectiveRateType] || pricing.perHour || pricing.per30Min || pricing.per15Min || selectedTimedItem.price
     }
 
     // Calculate block time in minutes based on selected rate type
     let blockMinutes = 60 // default to 1 hour
-    if (selectedRateType === 'per15Min') blockMinutes = 15
-    else if (selectedRateType === 'per30Min') blockMinutes = 30
-    else if (selectedRateType === 'perHour') blockMinutes = 60
+    if (effectiveRateType === 'per15Min') blockMinutes = 15
+    else if (effectiveRateType === 'per30Min') blockMinutes = 30
+    else if (effectiveRateType === 'perHour') blockMinutes = 60
 
     // T023: Check if this is inline ordering callback - skip API session creation
     if (inlineTimedRentalCallbackRef.current) {
@@ -1930,7 +1932,7 @@ export default function OrdersPage() {
         body: JSON.stringify({
           locationId: employee.location.id,
           menuItemId: selectedTimedItem.id,
-          rateType: selectedRateType,
+          rateType: effectiveRateType,
           rateAmount,
           startedById: employee.id,
         }),
@@ -1945,12 +1947,12 @@ export default function OrdersPage() {
           menuItemId: selectedTimedItem.id,
           menuItemName: selectedTimedItem.name,
           startedAt: session.startedAt,
-          rateType: selectedRateType,
+          rateType: effectiveRateType,
           rateAmount,
         }])
 
         // Add a placeholder item to the order showing active session
-        const rateLabel = selectedRateType.replace('per', '').replace('Min', ' min').replace('Hour', '/hr')
+        const rateLabel = effectiveRateType.replace('per', '').replace('Min', ' min').replace('Hour', '/hr')
         addItem({
           menuItemId: selectedTimedItem.id,
           name: `⏱️ ${selectedTimedItem.name} (Active)`,
@@ -2706,7 +2708,6 @@ export default function OrdersPage() {
               } else {
                 // Card NOT required → show tab name prompt with keyboard
                 // (reader stays in ready mode — if card is tapped it will be picked up)
-                setTabNameInput('')
                 setTabNameCallback(() => async () => {
                   // After name is entered, capture state then clear UI instantly
                   const store = useOrderStore.getState()
@@ -3202,7 +3203,7 @@ export default function OrdersPage() {
         )}
         {showEntertainmentStart && entertainmentItem && (
           <Suspense fallback={null}>
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <Modal isOpen={showEntertainmentStart && !!entertainmentItem} onClose={() => { setShowEntertainmentStart(false); setEntertainmentItem(null) }} size="md">
             <EntertainmentSessionStart
               itemName={entertainmentItem.name}
               itemId={entertainmentItem.id}
@@ -3227,102 +3228,19 @@ export default function OrdersPage() {
                 setEntertainmentItem(null)
               }}
             />
-          </div>
+          </Modal>
           </Suspense>
         )}
         {showTimedRentalModal && selectedTimedItem && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-              <div className="p-4 border-b bg-purple-50">
-                <h2 className="text-lg font-bold text-purple-800">{selectedTimedItem.name}</h2>
-                <p className="text-sm text-purple-600">Start a timed session</p>
-              </div>
-              <div className="p-6">
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Rate
-                  </label>
-                  <div className="space-y-2">
-                    {selectedTimedItem.timedPricing?.per15Min ? (
-                      <button
-                        onClick={() => setSelectedRateType('per15Min')}
-                        className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
-                          selectedRateType === 'per15Min'
-                            ? 'border-purple-500 bg-purple-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <span>Per 15 minutes</span>
-                        <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.per15Min)}</span>
-                      </button>
-                    ) : null}
-                    {selectedTimedItem.timedPricing?.per30Min ? (
-                      <button
-                        onClick={() => setSelectedRateType('per30Min')}
-                        className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
-                          selectedRateType === 'per30Min'
-                            ? 'border-purple-500 bg-purple-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <span>Per 30 minutes</span>
-                        <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.per30Min)}</span>
-                      </button>
-                    ) : null}
-                    {selectedTimedItem.timedPricing?.perHour ? (
-                      <button
-                        onClick={() => setSelectedRateType('perHour')}
-                        className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${
-                          selectedRateType === 'perHour'
-                            ? 'border-purple-500 bg-purple-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <span>Per hour</span>
-                        <span className="font-bold">{formatCurrency(selectedTimedItem.timedPricing.perHour)}</span>
-                      </button>
-                    ) : null}
-                    {!selectedTimedItem.timedPricing?.per15Min &&
-                     !selectedTimedItem.timedPricing?.per30Min &&
-                     !selectedTimedItem.timedPricing?.perHour && (
-                      <button
-                        onClick={() => setSelectedRateType('perHour')}
-                        className="w-full p-3 rounded-lg border-2 text-left flex justify-between items-center border-purple-500 bg-purple-50"
-                      >
-                        <span>Per hour (base rate)</span>
-                        <span className="font-bold">{formatCurrency(selectedTimedItem.price)}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {selectedTimedItem.timedPricing?.minimum && (
-                  <p className="text-sm text-gray-500 mb-4">
-                    Minimum: {selectedTimedItem.timedPricing.minimum} minutes
-                  </p>
-                )}
-              </div>
-              <div className="p-4 border-t bg-gray-50 flex gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setShowTimedRentalModal(false)
-                    setSelectedTimedItem(null)
-                    inlineTimedRentalCallbackRef.current = null
-                  }}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleStartTimedSession}
-                  disabled={loadingSession}
-                  className="flex-1 bg-purple-500 hover:bg-purple-600"
-                >
-                  {loadingSession ? 'Starting...' : 'Start Timer'}
-                </Button>
-              </div>
-            </div>
-          </div>
+          <Suspense fallback={null}>
+            <TimedRentalStartModal
+              isOpen={showTimedRentalModal && !!selectedTimedItem}
+              item={selectedTimedItem}
+              onStart={handleStartTimedSession}
+              onClose={() => { setShowTimedRentalModal(false); setSelectedTimedItem(null); inlineTimedRentalCallbackRef.current = null }}
+              loading={loadingSession}
+            />
+          </Suspense>
         )}
         {showPaymentModal && orderToPayId && (
           <Suspense fallback={null}>
@@ -3436,8 +3354,8 @@ export default function OrdersPage() {
         {/* Card-First Tab Flow Modal */}
         {showCardTabFlow && cardTabOrderId && employee && (
           <Suspense fallback={null}>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <Modal isOpen={showCardTabFlow && !!cardTabOrderId && !!employee} onClose={() => setShowCardTabFlow(false)} size="md">
+            <div className="rounded-2xl shadow-2xl w-full overflow-hidden -m-5" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <CardFirstTabFlow
                 orderId={cardTabOrderId}
                 readerId="reader-1"
@@ -3542,7 +3460,7 @@ export default function OrdersPage() {
                 }}
               />
             </div>
-          </div>
+          </Modal>
           </Suspense>
         )}
 
@@ -3583,9 +3501,7 @@ export default function OrdersPage() {
 
         {/* Resend to Kitchen Modal */}
         {resendModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-              <h3 className="text-lg font-bold mb-2">Resend to Kitchen</h3>
+          <Modal isOpen={!!resendModal} onClose={() => { setResendModal(null); setResendNote('') }} title="Resend to Kitchen" size="md">
               <p className="text-gray-600 mb-4">
                 Resend &quot;{resendModal.itemName}&quot; to kitchen?
               </p>
@@ -3622,8 +3538,7 @@ export default function OrdersPage() {
                   {resendLoading ? 'Sending...' : 'Resend'}
                 </Button>
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
 
         {/* Item Transfer Modal */}
@@ -3736,167 +3651,40 @@ export default function OrdersPage() {
         />
 
         {/* Pay All Splits Confirmation */}
-        {showPayAllSplitsConfirm && payAllSplitsParentId && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className={`rounded-2xl shadow-2xl w-full overflow-hidden ${payAllSplitsStep === 'datacap_card' ? 'max-w-md' : 'max-w-sm'}`} style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              {payAllSplitsStep === 'confirm' && (
-                <div className="p-6">
-                  <h3 className="text-lg font-bold text-white mb-1">Pay All Splits</h3>
-                  <p className="text-slate-400 text-sm mb-4">
-                    {orderSplitChips.filter(c => !c.isPaid).length} unpaid checks
-                  </p>
-                  <div className="rounded-xl p-4 mb-5" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-300 text-sm">Total</span>
-                      <span className="text-2xl font-bold text-white">${payAllSplitsTotal.toFixed(2)}</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={() => callPayAllSplitsAPI('cash')}
-                      disabled={payAllSplitsProcessing}
-                      className="flex-1 py-3 rounded-xl font-bold text-white transition-all"
-                      style={{ background: payAllSplitsProcessing ? 'rgba(34,197,94,0.3)' : 'rgba(34,197,94,0.8)' }}
-                    >
-                      {payAllSplitsProcessing ? 'Processing...' : 'Cash'}
-                    </button>
-                    <button
-                      onClick={() => setPayAllSplitsStep('datacap_card')}
-                      disabled={payAllSplitsProcessing}
-                      className="flex-1 py-3 rounded-xl font-bold text-white transition-all"
-                      style={{ background: payAllSplitsProcessing ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.8)' }}
-                    >
-                      Card
-                    </button>
-                  </div>
-                </div>
-              )}
-              {payAllSplitsStep === 'datacap_card' && employee?.location?.id && (
-                <div className="p-4">
-                  <DatacapPaymentProcessor
-                    orderId={payAllSplitsParentId}
-                    amount={payAllSplitsTotal}
-                    subtotal={payAllSplitsTotal}
-                    terminalId={TERMINAL_ID}
-                    employeeId={employee.id}
-                    locationId={employee.location.id}
-                    onSuccess={(result) => {
-                      callPayAllSplitsAPI('credit', {
-                        cardBrand: result.cardBrand,
-                        cardLast4: result.cardLast4,
-                        authCode: result.authCode,
-                        datacapRecordNo: result.recordNo,
-                        datacapRefNumber: result.refNumber,
-                        datacapSequenceNo: result.sequenceNo,
-                        entryMethod: result.entryMethod,
-                        amountAuthorized: result.amountAuthorized,
-                      })
-                    }}
-                    onCancel={() => setPayAllSplitsStep('confirm')}
-                  />
-                </div>
-              )}
-              <button
-                onClick={() => { setShowPayAllSplitsConfirm(false); setPayAllSplitsParentId(null); setPayAllSplitsStep('confirm') }}
-                className="w-full py-3 text-slate-400 text-sm font-medium border-t border-white/10 hover:bg-white/5 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
+        {showPayAllSplitsConfirm && payAllSplitsParentId && employee?.location?.id && (
+          <Suspense fallback={null}>
+            <PayAllSplitsModal
+              isOpen={showPayAllSplitsConfirm && !!payAllSplitsParentId}
+              parentOrderId={payAllSplitsParentId}
+              total={payAllSplitsTotal}
+              unpaidCount={orderSplitChips.filter(c => !c.isPaid).length}
+              terminalId={TERMINAL_ID}
+              employeeId={employee.id}
+              locationId={employee.location.id}
+              onPayCash={() => callPayAllSplitsAPI('cash')}
+              onPayCard={(cardResult) => callPayAllSplitsAPI('credit', cardResult)}
+              onClose={() => { setShowPayAllSplitsConfirm(false); setPayAllSplitsParentId(null); setPayAllSplitsStep('confirm') }}
+              processing={payAllSplitsProcessing}
+            />
+          </Suspense>
         )}
 
         {showTabNamePrompt && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-            <div className="rounded-2xl shadow-2xl w-full max-w-2xl p-6 max-h-[95vh] overflow-y-auto" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              {tabCardInfo?.cardLast4 ? (
-                <>
-                  <h3 className="text-lg font-bold text-white mb-2">Tab Started</h3>
-                  <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg" style={{ background: 'rgba(34, 197, 94, 0.15)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-                    <span className="text-green-400 text-sm">✓</span>
-                    <span className="text-green-300 text-sm font-medium">
-                      {tabCardInfo.cardType} •••{tabCardInfo.cardLast4}
-                    </span>
-                    {tabCardInfo.cardholderName && (
-                      <span className="text-green-300 text-sm ml-auto font-medium">{tabCardInfo.cardholderName}</span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-400 mb-3">Add a nickname? (shown above cardholder name)</p>
-                  <div
-                    className="w-full px-4 py-3 rounded-xl text-lg min-h-[48px] flex items-center"
-                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: tabNameInput ? 'white' : 'rgba(255,255,255,0.4)' }}
-                  >
-                    {tabNameInput || 'e.g. Blue shirt, Patio group...'}
-                  </div>
-                  <div className="mt-3">
-                    <OnScreenKeyboard
-                      value={tabNameInput}
-                      onChange={setTabNameInput}
-                      onSubmit={() => {
-                        if (tabNameInput.trim()) {
-                          const fullName = tabCardInfo.cardholderName
-                            ? `${tabNameInput.trim()} — ${tabCardInfo.cardholderName}`
-                            : tabNameInput.trim()
-                          useOrderStore.getState().updateOrderType('bar_tab', { tabName: fullName })
-                        }
-                        setShowTabNamePrompt(false)
-                        setTabNameInput('')
-                        tabNameCallback?.()
-                        setTabNameCallback(null)
-                      }}
-                      theme="dark"
-                      submitLabel="Send to Tab"
-                    />
-                  </div>
-                  <div className="flex gap-3 mt-4">
-                    <button
-                      onClick={() => { setShowTabNamePrompt(false); setTabNameInput(''); tabNameCallback?.(); setTabNameCallback(null) }}
-                      className="flex-1 py-3 rounded-xl text-gray-300 font-semibold"
-                      style={{ background: 'rgba(255,255,255,0.08)' }}
-                    >
-                      Skip
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <h3 className="text-lg font-bold text-white mb-1">Tab Name</h3>
-                  <p className="text-sm text-gray-400 mb-4">Enter a name for this tab</p>
-                  <div
-                    className="w-full px-4 py-3 rounded-xl text-lg min-h-[48px] flex items-center"
-                    style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: tabNameInput ? 'white' : 'rgba(255,255,255,0.4)' }}
-                  >
-                    {tabNameInput || 'e.g. John, Table 5, etc.'}
-                  </div>
-                  <div className="mt-3">
-                    <OnScreenKeyboard
-                      value={tabNameInput}
-                      onChange={setTabNameInput}
-                      onSubmit={() => {
-                        if (!tabNameInput.trim()) return
-                        useOrderStore.getState().updateOrderType('bar_tab', { tabName: tabNameInput.trim() })
-                        setShowTabNamePrompt(false)
-                        setTabNameInput('')
-                        tabNameCallback?.()
-                        setTabNameCallback(null)
-                      }}
-                      theme="dark"
-                      submitLabel="Start Tab"
-                    />
-                  </div>
-                  <div className="flex gap-3 mt-4">
-                    <button
-                      onClick={() => { setShowTabNamePrompt(false); setTabNameInput(''); setTabNameCallback(null) }}
-                      className="flex-1 py-3 rounded-xl text-gray-400 font-semibold"
-                      style={{ background: 'rgba(255,255,255,0.05)' }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+          <Suspense fallback={null}>
+            <TabNamePromptModal
+              isOpen={showTabNamePrompt}
+              onClose={() => { setShowTabNamePrompt(false); setTabNameCallback(null) }}
+              onSubmit={(name) => {
+                if (name) {
+                  useOrderStore.getState().updateOrderType('bar_tab', { tabName: name })
+                }
+                setShowTabNamePrompt(false)
+                tabNameCallback?.()
+                setTabNameCallback(null)
+              }}
+              cardInfo={tabCardInfo}
+            />
+          </Suspense>
         )}
 
         {/* Time Clock Modal */}
