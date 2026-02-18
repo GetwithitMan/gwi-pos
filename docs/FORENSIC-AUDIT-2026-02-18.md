@@ -38,7 +38,7 @@
 | window.alert() | 0 | 0 | 0 | — | — | — |
 
 **Previous Grade: B+** (Feb 18 initial scan)
-**Current Grade: A++** (after Waves 1-5 + hotfix wave complete)
+**Current Grade: A+++** (after Waves 1-6E complete)
 **Path to A+++: ~45 remaining items (large file splits, UX features, missing socket dispatches)**
 
 ---
@@ -734,18 +734,21 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ### Wave 6E — Multi-Card Tab Support (COMPLETED)
 | # | Fix | Agent | Status |
 |---|-----|-------|--------|
-| 53 | "Add Card to Tab" button in PaymentModal method selection | add-card | ✅ |
+| 53 | "Add Card to Tab" bright orange button in PaymentModal (method + card steps) | add-card | ✅ |
 | 54 | Pass orderCardId to close-tab API (charge specific card) | card-picker | ✅ |
-| 55 | Card picker: show all cards when 2+ on tab, auto-skip for 1 card | card-picker | ✅ |
+| 55 | Show tab cards on datacap_card step (Charge •••5432 buttons) | card-display | ✅ |
 | 56 | Refresh tab cards list after adding new card | add-card | ✅ |
+| 57 | Fetch tab cards on Card button click (was only fetched from other path) | card-fetch | ✅ |
+| 58 | Fix "Add Card" visibility when 0 cards exist (was inside length>0 block) | card-fix | ✅ |
+| 59 | Highlighted card buttons: stronger purple border + glow shadow | card-style | ✅ |
 
-**Impact:** Tabs can hold multiple cards. Bartender picks which card to charge at payment. "Add Card" available during payment flow.
-**Commit:** `682ce72`
+**Impact:** Tabs can hold multiple cards. Existing cards shown on card payment step. Bright orange "Add Card to Tab" button on both screens. Bartender picks which card to charge.
+**Commits:** `682ce72` → `9114cd2` → `90d14ff` → `355ac1b` → `67ab2a8` → `80adef7`
 
 ### Wave 6F+ — Remaining Backlog
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 57 | Response format normalization | P2 | 68+ routes |
+| 60 | Response format normalization | P2 | 68+ routes |
 
 ---
 
@@ -770,4 +773,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 6E COMPLETE — 56/56 tasks complete, 490+ individual fixes applied across 103+ files*
+*Last updated: Wave 6E COMPLETE — 59/59 tasks complete, 500+ individual fixes applied across 105+ files*
