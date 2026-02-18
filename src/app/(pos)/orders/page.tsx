@@ -357,6 +357,19 @@ export default function OrdersPage() {
     }
   }, [currentOrder?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Refresh tab cards when a new card is added via PaymentModal
+  const handleTabCardsChanged = useCallback(() => {
+    const orderId = orderToPayId || savedOrderId
+    if (!orderId) return
+    fetch(`/api/orders/${orderId}/cards`)
+      .then(r => r.ok ? r.json() : { data: [] })
+      .then(d => {
+        const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
+        setPaymentTabCards(authorized)
+      })
+      .catch(() => {})
+  }, [orderToPayId, savedOrderId])
+
   // Order type state (configurable order types)
   const [orderTypes, setOrderTypes] = useState<OrderTypeConfig[]>([])
   const [selectedOrderType, setSelectedOrderType] = useState<OrderTypeConfig | null>(null)
@@ -1282,7 +1295,8 @@ export default function OrdersPage() {
       .then(d => {
         const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
         setPaymentTabCards(authorized)
-        if (authorized.length > 0) setInitialPayMethod('credit')
+        if (authorized.length === 1) setInitialPayMethod('credit')
+        // When multiple cards: don't auto-skip, let user pick from the cards list
       })
       .catch(() => setPaymentTabCards([]))
 
@@ -3295,6 +3309,7 @@ export default function OrdersPage() {
               subtotal={currentOrder?.subtotal}
               remainingBalance={currentOrder?.total ?? 0}
               tabCards={paymentTabCards}
+              onTabCardsChanged={handleTabCardsChanged}
               dualPricing={dualPricing}
               paymentSettings={paymentSettings}
               priceRounding={priceRounding}

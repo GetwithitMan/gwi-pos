@@ -32,6 +32,7 @@ interface PaymentModalProps {
   paymentSettings: PaymentSettings
   priceRounding?: PriceRoundingSettings
   onPaymentComplete: (receiptData?: Record<string, unknown>) => void
+  onTabCardsChanged?: () => void  // Called when a card is added so parent can refresh
   employeeId?: string
   terminalId?: string  // Required for Datacap integration
   locationId?: string  // Required for Datacap integration
@@ -97,6 +98,7 @@ export function PaymentModal({
   paymentSettings,
   priceRounding,
   onPaymentComplete,
+  onTabCardsChanged,
   employeeId,
   terminalId,
   locationId,
@@ -138,6 +140,10 @@ export function PaymentModal({
   const [selectedHouseAccount, setSelectedHouseAccount] = useState<HouseAccountInfo | null>(null)
   const [houseAccountSearch, setHouseAccountSearch] = useState('')
   const [houseAccountsLoading, setHouseAccountsLoading] = useState(false)
+
+  // Add card to tab state
+  const [addingCard, setAddingCard] = useState(false)
+  const [addCardError, setAddCardError] = useState<string | null>(null)
 
   // Fetch order data if orderTotal is 0 or not provided
   useEffect(() => {
@@ -279,6 +285,7 @@ export function PaymentModal({
         body: JSON.stringify({
           employeeId,
           tipMode: 'receipt', // Bartender enters tip later
+          orderCardId: card.id, // Charge this specific card
         }),
       })
       const data = await res.json()
@@ -291,6 +298,48 @@ export function PaymentModal({
       setError('Failed to charge card')
     } finally {
       setIsProcessing(false)
+    }
+  }
+
+  // Add another card to an open tab
+  const handleAddCardToTab = async () => {
+    if (!orderId || !locationId) return
+    setAddingCard(true)
+    setAddCardError(null)
+
+    try {
+      // Use terminalId (the reader/terminal assigned to this POS station)
+      if (!terminalId) {
+        setAddCardError('No card reader configured')
+        setAddingCard(false)
+        return
+      }
+
+      const res = await fetch(`/api/orders/${orderId}/cards`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          readerId: terminalId,
+          employeeId,
+          makeDefault: (tabCards?.length || 0) === 0, // First card is default
+        }),
+      })
+
+      const data = await res.json()
+
+      if (data.data?.approved) {
+        // Success — refresh the tab cards list
+        if (onTabCardsChanged) {
+          onTabCardsChanged()
+        }
+        toast.success(`${data.data.cardType} \u2022\u2022\u2022${data.data.cardLast4} added to tab`)
+      } else {
+        setAddCardError(data.data?.error?.message || data.error || 'Card declined')
+      }
+    } catch {
+      setAddCardError('Failed to add card')
+    } finally {
+      setAddingCard(false)
     }
   }
 
@@ -760,6 +809,36 @@ export function PaymentModal({
                       <div style={{ color: '#e9d5ff', fontSize: 17, fontWeight: 700 }}>{formatCurrency(cardTotal)}</div>
                     </button>
                   ))}
+                  {/* Add Card to Tab button */}
+                  <button
+                    onClick={handleAddCardToTab}
+                    disabled={addingCard || isProcessing}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-dashed border-slate-600 hover:border-blue-500 hover:bg-blue-500/10 transition-colors"
+                    style={{
+                      cursor: (addingCard || isProcessing) ? 'wait' : 'pointer',
+                      opacity: (addingCard || isProcessing) ? 0.5 : 1,
+                    }}
+                  >
+                    <span className="text-2xl">{'\uD83D\uDCB3'}</span>
+                    <div className="text-left">
+                      <div className="font-bold text-white">Add Card to Tab</div>
+                      <div className="text-xs text-slate-400">Hold another card on this tab</div>
+                    </div>
+                  </button>
+
+                  {/* Add card loading state */}
+                  {addingCard && (
+                    <div style={{ textAlign: 'center', padding: '16px 0', color: '#60a5fa' }}>
+                      <div style={{ width: 24, height: 24, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block', marginBottom: 8 }} />
+                      <p>Waiting for card...</p>
+                    </div>
+                  )}
+                  {addCardError && (
+                    <div style={{ padding: 12, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, color: '#f87171', fontSize: 14 }}>
+                      {addCardError}
+                    </div>
+                  )}
+
                   <div style={{ height: 1, background: 'rgba(148, 163, 184, 0.15)', margin: '4px 0' }} />
                   <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Or pay another way</div>
                 </div>

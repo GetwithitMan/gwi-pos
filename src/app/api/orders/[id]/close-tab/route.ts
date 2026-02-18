@@ -21,6 +21,7 @@ export const POST = withVenue(async function POST(
       employeeId,
       tipMode = 'receipt', // 'device' | 'receipt' | 'included'
       tipAmount,           // Pre-set tip amount (for 'included' mode)
+      orderCardId,         // Optional: charge a specific card (when multiple cards on tab)
     } = body
 
     if (!employeeId) {
@@ -65,11 +66,20 @@ export const POST = withVenue(async function POST(
     const purchaseAmount = Number(order.total) - Number(order.tipTotal)
     const gratuityAmount = tipMode === 'included' && tipAmount != null ? Number(tipAmount) : undefined
 
+    // If a specific card was requested, filter to just that card
+    let cardsToTry = order.cards
+    if (orderCardId) {
+      cardsToTry = order.cards.filter(c => c.id === orderCardId)
+      if (cardsToTry.length === 0) {
+        return NextResponse.json({ error: 'Specified card not found or not authorized' }, { status: 400 })
+      }
+    }
+
     // Try capturing against default card first, then others
     let capturedCard = null
     let captureResult = null
 
-    for (const card of order.cards) {
+    for (const card of cardsToTry) {
       try {
         await validateReader(card.readerId, locationId)
         const client = await requireDatacapClient(locationId)
