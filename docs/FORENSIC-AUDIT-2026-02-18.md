@@ -731,12 +731,21 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 **Impact:** "Same Again" copies closed order items to current open order in 1 tap. ÷2 splits check evenly without entering split screen.
 **Commit:** `0386330`
 
-### Wave 6E+ — Remaining Backlog
+### Wave 6E — Multi-Card Tab Support (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 53 | "Add Card to Tab" button in PaymentModal method selection | add-card | ✅ |
+| 54 | Pass orderCardId to close-tab API (charge specific card) | card-picker | ✅ |
+| 55 | Card picker: show all cards when 2+ on tab, auto-skip for 1 card | card-picker | ✅ |
+| 56 | Refresh tab cards list after adding new card | add-card | ✅ |
+
+**Impact:** Tabs can hold multiple cards. Bartender picks which card to charge at payment. "Add Card" available during payment flow.
+**Commit:** `682ce72`
+
+### Wave 6F+ — Remaining Backlog
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 53 | Response format normalization | P2 | 68+ routes |
-| 54 | Multi-card tab support (add card to tab, choose card at payment) | P1 UX | PaymentModal + TabCards |
-| 55 | Payment skip: show card picker when multiple pre-auth cards | P1 UX | PaymentModal |
+| 57 | Response format normalization | P2 | 68+ routes |
 
 ---
 
@@ -761,4 +770,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 6D COMPLETE — 52/52 tasks complete, 480+ individual fixes applied across 100+ files*
+*Last updated: Wave 6E COMPLETE — 56/56 tasks complete, 490+ individual fixes applied across 103+ files*
