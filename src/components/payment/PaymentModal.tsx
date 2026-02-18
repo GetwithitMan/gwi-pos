@@ -151,7 +151,8 @@ export function PaymentModal({
       setLoadingOrder(true)
       fetch(`/api/orders/${orderId}`)
         .then(res => res.json())
-        .then(data => {
+        .then(raw => {
+          const data = raw.data ?? raw
           setFetchedOrderTotal(data.total || 0)
           setFetchedSubtotal(data.subtotal || 0)
         })
@@ -348,7 +349,8 @@ export function PaymentModal({
     try {
       const response = await fetch(`/api/house-accounts?locationId=${orderId?.split('-')[0] || ''}&status=active`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setHouseAccounts(data)
       }
     } catch {
@@ -376,7 +378,8 @@ export function PaymentModal({
         return
       }
 
-      const data = await response.json()
+      const raw = await response.json()
+      const data = raw.data ?? raw
       if (data.status !== 'active') {
         setGiftCardError(`Gift card is ${data.status}`)
         setGiftCardInfo(null)
@@ -587,7 +590,8 @@ export function PaymentModal({
         throw new Error(data.error || 'Payment failed')
       }
 
-      const result = await response.json()
+      const raw = await response.json()
+      const result = raw.data ?? raw
 
       // Payment succeeded — now update pending payments state
       setPendingPayments(payments)

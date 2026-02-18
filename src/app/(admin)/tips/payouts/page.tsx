@@ -94,9 +94,9 @@ export default function TipPayoutsPage() {
         return
       }
       const data = await res.json()
-      setEmployees(data.employees)
-      setTotalOwedCents(data.totalOwedCents)
-      setTotalOwedDollars(data.totalOwedDollars)
+      setEmployees(data.data.employees)
+      setTotalOwedCents(data.data.totalOwedCents)
+      setTotalOwedDollars(data.data.totalOwedDollars)
     } catch {
       toast.error('Failed to load tip balances')
     } finally {
@@ -128,8 +128,8 @@ export default function TipPayoutsPage() {
         return
       }
       const data = await res.json()
-      setHistory(data.payouts)
-      setHistoryTotal(data.total)
+      setHistory(data.data.payouts)
+      setHistoryTotal(data.data.total)
       setHistoryOffset(offset)
     } catch {
       toast.error('Failed to load payout history')
@@ -177,7 +177,7 @@ export default function TipPayoutsPage() {
       }
 
       const data = await res.json()
-      toast.success(`Paid out ${formatCurrency(data.payout.amountDollars)} to ${
+      toast.success(`Paid out ${formatCurrency(data.data.payout.amountDollars)} to ${
         cashOutEmployee?.displayName || `${cashOutEmployee?.firstName} ${cashOutEmployee?.lastName}`
       }`)
 
@@ -217,15 +217,15 @@ export default function TipPayoutsPage() {
 
       const data = await res.json()
       setBatchResult({
-        totalPaidOutDollars: data.batch.totalPaidOutDollars,
-        employeeCount: data.batch.employeeCount,
-        entries: data.batch.entries.map((e: { employeeName: string; amountDollars: number }) => ({
+        totalPaidOutDollars: data.data.batch.totalPaidOutDollars,
+        employeeCount: data.data.batch.employeeCount,
+        entries: data.data.batch.entries.map((e: { employeeName: string; amountDollars: number }) => ({
           employeeName: e.employeeName,
           amountDollars: e.amountDollars,
         })),
       })
 
-      toast.success(`Batch payout complete: ${formatCurrency(data.batch.totalPaidOutDollars)} to ${data.batch.employeeCount} employees`)
+      toast.success(`Batch payout complete: ${formatCurrency(data.data.batch.totalPaidOutDollars)} to ${data.data.batch.employeeCount} employees`)
       setShowBatchConfirm(false)
       await loadBalances()
       if (historyExpanded) await loadHistory(0)

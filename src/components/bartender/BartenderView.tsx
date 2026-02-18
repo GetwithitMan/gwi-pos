@@ -536,9 +536,9 @@ export function BartenderView({
       const res = await fetch(`/api/menu?locationId=${locationId}`)
       if (res.ok) {
         const data = await res.json()
-        const cats = data.categories || []
+        const cats = data.data?.categories || []
         setCategories(cats)
-        setAllMenuItems(data.items || [])
+        setAllMenuItems(data.data?.items || [])
       }
     } catch (error) {
       console.error('[BartenderView] Failed to load categories:', error)

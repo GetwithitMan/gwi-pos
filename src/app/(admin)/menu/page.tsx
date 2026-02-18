@@ -247,12 +247,12 @@ export default function MenuManagementPage() {
         const data = await menuResponse.json()
         // Filter out liquor categories - they belong in Liquor Builder
         // Drinks (soft drinks, non-alcoholic) stay in the regular menu
-        const foodCategories = data.categories.filter((c: Category) =>
+        const foodCategories = data.data.categories.filter((c: Category) =>
           c.categoryType !== 'liquor'
         )
         setCategories(foodCategories)
         // Force new array reference to ensure React re-renders
-        setItems([...data.items])
+        setItems([...data.data.items])
       }
 
       // Shared modifier groups are deprecated — modifiers are now item-owned
@@ -278,12 +278,12 @@ export default function MenuManagementPage() {
 
       if (printersResponse?.ok) {
         const printerData = await printersResponse.json()
-        setPrinters(printerData.printers || [])
+        setPrinters(printerData.data.printers || [])
       }
 
       if (kdsResponse?.ok) {
         const kdsData = await kdsResponse.json()
-        setKdsScreens(kdsData.screens || [])
+        setKdsScreens(kdsData.data.screens || [])
       }
     } catch (error) {
       console.error('Failed to load menu:', error)

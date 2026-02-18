@@ -99,27 +99,27 @@ export default function EmployeePaymentPage({ params }: { params: Promise<PagePa
       const response = await fetch(`/api/employees/${employeeId}/payment`)
       if (response.ok) {
         const data = await response.json()
-        setEmployee(data.employee)
+        setEmployee(data.data.employee)
 
         // Populate form
         setFormData({
-          address: data.employee.address || '',
-          city: data.employee.city || '',
-          state: data.employee.state || '',
-          zipCode: data.employee.zipCode || '',
-          federalFilingStatus: data.employee.federalFilingStatus || 'single',
-          federalAllowances: data.employee.federalAllowances?.toString() || '0',
-          additionalFederalWithholding: data.employee.additionalFederalWithholding?.toString() || '0',
-          stateFilingStatus: data.employee.stateFilingStatus || 'single',
-          stateAllowances: data.employee.stateAllowances?.toString() || '0',
-          additionalStateWithholding: data.employee.additionalStateWithholding?.toString() || '0',
-          isExemptFromFederalTax: data.employee.isExemptFromFederalTax || false,
-          isExemptFromStateTax: data.employee.isExemptFromStateTax || false,
-          paymentMethod: data.employee.paymentMethod || 'check',
-          bankName: data.employee.bankName || '',
+          address: data.data.employee.address || '',
+          city: data.data.employee.city || '',
+          state: data.data.employee.state || '',
+          zipCode: data.data.employee.zipCode || '',
+          federalFilingStatus: data.data.employee.federalFilingStatus || 'single',
+          federalAllowances: data.data.employee.federalAllowances?.toString() || '0',
+          additionalFederalWithholding: data.data.employee.additionalFederalWithholding?.toString() || '0',
+          stateFilingStatus: data.data.employee.stateFilingStatus || 'single',
+          stateAllowances: data.data.employee.stateAllowances?.toString() || '0',
+          additionalStateWithholding: data.data.employee.additionalStateWithholding?.toString() || '0',
+          isExemptFromFederalTax: data.data.employee.isExemptFromFederalTax || false,
+          isExemptFromStateTax: data.data.employee.isExemptFromStateTax || false,
+          paymentMethod: data.data.employee.paymentMethod || 'check',
+          bankName: data.data.employee.bankName || '',
           bankRoutingNumber: '', // Never prefill for security
           bankAccountNumber: '', // Never prefill for security
-          bankAccountType: data.employee.bankAccountType || 'checking',
+          bankAccountType: data.data.employee.bankAccountType || 'checking',
         })
       } else {
         setError('Failed to load employee')

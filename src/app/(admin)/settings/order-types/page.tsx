@@ -30,7 +30,7 @@ export default function OrderTypesPage() {
       const response = await fetch(`/api/order-types?locationId=${locationId}&includeInactive=true`)
       if (response.ok) {
         const data = await response.json()
-        setOrderTypes(data.orderTypes || [])
+        setOrderTypes(data.data.orderTypes || [])
       } else {
         console.error('Failed to load order types:', response.status)
       }

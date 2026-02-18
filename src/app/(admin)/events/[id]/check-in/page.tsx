@@ -74,15 +74,15 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
       // Fetch event
       const eventRes = await fetch(`/api/events/${id}`)
       const eventData = await eventRes.json()
-      setEvent(eventData.event)
+      setEvent(eventData.data.event)
 
       // Fetch tickets
       const ticketsRes = await fetch(`/api/tickets?eventId=${id}`)
       const ticketsData = await ticketsRes.json()
-      setTickets(ticketsData.tickets || [])
+      setTickets(ticketsData.data.tickets || [])
 
       // Calculate stats
-      const sold = ticketsData.tickets?.filter((t: Ticket) =>
+      const sold = ticketsData.data.tickets?.filter((t: Ticket) =>
         ['sold', 'checked_in'].includes(t.status)
       ) || []
       const checkedIn = sold.filter((t: Ticket) => t.status === 'checked_in').length
@@ -110,7 +110,8 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
         body: JSON.stringify({ method: 'scan' }),
       })
 
-      const data: CheckInResult = await res.json()
+      const raw = await res.json()
+      const data: CheckInResult = raw.data
       setLastResult(data)
 
       if (data.stats) {
@@ -148,7 +149,8 @@ export default function CheckInPage({ params }: { params: Promise<{ id: string }
         body: JSON.stringify({ method: 'manual' }),
       })
 
-      const data: CheckInResult = await res.json()
+      const raw2 = await res.json()
+      const data: CheckInResult = raw2.data
 
       if (data.success) {
         playSound('success')

@@ -69,7 +69,7 @@ export default function InventorySettingsPage() {
       const res = await fetch(`/api/inventory/settings?locationId=${employee.location.id}`)
       if (res.ok) {
         const data = await res.json()
-        setSettings(data.settings)
+        setSettings(data.data.settings)
       } else {
         toast.error('Failed to load settings')
       }

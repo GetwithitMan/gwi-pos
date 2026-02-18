@@ -98,13 +98,13 @@ export default function EventDetailPage({ params }: { params: Promise<{ id: stri
     try {
       const res = await fetch(`/api/events/${id}`)
       const data = await res.json()
-      setEvent(data.event)
+      setEvent(data.data.event)
 
       // Fetch conflicts if not handled
-      if (!data.event.reservationConflictsHandled) {
+      if (!data.data.event.reservationConflictsHandled) {
         const conflictRes = await fetch(`/api/events/${id}/conflicts`)
         const conflictData = await conflictRes.json()
-        setConflicts(conflictData.conflicts || [])
+        setConflicts(conflictData.data.conflicts || [])
       }
     } catch (error) {
       console.error('Failed to fetch event:', error)

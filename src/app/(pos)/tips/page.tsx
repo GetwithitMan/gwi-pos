@@ -90,9 +90,9 @@ export default function TipsPage() {
       const res = await fetch(`/api/orders/closed?${params}`)
       if (!res.ok) throw new Error('Failed to fetch')
       const data = await res.json()
-      setOrders(prev => append ? [...prev, ...data.orders] : data.orders)
-      setCursor(data.pagination.nextCursor)
-      setHasMore(data.pagination.hasMore)
+      setOrders(prev => append ? [...prev, ...data.data.orders] : data.data.orders)
+      setCursor(data.data.pagination.nextCursor)
+      setHasMore(data.data.pagination.hasMore)
     } catch {
       toast.error('Failed to load closed orders')
     } finally {

@@ -49,7 +49,8 @@ export function PizzaBuilderModal({
       try {
         const response = await fetch('/api/pizza/config')
         if (response.ok) {
-          const data = await response.json()
+          const raw = await response.json()
+          const data = raw.data ?? raw
           setConfig(data)
 
           // Set initial mode based on config

@@ -85,14 +85,16 @@ export function AddToWaitlistModal({
       // Fetch waitlist for this item
       const waitlistRes = await fetch(`/api/entertainment/waitlist?locationId=${locationId}&menuItemId=${menuItemId}&status=waiting`)
       if (waitlistRes.ok) {
-        const data = await waitlistRes.json()
+        const raw = await waitlistRes.json()
+        const data = raw.data ?? raw
         setWaitlist(data.waitlist || [])
       }
 
       // Fetch open tabs
       const tabsRes = await fetch(`/api/orders/open?locationId=${locationId}`)
       if (tabsRes.ok) {
-        const data = await tabsRes.json()
+        const raw = await tabsRes.json()
+        const data = raw.data ?? raw
         setOpenTabs(data.orders?.map((o: {
           id: string
           tabName: string | null

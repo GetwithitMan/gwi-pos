@@ -137,7 +137,8 @@ export function TimeClockModal({
       })
       const response = await fetch(`/api/time-clock?${params}`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setCurrentEntry(data.entries?.[0] || null)
 
         // Load pending tips
@@ -154,7 +155,8 @@ export function TimeClockModal({
     try {
       const response = await fetch(`/api/employees/${employeeId}/tips`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setPendingTips(data)
         // Show notification if there are pending tips
         if (data.grandTotal > 0) {
@@ -170,7 +172,8 @@ export function TimeClockModal({
     try {
       const response = await fetch(`/api/employees?locationId=${locationId}`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         // Filter to employees who can receive transfers (have the permission or are managers/admins)
         const eligibleManagers = (data.employees || []).filter((emp: {
           id: string
@@ -201,7 +204,8 @@ export function TimeClockModal({
         `/api/employees/${employeeId}/open-tabs?locationId=${locationId}`
       )
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         if (data.hasOpenTabs) {
           setOpenTabs(data.tabs)
           return true
@@ -266,7 +270,8 @@ export function TimeClockModal({
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setCurrentEntry(data)
         setShowOpenTabsWarning(false)
       } else {

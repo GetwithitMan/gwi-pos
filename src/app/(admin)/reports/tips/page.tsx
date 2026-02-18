@@ -102,7 +102,7 @@ export default function TipsReportPage() {
       const response = await fetch(`/api/reports/tips?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setReport(data)
+        setReport(data.data)
       }
     } catch (error) {
       console.error('Failed to load tips report:', error)

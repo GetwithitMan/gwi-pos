@@ -265,7 +265,8 @@ class OfflineManagerClass {
           })
 
           if (res.ok) {
-            const data = await res.json()
+            const raw = await res.json()
+            const data = raw.data ?? raw
             // Success - mark as synced
             await offlineDb.pendingOrders.update(order.id, {
               status: 'synced',
@@ -274,7 +275,8 @@ class OfflineManagerClass {
             await this.logAction('order_synced', `Order ${order.localId} synced`, order.localId, data.order?.id)
           } else if (res.status === 409) {
             // Duplicate - already synced
-            const data = await res.json()
+            const raw409 = await res.json()
+            const data = raw409.data ?? raw409
             await offlineDb.pendingOrders.update(order.id, {
               status: 'synced',
               serverOrderId: data.existingOrderId,

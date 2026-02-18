@@ -54,7 +54,7 @@ export default function VendorsPage() {
       const res = await fetch(`/api/inventory/vendors?locationId=${locationId}&activeOnly=false`)
       if (res.ok) {
         const data = await res.json()
-        setItemsRef.current(data.vendors || [])
+        setItemsRef.current(data.data.vendors || [])
       }
     } catch {
       // Silent — hook's loadItems already loaded active vendors as fallback

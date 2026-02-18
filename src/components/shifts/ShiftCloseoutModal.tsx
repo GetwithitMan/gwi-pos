@@ -224,7 +224,8 @@ export function ShiftCloseoutModal({
     try {
       const response = await fetch(`/api/shifts/${shift.id}`)
       if (!response.ok) throw new Error('Failed to fetch shift summary')
-      const data = await response.json()
+      const raw = await response.json()
+      const data = raw.data ?? raw
       setSummary(data.summary)
       if (!tipsDeclared) {
         setTipsDeclared(data.summary.totalTips.toFixed(2))
@@ -260,7 +261,8 @@ export function ShiftCloseoutModal({
       }
 
       if (employeesRes.ok) {
-        const empData = await employeesRes.json()
+        const empRaw = await employeesRes.json()
+        const empData = empRaw.data ?? empRaw
         // Filter out the current employee
         const otherEmployees = (empData.employees || []).filter(
           (emp: Employee) => emp.id !== shift.employee.id
@@ -283,12 +285,14 @@ export function ShiftCloseoutModal({
         fetch(`/api/settings/tips?locationId=${shift.locationId}&employeeId=${shift.employee.id}`)
       ])
       if (balanceRes.ok) {
-        const data = await balanceRes.json()
-        setTipBankBalance(data.currentBalanceCents ?? 0)
+        const balanceRaw = await balanceRes.json()
+        const balanceData = balanceRaw.data ?? balanceRaw
+        setTipBankBalance(balanceData.currentBalanceCents ?? 0)
       }
       if (settingsRes.ok) {
-        const data = await settingsRes.json()
-        const tb = data.tipBank
+        const settingsRaw = await settingsRes.json()
+        const settingsData = settingsRaw.data ?? settingsRaw
+        const tb = settingsData.tipBank
         if (tb) {
           setTipBankSettings({
             allowEODCashOut: tb.allowEODCashOut ?? false,
@@ -500,7 +504,8 @@ export function ShiftCloseoutModal({
         throw new Error(data.error || 'Failed to close shift')
       }
 
-      const data = await response.json()
+      const raw = await response.json()
+      const data = raw.data ?? raw
       setCloseoutResult({
         variance: data.shift.variance,
         expectedCash: data.shift.expectedCash,
@@ -1224,7 +1229,8 @@ export function ShiftCloseoutModal({
                                 }),
                               })
                               if (overrideRes.ok) {
-                                const data = await overrideRes.json()
+                                const raw = await overrideRes.json()
+                                const data = raw.data ?? raw
                                 toast.success('Shift closed. Open orders transferred to you.')
                                 setCloseoutResult({
                                   variance: data.shift.variance,
@@ -1288,7 +1294,8 @@ export function ShiftCloseoutModal({
                               }),
                             })
                             if (res.ok) {
-                              const data = await res.json()
+                              const raw = await res.json()
+                              const data = raw.data ?? raw
                               setPayoutResult({
                                 amountDollars: data.payout?.amountDollars ?? 0,
                                 newBalanceDollars: data.payout?.newBalanceDollars ?? 0,

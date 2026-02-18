@@ -96,11 +96,11 @@ export default function CouponReportsPage() {
       const res = await fetch(`/api/reports/coupons?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setSummary(data.summary)
-        setCoupons(data.coupons)
-        setDailyTrend(data.dailyTrend)
-        setByType(data.byType)
-        setRecentRedemptions(data.recentRedemptions)
+        setSummary(data.data.summary)
+        setCoupons(data.data.coupons)
+        setDailyTrend(data.data.dailyTrend)
+        setByType(data.data.byType)
+        setRecentRedemptions(data.data.recentRedemptions)
       }
     } catch (error) {
       console.error('Failed to load coupon report:', error)

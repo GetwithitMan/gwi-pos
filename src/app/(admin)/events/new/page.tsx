@@ -121,7 +121,7 @@ export default function CreateEventPage() {
       }
 
       // Redirect to event page
-      router.push(`/events/${data.event.id}`)
+      router.push(`/events/${data.data.event.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create event')
     } finally {

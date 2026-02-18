@@ -104,7 +104,7 @@ export default function ProductMixReportPage() {
         `/api/reports/product-mix?locationId=${locationId}&startDate=${startDate}&endDate=${endDate}`
       )
       const data = await res.json()
-      setReport(data)
+      setReport(data.data)
     } catch (error) {
       console.error('Failed to fetch report:', error)
     } finally {

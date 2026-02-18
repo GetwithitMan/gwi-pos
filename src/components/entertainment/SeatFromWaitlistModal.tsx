@@ -137,7 +137,8 @@ export function SeatFromWaitlistModal({
         const orderResponse = await fetch(`/api/orders/${tabId}`)
 
         if (orderResponse.ok) {
-          const orderData = await orderResponse.json()
+          const orderRaw = await orderResponse.json()
+          const orderData = orderRaw.data ?? orderRaw
 
           // Map existing items
           const existingItems = Array.isArray(orderData.items) ? orderData.items : []
@@ -197,7 +198,8 @@ export function SeatFromWaitlistModal({
           throw new Error(data.error || 'Failed to create tab')
         }
 
-        const tabData = await tabResponse.json()
+        const tabRaw = await tabResponse.json()
+        const tabData = tabRaw.data ?? tabRaw
         tabId = tabData.id // Response returns id directly, not order.id
 
         if (!tabId) {
@@ -211,7 +213,8 @@ export function SeatFromWaitlistModal({
       try {
         const orderResponse = await fetch(`/api/orders/${tabId}`)
         if (orderResponse.ok) {
-          const orderData = await orderResponse.json()
+          const orderRaw2 = await orderResponse.json()
+          const orderData = orderRaw2.data ?? orderRaw2
           // Find the item that matches our entertainment item
           const entertainmentItem = orderData.items?.find(
             (item: { menuItemId: string }) => item.menuItemId === selectedItemId

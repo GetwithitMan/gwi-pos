@@ -84,7 +84,8 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
       try {
         const res = await fetch(`/api/menu/items/${itemId}`)
         if (!res.ok) throw new Error('Failed to load')
-        const data = await res.json()
+        const raw = await res.json()
+        const data = raw.data ?? raw
         const it = data.item as ItemSettings
 
         setName(it.name || '')
@@ -129,7 +130,8 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
         // First try formal recipe costing
         const recipeRes = await fetch(`/api/menu/items/${itemId}/inventory-recipe`)
         if (recipeRes.ok) {
-          const recipeData = await recipeRes.json()
+          const recipeRaw = await recipeRes.json()
+          const recipeData = recipeRaw.data ?? recipeRaw
           if (recipeData.recipe?.ingredients?.length > 0) {
             setIngredientCosts({
               ingredients: recipeData.recipe.ingredients.map((ing: { inventoryItem?: { name?: string } | null; prepItem?: { name?: string } | null; lineCost: number }) => ({
@@ -153,7 +155,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
             // Batch fetch costs for all ingredients in parallel
             const costResults = await Promise.allSettled(
               items.map((i: { ingredientId: string }) =>
-                fetch(`/api/ingredients/${i.ingredientId}/cost`).then(r => r.ok ? r.json() : null)
+                fetch(`/api/ingredients/${i.ingredientId}/cost`).then(r => r.ok ? r.json().then(raw => raw.data ?? raw) : null)
               )
             )
 
@@ -246,7 +248,8 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
         toast.error(err.error || 'Upload failed')
         return
       }
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       setImageUrl(data.url)
       toast.success('Image uploaded')
     } catch {

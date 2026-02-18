@@ -100,12 +100,12 @@ export default function EmployeesPage() {
 
       if (employeesRes.ok) {
         const data = await employeesRes.json()
-        setEmployees(data.employees)
+        setEmployees(data.data.employees)
       }
 
       if (rolesRes.ok) {
         const data = await rolesRes.json()
-        setRoles(data.roles)
+        setRoles(data.data.roles)
       }
     } catch (err) {
       console.error('Failed to load data:', err)

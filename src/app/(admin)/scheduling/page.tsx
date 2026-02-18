@@ -93,9 +93,9 @@ export default function SchedulingPage() {
       const response = await fetch(`/api/schedules?locationId=${employee.location.id}`)
       if (response.ok) {
         const data = await response.json()
-        setSchedules(data.schedules)
+        setSchedules(data.data.schedules)
         // Auto-select current week schedule
-        const currentWeek = data.schedules.find((s: Schedule) => {
+        const currentWeek = data.data.schedules.find((s: Schedule) => {
           const start = new Date(s.weekStart)
           return start.toDateString() === currentWeekStart.toDateString()
         })
@@ -117,7 +117,7 @@ export default function SchedulingPage() {
       const response = await fetch(`/api/employees?locationId=${employee.location.id}`)
       if (response.ok) {
         const data = await response.json()
-        setEmployees(data.employees.map((e: { id: string; displayName?: string; firstName: string; lastName: string; role?: { name: string }; hourlyRate?: number }) => ({
+        setEmployees(data.data.employees.map((e: { id: string; displayName?: string; firstName: string; lastName: string; role?: { name: string }; hourlyRate?: number }) => ({
           id: e.id,
           name: e.displayName || `${e.firstName} ${e.lastName}`,
           role: e.role?.name || 'Staff',
@@ -175,7 +175,7 @@ export default function SchedulingPage() {
         const scheduleResponse = await fetch(`/api/schedules/${selectedSchedule.id}`)
         if (scheduleResponse.ok) {
           const data = await scheduleResponse.json()
-          setSelectedSchedule({ ...selectedSchedule, shifts: data.shifts })
+          setSelectedSchedule({ ...selectedSchedule, shifts: data.data.shifts })
         }
         loadSchedules()
       } else {

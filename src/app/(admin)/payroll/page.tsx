@@ -88,7 +88,7 @@ export default function PayrollPage() {
       const response = await fetch(`/api/payroll/periods?locationId=${employee.location.id}`)
       if (response.ok) {
         const data = await response.json()
-        setPeriods(data.periods)
+        setPeriods(data.data.periods)
       }
     } catch (error) {
       console.error('Failed to load payroll periods:', error)
@@ -102,8 +102,8 @@ export default function PayrollPage() {
       const response = await fetch(`/api/payroll/periods/${periodId}`)
       if (response.ok) {
         const data = await response.json()
-        setSelectedPeriod(data.period)
-        setPayStubs(data.payStubs)
+        setSelectedPeriod(data.data.period)
+        setPayStubs(data.data.payStubs)
       }
     } catch (error) {
       console.error('Failed to load period details:', error)

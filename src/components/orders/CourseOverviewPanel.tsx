@@ -44,7 +44,8 @@ export function CourseOverviewPanel({ orderId, onCourseUpdate }: CourseOverviewP
     try {
       const res = await fetch(`/api/orders/${orderId}/courses`)
       if (res.ok) {
-        const data = await res.json()
+        const raw = await res.json()
+        const data = raw.data ?? raw
         setCourses(data.courses || [])
         setCurrentCourse(data.currentCourse || 1)
         setCourseMode(data.courseMode || 'off')

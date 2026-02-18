@@ -50,7 +50,8 @@ export function SeatCourseHoldControls({
       })
 
       if (response.ok) {
-        const result = await response.json()
+        const raw = await response.json()
+        const result = raw.data ?? raw
         if (result.item) {
           onUpdate({
             seatNumber: result.item.seatNumber,

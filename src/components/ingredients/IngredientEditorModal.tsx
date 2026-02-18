@@ -70,7 +70,8 @@ export function IngredientEditorModal({
       // Fetch base ingredients (inventory items that can be parents)
       fetch(`/api/ingredients?locationId=${locationId}&baseOnly=true&includeInactive=false`)
         .then(res => res.json())
-        .then(data => {
+        .then(raw => {
+          const data = raw.data ?? raw
           setBaseIngredients(data.data || [])
         })
         .catch(err => console.error('Failed to load base ingredients:', err))
@@ -406,7 +407,8 @@ export function IngredientEditorModal({
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ...data, locationId, isBaseIngredient: true }),
                   })
-                  const result = await res.json()
+                  const rawResult = await res.json()
+                  const result = rawResult.data ?? rawResult
                   if (result.data?.id) {
                     // Add to base ingredients and select it
                     setBaseIngredients(prev => [...prev, result.data])

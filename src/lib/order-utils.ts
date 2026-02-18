@@ -188,7 +188,8 @@ export async function fetchAndMergeOrder(orderId: string): Promise<MergedOrderDa
   const res = await fetch(`/api/orders/${orderId}`)
   if (!res.ok) return null
 
-  const data = await res.json()
+  const raw = await res.json()
+  const data = raw.data ?? raw
 
   let mergedItems = data.items || []
   let mergedSubtotal = Number(data.subtotal) || 0
@@ -200,7 +201,8 @@ export async function fetchAndMergeOrder(orderId: string): Promise<MergedOrderDa
     try {
       const splitRes = await fetch(`/api/orders/${orderId}/split-tickets`)
       if (splitRes.ok) {
-        const splitData = await splitRes.json()
+        const rawSplit = await splitRes.json()
+        const splitData = rawSplit.data ?? rawSplit
         const splits = splitData.splitOrders || []
         if (Array.isArray(splits) && splits.length > 0) {
           mergedItems = []

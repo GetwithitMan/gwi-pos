@@ -104,7 +104,8 @@ export function usePOSLayout(options: UsePOSLayoutOptions = {}): UsePOSLayoutRet
     try {
       const response = await fetch(`/api/employees/${employeeId}/layout`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         const merged = { ...DEFAULT_LAYOUT_SETTINGS, ...data.layout }
         setLayout(merged)
         setCachedLayout(employeeId, merged)

@@ -91,7 +91,7 @@ export default function TipGroupPage() {
         const res = await fetch(`/api/settings/tips?locationId=${employee.location.id}&employeeId=${employee.id}`)
         if (res.ok) {
           const data = await res.json()
-          setAllowEmployeeCreatedGroups(data.tipBank?.allowEmployeeCreatedGroups ?? true)
+          setAllowEmployeeCreatedGroups(data.data?.tipBank?.allowEmployeeCreatedGroups ?? true)
         }
       } catch {
         // Default to true on failure
@@ -113,7 +113,7 @@ export default function TipGroupPage() {
       )
       if (res.ok) {
         const data = await res.json()
-        const allGroups: TipGroupInfo[] = data.groups || []
+        const allGroups: TipGroupInfo[] = data.data?.groups || []
         setGroups(allGroups)
 
         // Find which group the current employee is in
@@ -149,7 +149,7 @@ export default function TipGroupPage() {
       if (res.ok) {
         const data = await res.json()
         // Filter out the current employee (they are auto-included as creator)
-        const others: EmployeeOption[] = (data.employees || []).filter(
+        const others: EmployeeOption[] = (data.data?.employees || []).filter(
           (e: EmployeeOption) => e.id !== employee.id
         )
         setEmployees(others)

@@ -124,7 +124,8 @@ export function CompVoidModal({
         throw new Error(data.error || 'Failed to process')
       }
 
-      const result = await response.json()
+      const raw = await response.json()
+      const result = raw.data ?? raw
       onComplete({
         action,
         orderAutoClosed: result.orderAutoClosed,
@@ -157,7 +158,8 @@ export function CompVoidModal({
         throw new Error(data.error || 'Failed to restore')
       }
 
-      const result = await response.json()
+      const raw = await response.json()
+      const result = raw.data ?? raw
       onComplete({
         action: 'restore',
         orderTotals: result.orderTotals,
@@ -213,7 +215,8 @@ export function CompVoidModal({
         throw new Error(data.error || 'Failed to process')
       }
 
-      const result = await response.json()
+      const raw2 = await response.json()
+      const result = raw2.data ?? raw2
       onComplete({
         action: action!,
         orderTotals: result.orderTotals,

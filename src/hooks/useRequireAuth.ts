@@ -51,7 +51,8 @@ export function useRequireAuth() {
             try {
               const refresh = await fetch('/api/auth/cloud-session')
               if (refresh.ok) {
-                const data = await refresh.json()
+                const raw = await refresh.json()
+                const data = raw.data ?? raw
                 login(data.employee)
                 console.info(
                   '[useRequireAuth] Cloud session refreshed with locationId:',

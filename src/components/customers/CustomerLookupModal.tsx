@@ -87,7 +87,8 @@ export function CustomerLookupModal({
 
       const response = await fetch(`/api/customers?${params}`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setCustomers(data.customers)
       }
     } catch (err) {
@@ -127,7 +128,8 @@ export function CustomerLookupModal({
       })
 
       if (response.ok) {
-        const customer = await response.json()
+        const raw = await response.json()
+        const customer = raw.data ?? raw
         onSelectCustomer(customer)
         onClose()
       }

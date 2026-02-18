@@ -63,7 +63,8 @@ export function TablePickerModal({ locationId, onSelect, onCancel }: TablePicker
       try {
         const response = await fetch(`/api/tables?locationId=${locationId}`)
         if (response.ok) {
-          const data = await response.json()
+          const raw = await response.json()
+          const data = raw.data ?? raw
           setTables(data.tables || [])
 
           // Extract unique sections

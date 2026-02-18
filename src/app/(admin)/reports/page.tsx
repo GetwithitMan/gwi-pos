@@ -69,16 +69,16 @@ export default function ReportsHubPage() {
       if (response.ok) {
         const data = await response.json()
         setStats({
-          totalSales: data.summary?.netSales || 0,
-          orderCount: data.summary?.orderCount || 0,
-          avgOrderValue: data.summary?.averageOrderValue || 0,
-          cashSales: data.summary?.cashSales || 0,
-          cardSales: data.summary?.cardSales || 0,
-          tipsCollected: data.summary?.tips || 0,
+          totalSales: data.data.summary?.netSales || 0,
+          orderCount: data.data.summary?.orderCount || 0,
+          avgOrderValue: data.data.summary?.averageOrderValue || 0,
+          cashSales: data.data.summary?.cashSales || 0,
+          cardSales: data.data.summary?.cardSales || 0,
+          tipsCollected: data.data.summary?.tips || 0,
           // Labor metrics require aggregating TimeClockEntry data
           // Future enhancement: Add /api/reports/labor endpoint
-          laborHours: data.summary?.laborHours || 0,
-          laborCost: data.summary?.laborCost || 0,
+          laborHours: data.data.summary?.laborHours || 0,
+          laborCost: data.data.summary?.laborCost || 0,
         })
       }
     } catch (error) {

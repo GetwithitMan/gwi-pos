@@ -76,7 +76,7 @@ export default function RoutingPage() {
       if (menuRes.ok) {
         const menuData = await menuRes.json()
         // Convert printerIds from JSON to arrays
-        const cats = (menuData.categories || []).map((c: any) => ({
+        const cats = (menuData.data.categories || []).map((c: any) => ({
           ...c,
           printerIds: c.printerIds || null,
         }))
@@ -84,7 +84,7 @@ export default function RoutingPage() {
 
         // Group items by category
         const itemsByCategory: Record<string, MenuItem[]> = {}
-        for (const item of menuData.items || []) {
+        for (const item of menuData.data.items || []) {
           if (!itemsByCategory[item.categoryId]) {
             itemsByCategory[item.categoryId] = []
           }
@@ -99,12 +99,12 @@ export default function RoutingPage() {
 
       if (printersRes.ok) {
         const printersData = await printersRes.json()
-        setPrinters(printersData.printers || [])
+        setPrinters(printersData.data.printers || [])
       }
 
       if (kdsRes.ok) {
         const kdsData = await kdsRes.json()
-        setKdsScreens(kdsData.screens || [])
+        setKdsScreens(kdsData.data.screens || [])
       }
     } catch (error) {
       console.error('Failed to load data:', error)

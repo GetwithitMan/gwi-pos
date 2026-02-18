@@ -118,7 +118,8 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
         headers: { 'x-employee-id': employeeId },
       })
       if (!res.ok) throw new Error('Failed to load groups')
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       setGroups(data.groups || [])
     } catch {
       toast.error('Failed to load active tip groups')
@@ -135,7 +136,8 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
         headers: { 'x-employee-id': employeeId },
       })
       if (!res.ok) throw new Error('Failed to load employees')
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       setEmployees(data.employees || data || [])
     } catch {
       // Silent — add member modal will show empty

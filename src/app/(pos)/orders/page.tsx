@@ -550,7 +550,7 @@ export default function OrdersPage() {
           const res = await fetch(`/api/orders/${orderId}/split-tickets`)
           if (res.ok) {
             const data = await res.json()
-            if (data.splitOrders && data.splitOrders.length > 0) {
+            if (data.data?.splitOrders && data.data.splitOrders.length > 0) {
               setSplitManageMode(true)
               setShowSplitTicketManager(true)
               return
@@ -693,10 +693,10 @@ export default function OrdersPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        setCategories(data.categories)
-        setMenuItems([...data.items]) // Force new array reference
-        if (data.categories.length > 0 && !selectedCategoryRef.current) {
-          setSelectedCategory(data.categories[0].id)
+        setCategories(data.data.categories)
+        setMenuItems([...data.data.items]) // Force new array reference
+        if (data.data.categories.length > 0 && !selectedCategoryRef.current) {
+          setSelectedCategory(data.data.categories[0].id)
         }
       }
     } catch (error) {
@@ -713,7 +713,7 @@ export default function OrdersPage() {
       const response = await fetch(`/api/order-types?locationId=${employee?.location?.id}`)
       if (response.ok) {
         const data = await response.json()
-        setOrderTypes(data.orderTypes || [])
+        setOrderTypes(data.data?.orderTypes || [])
       }
     } catch (error) {
       console.error('Failed to load order types:', error)
@@ -786,7 +786,7 @@ export default function OrdersPage() {
       const response = await fetch(`/api/timed-sessions?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setActiveSessions(data.sessions || [])
+        setActiveSessions(data.data?.sessions || [])
       }
     } catch (error) {
       console.error('Failed to load active sessions:', error)
@@ -811,12 +811,12 @@ export default function OrdersPage() {
       const response = await fetch(`/api/shifts?${params}`)
       if (response.ok) {
         const data = await response.json()
-        if (data.shifts && data.shifts.length > 0) {
+        if (data.data?.shifts && data.data.shifts.length > 0) {
           // Enrich shift data with roleId and locationId for tip distribution
           setCurrentShift({
-            ...data.shifts[0],
+            ...data.data.shifts[0],
             employee: {
-              ...data.shifts[0].employee,
+              ...data.data.shifts[0].employee,
               roleId: employee?.role?.id,
             },
             locationId: employee?.location?.id,
@@ -844,7 +844,7 @@ export default function OrdersPage() {
         const response = await fetch(`/api/orders/open?${params}`)
         if (response.ok) {
           const data = await response.json()
-          setOpenOrdersCount(data.orders?.length || 0)
+          setOpenOrdersCount(data.data?.orders?.length || 0)
         }
       } catch (error) {
         console.error('Failed to load open orders count:', error)
@@ -885,7 +885,7 @@ export default function OrdersPage() {
           body: JSON.stringify({ itemIds: quickBar }),
         })
         if (!cancelled && res.ok) {
-          const { items } = await res.json()
+          const { data: { items } } = await res.json()
           setQuickBarItems(
             (items as { id: string; name: string; price: number }[]).map(item => ({
               id: item.id,
@@ -1297,7 +1297,7 @@ export default function OrdersPage() {
         return
       }
       const data = await res.json()
-      toast.success(`All ${data.splitsPaid} splits paid — $${data.totalAmount.toFixed(2)}`)
+      toast.success(`All ${data.data.splitsPaid} splits paid — $${data.data.totalAmount.toFixed(2)}`)
       cleanupAfterPayAllSplits()
     } catch {
       toast.error('Failed to pay all splits')
@@ -1343,7 +1343,7 @@ export default function OrdersPage() {
     const orderResponse = await fetch(`/api/orders/${savedOrderId}`)
     if (orderResponse.ok) {
       const orderData = await orderResponse.json()
-      loadOrder(orderData)
+      loadOrder(orderData.data || orderData)
     }
 
     // Refresh tabs panel
@@ -1418,7 +1418,7 @@ export default function OrdersPage() {
         const response = await fetch(`/api/orders/${orderId}/discount`)
         if (response.ok) {
           const data = await response.json()
-          setAppliedDiscounts(data.discounts || [])
+          setAppliedDiscounts(data.data?.discounts || [])
         }
       } catch (err) {
         console.error('Failed to load discounts:', err)
@@ -1439,7 +1439,7 @@ export default function OrdersPage() {
       fetch(`/api/orders/${orderToPayId}/discount`)
         .then(res => res.json())
         .then(data => {
-          setAppliedDiscounts(data.discounts || [])
+          setAppliedDiscounts(data.data?.discounts || [])
         })
         .catch(console.error)
     }
@@ -1597,7 +1597,7 @@ export default function OrdersPage() {
         const response = await fetch(`/api/combos/${item.id}`)
         if (response.ok) {
           const data = await response.json()
-          setComboTemplate(data.template)
+          setComboTemplate(data.data?.template)
         }
       } catch (error) {
         console.error('Failed to load combo template:', error)
@@ -1661,7 +1661,8 @@ export default function OrdersPage() {
       const res = await fetch(`/api/menu/items/${itemId}`)
       if (!res.ok) return
 
-      const { item } = await res.json()
+      const resp = await res.json()
+      const item = resp.data?.item || resp.item
       handleAddItem({
         id: item.id,
         name: item.name,
@@ -2254,7 +2255,7 @@ export default function OrdersPage() {
         const response = await fetch(`/api/menu/items/${menuItem.id}/modifiers`)
         if (response.ok) {
           const data = await response.json()
-          setItemModifierGroups(data.modifierGroups || [])
+          setItemModifierGroups(data.data?.modifierGroups || [])
         }
       } catch (error) {
         console.error('Failed to load modifiers:', error)

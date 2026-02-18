@@ -128,8 +128,8 @@ export default function TransactionsPage() {
       const res = await fetch(`/api/inventory/transactions?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setTransactions(data.transactions || [])
-        setPagination(data.pagination || null)
+        setTransactions(data.data.transactions || [])
+        setPagination(data.data.pagination || null)
       } else {
         toast.error('Failed to load transactions')
       }

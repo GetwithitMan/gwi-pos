@@ -58,7 +58,8 @@ export function ShiftStartModal({
     try {
       const res = await fetch(`/api/drawers?locationId=${locationId}`)
       if (res.ok) {
-        const data = await res.json()
+        const raw = await res.json()
+        const data = raw.data ?? raw
         setDrawers(data.drawers)
         // Auto-select if only one available
         const available = data.drawers.filter((d: DrawerOption) => d.isAvailable)
@@ -136,7 +137,8 @@ export function ShiftStartModal({
         throw new Error(data.error || 'Failed to start shift')
       }
 
-      const data = await response.json()
+      const raw = await response.json()
+      const data = raw.data ?? raw
       onShiftStarted(data.shift.id)
       onClose()
     } catch (err) {

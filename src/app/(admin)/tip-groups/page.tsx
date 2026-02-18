@@ -112,8 +112,8 @@ export default function TipGroupsPage() {
       }
 
       const data = await res.json()
-      setGroups(data.groups ?? [])
-      setTotal(data.total ?? 0)
+      setGroups(data.data.groups ?? [])
+      setTotal(data.data.total ?? 0)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load tip groups')
     } finally {

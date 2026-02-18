@@ -88,22 +88,22 @@ export default function HardwareDashboard() {
 
       if (printersRes.ok) {
         const data = await printersRes.json()
-        setPrinters(data.printers || [])
+        setPrinters(data.data.printers || [])
       }
 
       if (kdsRes.ok) {
         const data = await kdsRes.json()
-        setKdsScreens(data.screens || [])
+        setKdsScreens(data.data.screens || [])
       }
 
       if (terminalsRes.ok) {
         const data = await terminalsRes.json()
-        setTerminals(data.terminals || [])
+        setTerminals(data.data.terminals || [])
       }
 
       if (readersRes.ok) {
         const data = await readersRes.json()
-        setPaymentReaders(data.readers || [])
+        setPaymentReaders(data.data.readers || [])
       }
     } catch (error) {
       console.error('Failed to fetch hardware status:', error)

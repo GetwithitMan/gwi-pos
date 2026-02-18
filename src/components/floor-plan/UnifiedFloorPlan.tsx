@@ -189,11 +189,13 @@ export function UnifiedFloorPlan({
       ])
 
       if (tablesRes.ok) {
-        const data = await tablesRes.json()
+        const raw = await tablesRes.json()
+        const data = raw.data ?? raw
         setTables(data.tables || [])
       }
       if (sectionsRes.ok) {
-        const data = await sectionsRes.json()
+        const raw = await sectionsRes.json()
+        const data = raw.data ?? raw
         setSections(data.sections || [])
       }
     } catch (error) {
@@ -427,7 +429,8 @@ export function UnifiedFloorPlan({
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setTables(tables.map(t =>
           t.id === tableId
             ? { ...t, seats: data.seats, seatPattern: pattern }
@@ -510,7 +513,8 @@ export function UnifiedFloorPlan({
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         // Update local state
         setTables(tables.map(t => {
           if (t.id !== tableId) return t
@@ -631,7 +635,8 @@ export function UnifiedFloorPlan({
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         // Add to local state and select the new table
         setTables([...tables, data.table])
         selectTable(data.table.id)

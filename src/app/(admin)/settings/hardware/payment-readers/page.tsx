@@ -71,7 +71,7 @@ export default function PaymentReadersPage() {
       const res = await fetch(`/api/hardware/payment-readers?locationId=${locationId}`)
       if (res.ok) {
         const data = await res.json()
-        setReaders(data.readers || [])
+        setReaders(data.data.readers || [])
       }
     } catch (error) {
       console.error('Failed to fetch payment readers:', error)

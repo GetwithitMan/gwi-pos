@@ -57,7 +57,8 @@ export function ManagerPinModal({
       })
 
       if (res.ok) {
-        const data = await res.json()
+        const raw = await res.json()
+        const data = raw.data ?? raw
         const managerName = `${data.employee.firstName} ${data.employee.lastName}`
         toast.success(`Authorized by ${managerName}`)
         onVerified(data.employee.id, managerName)

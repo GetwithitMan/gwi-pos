@@ -85,7 +85,8 @@ export default function SharedOwnershipModal({
         headers: { 'x-employee-id': employeeId },
       })
       if (!res.ok) throw new Error('Failed to fetch ownership')
-      const data = await res.json()
+      const rawRes = await res.json()
+      const data = rawRes.data ?? rawRes
       const raw = data.ownership
 
       if (raw) {
@@ -133,7 +134,8 @@ export default function SharedOwnershipModal({
       const params = new URLSearchParams({ locationId, status: 'open' })
       const res = await fetch(`/api/shifts?${params}`)
       if (!res.ok) throw new Error('Failed to fetch shifts')
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       // Extract unique employees from open shifts — only those with pos.access permission
       const seen = new Set<string>()
       const clockedIn: EmployeeOption[] = []

@@ -99,7 +99,7 @@ export default function EmployeeReportsPage() {
       const response = await fetch(`/api/reports/employees?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setReport(data)
+        setReport(data.data)
       }
     } catch (error) {
       console.error('Failed to load employee report:', error)

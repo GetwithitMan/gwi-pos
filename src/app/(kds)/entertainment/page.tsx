@@ -52,9 +52,9 @@ export default function EntertainmentKDSPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        setItems(data.items)
+        setItems(data.data.items)
         // Collect all waitlist entries from all items
-        const waitlistEntries: WaitlistEntry[] = data.items.flatMap((item: EntertainmentItem) =>
+        const waitlistEntries: WaitlistEntry[] = data.data.items.flatMap((item: EntertainmentItem) =>
           item.waitlist.map(w => ({
             ...w,
             menuItem: { id: item.id, name: item.displayName, status: item.status },

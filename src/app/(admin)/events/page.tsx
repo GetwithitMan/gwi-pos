@@ -85,7 +85,7 @@ export default function EventsPage() {
 
       const res = await fetch(`/api/events?${params}`)
       const data = await res.json()
-      setEvents(data.events || [])
+      setEvents(data.data.events || [])
     } catch (error) {
       console.error('Failed to fetch events:', error)
     } finally {

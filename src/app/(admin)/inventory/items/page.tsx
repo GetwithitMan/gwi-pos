@@ -151,12 +151,12 @@ export default function InventoryItemsPage() {
 
       if (itemsRes.ok) {
         const data = await itemsRes.json()
-        setItems(data.items || [])
-        setPagination(data.pagination || null)
+        setItems(data.data.items || [])
+        setPagination(data.data.pagination || null)
       }
       if (vendorsRes.ok) {
         const data = await vendorsRes.json()
-        setVendors(data.vendors || [])
+        setVendors(data.data.vendors || [])
       }
     } catch (error) {
       console.error('Failed to load inventory items:', error)
@@ -175,8 +175,8 @@ export default function InventoryItemsPage() {
       const res = await fetch(`/api/inventory/items?${buildQueryParams(items.length)}`)
       if (res.ok) {
         const data = await res.json()
-        setItems(prev => [...prev, ...(data.items || [])])
-        setPagination(data.pagination || null)
+        setItems(prev => [...prev, ...(data.data.items || [])])
+        setPagination(data.data.pagination || null)
       }
     } catch (error) {
       console.error('Failed to load more items:', error)

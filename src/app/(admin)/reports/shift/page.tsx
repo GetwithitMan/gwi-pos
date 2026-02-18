@@ -177,7 +177,7 @@ function EmployeeShiftReportContent() {
       )
       if (response.ok) {
         const data = await response.json()
-        setEmployees(data.employees)
+        setEmployees(data.data.employees)
       }
     } catch (error) {
       console.error('Failed to load employees:', error)
@@ -194,7 +194,7 @@ function EmployeeShiftReportContent() {
       )
       if (response.ok) {
         const data = await response.json()
-        setReport(data)
+        setReport(data.data)
       } else {
         setReport(null)
       }
@@ -212,8 +212,8 @@ function EmployeeShiftReportContent() {
       const response = await fetch(`/api/reports/employee-shift?shiftId=${shiftId}`)
       if (response.ok) {
         const data = await response.json()
-        setReport(data)
-        setSelectedEmployeeId(data.employee.id)
+        setReport(data.data)
+        setSelectedEmployeeId(data.data.employee.id)
       }
     } catch (error) {
       console.error('Failed to load report:', error)

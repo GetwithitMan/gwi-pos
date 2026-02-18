@@ -74,7 +74,7 @@ export default function PrintersPage() {
       const res = await fetch(`/api/hardware/printers?locationId=${locationId}`)
       if (res.ok) {
         const data = await res.json()
-        setPrinters(data.printers || [])
+        setPrinters(data.data.printers || [])
       }
     } catch (error) {
       console.error('Failed to fetch printers:', error)
@@ -89,7 +89,7 @@ export default function PrintersPage() {
       const res = await fetch('/api/settings')
       if (res.ok) {
         const data = await res.json()
-        if (data.settings?.receiptDisplay) {
+        if (data.data.settings?.receiptDisplay) {
           setGlobalReceiptSettings(data.settings.receiptDisplay)
         }
       }

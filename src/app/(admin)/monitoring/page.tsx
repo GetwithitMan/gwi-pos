@@ -71,12 +71,12 @@ export default function MonitoringDashboard() {
 
       if (statsRes.ok) {
         const data = await statsRes.json()
-        setStats(data.stats || data)
+        setStats(data.data?.stats || data.data)
       }
 
       if (healthRes.ok) {
         const data = await healthRes.json()
-        setHealth(data.checks || [])
+        setHealth(data.data.checks || [])
       }
 
     } catch (error) {

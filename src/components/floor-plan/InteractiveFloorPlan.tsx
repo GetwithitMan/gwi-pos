@@ -64,8 +64,10 @@ export function InteractiveFloorPlan({
       if (!tablesRes.ok) throw new Error('Failed to fetch tables')
       if (!sectionsRes.ok) throw new Error('Failed to fetch sections')
 
-      const tablesData = await tablesRes.json()
-      const sectionsData = await sectionsRes.json()
+      const tablesRaw = await tablesRes.json()
+      const tablesData = tablesRaw.data ?? tablesRaw
+      const sectionsRaw = await sectionsRes.json()
+      const sectionsData = sectionsRaw.data ?? sectionsRaw
 
       setTables(tablesData.tables || [])
       setSections(sectionsData.sections || [])

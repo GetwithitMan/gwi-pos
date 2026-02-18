@@ -65,7 +65,8 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
     try {
       const res = await fetch(`${apiBase}?locationId=${locationId}`)
       if (!res.ok) throw new Error(`Failed to load ${resourceName}s`)
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       setItems(extractItems(data))
     } catch (err) {
       console.error(`Error loading ${resourceName}s:`, err)

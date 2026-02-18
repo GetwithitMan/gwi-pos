@@ -183,7 +183,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         return
       }
 
-      const order = await res.json()
+      const raw = await res.json()
+      const order = raw.data ?? raw
 
       // Pass raw API response directly — store.loadOrder() is the SINGLE source of truth for mapping
       useOrderStore.getState().loadOrder(order)
@@ -253,7 +254,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         }),
       }).then(async (res) => {
         if (res.ok) {
-          const data = await res.json()
+          const raw = await res.json()
+          const data = raw.data ?? raw
           // Store the real DB ID so ensureOrderInDB can skip creation
           useOrderStore.getState().updateOrderId(data.id, data.orderNumber)
           return data.id as string
@@ -288,7 +290,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           }),
         })
         if (res.ok) {
-          const result = await res.json()
+          const rawResult = await res.json()
+          const result = rawResult.data ?? rawResult
           if (result.addedItems) {
             const s = useOrderStore.getState()
             for (const added of result.addedItems) {
@@ -419,7 +422,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           return null
         }
 
-        const created = await res.json()
+        const rawCreated = await res.json()
+        const created = rawCreated.data ?? rawCreated
 
         // Update order ID in store
         store.updateOrderId(created.id, created.orderNumber)
@@ -475,7 +479,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           return null
         }
 
-        const result = await res.json()
+        const rawResult = await res.json()
+        const result = rawResult.data ?? rawResult
 
         // Map temp item IDs → real DB IDs
         if (result.addedItems) {
@@ -535,7 +540,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
             }),
           })
           if (res.ok) {
-            const result = await res.json()
+            const rawResult = await res.json()
+            const result = rawResult.data ?? rawResult
             if (result.addedItems) {
               for (const added of result.addedItems) {
                 if (added.correlationId) {
@@ -888,7 +894,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
               }),
             })
             if (res.ok) {
-              const result = await res.json()
+              const rawResult = await res.json()
+              const result = rawResult.data ?? rawResult
               totalSent += result.sentItemCount || 0
             }
           } catch (err) {
@@ -1013,7 +1020,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
                 }),
               })
               if (!appendRes.ok) throw new Error('Failed to save items')
-              const result = await appendRes.json()
+              const rawAppend = await appendRes.json()
+              const result = rawAppend.data ?? rawAppend
               itemIdMap = new Map<string, string>()
               if (result.addedItems) {
                 const s = useOrderStore.getState()
@@ -1122,7 +1130,8 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         return
       }
 
-      const result = await res.json()
+      const rawResult = await res.json()
+      const result = rawResult.data ?? rawResult
 
       // Mark course as fired in store
       const store = useOrderStore.getState()

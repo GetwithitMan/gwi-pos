@@ -62,17 +62,17 @@ export default function TerminalsPage() {
 
       if (terminalsRes.ok) {
         const data = await terminalsRes.json()
-        setTerminals(data.terminals || [])
+        setTerminals(data.data.terminals || [])
       }
 
       if (printersRes.ok) {
         const data = await printersRes.json()
-        setPrinters(data.printers || [])
+        setPrinters(data.data.printers || [])
       }
 
       if (rolesRes.ok) {
         const data = await rolesRes.json()
-        setRoles(data.roles || [])
+        setRoles(data.data.roles || [])
       }
     } catch (error) {
       console.error('Failed to fetch data:', error)

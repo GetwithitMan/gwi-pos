@@ -70,7 +70,7 @@ export default function SalesReportPage() {
       const response = await fetch(`/api/reports/sales?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setReport(data)
+        setReport(data.data)
       }
     } catch (error) {
       console.error('Failed to load sales report:', error)

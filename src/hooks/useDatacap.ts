@@ -155,7 +155,8 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
       const response = await fetch(`/api/hardware/terminals/${terminalId}`)
       if (!response.ok) return
 
-      const data = await response.json()
+      const raw = await response.json()
+      const data = raw.data ?? raw
       const terminal = data.terminal
 
       if (!terminal) {
@@ -237,7 +238,8 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         method: 'POST',
       })
 
-      const result = await response.json()
+      const rawResult = await response.json()
+      const result = rawResult.data ?? rawResult
       setIsReaderOnline(result.isOnline || false)
 
       if (result.isOnline) {

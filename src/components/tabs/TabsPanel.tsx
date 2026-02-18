@@ -70,7 +70,8 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
       const params = new URLSearchParams({ status: 'open' })
       const response = await fetch(`/api/tabs?${params}`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setTabs(data.tabs)
       }
     } catch (error) {

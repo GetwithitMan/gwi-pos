@@ -104,12 +104,12 @@ export default function KDSScreensPage() {
 
       if (screensRes.ok) {
         const data = await screensRes.json()
-        setScreens(data.screens || [])
+        setScreens(data.data.screens || [])
       }
 
       if (stationsRes.ok) {
         const data = await stationsRes.json()
-        setPrepStations(data.stations || [])
+        setPrepStations(data.data.stations || [])
       }
     } catch (error) {
       console.error('Failed to fetch data:', error)

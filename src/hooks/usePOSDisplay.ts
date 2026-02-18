@@ -42,7 +42,8 @@ export function usePOSDisplay() {
     try {
       const response = await fetch('/api/settings')
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         const posDisplay = data.settings?.posDisplay || data.posDisplay
         if (posDisplay) {
           setSettings({ ...DEFAULT_POS_DISPLAY, ...posDisplay })

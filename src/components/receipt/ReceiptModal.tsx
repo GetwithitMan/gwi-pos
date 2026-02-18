@@ -54,7 +54,8 @@ export function ReceiptModal({
           throw new Error(data.error || 'Failed to load receipt')
         }
 
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setReceiptData(data)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load receipt')

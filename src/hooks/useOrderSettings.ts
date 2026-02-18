@@ -195,7 +195,8 @@ export function useOrderSettings() {
       try {
         const response = await fetch('/api/settings')
         if (response.ok) {
-          const data = await response.json()
+          const raw = await response.json()
+          const data = raw.data ?? raw
           const settings = data.settings || data
           applySettings(settings)
           return cachedSettings

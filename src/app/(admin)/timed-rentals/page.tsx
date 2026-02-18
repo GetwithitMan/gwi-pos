@@ -192,13 +192,13 @@ function TimedRentalsContent() {
 
       if (sessionsRes.ok) {
         const data = await sessionsRes.json()
-        setSessions(data.sessions || [])
+        setSessions(data.data.sessions || [])
       }
 
       if (menuRes.ok) {
         const data = await menuRes.json()
         // Filter to entertainment items - either by itemType OR categoryType
-        const timed = (data.items || []).filter((i: { itemType: string; categoryType?: string }) =>
+        const timed = (data.data.items || []).filter((i: { itemType: string; categoryType?: string }) =>
           i.itemType === 'timed_rental' || i.categoryType === 'entertainment'
         )
         setTimedItems(timed)

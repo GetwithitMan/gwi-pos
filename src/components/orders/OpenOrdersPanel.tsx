@@ -243,7 +243,7 @@ export function OpenOrdersPanel({
       })
       if (response.ok) {
         const data = await response.json()
-        setOrders(data.orders)
+        setOrders(data.data?.orders || [])
       }
     } catch (error) {
       console.error('Failed to load orders:', error)
@@ -338,12 +338,12 @@ export function OpenOrdersPanel({
       if (response.ok) {
         const data = await response.json()
         if (cursor) {
-          setClosedOrders(prev => [...prev, ...data.orders])
+          setClosedOrders(prev => [...prev, ...(data.data?.orders || [])])
         } else {
-          setClosedOrders(data.orders)
+          setClosedOrders(data.data?.orders || [])
         }
-        setClosedCursor(data.pagination?.nextCursor || null)
-        setHasMoreClosed(data.pagination?.hasMore || false)
+        setClosedCursor(data.data?.pagination?.nextCursor || null)
+        setHasMoreClosed(data.data?.pagination?.hasMore || false)
       }
     } catch (error) {
       console.error('Failed to load closed orders:', error)

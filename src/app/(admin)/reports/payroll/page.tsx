@@ -113,7 +113,7 @@ export default function PayrollReportPage() {
       const response = await fetch(`/api/reports/payroll?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setReport(data)
+        setReport(data.data)
       }
     } catch (error) {
       console.error('Failed to load payroll report:', error)

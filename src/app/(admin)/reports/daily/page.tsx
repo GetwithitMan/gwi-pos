@@ -153,7 +153,7 @@ export default function DailyReportPage() {
       )
       if (response.ok) {
         const data = await response.json()
-        setReport(data)
+        setReport(data.data)
       }
     } catch (error) {
       console.error('Failed to load report:', error)

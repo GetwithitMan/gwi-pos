@@ -109,7 +109,7 @@ export default function WastePage() {
       const res = await fetch(`/api/inventory/waste?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setEntries(data.entries || [])
+        setEntries(data.data.entries || [])
       } else {
         toast.error('Failed to load waste log')
       }
@@ -367,7 +367,7 @@ function WasteEntryModal({
         const res = await fetch(`/api/inventory/items?locationId=${locationId}&activeOnly=true`)
         if (res.ok) {
           const data = await res.json()
-          setItems(data.items || [])
+          setItems(data.data.items || [])
         }
       } catch (error) {
         console.error('Failed to load items:', error)

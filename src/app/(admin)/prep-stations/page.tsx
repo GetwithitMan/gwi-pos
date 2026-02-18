@@ -102,9 +102,9 @@ export default function PrepStationsPage() {
       const menuRes = await fetch(`/api/menu?locationId=${employee.location.id}`)
       if (menuRes.ok) {
         const data = await menuRes.json()
-        setCategories(data.categories || [])
+        setCategories(data.data.categories || [])
         const items: MenuItem[] = []
-        data.categories?.forEach((cat: { id: string; items: { id: string; name: string }[] }) => {
+        data.data.categories?.forEach((cat: { id: string; items: { id: string; name: string }[] }) => {
           cat.items?.forEach((item: { id: string; name: string }) => {
             items.push({ id: item.id, name: item.name, categoryId: cat.id })
           })
@@ -174,8 +174,8 @@ export default function PrepStationsPage() {
       const response = await fetch(`/api/prep-stations/${station.id}`)
       if (response.ok) {
         const data = await response.json()
-        setSelectedCategories(data.categories?.map((c: { id: string }) => c.id) || [])
-        setSelectedItems(data.menuItems?.map((i: { id: string }) => i.id) || [])
+        setSelectedCategories(data.data.categories?.map((c: { id: string }) => c.id) || [])
+        setSelectedItems(data.data.menuItems?.map((i: { id: string }) => i.id) || [])
       }
     } catch (error) {
       console.error('Failed to load assignments:', error)

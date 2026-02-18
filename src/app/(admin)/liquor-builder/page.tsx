@@ -179,10 +179,10 @@ function LiquorBuilderContent() {
     const res = await fetch('/api/menu')
     if (res.ok) {
       const data = await res.json()
-      const liquorItems = data.items.filter((item: any) => item.categoryType === 'liquor')
+      const liquorItems = data.data.items.filter((item: any) => item.categoryType === 'liquor')
       setDrinks(liquorItems)
       // Load liquor-type menu categories (Beer, Cocktails, etc.)
-      const liquorCats = data.categories.filter((c: any) => c.categoryType === 'liquor')
+      const liquorCats = data.data.categories.filter((c: any) => c.categoryType === 'liquor')
       setMenuCategories(liquorCats.map((c: any) => ({ id: c.id, name: c.name, itemCount: c.itemCount ?? 0 })))
     }
   }
@@ -192,7 +192,7 @@ function LiquorBuilderContent() {
     if (res.ok) {
       const data = await res.json()
       // Filter to only liquor modifier groups
-      const liquorGroups = data.modifierGroups.filter((g: any) =>
+      const liquorGroups = data.data.modifierGroups.filter((g: any) =>
         g.modifierTypes && g.modifierTypes.includes('liquor')
       )
       setModifierGroups(liquorGroups)

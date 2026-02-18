@@ -428,7 +428,8 @@ class PaymentIntentManagerClass {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         // Update local intents based on results
         for (const result of data.results) {
           const intent = intents.find((i) => i.id === result.id)
@@ -534,7 +535,8 @@ class PaymentIntentManagerClass {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         await this.recordCapture(intent.id, data.paymentId)
         await this.logSync('payment_synced', intent.id, intent.amount)
       } else {

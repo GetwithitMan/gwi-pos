@@ -120,14 +120,14 @@ export default function ReservationReportsPage() {
       const res = await fetch(`/api/reports/reservations?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setSummary(data.summary)
-        setStatusBreakdown(data.statusBreakdown)
-        setByDayOfWeek(data.byDayOfWeek)
-        setByTimeSlot(data.byTimeSlot)
-        setByTable(data.byTable)
-        setDailyTrend(data.dailyTrend)
-        setPartySizeDistribution(data.partySizeDistribution)
-        setRecentReservations(data.recentReservations)
+        setSummary(data.data.summary)
+        setStatusBreakdown(data.data.statusBreakdown)
+        setByDayOfWeek(data.data.byDayOfWeek)
+        setByTimeSlot(data.data.byTimeSlot)
+        setByTable(data.data.byTable)
+        setDailyTrend(data.data.dailyTrend)
+        setPartySizeDistribution(data.data.partySizeDistribution)
+        setRecentReservations(data.data.recentReservations)
       }
     } catch (error) {
       console.error('Failed to load reservation report:', error)

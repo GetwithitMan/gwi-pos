@@ -82,8 +82,8 @@ export default function CustomersPage() {
       const response = await fetch(`/api/customers?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setCustomersLocal(data.customers)
-        setTotal(data.total)
+        setCustomersLocal(data.data.customers)
+        setTotal(data.data.total)
       }
     } catch (err) {
       console.error('Failed to load customers:', err)
@@ -144,7 +144,7 @@ export default function CustomersPage() {
       const response = await fetch(`/api/customers/${customerId}`)
       if (response.ok) {
         const data = await response.json()
-        setViewingCustomer(data)
+        setViewingCustomer(data.data)
         setShowDetailModal(true)
       }
     } catch (err) {

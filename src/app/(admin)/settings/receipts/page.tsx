@@ -97,11 +97,11 @@ export default function ReceiptSettingsPage() {
         return
       }
       const data = await res.json()
-      if (data.settings?.receipts) {
-        setReceipts(data.settings.receipts)
+      if (data.data.settings?.receipts) {
+        setReceipts(data.data.settings.receipts)
       }
-      if (data.settings?.receiptDisplay) {
-        setReceiptDisplay(data.settings.receiptDisplay)
+      if (data.data.settings?.receiptDisplay) {
+        setReceiptDisplay(data.data.settings.receiptDisplay)
       }
     } catch {
       toast.error('Failed to load receipt settings')
@@ -135,8 +135,8 @@ export default function ReceiptSettingsPage() {
         return
       }
       const data = await res.json()
-      if (data.settings?.receipts) setReceipts(data.settings.receipts)
-      if (data.settings?.receiptDisplay) setReceiptDisplay(data.settings.receiptDisplay)
+      if (data.data.settings?.receipts) setReceipts(data.data.settings.receipts)
+      if (data.data.settings?.receiptDisplay) setReceiptDisplay(data.data.settings.receiptDisplay)
       setIsDirty(false)
       toast.success('Receipt settings saved')
     } catch {

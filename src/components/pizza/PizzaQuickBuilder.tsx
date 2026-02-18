@@ -75,7 +75,8 @@ export function PizzaQuickBuilder({
       try {
         const response = await fetch('/api/pizza')
         if (!response.ok) throw new Error('Failed to load pizza data')
-        const result = await response.json()
+        const raw = await response.json()
+        const result = raw.data ?? raw
         setData(result)
 
         // Set defaults

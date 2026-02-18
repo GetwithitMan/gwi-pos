@@ -118,17 +118,17 @@ export default function CombosPage() {
 
       if (combosRes.ok) {
         const data = await combosRes.json()
-        setCombos(data.combos)
+        setCombos(data.data.combos)
       }
 
       if (menuRes.ok) {
         const data = await menuRes.json()
-        setCategories(data.categories)
+        setCategories(data.data.categories)
         // Items are returned separately, add category name
         const categoryMap = Object.fromEntries(
-          data.categories.map((c: Category) => [c.id, c.name])
+          data.data.categories.map((c: Category) => [c.id, c.name])
         )
-        const allItems: MenuItem[] = (data.items || []).map((item: MenuItem) => ({
+        const allItems: MenuItem[] = (data.data.items || []).map((item: MenuItem) => ({
           ...item,
           categoryName: categoryMap[item.categoryId] || 'Unknown',
         }))
@@ -147,7 +147,7 @@ export default function CombosPage() {
       const res = await fetch(`/api/menu/items/${itemId}/modifiers`)
       if (res.ok) {
         const data = await res.json()
-        return data.modifierGroups || []
+        return data.data.modifierGroups || []
       }
     } catch (error) {
       console.error('Failed to load item modifiers:', error)

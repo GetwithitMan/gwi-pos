@@ -97,8 +97,8 @@ export default function CrewHubPage() {
       const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
-        const tmpls = data.templates || []
-        const standalone = data.allowStandaloneServers ?? true
+        const tmpls = data.data?.templates || []
+        const standalone = data.data?.allowStandaloneServers ?? true
         if (tmpls.length > 0) {
           setEligibleTemplates(tmpls)
           setAllowStandaloneServers(standalone)

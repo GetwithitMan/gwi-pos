@@ -695,8 +695,8 @@ export function FloorPlanHome({
         const res = await fetch(`/api/employees/${employeeId}/preferences`)
         if (res.ok) {
           const data = await res.json()
-          if (data.preferences?.preferredRoomOrder) {
-            setPreferredRoomOrder(data.preferences.preferredRoomOrder)
+          if (data.data?.preferences?.preferredRoomOrder) {
+            setPreferredRoomOrder(data.data.preferences.preferredRoomOrder)
           }
         }
       } catch {
@@ -807,7 +807,7 @@ export function FloorPlanHome({
           body: JSON.stringify({ itemIds: quickBar }),
         })
         if (!cancelled && res.ok) {
-          const { items } = await res.json()
+          const { data: { items } } = await res.json()
           setQuickBarItems(
             (items as { id: string; name: string; price: number }[]).map(item => ({
               id: item.id,
@@ -1098,9 +1098,9 @@ export function FloorPlanHome({
       const res = await fetch(`/api/floorplan/snapshot?locationId=${locationId}`)
       if (res.ok) {
         const data = await res.json()
-        setTables(data.tables || [])
-        setSections(data.sections || [])
-        setElements(data.elements || [])
+        setTables(data.data?.tables || [])
+        setSections(data.data?.sections || [])
+        setElements(data.data?.elements || [])
         setOpenOrdersCount(data.openOrdersCount ?? 0)
       }
     } catch (error) {
@@ -1127,8 +1127,8 @@ export function FloorPlanHome({
       })
       if (res.ok) {
         const data = await res.json()
-        setCategories(data.categories || [])
-        setAllMenuItems(data.items || [])
+        setCategories(data.data?.categories || [])
+        setAllMenuItems(data.data?.items || [])
         // If a category is currently selected, refresh its filtered view
         if (selectedCategoryIdRef.current) {
           setMenuItems((data.items || []).filter(
@@ -1405,7 +1405,8 @@ export function FloorPlanHome({
       const res = await fetch(`/api/menu/items/${itemId}`)
       if (!res.ok) return
 
-      const { item } = await res.json()
+      const resp = await res.json()
+      const item = resp.data?.item || resp.item
       handleMenuItemTap({
         id: item.id,
         name: item.name,
@@ -1500,7 +1501,8 @@ export function FloorPlanHome({
           throw new Error(data.error || 'Failed to add seat')
         }
 
-        const result = await response.json()
+        const resultResp = await response.json()
+        const result = resultResp.data || resultResp
         toast.success(`Seat ${result.position} added`)
 
         if (result.warning === 'high_seat_count') {
@@ -2679,7 +2681,7 @@ export function FloorPlanHome({
                     const orderData = await response.json()
                     // Reload full order via store.loadOrder — one path, no duplication
                     const store = useOrderStore.getState()
-                    store.loadOrder(orderData)
+                    store.loadOrder(orderData.data || orderData)
                   }
                 } catch (error) {
                   console.error('Failed to refresh order:', error)

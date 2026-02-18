@@ -71,7 +71,7 @@ export default function TaxRulesPage() {
       const res = await fetch(`/api/menu?locationId=${employee.location.id}`)
       if (res.ok) {
         const data = await res.json()
-        setCategories(data.categories || [])
+        setCategories(data.data.categories || [])
       }
     } catch (error) {
       console.error('Failed to load categories:', error)

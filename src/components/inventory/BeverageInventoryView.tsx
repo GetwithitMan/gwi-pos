@@ -88,11 +88,13 @@ export function BeverageInventoryView({ locationId }: BeverageInventoryViewProps
       ])
 
       if (bottlesRes.ok) {
-        const data = await bottlesRes.json()
+        const raw = await bottlesRes.json()
+        const data = raw.data ?? raw
         setBottles(data || [])
       }
       if (categoriesRes.ok) {
-        const data = await categoriesRes.json()
+        const raw = await categoriesRes.json()
+        const data = raw.data ?? raw
         setCategories(data || [])
       }
     } catch (error) {
@@ -107,7 +109,8 @@ export function BeverageInventoryView({ locationId }: BeverageInventoryViewProps
     try {
       const res = await fetch('/api/liquor/bottles/sync-inventory')
       if (res.ok) {
-        const data = await res.json()
+        const raw = await res.json()
+        const data = raw.data ?? raw
         setSyncStatus(data)
       }
     } catch (error) {
@@ -121,7 +124,8 @@ export function BeverageInventoryView({ locationId }: BeverageInventoryViewProps
       const res = await fetch('/api/liquor/bottles/sync-inventory', {
         method: 'POST',
       })
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       if (res.ok) {
         toast.success(data.message)
         await loadData()

@@ -111,8 +111,8 @@ export default function TipSettingsPage() {
         return
       }
       const data = await res.json()
-      setTipBank(data.tipBank)
-      setTipShares(data.tipShares)
+      setTipBank(data.data.tipBank)
+      setTipShares(data.data.tipShares)
     } catch {
       toast.error('Failed to load tip settings')
     } finally {
@@ -136,7 +136,7 @@ export default function TipSettingsPage() {
       }
       if (rolesRes.ok) {
         const json = await rolesRes.json()
-        setRoles(json.roles || json.data || json || [])
+        setRoles(json.data.roles || json.data || [])
       }
     } catch {
       // Silently fail — templates section just shows empty
@@ -171,8 +171,8 @@ export default function TipSettingsPage() {
         return
       }
       const data = await res.json()
-      setTipBank(data.tipBank)
-      setTipShares(data.tipShares)
+      setTipBank(data.data.tipBank)
+      setTipShares(data.data.tipShares)
       setIsDirty(false)
       toast.success('Tip settings saved')
     } catch {

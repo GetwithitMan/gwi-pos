@@ -43,15 +43,15 @@ export default function SettingsPage() {
 
       if (terminalsRes.ok) {
         const data = await terminalsRes.json()
-        setTerminals(data.terminals || [])
+        setTerminals(data.data.terminals || [])
       }
       if (printersRes.ok) {
         const data = await printersRes.json()
-        setPrinters(data.printers || [])
+        setPrinters(data.data.printers || [])
       }
       if (kdsRes.ok) {
         const data = await kdsRes.json()
-        setKdsScreens(data.screens || [])
+        setKdsScreens(data.data.screens || [])
       }
     } catch (error) {
       console.error('Failed to load hardware status:', error)
@@ -84,8 +84,8 @@ export default function SettingsPage() {
       const response = await fetch('/api/settings')
       if (response.ok) {
         const data = await response.json()
-        setSettings(data.settings)
-        setLocationName(data.locationName)
+        setSettings(data.data.settings)
+        setLocationName(data.data.locationName)
       }
     } catch (error) {
       console.error('Failed to load settings:', error)

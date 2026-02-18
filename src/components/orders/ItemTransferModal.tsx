@@ -73,7 +73,8 @@ export function ItemTransferModal({
       const response = await fetch(`/api/orders/${currentOrderId}/transfer-items?${params}`)
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setTargetOrders(data.orders || [])
       } else {
         const data = await response.json()

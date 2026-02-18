@@ -61,14 +61,15 @@ export function useIngredientCost({
         return res.json()
       })
       .then(data => {
-        if (data.costPerUnit) {
-          setParentCostPerUnit(data.costPerUnit)
+        const d = data.data ?? data
+        if (d.costPerUnit) {
+          setParentCostPerUnit(d.costPerUnit)
 
           const yieldFactor = (parseFloat(yieldPercent) / 100) || 1
 
           // Calculate cost per output unit
           const cost = calculateCostPerOutputUnit(
-            data.costPerUnit,
+            d.costPerUnit,
             parentUnit || inputUnit,
             inputQty,
             inputUnit,

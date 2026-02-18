@@ -131,12 +131,12 @@ export default function OrderHistoryPage() {
       const res = await fetch(`/api/reports/order-history?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setOrders(data.orders)
-        setSummary(data.summary)
-        setStatusBreakdown(data.statusBreakdown)
-        setTypeBreakdown(data.typeBreakdown)
-        setPaymentBreakdown(data.paymentBreakdown)
-        setTotalPages(data.pagination.totalPages)
+        setOrders(data.data.orders)
+        setSummary(data.data.summary)
+        setStatusBreakdown(data.data.statusBreakdown)
+        setTypeBreakdown(data.data.typeBreakdown)
+        setPaymentBreakdown(data.data.paymentBreakdown)
+        setTotalPages(data.data.pagination.totalPages)
       }
     } catch (error) {
       console.error('Failed to load orders:', error)

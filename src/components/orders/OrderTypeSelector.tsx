@@ -81,7 +81,8 @@ export function OrderTypeSelector({
       try {
         const response = await fetch(`/api/order-types?locationId=${locationId}`)
         if (response.ok) {
-          const data = await response.json()
+          const raw = await response.json()
+          const data = raw.data ?? raw
           const types = data.orderTypes || []
           setOrderTypes(types)
           cachedOrderTypes = types

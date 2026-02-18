@@ -23,7 +23,7 @@ export default function HappyHourSettingsPage() {
       const response = await fetch('/api/settings')
       if (response.ok) {
         const data = await response.json()
-        setSettings(data.settings)
+        setSettings(data.data.settings)
       }
     } catch (error) {
       console.error('Failed to load settings:', error)

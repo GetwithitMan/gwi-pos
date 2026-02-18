@@ -36,10 +36,10 @@ export default function SmsIntegrationPage() {
         body: JSON.stringify({ service: 'twilio' }),
       })
       const data = await res.json()
-      if (data.success) {
-        toast.success(data.message)
+      if (data.data.success) {
+        toast.success(data.data.message)
       } else {
-        toast.error(data.message)
+        toast.error(data.data.message)
       }
     } catch {
       toast.error('Failed to test connection')

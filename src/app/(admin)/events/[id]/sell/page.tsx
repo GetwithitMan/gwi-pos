@@ -96,11 +96,11 @@ export default function SellTicketsPage({ params }: { params: Promise<{ id: stri
     try {
       const res = await fetch(`/api/events/${id}/availability`)
       const data = await res.json()
-      setEvent(data.event)
-      setTables(data.tables || [])
-      setPricingTiers(data.pricingTiers || [])
-      if (data.pricingTiers?.length > 0 && !selectedTier) {
-        setSelectedTier(data.pricingTiers[0].id)
+      setEvent(data.data.event)
+      setTables(data.data.tables || [])
+      setPricingTiers(data.data.pricingTiers || [])
+      if (data.data.pricingTiers?.length > 0 && !selectedTier) {
+        setSelectedTier(data.data.pricingTiers[0].id)
       }
     } catch (error) {
       console.error('Failed to fetch availability:', error)

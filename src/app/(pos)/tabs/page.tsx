@@ -104,7 +104,7 @@ export default function TabsPage() {
       const res = await fetch(`/api/orders?locationId=${employee.location.id}&orderType=bar_tab&status=open`)
       if (res.ok) {
         const data = await res.json()
-        setTabs(data.orders || [])
+        setTabs(data.data?.orders || [])
       }
     } catch (error) {
       console.error('[TabsPage] Failed to load tabs:', error)

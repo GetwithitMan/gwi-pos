@@ -58,12 +58,14 @@ export function RecipeBuilder({ menuItemId, menuItemPrice, isExpanded, onToggle 
       ])
 
       if (bottlesRes.ok) {
-        const bottlesData = await bottlesRes.json()
+        const bottlesRaw = await bottlesRes.json()
+        const bottlesData = bottlesRaw.data ?? bottlesRaw
         setBottles(bottlesData || [])
       }
 
       if (recipeRes.ok) {
-        const recipeData = await recipeRes.json()
+        const recipeRaw = await recipeRes.json()
+        const recipeData = recipeRaw.data ?? recipeRaw
         if (recipeData.ingredients && recipeData.ingredients.length > 0) {
           setIngredients(recipeData.ingredients.map((ing: any) => ({
             id: ing.id,

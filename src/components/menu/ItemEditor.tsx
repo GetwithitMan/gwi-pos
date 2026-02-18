@@ -242,7 +242,8 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       try {
         const res = await fetch('/api/hardware/printers')
         if (res.ok) {
-          const data = await res.json()
+          const raw = await res.json()
+          const data = raw.data ?? raw
           setPrinters((data.printers || []).map((p: any) => ({ id: p.id, name: p.name })))
         }
       } catch (e) {

@@ -74,9 +74,9 @@ export default function ErrorListPage() {
       const response = await fetch(`/api/monitoring/errors?${params}`)
       const data = await response.json()
 
-      if (data.success) {
-        setErrors(data.errors)
-        setTotal(data.pagination.total)
+      if (data.data.success) {
+        setErrors(data.data.errors)
+        setTotal(data.data.pagination.total)
       }
     } catch (error) {
       console.error('Failed to load errors:', error)

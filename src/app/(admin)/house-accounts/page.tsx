@@ -151,7 +151,7 @@ export default function HouseAccountsPage() {
       const response = await fetch(`/api/house-accounts/${account.id}`)
       if (response.ok) {
         const data = await response.json()
-        setAccountTransactions(data.transactions || [])
+        setAccountTransactions(data.data.transactions || [])
       }
     } catch (error) {
       console.error('Failed to load account details:', error)

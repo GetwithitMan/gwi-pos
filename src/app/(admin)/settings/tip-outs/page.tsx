@@ -105,7 +105,7 @@ export default function TipOutsSettingsPage() {
 
       if (rolesRes.ok) {
         const rolesData = await rolesRes.json()
-        setRoles(rolesData.roles || [])
+        setRoles(rolesData.data.roles || [])
       }
 
       if (rulesRes.ok) {
@@ -272,9 +272,9 @@ export default function TipOutsSettingsPage() {
       } else {
         const data = await response.json()
         // If deactivated instead of deleted
-        if (data.message?.includes('deactivated')) {
+        if (data.data?.message?.includes('deactivated')) {
           loadData() // Reload to get updated data
-          setSuccessMessage(data.message)
+          setSuccessMessage(data.data.message)
           setTimeout(() => setSuccessMessage(''), 3000)
         } else {
           setError(data.error || 'Failed to delete rule')

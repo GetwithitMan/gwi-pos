@@ -160,13 +160,13 @@ export default function PizzaAdminPage() {
       const response = await fetch('/api/pizza')
       if (response.ok) {
         const data = await response.json()
-        setConfig(data.config)
-        setSizes(data.sizes)
-        setCrusts(data.crusts)
-        setSauces(data.sauces)
-        setCheeses(data.cheeses)
-        setToppings(data.toppings)
-        setPrinters(data.printers || [])
+        setConfig(data.data.config)
+        setSizes(data.data.sizes)
+        setCrusts(data.data.crusts)
+        setSauces(data.data.sauces)
+        setCheeses(data.data.cheeses)
+        setToppings(data.data.toppings)
+        setPrinters(data.data.printers || [])
       }
     } catch (error) {
       console.error('Failed to load pizza data:', error)
@@ -185,7 +185,7 @@ export default function PizzaAdminPage() {
       })
       if (response.ok) {
         const data = await response.json()
-        setConfig(data)
+        setConfig(data.data)
       }
     } catch (error) {
       console.error('Failed to save config:', error)

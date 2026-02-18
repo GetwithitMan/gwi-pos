@@ -50,7 +50,8 @@ export function useOrderTypes({ locationId }: UseOrderTypesOptions): UseOrderTyp
       try {
         const res = await fetch(`/api/order-types?locationId=${locationId}`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
+        const raw = await res.json()
+        const data = raw.data ?? raw
         if (!cancelled && data.orderTypes?.length > 0) {
           setOrderTypes(data.orderTypes)
           fetchedRef.current = true

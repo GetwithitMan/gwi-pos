@@ -72,8 +72,8 @@ export function useMenuSearch({
         if (!res.ok) throw new Error('Search failed')
         return res.json()
       })
-      .then(data => {
-        setApiResults(data)
+      .then(raw => {
+        setApiResults(raw.data ?? raw)
         setIsSearching(false)
       })
       .catch(err => {

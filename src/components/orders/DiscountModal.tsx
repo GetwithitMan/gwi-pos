@@ -105,7 +105,8 @@ export function DiscountModal({
       })
       const response = await fetch(`/api/discounts?${params}`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         const rules = data.discounts || []
         setDiscountRules(rules)
         // Cache for subsequent opens
@@ -138,7 +139,8 @@ export function DiscountModal({
         throw new Error(data.error || 'Failed to apply discount')
       }
 
-      const result = await response.json()
+      const rawResult = await response.json()
+      const result = rawResult.data ?? rawResult
 
       if (result.requiresApproval) {
         // For now, just warn - in a full implementation, this would prompt for manager PIN
@@ -186,7 +188,8 @@ export function DiscountModal({
         throw new Error(data.error || 'Failed to apply discount')
       }
 
-      const result = await response.json()
+      const rawResult = await response.json()
+      const result = rawResult.data ?? rawResult
 
       if (result.requiresApproval) {
         toast.info('This discount may require manager approval')
@@ -216,7 +219,8 @@ export function DiscountModal({
         throw new Error(data.error || 'Failed to remove discount')
       }
 
-      const result = await response.json()
+      const rawResult = await response.json()
+      const result = rawResult.data ?? rawResult
       onDiscountApplied(result.orderTotals)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to remove discount')

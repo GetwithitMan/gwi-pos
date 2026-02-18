@@ -77,7 +77,7 @@ export default function CommissionReportPage() {
       const response = await fetch(`/api/reports/commission?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setReport(data)
+        setReport(data.data)
       }
     } catch (error) {
       console.error('Failed to load commission report:', error)

@@ -44,7 +44,8 @@ export function AddRoomModal({ isOpen, onClose, locationId, onRoomCreated }: Add
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         onRoomCreated(data.section)
         setName('')
         setColor('#6366f1')

@@ -149,7 +149,8 @@ function SplitUnifiedView({
     try {
       const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`)
       if (!res.ok) throw new Error('Failed to load splits')
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       setSplits((data.splitOrders || []).map((s: { id: string; splitIndex: number; displayNumber: string | null; status: string; subtotal?: number; total: number; isPaid?: boolean; card?: { last4: string; brand: string } | null; items?: { id: string; name: string; price: number; quantity: number; isSent?: boolean; status?: string; fractionLabel?: string; modifiers?: unknown[] }[] }) => ({
         id: s.id,
         splitIndex: s.splitIndex,
@@ -404,7 +405,8 @@ function SplitUnifiedView({
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Failed to create check')
       }
-      const newCheck = await res.json()
+      const newCheckRaw = await res.json()
+      const newCheck = newCheckRaw.data ?? newCheckRaw
       // If item was selected, move it on the server too
       if (capturedItemId && capturedFromSplitId) {
         await fetch(`/api/orders/${parentOrderId}/split-tickets`, {
@@ -464,7 +466,8 @@ function SplitUnifiedView({
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || 'Failed to delete check')
       }
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       if (data.merged) {
         onMergeBack()
       } else {
@@ -958,7 +961,8 @@ function SplitEditMode({
           const data = await res.json().catch(() => ({}))
           throw new Error(data.error || 'Split failed')
         }
-        const responseData = await res.json().catch(() => null)
+        const responseRaw = await res.json().catch(() => null)
+        const responseData = responseRaw?.data ?? responseRaw
         onSplitApplied(responseData ?? undefined)
         return
       }

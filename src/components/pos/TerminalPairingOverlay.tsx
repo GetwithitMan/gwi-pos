@@ -91,14 +91,15 @@ export function TerminalPairingOverlay({ onPaired }: TerminalPairingOverlayProps
         }),
       })
 
-      const data = await res.json()
+      const raw = await res.json()
 
       if (!res.ok) {
-        setError(data.error || 'Pairing failed')
+        setError(raw.error || 'Pairing failed')
         setStatus('error')
         return
       }
 
+      const data = raw.data ?? raw
       // Success! The httpOnly cookie is already set by the server
       onPaired(data.terminal)
     } catch (err) {

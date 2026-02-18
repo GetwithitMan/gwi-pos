@@ -313,7 +313,8 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         const targetCategory = categories.find(c => c.id === targetCategoryId)
         const categoryName = targetCategory?.name || 'Uncategorized'
         toast.success(`Moved ${data.movedCount} ingredients to ${categoryName}`)
@@ -400,7 +401,8 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
         return
       }
 
-      const data = await response.json()
+      const raw = await response.json()
+      const data = raw.data ?? raw
       if (data.requiresConfirmation) {
         // Has items — show confirmation modal
         setDeletingCategory(category)

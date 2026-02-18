@@ -89,7 +89,7 @@ export default function VoidReportsPage() {
       const response = await fetch(`/api/employees?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setEmployees(data.employees || [])
+        setEmployees(data.data.employees || [])
       }
     } catch (error) {
       console.error('Failed to load employees:', error)
@@ -114,8 +114,8 @@ export default function VoidReportsPage() {
       const response = await fetch(`/api/reports/voids?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setLogs(data.logs || [])
-        setSummary(data.summary || null)
+        setLogs(data.data.logs || [])
+        setSummary(data.data.summary || null)
       }
     } catch (error) {
       console.error('Failed to load void report:', error)

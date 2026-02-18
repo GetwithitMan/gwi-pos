@@ -134,7 +134,7 @@ export default function GiftCardsPage() {
       const response = await fetch(`/api/gift-cards/${card.id}`)
       if (response.ok) {
         const data = await response.json()
-        setCardTransactions(data.transactions || [])
+        setCardTransactions(data.data.transactions || [])
       }
     } catch (error) {
       console.error('Failed to load card details:', error)
@@ -199,7 +199,7 @@ export default function GiftCardsPage() {
         loadGiftCards()
         if (selectedCard?.id === card.id) {
           const data = await response.json()
-          setSelectedCard(data)
+          setSelectedCard(data.data)
         }
       }
     } catch (error) {

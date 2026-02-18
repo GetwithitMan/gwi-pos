@@ -344,7 +344,8 @@ export function useModifierSelections(
     try {
       const response = await fetch(`/api/menu/modifiers/${groupId}`)
       if (response.ok) {
-        const data = await response.json()
+        const raw = await response.json()
+        const data = raw.data ?? raw
         setChildGroups(prev => ({ ...prev, [groupId]: data }))
       }
     } catch (error) {

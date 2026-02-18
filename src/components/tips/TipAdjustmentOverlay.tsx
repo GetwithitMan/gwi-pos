@@ -85,7 +85,8 @@ export default function TipAdjustmentOverlay({ isOpen, onClose, locationId, empl
       })
       const res = await fetch(`/api/orders/closed?${params}`)
       if (!res.ok) throw new Error('Failed to fetch')
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
       setOrders(prev => append ? [...prev, ...data.orders] : data.orders)
       setCursor(data.pagination.nextCursor)
       setHasMore(data.pagination.hasMore)
@@ -138,7 +139,8 @@ export default function TipAdjustmentOverlay({ isOpen, onClose, locationId, empl
       })
 
       if (!res.ok) throw new Error('Failed to save')
-      const data = await res.json()
+      const raw = await res.json()
+      const data = raw.data ?? raw
 
       const newStatuses: Record<string, 'pending' | 'adjusted' | 'error'> = {}
       const newErrors: Record<string, string> = {}

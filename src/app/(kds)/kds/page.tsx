@@ -425,7 +425,7 @@ function KDSContent() {
       if (response.ok) {
         const data = await response.json()
 
-        let filteredOrders = data.orders || []
+        let filteredOrders = data.data?.orders || []
         if (!showCompleted) {
           filteredOrders = filteredOrders.filter((order: KDSOrder) =>
             order.items.some(item => !item.isCompleted)
@@ -433,7 +433,7 @@ function KDSContent() {
         }
 
         setOrders(filteredOrders)
-        setStation(data.station)
+        setStation(data.data?.station)
         setLastUpdate(new Date())
       }
     } catch (error) {

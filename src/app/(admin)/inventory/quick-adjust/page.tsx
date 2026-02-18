@@ -239,7 +239,7 @@ export default function QuickStockAdjustPage() {
       }
 
       const pinData = await pinResponse.json()
-      const verifiedEmployeeId = pinData.employee?.id
+      const verifiedEmployeeId = pinData.data.employee?.id
 
       if (!verifiedEmployeeId) {
         setPinError('Could not verify employee. Please try again.')

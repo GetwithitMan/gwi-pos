@@ -50,7 +50,8 @@ export function useTabCreation({
       const err = await res.json().catch(() => ({}))
       throw new Error(err.message || 'Failed to create tab')
     }
-    return res.json()
+    const raw = await res.json()
+    return raw.data ?? raw
   }, [locationId, employeeId])
 
   /** Shared post-creation handler: either send items or load the new empty tab. */

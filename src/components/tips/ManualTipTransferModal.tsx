@@ -43,7 +43,8 @@ export function ManualTipTransferModal({
       headers: { 'x-employee-id': employeeId },
     })
       .then(res => res.json())
-      .then(data => {
+      .then(raw => {
+        const data = raw.data ?? raw
         const list = (data.employees || [])
           .filter((e: EmployeeOption) => e.id !== employeeId)
         setEmployees(list)
