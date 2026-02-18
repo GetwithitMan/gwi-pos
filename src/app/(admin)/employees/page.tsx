@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface Role {
   id: string
@@ -36,17 +37,30 @@ interface Employee {
 export default function EmployeesPage() {
   const router = useRouter()
   const { employee: currentEmployee, isAuthenticated } = useAuthStore()
-  const [employees, setEmployees] = useState<Employee[]>([])
   const [roles, setRoles] = useState<Role[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isPageLoading, setIsPageLoading] = useState(true)
   const [showInactive, setShowInactive] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
 
-  // Modal state
-  const [showModal, setShowModal] = useState(false)
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const crud = useAdminCRUD<Employee>({
+    apiBase: '/api/employees',
+    locationId: currentEmployee?.location?.id,
+    resourceName: 'employee',
+    parseResponse: (data) => data.employees || [],
+  })
+
+  const {
+    showModal,
+    editingItem: editingEmployee,
+    isSaving,
+    modalError,
+    openAddModal: crudOpenAddModal,
+    openEditModal: crudOpenEditModal,
+    closeModal,
+    handleSave: crudHandleSave,
+    setItems: setEmployees,
+    setModalError,
+  } = crud
 
   // Multi-role state
   const [additionalRoleIds, setAdditionalRoleIds] = useState<string[]>([])
@@ -72,13 +86,8 @@ export default function EmployeesPage() {
     }
   }, [isAuthenticated, router])
 
-  useEffect(() => {
-    if (currentEmployee?.location?.id) {
-      loadData()
-    }
-  }, [currentEmployee, showInactive])
-
-  const loadData = async () => {
+  // Custom loadData: employees need includeInactive param + parallel roles fetch
+  const loadData = useCallback(async () => {
     if (!currentEmployee?.location?.id) return
 
     try {
@@ -99,12 +108,17 @@ export default function EmployeesPage() {
     } catch (err) {
       console.error('Failed to load data:', err)
     } finally {
-      setIsLoading(false)
+      setIsPageLoading(false)
     }
-  }
+  }, [currentEmployee?.location?.id, showInactive, setEmployees])
+
+  useEffect(() => {
+    if (currentEmployee?.location?.id) {
+      loadData()
+    }
+  }, [currentEmployee?.location?.id, showInactive, loadData])
 
   const openAddModal = () => {
-    setEditingEmployee(null)
     setFormData({
       firstName: '',
       lastName: '',
@@ -119,12 +133,10 @@ export default function EmployeesPage() {
       color: '#3B82F6',
     })
     setAdditionalRoleIds([])
-    setError(null)
-    setShowModal(true)
+    crudOpenAddModal()
   }
 
   const openEditModal = async (emp: Employee) => {
-    setEditingEmployee(emp)
     setFormData({
       firstName: emp.firstName,
       lastName: emp.lastName,
@@ -139,8 +151,7 @@ export default function EmployeesPage() {
       color: emp.color || '#3B82F6',
     })
     setAdditionalRoleIds([])
-    setError(null)
-    setShowModal(true)
+    crudOpenEditModal(emp)
 
     // Fetch employee's additional roles
     try {
@@ -157,88 +168,61 @@ export default function EmployeesPage() {
   }
 
   const handleSave = async () => {
-    setError(null)
+    setModalError(null)
 
     // Validation
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
-      setError('First name and last name are required')
+      setModalError('First name and last name are required')
       return
     }
 
     if (!formData.roleId) {
-      setError('Please select a role')
+      setModalError('Please select a role')
       return
     }
 
     if (!editingEmployee && !formData.pin) {
-      setError('PIN is required for new employees')
+      setModalError('PIN is required for new employees')
       return
     }
 
     if (formData.pin && formData.pin !== formData.confirmPin) {
-      setError('PINs do not match')
+      setModalError('PINs do not match')
       return
     }
 
     if (formData.pin && !/^\d{4,6}$/.test(formData.pin)) {
-      setError('PIN must be 4-6 digits')
+      setModalError('PIN must be 4-6 digits')
       return
     }
 
-    setIsSaving(true)
+    const payload: Record<string, unknown> = {
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
+      displayName: formData.displayName.trim() || null,
+      email: formData.email.trim() || null,
+      phone: formData.phone.trim() || null,
+      roleId: formData.roleId,
+      hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
+      hireDate: formData.hireDate || null,
+      color: formData.color,
+    }
 
-    try {
-      const payload: Record<string, unknown> = {
-        firstName: formData.firstName.trim(),
-        lastName: formData.lastName.trim(),
-        displayName: formData.displayName.trim() || null,
-        email: formData.email.trim() || null,
-        phone: formData.phone.trim() || null,
-        roleId: formData.roleId,
-        hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null,
-        hireDate: formData.hireDate || null,
-        color: formData.color,
-      }
+    if (formData.pin) {
+      payload.pin = formData.pin
+    }
 
-      if (formData.pin) {
-        payload.pin = formData.pin
-      }
+    // Include additional roles when editing
+    if (editingEmployee) {
+      payload.additionalRoleIds = additionalRoleIds
+    } else {
+      payload.locationId = currentEmployee?.location?.id
+    }
 
-      // Include additional roles when editing
-      if (editingEmployee) {
-        payload.additionalRoleIds = additionalRoleIds
-      }
-
-      let response: Response
-
-      if (editingEmployee) {
-        response = await fetch(`/api/employees/${editingEmployee.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-      } else {
-        response = await fetch('/api/employees', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...payload,
-            locationId: currentEmployee?.location?.id,
-          }),
-        })
-      }
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to save employee')
-      }
-
-      setShowModal(false)
+    const ok = await crudHandleSave(payload)
+    if (ok) {
+      // Reload with correct includeInactive param
       loadData()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save employee')
-    } finally {
-      setIsSaving(false)
     }
   }
 
@@ -284,6 +268,8 @@ export default function EmployeesPage() {
       }
     }
   }
+
+  const employees = crud.items
 
   const filteredEmployees = employees.filter(emp => {
     const searchLower = searchTerm.toLowerCase()
@@ -338,7 +324,7 @@ export default function EmployeesPage() {
         </div>
 
         {/* Employee List */}
-        {isLoading ? (
+        {isPageLoading ? (
           <div className="text-center py-12 text-gray-500">Loading employees...</div>
         ) : filteredEmployees.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
@@ -430,14 +416,14 @@ export default function EmployeesPage() {
       {/* Add/Edit Modal */}
       <Modal
         isOpen={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={closeModal}
         title={editingEmployee ? 'Edit Employee' : 'Add Employee'}
         size="lg"
       >
         <div className="space-y-4">
-          {error && (
+          {modalError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-              {error}
+              {modalError}
             </div>
           )}
 
@@ -654,7 +640,7 @@ export default function EmployeesPage() {
             <Button
               variant="ghost"
               className="flex-1"
-              onClick={() => setShowModal(false)}
+              onClick={closeModal}
               disabled={isSaving}
             >
               Cancel

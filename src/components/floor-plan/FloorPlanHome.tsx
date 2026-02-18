@@ -432,15 +432,6 @@ export function FloorPlanHome({
   const [preferredRoomOrder, setPreferredRoomOrder] = useState<string[]>([])
 
 
-  // TODO: May be redundant now that OrderPanel manages its own sort/highlight state
-  const [itemSortDirection, setItemSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
-  // TODO: May be redundant now that OrderPanel manages its own sort/highlight state
-  const [newestItemId, setNewestItemId] = useState<string | null>(null)
-  // TODO: May be redundant now that OrderPanel manages its own sort/highlight state
-  const prevItemCountRef2 = useRef(0)
-  // TODO: May be redundant now that OrderPanel manages its own scroll ref
-  const orderScrollRef = useRef<HTMLDivElement>(null)
-  const newestTimerRef2 = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Atomic selectors — each field only triggers re-render when IT changes
   const tables = useFloorPlanStore(s => s.tables)
@@ -1771,36 +1762,6 @@ export function FloorPlanHome({
 
     // Floor plan refresh happens automatically via socket dispatch from the CLEANUP API
   }, [defaultGuestCount, activeTableId, activeOrderId])
-
-  // Detect new items added → highlight + auto-scroll
-  useEffect(() => {
-    const prevCount = prevItemCountRef2.current
-    prevItemCountRef2.current = inlineOrderItems.length
-
-    if (inlineOrderItems.length > prevCount) {
-      const pendingItems = inlineOrderItems.filter(item =>
-        !item.sentToKitchen && (!item.kitchenStatus || item.kitchenStatus === 'pending')
-      )
-      if (pendingItems.length > 0) {
-        const newest = itemSortDirection === 'newest-top' ? pendingItems[0] : pendingItems[pendingItems.length - 1]
-        if (newest) {
-          setNewestItemId(newest.id)
-
-          requestAnimationFrame(() => {
-            const container = orderScrollRef.current
-            if (!container) return
-            const el = container.querySelector(`[data-item-id="${newest.id}"]`)
-            if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-            }
-          })
-
-          if (newestTimerRef2.current) clearTimeout(newestTimerRef2.current)
-          newestTimerRef2.current = setTimeout(() => setNewestItemId(null), 2000)
-        }
-      }
-    }
-  }, [inlineOrderItems, itemSortDirection])
 
   // Payment mode state (cash or card)
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')

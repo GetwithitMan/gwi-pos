@@ -1,8 +1,11 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAuthStore } from '@/stores/auth-store'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface Coupon {
   id: string
@@ -25,30 +28,45 @@ interface Coupon {
   _count: { redemptions: number }
 }
 
-const LOCATION_ID = 'loc_default'
-
 export default function CouponsPage() {
-  const [coupons, setCoupons] = useState<Coupon[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null)
+  const router = useRouter()
+  const { employee, isAuthenticated } = useAuthStore()
+
+  const crud = useAdminCRUD<Coupon>({
+    apiBase: '/api/coupons',
+    locationId: employee?.location?.id,
+    resourceName: 'coupon',
+    parseResponse: (data) => Array.isArray(data) ? data : [],
+  })
+
+  const {
+    items: coupons,
+    isLoading,
+    showModal,
+    editingItem: editingCoupon,
+    isSaving,
+    modalError,
+    loadItems,
+    openAddModal,
+    openEditModal,
+    closeModal,
+    handleSave,
+    handleDelete,
+  } = crud
+
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all')
 
   useEffect(() => {
-    fetchCoupons()
-  }, [])
-
-  async function fetchCoupons() {
-    try {
-      const res = await fetch(`/api/coupons?locationId=${LOCATION_ID}`)
-      const data = await res.json()
-      setCoupons(Array.isArray(data) ? data : [])
-    } catch (error) {
-      console.error('Failed to fetch coupons:', error)
-    } finally {
-      setLoading(false)
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/coupons')
     }
-  }
+  }, [isAuthenticated, router])
+
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadItems()
+    }
+  }, [employee?.location?.id, loadItems])
 
   async function toggleActive(coupon: Coupon) {
     try {
@@ -59,20 +77,9 @@ export default function CouponsPage() {
           action: coupon.isActive ? 'deactivate' : 'activate',
         }),
       })
-      fetchCoupons()
+      loadItems()
     } catch (error) {
       console.error('Failed to toggle coupon:', error)
-    }
-  }
-
-  async function deleteCoupon(id: string) {
-    if (!confirm('Are you sure you want to delete this coupon?')) return
-
-    try {
-      await fetch(`/api/coupons/${id}`, { method: 'DELETE' })
-      fetchCoupons()
-    } catch (error) {
-      console.error('Failed to delete coupon:', error)
     }
   }
 
@@ -110,7 +117,7 @@ export default function CouponsPage() {
     return <span className="px-2 py-1 text-xs rounded bg-green-900 text-green-300">Active</span>
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-gray-400">Loading coupons...</div>
@@ -123,7 +130,7 @@ export default function CouponsPage() {
       <AdminPageHeader
         title="Coupons & Promo Codes"
         actions={
-          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+          <Button variant="primary" onClick={openAddModal}>
             Create Coupon
           </Button>
         }
@@ -235,7 +242,7 @@ export default function CouponsPage() {
                 <td className="p-4">{getStatusBadge(coupon)}</td>
                 <td className="p-4 text-right">
                   <button
-                    onClick={() => setEditingCoupon(coupon)}
+                    onClick={() => openEditModal(coupon)}
                     className="px-3 py-1 text-sm bg-gray-700 rounded hover:bg-gray-600 mr-2"
                   >
                     Edit
@@ -251,7 +258,7 @@ export default function CouponsPage() {
                     {coupon.isActive ? 'Deactivate' : 'Activate'}
                   </button>
                   <button
-                    onClick={() => deleteCoupon(coupon.id)}
+                    onClick={() => handleDelete(coupon.id)}
                     className="px-3 py-1 text-sm bg-red-600 rounded hover:bg-red-700"
                   >
                     Delete
@@ -272,18 +279,14 @@ export default function CouponsPage() {
       </main>
 
       {/* Create/Edit Modal */}
-      {(showCreateModal || editingCoupon) && (
+      {showModal && (
         <CouponModal
           coupon={editingCoupon}
-          onClose={() => {
-            setShowCreateModal(false)
-            setEditingCoupon(null)
-          }}
-          onSave={() => {
-            setShowCreateModal(false)
-            setEditingCoupon(null)
-            fetchCoupons()
-          }}
+          isSaving={isSaving}
+          modalError={modalError}
+          locationId={employee?.location?.id}
+          onClose={closeModal}
+          onSave={handleSave}
         />
       )}
     </div>
@@ -292,12 +295,18 @@ export default function CouponsPage() {
 
 function CouponModal({
   coupon,
+  isSaving,
+  modalError,
+  locationId,
   onClose,
   onSave,
 }: {
   coupon: Coupon | null
+  isSaving: boolean
+  modalError: string | null
+  locationId: string | undefined
   onClose: () => void
-  onSave: () => void
+  onSave: (payload: Record<string, unknown>) => Promise<boolean>
 }) {
   const [form, setForm] = useState({
     code: coupon?.code || '',
@@ -314,48 +323,24 @@ function CouponModal({
     validFrom: coupon?.validFrom ? new Date(coupon.validFrom).toISOString().split('T')[0] : '',
     validUntil: coupon?.validUntil ? new Date(coupon.validUntil).toISOString().split('T')[0] : '',
   })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
-    setError('')
 
-    try {
-      const payload = {
-        ...form,
-        locationId: LOCATION_ID,
-        code: form.code.toUpperCase(),
-        discountValue: Number(form.discountValue),
-        minimumOrder: form.minimumOrder ? Number(form.minimumOrder) : null,
-        maximumDiscount: form.maximumDiscount ? Number(form.maximumDiscount) : null,
-        usageLimit: form.usageLimit ? Number(form.usageLimit) : null,
-        perCustomerLimit: form.perCustomerLimit ? Number(form.perCustomerLimit) : null,
-        validFrom: form.validFrom || null,
-        validUntil: form.validUntil || null,
-      }
-
-      const res = await fetch(
-        coupon ? `/api/coupons/${coupon.id}` : '/api/coupons',
-        {
-          method: coupon ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        }
-      )
-
-      if (!res.ok) {
-        const data = await res.json()
-        throw new Error(data.error || 'Failed to save coupon')
-      }
-
-      onSave()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save')
-    } finally {
-      setSaving(false)
+    const payload = {
+      ...form,
+      locationId,
+      code: form.code.toUpperCase(),
+      discountValue: Number(form.discountValue),
+      minimumOrder: form.minimumOrder ? Number(form.minimumOrder) : null,
+      maximumDiscount: form.maximumDiscount ? Number(form.maximumDiscount) : null,
+      usageLimit: form.usageLimit ? Number(form.usageLimit) : null,
+      perCustomerLimit: form.perCustomerLimit ? Number(form.perCustomerLimit) : null,
+      validFrom: form.validFrom || null,
+      validUntil: form.validUntil || null,
     }
+
+    await onSave(payload)
   }
 
   return (
@@ -365,8 +350,8 @@ function CouponModal({
           {coupon ? 'Edit Coupon' : 'Create Coupon'}
         </h2>
 
-        {error && (
-          <div className="bg-red-900/50 text-red-300 p-3 rounded mb-4">{error}</div>
+        {modalError && (
+          <div className="bg-red-900/50 text-red-300 p-3 rounded mb-4">{modalError}</div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -530,10 +515,10 @@ function CouponModal({
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={isSaving}
               className="flex-1 px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
             >
-              {saving ? 'Saving...' : coupon ? 'Save Changes' : 'Create Coupon'}
+              {isSaving ? 'Saving...' : coupon ? 'Save Changes' : 'Create Coupon'}
             </button>
           </div>
         </form>

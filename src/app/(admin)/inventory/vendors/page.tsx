@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface Vendor {
   id: string
@@ -32,50 +33,78 @@ const PAYMENT_TERMS = [
 export default function VendorsPage() {
   const router = useRouter()
   const { employee, isAuthenticated } = useAuthStore()
-  const [vendors, setVendors] = useState<Vendor[]>([])
-  const [isLoading, setIsLoading] = useState(true)
 
-  // Filters
+  // Search/filter state (kept separate from CRUD hook)
   const [search, setSearch] = useState('')
   const [showInactive, setShowInactive] = useState(false)
 
-  // Modal
-  const [showModal, setShowModal] = useState(false)
-  const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
+  // Refs to break circular dependency with hook callbacks
+  const showInactiveRef = useRef(false)
+  showInactiveRef.current = showInactive
+  const setItemsRef = useRef<React.Dispatch<React.SetStateAction<Vendor[]>> | null>(null)
+
+  const locationId = employee?.location?.id
+
+  // Custom fetch for when showInactive is true (hook's loadItems only loads active)
+  const fetchAllVendors = useCallback(async () => {
+    if (!locationId || !setItemsRef.current) return
+    try {
+      const res = await fetch(`/api/inventory/vendors?locationId=${locationId}&activeOnly=false`)
+      if (res.ok) {
+        const data = await res.json()
+        setItemsRef.current(data.vendors || [])
+      }
+    } catch {
+      // Silent — hook's loadItems already loaded active vendors as fallback
+    }
+  }, [locationId])
+
+  const crud = useAdminCRUD<Vendor>({
+    apiBase: '/api/inventory/vendors',
+    locationId,
+    resourceName: 'vendor',
+    parseResponse: (data) => data.vendors || [],
+    onSaveSuccess: () => {
+      if (showInactiveRef.current) fetchAllVendors()
+    },
+    onDeleteSuccess: () => {
+      if (showInactiveRef.current) fetchAllVendors()
+    },
+  })
+
+  setItemsRef.current = crud.setItems
+
+  const {
+    items: vendors,
+    isLoading,
+    showModal,
+    editingItem: editingVendor,
+    isSaving,
+    modalError,
+    loadItems,
+    openAddModal,
+    openEditModal,
+    closeModal,
+    handleSave,
+    handleDelete,
+  } = crud
 
   useEffect(() => {
     if (!isAuthenticated) {
       router.push('/login?redirect=/inventory/vendors')
       return
     }
-    loadData()
   }, [isAuthenticated, router])
 
-  const loadData = async () => {
-    if (!employee?.location?.id) return
-    setIsLoading(true)
-    try {
-      const res = await fetch(
-        `/api/inventory/vendors?locationId=${employee.location.id}&activeOnly=${!showInactive}`
-      )
-      if (res.ok) {
-        const data = await res.json()
-        setVendors(data.vendors || [])
-      }
-    } catch (error) {
-      console.error('Failed to load vendors:', error)
-      toast.error('Failed to load vendors')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Reload when filter changes
+  // Load vendors on mount and when showInactive changes
   useEffect(() => {
-    if (employee?.location?.id) {
-      loadData()
+    if (!locationId) return
+    if (showInactive) {
+      fetchAllVendors()
+    } else {
+      loadItems()
     }
-  }, [showInactive])
+  }, [locationId, showInactive, loadItems, fetchAllVendors])
 
   const filteredVendors = useMemo(() => {
     if (!search) return vendors
@@ -87,28 +116,6 @@ export default function VendorsPage() {
     )
   }, [vendors, search])
 
-  const handleDelete = async (vendor: Vendor) => {
-    if (!confirm(`Are you sure you want to ${vendor.isActive ? 'deactivate' : 'delete'} ${vendor.name}?`)) {
-      return
-    }
-
-    try {
-      const res = await fetch(`/api/inventory/vendors/${vendor.id}`, {
-        method: 'DELETE',
-      })
-
-      if (res.ok) {
-        toast.success(vendor.isActive ? 'Vendor deactivated' : 'Vendor deleted')
-        loadData()
-      } else {
-        toast.error('Failed to delete vendor')
-      }
-    } catch (error) {
-      console.error('Failed to delete vendor:', error)
-      toast.error('Failed to delete vendor')
-    }
-  }
-
   if (!isAuthenticated) return null
 
   return (
@@ -118,7 +125,7 @@ export default function VendorsPage() {
         subtitle="Manage your suppliers and their contact information"
         breadcrumbs={[{ label: 'Inventory', href: '/inventory' }]}
         actions={
-          <Button onClick={() => { setEditingVendor(null); setShowModal(true) }}>
+          <Button onClick={() => { openAddModal() }}>
             + Add Vendor
           </Button>
         }
@@ -215,14 +222,17 @@ export default function VendorsPage() {
                     variant="outline"
                     size="sm"
                     className="flex-1"
-                    onClick={() => { setEditingVendor(vendor); setShowModal(true) }}
+                    onClick={() => openEditModal(vendor)}
                   >
                     Edit
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDelete(vendor)}
+                    onClick={() => handleDelete(
+                      vendor.id,
+                      `Are you sure you want to ${vendor.isActive ? 'deactivate' : 'delete'} ${vendor.name}?`
+                    )}
                   >
                     {vendor.isActive ? 'Deactivate' : 'Delete'}
                   </Button>
@@ -237,9 +247,15 @@ export default function VendorsPage() {
       {showModal && (
         <VendorModal
           vendor={editingVendor}
-          locationId={employee?.location?.id || ''}
-          onClose={() => { setShowModal(false); setEditingVendor(null) }}
-          onSave={() => { setShowModal(false); setEditingVendor(null); loadData() }}
+          locationId={locationId || ''}
+          onClose={closeModal}
+          onSave={async (payload) => {
+            const ok = await handleSave(payload)
+            if (ok) toast.success(editingVendor ? 'Vendor updated' : 'Vendor created')
+            return ok
+          }}
+          isSaving={isSaving}
+          modalError={modalError}
         />
       )}
     </div>
@@ -252,11 +268,15 @@ function VendorModal({
   locationId,
   onClose,
   onSave,
+  isSaving,
+  modalError,
 }: {
   vendor: Vendor | null
   locationId: string
   onClose: () => void
-  onSave: () => void
+  onSave: (payload: Record<string, unknown>) => Promise<boolean>
+  isSaving: boolean
+  modalError: string | null
 }) {
   const [form, setForm] = useState({
     name: vendor?.name || '',
@@ -268,49 +288,23 @@ function VendorModal({
     notes: vendor?.notes || '',
     isActive: vendor?.isActive ?? true,
   })
-  const [isSaving, setIsSaving] = useState(false)
 
-  const handleSave = async () => {
+  const handleSubmit = async () => {
     if (!form.name.trim()) {
       toast.error('Name is required')
       return
     }
 
-    setIsSaving(true)
-    try {
-      const url = vendor
-        ? `/api/inventory/vendors/${vendor.id}`
-        : '/api/inventory/vendors'
-      const method = vendor ? 'PUT' : 'POST'
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          locationId,
-          accountNum: form.accountNum || null,
-          phone: form.phone || null,
-          email: form.email || null,
-          address: form.address || null,
-          paymentTerms: form.paymentTerms || null,
-          notes: form.notes || null,
-        }),
-      })
-
-      if (res.ok) {
-        toast.success(vendor ? 'Vendor updated' : 'Vendor created')
-        onSave()
-      } else {
-        const data = await res.json()
-        toast.error(data.error || 'Failed to save vendor')
-      }
-    } catch (error) {
-      console.error('Failed to save vendor:', error)
-      toast.error('Failed to save vendor')
-    } finally {
-      setIsSaving(false)
-    }
+    await onSave({
+      ...form,
+      locationId,
+      accountNum: form.accountNum || null,
+      phone: form.phone || null,
+      email: form.email || null,
+      address: form.address || null,
+      paymentTerms: form.paymentTerms || null,
+      notes: form.notes || null,
+    })
   }
 
   return (
@@ -320,6 +314,12 @@ function VendorModal({
           <CardTitle>{vendor ? 'Edit Vendor' : 'Add Vendor'}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {modalError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+              {modalError}
+            </div>
+          )}
+
           <div>
             <label className="block text-sm text-gray-600 mb-1">Vendor Name *</label>
             <input
@@ -414,7 +414,7 @@ function VendorModal({
             <Button variant="outline" onClick={onClose} disabled={isSaving} className="flex-1">
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={isSaving} className="flex-1">
+            <Button onClick={handleSubmit} disabled={isSaving} className="flex-1">
               {isSaving ? 'Saving...' : vendor ? 'Save Changes' : 'Create Vendor'}
             </Button>
           </div>

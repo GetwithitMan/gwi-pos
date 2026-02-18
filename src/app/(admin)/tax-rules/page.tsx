@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface TaxRule {
   id: string
@@ -28,11 +29,30 @@ interface Category {
 export default function TaxRulesPage() {
   const router = useRouter()
   const { employee, isAuthenticated } = useAuthStore()
-  const [taxRules, setTaxRules] = useState<TaxRule[]>([])
+
+  const crud = useAdminCRUD<TaxRule>({
+    apiBase: '/api/tax-rules',
+    locationId: employee?.location?.id,
+    resourceName: 'tax rule',
+    parseResponse: (data) => data.taxRules || [],
+  })
+
+  const {
+    items: taxRules,
+    isLoading,
+    showModal,
+    editingItem: editingRule,
+    isSaving,
+    modalError,
+    loadItems,
+    openAddModal,
+    openEditModal,
+    closeModal,
+    handleSave,
+    handleDelete,
+  } = crud
+
   const [categories, setCategories] = useState<Category[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [editingRule, setEditingRule] = useState<TaxRule | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     ratePercent: 0,
@@ -43,74 +63,33 @@ export default function TaxRulesPage() {
     isCompounded: false,
   })
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/tax-rules')
-      return
-    }
-    loadData()
-  }, [isAuthenticated, router])
-
-  const loadData = async () => {
+  const loadCategories = useCallback(async () => {
     if (!employee?.location?.id) return
-    setIsLoading(true)
     try {
-      const [rulesRes, menuRes] = await Promise.all([
-        fetch(`/api/tax-rules?locationId=${employee.location.id}`),
-        fetch(`/api/menu?locationId=${employee.location.id}`),
-      ])
-
-      if (rulesRes.ok) {
-        const data = await rulesRes.json()
-        setTaxRules(data.taxRules || [])
-      }
-      if (menuRes.ok) {
-        const data = await menuRes.json()
+      const res = await fetch(`/api/menu?locationId=${employee.location.id}`)
+      if (res.ok) {
+        const data = await res.json()
         setCategories(data.categories || [])
       }
     } catch (error) {
-      console.error('Failed to load tax rules:', error)
-    } finally {
-      setIsLoading(false)
+      console.error('Failed to load categories:', error)
     }
-  }
+  }, [employee?.location?.id])
 
-  const handleSave = async () => {
-    if (!employee?.location?.id || !formData.name) return
-
-    try {
-      const url = editingRule
-        ? `/api/tax-rules/${editingRule.id}`
-        : '/api/tax-rules'
-
-      const res = await fetch(url, {
-        method: editingRule ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId: employee.location.id,
-          name: formData.name,
-          rate: formData.ratePercent,
-          appliesTo: formData.appliesTo,
-          categoryIds: formData.appliesTo === 'category' ? formData.categoryIds : null,
-          isInclusive: formData.isInclusive,
-          priority: formData.priority,
-          isCompounded: formData.isCompounded,
-        }),
-      })
-
-      if (res.ok) {
-        setShowModal(false)
-        setEditingRule(null)
-        resetForm()
-        loadData()
-      }
-    } catch (error) {
-      console.error('Failed to save tax rule:', error)
+  useEffect(() => {
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/tax-rules')
     }
-  }
+  }, [isAuthenticated, router])
+
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadItems()
+      loadCategories()
+    }
+  }, [employee?.location?.id, loadItems, loadCategories])
 
   const handleEdit = (rule: TaxRule) => {
-    setEditingRule(rule)
     setFormData({
       name: rule.name,
       ratePercent: rule.ratePercent,
@@ -120,23 +99,25 @@ export default function TaxRulesPage() {
       priority: rule.priority,
       isCompounded: rule.isCompounded,
     })
-    setShowModal(true)
+    openEditModal(rule)
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this tax rule?')) return
+  const handleSubmitForm = async () => {
+    if (!employee?.location?.id || !formData.name) return
 
-    try {
-      const res = await fetch(`/api/tax-rules/${id}`, {
-        method: 'DELETE',
-      })
-
-      if (res.ok) {
-        loadData()
-      }
-    } catch (error) {
-      console.error('Failed to delete tax rule:', error)
+    const payload = {
+      locationId: employee.location.id,
+      name: formData.name,
+      rate: formData.ratePercent,
+      appliesTo: formData.appliesTo,
+      categoryIds: formData.appliesTo === 'category' ? formData.categoryIds : null,
+      isInclusive: formData.isInclusive,
+      priority: formData.priority,
+      isCompounded: formData.isCompounded,
     }
+
+    const ok = await handleSave(payload)
+    if (ok) resetForm()
   }
 
   const handleToggleActive = async (rule: TaxRule) => {
@@ -146,7 +127,7 @@ export default function TaxRulesPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isActive: !rule.isActive }),
       })
-      loadData()
+      loadItems()
     } catch (error) {
       console.error('Failed to toggle rule:', error)
     }
@@ -174,9 +155,8 @@ export default function TaxRulesPage() {
             <p className="text-gray-600">Configure multiple tax rates for different items</p>
           </div>
           <Button onClick={() => {
-            setEditingRule(null)
             resetForm()
-            setShowModal(true)
+            openAddModal()
           }}>
             Add Tax Rule
           </Button>
@@ -273,7 +253,7 @@ export default function TaxRulesPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDelete(rule.id)}
+                            onClick={() => handleDelete(rule.id, 'Delete this tax rule?')}
                             className="text-red-600"
                           >
                             Delete
@@ -297,6 +277,11 @@ export default function TaxRulesPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                {modalError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                    {modalError}
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Name</label>
                   <input
@@ -397,16 +382,15 @@ export default function TaxRulesPage() {
                   <Button
                     variant="outline"
                     onClick={() => {
-                      setShowModal(false)
-                      setEditingRule(null)
+                      closeModal()
                       resetForm()
                     }}
                     className="flex-1"
                   >
                     Cancel
                   </Button>
-                  <Button onClick={handleSave} className="flex-1">
-                    {editingRule ? 'Save Changes' : 'Add Rule'}
+                  <Button onClick={handleSubmitForm} className="flex-1" disabled={isSaving}>
+                    {isSaving ? 'Saving...' : editingRule ? 'Save Changes' : 'Add Rule'}
                   </Button>
                 </div>
               </div>
