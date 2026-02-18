@@ -214,7 +214,6 @@ interface LoadedOrderData {
 
 interface OrderState {
   currentOrder: Order | null
-  orderHistory: Order[]
 
   // Actions
   startOrder: (orderType: Order['orderType'], options?: { locationId?: string; tableId?: string; tableName?: string; tabName?: string; guestCount?: number; orderTypeId?: string; customFields?: Record<string, string> }) => void
@@ -230,7 +229,6 @@ interface OrderState {
   applyDiscount: (amount: number) => void
   calculateTotals: () => void
   clearOrder: () => void
-  saveOrder: () => void
   // New methods for shared order domain
   updateOrderId: (id: string, orderNumber?: number) => void
   updateItemId: (tempId: string, realId: string) => void
@@ -294,7 +292,6 @@ function computeTotals(order: Order): { subtotal: number; taxTotal: number; tota
 
 export const useOrderStore = create<OrderState>((set, get) => ({
   currentOrder: null,
-  orderHistory: [],
 
   startOrder: (orderType, options = {}) => {
     set({
@@ -528,16 +525,6 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
   clearOrder: () => {
     set({ currentOrder: null })
-  },
-
-  saveOrder: () => {
-    const { currentOrder, orderHistory } = get()
-    if (!currentOrder) return
-
-    set({
-      orderHistory: [...orderHistory, currentOrder],
-      currentOrder: null,
-    })
   },
 
   // Update order's DB ID without resetting items (after creating in DB)
