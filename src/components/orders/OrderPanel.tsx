@@ -124,6 +124,9 @@ export interface OrderPanelProps {
   // Seat filter (floor plan seat tap)
   filterSeatNumber?: number | null
   onClearSeatFilter?: () => void
+  // Seat selection (tap seat header to select for adding items)
+  onSeatSelect?: (seatNumber: number | null) => void
+  selectedSeatNumber?: number | null
   // Split ticket navigation
   splitInfo?: {
     displayNumber: string
@@ -253,6 +256,9 @@ export const OrderPanel = memo(function OrderPanel({
   // Seat filter
   filterSeatNumber,
   onClearSeatFilter,
+  // Seat selection
+  onSeatSelect,
+  selectedSeatNumber,
   // Split ticket navigation
   splitInfo,
   onNavigateSplit,
@@ -794,11 +800,19 @@ export const OrderPanel = memo(function OrderPanel({
                   overflow: 'hidden',
                 }}>
                   {/* Seat check header */}
-                  <div style={{
+                  {(() => {
+                    const isSelected = group.seatNumber === selectedSeatNumber
+                    return (
+                  <div
+                    onClick={() => onSeatSelect?.(group.seatNumber)}
+                    style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '8px 12px',
                     background: isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
                     borderBottom: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.2)' : getSeatBorderColor(group.seatNumber!)}`,
+                    cursor: onSeatSelect ? 'pointer' : undefined,
+                    borderLeft: isSelected ? `3px solid ${seatColor}` : '3px solid transparent',
+                    transition: 'border-left-color 0.15s ease, background 0.15s ease',
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{
@@ -822,6 +836,8 @@ export const OrderPanel = memo(function OrderPanel({
                       {formatCurrency(seatSubtotal)}
                     </span>
                   </div>
+                    )
+                  })()}
                   {/* Seat items */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
                     {renderItemList(groupSorted)}
@@ -919,11 +935,19 @@ export const OrderPanel = memo(function OrderPanel({
                   overflow: 'hidden',
                   opacity: 0.7,
                 }}>
-                  <div style={{
+                  {(() => {
+                    const isSelected = group.seatNumber === selectedSeatNumber
+                    return (
+                  <div
+                    onClick={() => onSeatSelect?.(group.seatNumber)}
+                    style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '6px 12px',
                     background: isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
                     borderBottom: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.2)' : getSeatBorderColor(group.seatNumber!)}`,
+                    cursor: onSeatSelect ? 'pointer' : undefined,
+                    borderLeft: isSelected ? `3px solid ${seatColor}` : '3px solid transparent',
+                    transition: 'border-left-color 0.15s ease, background 0.15s ease',
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{
@@ -944,6 +968,8 @@ export const OrderPanel = memo(function OrderPanel({
                       {formatCurrency(seatSubtotal)}
                     </span>
                   </div>
+                    )
+                  })()}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '8px 12px' }}>
                     {renderItemList(groupSent)}
                   </div>

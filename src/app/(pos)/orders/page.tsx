@@ -493,6 +493,18 @@ export default function OrdersPage() {
   const clearSelectedSeat = useFloorPlanStore(s => s.clearSelectedSeat)
   const addTableOrder = useFloorPlanStore(s => s.addTableOrder)
   const filterSeatNumber = selectedSeat?.seatNumber ?? null
+
+  // Seat selection handler: tap a seat header in OrderPanel to select that seat for adding items
+  const handleSeatSelect = useCallback((seatNumber: number | null) => {
+    const tableId = currentOrder?.tableId
+    if (!tableId) return
+    if (seatNumber === null || seatNumber === 0) {
+      useFloorPlanStore.getState().clearSelectedSeat()
+    } else {
+      useFloorPlanStore.getState().selectSeat(tableId, seatNumber)
+    }
+  }, [currentOrder?.tableId])
+
   const filteredOrderPanelItems = useMemo(() => {
     if (!filterSeatNumber) return orderPanelItems
     return orderPanelItems.filter(item => item.seatNumber === filterSeatNumber)
@@ -1267,7 +1279,11 @@ export default function OrdersPage() {
     // Fetch pre-authed tab cards in parallel
     fetch(`/api/orders/${orderId}/cards`)
       .then(r => r.ok ? r.json() : { data: [] })
-      .then(d => setPaymentTabCards((d.data || []).filter((c: { status: string }) => c.status === 'authorized')))
+      .then(d => {
+        const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
+        setPaymentTabCards(authorized)
+        if (authorized.length > 0) setInitialPayMethod('credit')
+      })
       .catch(() => setPaymentTabCards([]))
 
     setShowPaymentModal(true)
@@ -2417,6 +2433,8 @@ export default function OrdersPage() {
             items={filteredOrderPanelItems}
             filterSeatNumber={filterSeatNumber}
             onClearSeatFilter={clearSelectedSeat}
+            onSeatSelect={handleSeatSelect}
+            selectedSeatNumber={selectedSeat?.seatNumber ?? null}
             subtotal={pricing.subtotal}
             cashSubtotal={pricing.cashSubtotal}
             cardSubtotal={pricing.cardSubtotal}

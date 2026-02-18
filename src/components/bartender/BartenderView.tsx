@@ -1141,7 +1141,7 @@ export function BartenderView({
             forceDark={true}
             onSelectOrder={(order) => { handleSelectTab(order.id) }}
             onViewOrder={(order) => { handleSelectTab(order.id) }}
-
+            onNewTab={handleQuickTab}
             onClosedOrderAction={() => setTabRefreshTrigger(t => t + 1)}
             refreshTrigger={tabRefreshTrigger + (externalRefreshTrigger || 0)}
           />

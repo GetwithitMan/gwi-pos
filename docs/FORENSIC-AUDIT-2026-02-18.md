@@ -703,15 +703,23 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 **Files created:** `src/hooks/usePaymentFlow.ts`, `src/hooks/useModifierModal.ts`, `src/hooks/useItemOperations.ts`, `src/hooks/useComboBuilder.ts`
 **Commit:** `da6a456`
 
-### Wave 6B+ — Remaining Backlog (In Progress)
+### Wave 6B — Void Flow Simplification (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 46 | Auto-select first reason on Comp/Void action tap | void-simplify | ✅ |
+| 47 | Auto-detect "was it made?" from kitchenStatus (sent/cooking/ready=yes, pending=no) | void-simplify | ✅ |
+
+**Impact:** Comp/Void flow reduced from 5-6 taps to 3 (action → optional override → submit). All defaults overridable.
+**Commit:** `67ebe20`
+
+### Wave 6C+ — Remaining Backlog (In Progress)
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 46 | Void flow simplification (6→3 taps) | P1 UX | CompVoidModal |
-| 47 | Payment method skip for pre-auth | P1 UX | PaymentMethodStep |
-| 48 | Quick tab without name modal | P1 UX | NewTabModal |
-| 49 | Response format normalization | P2 | 68+ routes |
-| 50 | "Same Again" reorder feature | P0 UX | New feature |
-| 51 | Split evenly quick action | P1 UX | SplitCheckScreen |
+| 48 | Payment method skip for pre-auth | P1 UX | PaymentMethodStep |
+| 49 | Quick tab without name modal | P1 UX | NewTabModal |
+| 50 | Response format normalization | P2 | 68+ routes |
+| 51 | "Same Again" reorder feature | P0 UX | New feature |
+| 52 | Split evenly quick action | P1 UX | SplitCheckScreen |
 
 ---
 
@@ -736,4 +744,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 6A COMPLETE — 45/45 tasks complete, 470+ individual fixes applied across 95+ files*
+*Last updated: Wave 6B COMPLETE — 47/47 tasks complete, 470+ individual fixes applied across 95+ files*
