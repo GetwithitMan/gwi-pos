@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAuthStore } from '@/stores/auth-store'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface GiftCard {
   id: string
@@ -47,11 +50,32 @@ const TRANSACTION_TYPE_LABELS: Record<string, string> = {
 }
 
 export default function GiftCardsPage() {
-  const [giftCards, setGiftCards] = useState<GiftCard[]>([])
+  const router = useRouter()
+  const { employee, isAuthenticated } = useAuthStore()
+  const locationId = employee?.location?.id
+
+  const crud = useAdminCRUD<GiftCard>({
+    apiBase: '/api/gift-cards',
+    locationId,
+    resourceName: 'gift card',
+    parseResponse: (data) => Array.isArray(data) ? data : data.giftCards || [],
+  })
+
+  const {
+    items: giftCards,
+    showModal: showCreateModal,
+    isSaving,
+    modalError,
+    openAddModal,
+    closeModal,
+    handleSave,
+    setItems: setGiftCards,
+  } = crud
+
+  // Custom state — filters, detail panel, reload modal
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [showCreateModal, setShowCreateModal] = useState(false)
   const [selectedCard, setSelectedCard] = useState<GiftCard | null>(null)
   const [cardTransactions, setCardTransactions] = useState<GiftCardTransaction[]>([])
   const [showReloadModal, setShowReloadModal] = useState(false)
@@ -66,13 +90,15 @@ export default function GiftCardsPage() {
   // Reload form
   const [reloadAmount, setReloadAmount] = useState('')
 
-  const locationId = 'default-location' // In a real app, get from context
-
   useEffect(() => {
-    loadGiftCards()
-  }, [statusFilter])
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/gift-cards')
+    }
+  }, [isAuthenticated, router])
 
-  async function loadGiftCards() {
+  // Custom load — useAdminCRUD's loadItems doesn't support status/search filters
+  const loadGiftCards = useCallback(async () => {
+    if (!locationId) return
     setLoading(true)
     try {
       const params = new URLSearchParams({ locationId })
@@ -85,14 +111,20 @@ export default function GiftCardsPage() {
       const response = await fetch(`/api/gift-cards?${params}`)
       if (response.ok) {
         const data = await response.json()
-        setGiftCards(data)
+        setGiftCards(Array.isArray(data) ? data : data.giftCards || [])
       }
     } catch (error) {
       console.error('Failed to load gift cards:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [locationId, statusFilter, searchTerm, setGiftCards])
+
+  useEffect(() => {
+    if (locationId) {
+      loadGiftCards()
+    }
+  }, [locationId, statusFilter, loadGiftCards])
 
   async function loadCardDetails(card: GiftCard) {
     setSelectedCard(card)
@@ -109,27 +141,21 @@ export default function GiftCardsPage() {
 
   async function handleCreateGiftCard(e: React.FormEvent) {
     e.preventDefault()
-    try {
-      const response = await fetch('/api/gift-cards', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          amount: parseFloat(newAmount),
-          recipientName: recipientName || null,
-          recipientEmail: recipientEmail || null,
-          purchaserName: purchaserName || null,
-          message: message || null,
-        }),
-      })
+    if (!locationId) return
 
-      if (response.ok) {
-        setShowCreateModal(false)
-        resetCreateForm()
-        loadGiftCards()
-      }
-    } catch (error) {
-      console.error('Failed to create gift card:', error)
+    const payload = {
+      locationId,
+      amount: parseFloat(newAmount),
+      recipientName: recipientName || null,
+      recipientEmail: recipientEmail || null,
+      purchaserName: purchaserName || null,
+      message: message || null,
+    }
+
+    const ok = await handleSave(payload)
+    if (ok) {
+      resetCreateForm()
+      loadGiftCards()
     }
   }
 
@@ -192,7 +218,7 @@ export default function GiftCardsPage() {
       <AdminPageHeader
         title="Gift Cards"
         actions={
-          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+          <Button variant="primary" onClick={openAddModal}>
             Create Gift Card
           </Button>
         }
@@ -404,6 +430,11 @@ export default function GiftCardsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
             <h2 className="text-xl font-bold mb-4">Create Gift Card</h2>
+            {modalError && (
+              <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                {modalError}
+              </div>
+            )}
             <form onSubmit={handleCreateGiftCard} className="space-y-4">
               <div>
                 <label className="text-sm font-medium block mb-1">Amount *</label>
@@ -472,14 +503,14 @@ export default function GiftCardsPage() {
                   variant="outline"
                   className="flex-1"
                   onClick={() => {
-                    setShowCreateModal(false)
+                    closeModal()
                     resetCreateForm()
                   }}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" variant="primary" className="flex-1">
-                  Create Gift Card
+                <Button type="submit" variant="primary" className="flex-1" disabled={isSaving}>
+                  {isSaving ? 'Creating...' : 'Create Gift Card'}
                 </Button>
               </div>
             </form>

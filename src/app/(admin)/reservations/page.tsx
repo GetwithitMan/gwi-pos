@@ -1,8 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAuthStore } from '@/stores/auth-store'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import { toast } from '@/stores/toast-store'
 
 interface Table {
   id: string
@@ -34,8 +38,6 @@ interface Reservation {
   createdAt: string
 }
 
-const LOCATION_ID = 'loc_default'
-
 const STATUS_COLORS: Record<string, string> = {
   confirmed: 'bg-blue-900 text-blue-300',
   seated: 'bg-green-900 text-green-300',
@@ -45,42 +47,71 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function ReservationsPage() {
-  const [reservations, setReservations] = useState<Reservation[]>([])
+  const router = useRouter()
+  const { employee, isAuthenticated } = useAuthStore()
+  const locationId = employee?.location?.id
+
+  // useAdminCRUD for modal state and list state management
+  // Note: loadItems/handleSave/handleDelete not used because reservations
+  // require date-based fetching that the hook doesn't support
+  const crud = useAdminCRUD<Reservation>({
+    apiBase: '/api/reservations',
+    locationId,
+    resourceName: 'reservation',
+    parseResponse: (data) => Array.isArray(data) ? data : [],
+  })
+
+  const {
+    items: reservations,
+    isLoading,
+    showModal,
+    editingItem: editingReservation,
+    openAddModal,
+    openEditModal,
+    closeModal,
+    setItems: setReservations,
+  } = crud
+
   const [tables, setTables] = useState<Table[]>([])
-  const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
+  // Auth guard
   useEffect(() => {
-    fetchReservations()
-    fetchTables()
-  }, [selectedDate])
+    if (!isAuthenticated) {
+      router.push('/login?redirect=/reservations')
+    }
+  }, [isAuthenticated, router])
 
-  async function fetchReservations() {
+  // Custom fetch with date param (hook's loadItems doesn't support extra query params)
+  const fetchReservations = useCallback(async () => {
+    if (!locationId) return
     try {
       const res = await fetch(
-        `/api/reservations?locationId=${LOCATION_ID}&date=${selectedDate}`
+        `/api/reservations?locationId=${locationId}&date=${selectedDate}`
       )
       const data = await res.json()
       setReservations(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to fetch reservations:', error)
-    } finally {
-      setLoading(false)
     }
-  }
+  }, [locationId, selectedDate, setReservations])
 
-  async function fetchTables() {
+  const fetchTables = useCallback(async () => {
+    if (!locationId) return
     try {
-      const res = await fetch(`/api/tables?locationId=${LOCATION_ID}`)
+      const res = await fetch(`/api/tables?locationId=${locationId}`)
       const data = await res.json()
       setTables(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to fetch tables:', error)
     }
-  }
+  }, [locationId])
+
+  useEffect(() => {
+    fetchReservations()
+    fetchTables()
+  }, [fetchReservations, fetchTables])
 
   async function updateStatus(reservationId: string, action: string, data?: Record<string, unknown>) {
     try {
@@ -101,8 +132,10 @@ export default function ReservationsPage() {
     try {
       await fetch(`/api/reservations/${id}`, { method: 'DELETE' })
       fetchReservations()
+      toast.success('Reservation deleted')
     } catch (error) {
       console.error('Failed to delete reservation:', error)
+      toast.error('Failed to delete reservation')
     }
   }
 
@@ -131,7 +164,7 @@ export default function ReservationsPage() {
     ),
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-gray-400">Loading reservations...</div>
@@ -144,7 +177,7 @@ export default function ReservationsPage() {
       <AdminPageHeader
         title="Reservations"
         actions={
-          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+          <Button variant="primary" onClick={openAddModal}>
             New Reservation
           </Button>
         }
@@ -243,7 +276,7 @@ export default function ReservationsPage() {
                       key={reservation.id}
                       reservation={reservation}
                       tables={tables}
-                      onEdit={() => setEditingReservation(reservation)}
+                      onEdit={() => openEditModal(reservation)}
                       onSeat={() => updateStatus(reservation.id, 'seat')}
                       onComplete={() => updateStatus(reservation.id, 'complete')}
                       onCancel={(reason) => updateStatus(reservation.id, 'cancel', { reason })}
@@ -261,18 +294,17 @@ export default function ReservationsPage() {
       </main>
 
       {/* Create/Edit Modal */}
-      {(showCreateModal || editingReservation) && (
+      {(showModal || editingReservation) && (
         <ReservationModal
           reservation={editingReservation}
           tables={tables}
           selectedDate={selectedDate}
+          locationId={locationId || ''}
           onClose={() => {
-            setShowCreateModal(false)
-            setEditingReservation(null)
+            closeModal()
           }}
           onSave={() => {
-            setShowCreateModal(false)
-            setEditingReservation(null)
+            closeModal()
             fetchReservations()
           }}
         />
@@ -435,12 +467,14 @@ function ReservationModal({
   reservation,
   tables,
   selectedDate,
+  locationId,
   onClose,
   onSave,
 }: {
   reservation: Reservation | null
   tables: Table[]
   selectedDate: string
+  locationId: string
   onClose: () => void
   onSave: () => void
 }) {
@@ -469,7 +503,7 @@ function ReservationModal({
     try {
       const payload = {
         ...form,
-        locationId: LOCATION_ID,
+        locationId,
         tableId: form.tableId || null,
       }
 

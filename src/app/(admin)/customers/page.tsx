@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 // Common customer tags
 const CUSTOMER_TAGS = ['VIP', 'Regular', 'First-Timer', 'Staff', 'Family', 'Business', 'Birthday Club']
@@ -56,20 +57,60 @@ interface CustomerDetail extends Customer {
 export default function CustomersPage() {
   const router = useRouter()
   const { employee, isAuthenticated } = useAuthStore()
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [total, setTotal] = useState(0)
+  const [customers, setCustomersLocal] = useState<Customer[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Modal state
-  const [showModal, setShowModal] = useState(false)
+  // Detail view modal (separate from CRUD modal)
   const [showDetailModal, setShowDetailModal] = useState(false)
-  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [viewingCustomer, setViewingCustomer] = useState<CustomerDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+
+  // Custom filtered load (search + tag support)
+  const loadCustomers = useCallback(async () => {
+    if (!employee?.location?.id) return
+
+    try {
+      setIsLoading(true)
+      const params = new URLSearchParams({ locationId: employee.location.id })
+      if (searchTerm) params.append('search', searchTerm)
+      if (tagFilter) params.append('tag', tagFilter)
+
+      const response = await fetch(`/api/customers?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setCustomersLocal(data.customers)
+        setTotal(data.total)
+      }
+    } catch (err) {
+      console.error('Failed to load customers:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [employee?.location?.id, searchTerm, tagFilter])
+
+  const crud = useAdminCRUD<Customer>({
+    apiBase: '/api/customers',
+    locationId: employee?.location?.id,
+    resourceName: 'customer',
+    parseResponse: (data) => data.customers || [],
+    onSaveSuccess: () => loadCustomers(),
+    onDeleteSuccess: () => loadCustomers(),
+  })
+
+  const {
+    showModal,
+    editingItem: editingCustomer,
+    isSaving,
+    modalError,
+    openAddModal: crudOpenAddModal,
+    openEditModal: crudOpenEditModal,
+    closeModal,
+    handleSave: crudHandleSave,
+    handleDelete: crudHandleDelete,
+  } = crud
 
   // Form state
   const [formData, setFormData] = useState({
@@ -94,29 +135,7 @@ export default function CustomersPage() {
     if (employee?.location?.id) {
       loadCustomers()
     }
-  }, [employee, searchTerm, tagFilter])
-
-  const loadCustomers = async () => {
-    if (!employee?.location?.id) return
-
-    try {
-      setIsLoading(true)
-      const params = new URLSearchParams({ locationId: employee.location.id })
-      if (searchTerm) params.append('search', searchTerm)
-      if (tagFilter) params.append('tag', tagFilter)
-
-      const response = await fetch(`/api/customers?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setCustomers(data.customers)
-        setTotal(data.total)
-      }
-    } catch (err) {
-      console.error('Failed to load customers:', err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  }, [employee?.location?.id, loadCustomers])
 
   const loadCustomerDetail = async (customerId: string) => {
     setLoadingDetail(true)
@@ -134,8 +153,7 @@ export default function CustomersPage() {
     }
   }
 
-  const openAddModal = () => {
-    setEditingCustomer(null)
+  const resetForm = () => {
     setFormData({
       firstName: '',
       lastName: '',
@@ -147,12 +165,14 @@ export default function CustomersPage() {
       marketingOptIn: true,
       birthday: '',
     })
-    setError(null)
-    setShowModal(true)
+  }
+
+  const openAddModal = () => {
+    resetForm()
+    crudOpenAddModal()
   }
 
   const openEditModal = (customer: Customer) => {
-    setEditingCustomer(customer)
     setFormData({
       firstName: customer.firstName,
       lastName: customer.lastName,
@@ -164,75 +184,36 @@ export default function CustomersPage() {
       marketingOptIn: customer.marketingOptIn,
       birthday: customer.birthday ? customer.birthday.split('T')[0] : '',
     })
-    setError(null)
-    setShowModal(true)
+    crudOpenEditModal(customer)
   }
 
   const handleSave = async () => {
-    setError(null)
-
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
-      setError('First name and last name are required')
+      crud.setModalError('First name and last name are required')
       return
     }
 
-    setIsSaving(true)
-
-    try {
-      const url = editingCustomer
-        ? `/api/customers/${editingCustomer.id}`
-        : '/api/customers'
-
-      const response = await fetch(url, {
-        method: editingCustomer ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId: employee?.location?.id,
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
-          displayName: formData.displayName.trim() || null,
-          email: formData.email.trim() || null,
-          phone: formData.phone.trim() || null,
-          notes: formData.notes.trim() || null,
-          tags: formData.tags,
-          marketingOptIn: formData.marketingOptIn,
-          birthday: formData.birthday || null,
-        }),
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to save customer')
-      }
-
-      setShowModal(false)
-      loadCustomers()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save customer')
-    } finally {
-      setIsSaving(false)
+    const payload = {
+      locationId: employee?.location?.id,
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
+      displayName: formData.displayName.trim() || null,
+      email: formData.email.trim() || null,
+      phone: formData.phone.trim() || null,
+      notes: formData.notes.trim() || null,
+      tags: formData.tags,
+      marketingOptIn: formData.marketingOptIn,
+      birthday: formData.birthday || null,
     }
+
+    await crudHandleSave(payload)
   }
 
   const handleDelete = async (customerId: string) => {
-    if (!confirm('Are you sure you want to delete this customer? This action cannot be undone.')) {
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/customers/${customerId}`, {
-        method: 'DELETE',
-      })
-
-      if (response.ok) {
-        loadCustomers()
-        if (showDetailModal) {
-          setShowDetailModal(false)
-          setViewingCustomer(null)
-        }
-      }
-    } catch (err) {
-      console.error('Failed to delete customer:', err)
+    const deleted = await crudHandleDelete(customerId, 'Are you sure you want to delete this customer? This action cannot be undone.')
+    if (deleted && showDetailModal) {
+      setShowDetailModal(false)
+      setViewingCustomer(null)
     }
   }
 
@@ -393,13 +374,13 @@ export default function CustomersPage() {
       {/* Add/Edit Customer Modal */}
       <Modal
         isOpen={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={closeModal}
         title={editingCustomer ? 'Edit Customer' : 'Add Customer'}
       >
         <div className="space-y-4">
-          {error && (
+          {modalError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {error}
+              {modalError}
             </div>
           )}
 
@@ -516,7 +497,7 @@ export default function CustomersPage() {
             <Button
               variant="outline"
               className="flex-1"
-              onClick={() => setShowModal(false)}
+              onClick={closeModal}
             >
               Cancel
             </Button>

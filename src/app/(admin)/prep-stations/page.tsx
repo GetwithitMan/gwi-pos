@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
-import { toast } from '@/stores/toast-store'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface PrepStation {
   id: string
@@ -49,12 +49,31 @@ const COLORS = [
 export default function PrepStationsPage() {
   const router = useRouter()
   const { employee, isAuthenticated } = useAuthStore()
-  const [stations, setStations] = useState<PrepStation[]>([])
+
+  const crud = useAdminCRUD<PrepStation>({
+    apiBase: '/api/prep-stations',
+    locationId: employee?.location?.id,
+    resourceName: 'station',
+    parseResponse: (data) => data.stations || [],
+  })
+
+  const {
+    items: stations,
+    isLoading,
+    showModal,
+    editingItem: editingStation,
+    isSaving,
+    modalError,
+    loadItems,
+    openAddModal: crudOpenAddModal,
+    openEditModal: crudOpenEditModal,
+    closeModal,
+    handleSave: crudHandleSave,
+    handleDelete: crudHandleDelete,
+  } = crud
+
   const [categories, setCategories] = useState<Category[]>([])
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [editingStation, setEditingStation] = useState<PrepStation | null>(null)
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [assigningStation, setAssigningStation] = useState<PrepStation | null>(null)
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
@@ -73,29 +92,15 @@ export default function PrepStationsPage() {
       router.push('/login?redirect=/prep-stations')
       return
     }
-    if (employee?.location?.id) {
-      loadData()
-    }
-  }, [isAuthenticated, router, employee?.location?.id])
+  }, [isAuthenticated, router])
 
-  const loadData = async () => {
+  const loadMenuData = useCallback(async () => {
     if (!employee?.location?.id) return
-    setIsLoading(true)
     try {
-      const [stationsRes, menuRes] = await Promise.all([
-        fetch(`/api/prep-stations?locationId=${employee.location.id}`),
-        fetch(`/api/menu?locationId=${employee.location.id}`),
-      ])
-
-      if (stationsRes.ok) {
-        const data = await stationsRes.json()
-        setStations(data.stations || [])
-      }
-
+      const menuRes = await fetch(`/api/menu?locationId=${employee.location.id}`)
       if (menuRes.ok) {
         const data = await menuRes.json()
         setCategories(data.categories || [])
-        // Flatten menu items from categories
         const items: MenuItem[] = []
         data.categories?.forEach((cat: { id: string; items: { id: string; name: string }[] }) => {
           cat.items?.forEach((item: { id: string; name: string }) => {
@@ -105,87 +110,60 @@ export default function PrepStationsPage() {
         setMenuItems(items)
       }
     } catch (error) {
-      console.error('Failed to load data:', error)
-    } finally {
-      setIsLoading(false)
+      console.error('Failed to load menu data:', error)
     }
-  }
+  }, [employee?.location?.id])
 
-  const openAddModal = () => {
-    setEditingStation(null)
+  useEffect(() => {
+    if (employee?.location?.id) {
+      loadItems()
+      loadMenuData()
+    }
+  }, [employee?.location?.id, loadItems, loadMenuData])
+
+  const resetForm = () => {
     setFormName('')
     setFormDisplayName('')
     setFormColor('#3B82F6')
     setFormType('kitchen')
     setFormShowAllItems(false)
     setFormAutoComplete('')
-    setShowModal(true)
+  }
+
+  const openAddModal = () => {
+    resetForm()
+    crudOpenAddModal()
   }
 
   const openEditModal = (station: PrepStation) => {
-    setEditingStation(station)
     setFormName(station.name)
     setFormDisplayName(station.displayName || '')
     setFormColor(station.color || '#3B82F6')
     setFormType(station.stationType)
     setFormShowAllItems(station.showAllItems)
     setFormAutoComplete(station.autoComplete || '')
-    setShowModal(true)
+    crudOpenEditModal(station)
   }
 
   const handleSave = async () => {
     if (!employee?.location?.id || !formName.trim()) return
 
-    try {
-      const payload = {
-        locationId: employee.location.id,
-        name: formName.trim(),
-        displayName: formDisplayName.trim() || null,
-        color: formColor,
-        stationType: formType,
-        showAllItems: formShowAllItems,
-        autoComplete: formAutoComplete ? Number(formAutoComplete) : null,
-      }
-
-      const url = editingStation
-        ? `/api/prep-stations/${editingStation.id}`
-        : '/api/prep-stations'
-      const method = editingStation ? 'PUT' : 'POST'
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (response.ok) {
-        setShowModal(false)
-        loadData()
-      } else {
-        const error = await response.json()
-        toast.error(error.error || 'Failed to save')
-      }
-    } catch (error) {
-      console.error('Failed to save station:', error)
+    const payload = {
+      locationId: employee.location.id,
+      name: formName.trim(),
+      displayName: formDisplayName.trim() || null,
+      color: formColor,
+      stationType: formType,
+      showAllItems: formShowAllItems,
+      autoComplete: formAutoComplete ? Number(formAutoComplete) : null,
     }
+
+    const ok = await crudHandleSave(payload)
+    if (ok) resetForm()
   }
 
-  const handleDelete = async (station: PrepStation) => {
-    if (!confirm(`Delete "${station.name}"? This will remove all category and item assignments.`)) {
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/prep-stations/${station.id}`, {
-        method: 'DELETE',
-      })
-
-      if (response.ok) {
-        loadData()
-      }
-    } catch (error) {
-      console.error('Failed to delete station:', error)
-    }
+  const handleDelete = (station: PrepStation) => {
+    crudHandleDelete(station.id, `Delete "${station.name}"? This will remove all category and item assignments.`)
   }
 
   const openAssignModal = async (station: PrepStation) => {
@@ -219,7 +197,7 @@ export default function PrepStationsPage() {
       if (response.ok) {
         setShowAssignModal(false)
         setAssigningStation(null)
-        loadData()
+        loadItems()
       }
     } catch (error) {
       console.error('Failed to save assignments:', error)
@@ -381,6 +359,11 @@ export default function PrepStationsPage() {
               </h2>
             </div>
             <div className="p-4 space-y-4">
+              {modalError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                  {modalError}
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
                 <input
@@ -453,11 +436,11 @@ export default function PrepStationsPage() {
               </div>
             </div>
             <div className="p-4 border-t flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setShowModal(false)}>
+              <Button variant="outline" className="flex-1" onClick={() => { closeModal(); resetForm() }}>
                 Cancel
               </Button>
-              <Button variant="primary" className="flex-1" onClick={handleSave} disabled={!formName.trim()}>
-                {editingStation ? 'Update' : 'Create'}
+              <Button variant="primary" className="flex-1" onClick={handleSave} disabled={!formName.trim() || isSaving}>
+                {isSaving ? 'Saving...' : editingStation ? 'Update' : 'Create'}
               </Button>
             </div>
           </div>
