@@ -544,21 +544,24 @@ export const OrderPanelActions = memo(function OrderPanelActions({
       }}
     >
       {/* ── PRIMARY ACTION: One context-aware button ─────────── */}
-      {/* Rule: bar_tab + tab not started → "Start Tab" (purple, calls onStartTab)
-               everything else              → "Send"      (orange, calls onSend)    */}
+      {/* Rule: bar_tab → always "Start Tab" (purple, calls onStartTab)
+               everything else → "Send" (orange, calls onSend) */}
       {(() => {
-        const isNewTab = orderType === 'bar_tab' && !hasActiveTab && !hasSentItems
-        const handler = isNewTab ? onStartTab : onSend
+        const isBarTab = orderType === 'bar_tab'
+        const handler = isBarTab ? onStartTab : onSend
         if (!handler || !hasPendingItems) return null
 
+        const isNewTab = isBarTab && !hasActiveTab && !hasSentItems
         const needsCard = isNewTab && requireCardForTab
         const label = isSending
           ? (needsCard ? 'Authorizing...' : 'Sending...')
-          : isNewTab
-          ? (needsCard ? '💳 Start Tab' : 'Start Tab')
+          : isBarTab
+          ? (isNewTab
+            ? (needsCard ? '💳 Start Tab' : 'Start Tab')
+            : 'Add to Tab')
           : 'Send'
-        const bg = isNewTab ? '#8b5cf6' : '#ea580c'
-        const glow = isNewTab ? 'rgba(139, 92, 246, 0.3)' : 'rgba(234, 88, 12, 0.3)'
+        const bg = isBarTab ? '#8b5cf6' : '#ea580c'
+        const glow = isBarTab ? 'rgba(139, 92, 246, 0.3)' : 'rgba(234, 88, 12, 0.3)'
 
         return (
           <>

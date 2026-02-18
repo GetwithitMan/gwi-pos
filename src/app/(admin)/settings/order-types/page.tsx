@@ -251,6 +251,16 @@ export default function OrderTypesPage() {
                             Pay First
                           </span>
                         )}
+                        {(orderType.workflowRules as WorkflowRules)?.requireCardOnFile && (
+                          <span className="px-2 py-0.5 text-xs bg-violet-100 text-violet-700 rounded">
+                            Card Required
+                          </span>
+                        )}
+                        {(orderType.workflowRules as WorkflowRules)?.enablePreAuth && (
+                          <span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-700 rounded">
+                            Pre-Auth
+                          </span>
+                        )}
                         {Object.keys(orderType.requiredFields || {}).length > 0 && (
                           <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">
                             {Object.keys(orderType.requiredFields).length} Required Fields
@@ -332,6 +342,8 @@ function OrderTypeEditModal({
     requireTableSelection: (orderType.workflowRules as WorkflowRules)?.requireTableSelection || false,
     requireCustomerName: (orderType.workflowRules as WorkflowRules)?.requireCustomerName || false,
     requirePaymentBeforeSend: (orderType.workflowRules as WorkflowRules)?.requirePaymentBeforeSend || false,
+    requireCardOnFile: (orderType.workflowRules as WorkflowRules)?.requireCardOnFile || false,
+    enablePreAuth: (orderType.workflowRules as WorkflowRules)?.enablePreAuth || false,
     requirePhone: false,
     requireAddress: false,
     requirePickupTime: false,
@@ -364,6 +376,12 @@ function OrderTypeEditModal({
     }
     if (formData.requirePaymentBeforeSend) {
       workflowRules.requirePaymentBeforeSend = true
+    }
+    if (formData.requireCardOnFile) {
+      workflowRules.requireCardOnFile = true
+    }
+    if (formData.enablePreAuth) {
+      workflowRules.enablePreAuth = true
     }
     if (formData.requirePhone) {
       requiredFields.phone = true
@@ -550,6 +568,26 @@ function OrderTypeEditModal({
                 />
                 <span className="text-sm">Require payment before sending to kitchen</span>
               </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.requireCardOnFile}
+                  onChange={(e) => setFormData(prev => ({ ...prev, requireCardOnFile: e.target.checked, ...(!e.target.checked ? { enablePreAuth: false } : {}) }))}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm">Require card on file (chip read to open tab)</span>
+              </label>
+              {formData.requireCardOnFile && (
+                <label className="flex items-center gap-2 ml-6">
+                  <input
+                    type="checkbox"
+                    checked={formData.enablePreAuth}
+                    onChange={(e) => setFormData(prev => ({ ...prev, enablePreAuth: e.target.checked }))}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-sm">Enable pre-authorization &amp; incremental auth</span>
+                </label>
+              )}
             </div>
           </div>
 

@@ -36,7 +36,11 @@ async function main() {
   // Create Simulated Payment Reader
   const simulatedReader = await prisma.paymentReader.upsert({
     where: { serialNumber: 'SIM-001-DEV' },
-    update: {},
+    update: {
+      communicationMode: 'simulated',
+      isActive: true,
+      isOnline: true,
+    },
     create: {
       locationId: location.id,
       name: 'Simulated Card Reader',
@@ -44,6 +48,7 @@ async function main() {
       ipAddress: 'localhost',
       port: 3005,
       verificationType: 'IP_ONLY',
+      communicationMode: 'simulated',
       isActive: true,
       isOnline: true,
     },

@@ -947,44 +947,49 @@ export function BartenderView({
     const unsavedItems = orderItems.filter(i => !i.sentToKitchen)
     if (unsavedItems.length === 0) return
 
-    try {
-      const itemsPayload = unsavedItems.map(item => ({
-        menuItemId: item.menuItemId,
-        name: item.name,
-        price: item.price,
-        quantity: item.quantity,
-        modifiers: item.modifiers?.map(m => ({
-          modifierId: m.id,
-          name: m.name,
-          price: m.price,
-        })) || [],
-      }))
+    const itemsPayload = unsavedItems.map(item => ({
+      menuItemId: item.menuItemId,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      modifiers: item.modifiers?.map(m => ({
+        modifierId: m.id,
+        name: m.name,
+        price: m.price,
+      })) || [],
+    }))
 
-      const appendRes = await fetch(`/api/orders/${orderId}/items`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: itemsPayload }),
-      })
+    // Close UI instantly — don't wait for API calls
+    toast.success('Order sent')
+    useOrderStore.getState().clearOrder()
+    setSelectedTabId(null)
+    loadedTabIdRef.current = null
 
-      if (!appendRes.ok) {
-        const errorData = await appendRes.json().catch(() => ({}))
-        throw new Error(errorData.error || 'Failed to add items')
+    // Fire-and-forget: append items then send to kitchen in background
+    void (async () => {
+      try {
+        const appendRes = await fetch(`/api/orders/${orderId}/items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: itemsPayload }),
+        })
+
+        if (!appendRes.ok) {
+          const errorData = await appendRes.json().catch(() => ({}))
+          throw new Error(errorData.error || 'Failed to add items')
+        }
+
+        const sendRes = await fetch(`/api/orders/${orderId}/send`, { method: 'POST' })
+        if (!sendRes.ok) {
+          console.error('[BartenderView] Send to kitchen error:', await sendRes.json().catch(() => ({})))
+        }
+      } catch (error) {
+        console.error('[BartenderView] Background send failed:', error)
+        toast.error('Send failed — items may not have reached kitchen')
+      } finally {
+        setTabRefreshTrigger(t => t + 1)
       }
-
-      const sendRes = await fetch(`/api/orders/${orderId}/send`, { method: 'POST' })
-      if (!sendRes.ok) {
-        console.error('[BartenderView] Send to kitchen error:', await sendRes.json().catch(() => ({})))
-      }
-
-      toast.success('Order sent')
-      useOrderStore.getState().clearOrder()
-      setSelectedTabId(null)
-      loadedTabIdRef.current = null
-      setTabRefreshTrigger(t => t + 1)
-    } catch (error) {
-      console.error('[BartenderView] Failed to send:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to send order')
-    }
+    })()
   }, [orderItems])
 
   const handleCreateTab = useCallback(async () => {
@@ -1011,13 +1016,32 @@ export function BartenderView({
         setShowNewTabModal(false)
         setNewTabName('')
         pendingSendAfterTabRef.current = false
-        setTabRefreshTrigger(t => t + 1)
         if (data.id) {
-          setSelectedTabId(data.id)
           if (shouldSendAfter) {
+            // sendItemsToTab now fires-and-forgets internally — returns instantly
             await sendItemsToTab(data.id)
           } else {
+            // Load order directly from POST response — skip the GET /api/orders/{id} round trip
+            const store = useOrderStore.getState()
+            store.loadOrder({
+              id: data.id,
+              orderNumber: data.orderNumber,
+              orderType: 'bar_tab',
+              tabName: data.tabName || undefined,
+              guestCount: 1,
+              status: data.status || 'open',
+              items: [],
+              subtotal: 0,
+              discountTotal: 0,
+              taxTotal: 0,
+              tipTotal: 0,
+              total: 0,
+            })
+            loadedTabIdRef.current = data.id
+            setSelectedTabId(data.id)
+            onSelectedTabChange?.(data.id)
             toast.success('Tab created')
+            setTabRefreshTrigger(t => t + 1)
           }
         }
       } else {
@@ -1031,7 +1055,7 @@ export function BartenderView({
       setIsCreatingTab(false)
       pendingSendAfterTabRef.current = false
     }
-  }, [locationId, employeeId, newTabName, requireNameWithoutCard, sendItemsToTab])
+  }, [locationId, employeeId, newTabName, requireNameWithoutCard, sendItemsToTab, onSelectedTabChange])
 
   const handleQuickTab = useCallback(async () => {
     if (requireNameWithoutCard) {
@@ -1053,16 +1077,34 @@ export function BartenderView({
       if (res.ok) {
         const data = await res.json()
         toast.success('Tab created')
-        setTabRefreshTrigger(t => t + 1)
         if (data.id) {
+          // Load order directly — skip the GET /api/orders/{id} round trip
+          const store = useOrderStore.getState()
+          store.loadOrder({
+            id: data.id,
+            orderNumber: data.orderNumber,
+            orderType: 'bar_tab',
+            tabName: data.tabName || undefined,
+            guestCount: 1,
+            status: data.status || 'open',
+            items: [],
+            subtotal: 0,
+            discountTotal: 0,
+            taxTotal: 0,
+            tipTotal: 0,
+            total: 0,
+          })
+          loadedTabIdRef.current = data.id
           setSelectedTabId(data.id)
+          onSelectedTabChange?.(data.id)
+          setTabRefreshTrigger(t => t + 1)
         }
       }
     } catch (error) {
       console.error('[BartenderView] Failed to create quick tab:', error)
       toast.error('Failed to create tab')
     }
-  }, [locationId, employeeId, requireNameWithoutCard])
+  }, [locationId, employeeId, requireNameWithoutCard, onSelectedTabChange])
 
   const handleSend = useCallback(async () => {
     const unsavedItems = orderItems.filter(i => !i.sentToKitchen)
@@ -1075,17 +1117,9 @@ export function BartenderView({
       return
     }
 
-    setIsSending(true)
-    try {
-      await sendItemsToTab(selectedTabId)
-    } catch (error) {
-      console.error('[BartenderView] Failed to send:', error)
-      const msg = error instanceof Error ? error.message : 'Failed to send order'
-      toast.error(msg)
-    } finally {
-      setIsSending(false)
-    }
-  }, [orderItems, selectedTabId, locationId, employeeId])
+    // sendItemsToTab clears UI instantly and sends in background
+    await sendItemsToTab(selectedTabId)
+  }, [orderItems, selectedTabId, sendItemsToTab])
 
   const handlePay = useCallback(() => {
     if (selectedTabId && onOpenPayment) {

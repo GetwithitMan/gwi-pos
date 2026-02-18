@@ -59,6 +59,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       verificationType = 'SERIAL_HANDSHAKE',
       merchantId,
       terminalId,
+      communicationMode,
     } = body
 
     // Validate required fields
@@ -69,9 +70,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Validate IP address format
+    // Skip IP validation for simulated readers
     const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
-    if (!ipv4Regex.test(ipAddress)) {
+    if (communicationMode !== 'simulated' && !ipv4Regex.test(ipAddress)) {
       return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
     }
 
@@ -112,8 +113,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         verificationType,
         merchantId,
         terminalId,
+        ...(communicationMode && { communicationMode }),
         isActive: true,
-        isOnline: false,
+        isOnline: communicationMode === 'simulated' ? true : false,
       },
     })
 

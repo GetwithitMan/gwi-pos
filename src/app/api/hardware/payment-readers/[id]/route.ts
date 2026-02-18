@@ -71,6 +71,7 @@ export const PUT = withVenue(async function PUT(
       verificationType,
       merchantId,
       terminalId,
+      communicationMode,
       isActive,
       isOnline,
       lastSeenAt,
@@ -82,12 +83,18 @@ export const PUT = withVenue(async function PUT(
       sortOrder,
     } = body
 
-    // Validate IP address format if provided
+    // Validate IP address format if provided (skip for simulated readers)
     if (ipAddress) {
+      const resolvedMode = communicationMode || existing.communicationMode
       const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
-      if (!ipv4Regex.test(ipAddress)) {
+      if (resolvedMode !== 'simulated' && !ipv4Regex.test(ipAddress)) {
         return NextResponse.json({ error: 'Invalid IP address format' }, { status: 400 })
       }
+    }
+
+    // Validate port range if provided
+    if (port !== undefined && (port < 1 || port > 65535)) {
+      return NextResponse.json({ error: 'Port must be between 1 and 65535' }, { status: 400 })
     }
 
     // Check for duplicate serial number (if changing)
@@ -126,6 +133,7 @@ export const PUT = withVenue(async function PUT(
         ...(verificationType !== undefined && { verificationType }),
         ...(merchantId !== undefined && { merchantId }),
         ...(terminalId !== undefined && { terminalId }),
+        ...(communicationMode !== undefined && { communicationMode }),
         ...(isActive !== undefined && { isActive }),
         ...(isOnline !== undefined && { isOnline }),
         ...(lastSeenAt !== undefined && { lastSeenAt: lastSeenAt ? new Date(lastSeenAt) : null }),

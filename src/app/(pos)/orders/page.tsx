@@ -892,9 +892,13 @@ export default function OrdersPage() {
 
   useEffect(() => {
     if (!currentOrder) {
-      startOrder('dine_in', { guestCount: 1 })
+      if (viewMode === 'bartender') {
+        startOrder('bar_tab')
+      } else {
+        startOrder('dine_in', { guestCount: 1 })
+      }
     }
-  }, [currentOrder, startOrder])
+  }, [currentOrder, startOrder, viewMode])
 
   // Load quick bar items when quickBar changes (T035)
   useEffect(() => {
@@ -2573,6 +2577,8 @@ export default function OrdersPage() {
                         toast.success(`Added to tab •••${cardLast4}`)
                       }
 
+                      // Deselect tab in BartenderView so it can be re-selected
+                      bartenderDeselectTabRef.current?.()
                       clearOrder()
                       setSavedOrderId(null)
                       setOrderSent(false)
@@ -2584,26 +2590,101 @@ export default function OrdersPage() {
                     }
                     return
                   }
-                  // Card not found on existing order — fall through to new tab flow below
+                  // Card not found on existing order — still send items to the tab
+                  const newItems = items.filter(i => !i.sentToKitchen)
+                  if (newItems.length > 0) {
+                    const appendRes = await fetch(`/api/orders/${existingOrderId}/items`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        items: newItems.map(item => ({
+                          menuItemId: item.menuItemId,
+                          name: item.name,
+                          price: item.price,
+                          quantity: item.quantity,
+                          isHeld: item.isHeld || false,
+                          modifiers: (item.modifiers || []).map(mod => ({
+                            modifierId: (mod.id || mod.modifierId) ?? '',
+                            name: mod.name,
+                            price: Number(mod.price),
+                            depth: mod.depth ?? 0,
+                            preModifier: mod.preModifier ?? null,
+                            spiritTier: mod.spiritTier ?? null,
+                            linkedBottleProductId: mod.linkedBottleProductId ?? null,
+                            parentModifierId: mod.parentModifierId ?? null,
+                          })),
+                          specialNotes: item.specialNotes,
+                        })),
+                      }),
+                    })
+                    if (!appendRes.ok) {
+                      toast.error('Failed to save new items')
+                      return
+                    }
+                  }
+                  // Send to kitchen
+                  const noCardSendRes = await fetch(`/api/orders/${existingOrderId}/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employeeId: employee?.id }),
+                  })
+                  if (noCardSendRes.ok) {
+                    toast.success('Added to tab')
+                    // Deselect tab in BartenderView so it can be re-selected
+                    bartenderDeselectTabRef.current?.()
+                    clearOrder()
+                    setSavedOrderId(null)
+                    setOrderSent(false)
+                    setSelectedOrderType(null)
+                    setOrderCustomFields({})
+                    setTabsRefreshTrigger(prev => prev + 1)
+                  } else {
+                    toast.error('Failed to send to kitchen')
+                  }
+                  return
                 } finally {
                   setIsSendingOrder(false)
                 }
               }
 
-              // ── New tab (no existing order or no card on file) ──
+              // ── New tab (no existing order) ──
               const currentStore = useOrderStore.getState()
               if (currentStore.currentOrder && currentStore.currentOrder.orderType !== 'bar_tab') {
                 currentStore.updateOrderType('bar_tab')
               }
 
-              if (requireCardForTab) {
-                // Card required → card auth flow
-                const orderId = existingOrderId || await ensureOrderInDB(employee?.id)
-                if (orderId) {
-                  setSavedOrderId(orderId)
+              // Check order type workflow rules for card requirement
+              const barTabOT = orderTypes.find(t => t.slug === 'bar_tab')
+              const cardRequired = (barTabOT?.workflowRules as WorkflowRules)?.requireCardOnFile ?? requireCardForTab
+
+              if (cardRequired) {
+                // Card required → create lightweight draft shell, then show card modal instantly
+                try {
+                  let orderId = existingOrderId
+                  if (!orderId) {
+                    const shellRes = await fetch('/api/orders', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        employeeId: employee?.id,
+                        locationId: employee?.location?.id,
+                        orderType: 'bar_tab',
+                        items: [],
+                      }),
+                    })
+                    if (!shellRes.ok) {
+                      toast.error('Failed to create order')
+                      return
+                    }
+                    const shell = await shellRes.json()
+                    orderId = shell.id
+                    const store2 = useOrderStore.getState()
+                    store2.updateOrderId(shell.id, shell.orderNumber)
+                    setSavedOrderId(shell.id)
+                  }
                   setCardTabOrderId(orderId)
                   setShowCardTabFlow(true)
-                } else {
+                } catch {
                   toast.error('Failed to save order — please try again')
                 }
               } else {
@@ -2611,45 +2692,80 @@ export default function OrdersPage() {
                 // (reader stays in ready mode — if card is tapped it will be picked up)
                 setTabNameInput('')
                 setTabNameCallback(() => async () => {
-                  // After name is entered, save order with items and send to kitchen
+                  // After name is entered, capture state then clear UI instantly
                   const store = useOrderStore.getState()
                   const tabName = store.currentOrder?.tabName
                   if (!tabName) return
-                  setIsSendingOrder(true)
-                  try {
-                    // Ensure order + all items are in DB
-                    const orderId = await ensureOrderInDB(employee?.id)
-                    if (!orderId) {
-                      toast.error('Failed to save order')
-                      return
+
+                  // Capture items before clearing
+                  const capturedOrder = store.currentOrder
+                  if (!capturedOrder || capturedOrder.items.length === 0) return
+                  const capturedItems = [...capturedOrder.items]
+                  const capturedEmployeeId = employee?.id
+                  const capturedLocationId = capturedOrder.locationId || employee?.location?.id
+
+                  // Clear UI instantly — user can start next order immediately
+                  toast.success('Order sent to kitchen')
+                  clearOrder()
+                  setSavedOrderId(null)
+                  setOrderSent(false)
+                  setSelectedOrderType(null)
+                  setOrderCustomFields({})
+                  startOrder('bar_tab')
+
+                  // Fire-and-forget: create order + send to kitchen in background
+                  void (async () => {
+                    try {
+                      // Create order with items + tabName in one call
+                      const res = await fetch('/api/orders', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          employeeId: capturedEmployeeId,
+                          locationId: capturedLocationId,
+                          orderType: 'bar_tab',
+                          tabName,
+                          guestCount: capturedOrder.guestCount || 1,
+                          items: capturedItems.map(item => ({
+                            menuItemId: item.menuItemId,
+                            name: item.name,
+                            price: item.price,
+                            quantity: item.quantity,
+                            modifiers: item.modifiers?.map(m => ({
+                              modifierId: m.modifierId || m.id,
+                              name: m.name,
+                              price: m.price,
+                              preModifier: m.preModifier,
+                              depth: m.depth,
+                            })) || [],
+                          })),
+                        }),
+                      })
+
+                      if (!res.ok) {
+                        console.error('[onStartTab] Background create failed')
+                        toast.error('Tab may not have saved — check open orders')
+                        return
+                      }
+
+                      const created = await res.json()
+
+                      // Send to kitchen
+                      const sendRes = await fetch(`/api/orders/${created.id}/send`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ employeeId: capturedEmployeeId }),
+                      })
+                      if (!sendRes.ok) {
+                        console.error('[onStartTab] Background send failed')
+                      }
+                    } catch (err) {
+                      console.error('[onStartTab] Background tab creation failed:', err)
+                      toast.error('Tab may not have saved — check open orders')
+                    } finally {
+                      setTabsRefreshTrigger(prev => prev + 1)
                     }
-                    setSavedOrderId(orderId)
-
-                    // Update tabName on the server (ensureOrderInDB may have created it without the name)
-                    await fetch(`/api/orders/${orderId}`, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ tabName }),
-                    })
-
-                    // Use the shared send hook — handles item appending, delays, coursing
-                    await activeOrderFull.handleSendToKitchen(employee?.id)
-
-                    toast.success('Order sent to kitchen')
-                    clearOrder()
-                    setSavedOrderId(null)
-                    setOrderSent(false)
-                    setSelectedOrderType(null)
-                    setOrderCustomFields({})
-                    setTabsRefreshTrigger(prev => prev + 1)
-                    // Stay in bar mode — start fresh bar_tab order
-                    startOrder('bar_tab')
-                  } catch (err) {
-                    console.error('[onStartTab] Send failed:', err)
-                    toast.error('Failed to send to kitchen')
-                  } finally {
-                    setIsSendingOrder(false)
-                  }
+                  })()
                 })
                 setShowTabNamePrompt(true)
               }
@@ -3313,59 +3429,85 @@ export default function OrdersPage() {
                 onComplete={async (result) => {
                   setShowCardTabFlow(false)
                   if (result.approved) {
+                    // Capture items before clearing
+                    const store = useOrderStore.getState()
+                    const capturedItems = [...(store.currentOrder?.items || [])]
+                    const orderId = cardTabOrderId!
+                    const capturedEmployeeId = employee?.id
+
+                    // Clear UI instantly — ready for next customer
                     setTabCardInfo({
                       cardholderName: result.cardholderName,
                       cardLast4: result.cardLast4,
                       cardType: result.cardType,
                     })
-                    const store = useOrderStore.getState()
-                    if (store.currentOrder && result.cardholderName) {
-                      store.currentOrder.tabName = result.cardholderName
-                    }
-                    setTabNameInput(result.cardholderName || '')
-                    setTabNameCallback(() => async () => {
-                      // Direct send — bypass validateBeforeSend since card is already authorized
-                      const store = useOrderStore.getState()
-                      const items = store.currentOrder?.items
-                      if (!items?.length) return
-                      setIsSendingOrder(true)
+                    toast.success(`Tab opened — •••${result.cardLast4}`)
+                    clearOrder()
+                    setSavedOrderId(null)
+                    setOrderSent(false)
+                    setSelectedOrderType(null)
+                    setOrderCustomFields({})
+                    setCardTabOrderId(null)
+                    startOrder('bar_tab')
+
+                    // Fire-and-forget: append items + update tabName + send + auto-increment
+                    void (async () => {
                       try {
-                        const orderId = savedOrderId || store.currentOrder?.id || await ensureOrderInDB(employee?.id)
-                        if (orderId) {
-                          // Update metadata (tab name) on the saved order
-                          await fetch(`/api/orders/${orderId}`, {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ tabName: store.currentOrder?.tabName }),
-                          })
-                          const sendRes = await fetch(`/api/orders/${orderId}/send`, {
+                        // Append items to the draft shell
+                        if (capturedItems.length > 0) {
+                          const appendRes = await fetch(`/api/orders/${orderId}/items`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ employeeId: employee?.id }),
+                            body: JSON.stringify({
+                              items: capturedItems.map(item => ({
+                                menuItemId: item.menuItemId,
+                                name: item.name,
+                                price: item.price,
+                                quantity: item.quantity,
+                                modifiers: (item.modifiers || []).map(m => ({
+                                  modifierId: m.modifierId || m.id,
+                                  name: m.name,
+                                  price: Number(m.price),
+                                  preModifier: m.preModifier ?? null,
+                                  depth: m.depth ?? 0,
+                                })),
+                              })),
+                            }),
                           })
-                          if (sendRes.ok) {
-                            // Fire auto-increment in background
-                            fetch(`/api/orders/${orderId}/auto-increment`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ employeeId: employee?.id }),
-                            }).catch(() => {})
-                            toast.success(`Tab opened — •••${result.cardLast4}`)
-                            clearOrder()
-                            setSavedOrderId(null)
-                            setOrderSent(false)
-                            setSelectedOrderType(null)
-                            setOrderCustomFields({})
-                            setTabsRefreshTrigger(prev => prev + 1)
-                          } else {
-                            toast.error('Failed to send to kitchen')
+                          if (!appendRes.ok) {
+                            console.error('[CardTab] Failed to append items')
                           }
                         }
+
+                        // Update tabName from cardholder
+                        if (result.cardholderName) {
+                          await fetch(`/api/orders/${orderId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ tabName: result.cardholderName }),
+                          })
+                        }
+
+                        // Send to kitchen
+                        await fetch(`/api/orders/${orderId}/send`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ employeeId: capturedEmployeeId }),
+                        })
+
+                        // Auto-increment (fire-and-forget)
+                        fetch(`/api/orders/${orderId}/auto-increment`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ employeeId: capturedEmployeeId }),
+                        }).catch(() => {})
+                      } catch (err) {
+                        console.error('[CardTab] Background send failed:', err)
+                        toast.error('Tab may not have saved — check open orders')
                       } finally {
-                        setIsSendingOrder(false)
+                        setTabsRefreshTrigger(prev => prev + 1)
                       }
-                    })
-                    setShowTabNamePrompt(true)
+                    })()
                   } else {
                     setCardTabOrderId(null)
                   }

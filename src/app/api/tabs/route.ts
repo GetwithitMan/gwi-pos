@@ -120,6 +120,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
+    const locationId = body.locationId as string | undefined
+
     if (!employeeId) {
       return NextResponse.json(
         { error: 'Employee ID is required' },
@@ -127,13 +129,28 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Get location from employee
-    const employee = await db.employee.findUnique({
-      where: { id: employeeId },
-      include: {
-        location: true,
-      },
-    })
+    // Run employee lookup + last order number in parallel
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const tomorrow = new Date(today)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+
+    const [employee, lastOrder] = await Promise.all([
+      db.employee.findUnique({
+        where: { id: employeeId },
+        include: { location: true },
+      }),
+      // If locationId provided, skip waiting for employee to get it
+      locationId
+        ? db.order.findFirst({
+            where: {
+              locationId,
+              createdAt: { gte: today, lt: tomorrow },
+            },
+            orderBy: { orderNumber: 'desc' },
+          })
+        : null,
+    ])
 
     if (!employee) {
       return NextResponse.json(
@@ -142,26 +159,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
+    const resolvedLocationId = locationId || employee.locationId
     const settings = parseSettings(employee.location.settings)
 
-    // Get next order number for today
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-
-    const lastOrder = await db.order.findFirst({
+    // If we didn't already fetch lastOrder in parallel, do it now
+    const resolvedLastOrder = lastOrder ?? await db.order.findFirst({
       where: {
-        locationId: employee.locationId,
-        createdAt: {
-          gte: today,
-          lt: tomorrow,
-        },
+        locationId: resolvedLocationId,
+        createdAt: { gte: today, lt: tomorrow },
       },
       orderBy: { orderNumber: 'desc' },
     })
 
-    const orderNumber = (lastOrder?.orderNumber || 0) + 1
+    const orderNumber = (resolvedLastOrder?.orderNumber || 0) + 1
 
     // Create pre-auth data if provided
     let preAuthData = {}
@@ -185,7 +195,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Create the tab (order with type bar_tab)
     const tab = await db.order.create({
       data: {
-        locationId: employee.locationId,
+        locationId: resolvedLocationId,
         employeeId,
         orderNumber,
         orderType: 'bar_tab',

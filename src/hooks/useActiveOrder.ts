@@ -1056,7 +1056,6 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
           }
 
           bgChain()
-            .then(() => loadOrder(orderId).catch(() => {}))
             .catch(err => {
               console.error('[useActiveOrder] Background send failed:', err)
               toast.error('Send failed — tap Send again to retry')

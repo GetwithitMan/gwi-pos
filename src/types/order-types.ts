@@ -38,6 +38,8 @@ export interface WorkflowRules {
   requireTableSelection?: boolean
   requireCustomerName?: boolean
   requirePhone?: boolean
+  requireCardOnFile?: boolean
+  enablePreAuth?: boolean
   allowSplitCheck?: boolean
   autoCloseOnPayment?: boolean
   printTicketOnSend?: boolean
