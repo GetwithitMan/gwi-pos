@@ -23,8 +23,10 @@
 | 6E | Multi-Card Tab Support (7 sub-fixes) | 7 | ✅ |
 | 6E-HF | Deleted Items Reappearing (Prisma nested include bug) | 1 | ✅ |
 | 6F | Ingredient Modifications Fix (5 query paths) | 5 | ✅ |
+| 6G | Hook Wiring + New Extractions (56→30 useState) | 7 | ✅ |
+| 6H | API Response Format Normalization (460+ violations) | 5 | ✅ |
 
-**Total completed:** 65 tasks, 510+ individual fixes across 111+ files
+**Total completed:** 77 tasks, 970+ individual fixes across 370+ files
 
 ---
 
@@ -34,8 +36,8 @@
 - None currently known
 
 ### Priority 2 — Code Quality
-1. **Response format normalization** — 68+ routes need `{ data: T }` wrapper per API convention
-2. **orders/page.tsx** — Still ~30 useState calls. Continue hook extraction.
+1. ~~**Response format normalization**~~ — ✅ DONE (Wave 6H: 460+ responses normalized across 260 files)
+2. **orders/page.tsx** — Now at 30 useState calls (down from 56 in Wave 6G). Remaining states are mostly independent UI toggles — further extraction has diminishing returns.
 
 ### Priority 3 — Large File Splits
 | Lines | File |
