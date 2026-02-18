@@ -32,7 +32,7 @@ import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
 // MenuSearchInput, MenuSearchResults lifted to UnifiedPOSHeader
 import { calculateOrderSubtotal, splitSubtotalsByTaxInclusion } from '@/lib/order-calculations'
-import { isTempId } from '@/lib/order-utils'
+import { isTempId, fetchAndMergeOrder } from '@/lib/order-utils'
 import { getSeatColor, getSeatBgColor, getSeatTextColor, getSeatBorderColor } from '@/lib/seat-utils'
 import './styles/floor-plan.css'
 
@@ -226,7 +226,7 @@ export function FloorPlanHome({
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [allMenuItems, setAllMenuItems] = useState<MenuItem[]>(initialMenuItems || []) // Full menu, loaded once
   const [menuItems, setMenuItems] = useState<MenuItem[]>([])       // Filtered by category
-  const [loadingMenuItems, setLoadingMenuItems] = useState(false)
+  const loadingMenuItems = false // Always false — loading handled by parent
 
   // Sync from parent when props update (e.g., parent's loadMenu completes after mount)
   useEffect(() => {
@@ -275,7 +275,6 @@ export function FloorPlanHome({
   const tableRequiredButMissing = requiresTable && !activeTableId
 
   const [isSendingOrder, setIsSendingOrder] = useState(false)
-  const [pendingPayAfterSave, setPendingPayAfterSave] = useState(false)
   const [guestCount, setGuestCount] = useState(defaultGuestCount)
 
   // Register deselect function so parent can trigger "Hide" (deselect current table)
@@ -320,6 +319,18 @@ export function FloorPlanHome({
     locationId,
     employeeId,
   })
+
+  // === Clear order panel helper (consolidates 5+ repeated state-clearing sequences) ===
+  const clearOrderPanel = useCallback(() => {
+    setActiveOrderId(null)
+    setActiveOrderNumber(null)
+    setActiveOrderType(null)
+    setActiveSeatNumber(null)
+    setActiveSourceTableId(null)
+    useOrderStore.getState().clearOrder()
+    setActiveTableId(null)
+    setShowOrderPanel(false)
+  }, [])
 
   // DEPRECATED: inlineOrderItems now reads from Zustand store via useActiveOrder hook
   // This alias exists for backward compatibility while we migrate all call sites
@@ -381,9 +392,6 @@ export function FloorPlanHome({
   // which is the SINGLE source of truth for mapping API items into the store format
 
   // Notes editing — delegated to useActiveOrder hook (NoteEditModal)
-
-  // Modifiers editing state
-  const [editingModifiersItemId, setEditingModifiersItemId] = useState<string | null>(null)
 
   // Comp/Void modal state
   const [compVoidItem, setCompVoidItem] = useState<{
@@ -573,9 +581,6 @@ export function FloorPlanHome({
       toast.error('Failed to save room order')
     }
   }, [employeeId])
-
-  // Seat management refresh trigger (Skill 121)
-  const [refreshKey, setRefreshKey] = useState(0)
 
   // Extra seats per table (for walk-up guests before order exists)
   const [extraSeats, setExtraSeats] = useState<Map<string, number>>(new Map())
@@ -831,14 +836,14 @@ export function FloorPlanHome({
 
     const loadOrder = async () => {
       try {
-        const res = await fetch(`/api/orders/${orderToLoad.id}`)
-        if (!res.ok) {
+        const merged = await fetchAndMergeOrder(orderToLoad.id)
+        if (!merged) {
           console.error('[FloorPlanHome] Failed to load order:', orderToLoad.id)
           toast.error('Failed to load order. Please try again.')
           return
         }
 
-        const data = await res.json()
+        const data = merged.raw
 
         // Set order state
         setActiveOrderId(orderToLoad.id)
@@ -850,51 +855,6 @@ export function FloorPlanHome({
         // Load the full order into Zustand store — store.loadOrder handles all item mapping
         const store = useOrderStore.getState()
 
-        // If split parent, fetch all child split items and merge them for combined view
-        let mergedItems = data.items || []
-        let mergedSubtotal = Number(data.subtotal) || 0
-        let mergedTax = Number(data.taxTotal) || 0
-        let mergedTip = Number(data.tipTotal) || 0
-        let mergedTotal = Number(data.total) || 0
-
-        if (data.status === 'split') {
-          try {
-            const splitRes = await fetch(`/api/orders/${orderToLoad.id}/split-tickets`)
-            if (splitRes.ok) {
-              const splitData = await splitRes.json()
-              const splits = splitData.splitOrders || []
-              if (Array.isArray(splits) && splits.length > 0) {
-                mergedItems = []
-                mergedSubtotal = 0
-                mergedTax = 0
-                mergedTip = 0
-                mergedTotal = 0
-                for (const split of splits) {
-                  const label = split.displayNumber || split.orderNumber
-                  for (const item of (split.items || [])) {
-                    mergedItems.push({
-                      ...item,
-                      menuItemId: item.menuItemId || item.id,
-                      kitchenStatus: item.isSent || item.isCompleted ? 'sent' : 'pending',
-                      modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; preModifier?: string }) => ({
-                        ...m,
-                        modifierId: m.id,
-                      })),
-                      splitLabel: String(label),
-                    })
-                  }
-                  mergedSubtotal += Number(split.subtotal) || 0
-                  mergedTax += Number(split.taxTotal) || 0
-                  mergedTip += Number(split.tipTotal) || 0
-                  mergedTotal += Number(split.total) || 0
-                }
-              }
-            }
-          } catch (err) {
-            console.error('[FloorPlanHome] Failed to fetch split tickets:', err)
-          }
-        }
-
         store.loadOrder({
           id: orderToLoad.id,
           orderNumber: data.orderNumber ?? orderToLoad.orderNumber,
@@ -903,12 +863,12 @@ export function FloorPlanHome({
           tabName: data.tabName,
           guestCount: data.guestCount || 1,
           status: data.status,
-          items: mergedItems,
-          subtotal: mergedSubtotal,
+          items: merged.items,
+          subtotal: merged.subtotal,
           discountTotal: Number(data.discountTotal) || 0,
-          taxTotal: mergedTax,
-          tipTotal: mergedTip,
-          total: mergedTotal,
+          taxTotal: merged.taxTotal,
+          tipTotal: merged.tipTotal,
+          total: merged.total,
         })
 
         // Notify parent that order is loaded
@@ -940,24 +900,16 @@ export function FloorPlanHome({
     }
 
     // Clear the order panel state
-    setActiveOrderId(null)
-    setActiveOrderNumber(null)
-    setActiveTableId(null)
-    setActiveOrderType(null)
-    // (store cleared via clearOrder() below)
-    setShowOrderPanel(false)
+    clearOrderPanel()
     setSelectedCategoryId(null)
     setViewMode('tables')
-
-    // Clear Zustand store for cross-route persistence
-    useOrderStore.getState().clearOrder()
 
     // Refresh floor plan to show updated table status
     loadFloorPlanData() // snapshot includes count
 
     // Notify parent that we've cleared the paid order
     onPaidOrderCleared?.()
-  }, [paidOrderId, activeOrderId, activeTableId, tables, onPaidOrderCleared])
+  }, [paidOrderId, activeOrderId, activeTableId, tables, onPaidOrderCleared, clearOrderPanel])
 
   // Refs to track previous data for change detection (prevents flashing during polling)
   // Snapshot deduplication + coalescing refs
@@ -1160,58 +1112,12 @@ export function FloorPlanHome({
       setActiveOrderId(currentOrder.id)
       setActiveOrderNumber(String(currentOrder.orderNumber))
       try {
-        const res = await fetch(`/api/orders/${currentOrder.id}`)
-        if (res.ok) {
-          const data = await res.json()
+        const merged = await fetchAndMergeOrder(currentOrder.id)
+        if (merged) {
+          const data = merged.raw
           // Use loadOrder to atomically set tableId + items in Zustand store
           // store.loadOrder handles ALL item field mapping — one path, no duplication
           const store = useOrderStore.getState()
-
-          // If split parent, fetch all child split items and merge them for combined view
-          let mergedItems = data.items || []
-          let mergedSubtotal = Number(data.subtotal) || 0
-          let mergedTax = Number(data.taxTotal) || 0
-          let mergedTip = Number(data.tipTotal) || 0
-          let mergedTotal = Number(data.total) || 0
-
-          if (data.status === 'split') {
-            try {
-              const splitRes = await fetch(`/api/orders/${currentOrder.id}/split-tickets`)
-              if (splitRes.ok) {
-                const splitData = await splitRes.json()
-                const splits = splitData.splitOrders || []
-                if (Array.isArray(splits) && splits.length > 0) {
-                  mergedItems = []
-                  mergedSubtotal = 0
-                  mergedTax = 0
-                  mergedTip = 0
-                  mergedTotal = 0
-                  for (const split of splits) {
-                    const label = split.displayNumber || split.orderNumber
-                    for (const item of (split.items || [])) {
-                      mergedItems.push({
-                        ...item,
-                        menuItemId: item.menuItemId || item.id,
-                        sentToKitchen: true,
-                        kitchenStatus: 'sent',
-                        modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; preModifier?: string }) => ({
-                          ...m,
-                          modifierId: m.id,
-                        })),
-                        splitLabel: String(label),
-                      })
-                    }
-                    mergedSubtotal += Number(split.subtotal) || 0
-                    mergedTax += Number(split.taxTotal) || 0
-                    mergedTip += Number(split.tipTotal) || 0
-                    mergedTotal += Number(split.total) || 0
-                  }
-                }
-              }
-            } catch (err) {
-              console.error('[FloorPlanHome] Failed to fetch split tickets:', err)
-            }
-          }
 
           store.loadOrder({
             id: currentOrder.id,
@@ -1221,11 +1127,11 @@ export function FloorPlanHome({
             tabName: data.tabName,
             guestCount: data.guestCount || totalSeats,
             status: data.status,
-            items: mergedItems,
-            subtotal: mergedSubtotal,
-            taxTotal: mergedTax,
-            tipTotal: mergedTip,
-            total: mergedTotal,
+            items: merged.items,
+            subtotal: merged.subtotal,
+            taxTotal: merged.taxTotal,
+            tipTotal: merged.tipTotal,
+            total: merged.total,
             notes: data.notes,
             reopenedAt: data.reopenedAt,
             reopenReason: data.reopenReason,
@@ -1519,7 +1425,6 @@ export function FloorPlanHome({
         resendCount: (existingItem?.resendCount || 0) + 1,
       })
 
-      setEditingModifiersItemId(null)
       toast.success('Modifiers updated')
     } catch (error) {
       console.error('Failed to update modifiers:', error)
@@ -1531,8 +1436,6 @@ export function FloorPlanHome({
   const handleEditSentItemModifiers = useCallback((item: InlineOrderItem) => {
     const menuItem = menuItems.find(mi => mi.id === item.menuItemId)
     if (!menuItem) return
-
-    setEditingModifiersItemId(item.id)
 
     if (onOpenModifiers) {
       onOpenModifiers(menuItem, (newModifiers, ingredientMods) => {
@@ -1624,14 +1527,7 @@ export function FloorPlanHome({
       }
 
       // Return to floor plan view IMMEDIATELY — don't block on background refreshes
-      setActiveOrderId(null)
-      setActiveOrderNumber(null)
-      setActiveOrderType(null)
-      setActiveSeatNumber(null)
-      setActiveSourceTableId(null)
-      useOrderStore.getState().clearOrder()
-      setActiveTableId(null)
-      setShowOrderPanel(false)
+      clearOrderPanel()
 
       // Refresh floor plan data in background (fire-and-forget — UI already cleared)
       loadFloorPlanData(false).catch(() => {})
@@ -1641,47 +1537,7 @@ export function FloorPlanHome({
       isProcessingSendRef.current = false
       setIsSendingOrder(false)
     }
-  }, [inlineOrderItems, activeOrder.handleSendToKitchen, employeeId, activeTableId, addTableOrder, updateSingleTableStatus])
-
-  // Save order to DB without sending to kitchen (for Pay before Send flow)
-  const handleSaveOrderForPayment = useCallback(async () => {
-    if (inlineOrderItems.length === 0) return
-
-    // If all items already saved, just open payment
-    if (!activeOrder.hasUnsavedItems && activeOrderId) {
-      setPendingPayAfterSave(true)
-      return
-    }
-
-    setIsSendingOrder(true)
-    try {
-      // Hook handles: create/append order in DB, map IDs
-      const orderId = await activeOrder.ensureOrderInDB(employeeId)
-      if (!orderId) return
-
-      // Sync local state with store's order ID
-      setActiveOrderId(orderId)
-      const store = useOrderStore.getState()
-      if (store.currentOrder?.orderNumber) {
-        setActiveOrderNumber(String(store.currentOrder.orderNumber))
-      }
-
-      // Flag that payment should open
-      setPendingPayAfterSave(true)
-    } catch (error) {
-      console.error('[FloorPlanHome] Failed to save order for payment:', error)
-      toast.error('Failed to save order')
-    } finally {
-      setIsSendingOrder(false)
-    }
-  }, [inlineOrderItems, activeOrder.hasUnsavedItems, activeOrder.ensureOrderInDB, activeOrderId, employeeId])
-
-  // Open payment
-  const handleOpenPayment = useCallback(() => {
-    if (activeOrderId && onOpenPayment) {
-      onOpenPayment(activeOrderId)
-    }
-  }, [activeOrderId, onOpenPayment])
+  }, [inlineOrderItems, activeOrder.handleSendToKitchen, employeeId, activeTableId, addTableOrder, updateSingleTableStatus, clearOrderPanel])
 
   // Close/cancel an order with $0 balance (e.g. after voiding all items)
   const handleCloseOrder = useCallback(async () => {
@@ -1705,16 +1561,11 @@ export function FloorPlanHome({
       return
     }
     // Clear the panel
-    // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
-    setActiveOrderId(null)
-    setActiveOrderNumber(null)
-    setActiveOrderType(null)
     activeOrder.closeNoteEditor()
     setGuestCount(defaultGuestCount)
-    setActiveSeatNumber(null)
-    useOrderStore.getState().clearOrder()
+    clearOrderPanel()
     loadFloorPlanData()
-  }, [activeOrderId, defaultGuestCount, activeOrder, loadFloorPlanData])
+  }, [activeOrderId, defaultGuestCount, activeOrder, loadFloorPlanData, clearOrderPanel])
 
   // Close order panel
   const handleCloseOrderPanel = useCallback(() => {
@@ -1743,28 +1594,15 @@ export function FloorPlanHome({
       })
     }
 
-    // Clear dependent state FIRST
-    // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
-    setActiveOrderId(null)
-    setActiveOrderNumber(null)
-    setActiveOrderType(null)
+    // Clear dependent state + primary state
     activeOrder.closeNoteEditor()
     setGuestCount(defaultGuestCount)
-    setActiveSeatNumber(null)
-    setActiveSourceTableId(null)
-
-    // Clear Zustand store for cross-route persistence
-    store.clearOrder()
-
-    // Clear primary state LAST
-    setActiveTableId(null)
-    setShowOrderPanel(false)
+    clearOrderPanel()
 
     // Floor plan refresh happens automatically via socket dispatch from the CLEANUP API
-  }, [defaultGuestCount, activeTableId, activeOrderId])
+  }, [defaultGuestCount, activeTableId, activeOrderId, clearOrderPanel])
 
-  // Payment mode state (cash or card)
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
+  const paymentMode = 'card' as const
 
   // Calculate order subtotal using centralized function (single source of truth)
   const orderSubtotal = calculateOrderSubtotal(inlineOrderItems)
@@ -1790,56 +1628,6 @@ export function FloorPlanHome({
 
   // Totals from pricing hook (replaces hardcoded TAX_RATE and CASH_DISCOUNT_RATE)
   const orderTotal = pricing.total
-
-  // Handle payment success (extracted from inline for OrderPanel)
-  const handlePaymentSuccess = useCallback(async (result: { cardLast4?: string; cardBrand?: string; tipAmount: number }) => {
-    toast.success(`Payment approved! Card: ****${result.cardLast4 || '****'}`)
-
-    // Record the payment in the database and mark order as paid/closed
-    if (activeOrderId) {
-      try {
-        // Fetch server-side total to avoid client/server pricing mismatch
-        const orderRes = await fetch(`/api/orders/${activeOrderId}`)
-        const orderData = await orderRes.json()
-        const serverTotal = Number(orderData?.data?.total ?? orderData?.total ?? orderTotal)
-
-        await fetch(`/api/orders/${activeOrderId}/pay`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            payments: [{
-              method: 'credit',
-              amount: serverTotal,
-              tipAmount: result.tipAmount || 0,
-              cardBrand: result.cardBrand,
-              cardLast4: result.cardLast4,
-            }],
-            employeeId,
-          }),
-        })
-      } catch (err) {
-        console.error('[FloorPlanHome] Failed to record payment:', err)
-      }
-    }
-
-    // Clear the order panel (same as handleCloseOrderPanel)
-    // (store cleared via clearOrder() below — inlineOrderItems memo auto-derives)
-    setActiveOrderId(null)
-    setActiveOrderNumber(null)
-    setActiveOrderType(null)
-    activeOrder.closeNoteEditor()
-    setGuestCount(defaultGuestCount)
-    setActiveSeatNumber(null)
-    setActiveSourceTableId(null)
-    useOrderStore.getState().clearOrder()
-    setActiveTableId(null)
-    setShowOrderPanel(false)
-    setSelectedCategoryId(null)
-    setViewMode('tables')
-
-    // Refresh floor plan to show updated table status
-    loadFloorPlanData() // snapshot includes count
-  }, [activeOrderId, orderTotal, employeeId, defaultGuestCount, loadFloorPlanData])
 
   // Note: Ghost preview calculation is now handled by useFloorPlanDrag hook
 

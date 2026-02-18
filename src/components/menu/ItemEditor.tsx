@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
+import { IngredientHierarchyPicker } from './IngredientHierarchyPicker'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { useOrderSettings } from '@/hooks/useOrderSettings'
@@ -1085,25 +1086,6 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     setExpandedParents(new Set())
   }
 
-  // Toggle category expansion
-  const toggleCategory = (categoryId: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev)
-      if (next.has(categoryId)) next.delete(categoryId)
-      else next.add(categoryId)
-      return next
-    })
-  }
-
-  // Toggle parent expansion
-  const toggleParent = (parentId: string) => {
-    setExpandedParents(prev => {
-      const next = new Set(prev)
-      if (next.has(parentId)) next.delete(parentId)
-      else next.add(parentId)
-      return next
-    })
-  }
 
   // Create new ingredient category inline
   const createCategory = async () => {
@@ -1801,286 +1783,33 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
         {/* Hierarchical Ingredient Dropdown */}
         {isLinking && (
           <div className="ml-4 p-2 bg-purple-50 border border-purple-200 rounded">
-            <input
-              type="text"
-              value={modIngredientSearch}
-              onChange={(e) => setModIngredientSearch(e.target.value)}
-              placeholder="Search prep items..."
-              className="w-full px-2 py-1 text-xs border rounded mb-1"
-              autoFocus
+            <IngredientHierarchyPicker
+              ingredientsLibrary={ingredientsLibrary}
+              ingredientCategories={ingredientCategories}
+              searchTerm={modIngredientSearch}
+              onSearchChange={setModIngredientSearch}
+              searchPlaceholder="Search prep items..."
+              actionLabel="Link"
+              actionColor="purple"
+              onAction={(prepId) => { if (linkingModifier) linkIngredient(linkingModifier.groupId, linkingModifier.modId, prepId) }}
+              creatingNewCategory={creatingNewCategory}
+              setCreatingNewCategory={setCreatingNewCategory}
+              newCategoryName={newCategoryName}
+              setNewCategoryName={setNewCategoryName}
+              onCreateCategory={createCategory}
+              creatingInventoryInCategory={creatingInventoryInCategory}
+              setCreatingInventoryInCategory={setCreatingInventoryInCategory}
+              newInventoryName={newInventoryName}
+              setNewInventoryName={setNewInventoryName}
+              onCreateInventoryItem={createInventoryItem}
+              creatingPrepUnderParent={creatingPrepUnderParent}
+              setCreatingPrepUnderParent={setCreatingPrepUnderParent}
+              newPrepName={newPrepName}
+              setNewPrepName={setNewPrepName}
+              onCreatePrepItem={createPrepItem}
+              creatingIngredientLoading={creatingIngredientLoading}
+              createPrepLabel="Create & Link"
             />
-            {/* New Category inline form */}
-            {creatingNewCategory ? (
-              <div className="px-2 py-1.5 bg-amber-50 border border-amber-200 rounded mb-1">
-                <input
-                  type="text"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') createCategory()
-                    if (e.key === 'Escape') { setCreatingNewCategory(false); setNewCategoryName('') }
-                  }}
-                  placeholder="New category name..."
-                  className="w-full px-2 py-1 text-xs border rounded mb-1"
-                  autoFocus
-                  disabled={creatingIngredientLoading}
-                />
-                <div className="flex gap-1">
-                  <button
-                    onClick={createCategory}
-                    className="flex-1 px-2 py-1 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
-                    disabled={!newCategoryName.trim() || creatingIngredientLoading}
-                  >
-                    Create Category
-                  </button>
-                  <button
-                    onClick={() => { setCreatingNewCategory(false); setNewCategoryName('') }}
-                    className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                    disabled={creatingIngredientLoading}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setCreatingNewCategory(true)}
-                className="w-full px-2 py-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 mb-1 font-medium"
-              >
-                + New Category
-              </button>
-            )}
-            <div className="max-h-96 overflow-y-auto space-y-0.5">
-              {(() => {
-                const hierarchy = buildHierarchy(modIngredientSearch)
-                const sortedCategories = Object.values(hierarchy).sort((a, b) =>
-                  a.category.sortOrder - b.category.sortOrder
-                )
-
-                if (sortedCategories.length === 0) {
-                  return (
-                    <div className="text-xs text-gray-400 text-center py-2">
-                      {modIngredientSearch ? 'No matching ingredients' : 'No ingredient categories found'}
-                    </div>
-                  )
-                }
-
-                return sortedCategories.map(({ category, baseIngredients, parents }) => {
-                  const isExpanded = expandedCategories.has(category.id)
-                  const hasItems = baseIngredients.length > 0 || Object.keys(parents).length > 0
-
-                  return (
-                    <div key={category.id}>
-                      {/* Category Header */}
-                      <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 uppercase tracking-wider px-2 py-1.5 bg-gray-100 sticky top-0 border-b border-gray-200">
-                        <button
-                          onClick={() => toggleCategory(category.id)}
-                          className="hover:bg-gray-200 rounded px-1"
-                        >
-                          {isExpanded ? '▼' : '▶'}
-                        </button>
-                        <span className="flex-1">{category.name}</span>
-
-                        {/* Unverified count badge */}
-                        {(() => {
-                          const baseUnverified = baseIngredients.filter(b => b.needsVerification).length
-                          const prepUnverified = Object.values(parents)
-                            .flatMap(p => p.prepItems)
-                            .filter(prep => prep.needsVerification).length
-                          const unverifiedCount = baseUnverified + prepUnverified
-                          return unverifiedCount > 0 ? (
-                            <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium">
-                              ⚠ {unverifiedCount}
-                            </span>
-                          ) : null
-                        })()}
-
-                        <button
-                          onClick={() => setCreatingInventoryInCategory(category.id)}
-                          className="ml-auto text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded px-1"
-                          title="Create new inventory item"
-                          disabled={creatingIngredientLoading}
-                        >
-                          {creatingIngredientLoading && creatingInventoryInCategory === category.id ? (
-                            <span className="animate-spin">⏳</span>
-                          ) : (
-                            '+'
-                          )}
-                        </button>
-                      </div>
-
-                      {/* Inline Inventory Item Creation Form */}
-                      {creatingInventoryInCategory === category.id && (
-                        <div className="px-4 py-2 bg-blue-50 border-b border-blue-200">
-                          <input
-                            type="text"
-                            value={newInventoryName}
-                            onChange={(e) => setNewInventoryName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') createInventoryItem(category.id)
-                              if (e.key === 'Escape') {
-                                setCreatingInventoryInCategory(null)
-                                setNewInventoryName('')
-                              }
-                            }}
-                            placeholder="New inventory item name..."
-                            className="w-full px-2 py-1 text-xs border rounded mb-1"
-                            autoFocus
-                            disabled={creatingIngredientLoading}
-                          />
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => createInventoryItem(category.id)}
-                              className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                              disabled={!newInventoryName.trim() || creatingIngredientLoading}
-                            >
-                              Create
-                            </button>
-                            <button
-                              onClick={() => {
-                                setCreatingInventoryInCategory(null)
-                                setNewInventoryName('')
-                              }}
-                              className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                              disabled={creatingIngredientLoading}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Category Contents */}
-                      {isExpanded && (() => {
-                        // Build unified list for modifier ingredient picker too
-                        const modInvItems = baseIngredients
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map(base => ({
-                            item: base,
-                            children: (parents[base.id]?.prepItems || [])
-                              .sort((a, b) => a.name.localeCompare(b.name)),
-                          }))
-                        const modBaseIds = new Set(baseIngredients.map(b => b.id))
-                        const modOrphanParents = Object.entries(parents)
-                          .filter(([pid]) => !modBaseIds.has(pid))
-                          .map(([pid, { parent: p, prepItems }]) => ({
-                            item: p, parentId: pid,
-                            children: prepItems.sort((a, b) => a.name.localeCompare(b.name)),
-                          }))
-                          .filter(g => g.children.length > 0)
-                          .sort((a, b) => (a.item?.name || '').localeCompare(b.item?.name || ''))
-
-                        return (
-                          <div>
-                            {/* Inventory items (BLUE) — expand only, only prep items are linkable */}
-                            {modInvItems.map(({ item: base, children: modChildren }) => {
-                              const hasKids = modChildren.length > 0
-                              const isBaseExp = expandedParents.has(base.id)
-                              return (
-                                <div key={base.id}>
-                                  <div
-                                    className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
-                                    onClick={() => toggleParent(base.id)}
-                                  >
-                                    <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
-                                      {isBaseExp ? '▼' : '▶'}
-                                    </span>
-                                    <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
-                                    <span className="flex-1 text-xs font-medium truncate text-gray-900">{base.name}</span>
-                                    {base.needsVerification && <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>}
-                                    {hasKids ? (
-                                      <span className="text-[9px] text-blue-400 shrink-0">{modChildren.length} prep</span>
-                                    ) : (
-                                      <span className="text-[9px] text-gray-400 italic shrink-0">+ add prep</span>
-                                    )}
-                                  </div>
-                                  {isBaseExp && (
-                                    <div className="ml-5 border-l-2 border-green-300">
-                                      {modChildren.map(prep => (
-                                        <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
-                                          <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
-                                          <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-                                          <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
-                                          {prep.needsVerification && <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>}
-                                          <button
-                                            onClick={() => { if (linkingModifier) linkIngredient(linkingModifier.groupId, linkingModifier.modId, prep.id) }}
-                                            className="px-2.5 py-0.5 text-[9px] font-bold bg-purple-600 text-white rounded hover:bg-purple-700 active:bg-purple-800 shrink-0"
-                                          >
-                                            Link
-                                          </button>
-                                        </div>
-                                      ))}
-                                      {creatingPrepUnderParent === base.id ? (
-                                        <div className="px-3 py-2 bg-green-50 border-b border-green-200">
-                                          <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(base.id, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
-                                          <div className="flex gap-1">
-                                            <button onClick={() => createPrepItem(base.id, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create & Link</button>
-                                            <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <button onClick={() => setCreatingPrepUnderParent(base.id)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                            {/* Orphan parents (BLUE header + GREEN children) */}
-                            {modOrphanParents.map(({ item: p, parentId: pid, children: opChildren }) => {
-                              const isOpExp = expandedParents.has(pid)
-                              return (
-                                <div key={pid}>
-                                  <div
-                                    className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
-                                    onClick={() => toggleParent(pid)}
-                                  >
-                                    <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">{isOpExp ? '▼' : '▶'}</span>
-                                    <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
-                                    <span className="flex-1 text-xs font-medium truncate text-gray-900">{p?.name || 'Unknown'}</span>
-                                    <span className="text-[9px] text-blue-400 shrink-0">{opChildren.length} prep</span>
-                                  </div>
-                                  {isOpExp && (
-                                    <div className="ml-5 border-l-2 border-green-300">
-                                      {opChildren.map(prep => (
-                                        <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
-                                          <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
-                                          <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-                                          <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
-                                          {prep.needsVerification && <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>}
-                                          <button
-                                            onClick={() => { if (linkingModifier) linkIngredient(linkingModifier.groupId, linkingModifier.modId, prep.id) }}
-                                            className="px-2.5 py-0.5 text-[9px] font-bold bg-purple-600 text-white rounded hover:bg-purple-700 active:bg-purple-800 shrink-0"
-                                          >
-                                            Link
-                                          </button>
-                                        </div>
-                                      ))}
-                                      {/* Create prep item inline for orphan parent in modifier linking */}
-                                      {creatingPrepUnderParent === pid ? (
-                                        <div className="px-3 py-2 bg-green-50 border-b border-green-200">
-                                          <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(pid, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
-                                          <div className="flex gap-1">
-                                            <button onClick={() => createPrepItem(pid, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create & Link</button>
-                                            <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <button onClick={() => setCreatingPrepUnderParent(pid)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  )
-                })
-              })()}
-            </div>
           </div>
         )}
 
@@ -2365,157 +2094,6 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     )
   }
 
-  const filteredLibrary = ingredientsLibrary.filter(lib =>
-    !ingredients.find(i => i.ingredientId === lib.id) &&
-    lib.name.toLowerCase().includes(ingredientSearch.toLowerCase())
-  )
-
-  // Build hierarchy for dropdown
-  const buildHierarchy = (searchTerm: string = '') => {
-    const hierarchy: Record<string, {
-      category: IngredientCategory
-      baseIngredients: IngredientLibraryItem[]
-      parents: Record<string, {
-        parent: IngredientLibraryItem | null
-        prepItems: IngredientLibraryItem[]
-      }>
-    }> = {}
-
-    // Filter ALL ingredients based on search (both base and prep)
-    const filteredIngredients = searchTerm.trim()
-      ? ingredientsLibrary.filter(ing =>
-          ing.name.toLowerCase().includes(searchTerm.toLowerCase())
-        )
-      : ingredientsLibrary
-
-    // Separate base ingredients from prep items
-    const baseIngredients = filteredIngredients.filter(ing => !ing.parentIngredientId)
-    const prepItems = filteredIngredients.filter(ing => ing.parentIngredientId)
-
-    // Get relevant category IDs from ALL matching ingredients
-    const relevantCategoryIds = searchTerm.trim()
-      ? new Set([...baseIngredients, ...prepItems].map(p => p.categoryId).filter(Boolean) as string[])
-      : new Set(ingredientCategories.map(c => c.id))
-
-    // Initialize categories
-    ingredientCategories
-      .filter(cat => cat.isActive && (relevantCategoryIds.size === 0 || relevantCategoryIds.has(cat.id)))
-      .forEach(cat => {
-        hierarchy[cat.id] = { category: cat, baseIngredients: [], parents: {} }
-      })
-
-    // Add base ingredients to their categories
-    baseIngredients.forEach(base => {
-      const catId = base.categoryId || 'uncategorized'
-
-      if (!hierarchy[catId]) {
-        hierarchy[catId] = {
-          category: {
-            id: 'uncategorized',
-            code: 0,
-            name: 'Uncategorized',
-            icon: null,
-            color: null,
-            sortOrder: 999,
-            isActive: true,
-            ingredientCount: 0,
-          },
-          baseIngredients: [],
-          parents: {},
-        }
-      }
-
-      hierarchy[catId].baseIngredients.push(base)
-    })
-
-    // Group prep items by category and parent
-    prepItems.forEach(prep => {
-      const catId = prep.categoryId || 'uncategorized'
-
-      if (!hierarchy[catId]) {
-        hierarchy[catId] = {
-          category: {
-            id: 'uncategorized',
-            code: 0,
-            name: 'Uncategorized',
-            icon: null,
-            color: null,
-            sortOrder: 999,
-            isActive: true,
-            ingredientCount: 0,
-          },
-          baseIngredients: [],
-          parents: {},
-        }
-      }
-
-      const parentId = prep.parentIngredientId || 'standalone'
-
-      if (!hierarchy[catId].parents[parentId]) {
-        const parentIng = ingredientsLibrary.find(i => i.id === prep.parentIngredientId)
-        hierarchy[catId].parents[parentId] = {
-          parent: parentIng || null,
-          prepItems: [],
-        }
-      }
-
-      hierarchy[catId].parents[parentId].prepItems.push(prep)
-    })
-
-    return hierarchy
-  }
-
-  // Auto-expand on search (modifier linking)
-  useEffect(() => {
-    if (modIngredientSearch.trim()) {
-      const hierarchy = buildHierarchy(modIngredientSearch)
-      const categoriesToExpand = new Set<string>()
-      const parentsToExpand = new Set<string>()
-
-      Object.entries(hierarchy).forEach(([catId, catData]) => {
-        // Expand category if it has base ingredients OR prep items
-        if (catData.baseIngredients.length > 0 || Object.keys(catData.parents).length > 0) {
-          categoriesToExpand.add(catId)
-          Object.keys(catData.parents).forEach(parentId => {
-            parentsToExpand.add(parentId)
-          })
-        }
-      })
-
-      setExpandedCategories(categoriesToExpand)
-      setExpandedParents(parentsToExpand)
-    } else {
-      setExpandedCategories(new Set())
-      setExpandedParents(new Set())
-    }
-  }, [modIngredientSearch])
-
-  // Auto-expand on search (ingredient picker)
-  useEffect(() => {
-    if (ingredientSearch.trim()) {
-      const hierarchy = buildHierarchy(ingredientSearch)
-      const categoriesToExpand = new Set<string>()
-      const parentsToExpand = new Set<string>()
-
-      Object.entries(hierarchy).forEach(([catId, catData]) => {
-        // Expand category if it has base ingredients OR prep items
-        if (catData.baseIngredients.length > 0 || Object.keys(catData.parents).length > 0) {
-          categoriesToExpand.add(catId)
-          Object.keys(catData.parents).forEach(parentId => {
-            parentsToExpand.add(parentId)
-          })
-        }
-      })
-
-      setExpandedCategories(categoriesToExpand)
-      setExpandedParents(parentsToExpand)
-    } else if (!modIngredientSearch.trim()) {
-      // Only clear if modifier search is also empty
-      setExpandedCategories(new Set())
-      setExpandedParents(new Set())
-    }
-  }, [ingredientSearch, modIngredientSearch])
-
   if (!item) {
     return (
       <div className="h-full flex items-center justify-center text-gray-400 p-4 bg-gray-50">
@@ -2636,326 +2214,34 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                   {/* Hierarchical Ingredient Picker */}
                   {showIngredientPicker && (
                     <div className="p-2 border rounded bg-white mb-2">
-                      <input
-                        type="text"
-                        value={ingredientSearch}
-                        onChange={(e) => setIngredientSearch(e.target.value)}
-                        placeholder="Search ingredients..."
-                        className="w-full px-2 py-1 text-xs border rounded mb-1"
-                        autoFocus
+                      <IngredientHierarchyPicker
+                        ingredientsLibrary={ingredientsLibrary}
+                        ingredientCategories={ingredientCategories}
+                        searchTerm={ingredientSearch}
+                        onSearchChange={setIngredientSearch}
+                        actionLabel="+ Add"
+                        actionColor="green"
+                        onAction={addIngredient}
+                        excludeIds={new Set(ingredients.map(i => i.ingredientId))}
+                        showAvailableCount
+                        creatingNewCategory={creatingNewCategory}
+                        setCreatingNewCategory={setCreatingNewCategory}
+                        newCategoryName={newCategoryName}
+                        setNewCategoryName={setNewCategoryName}
+                        onCreateCategory={createCategory}
+                        creatingInventoryInCategory={creatingInventoryInCategory}
+                        setCreatingInventoryInCategory={setCreatingInventoryInCategory}
+                        newInventoryName={newInventoryName}
+                        setNewInventoryName={setNewInventoryName}
+                        onCreateInventoryItem={createInventoryItem}
+                        creatingPrepUnderParent={creatingPrepUnderParent}
+                        setCreatingPrepUnderParent={setCreatingPrepUnderParent}
+                        newPrepName={newPrepName}
+                        setNewPrepName={setNewPrepName}
+                        onCreatePrepItem={createPrepItem}
+                        creatingIngredientLoading={creatingIngredientLoading}
+                        createPrepLabel="Create & Add"
                       />
-                      {/* New Category inline form */}
-                      {creatingNewCategory ? (
-                        <div className="px-2 py-1.5 bg-amber-50 border border-amber-200 rounded mb-1">
-                          <input
-                            type="text"
-                            value={newCategoryName}
-                            onChange={(e) => setNewCategoryName(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') createCategory()
-                              if (e.key === 'Escape') { setCreatingNewCategory(false); setNewCategoryName('') }
-                            }}
-                            placeholder="New category name..."
-                            className="w-full px-2 py-1 text-xs border rounded mb-1"
-                            autoFocus
-                            disabled={creatingIngredientLoading}
-                          />
-                          <div className="flex gap-1">
-                            <button
-                              onClick={createCategory}
-                              className="flex-1 px-2 py-1 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50"
-                              disabled={!newCategoryName.trim() || creatingIngredientLoading}
-                            >
-                              Create Category
-                            </button>
-                            <button
-                              onClick={() => { setCreatingNewCategory(false); setNewCategoryName('') }}
-                              className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                              disabled={creatingIngredientLoading}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setCreatingNewCategory(true)}
-                          className="w-full px-2 py-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded hover:bg-amber-100 mb-1 font-medium"
-                        >
-                          + New Category
-                        </button>
-                      )}
-                      <div className="max-h-96 overflow-y-auto space-y-0.5">
-                        {(() => {
-                          const hierarchy = buildHierarchy(ingredientSearch)
-                          const sortedCategories = Object.values(hierarchy).sort((a, b) =>
-                            a.category.sortOrder - b.category.sortOrder
-                          )
-
-                          // Filter out already-added ingredients
-                          const alreadyAddedIds = new Set(ingredients.map(i => i.ingredientId))
-
-                          if (sortedCategories.length === 0) {
-                            return (
-                              <div className="text-xs text-gray-400 text-center py-2">
-                                {ingredientSearch ? 'No matching ingredients' : 'No ingredient categories found'}
-                              </div>
-                            )
-                          }
-
-                          return sortedCategories.map(({ category, baseIngredients, parents }) => {
-                            const isExpanded = expandedCategories.has(category.id)
-
-                            // Build unified list: each inventory item + its prep children
-                            const inventoryItems = baseIngredients
-                              .sort((a, b) => a.name.localeCompare(b.name))
-                              .map(base => ({
-                                item: base,
-                                children: (parents[base.id]?.prepItems || [])
-                                  .filter(pr => !alreadyAddedIds.has(pr.id))
-                                  .sort((a, b) => a.name.localeCompare(b.name)),
-                              }))
-
-                            // Orphan parents not in base list
-                            const baseIds = new Set(baseIngredients.map(b => b.id))
-                            const orphanParents = Object.entries(parents)
-                              .filter(([pid]) => !baseIds.has(pid))
-                              .map(([pid, { parent: p, prepItems }]) => ({
-                                item: p,
-                                parentId: pid,
-                                children: prepItems
-                                  .filter(pr => !alreadyAddedIds.has(pr.id))
-                                  .sort((a, b) => a.name.localeCompare(b.name)),
-                              }))
-                              .filter(g => g.children.length > 0)
-                              .sort((a, b) => (a.item?.name || '').localeCompare(b.item?.name || ''))
-
-                            const totalAvailable = inventoryItems.filter(iv => !alreadyAddedIds.has(iv.item.id)).length
-                              + inventoryItems.reduce((sum, iv) => sum + iv.children.length, 0)
-                              + orphanParents.reduce((sum, op) => sum + op.children.length, 0)
-
-                            return (
-                              <div key={category.id}>
-                                {/* Category Header */}
-                                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-700 uppercase tracking-wider px-2 py-1.5 bg-gray-100 sticky top-0 border-b border-gray-200">
-                                  <button
-                                    onClick={() => toggleCategory(category.id)}
-                                    className="hover:bg-gray-200 rounded px-1"
-                                  >
-                                    {isExpanded ? '▼' : '▶'}
-                                  </button>
-                                  <span className="flex-1">{category.name}</span>
-                                  <span className="text-[9px] text-gray-400 font-normal">{totalAvailable}</span>
-
-                                  {/* Unverified count badge */}
-                                  {(() => {
-                                    const baseUnverified = baseIngredients.filter(b => b.needsVerification).length
-                                    const prepUnverified = Object.values(parents)
-                                      .flatMap(p => p.prepItems)
-                                      .filter(prep => prep.needsVerification).length
-                                    const unverifiedCount = baseUnverified + prepUnverified
-                                    return unverifiedCount > 0 ? (
-                                      <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium">
-                                        ⚠ {unverifiedCount}
-                                      </span>
-                                    ) : null
-                                  })()}
-
-                                  <button
-                                    onClick={() => setCreatingInventoryInCategory(category.id)}
-                                    className="ml-auto text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded px-1"
-                                    title="Create new inventory item"
-                                    disabled={creatingIngredientLoading}
-                                  >
-                                    {creatingIngredientLoading && creatingInventoryInCategory === category.id ? (
-                                      <span className="animate-spin">⏳</span>
-                                    ) : (
-                                      '+'
-                                    )}
-                                  </button>
-                                </div>
-
-                                {/* Inline Inventory Item Creation Form */}
-                                {creatingInventoryInCategory === category.id && (
-                                  <div className="px-4 py-2 bg-blue-50 border-b border-blue-200">
-                                    <input
-                                      type="text"
-                                      value={newInventoryName}
-                                      onChange={(e) => setNewInventoryName(e.target.value)}
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') createInventoryItem(category.id)
-                                        if (e.key === 'Escape') {
-                                          setCreatingInventoryInCategory(null)
-                                          setNewInventoryName('')
-                                        }
-                                      }}
-                                      placeholder="New inventory item name..."
-                                      className="w-full px-2 py-1 text-xs border rounded mb-1"
-                                      autoFocus
-                                      disabled={creatingIngredientLoading}
-                                    />
-                                    <div className="flex gap-1">
-                                      <button
-                                        onClick={() => createInventoryItem(category.id)}
-                                        className="flex-1 px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                                        disabled={!newInventoryName.trim() || creatingIngredientLoading}
-                                      >
-                                        Create
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setCreatingInventoryInCategory(null)
-                                          setNewInventoryName('')
-                                        }}
-                                        className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                                        disabled={creatingIngredientLoading}
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Category Contents */}
-                                {isExpanded && (
-                                  <div>
-                                    {/* Inventory items (BLUE) — expand only, only prep items are addable */}
-                                    {inventoryItems.map(({ item: base, children }) => {
-                                      const hasChildren = children.length > 0
-                                      const isBaseExpanded = expandedParents.has(base.id)
-                                      return (
-                                        <div key={base.id}>
-                                          <div
-                                            className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
-                                            onClick={() => toggleParent(base.id)}
-                                          >
-                                            <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
-                                              {isBaseExpanded ? '▼' : '▶'}
-                                            </span>
-                                            <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
-                                            <span className="flex-1 text-xs font-medium truncate text-gray-900">{base.name}</span>
-                                            {base.needsVerification && (
-                                              <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
-                                            )}
-                                            {hasChildren ? (
-                                              <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
-                                            ) : (
-                                              <span className="text-[9px] text-gray-400 italic shrink-0">+ add prep</span>
-                                            )}
-                                          </div>
-                                          {/* Prep items (GREEN) under this inventory item — always expandable so user can create prep items */}
-                                          {isBaseExpanded && (
-                                            <div className="ml-5 border-l-2 border-green-300">
-                                              {children.map(prep => (
-                                                <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
-                                                  <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
-                                                  <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-                                                  <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
-                                                  {prep.needsVerification && (
-                                                    <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
-                                                  )}
-                                                  <button
-                                                    onClick={() => addIngredient(prep.id)}
-                                                    className="px-2.5 py-0.5 text-[9px] font-bold bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 shrink-0"
-                                                  >
-                                                    + Add
-                                                  </button>
-                                                </div>
-                                              ))}
-
-                                              {/* Create prep item inline */}
-                                              {creatingPrepUnderParent === base.id ? (
-                                                <div className="px-3 py-2 bg-green-50 border-b border-green-200">
-                                                  <input
-                                                    type="text"
-                                                    value={newPrepName}
-                                                    onChange={(e) => setNewPrepName(e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                      if (e.key === 'Enter') createPrepItem(base.id, category.id)
-                                                      if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') }
-                                                    }}
-                                                    placeholder="New prep item name..."
-                                                    className="w-full px-2 py-1 text-xs border rounded mb-1"
-                                                    autoFocus
-                                                    disabled={creatingIngredientLoading}
-                                                  />
-                                                  <div className="flex gap-1">
-                                                    <button onClick={() => createPrepItem(base.id, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create & Add</button>
-                                                    <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
-                                                  </div>
-                                                </div>
-                                              ) : (
-                                                <button
-                                                  onClick={() => setCreatingPrepUnderParent(base.id)}
-                                                  className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100"
-                                                  disabled={creatingIngredientLoading}
-                                                >
-                                                  + New prep item
-                                                </button>
-                                              )}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    })}
-                                    {/* Orphan parent groups (BLUE header with GREEN children) */}
-                                    {orphanParents.map(({ item: p, parentId: pid, children }) => {
-                                      const isOpExpanded = expandedParents.has(pid)
-                                      return (
-                                        <div key={pid}>
-                                          <div
-                                            className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
-                                            onClick={() => toggleParent(pid)}
-                                          >
-                                            <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
-                                              {isOpExpanded ? '▼' : '▶'}
-                                            </span>
-                                            <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
-                                            <span className="flex-1 text-xs font-medium truncate text-gray-900">{p?.name || 'Unknown'}</span>
-                                            <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
-                                          </div>
-                                          {isOpExpanded && (
-                                            <div className="ml-5 border-l-2 border-green-300">
-                                              {children.map(prep => (
-                                                <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
-                                                  <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
-                                                  <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-                                                  <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
-                                                  {prep.needsVerification && (
-                                                    <span className="text-[8px] px-1 py-0.5 bg-red-100 text-red-600 rounded font-medium shrink-0">⚠</span>
-                                                  )}
-                                                  <button
-                                                    onClick={() => addIngredient(prep.id)}
-                                                    className="px-2.5 py-0.5 text-[9px] font-bold bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 shrink-0"
-                                                  >
-                                                    + Add
-                                                  </button>
-                                                </div>
-                                              ))}
-                                              {/* Create prep item inline for orphan parent */}
-                                              {creatingPrepUnderParent === pid ? (
-                                                <div className="px-3 py-2 bg-green-50 border-b border-green-200">
-                                                  <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(pid, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
-                                                  <div className="flex gap-1">
-                                                    <button onClick={() => createPrepItem(pid, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create & Add</button>
-                                                    <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
-                                                  </div>
-                                                </div>
-                                              ) : (
-                                                <button onClick={() => setCreatingPrepUnderParent(pid)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
-                                              )}
-                                            </div>
-                                          )}
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            )
-                          })
-                        })()}
-                      </div>
                     </div>
                   )}
 
@@ -3070,190 +2356,36 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                                   className="text-xs text-gray-400 hover:text-red-500 px-1"
                                 >✕</button>
                               </div>
-                              <input
-                                type="text"
-                                value={ingredientSearch}
-                                onChange={(e) => setIngredientSearch(e.target.value)}
-                                placeholder="Search ingredients..."
-                                className="w-full px-2 py-1 text-xs border rounded mb-1.5"
-                                autoFocus
+                              <IngredientHierarchyPicker
+                                ingredientsLibrary={ingredientsLibrary}
+                                ingredientCategories={ingredientCategories}
+                                searchTerm={ingredientSearch}
+                                onSearchChange={setIngredientSearch}
+                                actionLabel="Link"
+                                actionColor="green"
+                                onAction={(prepId) => swapIngredientLink(ing.ingredientId, prepId)}
+                                excludeIds={new Set([...ingredients.map(i => i.ingredientId), ing.ingredientId])}
+                                showAvailableCount
+                                maxHeight="max-h-64"
+                                showCategoryCreation={false}
+                                showInventoryCreation={false}
+                                creatingNewCategory={creatingNewCategory}
+                                setCreatingNewCategory={setCreatingNewCategory}
+                                newCategoryName={newCategoryName}
+                                setNewCategoryName={setNewCategoryName}
+                                onCreateCategory={createCategory}
+                                creatingInventoryInCategory={creatingInventoryInCategory}
+                                setCreatingInventoryInCategory={setCreatingInventoryInCategory}
+                                newInventoryName={newInventoryName}
+                                setNewInventoryName={setNewInventoryName}
+                                onCreateInventoryItem={createInventoryItem}
+                                creatingPrepUnderParent={creatingPrepUnderParent}
+                                setCreatingPrepUnderParent={setCreatingPrepUnderParent}
+                                newPrepName={newPrepName}
+                                setNewPrepName={setNewPrepName}
+                                onCreatePrepItem={createPrepItem}
+                                creatingIngredientLoading={creatingIngredientLoading}
                               />
-                              <div className="max-h-64 overflow-y-auto space-y-0.5">
-                                {(() => {
-                                  const hierarchy = buildHierarchy(ingredientSearch)
-                                  const sortedCats = Object.values(hierarchy).sort((a, b) =>
-                                    a.category.sortOrder - b.category.sortOrder
-                                  )
-                                  const alreadyAddedIds = new Set(ingredients.map(i => i.ingredientId))
-                                  const excludeId = ing.ingredientId
-
-                                  if (sortedCats.length === 0) {
-                                    return (
-                                      <div className="text-xs text-gray-400 text-center py-2">
-                                        {ingredientSearch ? 'No matching ingredients' : 'No categories'}
-                                      </div>
-                                    )
-                                  }
-
-                                  return sortedCats.map(({ category, baseIngredients: catBase, parents }) => {
-                                    const catExpanded = expandedCategories.has(category.id)
-
-                                    // Build unified list: each inventory item + its prep children
-                                    // An inventory item can be in baseIngredients AND be a parent key
-                                    const inventoryItems = catBase
-                                      .filter(b => b.id !== excludeId)
-                                      .sort((a, b) => a.name.localeCompare(b.name))
-                                      .map(base => ({
-                                        item: base,
-                                        children: (parents[base.id]?.prepItems || [])
-                                          .filter(pr => pr.id !== excludeId && !alreadyAddedIds.has(pr.id))
-                                          .sort((a, b) => a.name.localeCompare(b.name)),
-                                      }))
-
-                                    // Also include parent groups whose parent isn't in baseIngredients
-                                    // (orphaned prep items — their parent might be in a different category or filtered out)
-                                    const baseIds = new Set(catBase.map(b => b.id))
-                                    const orphanParents = Object.entries(parents)
-                                      .filter(([pid]) => !baseIds.has(pid))
-                                      .map(([pid, { parent: p, prepItems }]) => ({
-                                        item: p,
-                                        parentId: pid,
-                                        children: prepItems
-                                          .filter(pr => pr.id !== excludeId && !alreadyAddedIds.has(pr.id))
-                                          .sort((a, b) => a.name.localeCompare(b.name)),
-                                      }))
-                                      .filter(g => g.children.length > 0)
-                                      .sort((a, b) => (a.item?.name || '').localeCompare(b.item?.name || ''))
-
-                                    // Count available items
-                                    const totalAvailable = inventoryItems.filter(iv => !alreadyAddedIds.has(iv.item.id)).length
-                                      + inventoryItems.reduce((sum, iv) => sum + iv.children.length, 0)
-                                      + orphanParents.reduce((sum, op) => sum + op.children.length, 0)
-
-                                    if (totalAvailable === 0 && inventoryItems.length === 0 && orphanParents.length === 0) return null
-
-                                    return (
-                                      <div key={category.id}>
-                                        {/* Category header — collapsed by default */}
-                                        <button
-                                          onClick={() => toggleCategory(category.id)}
-                                          className="w-full flex items-center gap-1 text-[10px] font-bold text-gray-700 uppercase tracking-wider px-2 py-1.5 bg-gray-100 sticky top-0 border-b border-gray-200"
-                                        >
-                                          <span>{catExpanded ? '▼' : '▶'}</span>
-                                          <span className="flex-1 text-left">{category.name}</span>
-                                          <span className="text-[9px] text-gray-400 font-normal">{totalAvailable}</span>
-                                        </button>
-                                        {catExpanded && (
-                                          <div>
-                                            {/* Inventory items (BLUE) — expand only, not directly linkable */}
-                                            {inventoryItems.map(({ item: base, children }) => {
-                                              const hasChildren = children.length > 0
-                                              const isBaseExpanded = expandedParents.has(base.id)
-                                              return (
-                                                <div key={base.id}>
-                                                  <div
-                                                    className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
-                                                    onClick={() => toggleParent(base.id)}
-                                                  >
-                                                    <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
-                                                      {isBaseExpanded ? '▼' : '▶'}
-                                                    </span>
-                                                    <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
-                                                    <span className="flex-1 text-xs font-medium truncate text-gray-900">{base.name}</span>
-                                                    {hasChildren ? (
-                                                      <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
-                                                    ) : (
-                                                      <span className="text-[9px] text-gray-400 italic shrink-0">+ add prep</span>
-                                                    )}
-                                                  </div>
-                                                  {/* Prep items (GREEN) under this inventory item — always expandable */}
-                                                  {isBaseExpanded && (
-                                                    <div className="ml-5 border-l-2 border-green-300">
-                                                      {children.map(prep => (
-                                                        <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
-                                                          <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
-                                                          <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-                                                          <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
-                                                          <button
-                                                            onClick={() => swapIngredientLink(ing.ingredientId, prep.id)}
-                                                            className="px-2.5 py-0.5 text-[9px] font-bold bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 shrink-0"
-                                                          >
-                                                            Link
-                                                          </button>
-                                                        </div>
-                                                      ))}
-                                                      {/* Create prep item inline for relink */}
-                                                      {creatingPrepUnderParent === base.id ? (
-                                                        <div className="px-3 py-2 bg-green-50 border-b border-green-200">
-                                                          <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(base.id, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
-                                                          <div className="flex gap-1">
-                                                            <button onClick={() => createPrepItem(base.id, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create</button>
-                                                            <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
-                                                          </div>
-                                                        </div>
-                                                      ) : (
-                                                        <button onClick={() => setCreatingPrepUnderParent(base.id)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
-                                                      )}
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              )
-                                            })}
-                                            {/* Orphan parent groups — inventory items not in this category's base list (BLUE) */}
-                                            {orphanParents.map(({ item: p, parentId: pid, children }) => {
-                                              const isOpExpanded = expandedParents.has(pid)
-                                              return (
-                                                <div key={pid}>
-                                                  <div
-                                                    className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 border-b border-blue-100 hover:bg-blue-100 cursor-pointer"
-                                                    onClick={() => toggleParent(pid)}
-                                                  >
-                                                    <span className="w-5 h-5 flex items-center justify-center text-[10px] text-blue-500 shrink-0">
-                                                      {isOpExpanded ? '▼' : '▶'}
-                                                    </span>
-                                                    <span className="text-[8px] px-1 py-0.5 bg-blue-600 text-white rounded font-bold shrink-0">INV</span>
-                                                    <span className="flex-1 text-xs font-medium truncate text-gray-900">{p?.name || 'Unknown'}</span>
-                                                    <span className="text-[9px] text-blue-400 shrink-0">{children.length} prep</span>
-                                                  </div>
-                                                  {isOpExpanded && (
-                                                    <div className="ml-5 border-l-2 border-green-300">
-                                                      {children.map(prep => (
-                                                        <div key={prep.id} className="flex items-center gap-1 px-2 py-1.5 bg-green-50 border-b border-green-100 hover:bg-green-100">
-                                                          <span className="w-5 h-5 flex items-center justify-center text-[10px] text-green-400 shrink-0">·</span>
-                                                          <span className="text-[8px] px-1 py-0.5 bg-green-600 text-white rounded font-bold shrink-0">PREP</span>
-                                                          <span className="flex-1 text-xs truncate text-gray-700">{prep.name}</span>
-                                                          <button
-                                                            onClick={() => swapIngredientLink(ing.ingredientId, prep.id)}
-                                                            className="px-2.5 py-0.5 text-[9px] font-bold bg-green-600 text-white rounded hover:bg-green-700 active:bg-green-800 shrink-0"
-                                                          >
-                                                            Link
-                                                          </button>
-                                                        </div>
-                                                      ))}
-                                                      {/* Create prep item inline for orphan parent in relink */}
-                                                      {creatingPrepUnderParent === pid ? (
-                                                        <div className="px-3 py-2 bg-green-50 border-b border-green-200">
-                                                          <input type="text" value={newPrepName} onChange={(e) => setNewPrepName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') createPrepItem(pid, category.id); if (e.key === 'Escape') { setCreatingPrepUnderParent(null); setNewPrepName('') } }} placeholder="New prep item name..." className="w-full px-2 py-1 text-xs border rounded mb-1" autoFocus disabled={creatingIngredientLoading} />
-                                                          <div className="flex gap-1">
-                                                            <button onClick={() => createPrepItem(pid, category.id)} className="flex-1 px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50" disabled={!newPrepName.trim() || creatingIngredientLoading}>Create</button>
-                                                            <button onClick={() => { setCreatingPrepUnderParent(null); setNewPrepName('') }} className="px-2 py-1 text-xs bg-gray-300 text-gray-700 rounded hover:bg-gray-400" disabled={creatingIngredientLoading}>Cancel</button>
-                                                          </div>
-                                                        </div>
-                                                      ) : (
-                                                        <button onClick={() => setCreatingPrepUnderParent(pid)} className="w-full text-left px-3 py-1 text-[10px] text-green-600 hover:bg-green-100" disabled={creatingIngredientLoading}>+ New prep item</button>
-                                                      )}
-                                                    </div>
-                                                  )}
-                                                </div>
-                                              )
-                                            })}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )
-                                  })
-                                })()}
-                              </div>
                             </div>
                           )}
 

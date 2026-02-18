@@ -7,7 +7,7 @@
  * Canvas with drawing and editing interactions for floor plan fixtures.
  */
 
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { FloorCanvasAPI } from '../canvas';
 import type { Fixture, Point, FixtureGeometry } from '../shared/types';
 import type { EditorToolMode, FixtureType, EditorTable, TableShape, EditorSeat } from './types';
@@ -15,6 +15,8 @@ import { getFixtureTypeMetadata, getTableShapeMetadata } from './types';
 import { TableRenderer, type ResizeHandle } from './TableRenderer';
 import { SeatRenderer } from './SeatRenderer';
 import { EntertainmentVisual, type EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals';
+import { useZoomPan } from './hooks/useZoomPan';
+import { FixtureResizeHandles } from './components/FixtureResizeHandles';
 import {
   SEAT_RADIUS,
   SEAT_HIT_RADIUS,
@@ -24,10 +26,6 @@ import {
   // Canvas constants
   CANVAS_WIDTH,
   CANVAS_HEIGHT,
-  ZOOM_MIN,
-  ZOOM_MAX,
-  ZOOM_DEFAULT,
-  ZOOM_STEP,
   GRID_SIZE,
 } from '@/lib/floorplan/constants';
 import { logger } from '@/lib/logger';
@@ -126,7 +124,20 @@ export function EditorCanvas({
   onZoomChange,
   zoomControlRef,
 }: EditorCanvasProps) {
-  const canvasRef = useRef<HTMLDivElement>(null);
+  // Zoom and pan (extracted hook)
+  const {
+    canvasRef,
+    zoom,
+    panOffset,
+    isPanning,
+    handleWheel,
+    handlePanStart,
+    handlePanMove,
+    handlePanEnd,
+    fitToScreen,
+    resetZoom,
+  } = useZoomPan({ zoomControlRef, onZoomChange });
+
   // In database mode, use the dbFloorPlan prop; otherwise use in-memory API
   const [floorPlan, setFloorPlan] = useState(
     useDatabase && dbFloorPlan ? dbFloorPlan : FloorCanvasAPI.getFloorPlan(roomId)
@@ -180,11 +191,6 @@ export function EditorCanvas({
   // Debug mode for boundary visualization (toggle with keyboard)
   const [showBoundaryDebug, setShowBoundaryDebug] = useState(false);
 
-  // Zoom and pan state
-  const [zoom, setZoom] = useState(ZOOM_DEFAULT);
-  const [panOffset, setPanOffset] = useState<Point>({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [lastPanPoint, setLastPanPoint] = useState<Point | null>(null);
 
   // Constants imported from @/lib/floorplan/constants
 
@@ -285,7 +291,7 @@ export function EditorCanvas({
       }
     }
     return false;
-  }, [seats, tables, SEAT_COLLISION_RADIUS]);
+  }, [seats, tables]);
 
   // Check if any seat of a table would collide with obstacles at a given table position
   const checkSeatsObstacleCollision = useCallback((
@@ -393,7 +399,7 @@ export function EditorCanvas({
     }
 
     return false; // No collisions
-  }, [seats, tables, fixtures, useDatabase, dbTables, dbFixtures, SEAT_RADIUS]);
+  }, [seats, tables, fixtures, useDatabase, dbTables, dbFixtures]);
 
   // Calculate available space around a table (in pixels)
   const calculateAvailableSpace = useCallback((
@@ -503,7 +509,7 @@ export function EditorCanvas({
       left: Math.max(0, leftSpace),
       right: Math.max(0, rightSpace),
     };
-  }, [tables, fixtures, useDatabase, dbTables, dbFixtures, SEAT_BOUNDARY_DISTANCE, SEAT_RADIUS]);
+  }, [tables, fixtures, useDatabase, dbTables, dbFixtures]);
 
   // Compress seats to fit within available space
   const compressSeatsToFit = useCallback((
@@ -565,56 +571,8 @@ export function EditorCanvas({
         relativeY: Math.round(newRelativeY),
       };
     });
-  }, [SEAT_MIN_DISTANCE, SEAT_RADIUS]);
+  }, []);
 
-  // Check if position is valid for a seat (boundary + not inside table)
-  const isValidSeatPosition = useCallback((
-    absoluteX: number,
-    absoluteY: number,
-    table: EditorTable,
-    excludeSeatId?: string
-  ): boolean => {
-    const tableCenterX = table.posX + table.width / 2;
-    const tableCenterY = table.posY + table.height / 2;
-
-    // If table is rotated, transform the check point to table-local coordinates
-    const rotation = (table.rotation || 0) * Math.PI / 180;
-    const cos = Math.cos(-rotation);
-    const sin = Math.sin(-rotation);
-
-    // Translate to table center, rotate, translate back
-    const dx = absoluteX - tableCenterX;
-    const dy = absoluteY - tableCenterY;
-    const localX = dx * cos - dy * sin;
-    const localY = dx * sin + dy * cos;
-
-    // Now check against unrotated table bounds
-    const halfWidth = table.width / 2;
-    const halfHeight = table.height / 2;
-
-    // Outer boundary (can't go beyond this)
-    const outerHalfWidth = halfWidth + SEAT_BOUNDARY_DISTANCE;
-    const outerHalfHeight = halfHeight + SEAT_BOUNDARY_DISTANCE;
-
-    if (Math.abs(localX) > outerHalfWidth || Math.abs(localY) > outerHalfHeight) {
-      return false; // Outside boundary
-    }
-
-    // Inner boundary (can't be inside table)
-    const innerHalfWidth = halfWidth - SEAT_MIN_DISTANCE;
-    const innerHalfHeight = halfHeight - SEAT_MIN_DISTANCE;
-
-    if (Math.abs(localX) < innerHalfWidth && Math.abs(localY) < innerHalfHeight) {
-      return false; // Inside table
-    }
-
-    // Check seat-to-seat collision
-    if (checkSeatCollision(absoluteX, absoluteY, table.id, excludeSeatId)) {
-      return false; // Collides with another seat
-    }
-
-    return true;
-  }, [checkSeatCollision, SEAT_BOUNDARY_DISTANCE, SEAT_MIN_DISTANCE]);
 
   // Load floor plan and fixtures
   useEffect(() => {
@@ -1690,7 +1648,7 @@ export function EditorCanvas({
         refreshFixtures();
       }
     },
-    [floorPlan, isDragging, isDraggingTable, isDraggingSeat, draggedSeatId, seatDragOffset, isRotatingTable, isResizingTable, resizeHandle, resizeStartDimensions, resizeStartPos, resizeStartMousePos, selectedFixtureId, selectedTableId, dragOffset, tableDragOffset, rotationStartAngle, rotationStartMouseAngle, fixtures, tables, seats, screenToFloor, calculateAngle, onFixtureUpdate, onTableUpdate, refreshFixtures, checkTableFixtureCollision, checkTableCollision, isValidSeatPosition]
+    [floorPlan, isDragging, isDraggingTable, isDraggingSeat, draggedSeatId, seatDragOffset, isRotatingTable, isResizingTable, resizeHandle, resizeStartDimensions, resizeStartPos, resizeStartMousePos, selectedFixtureId, selectedTableId, dragOffset, tableDragOffset, rotationStartAngle, rotationStartMouseAngle, fixtures, tables, seats, screenToFloor, calculateAngle, onFixtureUpdate, onTableUpdate, refreshFixtures, checkTableFixtureCollision, checkTableCollision]
   );
 
   // Handle mouse up
@@ -1970,92 +1928,6 @@ export function EditorCanvas({
   };
 
   // =============================================================================
-  // ZOOM AND PAN HANDLERS
-  // =============================================================================
-
-  // Zoom handler (wheel event)
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    // Only zoom if Ctrl/Cmd is held
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-      setZoom(prev => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, prev + delta)));
-    }
-  }, []);
-
-  // Pan handlers (middle mouse or Alt+drag)
-  const handlePanStart = useCallback((e: React.PointerEvent) => {
-    // Middle mouse button OR Alt key held
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
-      e.preventDefault();
-      setIsPanning(true);
-      setLastPanPoint({ x: e.clientX, y: e.clientY });
-      (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    }
-  }, []);
-
-  const handlePanMove = useCallback((e: React.PointerEvent) => {
-    if (!isPanning || !lastPanPoint) return;
-
-    const dx = e.clientX - lastPanPoint.x;
-    const dy = e.clientY - lastPanPoint.y;
-
-    setPanOffset(prev => ({
-      x: prev.x + dx,
-      y: prev.y + dy,
-    }));
-    setLastPanPoint({ x: e.clientX, y: e.clientY });
-  }, [isPanning, lastPanPoint]);
-
-  const handlePanEnd = useCallback((e: React.PointerEvent) => {
-    if (isPanning) {
-      setIsPanning(false);
-      setLastPanPoint(null);
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    }
-  }, [isPanning]);
-
-  // Fit to screen - calculate zoom to fit canvas in viewport
-  const fitToScreen = useCallback(() => {
-    if (!canvasRef.current) return;
-    const container = canvasRef.current.parentElement;
-    if (!container) return;
-
-    const containerWidth = container.clientWidth - 48; // padding
-    const containerHeight = container.clientHeight - 48;
-
-    const scaleX = containerWidth / CANVAS_WIDTH;
-    const scaleY = containerHeight / CANVAS_HEIGHT;
-    const newZoom = Math.min(scaleX, scaleY, ZOOM_MAX);
-
-    setZoom(Math.max(ZOOM_MIN, newZoom));
-    setPanOffset({ x: 0, y: 0 });
-  }, []);
-
-  // Reset zoom
-  const resetZoom = useCallback(() => {
-    setZoom(ZOOM_DEFAULT);
-    setPanOffset({ x: 0, y: 0 });
-  }, []);
-
-  // Expose zoom controls to parent
-  useEffect(() => {
-    if (zoomControlRef) {
-      zoomControlRef.current = {
-        fitToScreen,
-        resetZoom,
-        setZoom,
-        zoom,
-      };
-    }
-  }, [zoomControlRef, fitToScreen, resetZoom, zoom]);
-
-  // Notify parent of zoom changes
-  useEffect(() => {
-    onZoomChange?.(zoom);
-  }, [zoom, onZoomChange]);
-
-  // =============================================================================
   // RENDER FUNCTIONS
   // =============================================================================
 
@@ -2111,136 +1983,12 @@ export function EditorCanvas({
             </span>
 
             {/* Resize handles */}
-            {isSelected && toolMode === 'SELECT' && (
-              <>
-                {/* Corner handles */}
-                <div
-                  className="resize-handle nw"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'nw')}
-                  style={{
-                    position: 'absolute',
-                    top: -4,
-                    left: -4,
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'nw-resize',
-                    zIndex: 10,
-                  }}
-                />
-                <div
-                  className="resize-handle ne"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'ne')}
-                  style={{
-                    position: 'absolute',
-                    top: -4,
-                    right: -4,
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'ne-resize',
-                    zIndex: 10,
-                  }}
-                />
-                <div
-                  className="resize-handle sw"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'sw')}
-                  style={{
-                    position: 'absolute',
-                    bottom: -4,
-                    left: -4,
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'sw-resize',
-                    zIndex: 10,
-                  }}
-                />
-                <div
-                  className="resize-handle se"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'se')}
-                  style={{
-                    position: 'absolute',
-                    bottom: -4,
-                    right: -4,
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'se-resize',
-                    zIndex: 10,
-                  }}
-                />
-                {/* Edge handles */}
-                <div
-                  className="resize-handle n"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'n')}
-                  style={{
-                    position: 'absolute',
-                    top: -4,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'n-resize',
-                    zIndex: 10,
-                  }}
-                />
-                <div
-                  className="resize-handle s"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 's')}
-                  style={{
-                    position: 'absolute',
-                    bottom: -4,
-                    left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 's-resize',
-                    zIndex: 10,
-                  }}
-                />
-                <div
-                  className="resize-handle e"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'e')}
-                  style={{
-                    position: 'absolute',
-                    right: -4,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'e-resize',
-                    zIndex: 10,
-                  }}
-                />
-                <div
-                  className="resize-handle w"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'w')}
-                  style={{
-                    position: 'absolute',
-                    left: -4,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'w-resize',
-                    zIndex: 10,
-                  }}
-                />
-              </>
-            )}
+            <FixtureResizeHandles
+              fixtureId={fixture.id}
+              toolMode={toolMode}
+              isSelected={isSelected}
+              onResizeStart={handleFixtureResizeStart}
+            />
           </div>
         );
       }
@@ -2436,46 +2184,14 @@ export function EditorCanvas({
           </div>
 
           {/* Resize handles when selected */}
-          {isSelected && toolMode === 'SELECT' && (
-            <>
-              {/* NW handle */}
-              <div
-                onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'nw')}
-                style={{
-                  position: 'absolute', top: -4, left: -4,
-                  width: 8, height: 8, background: 'white',
-                  border: '1px solid #9333ea', cursor: 'nw-resize', zIndex: 10,
-                }}
-              />
-              {/* NE handle */}
-              <div
-                onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'ne')}
-                style={{
-                  position: 'absolute', top: -4, right: -4,
-                  width: 8, height: 8, background: 'white',
-                  border: '1px solid #9333ea', cursor: 'ne-resize', zIndex: 10,
-                }}
-              />
-              {/* SW handle */}
-              <div
-                onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'sw')}
-                style={{
-                  position: 'absolute', bottom: -4, left: -4,
-                  width: 8, height: 8, background: 'white',
-                  border: '1px solid #9333ea', cursor: 'sw-resize', zIndex: 10,
-                }}
-              />
-              {/* SE handle */}
-              <div
-                onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'se')}
-                style={{
-                  position: 'absolute', bottom: -4, right: -4,
-                  width: 8, height: 8, background: 'white',
-                  border: '1px solid #9333ea', cursor: 'se-resize', zIndex: 10,
-                }}
-              />
-            </>
-          )}
+          <FixtureResizeHandles
+            fixtureId={fixture.id}
+            toolMode={toolMode}
+            isSelected={isSelected}
+            onResizeStart={handleFixtureResizeStart}
+            color="#9333ea"
+            cornersOnly
+          />
         </div>
       );
     });

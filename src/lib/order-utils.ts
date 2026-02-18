@@ -158,3 +158,85 @@ interface ReopenableOrder {
 export function isReopened(order: ReopenableOrder | null | undefined): boolean {
   return !!order?.reopenedAt
 }
+
+// ════════════════════════════════════════════════════════════════
+// FETCH & MERGE ORDER (split-order aware)
+// ════════════════════════════════════════════════════════════════
+
+export interface MergedOrderData {
+  /** Raw API response (top-level order) */
+  raw: any
+  /** Merged items (from split children if split, otherwise from order itself) */
+  items: any[]
+  subtotal: number
+  taxTotal: number
+  tipTotal: number
+  total: number
+}
+
+/**
+ * Fetch an order by ID and, if it's a split parent, fetch all child split
+ * tickets and merge their items/totals into a single combined view.
+ *
+ * Used by FloorPlanHome's orderToLoad effect and handleTableTap to avoid
+ * duplicating the split-merge logic in two places.
+ */
+export async function fetchAndMergeOrder(orderId: string): Promise<MergedOrderData | null> {
+  const res = await fetch(`/api/orders/${orderId}`)
+  if (!res.ok) return null
+
+  const data = await res.json()
+
+  let mergedItems = data.items || []
+  let mergedSubtotal = Number(data.subtotal) || 0
+  let mergedTax = Number(data.taxTotal) || 0
+  let mergedTip = Number(data.tipTotal) || 0
+  let mergedTotal = Number(data.total) || 0
+
+  if (data.status === 'split') {
+    try {
+      const splitRes = await fetch(`/api/orders/${orderId}/split-tickets`)
+      if (splitRes.ok) {
+        const splitData = await splitRes.json()
+        const splits = splitData.splitOrders || []
+        if (Array.isArray(splits) && splits.length > 0) {
+          mergedItems = []
+          mergedSubtotal = 0
+          mergedTax = 0
+          mergedTip = 0
+          mergedTotal = 0
+          for (const split of splits) {
+            const label = split.displayNumber || split.orderNumber
+            for (const item of (split.items || [])) {
+              mergedItems.push({
+                ...item,
+                menuItemId: item.menuItemId || item.id,
+                kitchenStatus: item.isSent || item.isCompleted ? 'sent' : 'pending',
+                modifiers: (item.modifiers || []).map((m: { id: string; name: string; price: number; preModifier?: string }) => ({
+                  ...m,
+                  modifierId: m.id,
+                })),
+                splitLabel: String(label),
+              })
+            }
+            mergedSubtotal += Number(split.subtotal) || 0
+            mergedTax += Number(split.taxTotal) || 0
+            mergedTip += Number(split.tipTotal) || 0
+            mergedTotal += Number(split.total) || 0
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[fetchAndMergeOrder] Failed to fetch split tickets:', err)
+    }
+  }
+
+  return {
+    raw: data,
+    items: mergedItems,
+    subtotal: mergedSubtotal,
+    taxTotal: mergedTax,
+    tipTotal: mergedTip,
+    total: mergedTotal,
+  }
+}

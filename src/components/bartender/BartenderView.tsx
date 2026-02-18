@@ -1,8 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Modal } from '@/components/ui/modal'
+import { motion } from 'framer-motion'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { usePricing } from '@/hooks/usePricing'
@@ -11,9 +10,12 @@ import { useOrderStore } from '@/stores/order-store'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import type { EngineMenuItem, EngineModifier, EngineIngredientMod } from '@/hooks/useOrderingEngine'
+import { useLongPress } from '@/hooks/useLongPress'
+import { useTabCreation } from '@/hooks/useTabCreation'
 import ModeSelector from '@/components/orders/ModeSelector'
 import { OpenOrdersPanel } from '@/components/orders/OpenOrdersPanel'
-import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
+import { NewTabModal } from '@/components/bartender/NewTabModal'
+import { SpiritSelectionModal } from '@/components/bartender/SpiritSelectionModal'
 
 // ============================================================================
 // TYPES
@@ -86,7 +88,6 @@ interface BartenderViewProps {
   employeePermissions?: string[]
   // Settings
   requireNameWithoutCard?: boolean
-  tapCardBehavior?: 'close' | 'tab' | 'prompt'
   // Dual pricing from parent (avoids duplicate useOrderSettings call)
   dualPricing?: { enabled: boolean; cashDiscountPercent: number; applyToCredit: boolean; applyToDebit: boolean; showSavingsMessage: boolean }
   // Pre-loaded menu data from parent (avoids duplicate /api/menu fetch)
@@ -104,9 +105,6 @@ interface BartenderViewProps {
 
 // Menu sections - bar, food, or entertainment (standalone)
 type MenuSection = 'bar' | 'food' | 'entertainment'
-
-// Items per page for menu grid
-const ITEMS_PER_PAGE = 16 // 4x4 grid for larger buttons
 
 // Favorite item for custom bar
 interface FavoriteItem {
@@ -297,7 +295,7 @@ export function BartenderView({
 
   // Custom favorites bar
   const [favorites, setFavorites] = useState<FavoriteItem[]>([])
-  const [showFavorites, setShowFavorites] = useState(true)
+  const showFavorites = true
   const [isEditingFavorites, setIsEditingFavorites] = useState(false)
 
   // Category display settings
@@ -361,26 +359,14 @@ export function BartenderView({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items])
 
-  const [isSending, setIsSending] = useState(false)
-
-  // New tab modal
-  const [showNewTabModal, setShowNewTabModal] = useState(false)
-  const [newTabName, setNewTabName] = useState('')
-  const [isCreatingTab, setIsCreatingTab] = useState(false)
-  const pendingSendAfterTabRef = useRef(false)
+  // Tab creation (shared POST logic between "New Tab" modal and quick-tab button)
 
   // Spirit tier popup state
   const [spiritPopupItem, setSpiritPopupItem] = useState<MenuItem | null>(null)
   const [selectedSpiritTier, setSelectedSpiritTier] = useState<string | null>(null)
 
   // Refs
-  const categoryLongPressTimer = useRef<NodeJS.Timeout | null>(null)
-  const favoritesLongPressTimer = useRef<NodeJS.Timeout | null>(null)
-  const itemsLongPressTimer = useRef<NodeJS.Timeout | null>(null)
   const categoryScrollRef = useRef<HTMLDivElement>(null)
-
-  // Long press duration in ms
-  const LONG_PRESS_DURATION = 500
 
   // Get category order storage key
   const getCategoryOrderKey = (employeeId: string) => `bartender_category_order_${employeeId}`
@@ -993,119 +979,43 @@ export function BartenderView({
     })()
   }, [orderItems])
 
-  const handleCreateTab = useCallback(async () => {
-    if (requireNameWithoutCard && !newTabName.trim()) {
-      toast.error('Tab name is required')
-      return
-    }
-
-    setIsCreatingTab(true)
-    const shouldSendAfter = pendingSendAfterTabRef.current
-    try {
-      const res = await fetch('/api/tabs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          employeeId,
-          tabName: newTabName.trim() || null,
-        }),
+  // --- Tab creation hook (replaces handleCreateTab + handleQuickTab) ---
+  const {
+    handleCreateTab,
+    handleQuickTab,
+    isCreatingTab,
+    showNewTabModal,
+    newTabName,
+    setNewTabName,
+    openNewTabModal,
+    closeNewTabModal,
+  } = useTabCreation({
+    locationId,
+    employeeId,
+    requireNameWithoutCard,
+    onSendToTab: sendItemsToTab,
+    onTabCreated: useCallback((tab) => {
+      const store = useOrderStore.getState()
+      store.loadOrder({
+        id: tab.id,
+        orderNumber: tab.orderNumber,
+        orderType: 'bar_tab',
+        tabName: tab.tabName || undefined,
+        guestCount: 1,
+        status: tab.status || 'open',
+        items: [],
+        subtotal: 0,
+        discountTotal: 0,
+        taxTotal: 0,
+        tipTotal: 0,
+        total: 0,
       })
-
-      if (res.ok) {
-        const data = await res.json()
-        setShowNewTabModal(false)
-        setNewTabName('')
-        pendingSendAfterTabRef.current = false
-        if (data.id) {
-          if (shouldSendAfter) {
-            // sendItemsToTab now fires-and-forgets internally — returns instantly
-            await sendItemsToTab(data.id)
-          } else {
-            // Load order directly from POST response — skip the GET /api/orders/{id} round trip
-            const store = useOrderStore.getState()
-            store.loadOrder({
-              id: data.id,
-              orderNumber: data.orderNumber,
-              orderType: 'bar_tab',
-              tabName: data.tabName || undefined,
-              guestCount: 1,
-              status: data.status || 'open',
-              items: [],
-              subtotal: 0,
-              discountTotal: 0,
-              taxTotal: 0,
-              tipTotal: 0,
-              total: 0,
-            })
-            loadedTabIdRef.current = data.id
-            setSelectedTabId(data.id)
-            onSelectedTabChange?.(data.id)
-            toast.success('Tab created')
-            setTabRefreshTrigger(t => t + 1)
-          }
-        }
-      } else {
-        const error = await res.json()
-        toast.error(error.message || 'Failed to create tab')
-      }
-    } catch (error) {
-      console.error('[BartenderView] Failed to create tab:', error)
-      toast.error('Failed to create tab')
-    } finally {
-      setIsCreatingTab(false)
-      pendingSendAfterTabRef.current = false
-    }
-  }, [locationId, employeeId, newTabName, requireNameWithoutCard, sendItemsToTab, onSelectedTabChange])
-
-  const handleQuickTab = useCallback(async () => {
-    if (requireNameWithoutCard) {
-      setShowNewTabModal(true)
-      return
-    }
-
-    try {
-      const res = await fetch('/api/tabs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          employeeId,
-          tabName: null,
-        }),
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        toast.success('Tab created')
-        if (data.id) {
-          // Load order directly — skip the GET /api/orders/{id} round trip
-          const store = useOrderStore.getState()
-          store.loadOrder({
-            id: data.id,
-            orderNumber: data.orderNumber,
-            orderType: 'bar_tab',
-            tabName: data.tabName || undefined,
-            guestCount: 1,
-            status: data.status || 'open',
-            items: [],
-            subtotal: 0,
-            discountTotal: 0,
-            taxTotal: 0,
-            tipTotal: 0,
-            total: 0,
-          })
-          loadedTabIdRef.current = data.id
-          setSelectedTabId(data.id)
-          onSelectedTabChange?.(data.id)
-          setTabRefreshTrigger(t => t + 1)
-        }
-      }
-    } catch (error) {
-      console.error('[BartenderView] Failed to create quick tab:', error)
-      toast.error('Failed to create tab')
-    }
-  }, [locationId, employeeId, requireNameWithoutCard, onSelectedTabChange])
+      loadedTabIdRef.current = tab.id
+      setSelectedTabId(tab.id)
+      onSelectedTabChange?.(tab.id)
+    }, [onSelectedTabChange]),
+    onRefresh: useCallback(() => setTabRefreshTrigger(t => t + 1), []),
+  })
 
   const handleSend = useCallback(async () => {
     const unsavedItems = orderItems.filter(i => !i.sentToKitchen)
@@ -1113,14 +1023,13 @@ export function BartenderView({
 
     // If no tab selected, prompt for tab name first
     if (!selectedTabId) {
-      pendingSendAfterTabRef.current = true
-      setShowNewTabModal(true)
+      openNewTabModal(true)
       return
     }
 
     // sendItemsToTab clears UI instantly and sends in background
     await sendItemsToTab(selectedTabId)
-  }, [orderItems, selectedTabId, sendItemsToTab])
+  }, [orderItems, selectedTabId, sendItemsToTab, openNewTabModal])
 
   const handlePay = useCallback(() => {
     if (selectedTabId && onOpenPayment) {
@@ -1128,65 +1037,22 @@ export function BartenderView({
     }
   }, [selectedTabId, onOpenPayment])
 
-  // Time formatting
-  const getTimeOpen = (openedAt: string) => {
-    const opened = new Date(openedAt)
-    const now = new Date()
-    const diffMs = now.getTime() - opened.getTime()
-    const diffMins = Math.floor(diffMs / 60000)
+  // --- Long press hooks ---
+  const categoryLongPress = useLongPress(
+    useCallback(() => setIsEditingCategories(true), []),
+    { onTap: useCallback(() => categoryScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' }), []) },
+  )
 
-    if (diffMins < 60) return `${diffMins}m`
-    const hours = Math.floor(diffMins / 60)
-    const mins = diffMins % 60
-    return mins > 0 ? `${hours}h${mins}m` : `${hours}h`
-  }
+  const favoritesLongPress = useLongPress(
+    useCallback(() => {
+      if (favorites.length === 0) return
+      setIsEditingFavorites(prev => !prev)
+    }, [favorites.length]),
+  )
 
-  const formatTimeOpened = (openedAt: string) => {
-    const opened = new Date(openedAt)
-    return opened.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-  }
-
-  // Track if long press triggered
-  const categoryLongPressTriggered = useRef(false)
-  const favoritesLongPressTriggered = useRef(false)
-
-  // Long press handlers for touch devices
-  const handleCategoryLabelTouchStart = useCallback(() => {
-    categoryLongPressTriggered.current = false
-    categoryLongPressTimer.current = setTimeout(() => {
-      categoryLongPressTriggered.current = true
-      setIsEditingCategories(true)
-      if (navigator.vibrate) navigator.vibrate(50)
-    }, LONG_PRESS_DURATION)
-  }, [])
-
-  const handleCategoryLabelTouchEnd = useCallback(() => {
-    if (categoryLongPressTimer.current) {
-      clearTimeout(categoryLongPressTimer.current)
-      categoryLongPressTimer.current = null
-    }
-    // Quick tap - scroll to home
-    if (!categoryLongPressTriggered.current && categoryScrollRef.current) {
-      categoryScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' })
-    }
-  }, [])
-
-  const handleFavoritesLabelTouchStart = useCallback(() => {
-    if (favorites.length === 0) return
-    favoritesLongPressTriggered.current = false
-    favoritesLongPressTimer.current = setTimeout(() => {
-      favoritesLongPressTriggered.current = true
-      setIsEditingFavorites(!isEditingFavorites)
-      if (navigator.vibrate) navigator.vibrate(50)
-    }, LONG_PRESS_DURATION)
-  }, [favorites.length, isEditingFavorites])
-
-  const handleFavoritesLabelTouchEnd = useCallback(() => {
-    if (favoritesLongPressTimer.current) {
-      clearTimeout(favoritesLongPressTimer.current)
-      favoritesLongPressTimer.current = null
-    }
-  }, [])
+  const itemsLongPress = useLongPress(
+    useCallback(() => setIsEditingItems(prev => !prev), []),
+  )
 
   // Reset category order
   const resetCategoryOrder = useCallback(() => {
@@ -1318,12 +1184,7 @@ export function BartenderView({
                   {/* Vertical Label - Long press to edit */}
                   <div
                     className="flex-shrink-0 w-6 flex items-center justify-center cursor-pointer select-none"
-                    onTouchStart={handleCategoryLabelTouchStart}
-                    onTouchEnd={handleCategoryLabelTouchEnd}
-                    onTouchCancel={handleCategoryLabelTouchEnd}
-                    onMouseDown={handleCategoryLabelTouchStart}
-                    onMouseUp={handleCategoryLabelTouchEnd}
-                    onMouseLeave={handleCategoryLabelTouchEnd}
+                    {...categoryLongPress}
                     title="Long-press to edit display"
                   >
                     <span
@@ -1440,12 +1301,7 @@ export function BartenderView({
                   {/* Vertical Label - Long press to edit */}
                   <div
                     className="flex-shrink-0 w-6 flex items-center justify-center cursor-pointer select-none"
-                    onTouchStart={handleFavoritesLabelTouchStart}
-                    onTouchEnd={handleFavoritesLabelTouchEnd}
-                    onTouchCancel={handleFavoritesLabelTouchEnd}
-                    onMouseDown={handleFavoritesLabelTouchStart}
-                    onMouseUp={handleFavoritesLabelTouchEnd}
-                    onMouseLeave={handleFavoritesLabelTouchEnd}
+                    {...favoritesLongPress}
                     title={favorites.length > 0 ? 'Long-press to edit favorites' : ''}
                   >
                     <span
@@ -2004,35 +1860,7 @@ export function BartenderView({
                   <div className="flex-shrink-0 flex items-center justify-between pt-2">
                     {/* Items Edit Button - Subtle, long press to activate */}
                     <div
-                      onTouchStart={() => {
-                        itemsLongPressTimer.current = setTimeout(() => {
-                          setIsEditingItems(!isEditingItems)
-                          if (navigator.vibrate) navigator.vibrate(50)
-                        }, LONG_PRESS_DURATION)
-                      }}
-                      onTouchEnd={() => {
-                        if (itemsLongPressTimer.current) {
-                          clearTimeout(itemsLongPressTimer.current)
-                          itemsLongPressTimer.current = null
-                        }
-                      }}
-                      onMouseDown={() => {
-                        itemsLongPressTimer.current = setTimeout(() => {
-                          setIsEditingItems(!isEditingItems)
-                        }, LONG_PRESS_DURATION)
-                      }}
-                      onMouseUp={() => {
-                        if (itemsLongPressTimer.current) {
-                          clearTimeout(itemsLongPressTimer.current)
-                          itemsLongPressTimer.current = null
-                        }
-                      }}
-                      onMouseLeave={() => {
-                        if (itemsLongPressTimer.current) {
-                          clearTimeout(itemsLongPressTimer.current)
-                          itemsLongPressTimer.current = null
-                        }
-                      }}
+                      {...itemsLongPress}
                       className={`px-2 py-1 rounded text-[10px] transition-all select-none cursor-pointer ${
                         isEditingItems
                           ? 'bg-indigo-600/80 text-white'
@@ -2076,92 +1904,24 @@ export function BartenderView({
       </div>
 
       {/* ====== NEW TAB MODAL ====== */}
-      <Modal isOpen={showNewTabModal} onClose={() => setShowNewTabModal(false)} size="2xl">
-        <div className="-m-5 bg-slate-800 border border-white/10 rounded-2xl p-6 max-h-[95vh] overflow-y-auto">
-              <h2 className="text-xl font-bold text-white mb-2">Tab Name</h2>
-              <p className="text-sm text-slate-400 mb-3">
-                Enter a name for this tab {requireNameWithoutCard && <span className="text-red-400">*</span>}
-              </p>
-
-              {/* Input display */}
-              <div className="w-full px-4 py-3 bg-slate-700 border border-white/10 rounded-lg text-white min-h-[48px] mb-3 text-lg">
-                {newTabName || <span className="text-slate-400">e.g. John, Table 5, etc.</span>}
-              </div>
-
-              {/* On-screen keyboard */}
-              <OnScreenKeyboard
-                value={newTabName}
-                onChange={setNewTabName}
-                onSubmit={handleCreateTab}
-                theme="dark"
-                submitLabel="Start Tab"
-                className="mb-3"
-              />
-
-              <div className="flex gap-3">
-                <button
-                  onClick={() => { setShowNewTabModal(false); pendingSendAfterTabRef.current = false }}
-                  className="flex-1 py-3 bg-slate-700 hover:bg-slate-600 rounded-lg text-white font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreateTab}
-                  disabled={isCreatingTab}
-                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-white font-semibold transition-colors disabled:opacity-50"
-                >
-                  {isCreatingTab ? 'Creating...' : 'Start Tab'}
-                </button>
-              </div>
-        </div>
-      </Modal>
+      <NewTabModal
+        isOpen={showNewTabModal}
+        onClose={closeNewTabModal}
+        tabName={newTabName}
+        onTabNameChange={setNewTabName}
+        onSubmit={handleCreateTab}
+        isCreating={isCreatingTab}
+        requireName={requireNameWithoutCard}
+      />
 
       {/* ====== SPIRIT SELECTION POPUP ====== */}
-      <Modal isOpen={!!(spiritPopupItem && selectedSpiritTier)} onClose={handleCloseSpiritPopup} size="2xl">
-        {spiritPopupItem && selectedSpiritTier && (
-          <div className="-m-5 bg-slate-800/95 border border-white/20 rounded-2xl p-4">
-              {/* Header - compact */}
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-lg font-bold text-white">{spiritPopupItem.name}</span>
-                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${SPIRIT_TIER_CONFIG[selectedSpiritTier]?.color || 'bg-slate-600'} text-white`}>
-                    {SPIRIT_TIER_CONFIG[selectedSpiritTier]?.label || selectedSpiritTier}
-                  </span>
-                </div>
-                <button
-                  onClick={handleCloseSpiritPopup}
-                  className="text-slate-400 hover:text-white text-xl px-2"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {/* Spirit options - all visible in a row */}
-              <div className="flex gap-2 flex-wrap">
-                {spiritPopupItem.spiritTiers?.[selectedSpiritTier as keyof SpiritTiers]?.map(spirit => {
-                  const totalPrice = spiritPopupItem.price + spirit.price
-                  const prices = getDualPrices(totalPrice, dualPricing)
-                  const displayPrice = dualPricing.enabled ? prices.cardPrice : prices.cashPrice
-                  return (
-                    <button
-                      key={spirit.id}
-                      onClick={() => handleSpiritSelect(spirit)}
-                      className={`flex-1 min-w-[100px] max-w-[160px] p-3 rounded-xl text-center transition-all ${SPIRIT_TIER_CONFIG[selectedSpiritTier]?.color || 'bg-slate-700'} hover:brightness-110 active:scale-95`}
-                    >
-                      <div className="text-white font-bold text-sm leading-tight">{spirit.name}</div>
-                      <div className="text-white/90 text-lg font-bold mt-1">
-                        {formatCurrency(displayPrice)}
-                      </div>
-                      {spirit.price > 0 && (
-                        <div className="text-white/60 text-[10px]">+{formatCurrency(spirit.price)}</div>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-          </div>
-        )}
-      </Modal>
+      <SpiritSelectionModal
+        item={spiritPopupItem}
+        selectedTier={selectedSpiritTier}
+        dualPricing={dualPricing}
+        onSelect={handleSpiritSelect}
+        onClose={handleCloseSpiritPopup}
+      />
 
     </div>
   )
