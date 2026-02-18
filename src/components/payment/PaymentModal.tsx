@@ -1270,6 +1270,43 @@ export function PaymentModal({
           {/* Step: Datacap Direct Card Payment */}
           {step === 'datacap_card' && orderId && terminalId && employeeId && locationId && (
             <>
+            {/* Existing tab cards — charge one of these instead of swiping new */}
+            {tabCards.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Cards on Tab</div>
+                {tabCards.map((card) => (
+                  <button
+                    key={card.id}
+                    onClick={() => handleChargeExistingCard(card)}
+                    disabled={isProcessing}
+                    style={{
+                      width: '100%',
+                      padding: '10px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      borderRadius: 10,
+                      border: '2px solid rgba(168, 85, 247, 0.6)',
+                      background: 'rgba(168, 85, 247, 0.18)',
+                      cursor: isProcessing ? 'wait' : 'pointer',
+                      textAlign: 'left' as const,
+                      boxShadow: '0 2px 8px rgba(168, 85, 247, 0.25)',
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>{'\uD83D\uDCB3'}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ color: '#f1f5f9', fontSize: 14, fontWeight: 600 }}>
+                        Charge •••{card.cardLast4}
+                        {card.isDefault && <span style={{ marginLeft: 6, fontSize: 10, color: '#a78bfa', background: 'rgba(167, 139, 250, 0.15)', padding: '1px 5px', borderRadius: 4 }}>DEFAULT</span>}
+                      </div>
+                      <div style={{ color: '#c084fc', fontSize: 12 }}>
+                        {card.cardType}{card.cardholderName ? ` — ${card.cardholderName}` : ''}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Add Card to Tab option — visible on card payment step for tab orders */}
             {onTabCardsChanged && !addingCard && (
               <button

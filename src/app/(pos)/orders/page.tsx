@@ -2512,6 +2512,14 @@ export default function OrdersPage() {
               if (orderId) {
                 setInitialPayMethod(method)
                 setOrderToPayId(orderId)
+                // Fetch tab cards before showing modal so card buttons appear
+                fetch(`/api/orders/${orderId}/cards`)
+                  .then(r => r.ok ? r.json() : { data: [] })
+                  .then(d => {
+                    const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
+                    setPaymentTabCards(authorized)
+                  })
+                  .catch(() => setPaymentTabCards([]))
                 setShowPaymentModal(true)
               }
             }}
