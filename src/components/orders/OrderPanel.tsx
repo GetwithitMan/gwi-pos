@@ -1016,22 +1016,6 @@ export const OrderPanel = memo(function OrderPanel({
                       </svg>
                     )}
                   </h2>
-                ) : tabName ? (
-                  <h2
-                    onClick={() => hasItems && setShowCheckOverview(v => !v)}
-                    style={{
-                      fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0,
-                      cursor: hasItems ? 'pointer' : 'default',
-                      display: 'inline-flex', alignItems: 'center', gap: '4px',
-                    }}
-                  >
-                    {tabName}
-                    {hasItems && (
-                      <svg width="10" height="10" fill="none" stroke="#64748b" viewBox="0 0 24 24" style={{ opacity: 0.6 }}>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    )}
-                  </h2>
                 ) : (
                   <h2 style={{ fontSize: '16px', fontWeight: 600, color: '#f1f5f9', margin: 0 }}>
                     New Order
@@ -1213,11 +1197,37 @@ export const OrderPanel = memo(function OrderPanel({
                   </div>
                 )}
               </div>
-              {orderId && (
-                <div style={{ fontSize: '10px', color: '#475569', fontFamily: 'monospace' }}>
-                  {orderId.slice(-8)}
-                </div>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {orderId && (
+                  <div style={{ fontSize: '10px', color: '#475569', fontFamily: 'monospace' }}>
+                    {orderId.slice(-8)}
+                  </div>
+                )}
+                {onHide && (
+                  <button
+                    onClick={onHide}
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(100, 116, 139, 0.2)',
+                      background: 'rgba(100, 116, 139, 0.1)',
+                      color: '#64748b',
+                      fontSize: '14px',
+                      lineHeight: 1,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0,
+                      transition: 'all 0.15s ease',
+                    }}
+                    title="Hide panel"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )
