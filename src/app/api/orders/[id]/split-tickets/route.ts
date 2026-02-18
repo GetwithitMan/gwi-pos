@@ -763,7 +763,7 @@ export const DELETE = withVenue(async function DELETE(
       include: {
         splitOrders: {
           include: {
-            items: { include: { modifiers: true } },
+            items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } } } },
             payments: true,
           },
         },

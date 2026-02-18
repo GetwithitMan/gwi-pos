@@ -26,8 +26,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           select: { id: true, displayName: true, firstName: true, lastName: true },
         },
         items: {
+          where: { deletedAt: null },
           include: {
-            modifiers: true,
+            modifiers: { where: { deletedAt: null } },
           },
         },
         payments: true,

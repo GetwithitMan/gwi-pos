@@ -155,7 +155,7 @@ export const POST = withVenue(withTiming(async function POST(
         payments: true,
         location: true,
         customer: true,
-        items: { include: { modifiers: true } },
+        items: { where: { deletedAt: null }, include: { modifiers: { where: { deletedAt: null } } } },
         employee: { select: { id: true, displayName: true, firstName: true, lastName: true } },
         table: { select: { id: true, name: true } },
       },

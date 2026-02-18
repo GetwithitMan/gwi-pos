@@ -454,8 +454,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           },
         },
         items: {
+          where: { deletedAt: null },
           include: {
-            modifiers: true,
+            modifiers: { where: { deletedAt: null } },
           },
         },
         payments: true,

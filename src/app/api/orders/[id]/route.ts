@@ -29,8 +29,10 @@ export const GET = withVenue(async function GET(
           employee: { select: { id: true, displayName: true } },
           table: { select: { id: true, name: true } },
           items: {
+            where: { deletedAt: null },
             include: {
               modifiers: {
+                where: { deletedAt: null },
                 select: {
                   id: true, modifierId: true, name: true, price: true,
                   depth: true, preModifier: true, linkedMenuItemId: true,
@@ -59,8 +61,10 @@ export const GET = withVenue(async function GET(
           select: { id: true, name: true },
         },
         items: {
+          where: { deletedAt: null },
           include: {
             modifiers: {
+              where: { deletedAt: null },
               select: {
                 id: true,
                 modifierId: true,
