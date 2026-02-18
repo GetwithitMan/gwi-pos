@@ -69,6 +69,7 @@ import { useOrderSockets } from '@/hooks/useOrderSockets'
 import { useSplitTickets } from '@/hooks/useSplitTickets'
 import { useShiftManagement } from '@/hooks/useShiftManagement'
 import { useTimedRentals } from '@/hooks/useTimedRentals'
+import { useItemOperations } from '@/hooks/useItemOperations'
 const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentOverlay'))
 const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow').then(m => ({ default: m.CardFirstTabFlow })))
 const TabNamePromptModal = lazy(() => import('@/components/tabs/TabNamePromptModal').then(m => ({ default: m.TabNamePromptModal })))
@@ -305,23 +306,14 @@ export default function OrdersPage() {
     prevOrderRef.current = currentOrder
   }, [currentOrder])
 
-  // Comp/Void modal state
-  const [showCompVoidModal, setShowCompVoidModal] = useState(false)
-
-  // Resend modal state (replaces blocking prompt/alert)
-  const [resendModal, setResendModal] = useState<{ itemId: string; itemName: string } | null>(null)
-  const [resendNote, setResendNote] = useState('')
-  const [resendLoading, setResendLoading] = useState(false)
-  const [compVoidItem, setCompVoidItem] = useState<{
-    id: string
-    menuItemId?: string
-    name: string
-    quantity: number
-    price: number
-    modifiers: { id: string; name: string; price: number; depth?: number; preModifier?: string | null; modifierId?: string | null; spiritTier?: string | null; linkedBottleProductId?: string | null; parentModifierId?: string | null }[]
-    status?: string
-    voidReason?: string
-  } | null>(null)
+  // Comp/Void + Resend modal state (extracted to useItemOperations hook)
+  const {
+    showCompVoidModal, setShowCompVoidModal,
+    resendModal, setResendModal,
+    resendNote, setResendNote,
+    resendLoading, setResendLoading,
+    compVoidItem, setCompVoidItem,
+  } = useItemOperations()
 
   // Item Transfer modal state
   const [showItemTransferModal, setShowItemTransferModal] = useState(false)
