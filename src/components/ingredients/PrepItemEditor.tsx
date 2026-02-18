@@ -30,6 +30,7 @@ interface PrepItemEditorProps {
   ingredient: Ingredient | null
   categories: IngredientCategory[]
   inventoryItems: InventoryItemRef[]
+  locationId: string
   selectedParentId?: string  // Parent ID passed from modal (for new items)
   onSave: (data: Partial<Ingredient>) => void
   onClose: () => void
@@ -41,6 +42,7 @@ export function PrepItemEditor({
   ingredient,
   categories,
   inventoryItems,
+  locationId,
   selectedParentId: propParentId,
   onSave,
   onClose,
@@ -117,8 +119,8 @@ export function PrepItemEditor({
     if ((!isEditing || needsParentInfo) && baseIngredients.length === 0 && !loadingBases) {
       setLoadingBases(true)
       // Get locationId from ingredient or from global context/props
-      const locationId = ingredient?.locationId || 'loc-1' // TODO: Pass locationId as prop
-      fetch(`/api/ingredients?locationId=${locationId}&baseOnly=true&includeInactive=false`)
+      const locId = ingredient?.locationId || locationId
+      fetch(`/api/ingredients?locationId=${locId}&baseOnly=true&includeInactive=false`)
         .then(res => res.json())
         .then(data => {
           setBaseIngredients(data.data || [])

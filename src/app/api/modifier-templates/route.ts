@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-
-const DEMO_LOCATION_ID = 'loc-demo-001'
+import { getLocationId } from '@/lib/location-cache'
 
 // GET /api/modifier-templates - Get all modifier group templates
 export const GET = withVenue(async function GET() {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) return NextResponse.json({ error: 'No location found' }, { status: 400 })
+
     const templates = await db.modifierGroupTemplate.findMany({
       where: {
-        locationId: DEMO_LOCATION_ID,
+        locationId,
         deletedAt: null,
         isActive: true,
       },
@@ -66,15 +68,18 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
+    const locationId = await getLocationId()
+    if (!locationId) return NextResponse.json({ error: 'No location found' }, { status: 400 })
+
     // Get max sort order
     const maxSort = await db.modifierGroupTemplate.aggregate({
-      where: { locationId: DEMO_LOCATION_ID },
+      where: { locationId },
       _max: { sortOrder: true },
     })
 
     const template = await db.modifierGroupTemplate.create({
       data: {
-        locationId: DEMO_LOCATION_ID,
+        locationId,
         name: name.trim(),
         description: description?.trim() || null,
         minSelections,

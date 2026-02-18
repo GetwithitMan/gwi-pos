@@ -11,6 +11,7 @@ interface IngredientEditorModalProps {
   swapGroups: SwapGroup[]
   inventoryItems: InventoryItemRef[]
   prepItems: PrepItemRef[]
+  locationId: string
   onSave: (data: Partial<Ingredient>) => void
   onClose: () => void
 }
@@ -31,6 +32,7 @@ export function IngredientEditorModal({
   swapGroups: _swapGroups, // Kept for backwards compatibility
   inventoryItems,
   prepItems,
+  locationId,
   onSave,
   onClose,
 }: IngredientEditorModalProps) {
@@ -65,7 +67,7 @@ export function IngredientEditorModal({
     if (itemType === 'prep' && baseIngredients.length === 0 && !loadingBases) {
       setLoadingBases(true)
       // Fetch base ingredients (inventory items that can be parents)
-      fetch('/api/ingredients?locationId=loc-1&baseOnly=true&includeInactive=false')
+      fetch(`/api/ingredients?locationId=${locationId}&baseOnly=true&includeInactive=false`)
         .then(res => res.json())
         .then(data => {
           setBaseIngredients(data.data || [])
@@ -402,7 +404,7 @@ export function IngredientEditorModal({
                   const res = await fetch('/api/ingredients', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...data, locationId: 'loc-1', isBaseIngredient: true }),
+                    body: JSON.stringify({ ...data, locationId, isBaseIngredient: true }),
                   })
                   const result = await res.json()
                   if (result.data?.id) {
@@ -443,6 +445,7 @@ export function IngredientEditorModal({
             ingredient={ingredient}
             categories={categories}
             inventoryItems={inventoryItems}
+            locationId={locationId}
             selectedParentId={selectedParentId || ingredient?.parentIngredientId || ''}
             onSave={onSave}
             onClose={onClose}

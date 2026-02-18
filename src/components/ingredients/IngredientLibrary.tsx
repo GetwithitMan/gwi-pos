@@ -1359,6 +1359,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
           swapGroups={swapGroups}
           inventoryItems={inventoryItems}
           prepItems={prepItems}
+          locationId={locationId}
           onSave={handleSaveIngredient}
           onClose={() => { setShowIngredientModal(false); setEditingIngredient(null) }}
         />

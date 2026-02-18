@@ -114,7 +114,7 @@ function LiquorBuilderContent() {
 
     const onConnect = () => {
       socket.emit('join_station', {
-        locationId: 'default',
+        locationId: employee?.location?.id || '',
         tags: [],
         terminalId: getTerminalId(),
       })

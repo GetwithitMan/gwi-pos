@@ -10,43 +10,14 @@
  * (rotation controls, wall snapping, fine-tune buttons, etc.)
  */
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { FloorPlanEditor } from '@/domains/floor-plan/admin';
-
-// Default location ID for testing
-const TEST_LOCATION_ID = 'loc-default';
+import { useAuthStore } from '@/stores/auth-store';
 
 export default function FloorPlanEditorPage() {
-  const [locationId, setLocationId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  // Get a location ID from the database
-  useEffect(() => {
-    async function getLocationId() {
-      try {
-        // Try to get the first location
-        const res = await fetch('/api/locations');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.locations && data.locations.length > 0) {
-            setLocationId(data.locations[0].id);
-          } else {
-            // No locations exist, use a test ID
-            setLocationId(TEST_LOCATION_ID);
-          }
-        } else {
-          // API might not exist yet, use test ID
-          setLocationId(TEST_LOCATION_ID);
-        }
-      } catch {
-        // Use test ID on error
-        setLocationId(TEST_LOCATION_ID);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    getLocationId();
-  }, []);
+  const employee = useAuthStore(s => s.employee);
+  const locationId = employee?.location?.id ?? null;
+  const isLoading = !employee;
 
   const handleExit = () => {
     // Navigate back to orders (production FOH view)

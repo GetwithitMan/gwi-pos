@@ -370,7 +370,7 @@ function KDSContent() {
   const getLocationId = () => {
     if (screenConfig?.locationId) return screenConfig.locationId
     if (employee?.location?.id) return employee.location.id
-    return 'loc-1' // Fallback
+    return '' // No location available
   }
 
   const getStationIds = () => {
