@@ -30,7 +30,8 @@ const toastStyles: Record<ToastType, { bg: string; border: string; text: string;
 }
 
 export function ToastContainer() {
-  const { toasts, removeToast } = useToastStore()
+  const toasts = useToastStore(s => s.toasts)
+  const removeToast = useToastStore(s => s.removeToast)
 
   if (toasts.length === 0) return null
 

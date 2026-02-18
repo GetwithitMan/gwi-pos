@@ -338,17 +338,19 @@ export const POST = withVenue(async function POST(
       })
 
       // Remove items from original order
-      await db.orderItemModifier.deleteMany({
+      await db.orderItemModifier.updateMany({
         where: {
           orderItem: {
             id: { in: itemIds },
           },
         },
+        data: { deletedAt: new Date() },
       })
-      await db.orderItem.deleteMany({
+      await db.orderItem.updateMany({
         where: {
           id: { in: itemIds },
         },
+        data: { deletedAt: new Date(), status: 'removed' },
       })
 
       // Recalculate original order totals
@@ -539,13 +541,15 @@ export const POST = withVenue(async function POST(
         itemsBySeat.get(seat)?.map(item => item.id) || []
       )
 
-      await db.orderItemModifier.deleteMany({
+      await db.orderItemModifier.updateMany({
         where: {
           orderItem: { id: { in: itemIdsToRemove } },
         },
+        data: { deletedAt: new Date() },
       })
-      await db.orderItem.deleteMany({
+      await db.orderItem.updateMany({
         where: { id: { in: itemIdsToRemove } },
+        data: { deletedAt: new Date(), status: 'removed' },
       })
 
       // Recalculate original order totals (for items without seat assignment)
@@ -731,13 +735,15 @@ export const POST = withVenue(async function POST(
         itemsByTable.get(tableId)?.map(item => item.id) || []
       )
 
-      await db.orderItemModifier.deleteMany({
+      await db.orderItemModifier.updateMany({
         where: {
           orderItem: { id: { in: itemIdsToRemove } },
         },
+        data: { deletedAt: new Date() },
       })
-      await db.orderItem.deleteMany({
+      await db.orderItem.updateMany({
         where: { id: { in: itemIdsToRemove } },
+        data: { deletedAt: new Date(), status: 'removed' },
       })
 
       // Recalculate original order totals (for items without table assignment)

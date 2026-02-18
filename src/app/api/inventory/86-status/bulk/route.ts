@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 /**
  * POST /api/inventory/86-status/bulk
@@ -10,6 +11,11 @@ import { withVenue } from '@/lib/with-venue'
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const body = await request.json()
     const { ingredientIds, is86d, employeeId } = body
 
@@ -31,6 +37,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const result = await db.ingredient.updateMany({
       where: {
         id: { in: ingredientIds },
+        locationId,
         deletedAt: null
       },
       data: {
@@ -44,6 +51,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const updated = await db.ingredient.findMany({
       where: {
         id: { in: ingredientIds },
+        locationId,
         deletedAt: null
       },
       select: {

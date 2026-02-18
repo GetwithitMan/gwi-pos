@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { assignEmployeeToTemplateGroup } from '@/lib/domain/tips/tip-group-templates'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List time clock entries
@@ -134,6 +135,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    // Fire-and-forget socket dispatch for real-time clock updates
+    void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(() => {})
 
     // If a tip group template was selected, assign the employee to its runtime group.
     // Wrapped in try/catch so clock-in still succeeds even if group assignment fails.
@@ -290,6 +294,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         },
       },
     })
+
+    // Fire-and-forget socket dispatch for real-time clock updates
+    void emitToLocation(entry.locationId, 'employee:clock-changed', { employeeId: entry.employeeId }).catch(() => {})
 
     // Break audit trail: create/close Break records
     if (action === 'startBreak') {

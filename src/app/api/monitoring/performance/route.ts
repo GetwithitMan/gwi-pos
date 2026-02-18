@@ -63,10 +63,6 @@ export const POST = withVenue(async function POST(req: NextRequest) {
         exceededBy: `${exceededBy}ms (${percentOver.toFixed(0)}% over)`,
       })
 
-      // TODO Phase 4: Send alert for severe performance degradation
-      // if (percentOver > 200) {
-      //   await sendPerformanceAlert(performanceLog)
-      // }
     }
 
     return NextResponse.json({

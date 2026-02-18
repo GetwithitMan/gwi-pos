@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Generate employee shift report
@@ -63,11 +64,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       shiftEnd = shift.endedAt || new Date()
     } else {
       // Find shift by employee and date using business day boundaries
-      const shiftLocation = await db.location.findUnique({
-        where: { id: locationId! },
-        select: { settings: true },
-      })
-      const locationSettings = parseSettings(shiftLocation?.settings)
+      const locationSettings = parseSettings(await getLocationSettings(locationId!))
       const dayStartTime = locationSettings.businessDay.dayStartTime
 
       let startOfDay: Date

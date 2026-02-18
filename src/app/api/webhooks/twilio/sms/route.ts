@@ -128,24 +128,20 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
 
       // Dispatch socket notification
-      try {
-        await dispatchVoidApprovalUpdate(approval.locationId, {
-          type: 'approved',
-          approvalId: approval.id,
-          terminalId: approval.requestingTerminalId || undefined,
-          approvalCode,
-          managerName,
-        })
-      } catch (socketError) {
-        console.warn('[Twilio Webhook] Socket dispatch failed:', socketError)
-      }
+      void dispatchVoidApprovalUpdate(approval.locationId, {
+        type: 'approved',
+        approvalId: approval.id,
+        terminalId: approval.requestingTerminalId || undefined,
+        approvalCode,
+        managerName,
+      }).catch(err => console.error('[Twilio Webhook] Socket dispatch failed:', err))
 
       // Also send SMS with code (in case manager wants to relay verbally)
-      await sendApprovalCodeSMS({
+      void sendApprovalCodeSMS({
         to: normalizedPhone,
         code: approvalCode,
         serverName,
-      })
+      }).catch(err => console.error('[Twilio Webhook] SMS send failed:', err))
 
       // TwiML response (Twilio will send this as SMS reply)
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -169,16 +165,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
 
       // Dispatch socket notification
-      try {
-        await dispatchVoidApprovalUpdate(approval.locationId, {
-          type: 'rejected',
-          approvalId: approval.id,
-          terminalId: approval.requestingTerminalId || undefined,
-          managerName,
-        })
-      } catch (socketError) {
-        console.warn('[Twilio Webhook] Socket dispatch failed:', socketError)
-      }
+      void dispatchVoidApprovalUpdate(approval.locationId, {
+        type: 'rejected',
+        approvalId: approval.id,
+        terminalId: approval.requestingTerminalId || undefined,
+        managerName,
+      }).catch(err => console.error('[Twilio Webhook] Socket dispatch failed:', err))
 
       const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>

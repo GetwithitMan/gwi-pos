@@ -60,58 +60,61 @@ export const POST = withVenue(async function POST(
     }
 
     const now = new Date()
-    const updatedItemIds: string[] = []
+    const updatedItemIds: string[] = order.items.map(i => i.id)
 
-    // Update items to 'sent' status + mark courseStatus as 'fired'
-    for (const item of order.items) {
-      const updateData: {
-        kitchenStatus: string
-        courseStatus: string
-        firedAt: Date
-        blockTimeStartedAt?: Date
-        blockTimeExpiresAt?: Date
-      } = {
-        kitchenStatus: 'sent',
-        courseStatus: 'fired',
-        firedAt: now,
-      }
+    // Separate timed rental items from regular items
+    const timedItems = order.items.filter(i => i.menuItem?.itemType === 'timed_rental' && i.blockTimeMinutes)
+    const regularItemIds = order.items.filter(i => !(i.menuItem?.itemType === 'timed_rental' && i.blockTimeMinutes)).map(i => i.id)
 
-      // For timed rental items, start the timer
-      if (item.menuItem?.itemType === 'timed_rental' && item.blockTimeMinutes) {
-        updateData.blockTimeStartedAt = now
-        updateData.blockTimeExpiresAt = new Date(now.getTime() + item.blockTimeMinutes * 60 * 1000)
-
-        // Update the menu item status to in_use
-        await db.menuItem.update({
-          where: { id: item.menuItem.id },
-          data: {
-            entertainmentStatus: 'in_use',
-            currentOrderId: order.id,
-            currentOrderItemId: item.id,
-          }
-        })
-
-        // Update linked FloorPlanElement
-        await db.floorPlanElement.updateMany({
-          where: {
-            linkedMenuItemId: item.menuItem.id,
-            deletedAt: null,
-          },
-          data: {
-            status: 'in_use',
-            currentOrderId: order.id,
-            sessionStartedAt: now,
-            sessionExpiresAt: updateData.blockTimeExpiresAt,
-          },
-        })
-      }
-
-      await db.orderItem.update({
-        where: { id: item.id },
-        data: updateData,
+    // Batch update regular items in one query
+    if (regularItemIds.length > 0) {
+      await db.orderItem.updateMany({
+        where: { id: { in: regularItemIds } },
+        data: {
+          kitchenStatus: 'sent',
+          courseStatus: 'fired',
+          firedAt: now,
+        },
       })
+    }
 
-      updatedItemIds.push(item.id)
+    // Process timed rental items in parallel (each needs unique expiry + linked entity updates)
+    if (timedItems.length > 0) {
+      await Promise.all(timedItems.map(item => {
+        const expiresAt = new Date(now.getTime() + item.blockTimeMinutes! * 60 * 1000)
+        return Promise.all([
+          db.orderItem.update({
+            where: { id: item.id },
+            data: {
+              kitchenStatus: 'sent',
+              courseStatus: 'fired',
+              firedAt: now,
+              blockTimeStartedAt: now,
+              blockTimeExpiresAt: expiresAt,
+            },
+          }),
+          db.menuItem.update({
+            where: { id: item.menuItem!.id },
+            data: {
+              entertainmentStatus: 'in_use',
+              currentOrderId: order.id,
+              currentOrderItemId: item.id,
+            },
+          }),
+          db.floorPlanElement.updateMany({
+            where: {
+              linkedMenuItemId: item.menuItem!.id,
+              deletedAt: null,
+            },
+            data: {
+              status: 'in_use',
+              currentOrderId: order.id,
+              sessionStartedAt: now,
+              sessionExpiresAt: expiresAt,
+            },
+          }),
+        ])
+      }))
     }
 
     // Update current course on the order

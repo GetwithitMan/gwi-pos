@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid domain' }, { status: 400 })
     }
 
-    console.log(`[Cache Invalidate] domain=${domain} action=${action || ''} entityId=${entityId || ''}`)
+    if (process.env.NODE_ENV !== 'production') console.log(`[Cache Invalidate] domain=${domain} action=${action || ''} entityId=${entityId || ''}`)
 
     // Get locationId from env if not provided (NUC always has one location)
     const locId = locationId || process.env.LOCATION_ID || ''

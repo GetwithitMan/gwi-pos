@@ -59,19 +59,23 @@ export function getDualPrices(
 }
 
 /**
- * Calculate commission amount based on type and value
+ * Calculate commission amount based on type and value.
+ *
+ * For 'fixed' commissions, the value is per-unit — multiply by quantity.
+ * For 'percent' commissions, salePrice should already reflect total (price × qty).
  */
 export function calculateCommission(
   salePrice: number,
-  commissionType: 'fixed' | 'percent' | null | undefined,
-  commissionValue: number | null | undefined
+  commissionType: 'fixed' | 'percent' | string | null | undefined,
+  commissionValue: number | null | undefined,
+  quantity: number = 1
 ): number {
   if (!commissionType || commissionValue === null || commissionValue === undefined) {
     return 0
   }
 
   if (commissionType === 'fixed') {
-    return commissionValue
+    return roundToCents(commissionValue * quantity)
   }
 
   if (commissionType === 'percent') {

@@ -7,14 +7,121 @@ const globalForPrisma = globalThis as unknown as {
   venueClients: Map<string, PrismaClient> | undefined
 }
 
+/**
+ * Models that do NOT have a `deletedAt` column — skip soft-delete filtering.
+ */
+const NO_SOFT_DELETE_MODELS = new Set(['Organization', 'Location', 'SyncAuditEntry'])
+
+/**
+ * Prisma actions that read data and should auto-filter soft-deleted rows.
+ */
+const READ_ACTIONS = new Set(['findMany', 'findFirst', 'findUnique', 'findFirstOrThrow', 'findUniqueOrThrow', 'count', 'aggregate', 'groupBy'])
+
 function createPrismaClient(url?: string) {
   const baseUrl = url || process.env.DATABASE_URL || ''
   const pooledUrl = appendPoolParams(baseUrl)
 
-  return new PrismaClient({
+  const client = new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
     datasources: { db: { url: pooledUrl } },
+    transactionOptions: {
+      maxWait: 10000,
+      timeout: 15000,
+    },
   })
+
+  // ---------------------------------------------------------------------------
+  // Soft-delete query middleware
+  //
+  // Automatically adds `deletedAt: null` to all read queries so that
+  // soft-deleted rows are excluded by default. This fixes 288+ places in the
+  // codebase that would otherwise need manual `deletedAt: null` filters.
+  //
+  // To query deleted rows intentionally (e.g. admin / audit), explicitly set
+  // `deletedAt` to any non-undefined value in the where clause:
+  //   db.menuItem.findMany({ where: { deletedAt: { not: null } } })
+  //   db.menuItem.findMany({ where: { deletedAt: { gte: someDate } } })
+  // ---------------------------------------------------------------------------
+  const extended = client.$extends({
+    query: {
+      $allModels: {
+        async findMany({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async findFirst({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async findFirstOrThrow({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async findUnique({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async findUniqueOrThrow({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async count({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async aggregate({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+        async groupBy({ model, args, query }) {
+          if (!NO_SOFT_DELETE_MODELS.has(model)) {
+            args.where = args.where ?? {}
+            if ((args.where as any).deletedAt === undefined) {
+              (args.where as any).deletedAt = null
+            }
+          }
+          return query(args)
+        },
+      },
+    },
+  })
+
+  return extended as unknown as PrismaClient
 }
 
 /**

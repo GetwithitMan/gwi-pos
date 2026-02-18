@@ -373,7 +373,7 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
   }, []);
 
   const handleAddRoom = () => {
-    // TODO: Implement room creation via FloorCanvasAPI
+    // DEFERRED: Implement room creation via FloorCanvasAPI — tracked in PM-TASK-BOARD.md
     toast.info('Add Room feature coming soon');
   };
 
@@ -385,7 +385,7 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
 
   const handleRenameSubmit = (roomId: string) => {
     if (editingName.trim()) {
-      // TODO: Implement room rename via FloorCanvasAPI
+      // DEFERRED: Implement room rename via FloorCanvasAPI — tracked in PM-TASK-BOARD.md
       toast.info('Rename feature coming soon');
     }
     setEditingRoomId(null);
@@ -501,7 +501,7 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
         confirmLabel="Delete"
         destructive
         onConfirm={() => {
-          // TODO: Implement room deletion via FloorCanvasAPI
+          // DEFERRED: Implement room deletion via FloorCanvasAPI — tracked in PM-TASK-BOARD.md
           toast.info('Delete Room feature coming soon');
           setDeleteRoomTarget(null);
         }}

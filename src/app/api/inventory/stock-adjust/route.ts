@@ -334,28 +334,33 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     let resolvedLocationId: string | null = locationId || null
     let totalCostImpact = 0
 
+    // Batch-fetch all ingredients BEFORE the loop to avoid N+1 queries
+    const ingredientIds = adjustments.map((adj: { ingredientId: string }) => adj.ingredientId)
+    const ingredientsList = await db.ingredient.findMany({
+      where: { id: { in: ingredientIds } },
+      select: {
+        id: true,
+        locationId: true,
+        name: true,
+        currentPrepStock: true,
+        countPrecision: true,
+        outputUnit: true,
+        standardUnit: true,
+        purchaseCost: true,
+        unitsPerPurchase: true,
+        lowStockThreshold: true,
+        criticalStockThreshold: true,
+      }
+    })
+    const ingredientMap = new Map(ingredientsList.map(i => [i.id, i]))
+
     // Process each adjustment
     for (const adj of adjustments) {
       const { ingredientId, quantity, operation = 'set' } = adj
 
       try {
-        // Get ingredient with cost data
-        const ingredient = await db.ingredient.findUnique({
-          where: { id: ingredientId },
-          select: {
-            id: true,
-            locationId: true,
-            name: true,
-            currentPrepStock: true,
-            countPrecision: true,
-            outputUnit: true,
-            standardUnit: true,
-            purchaseCost: true,
-            unitsPerPurchase: true,
-            lowStockThreshold: true,
-            criticalStockThreshold: true,
-          }
-        })
+        // O(1) lookup from pre-fetched map
+        const ingredient = ingredientMap.get(ingredientId)
 
         if (!ingredient) {
           results.push({

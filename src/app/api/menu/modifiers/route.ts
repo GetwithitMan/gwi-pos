@@ -14,7 +14,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const channel = searchParams.get('channel') // 'online', 'pos', or null (admin - show all)
 
+    // Get the location ID (cached)
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'No location found' },
+        { status: 400 }
+      )
+    }
+
     const modifierGroups = await db.modifierGroup.findMany({
+      where: { locationId, deletedAt: null },
       orderBy: { sortOrder: 'asc' },
       include: {
         modifiers: {

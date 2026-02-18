@@ -210,6 +210,8 @@ export async function dispatchEntertainmentUpdate(
  * Dispatch location-wide alert
  *
  * Used for system alerts (sync status, hardware failures, etc.)
+ * Called from health-check route. No client-side alert UI wired yet.
+ * // TODO: Wire to a location-wide toast/banner component when alert UI is built
  */
 export async function dispatchLocationAlert(
   locationId: string,
@@ -308,6 +310,7 @@ export async function dispatchFloorPlanUpdate(
  *
  * Called when ingredient stock is adjusted via Quick Stock Adjust page.
  * Notifies all terminals to update stock displays in real-time.
+ * // TODO: Wire to inventory dashboard when built
  */
 export async function dispatchInventoryAdjustment(
   locationId: string,
@@ -348,6 +351,8 @@ export async function dispatchInventoryAdjustment(
  * Dispatch single stock level change (for POS menu item badges)
  *
  * Used for real-time stock level updates on menu items.
+ * Client listener: SocketEventProvider forwards via onAny → subscribe('inventory:stock-change')
+ * Drives 86'd item display on POS terminals.
  */
 export async function dispatchStockLevelChange(
   locationId: string,
@@ -455,6 +460,7 @@ export async function dispatchIngredientLibraryUpdate(
  *
  * Called when a menu item is created, updated, deleted, or restored.
  * Allows online ordering UI to update in real-time without polling.
+ * Used alongside menu:updated (dispatchMenuUpdate) for granular item-level changes.
  */
 export async function dispatchMenuItemChanged(
   locationId: string,
@@ -488,6 +494,8 @@ export async function dispatchMenuItemChanged(
  *
  * Called when an item's stock status changes (e.g., in_stock -> out_of_stock).
  * Allows online ordering to immediately show "Sold Out" without polling.
+ * Client listener: SocketEventProvider forwards via onAny → subscribe('menu:stock-changed')
+ * Works alongside inventory:stock-change for POS 86'd item display.
  */
 export async function dispatchMenuStockChanged(
   locationId: string,
@@ -521,6 +529,7 @@ export async function dispatchMenuStockChanged(
  *
  * Called when categories or modifier groups are added/updated/deleted.
  * Notifies menu builders and admin UIs to refresh structure.
+ * Used alongside menu:updated (dispatchMenuUpdate) for granular structure-level changes.
  */
 export async function dispatchMenuStructureChanged(
   locationId: string,
@@ -660,7 +669,104 @@ export async function dispatchOpenOrdersChanged(
  *
  * Called when tip group membership changes, group created/closed, etc.
  * Keeps all bartender terminals in sync with group state.
+ * // TODO: Wire to bartender tip group UI when built
  */
+
+/**
+ * Dispatch payment processed event
+ *
+ * Called after a successful payment DB write.
+ * Notifies all terminals that a payment was processed on an order.
+ */
+export async function dispatchPaymentProcessed(
+  locationId: string,
+  data: { orderId: string; paymentId?: string; status: string }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'payment:processed', data)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch payment:processed:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch order updated event
+ *
+ * Called after order metadata is updated (tab name, guest count, etc.).
+ * Notifies all terminals to refresh order data.
+ */
+export async function dispatchOrderUpdated(
+  locationId: string,
+  data: { orderId: string; changes?: string[] }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'order:updated', data)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch order:updated:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch tab updated event
+ *
+ * Called after tab status changes (opened, closed, captured).
+ * Notifies all terminals to refresh tab state.
+ */
+export async function dispatchTabUpdated(
+  locationId: string,
+  data: { orderId: string; status?: string }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'tab:updated', data)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch tab:updated:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch table status changed event
+ *
+ * Called when a table's status changes (available, occupied, reserved, etc.).
+ * Notifies all terminals to update floor plan table indicators.
+ */
+export async function dispatchTableStatusChanged(
+  locationId: string,
+  data: { tableId: string; status?: string }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'table:status-changed', data)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch table:status-changed:', error)
+    return false
+  }
+}
+
+/**
+ * Dispatch order item added event
+ *
+ * Called after new items are appended to an order.
+ * Notifies all terminals to refresh order item lists.
+ */
+export async function dispatchOrderItemAdded(
+  locationId: string,
+  data: { orderId: string; itemId?: string }
+): Promise<boolean> {
+  try {
+    await emitToLocation(locationId, 'order:item-added', data)
+    return true
+  } catch (error) {
+    console.error('[SocketDispatch] Failed to dispatch order:item-added:', error)
+    return false
+  }
+}
+
 export async function dispatchTipGroupUpdate(
   locationId: string,
   payload: {

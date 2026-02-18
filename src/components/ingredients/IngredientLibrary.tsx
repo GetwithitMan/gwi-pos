@@ -591,7 +591,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
         body: JSON.stringify({
           needsVerification: false,
           verifiedAt: new Date().toISOString(),
-          // TODO: Add verifiedBy with employee ID when available
+          // DEFERRED: Add verifiedBy with employee ID — requires auth context in this component — tracked in PM-TASK-BOARD.md
         }),
       })
 

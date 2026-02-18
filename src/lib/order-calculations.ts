@@ -11,7 +11,7 @@
  * - taxRate is always a decimal (0.08), never ambiguous 8 vs 0.08
  */
 
-import { roundToCents, applyPriceRounding } from './pricing'
+import { roundToCents, applyPriceRounding, calculateCommission } from './pricing'
 import type { PriceRoundingSettings } from './settings'
 
 // ============================================================================
@@ -84,7 +84,8 @@ export function calculateItemTotal(item: OrderItemForCalculation): number {
 }
 
 /**
- * Calculate commission for a single item
+ * Calculate commission for a single item.
+ * Delegates to the canonical calculateCommission in pricing.ts.
  */
 export function calculateItemCommission(
   itemTotal: number,
@@ -92,17 +93,7 @@ export function calculateItemCommission(
   commissionType: string | null,
   commissionValue: number | null
 ): number {
-  if (!commissionType || commissionValue === null || commissionValue === undefined) {
-    return 0
-  }
-
-  if (commissionType === 'percent') {
-    return roundToCents(itemTotal * commissionValue / 100)
-  } else if (commissionType === 'fixed') {
-    return roundToCents(commissionValue * quantity)
-  }
-
-  return 0
+  return calculateCommission(itemTotal, commissionType, commissionValue, quantity)
 }
 
 // ============================================================================

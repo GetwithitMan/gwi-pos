@@ -35,10 +35,10 @@ export async function requirePermission(
   options?: { soft?: boolean }
 ): Promise<AuthResult> {
   if (!employeeId) {
+    // DEFERRED: Remove soft mode once all UI pages send employeeId — tracked in PM-TASK-BOARD.md
     // Soft mode: allow through when no employeeId (for UI pages that don't send it yet)
-    // TODO: Remove soft mode once all UI pages send employeeId
     if (options?.soft) {
-      console.warn(`[api-auth] Soft auth bypass: no employeeId for permission ${permission}`)
+      if (process.env.NODE_ENV !== 'production') console.warn(`[api-auth] Soft auth bypass: no employeeId for permission ${permission}`)
       return {
         authorized: true,
         employee: { id: '', firstName: '', lastName: '', displayName: null, locationId, permissions: [] },

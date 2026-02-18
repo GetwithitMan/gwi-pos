@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 // GET - Get customer details with order history
 export const GET = withVenue(async function GET(
@@ -9,10 +10,13 @@ export const GET = withVenue(async function GET(
 ) {
   try {
     const { id } = await params
-    const locationId = request.nextUrl.searchParams.get('locationId')
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
 
     const customer = await db.customer.findFirst({
-      where: { id, ...(locationId ? { locationId } : {}) },
+      where: { id, locationId },
       include: {
         orders: {
           where: { status: { in: ['completed', 'paid'] } },
@@ -49,6 +53,7 @@ export const GET = withVenue(async function GET(
     const favoriteItems = await db.orderItem.groupBy({
       by: ['menuItemId', 'name'],
       where: {
+        locationId,
         order: {
           customerId: id,
           status: { in: ['completed', 'paid'] },
@@ -112,10 +117,13 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
-    const locationId = body.locationId || request.nextUrl.searchParams.get('locationId')
+    const locationId = body.locationId || request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
 
     const customer = await db.customer.findFirst({
-      where: { id, ...(locationId ? { locationId } : {}) },
+      where: { id, locationId },
     })
 
     if (!customer) {
@@ -175,7 +183,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     const updated = await db.customer.update({
-      where: { id },
+      where: { id, locationId },
       data: {
         ...(firstName !== undefined && { firstName }),
         ...(lastName !== undefined && { lastName }),
@@ -224,10 +232,13 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
-    const locationId = request.nextUrl.searchParams.get('locationId')
+    const locationId = request.nextUrl.searchParams.get('locationId') || await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
 
     const customer = await db.customer.findFirst({
-      where: { id, ...(locationId ? { locationId } : {}) },
+      where: { id, locationId },
     })
 
     if (!customer) {

@@ -120,7 +120,12 @@ export interface PublicModifierGroup {
   } | null
 
   // Pricing
-  tieredPricingConfig?: any // TODO: Type this properly
+  tieredPricingConfig?: {
+    enabled: boolean
+    modes: { flat_tiers: boolean; free_threshold: boolean }
+    flat_tiers?: { tiers: Array<{ upTo: number; price: number }>; overflowPrice: number }
+    free_threshold?: { freeCount: number }
+  } | null
   exclusionGroupKey: string | null
 
   // Modifiers (recursively includes child groups)

@@ -5,7 +5,7 @@ import { calculateItemTotal, calculateItemCommission, calculateOrderTotals, isIt
 import { calculateCardPrice } from '@/lib/pricing'
 import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
@@ -381,6 +381,11 @@ export const POST = withVenue(async function POST(
       items: result.updatedOrder.items.map(item =>
         mapOrderItemForResponse(item, correlationMap.get(item.id))
       ),
+    }
+
+    // Dispatch order:item-added for each newly created item (fire-and-forget)
+    for (const item of result.createdItems) {
+      void dispatchOrderItemAdded(result.updatedOrder.locationId, { orderId: result.updatedOrder.id, itemId: item.id }).catch(() => {})
     }
 
     // FIX-011: Dispatch real-time totals update (fire-and-forget)

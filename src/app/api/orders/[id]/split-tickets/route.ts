@@ -787,8 +787,9 @@ export const DELETE = withVenue(async function DELETE(
     // Merge splits back in a transaction
     await db.$transaction(async (tx) => {
       // Delete all split orders (cascade deletes items)
-      await tx.order.deleteMany({
+      await tx.order.updateMany({
         where: { parentOrderId: id },
+        data: { deletedAt: new Date(), status: 'cancelled' },
       })
 
       // Restore parent order status

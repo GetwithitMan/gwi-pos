@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, memo } from 'react'
 import { motion } from 'framer-motion'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
@@ -225,6 +225,43 @@ const getItemSettingsKey = (employeeId: string) => `bartender_item_settings_${em
 const getItemCustomizationsKey = (employeeId: string) => `bartender_item_customizations_${employeeId}`
 const getItemOrderKey = (employeeId: string, categoryId: string) => `bartender_item_order_${employeeId}_${categoryId}`
 
+
+// ============================================================================
+// MEMOIZED SUB-COMPONENTS
+// ============================================================================
+
+interface FavoriteItemProps {
+  fav: FavoriteItem
+  isEditingFavorites: boolean
+  onTap: (fav: FavoriteItem) => void
+  onRemove: (menuItemId: string) => void
+}
+
+const FavoriteItem = memo(function FavoriteItem({ fav, isEditingFavorites, onTap, onRemove }: FavoriteItemProps) {
+  return (
+    <button
+      onClick={() => !isEditingFavorites && onTap(fav)}
+      className={`relative flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+        isEditingFavorites
+          ? 'bg-red-900/30 border border-red-500/30 text-red-300'
+          : 'bg-amber-600/30 border border-amber-500/30 text-amber-200 hover:bg-amber-600/50 active:scale-95'
+      }`}
+    >
+      {isEditingFavorites && (
+        <span
+          onClick={(e) => {
+            e.stopPropagation()
+            onRemove(fav.menuItemId)
+          }}
+          className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-white text-xs flex items-center justify-center cursor-pointer"
+        >
+          ×
+        </span>
+      )}
+      {fav.name}
+    </button>
+  )
+})
 
 // ============================================================================
 // COMPONENT
@@ -1320,28 +1357,13 @@ export function BartenderView({
                   ) : (
                     <div className="flex-1 flex gap-2 overflow-x-auto">
                       {favorites.map(fav => (
-                        <button
+                        <FavoriteItem
                           key={fav.menuItemId}
-                          onClick={() => !isEditingFavorites && handleFavoriteTap(fav)}
-                          className={`relative flex-shrink-0 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                            isEditingFavorites
-                              ? 'bg-red-900/30 border border-red-500/30 text-red-300'
-                              : 'bg-amber-600/30 border border-amber-500/30 text-amber-200 hover:bg-amber-600/50 active:scale-95'
-                          }`}
-                        >
-                          {isEditingFavorites && (
-                            <span
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                removeFromFavorites(fav.menuItemId)
-                              }}
-                              className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 rounded-full text-white text-xs flex items-center justify-center cursor-pointer"
-                            >
-                              ×
-                            </span>
-                          )}
-                          {fav.name}
-                        </button>
+                          fav={fav}
+                          isEditingFavorites={isEditingFavorites}
+                          onTap={handleFavoriteTap}
+                          onRemove={removeFromFavorites}
+                        />
                       ))}
                     </div>
                   )}

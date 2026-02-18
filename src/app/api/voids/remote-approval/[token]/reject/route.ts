@@ -91,16 +91,12 @@ export const POST = withVenue(async function POST(
       `${approval.manager.firstName} ${approval.manager.lastName}`
 
     // Dispatch socket notification to POS terminal
-    try {
-      await dispatchVoidApprovalUpdate(approval.locationId, {
-        type: 'rejected',
-        approvalId: approval.id,
-        terminalId: approval.requestingTerminalId || undefined,
-        managerName,
-      })
-    } catch (socketError) {
-      console.warn('[RemoteVoidApproval] Socket dispatch failed:', socketError)
-    }
+    void dispatchVoidApprovalUpdate(approval.locationId, {
+      type: 'rejected',
+      approvalId: approval.id,
+      terminalId: approval.requestingTerminalId || undefined,
+      managerName,
+    }).catch(err => console.error('[RemoteVoidApproval] Socket dispatch failed:', err))
 
     return NextResponse.json({
       data: {

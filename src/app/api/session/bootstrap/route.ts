@@ -81,9 +81,12 @@ async function getMenuForBootstrap(locationId: string) {
         category: { select: { categoryType: true } },
         modifierGroups: {
           where: { deletedAt: null, modifierGroup: { deletedAt: null } },
-          include: {
+          select: {
             modifierGroup: {
-              include: {
+              select: {
+                id: true,
+                name: true,
+                isSpiritGroup: true,
                 modifiers: {
                   where: { deletedAt: null, isActive: true },
                   select: { id: true, name: true, price: true, spiritTier: true },
@@ -94,7 +97,8 @@ async function getMenuForBootstrap(locationId: string) {
           },
         },
         recipeIngredients: {
-          include: {
+          select: {
+            pourCount: true,
             bottleProduct: { select: { id: true, name: true, pourCost: true } },
           },
         },

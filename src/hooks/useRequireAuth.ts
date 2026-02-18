@@ -16,8 +16,11 @@ function isCloudMode(): boolean {
 
 export function useRequireAuth() {
   const router = useRouter()
-  const { employee, locationId, isAuthenticated, logout, login } =
-    useAuthStore()
+  const employee = useAuthStore(s => s.employee)
+  const locationId = useAuthStore(s => s.locationId)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const logout = useAuthStore(s => s.logout)
+  const login = useAuthStore(s => s.login)
   const validatedRef = useRef(false)
 
   useEffect(() => {

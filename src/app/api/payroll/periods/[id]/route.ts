@@ -118,7 +118,7 @@ export const PUT = withVenue(async function PUT(
       })
 
       // Delete existing pay stubs for this period (to regenerate)
-      await db.payStub.deleteMany({ where: { payrollPeriodId: id } })
+      await db.payStub.updateMany({ where: { payrollPeriodId: id }, data: { deletedAt: new Date() } })
 
       let totalRegularHours = 0
       let totalOvertimeHours = 0
@@ -128,82 +128,99 @@ export const PUT = withVenue(async function PUT(
       let totalBankedTips = 0
       let grandTotal = 0
 
-      for (const employee of employees) {
-        // Get time entries for this period
-        const timeEntries = await db.timeClockEntry.findMany({
+      const employeeIds = employees.map(e => e.id)
+
+      // Batch-fetch all data BEFORE the loop to avoid N+1 queries
+      const [allTimeEntries, allShifts, allTipLedgerEntries, allOrders] = await Promise.all([
+        db.timeClockEntry.findMany({
           where: {
-            employeeId: employee.id,
-            clockIn: {
-              gte: period.periodStart,
-              lte: period.periodEnd,
-            },
+            employeeId: { in: employeeIds },
+            clockIn: { gte: period.periodStart, lte: period.periodEnd },
             clockOut: { not: null },
           },
-        })
-
-        // Get closed shifts for tips
-        const shifts = await db.shift.findMany({
+        }),
+        db.shift.findMany({
           where: {
-            employeeId: employee.id,
+            employeeId: { in: employeeIds },
             status: 'closed',
-            startedAt: {
-              gte: period.periodStart,
-              lte: period.periodEnd,
-            },
+            startedAt: { gte: period.periodStart, lte: period.periodEnd },
           },
-        })
-
-        // Migrated from legacy TipBank/TipShare (Skill 273) — now uses TipLedgerEntry
-        const [tipOutsGivenAgg, tipOutsReceivedAgg, tipCreditsAgg] = await Promise.all([
-          db.tipLedgerEntry.aggregate({
-            where: {
-              employeeId: employee.id,
-              sourceType: 'ROLE_TIPOUT',
-              type: 'DEBIT',
-              deletedAt: null,
-              createdAt: { gte: period.periodStart, lte: period.periodEnd },
-            },
-            _sum: { amountCents: true },
-          }),
-          db.tipLedgerEntry.aggregate({
-            where: {
-              employeeId: employee.id,
-              sourceType: 'ROLE_TIPOUT',
-              type: 'CREDIT',
-              deletedAt: null,
-              createdAt: { gte: period.periodStart, lte: period.periodEnd },
-            },
-            _sum: { amountCents: true },
-          }),
-          db.tipLedgerEntry.aggregate({
-            where: {
-              employeeId: employee.id,
-              sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] },
-              type: 'CREDIT',
-              deletedAt: null,
-              createdAt: { gte: period.periodStart, lte: period.periodEnd },
-            },
-            _sum: { amountCents: true },
-          }),
-        ])
-
-        // Convert cents to dollars for downstream calculations
-        const tipSharesGivenTotal = Math.abs(tipOutsGivenAgg._sum.amountCents || 0) / 100
-        const tipSharesReceivedTotal = (tipOutsReceivedAgg._sum.amountCents || 0) / 100
-        const bankedTipsCollected = (tipCreditsAgg._sum.amountCents || 0) / 100
-
-        // Get commission from orders
-        const orders = await db.order.findMany({
+        }),
+        db.tipLedgerEntry.findMany({
           where: {
-            employeeId: employee.id,
+            employeeId: { in: employeeIds },
+            deletedAt: null,
+            createdAt: { gte: period.periodStart, lte: period.periodEnd },
+            OR: [
+              { sourceType: 'ROLE_TIPOUT', type: 'DEBIT' },
+              { sourceType: 'ROLE_TIPOUT', type: 'CREDIT' },
+              { sourceType: { in: ['DIRECT_TIP', 'TIP_GROUP'] }, type: 'CREDIT' },
+            ],
+          },
+        }),
+        db.order.findMany({
+          where: {
+            employeeId: { in: employeeIds },
             status: { in: ['completed', 'paid'] },
-            createdAt: {
-              gte: period.periodStart,
-              lte: period.periodEnd,
-            },
+            createdAt: { gte: period.periodStart, lte: period.periodEnd },
             commissionTotal: { gt: 0 },
           },
-        })
+        }),
+      ])
+
+      // Build Maps for O(1) lookups by employeeId
+      const timeEntriesByEmployee = new Map<string, typeof allTimeEntries>()
+      for (const entry of allTimeEntries) {
+        const list = timeEntriesByEmployee.get(entry.employeeId) || []
+        list.push(entry)
+        timeEntriesByEmployee.set(entry.employeeId, list)
+      }
+
+      const shiftsByEmployee = new Map<string, typeof allShifts>()
+      for (const shift of allShifts) {
+        const list = shiftsByEmployee.get(shift.employeeId) || []
+        list.push(shift)
+        shiftsByEmployee.set(shift.employeeId, list)
+      }
+
+      // Aggregate tip ledger entries per employee
+      const tipDataByEmployee = new Map<string, { givenCents: number; receivedCents: number; creditsCents: number }>()
+      for (const entry of allTipLedgerEntries) {
+        let data = tipDataByEmployee.get(entry.employeeId)
+        if (!data) {
+          data = { givenCents: 0, receivedCents: 0, creditsCents: 0 }
+          tipDataByEmployee.set(entry.employeeId, data)
+        }
+        const cents = entry.amountCents || 0
+        if (entry.sourceType === 'ROLE_TIPOUT' && entry.type === 'DEBIT') {
+          data.givenCents += cents
+        } else if (entry.sourceType === 'ROLE_TIPOUT' && entry.type === 'CREDIT') {
+          data.receivedCents += cents
+        } else {
+          // DIRECT_TIP or TIP_GROUP CREDIT
+          data.creditsCents += cents
+        }
+      }
+
+      const ordersByEmployee = new Map<string, typeof allOrders>()
+      for (const order of allOrders) {
+        if (!order.employeeId) continue
+        const list = ordersByEmployee.get(order.employeeId) || []
+        list.push(order)
+        ordersByEmployee.set(order.employeeId, list)
+      }
+
+      for (const employee of employees) {
+        // O(1) lookups from pre-fetched maps
+        const timeEntries = timeEntriesByEmployee.get(employee.id) || []
+        const shifts = shiftsByEmployee.get(employee.id) || []
+        const tipData = tipDataByEmployee.get(employee.id) || { givenCents: 0, receivedCents: 0, creditsCents: 0 }
+        const orders = ordersByEmployee.get(employee.id) || []
+
+        // Convert cents to dollars for downstream calculations
+        const tipSharesGivenTotal = Math.abs(tipData.givenCents) / 100
+        const tipSharesReceivedTotal = tipData.receivedCents / 100
+        const bankedTipsCollected = tipData.creditsCents / 100
 
         // Calculate totals
         const regularHours = timeEntries.reduce((sum, e) => sum + Number(e.regularHours || 0), 0)
@@ -352,34 +369,58 @@ export const PUT = withVenue(async function PUT(
         where: { payrollPeriodId: id },
       })
 
-      for (const stub of payStubs) {
-        // Update pay stub
-        await db.payStub.update({
-          where: { id: stub.id },
-          data: {
-            status: 'paid',
-            paidAt: new Date(),
-          },
-        })
+      // Batch update all pay stubs to paid status (1 query instead of N)
+      const paidAt = new Date()
+      await db.payStub.updateMany({
+        where: { payrollPeriodId: id },
+        data: { status: 'paid', paidAt },
+      })
 
-        // Update employee YTD
+      // Aggregate YTD increments per employee, then update each
+      // (employee updates use `increment` so must be per-employee, but we avoid the per-stub payStub.update)
+      const ytdByEmployee = new Map<string, {
+        grossPay: number; federalTax: number; stateTax: number; localTax: number;
+        socialSecurity: number; medicare: number; tips: number; commission: number; netPay: number;
+      }>()
+
+      for (const stub of payStubs) {
         const deductions = (stub.deductions || {}) as Record<string, number>
-        await db.employee.update({
-          where: { id: stub.employeeId },
-          data: {
-            ytdGrossWages: { increment: Number(stub.grossPay) },
-            ytdFederalTax: { increment: deductions.federalTax || 0 },
-            ytdStateTax: { increment: deductions.stateTax || 0 },
-            ytdLocalTax: { increment: deductions.localTax || 0 },
-            ytdSocialSecurity: { increment: deductions.socialSecurity || 0 },
-            ytdMedicare: { increment: deductions.medicare || 0 },
-            ytdTips: { increment: Number(stub.netTips) },
-            ytdCommission: { increment: Number(stub.commissionTotal) },
-            ytdNetPay: { increment: Number(stub.netPay) },
-            ytdLastUpdated: new Date(),
-          },
-        })
+        let agg = ytdByEmployee.get(stub.employeeId)
+        if (!agg) {
+          agg = { grossPay: 0, federalTax: 0, stateTax: 0, localTax: 0, socialSecurity: 0, medicare: 0, tips: 0, commission: 0, netPay: 0 }
+          ytdByEmployee.set(stub.employeeId, agg)
+        }
+        agg.grossPay += Number(stub.grossPay)
+        agg.federalTax += deductions.federalTax || 0
+        agg.stateTax += deductions.stateTax || 0
+        agg.localTax += deductions.localTax || 0
+        agg.socialSecurity += deductions.socialSecurity || 0
+        agg.medicare += deductions.medicare || 0
+        agg.tips += Number(stub.netTips)
+        agg.commission += Number(stub.commissionTotal)
+        agg.netPay += Number(stub.netPay)
       }
+
+      // One update per employee (not per stub)
+      await Promise.all(
+        Array.from(ytdByEmployee.entries()).map(([employeeId, agg]) =>
+          db.employee.update({
+            where: { id: employeeId },
+            data: {
+              ytdGrossWages: { increment: agg.grossPay },
+              ytdFederalTax: { increment: agg.federalTax },
+              ytdStateTax: { increment: agg.stateTax },
+              ytdLocalTax: { increment: agg.localTax },
+              ytdSocialSecurity: { increment: agg.socialSecurity },
+              ytdMedicare: { increment: agg.medicare },
+              ytdTips: { increment: agg.tips },
+              ytdCommission: { increment: agg.commission },
+              ytdNetPay: { increment: agg.netPay },
+              ytdLastUpdated: paidAt,
+            },
+          })
+        )
+      )
 
       // Update period
       await db.payrollPeriod.update({

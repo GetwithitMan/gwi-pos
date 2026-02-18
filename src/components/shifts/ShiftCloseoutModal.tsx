@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
@@ -115,6 +116,8 @@ export function ShiftCloseoutModal({
   permissions = [],
   cashHandlingMode,
 }: ShiftCloseoutModalProps) {
+  const router = useRouter()
+
   // Check if user has permission to see expected cash before counting (non-blind mode)
   const canSeeExpectedFirst = hasPermission(permissions, PERMISSIONS.MGR_CASH_DRAWER_FULL)
   const mode = cashHandlingMode || 'drawer'
@@ -1178,7 +1181,7 @@ export function ShiftCloseoutModal({
                         <button
                           onClick={() => {
                             onClose()
-                            window.location.href = '/orders'
+                            router.push('/orders')
                           }}
                           className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium rounded transition-colors"
                         >

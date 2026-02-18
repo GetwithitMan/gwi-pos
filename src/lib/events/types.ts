@@ -182,6 +182,21 @@ export interface EventMap {
 
   // Void Approvals
   'void:approval-update': VoidApprovalUpdateEvent
+
+  // Inventory
+  'inventory:adjustment': InventoryAdjustmentEvent
+  'inventory:stock-change': InventoryStockChangeEvent
+
+  // Menu (granular — used alongside menu:updated)
+  'menu:item-changed': MenuItemChangedEvent
+  'menu:stock-changed': MenuStockChangedEvent
+  'menu:structure-changed': MenuStructureChangedEvent
+
+  // Tip Groups
+  'tip-group:updated': TipGroupUpdatedEvent
+
+  // Location Alerts
+  'location:alert': LocationAlertEvent
 }
 
 export type EventName = keyof EventMap
@@ -282,6 +297,68 @@ export interface VoidApprovalUpdateEvent {
   terminalId?: string
   approvalCode?: string
   managerName: string
+}
+
+// Inventory Events
+export interface InventoryAdjustmentEvent {
+  adjustments: Array<{
+    ingredientId: string
+    name: string
+    previousStock: number
+    newStock: number
+    change: number
+    unit: string
+  }>
+  adjustedById: string
+  adjustedByName: string
+  totalItems: number
+}
+
+export interface InventoryStockChangeEvent {
+  ingredientId: string
+  name: string
+  currentStock: number
+  previousStock: number
+  unit: string
+  stockLevel: 'critical' | 'low' | 'ok' | 'good'
+}
+
+// Menu Granular Events
+export interface MenuItemChangedEvent {
+  itemId: string
+  action: 'created' | 'updated' | 'deleted' | 'restored'
+  changes?: Record<string, unknown>
+}
+
+export interface MenuStockChangedEvent {
+  itemId: string
+  stockStatus: 'in_stock' | 'low_stock' | 'critical' | 'out_of_stock'
+  isOrderableOnline: boolean
+}
+
+export interface MenuStructureChangedEvent {
+  action: 'category-created' | 'category-updated' | 'category-deleted' | 'modifier-group-updated'
+  entityId: string
+  entityType: 'category' | 'modifier-group'
+}
+
+// Tip Group Events
+export interface TipGroupUpdatedEvent {
+  action: 'created' | 'member-joined' | 'member-left' | 'closed' | 'ownership-transferred' | 'tip-received'
+  groupId: string
+  employeeId?: string
+  employeeName?: string
+  newOwnerId?: string
+  tipAmountCents?: number
+}
+
+// Location Alert Events
+export interface LocationAlertEvent {
+  type: 'info' | 'warning' | 'error' | 'success'
+  title: string
+  message: string
+  dismissable?: boolean
+  duration?: number
 }
 
 // ==================== Channel Types ====================

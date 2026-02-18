@@ -82,12 +82,12 @@ export function createProvider(
 
     case 'pusher':
       // Pusher provider not yet implemented
-      console.warn('[Events] Pusher provider not implemented, falling back to local')
+      if (process.env.NODE_ENV !== 'production') console.warn('[Events] Pusher provider not implemented, falling back to local')
       return createLocalProvider(config)
 
     case 'ably':
       // Ably provider not yet implemented
-      console.warn('[Events] Ably provider not implemented, falling back to local')
+      if (process.env.NODE_ENV !== 'production') console.warn('[Events] Ably provider not implemented, falling back to local')
       return createLocalProvider(config)
 
     case 'local':
@@ -195,7 +195,7 @@ export async function emitServerEvent<T extends keyof import('./types').EventMap
   // - For Pusher: Call Pusher's REST API to trigger event
   // - For Ably: Call Ably's REST API to publish
 
-  // TODO: Implement server-side event emission
+  // DEFERRED: Implement server-side event emission — tracked in PM-TASK-BOARD.md
   // This requires storing a reference to the socket.io server instance
   // or Pusher/Ably server-side client
 }

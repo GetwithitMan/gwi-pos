@@ -85,6 +85,16 @@ export const PUT = withVenue(async function PUT(
 
     // Handle item count updates
     if (body.items) {
+      // Pre-fetch all inventory items for cost calculation (batch instead of N+1)
+      const inventoryItemIds = body.items
+        .map((u: { id: string }) => existing.items.find(i => i.id === u.id)?.inventoryItemId)
+        .filter(Boolean) as string[]
+      const invItems = await db.inventoryItem.findMany({
+        where: { id: { in: inventoryItemIds } },
+        select: { id: true, costPerUnit: true },
+      })
+      const invItemMap = new Map(invItems.map(i => [i.id, i]))
+
       for (const itemUpdate of body.items) {
         const countItem = existing.items.find(i => i.id === itemUpdate.id)
         if (!countItem) continue
@@ -93,11 +103,7 @@ export const PUT = withVenue(async function PUT(
         const expectedQty = Number(countItem.expectedQty)
         const varianceQty = countedQty - expectedQty
 
-        // Get item cost for variance value
-        const invItem = await db.inventoryItem.findUnique({
-          where: { id: countItem.inventoryItemId },
-          select: { costPerUnit: true },
-        })
+        const invItem = invItemMap.get(countItem.inventoryItemId)
         const costPerUnit = invItem ? Number(invItem.costPerUnit) : 0
         const varianceValue = varianceQty * costPerUnit
         const variancePct = expectedQty > 0 ? (varianceQty / expectedQty) * 100 : 0
@@ -160,39 +166,42 @@ export const PUT = withVenue(async function PUT(
         where: { inventoryCountId: id },
       })
 
-      for (const item of items) {
-        if (item.countedQty !== null) {
-          // Get current stock for transaction record
-          const invItem = await db.inventoryItem.findUnique({
-            where: { id: item.inventoryItemId },
-            select: { currentStock: true, costPerUnit: true },
-          })
-          const currentStock = invItem ? Number(invItem.currentStock) : 0
-          const countedQty = Number(item.countedQty)
+      // Pre-fetch all inventory items for stock levels (batch instead of N+1)
+      const countedItems = items.filter(item => item.countedQty !== null)
+      const reviewInvItemIds = countedItems.map(item => item.inventoryItemId)
+      const reviewInvItems = await db.inventoryItem.findMany({
+        where: { id: { in: reviewInvItemIds } },
+        select: { id: true, currentStock: true, costPerUnit: true },
+      })
+      const reviewInvItemMap = new Map(reviewInvItems.map(i => [i.id, i]))
 
-          await db.inventoryItem.update({
-            where: { id: item.inventoryItemId },
+      for (const item of countedItems) {
+        const invItem = reviewInvItemMap.get(item.inventoryItemId)
+        const currentStock = invItem ? Number(invItem.currentStock) : 0
+        const countedQty = Number(item.countedQty)
+
+        await db.inventoryItem.update({
+          where: { id: item.inventoryItemId },
+          data: {
+            currentStock: item.countedQty,
+          },
+        })
+
+        // Create transaction record if there's a variance
+        if (item.variance && Number(item.variance) !== 0) {
+          await db.inventoryItemTransaction.create({
             data: {
-              currentStock: item.countedQty,
+              locationId: existing.locationId,
+              inventoryItemId: item.inventoryItemId,
+              type: 'count',
+              quantityBefore: currentStock,
+              quantityChange: Number(item.variance),
+              quantityAfter: countedQty,
+              unitCost: invItem?.costPerUnit,
+              totalCost: item.varianceValue,
+              reason: `Count adjustment - ${existing.countType}`,
             },
           })
-
-          // Create transaction record if there's a variance
-          if (item.variance && Number(item.variance) !== 0) {
-            await db.inventoryItemTransaction.create({
-              data: {
-                locationId: existing.locationId,
-                inventoryItemId: item.inventoryItemId,
-                type: 'count',
-                quantityBefore: currentStock,
-                quantityChange: Number(item.variance),
-                quantityAfter: countedQty,
-                unitCost: invItem?.costPerUnit,
-                totalCost: item.varianceValue,
-                reason: `Count adjustment - ${existing.countType}`,
-              },
-            })
-          }
         }
       }
 

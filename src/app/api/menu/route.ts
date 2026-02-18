@@ -4,6 +4,7 @@ import { getAllMenuItemsStockStatus } from '@/lib/stock-status'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 import { getMenuCache, setMenuCache, buildMenuCacheKey } from '@/lib/menu-cache'
+import { getLocationId } from '@/lib/location-cache'
 
 // Force dynamic rendering - never use Next.js cache (we have our own)
 export const dynamic = 'force-dynamic'
@@ -14,22 +15,26 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId')
     const categoryType = searchParams.get('categoryType')   // Optional: 'food', 'liquor', 'drinks', etc.
     const categoryShow = searchParams.get('categoryShow')   // Optional: 'food', 'bar', 'entertainment'
 
-    // Check server-side cache first
-    if (locationId) {
-      const cacheKey = buildMenuCacheKey(locationId, categoryType, categoryShow)
-      const cached = getMenuCache(cacheKey)
-      if (cached) {
-        timing.add('cache', 0, 'Hit')
-        return NextResponse.json(cached)
-      }
+    // Get the location ID (cached)
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'No location found' },
+        { status: 400 }
+      )
     }
 
-    // Build location filter - if locationId provided, filter by it
-    const locationFilter = locationId ? { locationId } : {}
+    // Check server-side cache first
+    const cacheKey = buildMenuCacheKey(locationId, categoryType, categoryShow)
+    const cached = getMenuCache(cacheKey)
+    if (cached) {
+      timing.add('cache', 0, 'Hit')
+      return NextResponse.json(cached)
+    }
+
     const categoryTypeFilter = categoryType ? { categoryType } : {}
     const categoryShowFilter = categoryShow ? { categoryShow } : {}
 
@@ -37,7 +42,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     timing.start('db')
     const [categories, items, stockStatusMap] = await Promise.all([
       db.category.findMany({
-        where: { isActive: true, deletedAt: null, ...locationFilter, ...categoryTypeFilter, ...categoryShowFilter },
+        where: { isActive: true, deletedAt: null, locationId, ...categoryTypeFilter, ...categoryShowFilter },
         orderBy: { sortOrder: 'asc' },
         include: {
           _count: {
@@ -52,7 +57,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         where: {
           isActive: true,
           deletedAt: null,
-          ...locationFilter,
+          locationId,
           ...(categoryType ? { category: { categoryType } } : {}),
           ...(categoryShow ? { category: { categoryShow } } : {}),
         },
@@ -110,7 +115,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         }
       }),
 
-      locationId ? getAllMenuItemsStockStatus(locationId) : Promise.resolve(new Map()),
+      getAllMenuItemsStockStatus(locationId),
     ])
     timing.end('db', 'Queries')
 
@@ -251,10 +256,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     timing.end('map', 'Response mapping')
 
     // Store in cache
-    if (locationId) {
-      const cacheKey = buildMenuCacheKey(locationId, categoryType, categoryShow)
-      setMenuCache(cacheKey, responseData)
-    }
+    setMenuCache(cacheKey, responseData)
 
     return NextResponse.json(responseData)
   } catch (error) {

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Retry capture for a walkout tab (manual trigger)
@@ -34,9 +35,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const locationId = retry.locationId
-    const settings = parseSettings(
-      (await db.location.findUnique({ where: { id: locationId }, select: { settings: true } }))?.settings
-    )
+    const settings = parseSettings(await getLocationSettings(locationId))
     const { walkoutRetryFrequencyDays, walkoutMaxRetryDays } = settings.payments
 
     try {

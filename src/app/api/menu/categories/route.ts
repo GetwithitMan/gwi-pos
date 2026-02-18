@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
+import { emitToLocation } from '@/lib/socket-server'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { getLocationId } from '@/lib/location-cache'
@@ -9,13 +10,17 @@ import { withVenue } from '@/lib/with-venue'
 // GET - List all categories for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId')
-
-    const locationFilter = locationId ? { locationId } : {}
+    // Get the location ID (cached)
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json(
+        { error: 'No location found' },
+        { status: 400 }
+      )
+    }
 
     const categories = await db.category.findMany({
-      where: { isActive: true, deletedAt: null, ...locationFilter },
+      where: { isActive: true, deletedAt: null, locationId },
       orderBy: { sortOrder: 'asc' },
       include: {
         _count: {
@@ -87,6 +92,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Invalidate server-side menu cache
     invalidateMenuCache(locationId)
+
+    // Fire-and-forget socket dispatch for real-time menu updates
+    void emitToLocation(locationId, 'menu:changed', { action: 'category_created' }).catch(() => {})
 
     // Dispatch socket event for real-time menu structure update
     dispatchMenuStructureChanged(locationId, {

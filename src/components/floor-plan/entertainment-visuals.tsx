@@ -1,5 +1,7 @@
 'use client'
 
+import { memo } from 'react'
+
 /**
  * Entertainment Visual SVG Components
  *
@@ -35,7 +37,7 @@ const STATUS_STROKES: Record<string, string> = {
 /**
  * Pool Table - Green felt with pockets and wood rail
  */
-export function PoolTableVisual({
+export const PoolTableVisual = memo(function PoolTableVisual({
   width = 160,
   height = 90,
   fillColor,
@@ -97,12 +99,12 @@ export function PoolTableVisual({
       />
     </svg>
   )
-}
+})
 
 /**
  * Dartboard - Circular target with wedges
  */
-export function DartboardVisual({
+export const DartboardVisual = memo(function DartboardVisual({
   width = 100,
   height = 100,
   fillColor,
@@ -153,12 +155,12 @@ export function DartboardVisual({
       <circle cx="50" cy="50" r="46" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * Arcade Cabinet - Retro game cabinet with screen
  */
-export function ArcadeVisual({
+export const ArcadeVisual = memo(function ArcadeVisual({
   width = 70,
   height = 100,
   fillColor,
@@ -208,12 +210,12 @@ export function ArcadeVisual({
       <rect x="10" y="10" width="50" height="88" rx="4" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * Foosball Table - Table with rods and players
  */
-export function FoosballVisual({
+export const FoosballVisual = memo(function FoosballVisual({
   width = 140,
   height = 80,
   fillColor,
@@ -269,12 +271,12 @@ export function FoosballVisual({
       <rect x="12" y="12" width="116" height="56" rx="2" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * Shuffleboard Table - Long narrow table with scoring zones
  */
-export function ShuffleboardVisual({
+export const ShuffleboardVisual = memo(function ShuffleboardVisual({
   width = 200,
   height = 50,
   fillColor,
@@ -311,12 +313,12 @@ export function ShuffleboardVisual({
       <rect x="8" y="8" width="184" height="34" rx="2" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * Ping Pong Table - Table with net
  */
-export function PingPongVisual({
+export const PingPongVisual = memo(function PingPongVisual({
   width = 140,
   height = 80,
   fillColor,
@@ -351,12 +353,12 @@ export function PingPongVisual({
       <rect x="5" y="5" width="130" height="70" rx="2" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * Bowling Lane - Long lane with pins
  */
-export function BowlingLaneVisual({
+export const BowlingLaneVisual = memo(function BowlingLaneVisual({
   width = 220,
   height = 45,
   fillColor,
@@ -400,12 +402,12 @@ export function BowlingLaneVisual({
       <rect x="2" y="5" width="216" height="35" rx="2" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * Karaoke Stage - Small platform with mic
  */
-export function KaraokeStageVisual({
+export const KaraokeStageVisual = memo(function KaraokeStageVisual({
   width = 100,
   height = 80,
   fillColor,
@@ -447,12 +449,12 @@ export function KaraokeStageVisual({
       <rect x="10" y="50" width="80" height="20" rx="2" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * DJ Booth - Booth with turntables
  */
-export function DJBoothVisual({
+export const DJBoothVisual = memo(function DJBoothVisual({
   width = 120,
   height = 70,
   fillColor,
@@ -500,12 +502,12 @@ export function DJBoothVisual({
       <rect x="5" y="25" width="110" height="40" rx="4" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * Photo Booth - Curtained booth with camera
  */
-export function PhotoBoothVisual({
+export const PhotoBoothVisual = memo(function PhotoBoothVisual({
   width = 80,
   height = 100,
   fillColor,
@@ -551,12 +553,12 @@ export function PhotoBoothVisual({
       <rect x="18" y="12" width="44" height="80" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * Generic Game Table - Flexible table for card games, board games, etc.
  */
-export function GameTableVisual({
+export const GameTableVisual = memo(function GameTableVisual({
   width = 100,
   height = 100,
   fillColor,
@@ -605,12 +607,12 @@ export function GameTableVisual({
       <circle cx="50" cy="50" r="45" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 /**
  * VR Station - Virtual reality gaming station
  */
-export function VRStationVisual({
+export const VRStationVisual = memo(function VRStationVisual({
   width = 90,
   height = 90,
   fillColor,
@@ -655,7 +657,7 @@ export function VRStationVisual({
       <rect x="15" y="15" width="60" height="60" rx="2" fill={fill} style={{ pointerEvents: 'none' }} />
     </svg>
   )
-}
+})
 
 // ============================================
 // VISUAL TYPE REGISTRY
@@ -696,7 +698,7 @@ export const ENTERTAINMENT_VISUAL_OPTIONS: { value: EntertainmentVisualType; lab
 /**
  * Render the appropriate visual for a given type
  */
-export function EntertainmentVisual({
+export const EntertainmentVisual = memo(function EntertainmentVisual({
   visualType,
   ...props
 }: VisualProps & { visualType: EntertainmentVisualType }) {
@@ -706,4 +708,4 @@ export function EntertainmentVisual({
     return <GameTableVisual {...props} />
   }
   return <Component {...props} />
-}
+})

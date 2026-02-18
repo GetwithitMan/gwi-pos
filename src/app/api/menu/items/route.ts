@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
+import { emitToLocation } from '@/lib/socket-server'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
@@ -43,9 +44,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             deletedAt: null,
             modifierGroup: { deletedAt: null }
           },
-          include: {
+          select: {
             modifierGroup: {
-              include: {
+              select: {
+                id: true,
+                name: true,
+                isSpiritGroup: true,
                 modifiers: {
                   where: { deletedAt: null, isActive: true },
                   select: {
@@ -55,9 +59,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
                     spiritTier: true,
                   },
                   orderBy: { sortOrder: 'asc' }
-                }
-              }
-            }
+                },
+              },
+            },
           }
         },
         // Include ingredients for stock status (only if requested)
@@ -279,6 +283,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Invalidate server-side menu cache so next GET returns fresh data
     invalidateMenuCache(category.locationId)
+
+    // Fire-and-forget socket dispatch for real-time menu updates
+    void emitToLocation(category.locationId, 'menu:changed', { action: 'created' }).catch(() => {})
 
     // Dispatch socket event for real-time menu updates
     dispatchMenuItemChanged(category.locationId, {

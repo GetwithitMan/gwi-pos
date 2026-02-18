@@ -222,7 +222,7 @@ export function startHealthMonitoring(locationId: string): void {
     }
   }, HEALTH_CHECK_INTERVAL)
 
-  console.log(`✅ Health monitoring started (every ${HEALTH_CHECK_INTERVAL / 1000}s)`)
+  if (process.env.NODE_ENV !== 'production') console.log(`Health monitoring started (every ${HEALTH_CHECK_INTERVAL / 1000}s)`)
 }
 
 /**
@@ -233,7 +233,7 @@ export function stopHealthMonitoring(): void {
     clearInterval(monitorInterval)
     monitorInterval = null
     currentLocationId = null
-    console.log('Health monitoring stopped')
+    if (process.env.NODE_ENV !== 'production') console.log('Health monitoring stopped')
   }
 }
 

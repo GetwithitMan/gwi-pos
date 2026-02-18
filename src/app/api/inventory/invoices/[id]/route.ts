@@ -68,13 +68,22 @@ export const PUT = withVenue(async function PUT(
 
     // Handle status changes
     if (body.status === 'received' && existing.status === 'pending') {
+      // Pre-fetch all inventory items for the line items (batch instead of N+1)
+      const lineItemInvIds = existing.lineItems
+        .filter(li => li.inventoryItemId)
+        .map(li => li.inventoryItemId!)
+      const invItems = await db.inventoryItem.findMany({
+        where: { id: { in: lineItemInvIds } },
+      })
+      const invItemMap = new Map(invItems.map(i => [i.id, i]))
+
       // Apply invoice to inventory - update stock levels and costs
+      const transactionData: Parameters<typeof db.inventoryItemTransaction.create>[0]['data'][] = []
+
       for (const lineItem of existing.lineItems) {
         if (!lineItem.inventoryItemId) continue
 
-        const item = await db.inventoryItem.findUnique({
-          where: { id: lineItem.inventoryItemId },
-        })
+        const item = invItemMap.get(lineItem.inventoryItemId)
         if (!item) continue
 
         const receivedQty = Number(lineItem.quantity)
@@ -90,7 +99,7 @@ export const PUT = withVenue(async function PUT(
           newAvgCost = totalQty > 0 ? totalValue / totalQty : newCost
         }
 
-        // Update inventory item
+        // Update inventory item (must be sequential — each has unique cost calculation)
         await db.inventoryItem.update({
           where: { id: lineItem.inventoryItemId },
           data: {
@@ -102,20 +111,23 @@ export const PUT = withVenue(async function PUT(
           },
         })
 
-        // Create transaction record
-        await db.inventoryItemTransaction.create({
-          data: {
-            locationId: existing.locationId,
-            inventoryItemId: lineItem.inventoryItemId,
-            type: 'purchase',
-            quantityBefore: currentStock,
-            quantityChange: receivedQty,
-            quantityAfter: currentStock + receivedQty,
-            unitCost: newCost,
-            totalCost: Number(lineItem.totalCost),
-            reason: `Invoice ${existing.invoiceNumber}`,
-          },
+        // Collect transaction data for batch create
+        transactionData.push({
+          locationId: existing.locationId,
+          inventoryItemId: lineItem.inventoryItemId,
+          type: 'purchase',
+          quantityBefore: currentStock,
+          quantityChange: receivedQty,
+          quantityAfter: currentStock + receivedQty,
+          unitCost: newCost,
+          totalCost: Number(lineItem.totalCost),
+          reason: `Invoice ${existing.invoiceNumber}`,
         })
+      }
+
+      // Batch create all transaction records at once
+      if (transactionData.length > 0) {
+        await db.inventoryItemTransaction.createMany({ data: transactionData })
       }
 
       await db.invoice.update({

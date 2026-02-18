@@ -66,13 +66,16 @@ import { toast } from '@/stores/toast-store'
 import type { DatacapResult } from '@/hooks/useDatacap'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
+import { useSplitTickets } from '@/hooks/useSplitTickets'
+import { useShiftManagement } from '@/hooks/useShiftManagement'
+import { useTimedRentals } from '@/hooks/useTimedRentals'
 const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentOverlay'))
 const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow').then(m => ({ default: m.CardFirstTabFlow })))
 const TabNamePromptModal = lazy(() => import('@/components/tabs/TabNamePromptModal').then(m => ({ default: m.TabNamePromptModal })))
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
-// TODO: Replace with dynamic terminal ID from device provisioning or localStorage
-// when multi-terminal support is implemented. For now, uses the seeded terminal.
+// DEFERRED: Replace with dynamic terminal ID from device provisioning — tracked in PM-TASK-BOARD.md
+// For now, uses the seeded terminal.
 const TERMINAL_ID = 'terminal-1'
 
 export default function OrdersPage() {
@@ -90,6 +93,11 @@ export default function OrdersPage() {
   // immediately on mount before the real auth state loads, causing unexpected logouts.
   const [hydrated, setHydrated] = useState(false)
   useEffect(() => { setHydrated(true) }, [])
+
+  // Preload PaymentModal so first payment isn't delayed
+  useEffect(() => {
+    import('@/components/payment/PaymentModal')
+  }, [])
 
   // Shared handlers from useActiveOrder hook
   const activeOrderFull = useActiveOrder({
@@ -318,17 +326,22 @@ export default function OrdersPage() {
   // Item Transfer modal state
   const [showItemTransferModal, setShowItemTransferModal] = useState(false)
 
-  // Split Ticket Manager state
-  const [showSplitTicketManager, setShowSplitTicketManager] = useState(false)
-  const [splitManageMode, setSplitManageMode] = useState(false)
-  const [editingChildSplit, setEditingChildSplit] = useState(false)
-  const [splitParentToReturnTo, setSplitParentToReturnTo] = useState<string | null>(null)
-  const [payAllSplitsQueue, setPayAllSplitsQueue] = useState<string[]>([]) // Auto-cycle remaining split IDs
-  const [showPayAllSplitsConfirm, setShowPayAllSplitsConfirm] = useState(false)
-  const [payAllSplitsTotal, setPayAllSplitsTotal] = useState(0)
-  const [payAllSplitsParentId, setPayAllSplitsParentId] = useState<string | null>(null)
-  const [payAllSplitsProcessing, setPayAllSplitsProcessing] = useState(false)
-  const [payAllSplitsStep, setPayAllSplitsStep] = useState<'confirm' | 'datacap_card'>('confirm')
+  // Split Ticket Manager state (extracted to useSplitTickets hook)
+  const {
+    showSplitTicketManager, setShowSplitTicketManager,
+    splitManageMode, setSplitManageMode,
+    editingChildSplit, setEditingChildSplit,
+    splitParentToReturnTo, setSplitParentToReturnTo,
+    payAllSplitsQueue, setPayAllSplitsQueue,
+    showPayAllSplitsConfirm, setShowPayAllSplitsConfirm,
+    payAllSplitsTotal, setPayAllSplitsTotal,
+    payAllSplitsParentId, setPayAllSplitsParentId,
+    payAllSplitsProcessing, setPayAllSplitsProcessing,
+    payAllSplitsStep, setPayAllSplitsStep,
+    orderSplitChips, setOrderSplitChips,
+    splitParentId, setSplitParentId,
+    splitChipsFlashing, setSplitChipsFlashing,
+  } = useSplitTickets()
 
   // Tabs panel state
   const [showTabsPanel, setShowTabsPanel] = useState(false)
@@ -368,10 +381,6 @@ export default function OrdersPage() {
   // Ref callbacks for UnifiedPOSHeader → FloorPlanHome communication
   const quickOrderTypeRef = useRef<((orderType: string) => void) | null>(null)
   const tablesClickRef = useRef<(() => void) | null>(null)
-
-  // Split chips state — persists while navigating between sibling splits
-  const [orderSplitChips, setOrderSplitChips] = useState<{ id: string; label: string; isPaid: boolean; total: number }[]>([])
-  const [splitParentId, setSplitParentId] = useState<string | null>(null)
 
   // Fetch split chips when a split parent order is loaded, or clear when leaving split context
   useEffect(() => {
@@ -416,20 +425,14 @@ export default function OrdersPage() {
   const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
   const [editingNotesText, setEditingNotesText] = useState('')
 
-  // Time clock modal state
-  const [showTimeClockModal, setShowTimeClockModal] = useState(false)
-
-  // Shift management state
-  const [currentShift, setCurrentShift] = useState<{
-    id: string
-    startedAt: string
-    startingCash: number
-    employee: { id: string; name: string; roleId?: string }
-    locationId?: string
-  } | null>(null)
-  const [showShiftStartModal, setShowShiftStartModal] = useState(false)
-  const [showShiftCloseoutModal, setShowShiftCloseoutModal] = useState(false)
-  const [shiftChecked, setShiftChecked] = useState(false)
+  // Shift management state (extracted to useShiftManagement hook)
+  const {
+    showTimeClockModal, setShowTimeClockModal,
+    currentShift, setCurrentShift,
+    showShiftStartModal, setShowShiftStartModal,
+    showShiftCloseoutModal, setShowShiftCloseoutModal,
+    shiftChecked, setShiftChecked,
+  } = useShiftManagement()
 
   // Combo selection state
   const [showComboModal, setShowComboModal] = useState(false)
@@ -476,31 +479,16 @@ export default function OrdersPage() {
   // comboSelections maps componentId -> groupId -> modifierIds
   const [comboSelections, setComboSelections] = useState<Record<string, Record<string, string[]>>>({})
 
-  // Timed rental state
-  const [showTimedRentalModal, setShowTimedRentalModal] = useState(false)
-  const [selectedTimedItem, setSelectedTimedItem] = useState<MenuItem | null>(null)
-  const [selectedRateType, setSelectedRateType] = useState<'per15Min' | 'per30Min' | 'perHour'>('perHour')
-  const [activeSessions, setActiveSessions] = useState<{
-    id: string
-    menuItemId: string
-    menuItemName: string
-    startedAt: string
-    rateType: string
-    rateAmount: number
-    orderItemId?: string
-  }[]>([])
-  const [loadingSession, setLoadingSession] = useState(false)
-
-  // Entertainment session start modal state
-  const [showEntertainmentStart, setShowEntertainmentStart] = useState(false)
-  const [entertainmentItem, setEntertainmentItem] = useState<{
-    id: string
-    name: string
-    ratePerMinute?: number
-    prepaidPackages?: PrepaidPackage[]
-    happyHourEnabled?: boolean
-    happyHourPrice?: number
-  } | null>(null)
+  // Timed rental & entertainment state (extracted to useTimedRentals hook)
+  const {
+    showTimedRentalModal, setShowTimedRentalModal,
+    selectedTimedItem, setSelectedTimedItem,
+    selectedRateType, setSelectedRateType,
+    activeSessions, setActiveSessions,
+    loadingSession, setLoadingSession,
+    showEntertainmentStart, setShowEntertainmentStart,
+    entertainmentItem, setEntertainmentItem,
+  } = useTimedRentals()
 
   // Menu search state (legacy order-entry mode removed — FloorPlanHome/BartenderView have their own search)
 
@@ -1574,7 +1562,6 @@ export default function OrdersPage() {
   }
 
   // Flash split chips to draw attention when user tries to add items to a split parent
-  const [splitChipsFlashing, setSplitChipsFlashing] = useState(false)
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     return () => {

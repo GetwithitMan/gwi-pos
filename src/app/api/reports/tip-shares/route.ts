@@ -16,6 +16,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Generate tip share report
@@ -38,12 +39,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Get business day settings for proper date boundaries
-    const tipShareLocation = await db.location.findUnique({
-      where: { id: locationId },
-      select: { settings: true },
-    })
-    const locationSettings = parseSettings(tipShareLocation?.settings)
+    // Get business day settings from cache for proper date boundaries
+    const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
 
     // Build date range using business day boundaries
@@ -270,14 +267,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     })
 
-    // Get location settings for tip share payout method
-    const location = await db.location.findUnique({
-      where: { id: locationId },
-      select: { settings: true },
-    })
-
-    const settings = (location?.settings as Record<string, Record<string, unknown>>) || {}
-    const tipShareSettings = settings.tipShares || {}
+    // Get location settings from cache for tip share payout method
+    const cachedSettings = (await getLocationSettings(locationId) as Record<string, unknown>) || {}
+    const tipShareSettings = (cachedSettings.tipShares as Record<string, unknown>) || {}
     const tipSharePayoutMethod = (tipShareSettings.payoutMethod as string) || 'payroll'
 
     return NextResponse.json({

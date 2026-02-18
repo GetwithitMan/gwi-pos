@@ -900,7 +900,7 @@ export function UnifiedFloorPlan({
           tableCountByRoom={tableCountBySection}
           showAddButton={mode === 'admin'}
           onAddRoom={() => {
-            // TODO: Open add section modal
+            // DEFERRED: Open add section modal — tracked in PM-TASK-BOARD.md
             logger.log('Add section clicked')
           }}
         />

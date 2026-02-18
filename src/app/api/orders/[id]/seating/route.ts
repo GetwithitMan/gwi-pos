@@ -121,7 +121,7 @@ export const GET = withVenue(async function GET(
         seatNumber: seatNum,
         subtotal: Math.round(subtotal * 100) / 100,
         taxAmount,
-        discountAmount: 0, // TODO: Per-seat discounts
+        discountAmount: 0, // DEFERRED: Per-seat discounts — tracked in PM-TASK-BOARD.md
         total: Math.round(total * 100) / 100,
         itemCount,
         status,

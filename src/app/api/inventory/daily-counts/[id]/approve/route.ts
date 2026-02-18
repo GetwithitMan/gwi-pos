@@ -72,13 +72,14 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       totalCost?: number
     }[] = []
 
+    const now = new Date()
+
+    // Build transaction records and collect ingredient updates
     for (const countItem of existing.countItems) {
       const ingredient = countItem.ingredient
       const totalCounted = Number(countItem.totalCounted)
-
-      // Update ingredient's currentPrepStock to the counted amount
       const prepStockBefore = Number(ingredient.currentPrepStock)
-      const prepStockAfter = totalCounted // Replace with counted amount
+      const prepStockAfter = totalCounted
 
       transactions.push({
         type: 'prep_stock_add',
@@ -88,26 +89,24 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         quantityAfter: prepStockAfter,
         unit: ingredient.standardUnit || 'each',
       })
-
-      // Update ingredient stock
-      await db.ingredient.update({
-        where: { id: ingredient.id },
-        data: {
-          currentPrepStock: prepStockAfter,
-          lastCountedAt: new Date(),
-        },
-      })
-
-      // TODO: Reverse inventory deduction for raw ingredients
-      // This would use ingredient.parentIngredient and batchYield to calculate
-      // how much raw material was consumed to make this prep quantity.
-      // For now, we just update the prep stock level.
     }
 
-    // Create transaction records
-    for (const t of transactions) {
-      await db.dailyPrepCountTransaction.create({
+    // Batch: update all ingredient stocks in parallel
+    await Promise.all(existing.countItems.map(countItem => {
+      const totalCounted = Number(countItem.totalCounted)
+      return db.ingredient.update({
+        where: { id: countItem.ingredient.id },
         data: {
+          currentPrepStock: totalCounted,
+          lastCountedAt: now,
+        },
+      })
+    }))
+
+    // Batch: create all transaction records at once
+    if (transactions.length > 0) {
+      await db.dailyPrepCountTransaction.createMany({
+        data: transactions.map(t => ({
           locationId: existing.locationId,
           dailyCountId: id,
           type: t.type,
@@ -119,7 +118,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
           unit: t.unit,
           unitCost: t.unitCost,
           totalCost: t.totalCost,
-        },
+        })),
       })
     }
 

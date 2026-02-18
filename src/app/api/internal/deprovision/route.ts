@@ -57,7 +57,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Drop the database
     await db.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`)
-    console.log(`[Deprovision] Dropped database: ${databaseName}`)
+    if (process.env.NODE_ENV !== 'production') console.log(`[Deprovision] Dropped database: ${databaseName}`)
 
     return Response.json({ success: true, databaseName })
   } catch (error) {

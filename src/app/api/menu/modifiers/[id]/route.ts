@@ -156,8 +156,9 @@ export const PUT = withVenue(async function PUT(
       // Delete modifiers not in the provided list
       const toDelete = [...existingIds].filter(existingId => !providedIds.has(existingId))
       if (toDelete.length > 0) {
-        await db.modifier.deleteMany({
-          where: { id: { in: toDelete } }
+        await db.modifier.updateMany({
+          where: { id: { in: toDelete } },
+          data: { deletedAt: new Date() },
         })
       }
 

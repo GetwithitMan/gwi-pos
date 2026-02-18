@@ -3,7 +3,7 @@
  *
  * Takes routing manifests from OrderRouter.resolveRouting() and produces
  * ESC/POS buffers sent to physical printers. This is the bridge that connects
- * the TODO in /api/orders/[id]/send/route.ts to actual kitchen printing.
+ * the order send route (/api/orders/[id]/send/route.ts) to actual kitchen printing.
  *
  * For manual reprints and advanced edge cases (pizza sections, red ribbon, etc.),
  * use the full /api/print/kitchen route directly.

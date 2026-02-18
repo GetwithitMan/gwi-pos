@@ -350,7 +350,7 @@ export const DEFAULT_LAYOUT_SETTINGS: POSLayoutSettings = {
   compactCategoryBar: true,
   autoCollapseCategories: true,
 
-  quickPickEnabled: false,
+  quickPickEnabled: true,
 
   coursingCourseCount: 5,
   coursingDefaultDelay: 0,

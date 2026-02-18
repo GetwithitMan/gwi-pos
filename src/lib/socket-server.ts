@@ -80,17 +80,30 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
 
   socketServer.on('connection', (socket: Socket) => {
     const clientIp = socket.handshake.address
-    console.log(`[Socket] New connection from ${clientIp} (${socket.id})`)
+    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] New connection from ${clientIp} (${socket.id})`)
 
     // Auto-join location room from handshake query (used by SocketEventProvider)
     const queryLocationId = socket.handshake.query?.locationId as string | undefined
-    if (queryLocationId) {
+    const serverLocationId = process.env.POS_LOCATION_ID
+    if (queryLocationId && typeof queryLocationId === 'string' && queryLocationId.length > 0) {
+      if (serverLocationId && queryLocationId !== serverLocationId) {
+        console.warn(`[Socket] Rejected location join: client sent ${queryLocationId}, server expects ${serverLocationId}`)
+        socket.disconnect(true)
+        return
+      }
       socket.join(`location:${queryLocationId}`)
-      console.log(`[Socket] Auto-joined location:${queryLocationId} from query`)
+      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Auto-joined location:${queryLocationId} from query`)
     }
+
+    // Valid room prefixes for subscribe
+    const ALLOWED_ROOM_PREFIXES = ['location:', 'tag:', 'terminal:', 'station:']
 
     // Handle channel subscribe/unsubscribe from SocketEventProvider
     socket.on('subscribe', (channelName: string) => {
+      if (typeof channelName !== 'string' || !ALLOWED_ROOM_PREFIXES.some(p => channelName.startsWith(p))) {
+        console.warn(`[Socket] Rejected subscribe to invalid room: ${channelName}`)
+        return
+      }
       socket.join(channelName)
     })
     socket.on('unsubscribe', (channelName: string) => {
@@ -139,7 +152,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         connectedAt: new Date(),
       })
 
-      console.log(`[Socket] Terminal ${terminalId} joined rooms:`, {
+      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} joined rooms:`, {
         location: `location:${locationId}`,
         tags: tags.map(t => `tag:${t}`),
         station: stationId ? `station:${stationId}` : null,
@@ -189,7 +202,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       for (const [terminalId, info] of connectedTerminals.entries()) {
         if (info.socketId === socket.id) {
           connectedTerminals.delete(terminalId)
-          console.log(`[Socket] Terminal ${terminalId} disconnected: ${reason}`)
+          if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Terminal ${terminalId} disconnected: ${reason}`)
           break
         }
       }
@@ -208,7 +221,7 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       rooms: socketServer.sockets.adapter.rooms.size,
     }
     if (stats.connections > 0) {
-      console.log(`[Socket] Status:`, stats)
+      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Status:`, stats)
     }
   }, 60000) // Every minute
 
@@ -224,13 +237,13 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
       }
     }
     if (cleaned > 0) {
-      console.log(`[Socket] Cleaned ${cleaned} stale terminal entries`)
+      if (process.env.DEBUG_SOCKETS) console.log(`[Socket] Cleaned ${cleaned} stale terminal entries`)
     }
   }, 5 * 60 * 1000) // Every 5 minutes
 
   // Store in global so API routes can emit events (survives HMR)
   setSocketServer(socketServer)
-  console.log('[Socket] Server initialized and stored in globalThis')
+  if (process.env.DEBUG_SOCKETS) console.log('[Socket] Server initialized and stored in globalThis')
   return socketServer
 }
 
@@ -281,7 +294,7 @@ export async function emitToLocation(locationId: string, event: string, data: un
   if (globalForSocket.socketServer) {
     const room = `location:${locationId}`
     const roomSockets = globalForSocket.socketServer.sockets.adapter.rooms.get(room)
-    console.log(`[Socket] emitToLocation: ${event} → ${room} (${roomSockets?.size ?? 0} clients)`)
+    if (process.env.DEBUG_SOCKETS) console.log(`[Socket] emitToLocation: ${event} → ${room} (${roomSockets?.size ?? 0} clients)`)
     globalForSocket.socketServer.to(room).emit(event, data)
     return true
   }

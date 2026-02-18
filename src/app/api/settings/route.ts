@@ -4,6 +4,7 @@ import { parseSettings, mergeWithDefaults, LocationSettings } from '@/lib/settin
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { getLocationSettings, invalidateLocationCache } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // Category types that map to liquor/food tax-inclusive flags
@@ -13,7 +14,7 @@ const FOOD_CATEGORY_TYPES = ['food', 'pizza', 'combos']
 // GET location settings
 export const GET = withVenue(async function GET() {
   try {
-    const location = await db.location.findFirst()
+    const location = await db.location.findFirst({ select: { id: true, name: true } })
     if (!location) {
       return NextResponse.json(
         { error: 'No location found' },
@@ -21,7 +22,7 @@ export const GET = withVenue(async function GET() {
       )
     }
 
-    const settings = parseSettings(location.settings)
+    const settings = parseSettings(await getLocationSettings(location.id))
 
     // Derive taxInclusiveLiquor/taxInclusiveFood from TaxRule records
     const [taxRules, categories] = await Promise.all([
@@ -92,7 +93,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid settings payload' }, { status: 400 })
     }
 
-    const location = await db.location.findFirst()
+    const location = await db.location.findFirst({ select: { id: true } })
     if (!location) {
       return NextResponse.json(
         { error: 'No location found' },
@@ -122,7 +123,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Get current settings and deep-merge with updates
     // mergeWithDefaults() handles all nested objects including tipBank.tipGuide,
     // happyHour.schedules, and receiptDisplay sub-sections
-    const currentSettings = parseSettings(location.settings)
+    const currentSettings = parseSettings(await getLocationSettings(location.id))
     const updatedSettings = mergeWithDefaults({
       ...currentSettings,
       ...settings,
@@ -151,6 +152,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         settings: updatedSettings as object,
       },
     })
+
+    // Invalidate settings cache after update
+    invalidateLocationCache(location.id)
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: location.id, domain: 'settings', action: 'updated' })

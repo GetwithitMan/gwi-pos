@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange, getCurrentBusinessDay } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Generate comprehensive daily report
@@ -23,13 +24,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Fetch location to get business day settings
-    const location = await db.location.findUnique({
-      where: { id: locationId },
-      select: { settings: true },
-    })
-
-    const locationSettings = parseSettings(location?.settings)
+    // Fetch location settings from cache for business day boundaries
+    const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
 
     // Parse date range using business day boundaries
@@ -74,16 +70,26 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           items: {
             include: {
               menuItem: {
-                include: {
-                  category: true,
+                select: {
+                  category: { select: { id: true } },
                 },
               },
             },
           },
-          payments: true,
+          payments: {
+            select: {
+              paymentMethod: true,
+              amount: true,
+              tipAmount: true,
+              roundingAdjustment: true,
+              cardBrand: true,
+            },
+          },
           discounts: {
-            include: {
-              discountRule: true,
+            select: {
+              name: true,
+              amount: true,
+              discountRule: { select: { name: true } },
             },
           },
           employee: {
@@ -107,8 +113,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           items: {
             include: {
               menuItem: {
-                include: {
-                  category: true,
+                select: {
+                  category: { select: { id: true } },
                 },
               },
             },
@@ -130,8 +136,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         },
         include: {
           employee: {
-            include: {
-              role: true,
+            select: {
+              hourlyRate: true,
+              role: { select: { name: true } },
             },
           },
         },
@@ -212,6 +219,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Categories for grouping
       db.category.findMany({
         where: { locationId },
+        select: { id: true, name: true, categoryType: true },
       }),
     ])
 

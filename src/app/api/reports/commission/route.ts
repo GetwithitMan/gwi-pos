@@ -4,6 +4,7 @@ import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { getBusinessDayRange } from '@/lib/business-day'
 import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET commission report
@@ -40,12 +41,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
-    // Get business day settings for proper date boundaries
-    const commissionLocation = await db.location.findUnique({
-      where: { id: locationId },
-      select: { settings: true },
-    })
-    const locationSettings = parseSettings(commissionLocation?.settings)
+    // Get business day settings from cache for proper date boundaries
+    const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
 
     // Build date filter using business day boundaries

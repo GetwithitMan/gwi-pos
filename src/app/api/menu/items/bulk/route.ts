@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 /**
  * POST /api/menu/items/bulk
@@ -11,6 +12,11 @@ import { withVenue } from '@/lib/with-venue'
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const { itemIds } = (await request.json()) as { itemIds: string[] }
 
     if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
@@ -22,7 +28,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     const items = await db.menuItem.findMany({
-      where: { id: { in: itemIds }, deletedAt: null },
+      where: { id: { in: itemIds }, locationId, deletedAt: null },
       select: {
         id: true,
         name: true,

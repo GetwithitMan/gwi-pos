@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { mapOrderForResponse } from '@/lib/api/order-response-mapper'
 import { recalculateTotalWithTip } from '@/lib/order-calculations'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
-import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOrderTotalsUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get order details
@@ -221,6 +221,9 @@ export const PUT = withVenue(async function PUT(
 
     // Use mapper for complete response with all modifier fields
     const response = mapOrderForResponse(updatedOrder)
+
+    // Dispatch order:updated for metadata changes (fire-and-forget)
+    void dispatchOrderUpdated(updatedOrder.locationId, { orderId: id, changes: Object.keys(updateData) }).catch(() => {})
 
     // FIX-011: Dispatch real-time totals update if tip changed (fire-and-forget)
     if (tipTotal !== undefined) {

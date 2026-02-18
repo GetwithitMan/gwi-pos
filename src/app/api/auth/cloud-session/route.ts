@@ -91,7 +91,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
         select: { id: true, name: true },
       })
-      console.log('[cloud-auth] Auto-created Location:', location.id, location.name)
+      if (process.env.NODE_ENV !== 'production') console.log('[cloud-auth] Auto-created Location:', location.id, location.name)
     }
 
     locationId = location.id

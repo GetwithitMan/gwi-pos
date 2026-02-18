@@ -99,10 +99,6 @@ export {
 // PUBLIC COMPONENTS (to be migrated)
 // =============================================================================
 
-// Components will be migrated incrementally
-// export { FloorPlanCanvas } from './components/FloorPlanCanvas'
-// export { TableNode } from './components/TableNode'
-// export { SeatNode } from './components/SeatNode'
 
 // =============================================================================
 // CONSTANTS

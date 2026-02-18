@@ -73,8 +73,11 @@ export const DELETE = withVenue(async function DELETE(
       throw new NotFoundError('Parent order')
     }
 
-    // Hard delete the empty split
-    await db.order.delete({ where: { id: splitId } })
+    // Soft delete the empty split (preserve audit trail)
+    await db.order.update({
+      where: { id: splitId },
+      data: { deletedAt: new Date(), status: 'cancelled' },
+    })
 
     // Count remaining splits
     const remainingSplits = await db.order.findMany({
@@ -138,8 +141,11 @@ export const DELETE = withVenue(async function DELETE(
           },
         })
 
-        // Delete the last split
-        await tx.order.delete({ where: { id: lastSplit.id } })
+        // Soft delete the last split (preserve audit trail)
+        await tx.order.update({
+          where: { id: lastSplit.id },
+          data: { deletedAt: new Date(), status: 'cancelled' },
+        })
 
         // Restore any soft-deleted split items on parent
         await tx.orderItem.updateMany({

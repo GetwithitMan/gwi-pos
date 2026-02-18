@@ -1,5 +1,6 @@
 'use client'
 
+import { memo } from 'react'
 import { motion } from 'framer-motion'
 
 interface Room {
@@ -20,7 +21,7 @@ interface RoomTabsProps {
   onOpenSettings?: () => void  // Callback for settings button
 }
 
-export function RoomTabs({
+export const RoomTabs = memo(function RoomTabs({
   rooms,
   selectedRoomId,
   onRoomSelect,
@@ -200,7 +201,7 @@ export function RoomTabs({
       )}
     </div>
   )
-}
+})
 
 interface RoomTabProps {
   room: Room
@@ -209,7 +210,7 @@ interface RoomTabProps {
   count?: number
 }
 
-function RoomTab({ room, isSelected, onClick, count }: RoomTabProps) {
+const RoomTab = memo(function RoomTab({ room, isSelected, onClick, count }: RoomTabProps) {
   return (
     <motion.button
       onClick={onClick}
@@ -284,4 +285,4 @@ function RoomTab({ room, isSelected, onClick, count }: RoomTabProps) {
       )}
     </motion.button>
   )
-}
+})

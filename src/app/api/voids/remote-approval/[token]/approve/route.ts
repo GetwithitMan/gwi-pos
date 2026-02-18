@@ -113,25 +113,20 @@ export const POST = withVenue(async function POST(
       `${approval.manager.firstName} ${approval.manager.lastName}`
 
     // Send SMS with approval code to manager (so they can relay it)
-    await sendApprovalCodeSMS({
+    void sendApprovalCodeSMS({
       to: approval.managerPhone,
       code: approvalCode,
       serverName,
-    })
+    }).catch(err => console.error('[RemoteVoidApproval] SMS send failed:', err))
 
     // Dispatch socket notification to POS terminal
-    try {
-      await dispatchVoidApprovalUpdate(approval.locationId, {
-        type: 'approved',
-        approvalId: approval.id,
-        terminalId: approval.requestingTerminalId || undefined,
-        approvalCode,
-        managerName,
-      })
-    } catch (socketError) {
-      console.warn('[RemoteVoidApproval] Socket dispatch failed:', socketError)
-      // Continue even if socket fails - code is still valid
-    }
+    void dispatchVoidApprovalUpdate(approval.locationId, {
+      type: 'approved',
+      approvalId: approval.id,
+      terminalId: approval.requestingTerminalId || undefined,
+      approvalCode,
+      managerName,
+    }).catch(err => console.error('[RemoteVoidApproval] Socket dispatch failed:', err))
 
     return NextResponse.json({
       data: {

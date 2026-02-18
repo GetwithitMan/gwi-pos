@@ -61,9 +61,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     if (existing.length === 0) {
       // CREATE DATABASE cannot use parameterized queries — sanitize via regex above
       await db.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`)
-      console.log(`[Provision] Created database: ${dbName}`)
+      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Created database: ${dbName}`)
     } else {
-      console.log(`[Provision] Database already exists: ${dbName}`)
+      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Database already exists: ${dbName}`)
     }
 
     // ── 2. Push schema via direct SQL (no execSync needed) ─────────────
@@ -78,7 +78,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       `
 
       if (tableCheck[0].count > 0) {
-        console.log(`[Provision] Schema already exists in ${dbName}, skipping push`)
+        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema already exists in ${dbName}, skipping push`)
       } else {
         // Read pre-generated schema SQL (built at deploy time by generate-schema-sql.mjs)
         const schemaSql = readFileSync(
@@ -92,7 +92,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         } finally {
           await pool.end()
         }
-        console.log(`[Provision] Schema pushed to ${dbName}`)
+        if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Schema pushed to ${dbName}`)
       }
     } catch (pushErr) {
       console.error('[Provision] Schema push failed:', pushErr)
@@ -110,7 +110,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     let posLocationId: string
     try {
       posLocationId = await seedVenueDefaults(venueDb, name)
-      console.log(`[Provision] Seeded defaults for ${slug} (locationId: ${posLocationId})`)
+      if (process.env.NODE_ENV !== 'production') console.log(`[Provision] Seeded defaults for ${slug} (locationId: ${posLocationId})`)
     } finally {
       await venueDb.$disconnect()
     }

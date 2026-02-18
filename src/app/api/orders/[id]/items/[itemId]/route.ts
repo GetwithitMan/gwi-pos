@@ -240,12 +240,15 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    // Delete modifiers first, then the item
-    await db.orderItemModifier.deleteMany({
+    // Soft delete modifiers and the item (preserve audit trail)
+    const now = new Date()
+    await db.orderItemModifier.updateMany({
       where: { orderItemId: itemId },
+      data: { deletedAt: now },
     })
-    await db.orderItem.delete({
+    await db.orderItem.update({
       where: { id: itemId },
+      data: { deletedAt: now, status: 'removed' },
     })
 
     return NextResponse.json({ success: true })

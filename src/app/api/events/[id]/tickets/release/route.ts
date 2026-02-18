@@ -47,12 +47,13 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Delete the held tickets (they were never sold)
-    const result = await db.ticket.deleteMany({
+    // Soft delete the held tickets (they were never sold)
+    const result = await db.ticket.updateMany({
       where: {
         id: { in: ticketsToRelease.map(t => t.id) },
         status: 'held',
       },
+      data: { deletedAt: new Date(), status: 'available' },
     })
 
     return NextResponse.json({
@@ -91,9 +92,10 @@ export const DELETE = withVenue(async function DELETE(
       whereClause.heldUntil = { lt: now }
     }
 
-    // Delete expired/all held tickets
-    const result = await db.ticket.deleteMany({
+    // Soft delete expired/all held tickets
+    const result = await db.ticket.updateMany({
       where: whereClause,
+      data: { deletedAt: new Date(), status: 'available' },
     })
 
     return NextResponse.json({

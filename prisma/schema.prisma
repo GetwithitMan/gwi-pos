@@ -65,8 +65,6 @@ model Location {
   reservations          Reservation[]
   entertainmentWaitlist EntertainmentWaitlist[]
   floorPlanElements     FloorPlanElement[]
-  virtualGroups         VirtualGroup[]
-
   // Seat-Level Ticketing
   seats   Seat[]
   events  Event[]
@@ -552,6 +550,7 @@ model TimeClockEntry {
   @@index([employeeId])
   @@index([clockIn])
   @@index([locationId, employeeId, clockOut])
+  @@index([locationId, clockIn])
 }
 
 // ============================================
@@ -1297,6 +1296,7 @@ model SectionAssignment {
   @@index([locationId])
   @@index([sectionId])
   @@index([employeeId])
+  @@index([sectionId, unassignedAt, deletedAt])
 }
 
 model Table {
@@ -1328,15 +1328,6 @@ model Table {
   status   String  @default("available") // available, occupied, reserved, dirty, in_use
   isActive Boolean @default(true)
 
-  // Table Combine (Skill 106/107)
-  combinedWithId   String? // Points to primary table when this table is combined
-  combinedTableIds Json?   // JSON array of table IDs that are combined into this one (on primary)
-  originalName     String? // Stores original name when combined for restoration on split
-
-  // Position before combine (for undo/split operations)
-  originalPosX     Int?    // Position before combine
-  originalPosY     Int?    // Position before combine
-
   // Default layout (admin-defined, used for reset-to-default)
   // Set via "Save as Default Layout" button in floor plan admin
   defaultPosX      Int?    // Admin-defined default X position
@@ -1345,14 +1336,6 @@ model Table {
 
   // Locked items (T019) - bolted down furniture that cannot be moved
   isLocked         Boolean @default(false)
-
-  // Virtual Table Combine - tables logically grouped without physically moving
-  virtualGroupId        String?   // UUID shared by all tables in group
-  virtualGroupPrimary   Boolean   @default(false) // Is this the primary (master) table?
-  virtualGroupColor     String?   // Hex color for matching pulsing glow
-  virtualGroupCreatedAt DateTime? // When group was created (for EOD cleanup/debugging)
-  virtualGroupOffsetX   Int?      // Visual X offset from DB position when in group
-  virtualGroupOffsetY   Int?      // Visual Y offset from DB position when in group
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1372,31 +1355,9 @@ model Table {
   @@index([locationId])
   @@index([sectionId])
   @@index([status])
-  @@index([virtualGroupId])
   @@index([locationId, status])
   @@index([locationId, isActive, deletedAt])
   @@index([locationId, sectionId])
-}
-
-// ============================================
-// VIRTUAL GROUPS (Logical table grouping across rooms)
-// ============================================
-
-model VirtualGroup {
-  id         String   @id @default(cuid())
-  locationId String
-  location   Location @relation(fields: [locationId], references: [id])
-
-  name           String  // Generated or custom name: "T1+T2+B3"
-  primaryTableId String  // Which table holds the order
-
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
-  syncedAt  DateTime?
-
-  @@index([locationId])
-  @@index([primaryTableId])
 }
 
 // ============================================
@@ -1461,6 +1422,7 @@ model FloorPlanElement {
   @@index([sectionId])
   @@index([linkedMenuItemId])
   @@index([status])
+  @@index([locationId, elementType, isVisible])
 }
 
 model EntertainmentWaitlist {
@@ -1703,6 +1665,7 @@ model Order {
   @@index([locationId, status, closedAt])
   @@index([locationId, orderType, status])
   @@index([locationId, paidAt])
+  @@index([locationId, createdAt, status])
 }
 
 model OrderItem {
@@ -1945,6 +1908,8 @@ model Payment {
   @@index([locationId, status, createdAt])
   @@index([shiftId])
   @@index([drawerId])
+  @@index([idempotencyKey])
+  @@index([offlineIntentId])
 }
 
 // Sync Audit Entry - Tracks all sync events for idempotency audit log
@@ -3091,11 +3056,6 @@ model Seat {
   // Seat properties
   seatType String @default("standard") // standard, premium, accessible, booth_end
 
-  // Virtual Group (for combined tables)
-  virtualGroupId        String?   // Matches Table.virtualGroupId when combined
-  virtualSeatNumber     Int?      // Seat number within combined group (1-13 for 8+5)
-  virtualGroupCreatedAt DateTime? // When this seat joined a virtual group
-
   // Temporary seat (created by POS when server adds extra seats)
   isTemporary    Boolean  @default(false) // true = created by POS, not editor
   sourceOrderId  String?                  // order that created this temp seat
@@ -3124,7 +3084,6 @@ model Seat {
   @@unique([tableId, seatNumber])
   @@index([locationId])
   @@index([tableId])
-  @@index([virtualGroupId])
   @@index([sourceOrderId])
 }
 
@@ -4649,6 +4608,7 @@ model MenuItemIngredient {
   @@index([locationId])
   @@index([menuItemId])
   @@index([locationId, ingredientId])
+  @@index([menuItemId, deletedAt])
 }
 
 // ============================================

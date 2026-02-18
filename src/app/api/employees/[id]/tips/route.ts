@@ -154,10 +154,10 @@ export const GET = withVenue(async function GET(
 })
 
 // POST - Collect pending tips
-// TODO: The "collect/accept" concept doesn't map cleanly to the immutable ledger model.
+// DEFERRED: The "collect/accept" concept doesn't map cleanly to the immutable ledger model.
 // In the ledger system, tip collection happens via PAYOUT_CASH or PAYOUT_PAYROLL debit
 // entries (see /api/tips/payouts). This legacy endpoint is kept for backward compatibility
-// until the UI is migrated to use the payout flow. Once migrated, remove this handler.
+// until the UI is migrated to use the payout flow — tracked in PM-TASK-BOARD.md
 // POST - Accept/collect tips (updates TipShare status only — TipBank removed in Skill 284)
 export const POST = withVenue(async function POST(
   request: NextRequest,

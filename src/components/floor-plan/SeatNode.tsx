@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { memo, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { FloorPlanSeat } from './use-floor-plan'
 
@@ -23,7 +23,7 @@ const SEAT_TYPE_COLORS: Record<string, string> = {
   bar: '#ea580c',
 }
 
-export function SeatNode({
+export const SeatNode = memo(function SeatNode({
   seat,
   tableWidth,
   tableHeight,
@@ -129,7 +129,7 @@ export function SeatNode({
       {seat.label}
     </motion.div>
   )
-}
+})
 
 // Utility function to render all seats for a table
 interface RenderSeatsProps {

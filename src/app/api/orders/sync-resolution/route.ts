@@ -139,7 +139,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           }
 
           // Log the void attempt for audit
-          await logAuditEntry({
+          void logAuditEntry({
             locationId,
             orderId: tx.orderId,
             terminalId: tx.terminalId,
@@ -151,7 +151,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             status: 'VOIDED',
             statusNote: tx.voidReason || 'Voided offline before sync',
             cardLast4: tx.cardLast4,
-          })
+          }).catch(err => console.error('[SyncResolution] Audit log failed:', err))
 
           voidedCount++
           results.push({
@@ -177,7 +177,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         if (existingPayment) {
           // We've already processed this! Skip it but tell the client it's "resolved"
           // Log this for the audit trail - proves we saved the merchant from a double-charge
-          await logAuditEntry({
+          void logAuditEntry({
             locationId,
             orderId: tx.orderId,
             paymentId: existingPayment.id,
@@ -190,7 +190,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
             status: 'DUPLICATE_BLOCKED',
             statusNote: 'Duplicate charge attempt blocked by idempotency engine',
             cardLast4: tx.cardLast4,
-          })
+          }).catch(err => console.error('[SyncResolution] Audit log failed:', err))
 
           duplicatesBlocked++
           results.push({
@@ -307,7 +307,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         })
 
         // Log successful offline sync
-        await logAuditEntry({
+        void logAuditEntry({
           locationId,
           orderId: resolvedOrderId,
           paymentId: payment.id,
@@ -320,7 +320,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           status: 'OFFLINE_SYNC',
           statusNote: 'Payment captured offline and synced successfully',
           cardLast4: tx.cardLast4,
-        })
+        }).catch(err => console.error('[SyncResolution] Audit log failed:', err))
 
         successfulSyncs++
         results.push({
@@ -332,7 +332,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         console.error(`Sync failed for tx ${tx.idempotencyKey}:`, error)
 
         // Log failed sync attempt
-        await logAuditEntry({
+        void logAuditEntry({
           locationId,
           orderId: tx.orderId,
           terminalId: tx.terminalId,
@@ -344,7 +344,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           status: 'FAILED',
           statusNote: error instanceof Error ? error.message : 'Unknown error',
           cardLast4: tx.cardLast4,
-        })
+        }).catch(err => console.error('[SyncResolution] Audit log failed:', err))
 
         failedSyncs++
         results.push({

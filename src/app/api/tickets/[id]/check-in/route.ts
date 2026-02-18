@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 // POST - Check in a ticket
 export const POST = withVenue(async function POST(
@@ -8,6 +9,11 @@ export const POST = withVenue(async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ success: false, error: 'No location found', checkInResult: 'error' }, { status: 400 })
+    }
+
     const { id } = await params
     const body = await request.json()
     const { employeeId, method = 'scan' } = body // method: 'scan' or 'manual'
@@ -15,6 +21,7 @@ export const POST = withVenue(async function POST(
     // Try to find by ID, ticket number, or barcode
     const ticket = await db.ticket.findFirst({
       where: {
+        locationId,
         OR: [
           { id },
           { ticketNumber: id },
@@ -140,6 +147,7 @@ export const POST = withVenue(async function POST(
     const checkInStats = await db.ticket.groupBy({
       by: ['status'],
       where: {
+        locationId,
         eventId: ticket.eventId,
         status: { in: ['sold', 'checked_in'] },
       },
@@ -199,10 +207,16 @@ export const DELETE = withVenue(async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const { id } = await params
 
     const ticket = await db.ticket.findFirst({
       where: {
+        locationId,
         OR: [
           { id },
           { ticketNumber: id },

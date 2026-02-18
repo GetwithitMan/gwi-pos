@@ -14,16 +14,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Build query filter - scope by location if provided for better performance
-    // Note: PINs are hashed so we must compare each one (can't query directly)
-    const whereClause: { isActive: boolean; locationId?: string } = { isActive: true }
-    if (locationId) {
-      whereClause.locationId = locationId
-    }
+    // locationId is optional — database-per-venue isolation already scopes queries.
+    // When provided, it adds defense-in-depth filtering.
 
-    // Get active employees (scoped by location if provided)
+    // Get active employees scoped by location (if provided)
+    // Note: PINs are hashed so we must compare each one (can't query directly)
     const employees = await db.employee.findMany({
-      where: whereClause,
+      where: {
+        isActive: true,
+        ...(locationId ? { locationId } : {}),
+      },
       include: {
         role: true,
         location: true,

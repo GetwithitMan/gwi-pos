@@ -15,7 +15,7 @@ import { deductInventoryForOrder } from '@/lib/inventory-calculations'
 import { errorCapture } from '@/lib/error-capture'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
 import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@/lib/pricing'
-import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
@@ -1007,6 +1007,11 @@ export const POST = withVenue(withTiming(async function POST(
       }, { async: true }).catch(err => {
         console.error('Failed to dispatch order totals update:', err)
       })
+    }
+
+    // Dispatch payment:processed for each created payment (fire-and-forget)
+    for (const p of createdPayments) {
+      void dispatchPaymentProcessed(order.locationId, { orderId, paymentId: p.id, status: 'completed' }).catch(() => {})
     }
 
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)

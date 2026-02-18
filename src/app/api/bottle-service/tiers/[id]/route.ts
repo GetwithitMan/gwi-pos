@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 // GET - Get a single bottle service tier
 export const GET = withVenue(async function GET(
@@ -8,10 +9,15 @@ export const GET = withVenue(async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const { id } = await params
 
     const tier = await db.bottleServiceTier.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, locationId, deletedAt: null },
     })
 
     if (!tier) {
@@ -43,12 +49,17 @@ export const PUT = withVenue(async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const { id } = await params
     const body = await request.json()
     const { name, description, color, depositAmount, minimumSpend, autoGratuityPercent, sortOrder, isActive } = body
 
     const existing = await db.bottleServiceTier.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, locationId, deletedAt: null },
     })
 
     if (!existing) {
@@ -56,7 +67,7 @@ export const PUT = withVenue(async function PUT(
     }
 
     const tier = await db.bottleServiceTier.update({
-      where: { id },
+      where: { id, locationId },
       data: {
         ...(name !== undefined && { name }),
         ...(description !== undefined && { description }),
@@ -94,10 +105,15 @@ export const DELETE = withVenue(async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const locationId = await getLocationId()
+    if (!locationId) {
+      return NextResponse.json({ error: 'No location found' }, { status: 400 })
+    }
+
     const { id } = await params
 
     const existing = await db.bottleServiceTier.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, locationId, deletedAt: null },
     })
 
     if (!existing) {
