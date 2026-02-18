@@ -722,12 +722,21 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 **Impact:** Quick tab = 1 tap (was modal). Pre-auth payment = 0 taps method selection. Seat selection = tap header in order list.
 **Commit:** `4b9443d`
 
-### Wave 6D+ — Remaining Backlog
+### Wave 6D — Same Again + Split Evenly (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 51 | "Same Again" reorder button on ClosedOrderActionsModal | same-again | ✅ |
+| 52 | ÷2 quick-split button next to Split in OrderPanelActions | split-evenly | ✅ |
+
+**Impact:** "Same Again" copies closed order items to current open order in 1 tap. ÷2 splits check evenly without entering split screen.
+**Commit:** `0386330`
+
+### Wave 6E+ — Remaining Backlog
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 51 | Response format normalization | P2 | 68+ routes |
-| 52 | "Same Again" reorder feature | P0 UX | New feature |
-| 53 | Split evenly quick action | P1 UX | SplitCheckScreen |
+| 53 | Response format normalization | P2 | 68+ routes |
+| 54 | Multi-card tab support (add card to tab, choose card at payment) | P1 UX | PaymentModal + TabCards |
+| 55 | Payment skip: show card picker when multiple pre-auth cards | P1 UX | PaymentModal |
 
 ---
 
@@ -752,4 +761,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 6C COMPLETE — 50/50 tasks complete, 475+ individual fixes applied across 98+ files*
+*Last updated: Wave 6D COMPLETE — 52/52 tasks complete, 480+ individual fixes applied across 100+ files*
