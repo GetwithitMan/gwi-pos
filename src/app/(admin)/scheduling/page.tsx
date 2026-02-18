@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { toast } from '@/stores/toast-store'
@@ -407,78 +408,74 @@ export default function SchedulingPage() {
       </div>
 
       {/* Add Shift Modal */}
-      {showAddShiftModal && selectedDate && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md mx-4">
-            <CardHeader>
-              <CardTitle>
-                Add Shift - {DAYS[selectedDate.getDay()]}, {formatDate(selectedDate)}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Employee
-                </label>
-                <select
-                  value={newShiftEmployeeId}
-                  onChange={(e) => setNewShiftEmployeeId(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                >
-                  <option value="">Select employee...</option>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.role})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Start Time
-                  </label>
-                  <select
-                    value={newShiftStartTime}
-                    onChange={(e) => setNewShiftStartTime(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  >
-                    {TIME_SLOTS.map(time => (
-                      <option key={time} value={time}>{time}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    End Time
-                  </label>
-                  <select
-                    value={newShiftEndTime}
-                    onChange={(e) => setNewShiftEndTime(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  >
-                    {TIME_SLOTS.map(time => (
-                      <option key={time} value={time}>{time}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="flex gap-2 justify-end pt-4">
-                <Button variant="outline" onClick={() => setShowAddShiftModal(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="primary"
-                  onClick={addShift}
-                  disabled={!newShiftEmployeeId}
-                >
-                  Add Shift
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+      <Modal
+        isOpen={showAddShiftModal && !!selectedDate}
+        onClose={() => setShowAddShiftModal(false)}
+        title={selectedDate ? `Add Shift - ${DAYS[selectedDate.getDay()]}, ${formatDate(selectedDate)}` : 'Add Shift'}
+        size="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Employee
+            </label>
+            <select
+              value={newShiftEmployeeId}
+              onChange={(e) => setNewShiftEmployeeId(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+            >
+              <option value="">Select employee...</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name} ({emp.role})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Start Time
+              </label>
+              <select
+                value={newShiftStartTime}
+                onChange={(e) => setNewShiftStartTime(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                {TIME_SLOTS.map(time => (
+                  <option key={time} value={time}>{time}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                End Time
+              </label>
+              <select
+                value={newShiftEndTime}
+                onChange={(e) => setNewShiftEndTime(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                {TIME_SLOTS.map(time => (
+                  <option key={time} value={time}>{time}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end pt-4">
+            <Button variant="outline" onClick={() => setShowAddShiftModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={addShift}
+              disabled={!newShiftEmployeeId}
+            >
+              Add Shift
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

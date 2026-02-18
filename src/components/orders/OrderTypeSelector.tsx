@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { OrderTypeConfig, WorkflowRules, OrderCustomFields, FieldDefinition } from '@/types/order-types'
 import { OnScreenKeyboard } from '@/components/ui/on-screen-keyboard'
 
@@ -393,9 +394,9 @@ export function OrderTypeSelector({
       </div>
 
       {/* Custom Fields Modal */}
-      {showFieldsModal && pendingOrderType && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+      <Modal isOpen={showFieldsModal && !!pendingOrderType} onClose={() => { setShowFieldsModal(false); setPendingOrderType(null) }} size="lg" variant="default">
+        {pendingOrderType && (
+          <div className="p-1">
             <h3 className="text-xl font-bold mb-6 flex items-center gap-3 text-gray-800">
               <span
                 className="w-10 h-10 rounded-full flex items-center justify-center text-white"
@@ -463,8 +464,8 @@ export function OrderTypeSelector({
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </>
   )
 }

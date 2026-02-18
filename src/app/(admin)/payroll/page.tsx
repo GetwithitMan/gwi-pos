@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
@@ -468,13 +469,8 @@ export default function PayrollPage() {
       </div>
 
       {/* Create Period Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md mx-4">
-            <CardHeader>
-              <CardTitle>Create Pay Period</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+      <Modal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} title="Create Pay Period" size="md">
+            <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Period Start
@@ -517,10 +513,8 @@ export default function PayrollPage() {
                   Create Period
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+            </div>
+      </Modal>
     </div>
   )
 }

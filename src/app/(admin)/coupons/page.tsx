@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
@@ -279,21 +280,21 @@ export default function CouponsPage() {
       </main>
 
       {/* Create/Edit Modal */}
-      {showModal && (
-        <CouponModal
-          coupon={editingCoupon}
-          isSaving={isSaving}
-          modalError={modalError}
-          locationId={employee?.location?.id}
-          onClose={closeModal}
-          onSave={handleSave}
-        />
-      )}
+      <CouponModal
+        isOpen={showModal}
+        coupon={editingCoupon}
+        isSaving={isSaving}
+        modalError={modalError}
+        locationId={employee?.location?.id}
+        onClose={closeModal}
+        onSave={handleSave}
+      />
     </div>
   )
 }
 
 function CouponModal({
+  isOpen,
   coupon,
   isSaving,
   modalError,
@@ -301,6 +302,7 @@ function CouponModal({
   onClose,
   onSave,
 }: {
+  isOpen: boolean
   coupon: Coupon | null
   isSaving: boolean
   modalError: string | null
@@ -344,185 +346,184 @@ function CouponModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">
-          {coupon ? 'Edit Coupon' : 'Create Coupon'}
-        </h2>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={coupon ? 'Edit Coupon' : 'Create Coupon'}
+      size="lg"
+    >
+      {modalError && (
+        <div className="bg-red-900/50 text-red-300 p-3 rounded mb-4">{modalError}</div>
+      )}
 
-        {modalError && (
-          <div className="bg-red-900/50 text-red-300 p-3 rounded mb-4">{modalError}</div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Code *</label>
-              <input
-                type="text"
-                value={form.code}
-                onChange={e => setForm({ ...form, code: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded uppercase"
-                placeholder="SAVE20"
-                required
-                disabled={!!coupon}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Name *</label>
-              <input
-                type="text"
-                value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-                placeholder="20% Off Order"
-                required
-              />
-            </div>
-          </div>
-
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-400 mb-1">Description</label>
-            <textarea
-              value={form.description}
-              onChange={e => setForm({ ...form, description: e.target.value })}
-              className="w-full px-3 py-2 bg-gray-700 rounded"
-              rows={2}
+            <label className="block text-sm text-gray-400 mb-1">Code *</label>
+            <input
+              type="text"
+              value={form.code}
+              onChange={e => setForm({ ...form, code: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded uppercase"
+              placeholder="SAVE20"
+              required
+              disabled={!!coupon}
             />
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Discount Type *</label>
-              <select
-                value={form.discountType}
-                onChange={e => setForm({ ...form, discountType: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-              >
-                <option value="percent">Percentage</option>
-                <option value="fixed">Fixed Amount</option>
-                <option value="free_item">Free Item</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">
-                {form.discountType === 'percent' ? 'Percentage *' : 'Amount *'}
-              </label>
-              <input
-                type="number"
-                value={form.discountValue}
-                onChange={e => setForm({ ...form, discountValue: Number(e.target.value) })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-                min="0"
-                step={form.discountType === 'percent' ? '1' : '0.01'}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Minimum Order</label>
-              <input
-                type="number"
-                value={form.minimumOrder}
-                onChange={e => setForm({ ...form, minimumOrder: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-                min="0"
-                step="0.01"
-                placeholder="No minimum"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Maximum Discount</label>
-              <input
-                type="number"
-                value={form.maximumDiscount}
-                onChange={e => setForm({ ...form, maximumDiscount: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-                min="0"
-                step="0.01"
-                placeholder="No maximum"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Usage Limit</label>
-              <input
-                type="number"
-                value={form.usageLimit}
-                onChange={e => setForm({ ...form, usageLimit: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-                min="1"
-                placeholder="Unlimited"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Per Customer Limit</label>
-              <input
-                type="number"
-                value={form.perCustomerLimit}
-                onChange={e => setForm({ ...form, perCustomerLimit: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-                min="1"
-                placeholder="Unlimited"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Valid From</label>
-              <input
-                type="date"
-                value={form.validFrom}
-                onChange={e => setForm({ ...form, validFrom: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Valid Until</label>
-              <input
-                type="date"
-                value={form.validUntil}
-                onChange={e => setForm({ ...form, validUntil: e.target.value })}
-                className="w-full px-3 py-2 bg-gray-700 rounded"
-              />
-            </div>
-          </div>
-
           <div>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={form.singleUse}
-                onChange={e => setForm({ ...form, singleUse: e.target.checked })}
-                className="w-4 h-4"
-              />
-              <span>Single use per customer</span>
-            </label>
+            <label className="block text-sm text-gray-400 mb-1">Name *</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={e => setForm({ ...form, name: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
+              placeholder="20% Off Order"
+              required
+            />
           </div>
+        </div>
 
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 bg-gray-700 rounded hover:bg-gray-600"
+        <div>
+          <label className="block text-sm text-gray-400 mb-1">Description</label>
+          <textarea
+            value={form.description}
+            onChange={e => setForm({ ...form, description: e.target.value })}
+            className="w-full px-3 py-2 bg-gray-700 rounded"
+            rows={2}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Discount Type *</label>
+            <select
+              value={form.discountType}
+              onChange={e => setForm({ ...form, discountType: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
             >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="flex-1 px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
-            >
-              {isSaving ? 'Saving...' : coupon ? 'Save Changes' : 'Create Coupon'}
-            </button>
+              <option value="percent">Percentage</option>
+              <option value="fixed">Fixed Amount</option>
+              <option value="free_item">Free Item</option>
+            </select>
           </div>
-        </form>
-      </div>
-    </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              {form.discountType === 'percent' ? 'Percentage *' : 'Amount *'}
+            </label>
+            <input
+              type="number"
+              value={form.discountValue}
+              onChange={e => setForm({ ...form, discountValue: Number(e.target.value) })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
+              min="0"
+              step={form.discountType === 'percent' ? '1' : '0.01'}
+              required
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Minimum Order</label>
+            <input
+              type="number"
+              value={form.minimumOrder}
+              onChange={e => setForm({ ...form, minimumOrder: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
+              min="0"
+              step="0.01"
+              placeholder="No minimum"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Maximum Discount</label>
+            <input
+              type="number"
+              value={form.maximumDiscount}
+              onChange={e => setForm({ ...form, maximumDiscount: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
+              min="0"
+              step="0.01"
+              placeholder="No maximum"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Usage Limit</label>
+            <input
+              type="number"
+              value={form.usageLimit}
+              onChange={e => setForm({ ...form, usageLimit: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
+              min="1"
+              placeholder="Unlimited"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Per Customer Limit</label>
+            <input
+              type="number"
+              value={form.perCustomerLimit}
+              onChange={e => setForm({ ...form, perCustomerLimit: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
+              min="1"
+              placeholder="Unlimited"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Valid From</label>
+            <input
+              type="date"
+              value={form.validFrom}
+              onChange={e => setForm({ ...form, validFrom: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Valid Until</label>
+            <input
+              type="date"
+              value={form.validUntil}
+              onChange={e => setForm({ ...form, validUntil: e.target.value })}
+              className="w-full px-3 py-2 bg-gray-700 rounded"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={form.singleUse}
+              onChange={e => setForm({ ...form, singleUse: e.target.checked })}
+              className="w-4 h-4"
+            />
+            <span>Single use per customer</span>
+          </label>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 px-4 py-2 bg-gray-700 rounded hover:bg-gray-600"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSaving}
+            className="flex-1 px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isSaving ? 'Saving...' : coupon ? 'Save Changes' : 'Create Coupon'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }

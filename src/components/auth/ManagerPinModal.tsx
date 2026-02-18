@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 
 interface ManagerPinModalProps {
   isOpen: boolean
@@ -86,13 +87,9 @@ export function ManagerPinModal({
     setPin(digitsOnly.slice(0, 6)) // Max 6 digits
   }
 
-  if (!isOpen) return null
-
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 rounded-xl p-6 w-full max-w-md border border-white/10">
-        <h2 className="text-xl font-bold text-white mb-2">{title}</h2>
-        <p className="text-sm text-slate-400 mb-6">{message}</p>
+    <Modal isOpen={isOpen} onClose={onClose} title={title} size="md">
+        <p className="text-sm text-gray-500 mb-6">{message}</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -133,7 +130,6 @@ export function ManagerPinModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }

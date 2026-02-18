@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
 import { toast } from '@/stores/toast-store'
 import { formatDateTime } from '@/lib/utils'
@@ -89,8 +90,6 @@ export function ReopenOrderModal({
     }
   }
 
-  if (!isOpen) return null
-
   const closedByName = order.employee
     ? `${order.employee.firstName} ${order.employee.lastName}`
     : 'Unknown'
@@ -101,8 +100,8 @@ export function ReopenOrderModal({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-slate-900 rounded-xl p-6 w-full max-w-md border border-white/10">
+      <Modal isOpen={isOpen} onClose={onClose} size="md">
+        <div className="bg-slate-900 rounded-xl p-6 border border-white/10">
           <h2 className="text-xl font-bold text-white mb-4">
             Reopen Order - #{order.orderNumber}
           </h2>
@@ -215,7 +214,7 @@ export function ReopenOrderModal({
             </div>
           </div>
         </div>
-      </div>
+      </Modal>
 
       <ManagerPinModal
         isOpen={showPinModal}

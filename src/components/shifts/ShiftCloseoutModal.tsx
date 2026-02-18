@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 
 interface ShiftSummary {
   totalSales: number
@@ -515,8 +516,6 @@ export function ShiftCloseoutModal({
     }
   }
 
-  if (!isOpen) return null
-
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -534,27 +533,11 @@ export function ShiftCloseoutModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="p-4 border-b bg-gray-50">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold">Close Out Shift</h2>
-              <p className="text-sm text-gray-500">
-                {shift.employee.name} • Started {formatTime(shift.startedAt)} ({formatDuration(shift.startedAt)})
-              </p>
-            </div>
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4">
+    <Modal isOpen={isOpen} onClose={onClose} title="Close Out Shift" size="2xl" variant="default">
+        <p className="text-sm text-gray-500 -mt-3 mb-4">
+          {shift.employee.name} • Started {formatTime(shift.startedAt)} ({formatDuration(shift.startedAt)})
+        </p>
+        <div>
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
               {error}
@@ -1396,7 +1379,6 @@ export function ShiftCloseoutModal({
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

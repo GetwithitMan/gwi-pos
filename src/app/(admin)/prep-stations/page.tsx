@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
@@ -350,15 +351,8 @@ export default function PrepStationsPage() {
       </div>
 
       {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="p-4 border-b">
-              <h2 className="text-lg font-bold">
-                {editingStation ? 'Edit Station' : 'Add Prep Station'}
-              </h2>
-            </div>
-            <div className="p-4 space-y-4">
+      <Modal isOpen={showModal} onClose={() => { closeModal(); resetForm() }} title={editingStation ? 'Edit Station' : 'Add Prep Station'} size="md">
+            <div className="space-y-4">
               {modalError && (
                 <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
                   {modalError}
@@ -434,32 +428,25 @@ export default function PrepStationsPage() {
                   min={0}
                 />
               </div>
+              <div className="flex gap-3 pt-4">
+                <Button variant="outline" className="flex-1" onClick={() => { closeModal(); resetForm() }}>
+                  Cancel
+                </Button>
+                <Button variant="primary" className="flex-1" onClick={handleSave} disabled={!formName.trim() || isSaving}>
+                  {isSaving ? 'Saving...' : editingStation ? 'Update' : 'Create'}
+                </Button>
+              </div>
             </div>
-            <div className="p-4 border-t flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => { closeModal(); resetForm() }}>
-                Cancel
-              </Button>
-              <Button variant="primary" className="flex-1" onClick={handleSave} disabled={!formName.trim() || isSaving}>
-                {isSaving ? 'Saving...' : editingStation ? 'Update' : 'Create'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Assign Modal */}
-      {showAssignModal && assigningStation && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div className="p-4 border-b">
-              <h2 className="text-lg font-bold">
-                Assign to {assigningStation.displayName || assigningStation.name}
-              </h2>
-              <p className="text-sm text-gray-500">
-                Select which categories and items should route to this station
-              </p>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4">
+      <Modal isOpen={showAssignModal && !!assigningStation} onClose={() => { setShowAssignModal(false); setAssigningStation(null) }} title={assigningStation ? `Assign to ${assigningStation.displayName || assigningStation.name}` : 'Assign'} size="2xl">
+        {assigningStation && (
+          <>
+            <p className="text-sm text-gray-500 mb-4">
+              Select which categories and items should route to this station
+            </p>
+            <div>
               {/* Categories */}
               <div className="mb-6">
                 <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -530,7 +517,7 @@ export default function PrepStationsPage() {
                 </div>
               </div>
             </div>
-            <div className="p-4 border-t flex gap-3">
+            <div className="flex gap-3 pt-4">
               <Button
                 variant="outline"
                 className="flex-1"
@@ -545,9 +532,9 @@ export default function PrepStationsPage() {
                 Save Assignments
               </Button>
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

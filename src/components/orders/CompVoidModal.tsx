@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { RemoteVoidApprovalModal } from './RemoteVoidApprovalModal'
@@ -74,8 +75,6 @@ export function CompVoidModal({
   const [error, setError] = useState<string | null>(null)
   const [showRemoteApproval, setShowRemoteApproval] = useState(false)
   const [remoteApprovalCode, setRemoteApprovalCode] = useState<string | null>(null)
-
-  if (!isOpen) return null
 
   const modifiersTotal = item.modifiers.reduce((sum, m) => sum + m.price, 0)
   const itemTotal = (item.price + modifiersTotal) * item.quantity
@@ -226,8 +225,9 @@ export function CompVoidModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+    <>
+      <Modal isOpen={isOpen} onClose={onClose} size="md" variant="default">
+        <div className="bg-white rounded-lg shadow-xl max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
           <h2 className="text-xl font-bold">
@@ -467,6 +467,8 @@ export function CompVoidModal({
         </div>
       </div>
 
+      </Modal>
+
       {/* Remote Void Approval Modal */}
       <RemoteVoidApprovalModal
         isOpen={showRemoteApproval}
@@ -481,6 +483,6 @@ export function CompVoidModal({
         terminalId={terminalId}
         onSuccess={handleRemoteApprovalSuccess}
       />
-    </div>
+    </>
   )
 }

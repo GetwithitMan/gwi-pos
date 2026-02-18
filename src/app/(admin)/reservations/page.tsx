@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 import { toast } from '@/stores/toast-store'
@@ -530,12 +531,7 @@ function ReservationModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">
-          {reservation ? 'Edit Reservation' : 'New Reservation'}
-        </h2>
-
+    <Modal isOpen={true} onClose={onClose} title={reservation ? 'Edit Reservation' : 'New Reservation'} size="lg">
         {error && (
           <div className="bg-red-900/50 text-red-300 p-3 rounded mb-4">{error}</div>
         )}
@@ -685,7 +681,6 @@ function ReservationModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }

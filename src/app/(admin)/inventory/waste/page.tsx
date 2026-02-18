@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
@@ -448,12 +449,8 @@ function WasteEntryModal({
   const selectedItem = items.find(i => i.id === form.inventoryItemId) as (InventoryItem & { costPerUnit?: number }) | undefined
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <CardHeader>
-          <CardTitle>Log Waste Entry</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <Modal isOpen={true} onClose={onClose} title="Log Waste Entry" size="lg">
+        <div className="space-y-4">
           {/* Item Selection */}
           <div>
             <label className="block text-sm text-gray-600 mb-1">Inventory Item *</label>
@@ -579,8 +576,7 @@ function WasteEntryModal({
           <datalist id="waste-units">
             {STORAGE_UNITS.map(u => <option key={u} value={u} />)}
           </datalist>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+    </Modal>
   )
 }

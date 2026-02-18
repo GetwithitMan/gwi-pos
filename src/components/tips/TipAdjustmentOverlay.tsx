@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
+import { Modal } from '@/components/ui/modal'
 import TipEntryRow from '@/components/tips/TipEntryRow'
 
 interface ClosedOrder {
@@ -168,10 +169,9 @@ export default function TipAdjustmentOverlay({ isOpen, onClose, locationId, empl
     }
   }
 
-  if (!isOpen) return null
-
   return (
-    <div className="fixed inset-0 z-[60] bg-[rgba(15,15,30,0.98)] overflow-y-auto">
+    <Modal isOpen={isOpen} onClose={onClose} size="4xl">
+      <div className="-m-5 bg-[rgba(15,15,30,0.98)] overflow-y-auto rounded-b-2xl" style={{ maxHeight: 'calc(90vh - 1rem)' }}>
       {/* Header */}
       <div className="sticky top-0 z-10 bg-[rgba(15,15,30,0.95)] backdrop-blur-xl border-b border-white/10">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -287,7 +287,7 @@ export default function TipAdjustmentOverlay({ isOpen, onClose, locationId, empl
 
       {/* Bottom bar */}
       {orders.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-[61] bg-[rgba(15,15,30,0.95)] backdrop-blur-xl border-t border-white/10">
+        <div className="sticky bottom-0 z-10 bg-[rgba(15,15,30,0.95)] backdrop-blur-xl border-t border-white/10">
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
             <div className="text-sm text-white/60">
               <span className="font-semibold text-white">{editedCount}</span> tips entered
@@ -308,6 +308,7 @@ export default function TipAdjustmentOverlay({ isOpen, onClose, locationId, empl
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </Modal>
   )
 }

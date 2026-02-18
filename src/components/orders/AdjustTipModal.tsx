@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
 import { toast } from '@/stores/toast-store'
 
@@ -103,16 +104,14 @@ export function AdjustTipModal({
     }
   }
 
-  if (!isOpen) return null
-
   const customerName = order.customer
     ? `${order.customer.firstName} ${order.customer.lastName}`
     : order.tabName || 'Guest'
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-slate-900 rounded-xl p-6 w-full max-w-md border border-white/10">
+      <Modal isOpen={isOpen} onClose={onClose} size="md">
+        <div className="bg-slate-900 rounded-xl p-6 border border-white/10">
           <h2 className="text-xl font-bold text-white mb-4">
             Adjust Tip - Order #{order.orderNumber}
           </h2>
@@ -212,7 +211,7 @@ export function AdjustTipModal({
             </div>
           </div>
         </div>
-      </div>
+      </Modal>
 
       <ManagerPinModal
         isOpen={showPinModal}

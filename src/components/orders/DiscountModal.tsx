@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
@@ -117,8 +118,6 @@ export function DiscountModal({
       setIsLoading(false)
     }
   }
-
-  if (!isOpen) return null
 
   const handleApplyPreset = async (rule: DiscountRule) => {
     setIsProcessing(true)
@@ -237,8 +236,8 @@ export function DiscountModal({
   const currentDiscountTotal = appliedDiscounts.reduce((sum, d) => sum + d.amount, 0)
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col">
+    <Modal isOpen={isOpen} onClose={onClose} size="md" variant="default">
+      <div className="bg-white rounded-lg shadow-xl max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
           <h2 className="text-xl font-bold">Apply Discount</h2>
@@ -490,6 +489,6 @@ export function DiscountModal({
           </Button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

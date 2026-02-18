@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -520,10 +521,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
       )}
 
       {/* ── Add Member Modal ──────────────────────────────────────────────────── */}
-      {addMemberGroupId && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Add Member</h3>
+      <Modal isOpen={!!addMemberGroupId} onClose={() => { setAddMemberGroupId(null); setAddMemberSelected(null) }} title="Add Member" size="md" variant="default">
 
             {/* Search */}
             <input
@@ -593,15 +591,10 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                 {addMemberSaving ? 'Adding...' : 'Add Member'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* ── Close Group Confirmation Modal ────────────────────────────────────── */}
-      {closeGroupId && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Close Group</h3>
+      <Modal isOpen={!!closeGroupId} onClose={() => setCloseGroupId(null)} title="Close Group" size="md" variant="default">
             <p className="text-sm text-gray-500 mb-6">
               This will close the group and end tip pooling for all members.
             </p>
@@ -622,15 +615,10 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                 {closingGroup ? 'Closing...' : 'Close Group'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* ── Manual Adjustment Modal ──────────────────────────────────────────── */}
-      {adjustGroupId && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Adjust Tips</h3>
+      <Modal isOpen={!!adjustGroupId} onClose={() => { setAdjustGroupId(null); setAdjustEmployeeId(''); setAdjustAmount(''); setAdjustReason('') }} title="Adjust Tips" size="md" variant="default">
 
             {/* Employee selector */}
             <div className="mb-4">
@@ -704,9 +692,7 @@ export function ActiveGroupManager({ locationId, employeeId }: ActiveGroupManage
                 {adjustSaving ? 'Saving...' : 'Save Adjustment'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
     </section>
   )
 }

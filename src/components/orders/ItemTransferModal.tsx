@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
@@ -85,8 +86,6 @@ export function ItemTransferModal({
       setIsLoading(false)
     }
   }
-
-  if (!isOpen) return null
 
   const transferableItems = items.filter(
     (item) => item.status !== 'comped' && item.status !== 'voided'
@@ -178,8 +177,8 @@ export function ItemTransferModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+    <Modal isOpen={isOpen} onClose={onClose} size="lg" variant="default">
+      <div className="bg-white rounded-lg shadow-xl max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
           <div>
@@ -381,6 +380,6 @@ export function ItemTransferModal({
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
@@ -283,198 +284,193 @@ export default function DiscountsPage() {
       </main>
 
       {/* Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-hidden">
-            <div className="p-4 border-b bg-gray-50">
-              <h2 className="text-xl font-bold">
-                {editingDiscount ? 'Edit Discount' : 'Create Discount'}
-              </h2>
+      <Modal
+        isOpen={showModal}
+        onClose={() => { closeModal(); resetForm() }}
+        title={editingDiscount ? 'Edit Discount' : 'Create Discount'}
+        size="md"
+      >
+        <form onSubmit={handleSubmitForm}>
+          <div className="space-y-4">
+            {modalError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                {modalError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Internal Name
+              </label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="e.g., Employee Discount"
+                required
+              />
             </div>
 
-            <form onSubmit={handleSubmitForm} className="p-4 overflow-y-auto max-h-[70vh]">
-              <div className="space-y-4">
-                {modalError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                    {modalError}
-                  </div>
-                )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Display Text (shown on receipt)
+              </label>
+              <input
+                type="text"
+                value={formData.displayText}
+                onChange={(e) => setFormData({ ...formData, displayText: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="e.g., 10% Employee Discount"
+                required
+              />
+            </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Internal Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
-                    placeholder="e.g., Employee Discount"
-                    required
-                  />
-                </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description (optional)
+              </label>
+              <input
+                type="text"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="e.g., For active employees only"
+              />
+            </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Display Text (shown on receipt)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.displayText}
-                    onChange={(e) => setFormData({ ...formData, displayText: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
-                    placeholder="e.g., 10% Employee Discount"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description (optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.description}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
-                    placeholder="e.g., For active employees only"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Type
-                    </label>
-                    <select
-                      value={formData.configType}
-                      onChange={(e) =>
-                        setFormData({ ...formData, configType: e.target.value as 'percent' | 'fixed' })
-                      }
-                      className="w-full px-3 py-2 border rounded-lg"
-                    >
-                      <option value="percent">Percentage</option>
-                      <option value="fixed">Fixed Amount</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {formData.configType === 'percent' ? 'Percent (%)' : 'Amount ($)'}
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.configValue}
-                      onChange={(e) => setFormData({ ...formData, configValue: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      placeholder={formData.configType === 'percent' ? '10' : '5.00'}
-                      step={formData.configType === 'percent' ? '1' : '0.01'}
-                      min="0"
-                      max={formData.configType === 'percent' ? '100' : undefined}
-                      required
-                    />
-                  </div>
-                </div>
-
-                {formData.configType === 'percent' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Maximum Discount Amount (optional)
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.configMaxAmount}
-                      onChange={(e) => setFormData({ ...formData, configMaxAmount: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      placeholder="e.g., 25.00"
-                      step="0.01"
-                      min="0"
-                    />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Max Per Order
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.maxPerOrder}
-                      onChange={(e) => setFormData({ ...formData, maxPerOrder: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      placeholder="Unlimited"
-                      min="1"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Priority
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.priority}
-                      onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                      className="w-full px-3 py-2 border rounded-lg"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.isStackable}
-                      onChange={(e) => setFormData({ ...formData, isStackable: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Can be combined with other discounts</span>
-                  </label>
-
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.requiresApproval}
-                      onChange={(e) =>
-                        setFormData({ ...formData, requiresApproval: e.target.checked })
-                      }
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Requires manager approval</span>
-                  </label>
-
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={formData.isActive}
-                      onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                      className="w-4 h-4"
-                    />
-                    <span className="text-sm">Active</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="flex gap-2 mt-6">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    closeModal()
-                    resetForm()
-                  }}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Type
+                </label>
+                <select
+                  value={formData.configType}
+                  onChange={(e) =>
+                    setFormData({ ...formData, configType: e.target.value as 'percent' | 'fixed' })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
                 >
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" className="flex-1" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : editingDiscount ? 'Save Changes' : 'Create Discount'}
-                </Button>
+                  <option value="percent">Percentage</option>
+                  <option value="fixed">Fixed Amount</option>
+                </select>
               </div>
-            </form>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {formData.configType === 'percent' ? 'Percent (%)' : 'Amount ($)'}
+                </label>
+                <input
+                  type="number"
+                  value={formData.configValue}
+                  onChange={(e) => setFormData({ ...formData, configValue: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder={formData.configType === 'percent' ? '10' : '5.00'}
+                  step={formData.configType === 'percent' ? '1' : '0.01'}
+                  min="0"
+                  max={formData.configType === 'percent' ? '100' : undefined}
+                  required
+                />
+              </div>
+            </div>
+
+            {formData.configType === 'percent' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Maximum Discount Amount (optional)
+                </label>
+                <input
+                  type="number"
+                  value={formData.configMaxAmount}
+                  onChange={(e) => setFormData({ ...formData, configMaxAmount: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="e.g., 25.00"
+                  step="0.01"
+                  min="0"
+                />
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max Per Order
+                </label>
+                <input
+                  type="number"
+                  value={formData.maxPerOrder}
+                  onChange={(e) => setFormData({ ...formData, maxPerOrder: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="Unlimited"
+                  min="1"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Priority
+                </label>
+                <input
+                  type="number"
+                  value={formData.priority}
+                  onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.isStackable}
+                  onChange={(e) => setFormData({ ...formData, isStackable: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Can be combined with other discounts</span>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.requiresApproval}
+                  onChange={(e) =>
+                    setFormData({ ...formData, requiresApproval: e.target.checked })
+                  }
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Requires manager approval</span>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={formData.isActive}
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm">Active</span>
+              </label>
+            </div>
           </div>
-        </div>
-      )}
+
+          <div className="flex gap-2 mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                closeModal()
+                resetForm()
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" className="flex-1" disabled={isSaving}>
+              {isSaving ? 'Saving...' : editingDiscount ? 'Save Changes' : 'Create Discount'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
@@ -426,103 +427,97 @@ export default function GiftCardsPage() {
       </div>
 
       {/* Create Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
-            <h2 className="text-xl font-bold mb-4">Create Gift Card</h2>
-            {modalError && (
-              <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                {modalError}
-              </div>
-            )}
-            <form onSubmit={handleCreateGiftCard} className="space-y-4">
-              <div>
-                <label className="text-sm font-medium block mb-1">Amount *</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2 text-gray-500">$</span>
-                  <input
-                    type="number"
-                    value={newAmount}
-                    onChange={(e) => setNewAmount(e.target.value)}
-                    className="w-full pl-7 pr-3 py-2 border rounded-lg"
-                    placeholder="0.00"
-                    step="0.01"
-                    min="1"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm font-medium block mb-1">Recipient Name</label>
-                <input
-                  type="text"
-                  value={recipientName}
-                  onChange={(e) => setRecipientName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="John Doe"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium block mb-1">Recipient Email</label>
-                <input
-                  type="email"
-                  value={recipientEmail}
-                  onChange={(e) => setRecipientEmail(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="john@example.com"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium block mb-1">Purchaser Name</label>
-                <input
-                  type="text"
-                  value={purchaserName}
-                  onChange={(e) => setPurchaserName(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="Jane Doe"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium block mb-1">Gift Message</label>
-                <textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="Happy Birthday!"
-                  rows={2}
-                />
-              </div>
-
-              <div className="flex gap-2 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    closeModal()
-                    resetCreateForm()
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary" className="flex-1" disabled={isSaving}>
-                  {isSaving ? 'Creating...' : 'Create Gift Card'}
-                </Button>
-              </div>
-            </form>
+      <Modal isOpen={showCreateModal} onClose={() => { closeModal(); resetCreateForm() }} title="Create Gift Card" size="md">
+        {modalError && (
+          <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            {modalError}
           </div>
-        </div>
-      )}
+        )}
+        <form onSubmit={handleCreateGiftCard} className="space-y-4">
+          <div>
+            <label className="text-sm font-medium block mb-1">Amount *</label>
+            <div className="relative">
+              <span className="absolute left-3 top-2 text-gray-500">$</span>
+              <input
+                type="number"
+                value={newAmount}
+                onChange={(e) => setNewAmount(e.target.value)}
+                className="w-full pl-7 pr-3 py-2 border rounded-lg"
+                placeholder="0.00"
+                step="0.01"
+                min="1"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-1">Recipient Name</label>
+            <input
+              type="text"
+              value={recipientName}
+              onChange={(e) => setRecipientName(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="John Doe"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-1">Recipient Email</label>
+            <input
+              type="email"
+              value={recipientEmail}
+              onChange={(e) => setRecipientEmail(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="john@example.com"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-1">Purchaser Name</label>
+            <input
+              type="text"
+              value={purchaserName}
+              onChange={(e) => setPurchaserName(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="Jane Doe"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-1">Gift Message</label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg"
+              placeholder="Happy Birthday!"
+              rows={2}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                closeModal()
+                resetCreateForm()
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" className="flex-1" disabled={isSaving}>
+              {isSaving ? 'Creating...' : 'Create Gift Card'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Reload Modal */}
-      {showReloadModal && selectedCard && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
-            <h2 className="text-xl font-bold mb-4">Reload Gift Card</h2>
+      <Modal isOpen={showReloadModal && !!selectedCard} onClose={() => { setShowReloadModal(false); setReloadAmount('') }} title="Reload Gift Card" size="sm">
+        {selectedCard && (
+          <>
             <div className="mb-4 text-sm text-gray-500">
               {selectedCard.cardNumber}
               <br />
@@ -563,9 +558,9 @@ export default function GiftCardsPage() {
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

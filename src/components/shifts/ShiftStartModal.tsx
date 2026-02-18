@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
+import { Modal } from '@/components/ui/modal'
 
 interface DrawerOption {
   id: string
@@ -145,24 +146,21 @@ export function ShiftStartModal({
     }
   }
 
-  if (!isOpen) return null
-
   // "none" mode — auto-starts, show minimal loading state
   if (mode === 'none') {
     if (isLoading) {
       return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-8 text-center">
+        <Modal isOpen={isOpen} onClose={onClose} size="sm" variant="default">
+          <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4" />
             <p className="text-gray-600">Starting shift...</p>
           </div>
-        </div>
+        </Modal>
       )
     }
     if (error) {
       return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
+        <Modal isOpen={isOpen} onClose={onClose} size="sm" variant="default">
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
               {error}
             </div>
@@ -174,8 +172,7 @@ export function ShiftStartModal({
                 Retry
               </Button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )
     }
     return null
@@ -184,22 +181,16 @@ export function ShiftStartModal({
   // "purse" mode — just ask for starting cash amount
   if (mode === 'purse') {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-          {/* Header */}
-          <div className="p-4 border-b bg-gray-50">
-            <h2 className="text-xl font-bold">Start Your Purse</h2>
-            <p className="text-sm text-gray-500">{employeeName}</p>
-          </div>
+      <Modal isOpen={isOpen} onClose={onClose} title="Start Your Purse" size="md" variant="default">
+          <p className="text-sm text-gray-500 -mt-3 mb-4">{employeeName}</p>
 
-          {/* Content */}
-          <div className="p-4 space-y-4">
             {error && (
-              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
                 {error}
               </div>
             )}
 
+            <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Starting Cash in Purse
@@ -244,10 +235,10 @@ export function ShiftStartModal({
                 placeholder="Any notes about starting the shift..."
               />
             </div>
-          </div>
+            </div>
 
           {/* Footer — NO Cancel button for purse mode */}
-          <div className="p-4 border-t bg-gray-50">
+          <div className="pt-4 border-t mt-4">
             <Button
               variant="primary"
               className="w-full"
@@ -257,29 +248,22 @@ export function ShiftStartModal({
               {isLoading ? 'Starting...' : 'Start Shift'}
             </Button>
           </div>
-        </div>
-      </div>
+      </Modal>
     )
   }
 
   // "drawer" mode — select drawer + enter starting cash
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-        {/* Header */}
-        <div className="p-4 border-b bg-gray-50">
-          <h2 className="text-xl font-bold">Start Your Shift</h2>
-          <p className="text-sm text-gray-500">{employeeName}</p>
-        </div>
+    <Modal isOpen={isOpen} onClose={onClose} title="Start Your Shift" size="md" variant="default">
+        <p className="text-sm text-gray-500 -mt-3 mb-4">{employeeName}</p>
 
-        {/* Content */}
-        <div className="p-4 space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm mb-4">
               {error}
             </div>
           )}
 
+        <div className="space-y-4">
           {/* Drawer Selection */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -372,7 +356,7 @@ export function ShiftStartModal({
         </div>
 
         {/* Footer — NO Cancel button for drawer mode */}
-        <div className="p-4 border-t bg-gray-50">
+        <div className="pt-4 border-t mt-4">
           <Button
             variant="primary"
             className="w-full"
@@ -382,7 +366,6 @@ export function ShiftStartModal({
             {isLoading ? 'Starting...' : 'Start Shift'}
           </Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

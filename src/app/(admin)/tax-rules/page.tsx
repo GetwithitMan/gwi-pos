@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
@@ -269,135 +270,131 @@ export default function TaxRulesPage() {
         </Card>
 
       {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-lg">
-            <CardHeader>
-              <CardTitle>{editingRule ? 'Edit Tax Rule' : 'Add Tax Rule'}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {modalError && (
-                  <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                    {modalError}
-                  </div>
-                )}
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="State Sales Tax"
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
+      <Modal
+        isOpen={showModal}
+        onClose={() => { closeModal(); resetForm() }}
+        title={editingRule ? 'Edit Tax Rule' : 'Add Tax Rule'}
+        size="lg"
+      >
+        <div className="space-y-4">
+          {modalError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+              {modalError}
+            </div>
+          )}
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Name</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="State Sales Tax"
+              className="w-full border rounded px-3 py-2"
+            />
+          </div>
 
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Tax Rate (%)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.ratePercent}
-                    onChange={(e) => setFormData({ ...formData, ratePercent: parseFloat(e.target.value) })}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Tax Rate (%)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={formData.ratePercent}
+              onChange={(e) => setFormData({ ...formData, ratePercent: parseFloat(e.target.value) })}
+              className="w-full border rounded px-3 py-2"
+            />
+          </div>
 
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1">Applies To</label>
-                  <select
-                    value={formData.appliesTo}
-                    onChange={(e) => setFormData({ ...formData, appliesTo: e.target.value })}
-                    className="w-full border rounded px-3 py-2"
-                  >
-                    <option value="all">All Items</option>
-                    <option value="category">Specific Categories</option>
-                    <option value="item">Specific Items</option>
-                  </select>
-                </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Applies To</label>
+            <select
+              value={formData.appliesTo}
+              onChange={(e) => setFormData({ ...formData, appliesTo: e.target.value })}
+              className="w-full border rounded px-3 py-2"
+            >
+              <option value="all">All Items</option>
+              <option value="category">Specific Categories</option>
+              <option value="item">Specific Items</option>
+            </select>
+          </div>
 
-                {formData.appliesTo === 'category' && (
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Categories</label>
-                    <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded p-2">
-                      {categories.map(cat => (
-                        <label key={cat.id} className="flex items-center gap-2 text-sm">
-                          <input
-                            type="checkbox"
-                            checked={formData.categoryIds.includes(cat.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setFormData({
-                                  ...formData,
-                                  categoryIds: [...formData.categoryIds, cat.id],
-                                })
-                              } else {
-                                setFormData({
-                                  ...formData,
-                                  categoryIds: formData.categoryIds.filter(id => id !== cat.id),
-                                })
-                              }
-                            }}
-                          />
-                          {cat.name}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-gray-600 mb-1">Priority</label>
+          {formData.appliesTo === 'category' && (
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Categories</label>
+              <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded p-2">
+                {categories.map(cat => (
+                  <label key={cat.id} className="flex items-center gap-2 text-sm">
                     <input
-                      type="number"
-                      value={formData.priority}
-                      onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
-                      className="w-full border rounded px-3 py-2"
+                      type="checkbox"
+                      checked={formData.categoryIds.includes(cat.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setFormData({
+                            ...formData,
+                            categoryIds: [...formData.categoryIds, cat.id],
+                          })
+                        } else {
+                          setFormData({
+                            ...formData,
+                            categoryIds: formData.categoryIds.filter(id => id !== cat.id),
+                          })
+                        }
+                      }}
                     />
-                    <p className="text-xs text-gray-400 mt-1">Lower = applied first</p>
-                  </div>
-                  <div className="space-y-2 pt-6">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={formData.isCompounded}
-                        onChange={(e) => setFormData({ ...formData, isCompounded: e.target.checked })}
-                      />
-                      Compounded (tax on tax)
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={formData.isInclusive}
-                        onChange={(e) => setFormData({ ...formData, isInclusive: e.target.checked })}
-                      />
-                      Tax-inclusive pricing
-                    </label>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      closeModal()
-                      resetForm()
-                    }}
-                    className="flex-1"
-                  >
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSubmitForm} className="flex-1" disabled={isSaving}>
-                    {isSaving ? 'Saving...' : editingRule ? 'Save Changes' : 'Add Rule'}
-                  </Button>
-                </div>
+                    {cat.name}
+                  </label>
+                ))}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Priority</label>
+              <input
+                type="number"
+                value={formData.priority}
+                onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) })}
+                className="w-full border rounded px-3 py-2"
+              />
+              <p className="text-xs text-gray-400 mt-1">Lower = applied first</p>
+            </div>
+            <div className="space-y-2 pt-6">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={formData.isCompounded}
+                  onChange={(e) => setFormData({ ...formData, isCompounded: e.target.checked })}
+                />
+                Compounded (tax on tax)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={formData.isInclusive}
+                  onChange={(e) => setFormData({ ...formData, isInclusive: e.target.checked })}
+                />
+                Tax-inclusive pricing
+              </label>
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                closeModal()
+                resetForm()
+              }}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSubmitForm} className="flex-1" disabled={isSaving}>
+              {isSaving ? 'Saving...' : editingRule ? 'Save Changes' : 'Add Rule'}
+            </Button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

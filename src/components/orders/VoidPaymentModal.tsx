@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { ManagerPinModal } from '@/components/auth/ManagerPinModal'
 import { toast } from '@/stores/toast-store'
 
@@ -100,8 +101,6 @@ export function VoidPaymentModal({
     }
   }
 
-  if (!isOpen) return null
-
   const paymentMethodDisplay = (() => {
     if (payment.paymentMethod === 'credit' || payment.paymentMethod === 'debit') {
       return `${payment.cardBrand || 'Card'} ****${payment.cardLast4 || '????'}`
@@ -115,8 +114,8 @@ export function VoidPaymentModal({
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-slate-900 rounded-xl p-6 w-full max-w-md border border-white/10">
+      <Modal isOpen={isOpen} onClose={onClose} size="md">
+        <div className="bg-slate-900 rounded-xl p-6 border border-white/10">
           <h2 className="text-xl font-bold text-white mb-4">
             Void Payment - Order #{order.orderNumber}
           </h2>
@@ -218,7 +217,7 @@ export function VoidPaymentModal({
             </div>
           </div>
         </div>
-      </div>
+      </Modal>
 
       <ManagerPinModal
         isOpen={showPinModal}

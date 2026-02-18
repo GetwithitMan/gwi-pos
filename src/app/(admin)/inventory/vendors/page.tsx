@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -308,12 +309,8 @@ function VendorModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <CardTitle>{vendor ? 'Edit Vendor' : 'Add Vendor'}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <Modal isOpen={true} onClose={onClose} title={vendor ? 'Edit Vendor' : 'Add Vendor'} size="lg">
+        <div className="space-y-4">
           {modalError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
               {modalError}
@@ -418,8 +415,7 @@ function VendorModal({
               {isSaving ? 'Saving...' : vendor ? 'Save Changes' : 'Create Vendor'}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+    </Modal>
   )
 }

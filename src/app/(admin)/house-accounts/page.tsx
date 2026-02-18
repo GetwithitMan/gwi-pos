@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
@@ -517,18 +518,13 @@ export default function HouseAccountsPage() {
       </div>
 
       {/* Create/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">
-              {editingAccount ? 'Edit Account' : 'Create House Account'}
-            </h2>
-            {modalError && (
-              <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                {modalError}
-              </div>
-            )}
-            <form onSubmit={handleSubmitForm} className="space-y-4">
+      <Modal isOpen={showModal} onClose={() => { closeModal(); resetForm() }} title={editingAccount ? 'Edit Account' : 'Create House Account'} size="lg">
+        {modalError && (
+          <div className="p-3 mb-4 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            {modalError}
+          </div>
+        )}
+        <form onSubmit={handleSubmitForm} className="space-y-4">
               <div>
                 <label className="text-sm font-medium block mb-1">Account Name *</label>
                 <input
@@ -671,15 +667,12 @@ export default function HouseAccountsPage() {
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Payment Modal */}
-      {showPaymentModal && selectedAccount && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-6">
-            <h2 className="text-xl font-bold mb-4">Record Payment</h2>
+      <Modal isOpen={showPaymentModal && !!selectedAccount} onClose={() => { setShowPaymentModal(false); resetPaymentForm() }} title="Record Payment" size="sm">
+        {selectedAccount && (
+          <>
             <div className="mb-4 text-sm text-gray-500">
               {selectedAccount.name}
               <br />
@@ -758,9 +751,9 @@ export default function HouseAccountsPage() {
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

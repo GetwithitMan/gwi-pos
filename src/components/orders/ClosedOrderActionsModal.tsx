@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { hasPermission } from '@/lib/auth-utils'
@@ -223,10 +224,6 @@ export function ClosedOrderActionsModal({
     else if (action === 'rerun') executeRerun()
   }
 
-  if (!isOpen) return null
-
-  const dark = true // Always dark glass style
-
   const getPaymentStatusBanner = (payment: Payment) => {
     if (!payment.datacapRecordNo) {
       return { text: 'Card must be present for void/refund', color: 'text-amber-400 bg-amber-900/30' }
@@ -241,12 +238,8 @@ export function ClosedOrderActionsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
-
-      {/* Modal */}
-      <div className="relative w-full max-w-lg mx-4 bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
+    <Modal isOpen={isOpen} onClose={handleClose} size="lg">
+      <div className="bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
           <div>
@@ -582,6 +575,6 @@ export function ClosedOrderActionsModal({
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

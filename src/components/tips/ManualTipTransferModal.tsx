@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 
 interface EmployeeOption {
   id: string
@@ -104,27 +105,8 @@ export function ManualTipTransferModal({
     }
   }
 
-  if (!isOpen) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20 bg-black/60 backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-white font-semibold text-lg">Transfer Tips</h2>
-          <button
-            onClick={onClose}
-            className="text-white/40 hover:text-white text-xl leading-none"
-            aria-label="Close transfer modal"
-          >
-            &times;
-          </button>
-        </div>
+    <Modal isOpen={isOpen} onClose={onClose} title="Transfer Tips" size="md" variant="default">
 
         {/* Balance */}
         <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-6">
@@ -214,7 +196,6 @@ export function ManualTipTransferModal({
             {loading ? 'Sending...' : 'Send Transfer'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

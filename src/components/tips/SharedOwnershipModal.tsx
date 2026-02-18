@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -366,28 +367,8 @@ export default function SharedOwnershipModal({
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (!isOpen) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center pt-20"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl">
-        {/* ── Header ───────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold text-white">Share Table</h2>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/50 hover:text-white transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+    <Modal isOpen={isOpen} onClose={onClose} title="Share Table" size="md" variant="default">
 
         {/* ── Loading ──────────────────────────────────────────────────────── */}
         {loading ? (
@@ -671,7 +652,6 @@ export default function SharedOwnershipModal({
             </div>
           </>
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }

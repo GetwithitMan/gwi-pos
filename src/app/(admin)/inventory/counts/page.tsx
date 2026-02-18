@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { GroupedVirtuoso } from 'react-virtuoso'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
@@ -586,12 +587,8 @@ function NewCountModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>New Inventory Count</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <Modal isOpen={true} onClose={onClose} title="New Inventory Count" size="md">
+        <div className="space-y-4">
           {/* Count Type */}
           <div>
             <label className="block text-sm text-gray-600 mb-2">Count Type *</label>
@@ -656,8 +653,7 @@ function NewCountModal({
               {isCreating ? 'Creating...' : 'Start Count'}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+    </Modal>
   )
 }

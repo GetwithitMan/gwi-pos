@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import type { OrderTypeConfig, FieldDefinition, WorkflowRules, KDSConfig } from '@/types/order-types'
 import { toast } from '@/stores/toast-store'
@@ -464,15 +465,13 @@ function OrderTypeEditModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold">
-            {orderType.id ? 'Edit Order Type' : 'New Order Type'}
-          </h2>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={orderType.id ? 'Edit Order Type' : 'New Order Type'}
+      size="lg"
+    >
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Basic Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -672,7 +671,6 @@ function OrderTypeEditModal({
             </button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }

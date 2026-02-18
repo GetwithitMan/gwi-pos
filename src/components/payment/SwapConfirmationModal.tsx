@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { SpeakerWaveIcon, CheckCircleIcon } from '@heroicons/react/24/outline'
+import { Modal } from '@/components/ui/modal'
 import type { PaymentReader } from '@/hooks/useDatacap'
 
 interface SwapConfirmationModalProps {
@@ -38,8 +39,8 @@ export function SwapConfirmationModal({
     : targetReader.serialNumber
 
   return (
-    <div className="fixed inset-0 bg-black/95 flex items-center justify-center z-[300] p-6">
-      <div className="bg-slate-900 border-2 border-amber-500 rounded-3xl p-8 w-full max-w-sm text-center shadow-2xl">
+    <Modal isOpen={true} onClose={onCancel} size="sm">
+      <div className="bg-slate-900 border-2 border-amber-500 rounded-3xl p-8 text-center shadow-2xl -m-5">
         {/* Header */}
         <h3 className="text-xl font-black text-white mb-2">VERIFY DEVICE</h3>
         <p className="text-slate-400 text-xs mb-6 uppercase tracking-widest">
@@ -111,6 +112,6 @@ export function SwapConfirmationModal({
           Cancel
         </button>
       </div>
-    </div>
+    </Modal>
   )
 }

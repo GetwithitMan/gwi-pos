@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { formatCurrency } from '@/lib/utils'
 import { useEvents } from '@/lib/events/use-events'
@@ -263,11 +264,9 @@ export function RemoteVoidApprovalModal({
     setError(null)
   }
 
-  if (!isOpen) return null
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-full max-w-md rounded-lg bg-slate-800 p-6 shadow-xl">
+    <Modal isOpen={isOpen} onClose={onClose} size="md">
+      <div className="rounded-lg bg-slate-800 p-6 shadow-xl">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-bold text-white">Remote Manager Approval</h2>
@@ -523,6 +522,6 @@ export function RemoteVoidApprovalModal({
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   )
 }

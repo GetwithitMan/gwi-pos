@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { formatCurrency } from '@/lib/utils'
@@ -285,8 +286,8 @@ export function TablePickerModal({ locationId, onSelect, onCancel }: TablePicker
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
+    <Modal isOpen={true} onClose={onCancel} size="4xl" variant="default">
+      <Card className="max-h-[80vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b flex items-center justify-between">
           <div>
@@ -408,6 +409,6 @@ export function TablePickerModal({ locationId, onSelect, onCancel }: TablePicker
           </Button>
         </div>
       </Card>
-    </div>
+    </Modal>
   )
 }
