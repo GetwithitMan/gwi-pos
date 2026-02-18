@@ -1,6 +1,6 @@
 // Print Template Settings Types
 
-export interface PrintTemplateSettings {
+export interface BasicPrintSettings {
   // Header Settings
   header: {
     showLogo: boolean
@@ -86,7 +86,7 @@ export interface PrintTemplateSettings {
 }
 
 // Default settings for kitchen tickets
-export const DEFAULT_KITCHEN_TEMPLATE: PrintTemplateSettings = {
+export const DEFAULT_KITCHEN_TEMPLATE: BasicPrintSettings = {
   header: {
     showLogo: false,
     businessName: '',
@@ -153,7 +153,7 @@ export const DEFAULT_KITCHEN_TEMPLATE: PrintTemplateSettings = {
 }
 
 // Default settings for customer receipts
-export const DEFAULT_RECEIPT_TEMPLATE: PrintTemplateSettings = {
+export const DEFAULT_RECEIPT_TEMPLATE: BasicPrintSettings = {
   header: {
     showLogo: true,
     businessName: '',

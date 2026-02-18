@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import type { PrintTemplateSettings } from '@/types/print-settings'
+import type { BasicPrintSettings } from '@/types/print-settings'
 import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print-settings'
 
 interface PrintSettingsEditorProps {
-  settings: PrintTemplateSettings
+  settings: BasicPrintSettings
   printerRole: 'receipt' | 'kitchen' | 'bar'
-  onSave: (settings: PrintTemplateSettings) => void
+  onSave: (settings: BasicPrintSettings) => void
   onCancel: () => void
 }
 
@@ -20,7 +20,7 @@ export default function PrintSettingsEditor({
   onCancel,
 }: PrintSettingsEditorProps) {
   const [activeTab, setActiveTab] = useState<TabId>('items')
-  const [localSettings, setLocalSettings] = useState<PrintTemplateSettings>(settings)
+  const [localSettings, setLocalSettings] = useState<BasicPrintSettings>(settings)
 
   const tabs: { id: TabId; label: string; showFor: ('receipt' | 'kitchen' | 'bar')[] }[] = [
     { id: 'header', label: 'Header', showFor: ['receipt'] },
@@ -35,10 +35,10 @@ export default function PrintSettingsEditor({
 
   const visibleTabs = tabs.filter(tab => tab.showFor.includes(printerRole))
 
-  const updateSetting = <K extends keyof PrintTemplateSettings>(
+  const updateSetting = <K extends keyof BasicPrintSettings>(
     section: K,
-    field: keyof PrintTemplateSettings[K],
-    value: PrintTemplateSettings[K][typeof field]
+    field: keyof BasicPrintSettings[K],
+    value: BasicPrintSettings[K][typeof field]
   ) => {
     setLocalSettings(prev => ({
       ...prev,

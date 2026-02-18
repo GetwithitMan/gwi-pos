@@ -3,13 +3,14 @@ import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // GET all terminals for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
+    const locationId = searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     const category = searchParams.get('category') // Filter by category
 
     const terminals = await db.terminal.findMany({
@@ -51,13 +52,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      locationId = DEFAULT_LOCATION_ID,
+      locationId,
       name,
       category = 'FIXED_STATION',
       staticIp,
       receiptPrinterId,
       roleSkipRules,
     } = body
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     // Validate required fields
     if (!name) {

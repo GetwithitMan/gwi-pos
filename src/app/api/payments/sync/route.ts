@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 /**
  * POST /api/payments/sync
  *
@@ -201,7 +199,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
+    const locationId = searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     const dateStr = searchParams.get('date') // YYYY-MM-DD format
     const needsReconciliation = searchParams.get('needsReconciliation') === 'true'
 

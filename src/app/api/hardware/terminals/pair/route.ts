@@ -3,14 +3,15 @@ import { db } from '@/lib/db'
 import crypto from 'crypto'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // POST complete terminal pairing with code
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { pairingCode, deviceFingerprint, deviceInfo } = body
-    const locationId = body.locationId || DEFAULT_LOCATION_ID
+    const locationId = body.locationId
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     if (!pairingCode) {
       return NextResponse.json({ error: 'Pairing code is required' }, { status: 400 })

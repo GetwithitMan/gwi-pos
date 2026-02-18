@@ -3,13 +3,14 @@ import { db } from '@/lib/db'
 import { DEFAULT_KITCHEN_TEMPLATE, DEFAULT_RECEIPT_TEMPLATE } from '@/types/print-settings'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // GET all printers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
+    const locationId = searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     const role = searchParams.get('role') // Filter by printerRole
 
     const printers = await db.printer.findMany({
@@ -39,7 +40,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      locationId = DEFAULT_LOCATION_ID,
+      locationId,
       name,
       printerType,
       model,
@@ -53,6 +54,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     // Validate required fields
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     if (!name || !printerType || !ipAddress) {
       return NextResponse.json(
         { error: 'Name, printer type, and IP address are required' },

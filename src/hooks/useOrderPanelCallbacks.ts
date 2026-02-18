@@ -63,32 +63,27 @@ export function useOrderPanelCallbacks({
     if (!item) return
     const newQty = item.quantity + delta
     if (newQty <= 0) {
-      // Delete from DB + local state (not just local)
+      // Delete from DB + local state
       activeOrder.handleRemoveItem(itemId)
     } else {
-      store.updateItem(itemId, { quantity: newQty })
+      // Persist to DB + update local state
+      activeOrder.handleQuantityChange(itemId, delta)
     }
   }, [activeOrder])
 
   const onItemHoldToggle = useCallback((itemId: string) => {
-    const store = useOrderStore.getState()
-    const item = store.currentOrder?.items.find(i => i.id === itemId)
-    if (!item) return
-    const newHeld = !item.isHeld
-    store.updateItem(itemId, {
-      isHeld: newHeld,
-      // Hold and delay are mutually exclusive
-      ...(newHeld ? { delayMinutes: null, delayStartedAt: null, delayFiredAt: null } : {}),
-    })
-  }, [])
+    // Persist to DB + update local state (not just local)
+    activeOrder.handleHoldToggle(itemId)
+  }, [activeOrder])
 
   const onItemNoteEdit = useCallback((itemId: string, currentNote?: string) => {
     activeOrder.openNoteEditor(itemId, currentNote)
   }, [activeOrder.openNoteEditor])
 
   const onItemCourseChange = useCallback((itemId: string, course: number | null) => {
-    useOrderStore.getState().updateItem(itemId, { courseNumber: course ?? undefined })
-  }, [])
+    // Persist to DB + update local state (not just local)
+    activeOrder.handleCourseChange(itemId, course)
+  }, [activeOrder])
 
   const onItemEditModifiers = useCallback((itemId: string) => {
     engine.handleEditItem(itemId)
@@ -129,8 +124,9 @@ export function useOrderPanelCallbacks({
   }, [onOpenSplit])
 
   const onItemSeatChange = useCallback((itemId: string, seat: number | null) => {
-    useOrderStore.getState().updateItem(itemId, { seatNumber: seat ?? undefined })
-  }, [])
+    // Persist to DB + update local state (not just local)
+    activeOrder.handleSeatChange(itemId, seat)
+  }, [activeOrder])
 
   const onItemToggleExpand = useCallback((id: string) => {
     setExpandedItemId(prev => prev === id ? null : id)

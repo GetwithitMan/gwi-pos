@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // GET all KDS screens for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
+    const locationId = searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     const screenType = searchParams.get('screenType') // Filter by type
 
     const screens = await db.kDSScreen.findMany({
@@ -79,7 +80,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      locationId = DEFAULT_LOCATION_ID,
+      locationId,
       name,
       screenType = 'kds',
       columns = 4,
@@ -95,6 +96,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     // Validate required fields
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }

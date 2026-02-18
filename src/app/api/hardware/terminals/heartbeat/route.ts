@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // POST terminal heartbeat - updates online status
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {

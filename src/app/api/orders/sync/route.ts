@@ -3,15 +3,13 @@ import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // POST sync an offline order
 // This handles orders that were created while the terminal was offline
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      locationId = DEFAULT_LOCATION_ID,
+      locationId,
       tableId,
       orderTypeId,
       employeeId,
@@ -21,6 +19,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       offlineId,    // UUID for deduplication
       offlineTimestamp,
     } = body
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     // Check for duplicate sync (idempotency)
     if (offlineId) {

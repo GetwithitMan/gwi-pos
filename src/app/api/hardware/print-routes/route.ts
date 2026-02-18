@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // GET - List all print routes for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
+    const locationId = searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     const routeType = searchParams.get('routeType') // Optional filter
 
     const routes = await db.printRoute.findMany({
@@ -45,7 +46,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      locationId = DEFAULT_LOCATION_ID,
+      locationId,
       name,
       routeType,
       isActive = true,
@@ -58,6 +59,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       failoverTimeout = 5000,
       settings,
     } = body
+
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
 
     // Validate required fields
     if (!name || !routeType) {

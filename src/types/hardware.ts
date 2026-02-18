@@ -1,6 +1,6 @@
 // Hardware Management Types
 
-import type { PrintTemplateSettings } from './print-settings'
+import type { BasicPrintSettings } from './print-settings'
 
 // ============================================
 // PRINTER TYPES
@@ -24,7 +24,7 @@ export interface Printer {
   isActive: boolean
   lastPingAt: Date | null
   lastPingOk: boolean
-  printSettings: PrintTemplateSettings | null
+  printSettings: BasicPrintSettings | null
   sortOrder: number
   createdAt: Date
   updatedAt: Date
@@ -40,7 +40,7 @@ export interface CreatePrinterInput {
   isDefault?: boolean
   paperWidth?: number
   supportsCut?: boolean
-  printSettings?: PrintTemplateSettings
+  printSettings?: BasicPrintSettings
 }
 
 export interface UpdatePrinterInput extends Partial<CreatePrinterInput> {
