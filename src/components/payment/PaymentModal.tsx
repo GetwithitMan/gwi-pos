@@ -809,7 +809,14 @@ export function PaymentModal({
                       <div style={{ color: '#e9d5ff', fontSize: 17, fontWeight: 700 }}>{formatCurrency(cardTotal)}</div>
                     </button>
                   ))}
-                  {/* Add Card to Tab button */}
+                  <div style={{ height: 1, background: 'rgba(148, 163, 184, 0.15)', margin: '4px 0' }} />
+                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Or pay another way</div>
+                </div>
+              )}
+
+              {/* Add Card to Tab — shown for any tab order (even with 0 cards) */}
+              {onTabCardsChanged && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 4 }}>
                   <button
                     onClick={handleAddCardToTab}
                     disabled={addingCard || isProcessing}
@@ -826,7 +833,6 @@ export function PaymentModal({
                     </div>
                   </button>
 
-                  {/* Add card loading state */}
                   {addingCard && (
                     <div style={{ textAlign: 'center', padding: '16px 0', color: '#60a5fa' }}>
                       <div style={{ width: 24, height: 24, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block', marginBottom: 8 }} />
@@ -838,9 +844,6 @@ export function PaymentModal({
                       {addCardError}
                     </div>
                   )}
-
-                  <div style={{ height: 1, background: 'rgba(148, 163, 184, 0.15)', margin: '4px 0' }} />
-                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>Or pay another way</div>
                 </div>
               )}
 
