@@ -1256,6 +1256,43 @@ export function PaymentModal({
 
           {/* Step: Datacap Direct Card Payment */}
           {step === 'datacap_card' && orderId && terminalId && employeeId && locationId && (
+            <>
+            {/* Add Card to Tab option — visible on card payment step for tab orders */}
+            {onTabCardsChanged && !addingCard && (
+              <button
+                onClick={handleAddCardToTab}
+                disabled={isProcessing}
+                style={{
+                  width: '100%',
+                  padding: '10px 16px',
+                  borderRadius: 10,
+                  border: '2px dashed rgba(100, 116, 139, 0.4)',
+                  background: 'transparent',
+                  color: '#94a3b8',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  marginBottom: 8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                {'\uD83D\uDCB3'} Add Card to Tab Instead
+              </button>
+            )}
+            {addingCard && (
+              <div style={{ textAlign: 'center', padding: '12px 0', color: '#60a5fa', marginBottom: 8 }}>
+                <div style={{ width: 20, height: 20, border: '2px solid #60a5fa', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite', display: 'inline-block', marginBottom: 4 }} />
+                <p style={{ fontSize: 13 }}>Adding card to tab...</p>
+              </div>
+            )}
+            {addCardError && (
+              <div style={{ padding: 10, background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: 8, color: '#f87171', fontSize: 13, marginBottom: 8 }}>
+                {addCardError}
+              </div>
+            )}
             <DatacapPaymentProcessor
               orderId={orderId}
               amount={currentTotal}
@@ -1286,6 +1323,7 @@ export function PaymentModal({
               }}
               onCancel={() => setStep('method')}
             />
+            </>
           )}
 
           {/* Step: Gift Card Payment */}
