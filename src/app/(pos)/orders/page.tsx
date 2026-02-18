@@ -1398,6 +1398,34 @@ export default function OrdersPage() {
     }
   }
 
+  // Handle quick split evenly (÷2 shortcut button)
+  const handleQuickSplitEvenly = useCallback(async (numWays: number) => {
+    const orderId = savedOrderId
+    if (!orderId) return
+    try {
+      const res = await fetch(`/api/orders/${orderId}/split`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'even', numWays }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        toast.error(data.error || 'Failed to split')
+        return
+      }
+      toast.success(`Split ${numWays} ways`)
+      // Reload the order to pick up split state
+      const orderResponse = await fetch(`/api/orders/${orderId}`)
+      if (orderResponse.ok) {
+        const orderData = await orderResponse.json()
+        loadOrder(orderData)
+      }
+      setFloorPlanRefreshTrigger(prev => prev + 1)
+    } catch {
+      toast.error('Failed to split order')
+    }
+  }, [savedOrderId])
+
   // Handle opening discount modal
   const handleOpenDiscount = async () => {
     if (!currentOrder?.items.length) return
@@ -2454,6 +2482,7 @@ export default function OrdersPage() {
             onItemCompVoid={panelCallbacks.onItemCompVoid}
             onItemResend={panelCallbacks.onItemResend}
             onItemSplit={editingChildSplit || orderSplitChips.some(c => c.id === currentOrder?.id) ? undefined : panelCallbacks.onItemSplit}
+            onQuickSplitEvenly={savedOrderId && !editingChildSplit && !orderSplitChips.some(c => c.id === currentOrder?.id) ? handleQuickSplitEvenly : undefined}
             onItemSeatChange={panelCallbacks.onItemSeatChange}
             expandedItemId={panelCallbacks.expandedItemId}
             onItemToggleExpand={panelCallbacks.onItemToggleExpand}
@@ -3118,6 +3147,7 @@ export default function OrdersPage() {
                 refreshTrigger={tabsRefreshTrigger}
                 isExpanded={isTabManagerExpanded}
                 onToggleExpand={() => setIsTabManagerExpanded(!isTabManagerExpanded)}
+                currentOrderId={savedOrderId || undefined}
                 onSelectOrder={(order) => {
                   setOrderToLoad({
                     id: order.id,

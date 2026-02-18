@@ -135,6 +135,7 @@ interface OpenOrdersPanelProps {
   isExpanded?: boolean
   onToggleExpand?: () => void
   forceDark?: boolean
+  currentOrderId?: string
 }
 
 type SortOption = 'newest' | 'oldest' | 'alpha_first' | 'alpha_last' | 'total_high' | 'total_low' | 'employee'
@@ -211,6 +212,7 @@ function getOrderTypeDisplay(order: OpenOrder, dark: boolean): { icon: string; l
 export function OpenOrdersPanel({
   locationId, employeeId, employeePermissions = [], onSelectOrder, onViewOrder, onNewTab,
   refreshTrigger, onViewReceipt, onClosedOrderAction, onOpenTipAdjustment, isExpanded = false, onToggleExpand, forceDark = false,
+  currentOrderId,
 }: OpenOrdersPanelProps) {
   const [orders, setOrders] = useState<OpenOrder[]>([])
   const [closedOrders, setClosedOrders] = useState<OpenOrder[]>([])
@@ -1160,6 +1162,7 @@ export function OpenOrdersPanel({
               loadClosedOrders(null)
             }}
             onOpenTipAdjustment={onOpenTipAdjustment}
+            currentOrderId={currentOrderId}
           />
         )}
       </>
@@ -1181,6 +1184,7 @@ export function OpenOrdersPanel({
         loadClosedOrders(null)
       }}
       onOpenTipAdjustment={onOpenTipAdjustment}
+      currentOrderId={currentOrderId}
     />
   )
 

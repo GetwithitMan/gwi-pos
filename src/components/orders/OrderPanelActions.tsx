@@ -61,6 +61,7 @@ interface OrderPanelActionsProps {
   hasTaxInclusiveItems?: boolean
   roundingAdjustment?: number  // Rounding applied (positive = rounded up, negative = down)
   onSplit?: () => void
+  onQuickSplitEvenly?: (numWays: number) => void
   orderType?: string  // 'bar_tab', 'dine_in', etc. — table orders show Send instead of Start Tab
 }
 
@@ -108,6 +109,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   hasTaxInclusiveItems,
   roundingAdjustment,
   onSplit,
+  onQuickSplitEvenly,
   orderType,
 }: OrderPanelActionsProps) {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card'>('card')
@@ -885,8 +887,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
       </div>
 
       {/* Secondary actions */}
-      {hasItems && (onDiscount || onClear || onCancelOrder || onSplit) && (
-        <div style={{ display: 'grid', gridTemplateColumns: [onSplit, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onSplit, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
+      {hasItems && (onDiscount || onClear || onCancelOrder || onSplit || onQuickSplitEvenly) && (
+        <div style={{ display: 'grid', gridTemplateColumns: [onSplit, onQuickSplitEvenly, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length > 1 ? `repeat(${[onSplit, onQuickSplitEvenly, onDiscount, (onCancelOrder && !hasSentItems), (onClear && !onCancelOrder)].filter(Boolean).length}, 1fr)` : '1fr', gap: '8px' }}>
           {onSplit && (
             <button
               onClick={onSplit}
@@ -903,6 +905,25 @@ export const OrderPanelActions = memo(function OrderPanelActions({
               }}
             >
               Split
+            </button>
+          )}
+          {onQuickSplitEvenly && (
+            <button
+              onClick={() => onQuickSplitEvenly(2)}
+              style={{
+                padding: '6px 10px',
+                borderRadius: '8px',
+                background: 'rgba(139, 92, 246, 0.15)',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                color: '#a78bfa',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              title="Split check evenly by 2"
+            >
+              ÷2
             </button>
           )}
           {onDiscount && (

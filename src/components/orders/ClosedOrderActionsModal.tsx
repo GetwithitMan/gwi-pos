@@ -43,6 +43,7 @@ interface ClosedOrderActionsModalProps {
   employeePermissions: string[]
   onActionComplete: () => void
   onOpenTipAdjustment?: () => void
+  currentOrderId?: string
 }
 
 const REOPEN_REASONS = [
@@ -71,6 +72,7 @@ export function ClosedOrderActionsModal({
   employeePermissions,
   onActionComplete,
   onOpenTipAdjustment,
+  currentOrderId,
 }: ClosedOrderActionsModalProps) {
   const locationId = useAuthStore(s => s.locationId)
   const [action, setAction] = useState<ActionType>(null)
@@ -81,6 +83,7 @@ export function ClosedOrderActionsModal({
   const [loading, setLoading] = useState(false)
   const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(null)
   const [rerunAmount, setRerunAmount] = useState('')
+  const [sameAgainLoading, setSameAgainLoading] = useState(false)
 
   const canVoid = hasPermission(employeePermissions, 'manager.void_payments')
   const canReopen = hasPermission(employeePermissions, 'manager.void_orders')
@@ -100,6 +103,66 @@ export function ClosedOrderActionsModal({
   const handleClose = () => {
     reset()
     onClose()
+  }
+
+  const handleSameAgain = async () => {
+    if (!currentOrderId) {
+      toast.error('Open an order first to add items')
+      return
+    }
+    setSameAgainLoading(true)
+    try {
+      // Fetch the closed order's full details to get items
+      const orderRes = await fetch(`/api/orders/${order.id}`)
+      if (!orderRes.ok) {
+        toast.error('Failed to load order details')
+        setSameAgainLoading(false)
+        return
+      }
+      const orderData = await orderRes.json()
+      const sourceItems = orderData.items || orderData.data?.items || []
+
+      const itemsPayload = sourceItems
+        .filter((item: any) => item.status === 'active' || item.status === 'sent')
+        .map((item: any) => ({
+          menuItemId: item.menuItemId,
+          name: item.name,
+          price: Number(item.price),
+          quantity: item.quantity,
+          modifiers: (item.modifiers || []).map((m: any) => ({
+            modifierId: m.modifierId,
+            name: m.name,
+            price: Number(m.price),
+            preModifier: m.preModifier || null,
+            depth: m.depth || 0,
+          })),
+          specialNotes: item.specialNotes || undefined,
+        }))
+
+      if (itemsPayload.length === 0) {
+        toast.error('No items to reorder')
+        setSameAgainLoading(false)
+        return
+      }
+
+      const addRes = await fetch(`/api/orders/${currentOrderId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsPayload }),
+      })
+      if (!addRes.ok) {
+        const errData = await addRes.json()
+        toast.error(errData.error || 'Failed to add items')
+        setSameAgainLoading(false)
+        return
+      }
+      toast.success(`Added ${itemsPayload.length} item${itemsPayload.length !== 1 ? 's' : ''} to current order`)
+      handleClose()
+      onActionComplete()
+    } catch {
+      toast.error('Failed to add items')
+    }
+    setSameAgainLoading(false)
   }
 
   const verifyPin = async (): Promise<string | null> => {
@@ -375,7 +438,21 @@ export function ClosedOrderActionsModal({
                 </button>
               )}
 
-              {!canReopen && !canVoid && !onOpenTipAdjustment && (
+              {currentOrderId && (
+                <button
+                  onClick={handleSameAgain}
+                  disabled={sameAgainLoading}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="text-2xl">🔄</span>
+                  <div>
+                    <div className="font-bold text-white">{sameAgainLoading ? 'Adding Items...' : 'Same Again'}</div>
+                    <div className="text-xs text-slate-400">Add these items to current order</div>
+                  </div>
+                </button>
+              )}
+
+              {!canReopen && !canVoid && !onOpenTipAdjustment && !currentOrderId && (
                 <p className="text-center text-slate-400 py-4">No actions available for your role</p>
               )}
             </div>

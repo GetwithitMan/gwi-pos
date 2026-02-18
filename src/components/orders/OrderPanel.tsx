@@ -149,6 +149,7 @@ export interface OrderPanelProps {
   splitChipsFlashing?: boolean
   onAddSplit?: () => void
   cardPriceMultiplier?: number
+  onQuickSplitEvenly?: (numWays: number) => void
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -271,6 +272,7 @@ export const OrderPanel = memo(function OrderPanel({
   splitChipsFlashing,
   onAddSplit,
   cardPriceMultiplier,
+  onQuickSplitEvenly,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -1502,6 +1504,7 @@ export const OrderPanel = memo(function OrderPanel({
           autoShowPayment={autoShowPayment}
           onAutoShowPaymentHandled={onAutoShowPaymentHandled}
           onSplit={onItemSplit ? () => onItemSplit('') : undefined}
+          onQuickSplitEvenly={onQuickSplitEvenly}
           orderType={orderType}
         />
       </div>

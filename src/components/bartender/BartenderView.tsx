@@ -1139,6 +1139,7 @@ export function BartenderView({
             isExpanded={isTabPanelExpanded}
             onToggleExpand={() => setIsTabPanelExpanded(!isTabPanelExpanded)}
             forceDark={true}
+            currentOrderId={selectedTabId || undefined}
             onSelectOrder={(order) => { handleSelectTab(order.id) }}
             onViewOrder={(order) => { handleSelectTab(order.id) }}
             onNewTab={handleQuickTab}
