@@ -15,6 +15,8 @@ interface OrderItem {
   modifiers: UiModifier[]  // ✅ Use canonical type
   status?: string
   voidReason?: string
+  kitchenStatus?: 'pending' | 'sent' | 'cooking' | 'ready' | 'served'
+  sentToKitchen?: boolean
 }
 
 interface CompVoidModalProps {
@@ -300,8 +302,9 @@ export function CompVoidModal({
                     className="h-16 flex-col"
                     onClick={() => {
                       setAction('comp')
-                      setReason('')
-                      setWasMade(null)
+                      setReason(COMMON_REASONS['comp'][0])
+                      const autoWasMade = item.kitchenStatus && item.kitchenStatus !== 'pending' ? true : false
+                      setWasMade(autoWasMade)
                     }}
                   >
                     <span className="text-lg">🎁</span>
@@ -313,8 +316,9 @@ export function CompVoidModal({
                     className="h-16 flex-col"
                     onClick={() => {
                       setAction('void')
-                      setReason('')
-                      setWasMade(null)
+                      setReason(COMMON_REASONS['void'][0])
+                      const autoWasMade = item.kitchenStatus && item.kitchenStatus !== 'pending' ? true : false
+                      setWasMade(autoWasMade)
                     }}
                   >
                     <span className="text-lg">🗑️</span>
