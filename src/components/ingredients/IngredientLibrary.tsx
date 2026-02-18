@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { CategorySection } from './CategorySection'
 import { IngredientEditorModal } from './IngredientEditorModal'
 import { CategoryEditorModal } from './CategoryEditorModal'
@@ -1377,14 +1378,18 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
 
       {/* Delete Category Confirmation Modal */}
       {deletingCategory && deleteCategoryInfo && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
-            <div className="p-6 border-b bg-red-50">
-              <h2 className="text-xl font-bold text-red-800">
-                Delete &ldquo;{deletingCategory.name}&rdquo;?
-              </h2>
-            </div>
-            <div className="p-6 space-y-4">
+        <Modal
+          isOpen={true}
+          onClose={() => {
+            setDeletingCategory(null)
+            setDeleteCategoryInfo(null)
+            setDeleteConfirmText('')
+          }}
+          title={`Delete \u201c${deletingCategory.name}\u201d?`}
+          size="md"
+          variant="default"
+        >
+            <div className="space-y-4">
               <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
                 <p className="font-semibold text-amber-900 mb-2">
                   This category contains:
@@ -1438,8 +1443,7 @@ export function IngredientLibrary({ locationId }: IngredientLibraryProps) {
                 </Button>
               </div>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

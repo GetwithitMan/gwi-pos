@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { Modal } from '@/components/ui/modal'
 import { TerminalFailoverManager } from '@/components/hardware/TerminalFailoverManager'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -540,13 +541,9 @@ function TerminalModal({
   const getRoleSlug = (role: Role) => role.name.toLowerCase().replace(/\s+/g, '_')
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-white border border-gray-200 rounded-3xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col shadow-xl">
-        {/* Header */}
-        <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-          <h2 className="text-xl font-bold text-gray-900">
-            {terminal ? 'Edit Station' : 'Add New Station'}
-          </h2>
+    <Modal isOpen={true} onClose={onClose} title={terminal ? 'Edit Station' : 'Add New Station'} size="2xl">
+        {/* Category Toggle */}
+        <div className="flex justify-end mb-4">
           <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-300">
             <button
               onClick={() => setCategory('FIXED_STATION')}
@@ -568,7 +565,7 @@ function TerminalModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto flex-1">
+        <div>
           <div className="grid grid-cols-2 gap-6">
             {/* Left Column - Identity */}
             <div className="space-y-4">
@@ -673,7 +670,7 @@ function TerminalModal({
         </div>
 
         {/* Footer */}
-        <div className="p-6 bg-gray-50 flex gap-3 border-t border-gray-200">
+        <div className="flex gap-3 mt-6">
           <button
             onClick={onClose}
             className="flex-1 py-3 text-gray-600 font-bold hover:text-gray-900 transition-colors"
@@ -688,8 +685,7 @@ function TerminalModal({
             {saving ? 'Saving...' : terminal ? 'Save Changes' : 'Create Station'}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -727,34 +723,29 @@ function PairingCodeModal({
   }, [expiresAt])
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-white border border-gray-200 rounded-3xl w-full max-w-md overflow-hidden text-center shadow-xl">
-        <div className="p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Pairing Code</h2>
-          <p className="text-gray-600 text-sm mb-6">
-            Enter this code on the device to pair it
-          </p>
+    <Modal isOpen={true} onClose={onClose} title="Pairing Code" size="md">
+      <div className="text-center">
+        <p className="text-gray-600 text-sm mb-6">
+          Enter this code on the device to pair it
+        </p>
 
-          <div className="bg-gray-50 rounded-2xl p-6 mb-4 border border-gray-200">
-            <div className="text-5xl font-mono font-bold tracking-[0.3em] text-cyan-600">
-              {code}
-            </div>
+        <div className="bg-gray-50 rounded-2xl p-6 mb-4 border border-gray-200">
+          <div className="text-5xl font-mono font-bold tracking-[0.3em] text-cyan-600">
+            {code}
           </div>
-
-          <p className={`text-sm ${timeLeft === 'Expired' ? 'text-red-600' : 'text-gray-600'}`}>
-            {timeLeft === 'Expired' ? 'Code expired' : `Expires in ${timeLeft}`}
-          </p>
         </div>
 
-        <div className="p-4 bg-gray-50 border-t border-gray-200">
-          <button
-            onClick={onClose}
-            className="w-full py-3 bg-gray-200 hover:bg-gray-300 text-gray-900 font-bold rounded-xl transition-colors"
-          >
-            Close
-          </button>
-        </div>
+        <p className={`text-sm ${timeLeft === 'Expired' ? 'text-red-600' : 'text-gray-600'}`}>
+          {timeLeft === 'Expired' ? 'Code expired' : `Expires in ${timeLeft}`}
+        </p>
+
+        <button
+          onClick={onClose}
+          className="w-full mt-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-900 font-bold rounded-xl transition-colors"
+        >
+          Close
+        </button>
       </div>
-    </div>
+    </Modal>
   )
 }

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 
 interface StockItem {
   id: string
@@ -432,17 +433,15 @@ export default function QuickStockAdjustPage() {
       )}
 
       {/* Verification Modal */}
-      {showVerifyModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            {/* Modal Header */}
-            <div className="px-4 py-3 border-b bg-orange-50">
-              <h2 className="text-lg font-bold text-orange-800">Confirm Stock Adjustments</h2>
-              <p className="text-sm text-orange-600">Review changes and verify to save</p>
-            </div>
+      <Modal
+        isOpen={showVerifyModal}
+        onClose={() => setShowVerifyModal(false)}
+        title="Confirm Stock Adjustments"
+        size="md"
+      >
 
             {/* Changes Summary */}
-            <div className="px-4 py-3 max-h-48 overflow-y-auto border-b">
+            <div className="py-3 max-h-48 overflow-y-auto border-b">
               <p className="text-xs text-gray-500 mb-2 font-medium">CHANGES TO BE SAVED:</p>
               <div className="space-y-1">
                 {Array.from(pendingChanges.values()).map(change => (
@@ -462,7 +461,7 @@ export default function QuickStockAdjustPage() {
             </div>
 
             {/* Verification Form */}
-            <div className="px-4 py-4 space-y-4">
+            <div className="py-4 space-y-4">
               {/* Type VERIFY */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -504,7 +503,7 @@ export default function QuickStockAdjustPage() {
             </div>
 
             {/* Modal Actions */}
-            <div className="px-4 py-3 border-t bg-gray-50 flex gap-2">
+            <div className="pt-3 border-t flex gap-2">
               <Button
                 variant="outline"
                 onClick={() => setShowVerifyModal(false)}
@@ -521,9 +520,7 @@ export default function QuickStockAdjustPage() {
                 {isSaving ? 'Saving...' : 'Confirm & Save'}
               </Button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   )
 }

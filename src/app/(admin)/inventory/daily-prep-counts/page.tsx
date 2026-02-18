@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { Modal } from '@/components/ui/modal'
 
 interface TrayConfig {
   id: string
@@ -793,13 +794,16 @@ export default function DailyPrepCountsPage() {
       )}
 
       {/* Rejection Reason Modal */}
-      {showRejectModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Reject Count</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+      <Modal
+        isOpen={showRejectModal}
+        onClose={() => {
+          setShowRejectModal(false)
+          setRejectionReason('')
+        }}
+        title="Reject Count"
+        size="md"
+      >
+            <div className="space-y-4">
               <p className="text-sm text-gray-600">
                 Please provide a reason for rejecting this count. The staff member will need to submit a new count.
               </p>
@@ -835,10 +839,8 @@ export default function DailyPrepCountsPage() {
                   {isRejecting ? 'Rejecting...' : 'Reject Count'}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+            </div>
+      </Modal>
     </div>
   )
 }

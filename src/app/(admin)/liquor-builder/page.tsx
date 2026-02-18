@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
@@ -1059,12 +1060,8 @@ function CategoryModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-md w-full">
-        <div className="p-6 border-b">
-          <h2 className="text-xl font-bold">{category ? 'Edit Category' : 'New Spirit Category'}</h2>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <Modal isOpen={true} onClose={onClose} title={category ? 'Edit Category' : 'New Spirit Category'} size="md">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Name *</label>
             <input
@@ -1123,8 +1120,7 @@ function CategoryModal({
             </div>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1188,12 +1184,8 @@ function BottleModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b">
-          <h2 className="text-xl font-bold">{bottle ? 'Edit Bottle' : 'New Bottle Product'}</h2>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <Modal isOpen={true} onClose={onClose} title={bottle ? 'Edit Bottle' : 'New Bottle Product'} size="2xl">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Product Name *</label>
@@ -1461,8 +1453,7 @@ function BottleModal({
             </div>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1497,15 +1488,11 @@ function CreateMenuItemModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg max-w-md w-full">
-        <div className="p-6 border-b">
-          <h2 className="text-xl font-bold">Create Menu Item</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Create a POS menu item for <strong>{bottle.name}</strong>
-          </p>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+    <Modal isOpen={true} onClose={onClose} title="Create Menu Item" size="md">
+        <p className="text-sm text-gray-500 mb-4">
+          Create a POS menu item for <strong>{bottle.name}</strong>
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Bottle Info */}
           <div className="bg-gray-50 rounded-lg p-3 text-sm">
             <div className="flex justify-between mb-1">
@@ -1604,8 +1591,7 @@ function CreateMenuItemModal({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

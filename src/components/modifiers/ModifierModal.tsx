@@ -1,6 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import type { DualPricingSettings } from '@/lib/settings'
 import type { MenuItem, ModifierGroup, SelectedModifier, Modifier } from '@/types'
@@ -326,8 +327,8 @@ export function ModifierModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 modifier-modal-container">
-      <div className={`mm-glass-panel rounded-2xl w-full ${viewMode === 'grid' ? 'max-w-2xl' : 'max-w-lg'} h-[85vh] overflow-hidden flex flex-col`}>
+    <Modal isOpen={true} onClose={onCancel} size={viewMode === 'grid' ? '2xl' : 'lg'}>
+      <div className="-m-5 modifier-modal-container mm-glass-panel rounded-2xl h-[85vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-3 border-b border-white/10 bg-gradient-to-r from-indigo-600/30 to-purple-600/20 flex items-center justify-between">
           <div className="min-w-0">
@@ -523,6 +524,6 @@ export function ModifierModal({
           onCancel={() => setSwapModalIngredient(null)}
         />
       )}
-    </div>
+    </Modal>
   )
 }

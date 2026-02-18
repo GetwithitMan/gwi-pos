@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { Modal } from '@/components/ui/modal'
 import { ToggleSwitch, ToggleRow, SettingsSaveBar } from '@/components/admin/settings'
 import { useRequireAuth } from '@/hooks/useRequireAuth'
 import { useUnsavedWarning } from '@/hooks/useUnsavedWarning'
@@ -922,12 +923,12 @@ export default function TipSettingsPage() {
         )}
 
         {/* ── Template Form Modal ────────────────────────────────────────── */}
-        {showTemplateForm && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-xl border border-gray-200 p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                {editingTemplate ? 'Edit Team' : 'New Team'}
-              </h3>
+        <Modal
+          isOpen={showTemplateForm}
+          onClose={() => { setShowTemplateForm(false); setEditingTemplate(null) }}
+          title={editingTemplate ? 'Edit Team' : 'New Team'}
+          size="md"
+        >
 
               {/* Name */}
               <div className="mb-4">
@@ -1023,9 +1024,7 @@ export default function TipSettingsPage() {
                   {templateSaving ? 'Saving...' : editingTemplate ? 'Update Team' : 'Create Team'}
                 </button>
               </div>
-            </div>
-          </div>
-        )}
+        </Modal>
 
         {/* Bottom save bar (sticky for long pages) */}
         <SettingsSaveBar isDirty={isDirty} isSaving={isSaving} onSave={handleSave} />

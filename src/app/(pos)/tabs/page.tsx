@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useEvents } from '@/lib/events/use-events'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrency, formatTime } from '@/lib/utils'
+import { Modal } from '@/components/ui/modal'
 
 interface TabOrder {
   id: string
@@ -374,93 +375,58 @@ export default function TabsPage() {
       </main>
 
       {/* Tab Detail Modal */}
-      <AnimatePresence>
+      <Modal isOpen={!!selectedTab} onClose={() => setSelectedTab(null)} title={selectedTab?.tabName || selectedTab?.customerName || (selectedTab ? `Tab #${selectedTab.orderNumber}` : '')} size="lg">
         {selectedTab && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setSelectedTab(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-lg max-h-[80vh] overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div className="p-6 border-b border-white/10">
-                <div className="flex items-center justify-between">
+          <>
+            <p className="text-sm text-gray-400 -mt-2 mb-4">
+              {selectedTab.itemCount} items • {selectedTab.employeeName}
+            </p>
+
+            {/* Items */}
+            <div className="space-y-3 mb-6">
+              {selectedTab.items.map((item) => (
+                <div key={item.id} className="flex items-center justify-between">
                   <div>
-                    <h2 className="text-xl font-bold text-white">
-                      {selectedTab.tabName || selectedTab.customerName || `Tab #${selectedTab.orderNumber}`}
-                    </h2>
-                    <p className="text-sm text-slate-400 mt-1">
-                      {selectedTab.itemCount} items • {selectedTab.employeeName}
-                    </p>
+                    <span className="text-gray-900">{item.name}</span>
+                    {item.quantity > 1 && (
+                      <span className="ml-2 text-gray-400">x{item.quantity}</span>
+                    )}
                   </div>
-                  <button
-                    onClick={() => setSelectedTab(null)}
-                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                  >
-                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" className="text-slate-400">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {/* Modal Body - Items */}
-              <div className="p-6 max-h-[50vh] overflow-auto">
-                <div className="space-y-3">
-                  {selectedTab.items.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between">
-                      <div>
-                        <span className="text-white">{item.name}</span>
-                        {item.quantity > 1 && (
-                          <span className="ml-2 text-slate-400">x{item.quantity}</span>
-                        )}
-                      </div>
-                      <span className="text-green-400 font-medium">
-                        {formatCurrency(item.price * item.quantity)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="p-6 border-t border-white/10 bg-slate-900/80">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-slate-400">Total</span>
-                  <span className="text-2xl font-bold text-green-400">
-                    {formatCurrency(selectedTab.total)}
+                  <span className="text-green-600 font-medium">
+                    {formatCurrency(item.price * item.quantity)}
                   </span>
                 </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => {
-                      // Add items to this tab
-                      router.push(`/orders?tabId=${selectedTab.id}&addItems=true`)
-                    }}
-                    className="flex-1 px-4 py-3 bg-white/5 border border-white/10 rounded-lg text-slate-300 font-medium hover:bg-white/10 transition-colors"
-                  >
-                    Add Items
-                  </button>
-                  <button
-                    onClick={() => handleCloseTab(selectedTab)}
-                    className="flex-1 px-4 py-3 bg-indigo-600 rounded-lg text-white font-medium hover:bg-indigo-700 transition-colors"
-                  >
-                    Close Tab
-                  </button>
-                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-4 border-t border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-gray-500">Total</span>
+                <span className="text-2xl font-bold text-green-600">
+                  {formatCurrency(selectedTab.total)}
+                </span>
               </div>
-            </motion.div>
-          </motion.div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    router.push(`/orders?tabId=${selectedTab.id}&addItems=true`)
+                  }}
+                  className="flex-1 px-4 py-3 bg-gray-100 border border-gray-200 rounded-lg text-gray-700 font-medium hover:bg-gray-200 transition-colors"
+                >
+                  Add Items
+                </button>
+                <button
+                  onClick={() => handleCloseTab(selectedTab)}
+                  className="flex-1 px-4 py-3 bg-indigo-600 rounded-lg text-white font-medium hover:bg-indigo-700 transition-colors"
+                >
+                  Close Tab
+                </button>
+              </div>
+            </div>
+          </>
         )}
-      </AnimatePresence>
+      </Modal>
     </div>
   )
 }

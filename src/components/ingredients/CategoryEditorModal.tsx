@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import type { IngredientCategory } from './IngredientLibrary'
 
 interface CategoryEditorModalProps {
@@ -71,20 +72,14 @@ export function CategoryEditorModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b">
-          <h2 className="text-xl font-bold">
-            {category ? 'Edit Category' : 'Add Category'}
-          </h2>
-          {category && (
-            <p className="text-sm text-gray-500 mt-1">
-              ID: {category.code} (immutable)
-            </p>
-          )}
-        </div>
+    <Modal isOpen={true} onClose={onClose} title={category ? 'Edit Category' : 'Add Category'} size="md" variant="default">
+      {category && (
+        <p className="text-sm text-gray-500 mb-4">
+          ID: {category.code} (immutable)
+        </p>
+      )}
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -231,7 +226,6 @@ export function CategoryEditorModal({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }

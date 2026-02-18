@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { Modal } from '@/components/ui/modal'
 
 // ────────────────────────────────────────────
 // Types
@@ -611,51 +612,57 @@ export default function TipPayoutsPage() {
       {/* ═══════════════════════════════════════════
           Cash Out Confirmation Modal
           ═══════════════════════════════════════════ */}
-      {cashOutEmployeeId && cashOutEmployee && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
-            <h3 className="text-lg font-semibold text-white mb-1">Cash Out Tips</h3>
-            <p className="text-sm text-white/50 mb-5">
-              Pay out tips for {cashOutEmployee.displayName || `${cashOutEmployee.firstName} ${cashOutEmployee.lastName}`}
+      <Modal
+        isOpen={!!(cashOutEmployeeId && cashOutEmployee)}
+        onClose={() => {
+          setCashOutEmployeeId(null)
+          setCashOutAmount('')
+          setCashOutMemo('')
+        }}
+        title="Cash Out Tips"
+        size="md"
+      >
+            <p className="text-sm text-gray-500 mb-5">
+              Pay out tips for {cashOutEmployee?.displayName || `${cashOutEmployee?.firstName} ${cashOutEmployee?.lastName}`}
             </p>
 
             <div className="space-y-4">
               {/* Current balance display */}
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                <div className="text-xs text-white/50 mb-0.5">Current Balance</div>
-                <div className="text-xl font-bold text-emerald-400">
-                  {formatCurrency(cashOutEmployee.currentBalanceDollars)}
+              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200">
+                <div className="text-xs text-gray-500 mb-0.5">Current Balance</div>
+                <div className="text-xl font-bold text-emerald-600">
+                  {formatCurrency(cashOutEmployee?.currentBalanceDollars ?? 0)}
                 </div>
               </div>
 
               {/* Amount input */}
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-1">Payout Amount</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Payout Amount</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40 text-sm">$</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
                   <input
                     type="number"
                     step="0.01"
                     min="0.01"
-                    max={cashOutEmployee.currentBalanceDollars}
+                    max={cashOutEmployee?.currentBalanceDollars}
                     value={cashOutAmount}
                     onChange={e => setCashOutAmount(e.target.value)}
-                    className="w-full pl-7 pr-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                    placeholder={String(cashOutEmployee.currentBalanceDollars)}
+                    className="w-full pl-7 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    placeholder={String(cashOutEmployee?.currentBalanceDollars)}
                     aria-label="Payout amount"
                   />
                 </div>
-                <p className="text-xs text-white/30 mt-1">Leave at full balance for complete payout</p>
+                <p className="text-xs text-gray-400 mt-1">Leave at full balance for complete payout</p>
               </div>
 
               {/* Memo input */}
               <div>
-                <label className="block text-sm font-medium text-white/70 mb-1">Memo (optional)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Memo (optional)</label>
                 <input
                   type="text"
                   value={cashOutMemo}
                   onChange={e => setCashOutMemo(e.target.value)}
-                  className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   placeholder="e.g. End of shift cash out"
                   aria-label="Payout memo"
                 />
@@ -671,7 +678,7 @@ export default function TipPayoutsPage() {
                   setCashOutMemo('')
                 }}
                 disabled={isCashingOut}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border border-white/20 text-white/70 hover:bg-white/10 transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -680,35 +687,35 @@ export default function TipPayoutsPage() {
                 disabled={isCashingOut}
                 className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-50"
               >
-                {isCashingOut ? 'Processing...' : `Pay ${cashOutAmount ? formatCurrency(parseFloat(cashOutAmount) || 0) : formatCurrency(cashOutEmployee.currentBalanceDollars)}`}
+                {isCashingOut ? 'Processing...' : `Pay ${cashOutAmount ? formatCurrency(parseFloat(cashOutAmount) || 0) : formatCurrency(cashOutEmployee?.currentBalanceDollars ?? 0)}`}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* ═══════════════════════════════════════════
           Batch Payroll Confirmation Modal
           ═══════════════════════════════════════════ */}
-      {showBatchConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
-            <h3 className="text-lg font-semibold text-white mb-1">Confirm Payroll Batch Payout</h3>
-            <p className="text-sm text-white/50 mb-5">
+      <Modal
+        isOpen={showBatchConfirm}
+        onClose={() => setShowBatchConfirm(false)}
+        title="Confirm Payroll Batch Payout"
+        size="md"
+      >
+            <p className="text-sm text-gray-500 mb-5">
               This will create payroll debit entries for {employeesOwed.length} employee{employeesOwed.length !== 1 ? 's' : ''} totaling {formatCurrency(totalOwedDollars)}.
             </p>
 
             {/* Preview list */}
-            <div className="max-h-60 overflow-y-auto rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5">
+            <div className="max-h-60 overflow-y-auto rounded-xl bg-gray-50 border border-gray-200 divide-y divide-gray-100">
               {employeesOwed.map(emp => {
                 const name = emp.displayName || `${emp.firstName} ${emp.lastName}`
                 return (
                   <div key={emp.employeeId} className="flex items-center justify-between px-4 py-2.5">
                     <div>
-                      <div className="text-sm text-white font-medium">{name}</div>
-                      <div className="text-xs text-white/40">{emp.roleName}</div>
+                      <div className="text-sm text-gray-900 font-medium">{name}</div>
+                      <div className="text-xs text-gray-500">{emp.roleName}</div>
                     </div>
-                    <span className="text-sm font-semibold text-emerald-400">
+                    <span className="text-sm font-semibold text-emerald-600">
                       {formatCurrency(emp.currentBalanceDollars)}
                     </span>
                   </div>
@@ -717,9 +724,9 @@ export default function TipPayoutsPage() {
             </div>
 
             {/* Total */}
-            <div className="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
-              <span className="text-sm font-medium text-white/70">Total Payout</span>
-              <span className="text-lg font-bold text-white">{formatCurrency(totalOwedDollars)}</span>
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+              <span className="text-sm font-medium text-gray-700">Total Payout</span>
+              <span className="text-lg font-bold text-gray-900">{formatCurrency(totalOwedDollars)}</span>
             </div>
 
             {/* Actions */}
@@ -727,7 +734,7 @@ export default function TipPayoutsPage() {
               <button
                 onClick={() => setShowBatchConfirm(false)}
                 disabled={isBatchProcessing}
-                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border border-white/20 text-white/70 hover:bg-white/10 transition-colors disabled:opacity-50"
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -739,32 +746,32 @@ export default function TipPayoutsPage() {
                 {isBatchProcessing ? 'Processing...' : 'Confirm Batch Payout'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* ═══════════════════════════════════════════
           Batch Result Modal
           ═══════════════════════════════════════════ */}
-      {batchResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-gray-900 border border-white/10 rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+      <Modal
+        isOpen={!!batchResult}
+        onClose={() => setBatchResult(null)}
+        title="Batch Payout Complete"
+        size="md"
+      >
             <div className="text-center mb-5">
-              <svg className="w-12 h-12 mx-auto mb-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-12 h-12 mx-auto mb-3 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <h3 className="text-lg font-semibold text-white">Batch Payout Complete</h3>
-              <p className="text-sm text-white/50 mt-1">
-                {formatCurrency(batchResult.totalPaidOutDollars)} paid to {batchResult.employeeCount} employee{batchResult.employeeCount !== 1 ? 's' : ''}
+              <p className="text-sm text-gray-500 mt-1">
+                {formatCurrency(batchResult?.totalPaidOutDollars ?? 0)} paid to {batchResult?.employeeCount ?? 0} employee{batchResult?.employeeCount !== 1 ? 's' : ''}
               </p>
             </div>
 
             {/* Result list */}
-            <div className="max-h-60 overflow-y-auto rounded-xl bg-white/5 border border-white/10 divide-y divide-white/5">
-              {batchResult.entries.map((entry, i) => (
+            <div className="max-h-60 overflow-y-auto rounded-xl bg-gray-50 border border-gray-200 divide-y divide-gray-100">
+              {batchResult?.entries.map((entry, i) => (
                 <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                  <span className="text-sm text-white font-medium">{entry.employeeName}</span>
-                  <span className="text-sm font-semibold text-emerald-400">
+                  <span className="text-sm text-gray-900 font-medium">{entry.employeeName}</span>
+                  <span className="text-sm font-semibold text-emerald-600">
                     {formatCurrency(entry.amountDollars)}
                   </span>
                 </div>
@@ -777,9 +784,7 @@ export default function TipPayoutsPage() {
             >
               Done
             </button>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   )
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
@@ -1046,9 +1047,7 @@ function SizeModal({ size, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-xl font-bold mb-4">{size ? 'Edit Size' : 'Add Size'}</h2>
+    <Modal isOpen={true} onClose={onClose} title={size ? 'Edit Size' : 'Add Size'} size="md">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Name *</label>
@@ -1141,8 +1140,7 @@ function SizeModal({ size, onSave, onClose }: {
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSubmit}>Save</Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1169,9 +1167,7 @@ function CrustModal({ crust, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-xl font-bold mb-4">{crust ? 'Edit Crust' : 'Add Crust'}</h2>
+    <Modal isOpen={true} onClose={onClose} title={crust ? 'Edit Crust' : 'Add Crust'} size="md">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Name *</label>
@@ -1227,8 +1223,7 @@ function CrustModal({ crust, onSave, onClose }: {
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSubmit}>Save</Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1259,9 +1254,7 @@ function SauceModal({ sauce, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-xl font-bold mb-4">{sauce ? 'Edit Sauce' : 'Add Sauce'}</h2>
+    <Modal isOpen={true} onClose={onClose} title={sauce ? 'Edit Sauce' : 'Add Sauce'} size="md">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Name *</label>
@@ -1341,8 +1334,7 @@ function SauceModal({ sauce, onSave, onClose }: {
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSubmit}>Save</Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1373,9 +1365,7 @@ function CheeseModal({ cheese, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-xl font-bold mb-4">{cheese ? 'Edit Cheese' : 'Add Cheese'}</h2>
+    <Modal isOpen={true} onClose={onClose} title={cheese ? 'Edit Cheese' : 'Add Cheese'} size="md">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Name *</label>
@@ -1455,8 +1445,7 @@ function CheeseModal({ cheese, onSave, onClose }: {
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSubmit}>Save</Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1487,9 +1476,7 @@ function ToppingModal({ topping, onSave, onClose }: {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-        <h2 className="text-xl font-bold mb-4">{topping ? 'Edit Topping' : 'Add Topping'}</h2>
+    <Modal isOpen={true} onClose={onClose} title={topping ? 'Edit Topping' : 'Add Topping'} size="md">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Name *</label>
@@ -1578,7 +1565,6 @@ function ToppingModal({ topping, onSave, onClose }: {
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSubmit}>Save</Button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }

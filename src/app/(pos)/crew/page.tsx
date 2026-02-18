@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
+import { Modal } from '@/components/ui/modal'
 
 export default function CrewHubPage() {
   const router = useRouter()
@@ -373,113 +374,104 @@ export default function CrewHubPage() {
       </div>
 
       {/* Role Picker Dialog */}
-      {showRolePicker && employee.availableRoles && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800/90 border border-white/10 backdrop-blur-xl rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
-            <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Working As</h3>
-            <p className="text-white/50 text-sm mb-6">Which role are you working today?</p>
-            <div className="flex flex-col gap-3">
-              {employee.availableRoles.map((role) => (
-                <button
-                  key={role.id}
-                  onClick={() => handleRoleSelectedForClockIn(role)}
-                  disabled={clockLoading}
-                  className={`w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-50 ${
-                    role.isPrimary
-                      ? 'bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-400'
-                      : 'bg-white/10 hover:bg-white/20 text-white'
-                  }`}
-                >
-                  {role.name}
-                  {role.isPrimary && (
-                    <span className="ml-2 text-xs opacity-60">(Primary)</span>
-                  )}
-                </button>
-              ))}
+      <Modal isOpen={showRolePicker && !!employee.availableRoles} onClose={() => setShowRolePicker(false)} title="Working As" size="sm">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+          </div>
+          <p className="text-gray-500 text-sm mb-6">Which role are you working today?</p>
+          <div className="flex flex-col gap-3">
+            {employee.availableRoles?.map((role) => (
               <button
-                onClick={() => setShowRolePicker(false)}
-                className="py-2 text-white/40 hover:text-white/60 text-sm transition-all"
+                key={role.id}
+                onClick={() => handleRoleSelectedForClockIn(role)}
+                disabled={clockLoading}
+                className={`w-full py-3 rounded-xl font-semibold text-sm transition-all disabled:opacity-50 ${
+                  role.isPrimary
+                    ? 'bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/30 text-blue-600'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
               >
-                Cancel
+                {role.name}
+                {role.isPrimary && (
+                  <span className="ml-2 text-xs opacity-60">(Primary)</span>
+                )}
               </button>
-            </div>
+            ))}
+            <button
+              onClick={() => setShowRolePicker(false)}
+              className="py-2 text-gray-400 hover:text-gray-600 text-sm transition-all"
+            >
+              Cancel
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Clock-Out Confirmation Dialog */}
-      {showClockOutConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800/90 border border-white/10 backdrop-blur-xl rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
-            <div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Clock Out?</h3>
-            <p className="text-white/50 text-sm mb-6">Are you sure you want to clock out?</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setShowClockOutConfirm(false)}
-                className="py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-sm transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmClockOut}
-                disabled={clockLoading}
-                className="py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
-              >
-                {clockLoading ? 'Processing...' : 'Yes, Clock Out'}
-              </button>
-            </div>
+      <Modal isOpen={showClockOutConfirm} onClose={() => setShowClockOutConfirm(false)} title="Clock Out?" size="sm">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-gray-500 text-sm mb-6">Are you sure you want to clock out?</p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setShowClockOutConfirm(false)}
+              className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold text-sm transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleConfirmClockOut}
+              disabled={clockLoading}
+              className="py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-500 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+            >
+              {clockLoading ? 'Processing...' : 'Yes, Clock Out'}
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* Tip Group Selection Dialog */}
-      {showGroupPicker && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800/90 border border-white/10 backdrop-blur-xl rounded-2xl p-8 max-w-sm w-full mx-4 text-center">
-            <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Choose Your Tip Team</h3>
-            <p className="text-white/50 text-sm mb-6">Select which team to pool tips with for this shift</p>
-            <div className="flex flex-col gap-3">
-              {eligibleTemplates.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => handleGroupSelected(t.id)}
-                  disabled={clockLoading}
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
-                >
-                  {t.name}
-                  <span className="block text-xs font-normal text-indigo-200 mt-0.5">
-                    {t.defaultSplitMode === 'equal' ? 'Equal split' : t.defaultSplitMode === 'hours_weighted' ? 'Hours weighted' : 'Role weighted'}
-                  </span>
-                </button>
-              ))}
-              {allowStandaloneServers && (
-                <button
-                  onClick={() => handleGroupSelected(null)}
-                  disabled={clockLoading}
-                  className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/20 text-gray-300 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
-                >
-                  No Group (Keep My Own Tips)
-                </button>
-              )}
-            </div>
+      <Modal isOpen={showGroupPicker} onClose={() => setShowGroupPicker(false)} title="Choose Your Tip Team" size="sm">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+            </svg>
+          </div>
+          <p className="text-gray-500 text-sm mb-6">Select which team to pool tips with for this shift</p>
+          <div className="flex flex-col gap-3">
+            {eligibleTemplates.map(t => (
+              <button
+                key={t.id}
+                onClick={() => handleGroupSelected(t.id)}
+                disabled={clockLoading}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+              >
+                {t.name}
+                <span className="block text-xs font-normal text-indigo-200 mt-0.5">
+                  {t.defaultSplitMode === 'equal' ? 'Equal split' : t.defaultSplitMode === 'hours_weighted' ? 'Hours weighted' : 'Role weighted'}
+                </span>
+              </button>
+            ))}
+            {allowStandaloneServers && (
+              <button
+                onClick={() => handleGroupSelected(null)}
+                disabled={clockLoading}
+                className="w-full py-3 bg-gray-100 hover:bg-gray-200 border border-gray-200 text-gray-600 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+              >
+                No Group (Keep My Own Tips)
+              </button>
+            )}
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

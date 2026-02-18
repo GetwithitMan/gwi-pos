@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from 'react'
 import Link from 'next/link'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 
 interface PricingTier {
   id: string
@@ -412,9 +413,12 @@ function ConflictModal({
   const [selectedIds, setSelectedIds] = useState<string[]>([])
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">Resolve Reservation Conflicts</h2>
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title="Resolve Reservation Conflicts"
+      size="2xl"
+    >
 
         <p className="text-gray-400 mb-4">
           The following reservations overlap with this event. Choose how to handle them:
@@ -455,32 +459,31 @@ function ConflictModal({
         <div className="flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 px-4 py-2 bg-gray-700 rounded hover:bg-gray-600"
+            className="flex-1 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-gray-700"
           >
             Cancel
           </button>
           <button
             onClick={() => onResolve('ignore')}
-            className="flex-1 px-4 py-2 bg-yellow-600 rounded hover:bg-yellow-700"
+            className="flex-1 px-4 py-2 bg-yellow-600 rounded hover:bg-yellow-700 text-white"
           >
             Keep All
           </button>
           <button
             onClick={() => onResolve('cancel_selected', selectedIds)}
             disabled={selectedIds.length === 0}
-            className="flex-1 px-4 py-2 bg-orange-600 rounded hover:bg-orange-700 disabled:opacity-50"
+            className="flex-1 px-4 py-2 bg-orange-600 rounded hover:bg-orange-700 text-white disabled:opacity-50"
           >
             Cancel Selected ({selectedIds.length})
           </button>
           <button
             onClick={() => onResolve('cancel_all')}
-            className="flex-1 px-4 py-2 bg-red-600 rounded hover:bg-red-700"
+            className="flex-1 px-4 py-2 bg-red-600 rounded hover:bg-red-700 text-white"
           >
             Cancel All ({conflicts.length})
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   )
 }
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { PrinterSettings, DEFAULT_THERMAL_SETTINGS, DEFAULT_IMPACT_SETTINGS } from '@/types/print'
 
@@ -48,18 +49,14 @@ export function PrinterSettingsEditor({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="p-6 border-b">
-          <h2 className="text-xl font-bold">Printer Settings: {printerName}</h2>
-          <p className="text-sm text-gray-600 mt-1">
-            Configure text sizes and formatting for this {printerType} printer
-          </p>
-        </div>
+    <Modal isOpen={true} onClose={onClose} title={`Printer Settings: ${printerName}`} size="2xl" variant="default">
+      <div className="flex flex-col max-h-[75vh]">
+        <p className="text-sm text-gray-600 -mt-3 mb-4">
+          Configure text sizes and formatting for this {printerType} printer
+        </p>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto space-y-6">
           {/* Text Sizing Section */}
           <div className="bg-gray-50 rounded-lg p-4">
             <h3 className="font-semibold text-gray-900 mb-4">Text Sizing</h3>
@@ -271,7 +268,7 @@ export function PrinterSettingsEditor({
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t bg-gray-50 flex justify-between">
+        <div className="pt-4 border-t bg-gray-50 -mx-5 -mb-5 px-5 py-4 rounded-b-2xl flex justify-between">
           <Button variant="outline" onClick={handleResetToDefaults}>
             Reset to Defaults
           </Button>
@@ -285,6 +282,6 @@ export function PrinterSettingsEditor({
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

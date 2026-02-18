@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
@@ -540,10 +541,9 @@ function AdjustBottleStockModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="w-full max-w-md rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/10 shadow-2xl">
-        <div className="px-6 py-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Adjust Stock</h2>
+    <Modal isOpen={true} onClose={onClose} title="Adjust Stock" size="md">
+      <div className="-m-5 rounded-b-2xl bg-slate-900/95 backdrop-blur-xl border border-white/10">
+        <div className="px-6 pt-4 pb-2">
           <p className="text-sm text-white/50">{bottle.name}</p>
         </div>
         <div className="p-6 space-y-4">
@@ -616,6 +616,6 @@ function AdjustBottleStockModal({
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

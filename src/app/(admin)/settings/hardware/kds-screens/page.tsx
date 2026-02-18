@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -480,13 +481,7 @@ export default function KDSScreensPage() {
       </div>
 
       {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-lg">
-            <h2 className="mb-4 text-lg font-semibold">
-              {editingScreen ? 'Edit KDS Screen' : 'Add KDS Screen'}
-            </h2>
-
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingScreen ? 'Edit KDS Screen' : 'Add KDS Screen'} size="lg">
             {error && (
               <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
             )}
@@ -744,24 +739,13 @@ export default function KDSScreensPage() {
                 {saving ? 'Saving...' : editingScreen ? 'Save Changes' : 'Add Screen'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Pairing Code Modal */}
-      {pairingModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lg">
+      <Modal isOpen={!!pairingModal} onClose={() => setPairingModal(null)} title={pairingModal ? `Pair Device to "${pairingModal.screen.name}"` : ''} size="md">
+        {pairingModal && (
+          <>
             <div className="text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-purple-100">
-                <svg className="h-8 w-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                </svg>
-              </div>
-              <h2 className="mb-2 text-xl font-semibold text-gray-900">
-                Pair Device to &quot;{pairingModal.screen.name}&quot;
-              </h2>
-
               {pairingModal.loading ? (
                 <div className="py-8">
                   <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-purple-500 border-t-transparent"></div>
@@ -829,9 +813,9 @@ export default function KDSScreensPage() {
                 </button>
               )}
             </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

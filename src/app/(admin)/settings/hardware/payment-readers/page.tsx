@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import {
   CreditCardIcon,
@@ -392,13 +393,7 @@ export default function PaymentReadersPage() {
       )}
 
       {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
-            <h2 className="text-xl font-bold mb-4">
-              {editingReader ? 'Edit Reader' : 'Add Payment Reader'}
-            </h2>
-
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingReader ? 'Edit Reader' : 'Add Payment Reader'} size="md">
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                 {error}
@@ -537,9 +532,7 @@ export default function PaymentReadersPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   )
 }

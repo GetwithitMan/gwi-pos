@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -621,180 +622,169 @@ export default function TipGroupPage() {
       </div>
 
       {/* ── Start Tip Group Modal ──────────────────────────────────────────── */}
-      {showStartModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800/95 border border-white/10 backdrop-blur-xl rounded-2xl p-6 max-w-md w-full max-h-[85vh] flex flex-col">
-            <h3 className="text-lg font-semibold text-white mb-1">Start a Tip Group</h3>
-            <p className="text-white/40 text-sm mb-4">
-              You will be added automatically. Select coworkers to invite.
-            </p>
+      <Modal isOpen={showStartModal} onClose={() => { setShowStartModal(false); setSelectedEmployees(new Set()); setSplitMode('equal') }} title="Start a Tip Group" size="md">
+        <p className="text-gray-500 text-sm mb-4">
+          You will be added automatically. Select coworkers to invite.
+        </p>
 
-            {/* Split mode selector */}
-            <div className="mb-4">
-              <label className="text-white/60 text-xs font-semibold uppercase tracking-wider block mb-2">
-                Split Mode
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setSplitMode('equal')}
-                  className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
-                    splitMode === 'equal'
-                      ? 'bg-indigo-500/30 border border-indigo-500/40 text-indigo-300'
-                      : 'bg-white/5 border border-white/10 text-white/50 hover:bg-white/10'
-                  }`}
-                >
-                  Equal
-                </button>
-                <button
-                  onClick={() => setSplitMode('custom')}
-                  className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
-                    splitMode === 'custom'
-                      ? 'bg-indigo-500/30 border border-indigo-500/40 text-indigo-300'
-                      : 'bg-white/5 border border-white/10 text-white/50 hover:bg-white/10'
-                  }`}
-                >
-                  Custom
-                </button>
-              </div>
-            </div>
-
-            {/* Employee list */}
-            <div className="mb-4 flex-1 overflow-y-auto min-h-0">
-              <label className="text-white/60 text-xs font-semibold uppercase tracking-wider block mb-2">
-                Invite Coworkers
-              </label>
-              {employees.length === 0 ? (
-                <p className="text-white/30 text-sm py-4 text-center">
-                  Loading employees...
-                </p>
-              ) : (
-                <div className="space-y-1">
-                  {employees.map((emp) => {
-                    const isSelected = selectedEmployees.has(emp.id)
-                    return (
-                      <button
-                        key={emp.id}
-                        onClick={() => toggleEmployeeSelection(emp.id)}
-                        className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-xl text-left transition-all ${
-                          isSelected
-                            ? 'bg-indigo-500/20 border border-indigo-500/30'
-                            : 'bg-white/5 border border-transparent hover:bg-white/10'
-                        }`}
-                      >
-                        <div
-                          className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all ${
-                            isSelected
-                              ? 'bg-indigo-500 text-white'
-                              : 'bg-white/10 border border-white/20'
-                          }`}
-                        >
-                          {isSelected && (
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-white text-sm font-medium block truncate">
-                            {emp.displayName || `${emp.firstName} ${emp.lastName}`}
-                          </span>
-                          <span className="text-white/40 text-xs">{emp.role.name}</span>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Modal actions */}
-            <div className="flex gap-3 pt-2 border-t border-white/10">
-              <button
-                onClick={() => {
-                  setShowStartModal(false)
-                  setSelectedEmployees(new Set())
-                  setSplitMode('equal')
-                }}
-                className="flex-1 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-sm transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleStartGroup}
-                disabled={actionLoading}
-                className="flex-1 py-3 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-400 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
-              >
-                {actionLoading ? 'Creating...' : `Start Group${selectedEmployees.size > 0 ? ` (${selectedEmployees.size + 1})` : ''}`}
-              </button>
-            </div>
+        {/* Split mode selector */}
+        <div className="mb-4">
+          <label className="text-gray-500 text-xs font-semibold uppercase tracking-wider block mb-2">
+            Split Mode
+          </label>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setSplitMode('equal')}
+              className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
+                splitMode === 'equal'
+                  ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-600'
+                  : 'bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              Equal
+            </button>
+            <button
+              onClick={() => setSplitMode('custom')}
+              className={`flex-1 py-2 rounded-xl text-sm font-semibold transition-all ${
+                splitMode === 'custom'
+                  ? 'bg-indigo-500/20 border border-indigo-500/40 text-indigo-600'
+                  : 'bg-gray-100 border border-gray-200 text-gray-500 hover:bg-gray-200'
+              }`}
+            >
+              Custom
+            </button>
           </div>
         </div>
-      )}
+
+        {/* Employee list */}
+        <div className="mb-4">
+          <label className="text-gray-500 text-xs font-semibold uppercase tracking-wider block mb-2">
+            Invite Coworkers
+          </label>
+          {employees.length === 0 ? (
+            <p className="text-gray-400 text-sm py-4 text-center">
+              Loading employees...
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {employees.map((emp) => {
+                const isSelected = selectedEmployees.has(emp.id)
+                return (
+                  <button
+                    key={emp.id}
+                    onClick={() => toggleEmployeeSelection(emp.id)}
+                    className={`w-full flex items-center gap-3 py-2.5 px-3 rounded-xl text-left transition-all ${
+                      isSelected
+                        ? 'bg-indigo-500/10 border border-indigo-500/30'
+                        : 'bg-gray-50 border border-transparent hover:bg-gray-100'
+                    }`}
+                  >
+                    <div
+                      className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all ${
+                        isSelected
+                          ? 'bg-indigo-500 text-white'
+                          : 'bg-gray-200 border border-gray-300'
+                      }`}
+                    >
+                      {isSelected && (
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-gray-900 text-sm font-medium block truncate">
+                        {emp.displayName || `${emp.firstName} ${emp.lastName}`}
+                      </span>
+                      <span className="text-gray-400 text-xs">{emp.role.name}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Modal actions */}
+        <div className="flex gap-3 pt-2 border-t border-gray-200">
+          <button
+            onClick={() => {
+              setShowStartModal(false)
+              setSelectedEmployees(new Set())
+              setSplitMode('equal')
+            }}
+            className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold text-sm transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleStartGroup}
+            disabled={actionLoading}
+            className="flex-1 py-3 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-600 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+          >
+            {actionLoading ? 'Creating...' : `Start Group${selectedEmployees.size > 0 ? ` (${selectedEmployees.size + 1})` : ''}`}
+          </button>
+        </div>
+      </Modal>
 
       {/* ── Leave Confirmation Dialog ──────────────────────────────────────── */}
-      {showLeaveConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800/95 border border-white/10 backdrop-blur-xl rounded-2xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Leave Tip Group?</h3>
-            <p className="text-white/50 text-sm mb-6">
-              Your tip split will stop and you will no longer pool tips with this group.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setShowLeaveConfirm(false)}
-                className="py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-sm transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleLeaveGroup}
-                disabled={actionLoading}
-                className="py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
-              >
-                {actionLoading ? 'Leaving...' : 'Yes, Leave'}
-              </button>
-            </div>
+      <Modal isOpen={showLeaveConfirm} onClose={() => setShowLeaveConfirm(false)} title="Leave Tip Group?" size="sm">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <p className="text-gray-500 text-sm mb-6">
+            Your tip split will stop and you will no longer pool tips with this group.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setShowLeaveConfirm(false)}
+              className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold text-sm transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleLeaveGroup}
+              disabled={actionLoading}
+              className="py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-500 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+            >
+              {actionLoading ? 'Leaving...' : 'Yes, Leave'}
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* ── Close Group Confirmation Dialog ─────────────────────────────────── */}
-      {showCloseConfirm && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800/95 border border-white/10 backdrop-blur-xl rounded-2xl p-8 max-w-sm w-full text-center">
-            <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Close Tip Group?</h3>
-            <p className="text-white/50 text-sm mb-6">
-              This will end the group for all {activeMembers.length} member{activeMembers.length !== 1 ? 's' : ''}.
-              Tip pooling will stop immediately.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setShowCloseConfirm(false)}
-                className="py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold text-sm transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleCloseGroup}
-                disabled={actionLoading}
-                className="py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
-              >
-                {actionLoading ? 'Closing...' : 'Yes, Close Group'}
-              </button>
-            </div>
+      <Modal isOpen={showCloseConfirm} onClose={() => setShowCloseConfirm(false)} title="Close Tip Group?" size="sm">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <p className="text-gray-500 text-sm mb-6">
+            This will end the group for all {activeMembers.length} member{activeMembers.length !== 1 ? 's' : ''}.
+            Tip pooling will stop immediately.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setShowCloseConfirm(false)}
+              className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold text-sm transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCloseGroup}
+              disabled={actionLoading}
+              className="py-3 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-500 rounded-xl font-semibold text-sm transition-all disabled:opacity-50"
+            >
+              {actionLoading ? 'Closing...' : 'Yes, Close Group'}
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

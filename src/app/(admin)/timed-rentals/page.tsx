@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 import { useEvents } from '@/lib/events/use-events'
 
 import type { EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals'
@@ -562,28 +563,16 @@ function TimedRentalsContent() {
         </Card>
 
       {/* Entertainment Builder Modal */}
-      {showBuilder && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">
-                  {itemIdFromUrl === 'new' ? 'Create Entertainment Item' : 'Edit Entertainment Item'}
-                </CardTitle>
-                <button
-                  onClick={() => {
-                    setShowBuilder(false)
-                    router.push('/timed-rentals')
-                  }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 overflow-y-auto flex-1">
+      <Modal
+        isOpen={showBuilder}
+        onClose={() => {
+          setShowBuilder(false)
+          router.push('/timed-rentals')
+        }}
+        title={itemIdFromUrl === 'new' ? 'Create Entertainment Item' : 'Edit Entertainment Item'}
+        size="2xl"
+      >
+            <div className="space-y-4">
               {/* Name + Visual Type Row */}
               <div className="flex gap-4 items-end">
                 <div className="flex-1">
@@ -758,9 +747,9 @@ function TimedRentalsContent() {
                   <span className="text-sm text-amber-700">Maintenance</span>
                 </label>
               </div>
-            </CardContent>
-            {/* Actions - Fixed at bottom, always visible */}
-            <div className="flex gap-2 p-4 border-t bg-white">
+            </div>
+            {/* Actions */}
+            <div className="flex gap-2 pt-4 border-t">
               <Button
                 variant="outline"
                 onClick={() => {
@@ -779,18 +768,18 @@ function TimedRentalsContent() {
                 {isSaving ? 'Saving...' : 'Save Item'}
               </Button>
             </div>
-          </Card>
-        </div>
-      )}
+      </Modal>
 
       {/* Start Session Modal */}
-      {showStartModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-md">
-            <CardHeader>
-              <CardTitle>Start Timed Session</CardTitle>
-            </CardHeader>
-            <CardContent>
+      <Modal
+        isOpen={showStartModal}
+        onClose={() => {
+          setShowStartModal(false)
+          setSelectedItem(null)
+        }}
+        title="Start Timed Session"
+        size="md"
+      >
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1">Select Item</label>
@@ -855,10 +844,7 @@ function TimedRentalsContent() {
                   </Button>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      </Modal>
     </div>
   )
 }

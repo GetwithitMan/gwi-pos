@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
+import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import type {
   MenuItem,
@@ -352,31 +353,30 @@ export function PizzaQuickBuilder({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl p-6 shadow-2xl">
-          <div className="animate-spin w-6 h-6 border-3 border-orange-500 border-t-transparent rounded-full mx-auto" />
+      <Modal isOpen={true} onClose={onCancel} size="sm" variant="default">
+        <div className="flex justify-center">
+          <div className="animate-spin w-6 h-6 border-3 border-orange-500 border-t-transparent rounded-full" />
         </div>
-      </div>
+      </Modal>
     )
   }
 
   if (error || !data) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl p-6 shadow-2xl">
-          <p className="text-red-600">{error}</p>
-          <button onClick={onCancel} className="mt-3 px-4 py-2 bg-gray-100 rounded-lg">Close</button>
-        </div>
-      </div>
+      <Modal isOpen={true} onClose={onCancel} size="sm" variant="default">
+        <p className="text-red-600">{error}</p>
+        <button onClick={onCancel} className="mt-3 px-4 py-2 bg-gray-100 rounded-lg">Close</button>
+      </Modal>
     )
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-2">
+    <Modal isOpen={true} onClose={onCancel} size="4xl">
+      <div className="-m-5">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col border border-white/30 overflow-hidden"
+        className="bg-white/95 backdrop-blur-xl rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden mx-auto"
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-orange-500 to-red-500 px-4 py-3 text-white flex items-center justify-between">
@@ -631,6 +631,7 @@ export function PizzaQuickBuilder({
           </div>
         </div>
       </motion.div>
-    </div>
+      </div>
+    </Modal>
   )
 }

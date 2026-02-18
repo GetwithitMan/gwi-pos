@@ -1,5 +1,6 @@
 'use client'
 
+import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import type { MenuItemIngredient } from './useModifierSelections'
 
@@ -17,8 +18,8 @@ export function SwapPicker({ ingredient, currentSwap, onSelect, onCancel }: Swap
   // Check if no options available
   if (!swapGroup || !swapGroup.modifiers || swapGroup.modifiers.length === 0) {
     return (
-      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]">
-        <div className="mm-glass-panel rounded-2xl w-full max-w-sm p-6">
+      <Modal isOpen={true} onClose={onCancel} size="sm">
+        <div className="-m-5 mm-glass-panel rounded-2xl p-6">
           <div className="text-center">
             <p className="text-white font-medium mb-2">No swap options available</p>
             <p className="text-slate-400 text-sm mb-4">The modifier group has no active modifiers.</p>
@@ -30,7 +31,7 @@ export function SwapPicker({ ingredient, currentSwap, onSelect, onCancel }: Swap
             </button>
           </div>
         </div>
-      </div>
+      </Modal>
     )
   }
 
@@ -46,8 +47,8 @@ export function SwapPicker({ ingredient, currentSwap, onSelect, onCancel }: Swap
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[60]">
-      <div className="mm-glass-panel rounded-2xl w-full max-w-sm max-h-[85vh] overflow-hidden flex flex-col">
+    <Modal isOpen={true} onClose={onCancel} size="sm">
+      <div className="-m-5 mm-glass-panel rounded-2xl max-h-[85vh] overflow-hidden flex flex-col">
         {/* Drag Handle (decorative) */}
         <div className="flex justify-center pt-2 pb-1">
           <div className="w-10 h-1 rounded-full bg-gray-500/50" />
@@ -122,6 +123,6 @@ export function SwapPicker({ ingredient, currentSwap, onSelect, onCancel }: Swap
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

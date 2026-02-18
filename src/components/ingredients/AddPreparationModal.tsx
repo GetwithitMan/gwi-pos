@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import type { Ingredient, InventoryItemRef, PrepItemRef } from './IngredientLibrary'
 
 interface AddPreparationModalProps {
@@ -111,22 +112,17 @@ export function AddPreparationModal({
   const parentUnit = parentIngredient.standardUnit || 'oz'
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="p-6 border-b sticky top-0 bg-white z-10">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2 py-0.5 bg-green-600 text-white rounded text-xs font-bold uppercase">
-              New Prep Item
-            </span>
-          </div>
-          <h2 className="text-xl font-bold">Add Prep Item</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            How is <span className="font-semibold text-blue-600">{parentIngredient.name}</span> prepared?
-          </p>
-        </div>
+    <Modal isOpen={true} onClose={onClose} title="Add Prep Item" size="lg" variant="default">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="px-2 py-0.5 bg-green-600 text-white rounded text-xs font-bold uppercase">
+          New Prep Item
+        </span>
+      </div>
+      <p className="text-sm text-gray-500 mb-4">
+        How is <span className="font-semibold text-blue-600">{parentIngredient.name}</span> prepared?
+      </p>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
           {/* Step 1: Preparation Type */}
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -303,7 +299,6 @@ export function AddPreparationModal({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   )
 }

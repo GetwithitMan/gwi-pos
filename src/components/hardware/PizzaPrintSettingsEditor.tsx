@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PIZZA_PRINT_PRESETS } from '@/types/print'
 
@@ -178,8 +179,8 @@ export function PizzaPrintSettingsEditor({ settings, onSave, onClose }: PizzaPri
   ]
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-6xl flex flex-col">
+    <Modal isOpen={true} onClose={onClose} size="4xl" variant="default">
+      <div className="-m-5 flex flex-col">
         {/* Header */}
         <div className="p-3 border-b flex items-center justify-between">
           <div>
@@ -671,6 +672,6 @@ export function PizzaPrintSettingsEditor({ settings, onSave, onClose }: PizzaPri
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }

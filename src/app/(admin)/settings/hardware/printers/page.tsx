@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { Modal } from '@/components/ui/modal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { PrinterSettingsEditor } from '@/components/hardware/PrinterSettingsEditor'
 import { useAuthStore } from '@/stores/auth-store'
@@ -466,13 +467,7 @@ export default function PrintersPage() {
       </div>
 
       {/* Add/Edit Modal */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-lg">
-            <h2 className="mb-4 text-lg font-semibold">
-              {editingPrinter ? 'Edit Printer' : 'Add Printer'}
-            </h2>
-
+      <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editingPrinter ? 'Edit Printer' : 'Add Printer'} size="lg">
             {error && (
               <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</div>
             )}
@@ -617,9 +612,7 @@ export default function PrintersPage() {
                 {saving ? 'Saving...' : editingPrinter ? 'Save Changes' : 'Add Printer'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Hardware/Printer Settings Modal */}
       {hardwareSettingsPrinter && (
@@ -633,21 +626,19 @@ export default function PrintersPage() {
       )}
 
       {/* Visual Receipt Editor Modal */}
-      {visualEditorPrinter && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="max-h-[90vh] w-full max-w-6xl overflow-auto rounded-2xl">
-            <ReceiptVisualEditor
-              templateType={getTemplateType(visualEditorPrinter.printerRole)}
-              printerType={visualEditorPrinter.printerType}
-              printerRole={visualEditorPrinter.printerRole}
-              initialSettings={visualEditorPrinter.printSettings as unknown as VisualEditorSettings | undefined}
-              globalSettings={globalReceiptSettings}
-              onSave={handleSaveVisualEditorSettings}
-              onCancel={() => setVisualEditorPrinter(null)}
-            />
-          </div>
-        </div>
-      )}
+      <Modal isOpen={!!visualEditorPrinter} onClose={() => setVisualEditorPrinter(null)} title="Visual Receipt Editor" size="4xl">
+        {visualEditorPrinter && (
+          <ReceiptVisualEditor
+            templateType={getTemplateType(visualEditorPrinter.printerRole)}
+            printerType={visualEditorPrinter.printerType}
+            printerRole={visualEditorPrinter.printerRole}
+            initialSettings={visualEditorPrinter.printSettings as unknown as VisualEditorSettings | undefined}
+            globalSettings={globalReceiptSettings}
+            onSave={handleSaveVisualEditorSettings}
+            onCancel={() => setVisualEditorPrinter(null)}
+          />
+        )}
+      </Modal>
     </div>
   )
 }

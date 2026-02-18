@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { usePricing } from '@/hooks/usePricing'
@@ -2075,22 +2076,8 @@ export function BartenderView({
       </div>
 
       {/* ====== NEW TAB MODAL ====== */}
-      <AnimatePresence>
-        {showNewTabModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowNewTabModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-slate-800 border border-white/10 rounded-2xl w-full max-w-2xl p-6 max-h-[95vh] overflow-y-auto"
-              onClick={e => e.stopPropagation()}
-            >
+      <Modal isOpen={showNewTabModal} onClose={() => setShowNewTabModal(false)} size="2xl">
+        <div className="-m-5 bg-slate-800 border border-white/10 rounded-2xl p-6 max-h-[95vh] overflow-y-auto">
               <h2 className="text-xl font-bold text-white mb-2">Tab Name</h2>
               <p className="text-sm text-slate-400 mb-3">
                 Enter a name for this tab {requireNameWithoutCard && <span className="text-red-400">*</span>}
@@ -2126,28 +2113,13 @@ export function BartenderView({
                   {isCreatingTab ? 'Creating...' : 'Start Tab'}
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      </Modal>
 
       {/* ====== SPIRIT SELECTION POPUP ====== */}
-      <AnimatePresence>
+      <Modal isOpen={!!(spiritPopupItem && selectedSpiritTier)} onClose={handleCloseSpiritPopup} size="2xl">
         {spiritPopupItem && selectedSpiritTier && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={handleCloseSpiritPopup}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              className="bg-slate-800/95 border border-white/20 rounded-2xl p-4 mx-auto"
-              onClick={e => e.stopPropagation()}
-            >
+          <div className="-m-5 bg-slate-800/95 border border-white/20 rounded-2xl p-4">
               {/* Header - compact */}
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
@@ -2187,10 +2159,9 @@ export function BartenderView({
                   )
                 })}
               </div>
-            </motion.div>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
+      </Modal>
 
     </div>
   )

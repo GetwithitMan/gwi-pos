@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
+import { Modal } from '@/components/ui/modal'
 import { ItemTreeView } from '@/components/menu/ItemTreeView'
 import { ItemEditor, IngredientLibraryItem } from '@/components/menu/ItemEditor'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
@@ -906,12 +907,13 @@ function CategoryModal({
   ]
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>{category ? 'Edit Category' : 'New Category'}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={category ? 'Edit Category' : 'New Category'}
+      size="md"
+    >
+        <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Name</label>
             <input
@@ -1072,9 +1074,8 @@ function CategoryModal({
               {category ? 'Save Changes' : 'Create Category'}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+    </Modal>
   )
 }
 

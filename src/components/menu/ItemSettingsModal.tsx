@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Modal } from '@/components/ui/modal'
 import { toast } from '@/stores/toast-store'
 
 interface ItemSettings {
@@ -274,13 +275,8 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
   const labelClass = 'block text-xs font-semibold text-gray-500 mb-1'
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-        {/* Header */}
-        <div className="px-5 py-4 border-b flex items-center justify-between shrink-0">
-          <h2 className="text-lg font-bold text-gray-900">Edit Item</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
-        </div>
+    <Modal isOpen={true} onClose={onClose} title="Edit Item" size="2xl" variant="default">
+      <div className="-m-5 bg-white rounded-b-2xl flex flex-col max-h-[75vh]">
 
         {loading ? (
           <div className="p-12 text-center text-gray-400">Loading...</div>
@@ -643,7 +639,7 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-4 border-t shrink-0 flex gap-3">
+            <div className="px-5 py-4 border-t shrink-0 flex gap-3 rounded-b-2xl">
               <button
                 onClick={onClose}
                 className="flex-1 py-2.5 rounded-lg text-sm font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
@@ -661,6 +657,6 @@ export function ItemSettingsModal({ itemId, onClose, onSaved }: ItemSettingsModa
           </>
         )}
       </div>
-    </div>
+    </Modal>
   )
 }

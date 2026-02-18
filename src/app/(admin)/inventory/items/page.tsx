@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { Modal } from '@/components/ui/modal'
 
 interface InventoryItem {
   id: string
@@ -695,13 +696,13 @@ function InventoryItemModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b sticky top-0 bg-white">
-          <h2 className="text-xl font-bold">{item ? 'Edit Item' : 'Add Inventory Item'}</h2>
-        </div>
-
-        <div className="p-6 space-y-6">
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={item ? 'Edit Item' : 'Add Inventory Item'}
+      size="3xl"
+    >
+        <div className="space-y-6">
           {/* Basic Info */}
           <div>
             <h3 className="font-semibold mb-3">Basic Information</h3>
@@ -960,7 +961,7 @@ function InventoryItemModal({
         </div>
 
         {/* Footer */}
-        <div className="p-6 border-t bg-gray-50 flex justify-end gap-3 sticky bottom-0">
+        <div className="flex justify-end gap-3 pt-4 border-t">
           <Button variant="outline" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
@@ -976,8 +977,7 @@ function InventoryItemModal({
         <datalist id="storage-units">
           {STORAGE_UNITS.map(u => <option key={u} value={u} />)}
         </datalist>
-      </div>
-    </div>
+    </Modal>
   )
 }
 
@@ -1040,12 +1040,13 @@ function AdjustStockModal({
   const newStock = item.currentStock + form.quantityChange
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Adjust Stock - {item.name}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={`Adjust Stock - ${item.name}`}
+      size="md"
+    >
+        <div className="space-y-4">
           <div className="text-sm text-gray-500">
             Current stock: <strong>{item.currentStock.toFixed(1)} {item.storageUnit}</strong>
           </div>
@@ -1106,8 +1107,7 @@ function AdjustStockModal({
               {isSaving ? 'Saving...' : 'Save'}
             </Button>
           </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+    </Modal>
   )
 }

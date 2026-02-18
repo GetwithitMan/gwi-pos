@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { PrepItemEditor } from './PrepItemEditor'
 import { InventoryItemEditor } from './InventoryItemEditor'
+import { Modal } from '@/components/ui/modal'
 import type { Ingredient, IngredientCategory, SwapGroup, InventoryItemRef, PrepItemRef } from './IngredientLibrary'
 
 interface IngredientEditorModalProps {
@@ -119,8 +120,7 @@ export function IngredientEditorModal({
   )
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto relative">
+    <Modal isOpen={true} onClose={onClose} size="2xl" variant="default">
 
         {/* Type Selection (for new items OR uncategorized items being edited) */}
         {itemType === null && (
@@ -469,7 +469,6 @@ export function IngredientEditorModal({
             onChangeType={handleChangeToPrep}
           />
         )}
-      </div>
-    </div>
+    </Modal>
   )
 }

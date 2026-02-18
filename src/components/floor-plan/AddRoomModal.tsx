@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { Modal } from '@/components/ui/modal'
 
 interface AddRoomModalProps {
   isOpen: boolean
@@ -71,48 +71,7 @@ export function AddRoomModal({ isOpen, onClose, locationId, onRoomCreated }: Add
   }
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          {/* Backdrop */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-          />
-
-          {/* Modal */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm"
-          >
-            <div
-              className="rounded-3xl p-6"
-              style={{
-                background: 'linear-gradient(180deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.98) 100%)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-              }}
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg font-bold text-white">Add Floor Plan Area</h2>
-                <button
-                  onClick={onClose}
-                  className="p-2 rounded-lg hover:bg-white/5 transition-colors"
-                >
-                  <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" className="text-slate-400">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Form */}
+    <Modal isOpen={isOpen} onClose={onClose} title="Add Floor Plan Area" size="sm" variant="default">
               <div className="space-y-5">
                 {/* Room Name */}
                 <div className="space-y-2">
@@ -152,14 +111,13 @@ export function AddRoomModal({ isOpen, onClose, locationId, onRoomCreated }: Add
                         }}
                       >
                         {color === c && (
-                          <motion.div
-                            layoutId="colorCheck"
+                          <div
                             className="absolute inset-0 flex items-center justify-center"
                           >
                             <svg width="16" height="16" fill="none" stroke="white" viewBox="0 0 24 24" strokeWidth={3}>
                               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                             </svg>
-                          </motion.div>
+                          </div>
                         )}
                       </button>
                     ))}
@@ -184,10 +142,6 @@ export function AddRoomModal({ isOpen, onClose, locationId, onRoomCreated }: Add
                   {isCreating ? 'Creating...' : 'Create Room'}
                 </button>
               </div>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+    </Modal>
   )
 }

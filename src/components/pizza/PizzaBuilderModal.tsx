@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Modal } from '@/components/ui/modal'
 import type {
   MenuItem,
   PizzaSpecialty,
@@ -87,11 +88,11 @@ export function PizzaBuilderModal({
   // Show loading state briefly
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl p-6 shadow-2xl">
-          <div className="animate-spin w-6 h-6 border-3 border-orange-500 border-t-transparent rounded-full mx-auto" />
+      <Modal isOpen={true} onClose={onCancel} size="sm" variant="default">
+        <div className="flex justify-center">
+          <div className="animate-spin w-6 h-6 border-3 border-orange-500 border-t-transparent rounded-full" />
         </div>
-      </div>
+      </Modal>
     )
   }
 
