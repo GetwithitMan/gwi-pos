@@ -2486,7 +2486,10 @@ export default function OrdersPage() {
             }}
             isSending={isSendingOrder}
             hasActiveTab={!!(tabCardInfo?.cardLast4 || currentOrder?.tabName)}
-            requireCardForTab={requireCardForTab}
+            requireCardForTab={(() => {
+              const barTabOT = orderTypes.find(t => t.slug === 'bar_tab')
+              return (barTabOT?.workflowRules as WorkflowRules)?.requireCardOnFile ?? requireCardForTab
+            })()}
             tabCardLast4={tabCardInfo?.cardLast4}
             onStartTab={async () => {
               // Read fresh state — avoids stale closure issues

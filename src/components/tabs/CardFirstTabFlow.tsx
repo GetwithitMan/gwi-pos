@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/stores/toast-store'
 
@@ -28,11 +28,9 @@ interface TabOpenResult {
  * Card-First Tab Open Flow component.
  *
  * Flow:
- * 1. UI shows "Please tap or insert card" instruction
- * 2. CollectCardData fires → reads cardholder name from chip
- * 3. EMVPreAuth fires for configurable hold amount
- * 4. On success: tab auto-populates with cardholder name
- * 5. On decline: alerts bartender, allows retry with different card
+ * 1. Auto-starts on mount — fires CollectCardData + EMVPreAuth
+ * 2. On success: tab auto-populates with cardholder name
+ * 3. On decline: alerts bartender, allows retry with different card
  */
 export function CardFirstTabFlow({
   orderId,
@@ -41,9 +39,10 @@ export function CardFirstTabFlow({
   onComplete,
   onCancel,
 }: CardFirstTabFlowProps) {
-  const [status, setStatus] = useState<'ready' | 'reading' | 'authorizing' | 'done' | 'error'>('ready')
+  const [status, setStatus] = useState<'reading' | 'authorizing' | 'done' | 'error'>('reading')
   const [cardInfo, setCardInfo] = useState<{ name?: string; type?: string; last4?: string }>({})
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const startedRef = useRef(false)
 
   const startFlow = useCallback(async () => {
     setStatus('reading')
@@ -75,14 +74,12 @@ export function CardFirstTabFlow({
 
       if (data.approved) {
         setStatus('done')
-        toast.success(`Tab opened for ${data.cardholderName || `Card ...${data.cardLast4}`}`)
         onComplete(data)
       } else {
         setStatus('error')
         const msg = data.error?.message || 'Card declined'
         setErrorMessage(msg)
         toast.error(msg)
-        onComplete(data)
       }
     } catch (err) {
       setStatus('error')
@@ -92,31 +89,15 @@ export function CardFirstTabFlow({
     }
   }, [orderId, readerId, employeeId, onComplete])
 
+  // Auto-start on mount
+  useEffect(() => {
+    if (startedRef.current) return
+    startedRef.current = true
+    startFlow()
+  }, [startFlow])
+
   return (
-    <div className="flex flex-col items-center gap-4 p-6">
-      {/* Status display */}
-      {status === 'ready' && (
-        <>
-          <div className="text-center">
-            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-blue-100 flex items-center justify-center">
-              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
-              </svg>
-            </div>
-            <h3 className="text-lg font-semibold">Open Tab with Card</h3>
-            <p className="text-sm text-gray-500 mt-1">
-              Customer taps or inserts card to start tab
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-            <Button variant="primary" onClick={startFlow}>
-              Activate Reader
-            </Button>
-          </div>
-        </>
-      )}
+    <div className="flex flex-col items-center gap-4 p-6">{/* intentional — no 'ready' state, auto-starts */}
 
       {status === 'reading' && (
         <div className="text-center">
@@ -126,10 +107,11 @@ export function CardFirstTabFlow({
                 d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold">Waiting for Card...</h3>
+          <h3 className="text-lg font-semibold">Authorizing Card...</h3>
           <p className="text-sm text-gray-500 mt-1">
-            Please tap or insert card on the reader
+            Processing pre-authorization hold
           </p>
+          <Button variant="ghost" className="mt-3" onClick={onCancel}>Cancel</Button>
         </div>
       )}
 
