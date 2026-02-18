@@ -1121,7 +1121,7 @@ function SplitEditMode({
       </div>
 
       {/* Main Content */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '16px' }}>
         {splitMode === 'even' ? (
           /* Even Mode View */
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px', paddingTop: '20px' }}>

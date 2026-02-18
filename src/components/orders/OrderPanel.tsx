@@ -340,13 +340,20 @@ export const OrderPanel = memo(function OrderPanel({
     }
     if (seatSet.size < 2) return null // No grouping needed for 0 or 1 seat
     const seats = Array.from(seatSet).sort((a, b) => a - b)
-    return seats.map(seatNum => {
+    const groups: { seatNumber: number | null; items: OrderPanelItemData[]; subtotal: number }[] = seats.map(seatNum => {
       const seatItems = items.filter(i => i.seatNumber === seatNum)
       const subtotal = seatItems
         .filter(i => !i.status || i.status === 'active')
         .reduce((sum, i) => sum + calculateItemTotal(i), 0)
       return { seatNumber: seatNum, items: seatItems, subtotal }
     })
+    // Add "No Seat" group for active items without a seat assignment
+    const unassignedItems = items.filter(i => !i.seatNumber && (!i.status || i.status === 'active'))
+    if (unassignedItems.length > 0) {
+      const subtotal = unassignedItems.reduce((sum, i) => sum + calculateItemTotal(i), 0)
+      groups.push({ seatNumber: null, items: unassignedItems, subtotal })
+    }
+    return groups
   }, [items])
 
   // Auto-group items by split label when viewing a split parent order
@@ -772,13 +779,14 @@ export const OrderPanel = memo(function OrderPanel({
               )
               if (groupPending.length === 0) return null
               const groupSorted = sortDirection === 'newest-top' ? [...groupPending].reverse() : groupPending
-              const seatColor = getSeatColor(group.seatNumber)
+              const isUnassigned = group.seatNumber === null
+              const seatColor = isUnassigned ? '#94a3b8' : getSeatColor(group.seatNumber!)
               const seatSubtotal = groupPending
                 .filter(i => !i.status || i.status === 'active')
                 .reduce((sum, i) => sum + calculateItemTotal(i), 0)
               return (
-                <div key={`seat-${group.seatNumber}`} style={{
-                  border: `1px solid ${getSeatBorderColor(group.seatNumber)}`,
+                <div key={`seat-${group.seatNumber ?? 'none'}`} style={{
+                  border: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.3)' : getSeatBorderColor(group.seatNumber!)}`,
                   borderRadius: '8px',
                   overflow: 'hidden',
                 }}>
@@ -786,8 +794,8 @@ export const OrderPanel = memo(function OrderPanel({
                   <div style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '8px 12px',
-                    background: getSeatBgColor(group.seatNumber),
-                    borderBottom: `1px solid ${getSeatBorderColor(group.seatNumber)}`,
+                    background: isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
+                    borderBottom: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.2)' : getSeatBorderColor(group.seatNumber!)}`,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{
@@ -796,9 +804,9 @@ export const OrderPanel = memo(function OrderPanel({
                       }} />
                       <span style={{
                         fontSize: '12px', fontWeight: 700,
-                        color: getSeatTextColor(group.seatNumber),
+                        color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
                       }}>
-                        Seat {group.seatNumber}
+                        {isUnassigned ? 'No Seat' : `Seat ${group.seatNumber}`}
                       </span>
                       <span style={{ fontSize: '11px', color: '#64748b' }}>
                         {groupPending.length} item{groupPending.length !== 1 ? 's' : ''}
@@ -806,7 +814,7 @@ export const OrderPanel = memo(function OrderPanel({
                     </div>
                     <span style={{
                       fontSize: '12px', fontWeight: 600,
-                      color: getSeatTextColor(group.seatNumber),
+                      color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
                     }}>
                       {formatCurrency(seatSubtotal)}
                     </span>
@@ -896,13 +904,14 @@ export const OrderPanel = memo(function OrderPanel({
                 i.sentToKitchen || (i.kitchenStatus && i.kitchenStatus !== 'pending')
               )
               if (groupSent.length === 0) return null
-              const seatColor = getSeatColor(group.seatNumber)
+              const isUnassigned = group.seatNumber === null
+              const seatColor = isUnassigned ? '#94a3b8' : getSeatColor(group.seatNumber!)
               const seatSubtotal = groupSent
                 .filter(i => !i.status || i.status === 'active')
                 .reduce((sum, i) => sum + calculateItemTotal(i), 0)
               return (
-                <div key={`sent-seat-${group.seatNumber}`} style={{
-                  border: `1px solid ${getSeatBorderColor(group.seatNumber)}`,
+                <div key={`sent-seat-${group.seatNumber ?? 'none'}`} style={{
+                  border: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.3)' : getSeatBorderColor(group.seatNumber!)}`,
                   borderRadius: '8px',
                   overflow: 'hidden',
                   opacity: 0.7,
@@ -910,8 +919,8 @@ export const OrderPanel = memo(function OrderPanel({
                   <div style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '6px 12px',
-                    background: getSeatBgColor(group.seatNumber),
-                    borderBottom: `1px solid ${getSeatBorderColor(group.seatNumber)}`,
+                    background: isUnassigned ? 'rgba(148, 163, 184, 0.08)' : getSeatBgColor(group.seatNumber!),
+                    borderBottom: `1px solid ${isUnassigned ? 'rgba(148, 163, 184, 0.2)' : getSeatBorderColor(group.seatNumber!)}`,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{
@@ -920,14 +929,14 @@ export const OrderPanel = memo(function OrderPanel({
                       }} />
                       <span style={{
                         fontSize: '11px', fontWeight: 700,
-                        color: getSeatTextColor(group.seatNumber),
+                        color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
                       }}>
-                        Seat {group.seatNumber}
+                        {isUnassigned ? 'No Seat' : `Seat ${group.seatNumber}`}
                       </span>
                     </div>
                     <span style={{
                       fontSize: '11px', fontWeight: 600,
-                      color: getSeatTextColor(group.seatNumber),
+                      color: isUnassigned ? '#94a3b8' : getSeatTextColor(group.seatNumber!),
                     }}>
                       {formatCurrency(seatSubtotal)}
                     </span>
