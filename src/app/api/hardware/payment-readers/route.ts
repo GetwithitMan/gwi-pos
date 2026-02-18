@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 
-const DEFAULT_LOCATION_ID = 'loc-1'
-
 // GET all payment readers for a location
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const locationId = searchParams.get('locationId') || DEFAULT_LOCATION_ID
+    const locationId = searchParams.get('locationId')
+    if (!locationId) {
+      return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+    }
     const activeOnly = searchParams.get('activeOnly') === 'true'
 
     const readers = await db.paymentReader.findMany({
@@ -51,7 +52,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const {
-      locationId = DEFAULT_LOCATION_ID,
+      locationId,
       name,
       serialNumber,
       ipAddress,
@@ -63,9 +64,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     } = body
 
     // Validate required fields
-    if (!name || !serialNumber || !ipAddress) {
+    if (!locationId || !name || !serialNumber || !ipAddress) {
       return NextResponse.json(
-        { error: 'Name, serial number, and IP address are required' },
+        { error: 'locationId, name, serial number, and IP address are required' },
         { status: 400 }
       )
     }

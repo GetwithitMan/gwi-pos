@@ -141,7 +141,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   const displaySubtotal = paymentMode === 'cash' ? cashSub : cardSub
 
   const displayTotal = paymentMode === 'cash' ? cashTotal : cardTotal
-  const totalToCharge = displayTotal + tipAmount
+  const totalToCharge = roundToCents(displayTotal + tipAmount)
 
   // Datacap hook — only active when we have terminalId + employeeId
   const datacap = useDatacap({
@@ -214,7 +214,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
     await datacap.processPayment({
       orderId,
       amount: totalToCharge,
-      tipAmount,
+      tipAmount: roundToCents(tipAmount),
       tranType: 'Sale',
     })
   }

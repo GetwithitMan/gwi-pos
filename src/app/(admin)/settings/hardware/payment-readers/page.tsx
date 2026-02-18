@@ -15,6 +15,7 @@ import {
   SpeakerWaveIcon,
 } from '@heroicons/react/24/outline'
 import { toast } from '@/stores/toast-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface PaymentReader {
   id: string
@@ -51,6 +52,8 @@ const DEFAULT_FORM_DATA: ReaderFormData = {
 }
 
 export default function PaymentReadersPage() {
+  const employee = useAuthStore(s => s.employee)
+  const locationId = employee?.location?.id
   const [readers, setReaders] = useState<PaymentReader[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -62,8 +65,9 @@ export default function PaymentReadersPage() {
   const [verifyingId, setVerifyingId] = useState<string | null>(null)
 
   const fetchReaders = useCallback(async () => {
+    if (!locationId) return
     try {
-      const res = await fetch('/api/hardware/payment-readers?locationId=loc-1')
+      const res = await fetch(`/api/hardware/payment-readers?locationId=${locationId}`)
       if (res.ok) {
         const data = await res.json()
         setReaders(data.readers || [])
@@ -73,7 +77,7 @@ export default function PaymentReadersPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [locationId])
 
   useEffect(() => {
     fetchReaders()
@@ -113,7 +117,7 @@ export default function PaymentReadersPage() {
         method: editingReader ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          locationId: 'loc-1',
+          locationId,
           ...formData,
         }),
       })

@@ -324,13 +324,14 @@ function SplitUnifiedView({
 
   // Merge all splits back to parent — confirm server success before closing UI
   const handleMergeBack = useCallback(async () => {
-    if (merging) return
+    if (merging || isSplitActionInFlightRef.current) return
     const hasPaidSplits = splits.some(s => s.isPaid)
     if (hasPaidSplits) {
       toast.error('Cannot merge back — some splits are already paid')
       return
     }
     setMerging(true)
+    isSplitActionInFlightRef.current = true
     try {
       const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`, { method: 'DELETE' })
       if (!res.ok) {
@@ -344,6 +345,7 @@ function SplitUnifiedView({
       toast.error('Network error — please try again')
     } finally {
       setMerging(false)
+      isSplitActionInFlightRef.current = false
     }
   }, [merging, splits, parentOrderId, onMergeBack])
 
