@@ -192,6 +192,9 @@ function SplitUnifiedView({
     const debouncedRefresh = () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
       debounceRef.current = setTimeout(() => {
+        // Skip refresh while a manual split action (move, split, merge) is in-flight
+        // to prevent stale server data from overwriting optimistic UI updates
+        if (isSplitActionInFlightRef.current) return
         loadSplits()
       }, 200)
     }
@@ -319,7 +322,7 @@ function SplitUnifiedView({
     }
   }, [selectedItemId, selectedFromSplitId, splittingItem, parentOrderId, loadSplits])
 
-  // Merge all splits back to parent — optimistic close
+  // Merge all splits back to parent — confirm server success before closing UI
   const handleMergeBack = useCallback(async () => {
     if (merging) return
     const hasPaidSplits = splits.some(s => s.isPaid)
@@ -328,18 +331,20 @@ function SplitUnifiedView({
       return
     }
     setMerging(true)
-    // Optimistic: close the view immediately
-    toast.success('Splits merged back')
-    onMergeBack()
-
-    // Fire API in background
-    fetch(`/api/orders/${parentOrderId}/split-tickets`, { method: 'DELETE' })
-      .then(res => {
-        if (!res.ok) return res.json().catch(() => ({})).then(d => { throw new Error(d.error || 'Merge failed') })
-      })
-      .catch(err => {
-        toast.error(err instanceof Error ? err.message : 'Merge failed — please try again')
-      })
+    try {
+      const res = await fetch(`/api/orders/${parentOrderId}/split-tickets`, { method: 'DELETE' })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        toast.error(d.error || 'Merge failed — please try again')
+        return
+      }
+      toast.success('Splits merged back')
+      onMergeBack()
+    } catch {
+      toast.error('Network error — please try again')
+    } finally {
+      setMerging(false)
+    }
   }, [merging, splits, parentOrderId, onMergeBack])
 
   const handleCreateCheck = useCallback(async () => {

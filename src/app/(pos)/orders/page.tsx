@@ -68,6 +68,10 @@ const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentO
 const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow').then(m => ({ default: m.CardFirstTabFlow })))
 import type { Category, MenuItem, ModifierGroup, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
+// TODO: Replace with dynamic terminal ID from device provisioning or localStorage
+// when multi-terminal support is implemented. For now, uses the seeded terminal.
+const TERMINAL_ID = 'terminal-1'
+
 export default function OrdersPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
@@ -1316,7 +1320,7 @@ export default function OrdersPage() {
         body: JSON.stringify({
           method,
           employeeId: employee?.id,
-          terminalId: 'terminal-1',
+          terminalId: TERMINAL_ID,
           ...cardDetails,
         }),
       })
@@ -1569,6 +1573,12 @@ export default function OrdersPage() {
 
   // Flash split chips to draw attention when user tries to add items to a split parent
   const [splitChipsFlashing, setSplitChipsFlashing] = useState(false)
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    return () => {
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
+    }
+  }, [])
 
   const handleAddItem = async (item: MenuItem) => {
     if (!item.isAvailable) return
@@ -1577,7 +1587,8 @@ export default function OrdersPage() {
     if (currentOrder?.status === 'split' && orderSplitChips.length > 0) {
       toast.warning('Select a split check or add a new one')
       setSplitChipsFlashing(true)
-      setTimeout(() => setSplitChipsFlashing(false), 1500)
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current)
+      flashTimeoutRef.current = setTimeout(() => setSplitChipsFlashing(false), 1500)
       return
     }
 
@@ -3380,7 +3391,7 @@ export default function OrdersPage() {
                 setFloorPlanRefreshTrigger(prev => prev + 1)
               }}
               employeeId={employee?.id}
-              terminalId="terminal-1"
+              terminalId={TERMINAL_ID}
               locationId={employee?.location?.id}
               waitForOrderReady={async () => {
                 if (orderReadyPromiseRef.current) {
@@ -3753,7 +3764,7 @@ export default function OrdersPage() {
                     orderId={payAllSplitsParentId}
                     amount={payAllSplitsTotal}
                     subtotal={payAllSplitsTotal}
-                    terminalId="terminal-1"
+                    terminalId={TERMINAL_ID}
                     employeeId={employee.id}
                     locationId={employee.location.id}
                     onSuccess={(result) => {
