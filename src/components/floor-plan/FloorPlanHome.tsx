@@ -431,10 +431,6 @@ export function FloorPlanHome({
   const [showRoomReorderModal, setShowRoomReorderModal] = useState(false)
   const [preferredRoomOrder, setPreferredRoomOrder] = useState<string[]>([])
 
-  // Resend to kitchen state
-  const [resendModal, setResendModal] = useState<{ itemId: string; itemName: string } | null>(null)
-  const [resendNote, setResendNote] = useState('')
-  const [resendLoading, setResendLoading] = useState(false)
 
   // TODO: May be redundant now that OrderPanel manages its own sort/highlight state
   const [itemSortDirection, setItemSortDirection] = useState<'newest-bottom' | 'newest-top'>('newest-bottom')
@@ -1560,50 +1556,6 @@ export function FloorPlanHome({
     }
   }, [menuItems, onOpenModifiers, handleSaveModifierChanges])
 
-  // Handle resend item to kitchen
-  const handleResendItem = useCallback((itemId: string, itemName: string) => {
-    setResendNote('')
-    setResendModal({ itemId, itemName })
-  }, [])
-
-  // Confirm resend item to kitchen
-  const confirmResendItem = useCallback(async () => {
-    if (!resendModal) return
-
-    setResendLoading(true)
-    try {
-      const response = await fetch('/api/kds', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          itemIds: [resendModal.itemId],
-          action: 'resend',
-          resendNote: resendNote.trim() || undefined,
-        }),
-      })
-
-      if (response.ok) {
-        // Update store to increment resend count
-        const store = useOrderStore.getState()
-        const existingItem = store.currentOrder?.items.find(i => i.id === resendModal.itemId)
-        store.updateItem(resendModal.itemId, {
-          resendCount: (existingItem?.resendCount || 0) + 1,
-        })
-
-        setResendModal(null)
-        setResendNote('')
-        toast.success('Item resent to kitchen')
-      } else {
-        const data = await response.json()
-        toast.error(data.error || 'Failed to resend item')
-      }
-    } catch (error) {
-      console.error('Failed to resend item:', error)
-      toast.error('Failed to resend item')
-    } finally {
-      setResendLoading(false)
-    }
-  }, [resendModal, resendNote])
 
   // Open comp/void modal for a sent item
   const handleOpenCompVoid = useCallback((item: InlineOrderItem) => {
@@ -2906,127 +2858,6 @@ export function FloorPlanHome({
         />
       </Suspense>
 
-      {/* Resend to Kitchen Modal */}
-      {resendModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 9999,
-          }}
-        >
-          <div
-            style={{
-              background: '#1e293b',
-              borderRadius: '12px',
-              padding: '24px',
-              width: '400px',
-              maxWidth: '90vw',
-              border: '1px solid rgba(245, 158, 11, 0.3)',
-            }}
-          >
-            <h3
-              style={{
-                color: '#f1f5f9',
-                fontSize: '18px',
-                fontWeight: 600,
-                marginBottom: '16px',
-              }}
-            >
-              Resend to Kitchen
-            </h3>
-            <p
-              style={{
-                color: '#94a3b8',
-                fontSize: '14px',
-                marginBottom: '16px',
-              }}
-            >
-              Resending: <strong style={{ color: '#e2e8f0' }}>{resendModal.itemName}</strong>
-            </p>
-            <textarea
-              value={resendNote}
-              onChange={(e) => setResendNote(e.target.value)}
-              placeholder="Add a note for the kitchen (optional)"
-              style={{
-                width: '100%',
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                background: 'rgba(255, 255, 255, 0.05)',
-                color: '#e2e8f0',
-                fontSize: '14px',
-                resize: 'none',
-                height: '80px',
-                marginBottom: '16px',
-                fontFamily: 'inherit',
-              }}
-            />
-            <div
-              style={{
-                display: 'flex',
-                gap: '12px',
-                justifyContent: 'flex-end',
-              }}
-            >
-              <button
-                onClick={() => setResendModal(null)}
-                style={{
-                  padding: '10px 20px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: '8px',
-                  color: '#94a3b8',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)'
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmResendItem}
-                disabled={resendLoading}
-                style={{
-                  padding: '10px 20px',
-                  background: resendLoading ? 'rgba(245, 158, 11, 0.5)' : '#f59e0b',
-                  border: 'none',
-                  borderRadius: '8px',
-                  color: '#fff',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  cursor: resendLoading ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.15s ease',
-                  opacity: resendLoading ? 0.7 : 1,
-                }}
-                onMouseEnter={(e) => {
-                  if (!resendLoading) {
-                    e.currentTarget.style.background = '#d97706'
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!resendLoading) {
-                    e.currentTarget.style.background = '#f59e0b'
-                  }
-                }}
-              >
-                {resendLoading ? 'Sending...' : 'Resend'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Comp/Void Modal */}
       {compVoidItem && activeOrderId && employeeId && (
