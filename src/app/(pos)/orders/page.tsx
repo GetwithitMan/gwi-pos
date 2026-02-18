@@ -1295,8 +1295,7 @@ export default function OrdersPage() {
       .then(d => {
         const authorized = (d.data || []).filter((c: { status: string }) => c.status === 'authorized')
         setPaymentTabCards(authorized)
-        if (authorized.length === 1) setInitialPayMethod('credit')
-        // When multiple cards: don't auto-skip, let user pick from the cards list
+        // Don't auto-skip — show method selection so user sees cards and can pick which to charge
       })
       .catch(() => setPaymentTabCards([]))
 
