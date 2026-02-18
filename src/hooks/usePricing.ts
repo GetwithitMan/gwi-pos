@@ -41,6 +41,8 @@ interface UsePricingReturn {
   // === Cash & Card totals (both always computed for toggle buttons) ===
   cashTotal: number        // Cash total with tax (tax-inclusive aware)
   cardTotal: number        // Card total with tax (tax-inclusive aware)
+  cashTax: number          // Tax on cash subtotal
+  cardTax: number          // Tax on card subtotal
   cashRoundingDelta: number  // Rounding applied to cash total (for UI display)
   cardRoundingDelta: number  // Rounding applied to card total (usually 0)
 
@@ -141,6 +143,8 @@ export function usePricing(options: UsePricingOptions = { subtotal: 0 }): UsePri
       roundingDelta: active.roundingDelta,
       cashTotal: cashResult.total,
       cardTotal: cardResult.total,
+      cashTax: cashResult.taxTotal,
+      cardTax: cardResult.taxTotal,
       cashRoundingDelta: cashResult.roundingDelta,
       cardRoundingDelta: cardResult.roundingDelta,
     }

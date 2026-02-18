@@ -25,6 +25,8 @@ interface OrderPanelActionsProps {
   cashSubtotal?: number  // Cash subtotal (same as subtotal, explicit)
   cardSubtotal?: number  // Card subtotal (with surcharge if dual pricing)
   tax?: number           // Tax amount
+  cashTax?: number       // Tax on cash subtotal
+  cardTax?: number       // Tax on card subtotal
   discounts?: number     // Dollar discounts
   total?: number         // Current display total (based on active payment mode)
   cashTotal?: number     // Total if paying cash (always lower or equal to cardTotal)
@@ -71,6 +73,8 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   cashSubtotal: cashSubtotalProp,
   cardSubtotal: cardSubtotalProp,
   tax = 0,
+  cashTax: cashTaxProp,
+  cardTax: cardTaxProp,
   discounts = 0,
   total = 0,
   cashTotal: cashTotalProp,
@@ -139,6 +143,9 @@ export const OrderPanelActions = memo(function OrderPanelActions({
   const cashSub = cashSubtotalProp ?? subtotal
   const cardSub = cardSubtotalProp ?? subtotal
   const displaySubtotal = paymentMode === 'cash' ? cashSub : cardSub
+
+  // Tax matched to payment mode (cash tax vs card tax)
+  const displayTax = paymentMode === 'cash' ? (cashTaxProp ?? tax) : (cardTaxProp ?? tax)
 
   const displayTotal = paymentMode === 'cash' ? cashTotal : cardTotal
   const totalToCharge = roundToCents(displayTotal + tipAmount)
@@ -227,7 +234,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
 
   // Suggested tip percentages
   const tipPercentages = [15, 18, 20, 25]
-  const tipBasis = subtotal || displayTotal
+  const tipBasis = displaySubtotal || displayTotal
 
   // ─── PAYMENT PROCESSOR VIEW ───────────────────────────────────────────
   if (showPaymentProcessor) {
@@ -741,7 +748,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
               {/* Subtotal — always shows card subtotal, cash discount shown below when paying cash */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '12px', paddingTop: '8px', borderTop: '1px solid rgba(255, 255, 255, 0.05)' }}>
                 <span style={{ color: '#94a3b8' }}>Subtotal</span>
-                <span style={{ color: '#e2e8f0' }}>${cardSub.toFixed(2)}</span>
+                <span style={{ color: '#e2e8f0' }}>${displaySubtotal.toFixed(2)}</span>
               </div>
 
               {/* Cash Discount (only when paying cash with dual pricing) */}
@@ -763,7 +770,7 @@ export const OrderPanelActions = memo(function OrderPanelActions({
               {/* Tax */}
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '4px' }}>
                 <span style={{ color: '#94a3b8' }}>Tax{taxPct > 0 ? ` (${taxPct}%)` : ''}</span>
-                <span style={{ color: '#e2e8f0' }}>${tax.toFixed(2)}</span>
+                <span style={{ color: '#e2e8f0' }}>${displayTax.toFixed(2)}</span>
               </div>
               {hasTaxInclusiveItems && (
                 <div style={{ fontSize: '10px', color: '#64748b', fontStyle: 'italic', marginTop: '2px', textAlign: 'right' }}>

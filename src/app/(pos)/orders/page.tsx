@@ -228,7 +228,7 @@ export default function OrdersPage() {
     permissions: hasLayoutPermission ? { posLayout: ['customize_personal'] } : undefined,
   })
 
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('cash')
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card'>('card')
 
   // Unified pricing calculations
   const pricing = usePricing({
@@ -335,6 +335,7 @@ export default function OrdersPage() {
     payAllSplitsQueue, setPayAllSplitsQueue,
     showPayAllSplitsConfirm, setShowPayAllSplitsConfirm,
     payAllSplitsTotal, setPayAllSplitsTotal,
+    payAllSplitsCardTotal, setPayAllSplitsCardTotal,
     payAllSplitsParentId, setPayAllSplitsParentId,
     payAllSplitsProcessing, setPayAllSplitsProcessing,
     payAllSplitsStep, setPayAllSplitsStep,
@@ -2428,6 +2429,8 @@ export default function OrdersPage() {
             cashSubtotal={pricing.cashSubtotal}
             cardSubtotal={pricing.cardSubtotal}
             tax={pricing.tax}
+            cashTax={pricing.cashTax}
+            cardTax={pricing.cardTax}
             total={pricing.total}
             showItemControls={true}
             showEntertainmentTimers={true}
@@ -2830,6 +2833,7 @@ export default function OrdersPage() {
             className={viewMode === 'bartender' ? 'w-[360px] flex-shrink-0' : 'flex-1 min-h-0'}
             splitChips={orderSplitChips.length > 0 ? orderSplitChips : undefined}
             splitChipsFlashing={splitChipsFlashing}
+            cardPriceMultiplier={pricing.isDualPricingEnabled ? 1 + pricing.cashDiscountRate / 100 : undefined}
             onAddSplit={orderSplitChips.length > 0 ? async () => {
               const parentId = splitParentId || currentOrder?.id
               if (!parentId) return
@@ -2871,8 +2875,12 @@ export default function OrdersPage() {
               if (unpaid.length === 0) return
               const parentId = splitParentId || savedOrderId || currentOrder?.id || ''
               const combinedTotal = unpaid.reduce((sum, c) => sum + c.total, 0)
+              const combinedCardTotal = pricing.isDualPricingEnabled
+                ? calculateCardPrice(combinedTotal, pricing.cashDiscountRate)
+                : combinedTotal
               setPayAllSplitsParentId(parentId)
               setPayAllSplitsTotal(combinedTotal)
+              setPayAllSplitsCardTotal(combinedCardTotal)
               setShowPayAllSplitsConfirm(true)
             } : undefined}
           />
@@ -3595,8 +3603,12 @@ export default function OrdersPage() {
               onPayAllSplits={(splitIds, combinedTotal) => {
                 if (splitIds.length === 0) return
                 const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
+                const combinedCardTotal = pricing.isDualPricingEnabled
+                  ? calculateCardPrice(combinedTotal, pricing.cashDiscountRate)
+                  : combinedTotal
                 setPayAllSplitsParentId(parentId)
                 setPayAllSplitsTotal(combinedTotal)
+                setPayAllSplitsCardTotal(combinedCardTotal)
                 setShowPayAllSplitsConfirm(true)
               }}
               onAddCard={(splitId) => {
@@ -3644,6 +3656,7 @@ export default function OrdersPage() {
               isOpen={showPayAllSplitsConfirm && !!payAllSplitsParentId}
               parentOrderId={payAllSplitsParentId}
               total={payAllSplitsTotal}
+              cardTotal={payAllSplitsCardTotal !== payAllSplitsTotal ? payAllSplitsCardTotal : undefined}
               unpaidCount={orderSplitChips.filter(c => !c.isPaid).length}
               terminalId={TERMINAL_ID}
               employeeId={employee.id}

@@ -19,6 +19,7 @@ interface PayAllSplitsModalProps {
   isOpen: boolean
   parentOrderId: string | null
   total: number
+  cardTotal?: number
   unpaidCount: number
   terminalId: string
   employeeId: string
@@ -33,6 +34,7 @@ export function PayAllSplitsModal({
   isOpen,
   parentOrderId,
   total,
+  cardTotal,
   unpaidCount,
   terminalId,
   employeeId,
@@ -59,10 +61,23 @@ export function PayAllSplitsModal({
               {unpaidCount} unpaid checks
             </p>
             <div className="rounded-xl p-4 mb-5" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-300 text-sm">Total</span>
-                <span className="text-2xl font-bold text-white">${total.toFixed(2)}</span>
-              </div>
+              {cardTotal && cardTotal !== total ? (
+                <>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-slate-300 text-sm">Cash</span>
+                    <span className="text-lg font-bold text-emerald-400">${total.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-300 text-sm">Card</span>
+                    <span className="text-lg font-bold text-white">${cardTotal.toFixed(2)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-300 text-sm">Total</span>
+                  <span className="text-2xl font-bold text-white">${total.toFixed(2)}</span>
+                </div>
+              )}
             </div>
             <div className="flex gap-3">
               <button
@@ -88,8 +103,8 @@ export function PayAllSplitsModal({
           <div className="p-4">
             <DatacapPaymentProcessor
               orderId={parentOrderId}
-              amount={total}
-              subtotal={total}
+              amount={cardTotal || total}
+              subtotal={cardTotal || total}
               terminalId={terminalId}
               employeeId={employeeId}
               locationId={locationId}

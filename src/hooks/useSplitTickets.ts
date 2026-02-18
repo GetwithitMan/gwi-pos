@@ -10,6 +10,7 @@ export function useSplitTickets() {
   const [payAllSplitsQueue, setPayAllSplitsQueue] = useState<string[]>([])
   const [showPayAllSplitsConfirm, setShowPayAllSplitsConfirm] = useState(false)
   const [payAllSplitsTotal, setPayAllSplitsTotal] = useState(0)
+  const [payAllSplitsCardTotal, setPayAllSplitsCardTotal] = useState(0)
   const [payAllSplitsParentId, setPayAllSplitsParentId] = useState<string | null>(null)
   const [payAllSplitsProcessing, setPayAllSplitsProcessing] = useState(false)
   const [payAllSplitsStep, setPayAllSplitsStep] = useState<'confirm' | 'datacap_card'>('confirm')
@@ -32,6 +33,8 @@ export function useSplitTickets() {
     setShowPayAllSplitsConfirm,
     payAllSplitsTotal,
     setPayAllSplitsTotal,
+    payAllSplitsCardTotal,
+    setPayAllSplitsCardTotal,
     payAllSplitsParentId,
     setPayAllSplitsParentId,
     payAllSplitsProcessing,

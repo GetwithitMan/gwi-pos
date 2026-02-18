@@ -30,6 +30,8 @@ export interface OrderPanelProps {
   items: OrderPanelItemData[]
   subtotal: number
   tax: number
+  cashTax?: number
+  cardTax?: number
   discounts?: number
   total: number
   showItemControls?: boolean
@@ -143,6 +145,7 @@ export interface OrderPanelProps {
   onPayAll?: () => void
   splitChipsFlashing?: boolean
   onAddSplit?: () => void
+  cardPriceMultiplier?: number
 }
 
 export const OrderPanel = memo(function OrderPanel({
@@ -156,6 +159,8 @@ export const OrderPanel = memo(function OrderPanel({
   items,
   subtotal,
   tax,
+  cashTax,
+  cardTax,
   discounts = 0,
   total,
   showItemControls = false,
@@ -259,6 +264,7 @@ export const OrderPanel = memo(function OrderPanel({
   onPayAll,
   splitChipsFlashing,
   onAddSplit,
+  cardPriceMultiplier,
 }: OrderPanelProps) {
   const hasItems = items.length > 0
   const hasPendingItems = items.some(item =>
@@ -375,9 +381,6 @@ export const OrderPanel = memo(function OrderPanel({
         .reduce((sum, i) => sum + calculateItemTotal(i), 0),
     }))
   }, [items])
-
-  // Card price multiplier for dual pricing display (e.g. 1.04 for 4%)
-  const cardPriceMultiplier = cashDiscountPct && cashDiscountPct > 0 ? 1 + cashDiscountPct / 100 : undefined
 
   // Shared item renderer — ensures identical rendering everywhere
   const renderItem = useCallback((item: OrderPanelItemData) => (
@@ -1197,37 +1200,24 @@ export const OrderPanel = memo(function OrderPanel({
                   </div>
                 )}
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {orderId && (
-                  <div style={{ fontSize: '10px', color: '#475569', fontFamily: 'monospace' }}>
-                    {orderId.slice(-8)}
-                  </div>
-                )}
-                {onHide && (
-                  <button
-                    onClick={onHide}
-                    style={{
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '6px',
-                      border: '1px solid rgba(100, 116, 139, 0.2)',
-                      background: 'rgba(100, 116, 139, 0.1)',
-                      color: '#64748b',
-                      fontSize: '14px',
-                      lineHeight: 1,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: 0,
-                      transition: 'all 0.15s ease',
-                    }}
-                    title="Hide panel"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
+              {onHide && (
+                <button
+                  onClick={onHide}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid rgba(100, 116, 139, 0.3)',
+                    background: 'rgba(100, 116, 139, 0.15)',
+                    color: '#94a3b8',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  Hide
+                </button>
+              )}
             </div>
           </div>
         )
@@ -1306,7 +1296,7 @@ export const OrderPanel = memo(function OrderPanel({
                 }}
               >
                 <span>{split.label}</span>
-                <span style={{ opacity: 0.7 }}>${split.total.toFixed(2)}</span>
+                <span style={{ opacity: 0.7 }}>${(cardPriceMultiplier ? split.total * cardPriceMultiplier : split.total).toFixed(2)}</span>
                 {split.isPaid && (
                   <span style={{
                     fontSize: 8, textTransform: 'uppercase', letterSpacing: '0.05em',
@@ -1451,6 +1441,8 @@ export const OrderPanel = memo(function OrderPanel({
           cashSubtotal={cashSubtotal}
           cardSubtotal={cardSubtotal}
           tax={tax}
+          cashTax={cashTax}
+          cardTax={cardTax}
           discounts={discounts}
           total={total}
           onSend={onSend}
