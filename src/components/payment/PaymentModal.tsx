@@ -789,10 +789,11 @@ export function PaymentModal({
                         gap: 16,
                         padding: '0 20px',
                         borderRadius: 12,
-                        border: '1px solid rgba(168, 85, 247, 0.4)',
-                        background: 'rgba(168, 85, 247, 0.12)',
+                        border: '2px solid rgba(168, 85, 247, 0.6)',
+                        background: 'rgba(168, 85, 247, 0.18)',
                         cursor: isProcessing ? 'wait' : 'pointer',
                         textAlign: 'left' as const,
+                        boxShadow: '0 2px 8px rgba(168, 85, 247, 0.25)',
                       }}
                     >
                       <span style={{ fontSize: 28 }}>💳</span>
@@ -820,16 +821,28 @@ export function PaymentModal({
                   <button
                     onClick={handleAddCardToTab}
                     disabled={addingCard || isProcessing}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-dashed border-slate-600 hover:border-blue-500 hover:bg-blue-500/10 transition-colors"
                     style={{
+                      width: '100%',
+                      padding: '14px 20px',
+                      borderRadius: 12,
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #f97316, #ea580c)',
+                      color: '#fff',
+                      fontSize: 16,
+                      fontWeight: 700,
                       cursor: (addingCard || isProcessing) ? 'wait' : 'pointer',
                       opacity: (addingCard || isProcessing) ? 0.5 : 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      boxShadow: '0 2px 10px rgba(249, 115, 22, 0.4)',
+                      textAlign: 'left' as const,
                     }}
                   >
-                    <span className="text-2xl">{'\uD83D\uDCB3'}</span>
-                    <div className="text-left">
-                      <div className="font-bold text-white">Add Card to Tab</div>
-                      <div className="text-xs text-slate-400">Hold another card on this tab</div>
+                    <span style={{ fontSize: 24 }}>{'\uD83D\uDCB3'}</span>
+                    <div>
+                      <div>Add Card to Tab</div>
+                      <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.8 }}>Hold another card on this tab</div>
                     </div>
                   </button>
 
@@ -1264,19 +1277,20 @@ export function PaymentModal({
                 disabled={isProcessing}
                 style={{
                   width: '100%',
-                  padding: '10px 16px',
+                  padding: '12px 16px',
                   borderRadius: 10,
-                  border: '2px dashed rgba(100, 116, 139, 0.4)',
-                  background: 'transparent',
-                  color: '#94a3b8',
-                  fontSize: 13,
-                  fontWeight: 600,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #f97316, #ea580c)',
+                  color: '#fff',
+                  fontSize: 14,
+                  fontWeight: 700,
                   cursor: 'pointer',
                   marginBottom: 8,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 8,
+                  boxShadow: '0 2px 8px rgba(249, 115, 22, 0.35)',
                 }}
               >
                 {'\uD83D\uDCB3'} Add Card to Tab Instead
