@@ -712,14 +712,22 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 **Impact:** Comp/Void flow reduced from 5-6 taps to 3 (action → optional override → submit). All defaults overridable.
 **Commit:** `67ebe20`
 
-### Wave 6C+ — Remaining Backlog (In Progress)
+### Wave 6C — Quick Tab, Payment Skip, Clickable Seats (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 48 | Wire handleQuickTab to OpenOrdersPanel in BartenderView (instant tab creation) | quick-tab | ✅ |
+| 49 | Auto-skip payment method selection when pre-auth tab cards exist | payment-skip | ✅ |
+| 50 | Make seat headers clickable in OrderPanel to select seat for new items | seat-select | ✅ |
+
+**Impact:** Quick tab = 1 tap (was modal). Pre-auth payment = 0 taps method selection. Seat selection = tap header in order list.
+**Commit:** `4b9443d`
+
+### Wave 6D+ — Remaining Backlog
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 48 | Payment method skip for pre-auth | P1 UX | PaymentMethodStep |
-| 49 | Quick tab without name modal | P1 UX | NewTabModal |
-| 50 | Response format normalization | P2 | 68+ routes |
-| 51 | "Same Again" reorder feature | P0 UX | New feature |
-| 52 | Split evenly quick action | P1 UX | SplitCheckScreen |
+| 51 | Response format normalization | P2 | 68+ routes |
+| 52 | "Same Again" reorder feature | P0 UX | New feature |
+| 53 | Split evenly quick action | P1 UX | SplitCheckScreen |
 
 ---
 
@@ -744,4 +752,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 6B COMPLETE — 47/47 tasks complete, 470+ individual fixes applied across 95+ files*
+*Last updated: Wave 6C COMPLETE — 50/50 tasks complete, 475+ individual fixes applied across 98+ files*
