@@ -1,25 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { PizzaPrintSettings } from '@/types/pizza-print-settings'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza/config - Get pizza configuration for location
 export const GET = withVenue(async function GET() {
   try {
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
     let config = await db.pizzaConfig.findUnique({
-      where: { locationId: location.id }
+      where: { locationId }
     })
 
     // Create default config if doesn't exist
     if (!config) {
       config = await db.pizzaConfig.create({
         data: {
-          locationId: location.id,
+          locationId,
           maxSections: 8,
           defaultSections: 2,
           sectionOptions: [1, 2, 4, 8],
@@ -58,13 +59,13 @@ export const GET = withVenue(async function GET() {
 export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
     const config = await db.pizzaConfig.upsert({
-      where: { locationId: location.id },
+      where: { locationId },
       update: {
         ...(body.maxSections !== undefined && { maxSections: body.maxSections }),
         ...(body.defaultSections !== undefined && { defaultSections: body.defaultSections }),
@@ -85,7 +86,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         ...(body.allowModeSwitch !== undefined && { allowModeSwitch: body.allowModeSwitch }),
       },
       create: {
-        locationId: location.id,
+        locationId,
         maxSections: body.maxSections ?? 8,
         defaultSections: body.defaultSections ?? 2,
         sectionOptions: body.sectionOptions ?? [1, 2, 4, 8],

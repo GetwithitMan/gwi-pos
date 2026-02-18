@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // Typo-resistant charset: no 0, O, 1, I
@@ -21,13 +22,13 @@ function deriveStatus(token: { status: string; expiresAt: Date }): string {
 
 export const GET = withVenue(async function GET() {
   try {
-    const location = await db.location.findFirst({ select: { id: true } })
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 404 })
     }
 
     const token = await db.serverRegistrationToken.findFirst({
-      where: { locationId: location.id, deletedAt: null },
+      where: { locationId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
     })
 
@@ -53,15 +54,15 @@ export const GET = withVenue(async function GET() {
 
 export const POST = withVenue(async function POST() {
   try {
-    const location = await db.location.findFirst({ select: { id: true } })
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 404 })
     }
 
     // Revoke any existing PENDING tokens for this location
     await db.serverRegistrationToken.updateMany({
       where: {
-        locationId: location.id,
+        locationId,
         status: 'PENDING',
       },
       data: { status: 'REVOKED' },
@@ -71,7 +72,7 @@ export const POST = withVenue(async function POST() {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)
     const token = await db.serverRegistrationToken.create({
       data: {
-        locationId: location.id,
+        locationId,
         token: generateRegistrationCode(),
         expiresAt,
       },

@@ -1,4 +1,5 @@
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 
 interface InventoryDeduction {
   bottleProductId: string
@@ -223,12 +224,12 @@ export async function recordSpiritUpsells(
   if (upsellEvents.length === 0) return
 
   try {
-    const location = await db.location.findFirst()
-    if (!location) return
+    const locationId = await getLocationId()
+    if (!locationId) return
 
     await db.spiritUpsellEvent.createMany({
       data: upsellEvents.map(event => ({
-        locationId: location.id,
+        locationId,
         orderId,
         orderItemId: event.orderItemId,
         employeeId: employeeId || '',

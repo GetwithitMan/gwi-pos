@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza/toppings - Get all pizza toppings
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
@@ -16,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const toppings = await db.pizzaTopping.findMany({
       where: {
-        locationId: location.id,
+        locationId,
         ...(category && { category }),
         ...(!includeInactive && { isActive: true }),
       },
@@ -47,19 +48,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Valid price is required' }, { status: 400 })
     }
 
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
     const maxSort = await db.pizzaTopping.aggregate({
-      where: { locationId: location.id, category: category || 'standard' },
+      where: { locationId, category: category || 'standard' },
       _max: { sortOrder: true }
     })
 
     const topping = await db.pizzaTopping.create({
       data: {
-        locationId: location.id,
+        locationId,
         name: name.trim(),
         displayName: displayName?.trim() || null,
         description: description?.trim() || null,

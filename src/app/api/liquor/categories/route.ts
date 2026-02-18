@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 /**
  * GET /api/liquor/categories
@@ -12,9 +13,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const isActive = searchParams.get('isActive')
     const includeBottles = searchParams.get('includeBottles') === 'true'
 
-    // Get the location (for now using first location)
-    const location = await db.location.findFirst()
-    if (!location) {
+    // Get the location
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -23,7 +24,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const categories = await db.spiritCategory.findMany({
       where: {
-        locationId: location.id,
+        locationId,
         ...(isActive !== null && { isActive: isActive === 'true' }),
       },
       include: {
@@ -100,9 +101,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Get the location (for now using first location)
-    const location = await db.location.findFirst()
-    if (!location) {
+    // Get the location
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -111,13 +112,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Get max sort order
     const maxSortOrder = await db.spiritCategory.aggregate({
-      where: { locationId: location.id },
+      where: { locationId },
       _max: { sortOrder: true },
     })
 
     const category = await db.spiritCategory.create({
       data: {
-        locationId: location.id,
+        locationId,
         name: name.trim(),
         displayName: displayName?.trim() || null,
         description: description?.trim() || null,

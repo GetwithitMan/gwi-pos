@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -37,9 +38,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const spiritCategoryId = searchParams.get('spiritCategoryId')
     const isActive = searchParams.get('isActive')
 
-    // Get the location (for now using first location)
-    const location = await db.location.findFirst()
-    if (!location) {
+    // Get the location
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -48,7 +49,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const bottles = await db.bottleProduct.findMany({
       where: {
-        locationId: location.id,
+        locationId,
         deletedAt: null,
         ...(tier && { tier }),
         ...(spiritCategoryId && { spiritCategoryId }),

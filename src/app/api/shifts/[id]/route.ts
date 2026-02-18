@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 
 // GET - Get shift details with sales summary
 export const GET = withVenue(async function GET(
@@ -145,11 +146,8 @@ export const PUT = withVenue(async function PUT(
       }
 
       // Check if employee has open orders (requireCloseTabsBeforeShift setting)
-      const locationForSettings = await db.location.findFirst({
-        where: { id: shift.locationId },
-        select: { settings: true },
-      })
-      const locSettings = parseSettings(locationForSettings?.settings)
+      const locationSettings = await getLocationSettings(shift.locationId)
+      const locSettings = parseSettings(locationSettings)
       const requireClose = locSettings.barTabs?.requireCloseTabsBeforeShift ?? true
 
       if (requireClose) {

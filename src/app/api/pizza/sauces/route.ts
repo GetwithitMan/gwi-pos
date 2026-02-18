@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza/sauces - Get all pizza sauces
 export const GET = withVenue(async function GET() {
   try {
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
     const sauces = await db.pizzaSauce.findMany({
-      where: { locationId: location.id, isActive: true },
+      where: { locationId, isActive: true },
       orderBy: { sortOrder: 'asc' }
     })
 
@@ -36,26 +37,26 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     }
 
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
     const maxSort = await db.pizzaSauce.aggregate({
-      where: { locationId: location.id },
+      where: { locationId },
       _max: { sortOrder: true }
     })
 
     if (isDefault) {
       await db.pizzaSauce.updateMany({
-        where: { locationId: location.id, isDefault: true },
+        where: { locationId, isDefault: true },
         data: { isDefault: false }
       })
     }
 
     const sauce = await db.pizzaSauce.create({
       data: {
-        locationId: location.id,
+        locationId,
         name: name.trim(),
         displayName: displayName?.trim() || null,
         description: description?.trim() || null,

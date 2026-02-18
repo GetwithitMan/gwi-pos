@@ -43,6 +43,46 @@ const cache = new Map<string, CacheEntry>()
 const CACHE_TTL = 5 * 60 * 1000
 
 // ============================================================================
+// LOCATION ID CACHE
+// ============================================================================
+
+/**
+ * Cached location ID for the current venue database.
+ * Each venue DB has exactly one location — this avoids repeated findFirst() calls.
+ */
+let cachedLocationId: string | null = null
+let locationIdTimestamp = 0
+
+/**
+ * Get the location ID for the current venue database (cached).
+ *
+ * Since each venue DB has exactly one Location row, this is safe to cache.
+ * Eliminates ~30 redundant db.location.findFirst() calls across pizza/liquor/menu routes.
+ *
+ * @returns The location ID, or null if no location exists
+ *
+ * Example:
+ *   const locationId = await getLocationId()
+ *   if (!locationId) return NextResponse.json({ error: 'No location found' }, { status: 400 })
+ */
+export async function getLocationId(): Promise<string | null> {
+  const now = Date.now()
+
+  if (cachedLocationId && (now - locationIdTimestamp) < CACHE_TTL) {
+    return cachedLocationId
+  }
+
+  const location = await db.location.findFirst({
+    select: { id: true },
+  })
+
+  cachedLocationId = location?.id ?? null
+  locationIdTimestamp = now
+
+  return cachedLocationId
+}
+
+// ============================================================================
 // PUBLIC API
 // ============================================================================
 
@@ -103,6 +143,8 @@ export function invalidateLocationCache(locationId: string): void {
  */
 export function invalidateAllLocationCaches(): void {
   cache.clear()
+  cachedLocationId = null
+  locationIdTimestamp = 0
 }
 
 /**

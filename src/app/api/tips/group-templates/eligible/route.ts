@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET(request: NextRequest) {
@@ -38,11 +39,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Fetch location settings for allowStandaloneServers
-    const location = await db.location.findFirst({
-      where: { id: locationId },
-      select: { settings: true },
-    })
-    const settings = location ? parseSettings(location.settings) : null
+    const locationSettings = await getLocationSettings(locationId)
+    const settings = locationSettings ? parseSettings(locationSettings) : null
     const allowStandaloneServers = settings?.tipBank?.allowStandaloneServers ?? true
 
     // Fetch all active templates for this location

@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List all categories for a location
@@ -57,9 +58,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Get the location (for now using first location)
-    const location = await db.location.findFirst()
-    if (!location) {
+    // Get the location ID (cached)
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -68,13 +69,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Get max sort order
     const maxSortOrder = await db.category.aggregate({
-      where: { locationId: location.id },
+      where: { locationId },
       _max: { sortOrder: true }
     })
 
     const category = await db.category.create({
       data: {
-        locationId: location.id,
+        locationId,
         name: name.trim(),
         color: color || '#3b82f6',
         categoryType: categoryType || 'food',
@@ -85,10 +86,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // Invalidate server-side menu cache
-    invalidateMenuCache(location.id)
+    invalidateMenuCache(locationId)
 
     // Dispatch socket event for real-time menu structure update
-    dispatchMenuStructureChanged(location.id, {
+    dispatchMenuStructureChanged(locationId, {
       action: 'category-created',
       entityId: category.id,
       entityType: 'category',
@@ -97,7 +98,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // Notify cloud → NUC sync
-    void notifyDataChanged({ locationId: location.id, domain: 'menu', action: 'created', entityId: category.id })
+    void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: category.id })
 
     return NextResponse.json({
       id: category.id,

@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza/specialties - Get all specialty pizzas
 export const GET = withVenue(async function GET() {
   try {
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
     const specialties = await db.pizzaSpecialty.findMany({
-      where: { locationId: location.id },
+      where: { locationId },
       include: {
         menuItem: true,
         defaultCrust: true,
@@ -77,14 +78,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Menu item ID is required' }, { status: 400 })
     }
 
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
     // Verify menu item exists and is a pizza
     const menuItem = await db.menuItem.findFirst({
-      where: { id: menuItemId, locationId: location.id },
+      where: { id: menuItemId, locationId },
       include: { category: true }
     })
 
@@ -103,7 +104,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const specialty = await db.pizzaSpecialty.create({
       data: {
-        locationId: location.id,
+        locationId,
         menuItemId,
         defaultCrustId: defaultCrustId || null,
         defaultSauceId: defaultSauceId || null,

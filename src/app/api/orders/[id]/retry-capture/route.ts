@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseSettings } from '@/lib/settings'
+import { getLocationSettings } from '@/lib/location-cache'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
@@ -81,11 +82,10 @@ export const POST = withVenue(async function POST(
         })
 
         // Check walkout threshold
-        const location = await db.location.findFirst({ where: { id: locationId }, select: { settings: true } })
-        const settings = parseSettings(location?.settings)
+        const locSettings = parseSettings(await getLocationSettings(locationId))
         const updated = await db.order.findUnique({ where: { id: orderId }, select: { captureRetryCount: true } })
-        const maxRetries = settings.barTabs?.maxCaptureRetries ?? 3
-        if (settings.barTabs?.autoFlagWalkoutAfterDeclines && updated && updated.captureRetryCount >= maxRetries) {
+        const maxRetries = locSettings.barTabs?.maxCaptureRetries ?? 3
+        if (locSettings.barTabs?.autoFlagWalkoutAfterDeclines && updated && updated.captureRetryCount >= maxRetries) {
           await db.order.update({
             where: { id: orderId },
             data: { isWalkout: true, walkoutAt: now },

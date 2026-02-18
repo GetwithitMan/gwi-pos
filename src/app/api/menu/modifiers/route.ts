@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { getLocationId } from '@/lib/location-cache'
 
 // GET all modifier groups with their modifiers
 // Optional query params:
@@ -130,9 +131,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       )
     }
 
-    // Get the location
-    const location = await db.location.findFirst()
-    if (!location) {
+    // Get the location ID (cached)
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -141,13 +142,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Get max sort order
     const maxSortOrder = await db.modifierGroup.aggregate({
-      where: { locationId: location.id },
+      where: { locationId },
       _max: { sortOrder: true }
     })
 
     const modifierGroup = await db.modifierGroup.create({
       data: {
-        locationId: location.id,
+        locationId,
         name: name.trim(),
         displayName: displayName?.trim() || null,
         modifierTypes: modifierTypes || ['universal'],
@@ -160,7 +161,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         sortOrder: (maxSortOrder._max.sortOrder || 0) + 1,
         modifiers: modifiers?.length ? {
           create: modifiers.map((mod: { name: string; price: number; upsellPrice?: number; allowedPreModifiers?: string[]; extraPrice?: number; extraUpsellPrice?: number; childModifierGroupId?: string; commissionType?: string; commissionValue?: number; showOnPOS?: boolean; showOnline?: boolean; printerRouting?: string; printerIds?: string[]; spiritTier?: string }, index: number) => ({
-            locationId: location.id,
+            locationId,
             name: mod.name,
             price: mod.price || 0,
             upsellPrice: mod.upsellPrice ?? null,
@@ -185,10 +186,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // Invalidate server-side menu cache
-    invalidateMenuCache(location.id)
+    invalidateMenuCache(locationId)
 
     // Notify cloud → NUC sync
-    void notifyDataChanged({ locationId: location.id, domain: 'menu', action: 'created', entityId: modifierGroup.id })
+    void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: modifierGroup.id })
 
     return NextResponse.json({
       id: modifierGroup.id,

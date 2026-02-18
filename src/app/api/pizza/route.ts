@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/pizza - Get all pizza builder data at once (for PizzaBuilderModal)
 export const GET = withVenue(async function GET() {
   try {
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 400 })
     }
 
@@ -14,10 +15,10 @@ export const GET = withVenue(async function GET() {
     const [config, sizes, crusts, sauces, cheeses, toppings, printers] = await Promise.all([
       // Config (create default if doesn't exist)
       db.pizzaConfig.upsert({
-        where: { locationId: location.id },
+        where: { locationId },
         update: {},
         create: {
-          locationId: location.id,
+          locationId,
           maxSections: 8,
           defaultSections: 2,
           sectionOptions: [1, 2, 4, 8],
@@ -32,32 +33,32 @@ export const GET = withVenue(async function GET() {
       }),
       // Sizes
       db.pizzaSize.findMany({
-        where: { locationId: location.id, isActive: true },
+        where: { locationId, isActive: true },
         orderBy: { sortOrder: 'asc' }
       }),
       // Crusts
       db.pizzaCrust.findMany({
-        where: { locationId: location.id, isActive: true },
+        where: { locationId, isActive: true },
         orderBy: { sortOrder: 'asc' }
       }),
       // Sauces
       db.pizzaSauce.findMany({
-        where: { locationId: location.id, isActive: true },
+        where: { locationId, isActive: true },
         orderBy: { sortOrder: 'asc' }
       }),
       // Cheeses
       db.pizzaCheese.findMany({
-        where: { locationId: location.id, isActive: true },
+        where: { locationId, isActive: true },
         orderBy: { sortOrder: 'asc' }
       }),
       // Toppings
       db.pizzaTopping.findMany({
-        where: { locationId: location.id, isActive: true },
+        where: { locationId, isActive: true },
         orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }]
       }),
       // Printers (for admin UI)
       db.printer.findMany({
-        where: { locationId: location.id, isActive: true },
+        where: { locationId, isActive: true },
         orderBy: { name: 'asc' },
         select: { id: true, name: true, printerRole: true }
       }),

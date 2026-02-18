@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 /**
  * POST /api/liquor/upsells
@@ -33,8 +34,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get the location
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -43,7 +44,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const upsellEvent = await db.spiritUpsellEvent.create({
       data: {
-        locationId: location.id,
+        locationId,
         orderId,
         orderItemId,
         employeeId,
@@ -84,8 +85,8 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const employeeId = searchParams.get('employeeId')
 
     // Get the location
-    const location = await db.location.findFirst()
-    if (!location) {
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -93,7 +94,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     const where: any = {
-      locationId: location.id,
+      locationId,
     }
 
     if (startDate) {

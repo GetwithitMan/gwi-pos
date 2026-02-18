@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 /**
  * GET /api/liquor/recipes
@@ -12,9 +13,9 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const categoryId = searchParams.get('categoryId')
     const hasRecipe = searchParams.get('hasRecipe')
 
-    // Get the location (for now using first location)
-    const location = await db.location.findFirst()
-    if (!location) {
+    // Get the location
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -24,7 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Find all menu items in liquor categories (or optionally filtered by category)
     const menuItems = await db.menuItem.findMany({
       where: {
-        locationId: location.id,
+        locationId,
         isActive: true,
         category: {
           categoryType: 'liquor',

@@ -5,6 +5,7 @@ import { parseError } from '@/lib/datacap/xml-parser'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { parseSettings } from '@/lib/settings'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
+import { getLocationSettings } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Close tab by capturing against cards
@@ -51,8 +52,8 @@ export const POST = withVenue(async function POST(
     const locationId = order.locationId
 
     // Load tip percentages from location settings
-    const location = await db.location.findFirst({ where: { id: locationId }, select: { settings: true } })
-    const locSettings = parseSettings(location?.settings)
+    const settings = await getLocationSettings(locationId)
+    const locSettings = parseSettings(settings)
     const rawSuggestions = locSettings.tipBank?.tipGuide?.percentages ?? [15, 18, 20, 25]
     const tipSuggestions = rawSuggestions
       .map(Number)

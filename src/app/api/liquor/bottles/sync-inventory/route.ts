@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { getLocationId } from '@/lib/location-cache'
 
 const ML_PER_OZ = 29.5735
 const DEFAULT_POUR_SIZE_OZ = 1.5
@@ -38,9 +39,9 @@ function calculateBottleMetrics(
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
-    // Get the location (for now using first location)
-    const location = await db.location.findFirst()
-    if (!location) {
+    // Get the location
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -50,7 +51,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Find all bottles without an inventoryItemId
     const bottlesWithoutInventory = await db.bottleProduct.findMany({
       where: {
-        locationId: location.id,
+        locationId,
         deletedAt: null,
         inventoryItemId: null,
       },
@@ -188,9 +189,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
  */
 export const GET = withVenue(async function GET(request: NextRequest) {
   try {
-    // Get the location (for now using first location)
-    const location = await db.location.findFirst()
-    if (!location) {
+    // Get the location
+    const locationId = await getLocationId()
+    if (!locationId) {
       return NextResponse.json(
         { error: 'No location found' },
         { status: 400 }
@@ -200,7 +201,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Count bottles without inventory link
     const count = await db.bottleProduct.count({
       where: {
-        locationId: location.id,
+        locationId,
         deletedAt: null,
         inventoryItemId: null,
       },
@@ -209,7 +210,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Get total bottles count
     const total = await db.bottleProduct.count({
       where: {
-        locationId: location.id,
+        locationId,
         deletedAt: null,
       },
     })
