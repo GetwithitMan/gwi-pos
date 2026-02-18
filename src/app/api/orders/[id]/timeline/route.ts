@@ -222,11 +222,11 @@ export const GET = withVenue(async function GET(
       return true
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orderId,
       orderNumber: order.orderNumber,
       timeline: deduped,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch order timeline:', error)
     return NextResponse.json(

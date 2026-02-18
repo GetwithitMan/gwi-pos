@@ -79,7 +79,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       terminal: {
         id: terminal.id,
@@ -89,7 +89,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         forceAllPrints: terminal.forceAllPrints,
         receiptPrinter: terminal.receiptPrinter,
       },
-    })
+    } })
   } catch (error) {
     console.error('Terminal heartbeat failed:', error)
     return NextResponse.json({ error: 'Heartbeat failed' }, { status: 500 })

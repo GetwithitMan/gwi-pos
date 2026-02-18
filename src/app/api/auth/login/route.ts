@@ -101,7 +101,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Check for dev access (Super Admin or has dev.access permission)
     const isDevAccess = permissions.includes('all') || permissions.includes('dev.access')
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       employee: {
         id: matchedEmployee.id,
         firstName: matchedEmployee.firstName,
@@ -120,7 +120,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         isDevAccess,
         availableRoles,
       },
-    })
+    } })
   } catch (error) {
     console.error('Login error:', error)
     return NextResponse.json(

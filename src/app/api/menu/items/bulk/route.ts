@@ -53,7 +53,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         categoryType: item!.category?.categoryType ?? null,
       }))
 
-    return NextResponse.json({ items: ordered })
+    return NextResponse.json({ data: { items: ordered } })
   } catch (error) {
     console.error('[menu/items/bulk] POST error:', error)
     return NextResponse.json({ error: 'Failed to fetch items' }, { status: 500 })

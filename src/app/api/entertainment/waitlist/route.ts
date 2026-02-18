@@ -85,14 +85,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       waitlist: enrichedWaitlist,
       counts: {
         waiting: enrichedWaitlist.filter(w => w.status === 'waiting').length,
         notified: enrichedWaitlist.filter(w => w.status === 'notified').length,
         seated: enrichedWaitlist.filter(w => w.status === 'seated').length,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch waitlist:', error)
     return NextResponse.json(
@@ -213,7 +213,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Dispatch real-time update
     dispatchFloorPlanUpdate(locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entry: {
         id: entry.id,
         customerName: entry.customerName,
@@ -230,7 +230,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         expiresAt: entry.expiresAt?.toISOString() || null,
       },
       message: `Added ${customerName || 'Table'} to waitlist at position ${entry.position}`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to add to waitlist:', error)
     return NextResponse.json(

@@ -29,7 +29,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seat: {
         id: seat.id,
         tableId: seat.tableId,
@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(
         angle: seat.angle,
         seatType: seat.seatType,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch seat:', error)
     return NextResponse.json(
@@ -108,7 +108,7 @@ export const PUT = withVenue(async function PUT(
 
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seat: {
         id: seat.id,
         tableId: seat.tableId,
@@ -119,7 +119,7 @@ export const PUT = withVenue(async function PUT(
         angle: seat.angle,
         seatType: seat.seatType,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update seat:', error)
     return NextResponse.json(
@@ -203,7 +203,7 @@ export const DELETE = withVenue(async function DELETE(
 
     dispatchFloorPlanUpdate(existingSeat.table.locationId, { async: true })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete seat:', error)
     return NextResponse.json(

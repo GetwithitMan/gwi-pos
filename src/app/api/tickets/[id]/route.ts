@@ -82,7 +82,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ticket: {
         id: ticket.id,
         ticketNumber: ticket.ticketNumber,
@@ -143,7 +143,7 @@ export const GET = withVenue(async function GET(
             }
           : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch ticket:', error)
     return NextResponse.json(
@@ -204,10 +204,10 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       ticket: updated,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update ticket:', error)
     return NextResponse.json(
@@ -272,11 +272,11 @@ export const DELETE = withVenue(async function DELETE(
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: 'Ticket cancelled successfully',
       ticketNumber: ticket.ticketNumber,
-    })
+    } })
   } catch (error) {
     console.error('Failed to cancel ticket:', error)
     return NextResponse.json(

@@ -143,7 +143,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         }
       })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalCoupons: coupons.length,
         activeCoupons: coupons.filter(c => c.isActive).length,
@@ -156,7 +156,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       dailyTrend: Object.values(dailyTrend).sort((a, b) => a.date.localeCompare(b.date)),
       byType: Object.values(byType),
       recentRedemptions,
-    })
+    } })
   } catch (error) {
     console.error('Coupon report error:', error)
     return NextResponse.json({ error: 'Failed to generate coupon report' }, { status: 500 })

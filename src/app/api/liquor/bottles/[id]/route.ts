@@ -69,7 +69,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: bottle.id,
       name: bottle.name,
       brand: bottle.brand,
@@ -94,7 +94,7 @@ export const GET = withVenue(async function GET(
         modifiers: bottle._count.spiritModifiers,
         recipes: bottle._count.recipeIngredients,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch bottle:', error)
     return NextResponse.json(
@@ -264,7 +264,7 @@ export const PUT = withVenue(async function PUT(
       return updatedBottle
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: bottle.id,
       name: bottle.name,
       brand: bottle.brand,
@@ -284,7 +284,7 @@ export const PUT = withVenue(async function PUT(
       inventoryItemId: existing.inventoryItemId,
       createdAt: bottle.createdAt,
       updatedAt: bottle.updatedAt,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update bottle:', error)
     return NextResponse.json(
@@ -357,7 +357,7 @@ export const DELETE = withVenue(async function DELETE(
       }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete bottle:', error)
     return NextResponse.json(

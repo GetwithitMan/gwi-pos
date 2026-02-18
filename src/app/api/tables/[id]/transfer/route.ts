@@ -114,7 +114,7 @@ export const POST = withVenue(async function POST(
     // Notify POS terminals of table transfer
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       table: {
         id: table.id,
@@ -126,7 +126,7 @@ export const POST = withVenue(async function POST(
       },
       ordersTransferred: openOrders.length,
       orderIds: openOrders.map(o => o.id),
-    })
+    } })
   } catch (error) {
     console.error('Failed to transfer table:', error)
     return NextResponse.json(

@@ -54,7 +54,7 @@ export const GET = withVenue(async function GET(req: Request) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       elements: elements.map((el) => ({
         id: el.id,
         name: el.name,
@@ -84,7 +84,7 @@ export const GET = withVenue(async function GET(req: Request) {
         waitlistCount: el.waitlistEntries.length,
         waitlistEntries: el.waitlistEntries,
       })),
-    })
+    } })
   } catch (error) {
     console.error('[floor-plan-elements] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch elements' }, { status: 500 })
@@ -235,7 +235,7 @@ export const POST = withVenue(async function POST(req: Request) {
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(locationId, { async: true })
 
-    return NextResponse.json({ element })
+    return NextResponse.json({ data: { element } })
   } catch (error) {
     console.error('[floor-plan-elements] POST error:', error)
     const message = error instanceof Error ? error.message : 'Unknown error'

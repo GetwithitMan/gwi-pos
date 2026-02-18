@@ -84,7 +84,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.auditLog.count({ where }),
     ])
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entries: entries.map(entry => ({
         id: entry.id,
         timestamp: entry.createdAt.toISOString(),
@@ -100,7 +100,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       total,
       limit,
       offset,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch audit activity log:', error)
     return NextResponse.json(

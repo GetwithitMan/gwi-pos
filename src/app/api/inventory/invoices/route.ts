@@ -43,12 +43,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { invoiceDate: 'desc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       invoices: invoices.map(inv => ({
         ...inv,
         totalAmount: Number(inv.totalAmount),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Invoices list error:', error)
     return NextResponse.json({ error: 'Failed to fetch invoices' }, { status: 500 })
@@ -134,7 +134,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       invoice: {
         ...invoice,
         totalAmount: Number(invoice.totalAmount),
@@ -145,7 +145,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           totalCost: Number(li.totalCost),
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Create invoice error:', error)
     if ((error as { code?: string }).code === 'P2002') {

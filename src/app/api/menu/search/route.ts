@@ -24,11 +24,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Require minimum 2 characters for search
     if (!query || query.trim().length < 2) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         directMatches: [],
         ingredientMatches: [],
         totalMatches: 0
-      })
+      } })
     }
 
     const searchQuery = query.trim()
@@ -182,7 +182,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalMatches = directMatches.length + totalIngredientItems
 
     // Prepare response
-    const response = NextResponse.json({
+    const response = NextResponse.json({ data: {
       directMatches: directMatches.map(item => ({
         id: item.id,
         name: item.name,
@@ -192,7 +192,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })),
       ingredientMatches,
       totalMatches
-    })
+    } })
 
     // Prevent caching
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')

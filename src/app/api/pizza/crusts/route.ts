@@ -65,10 +65,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...crust,
       price: Number(crust.price),
-    })
+    } })
   } catch (error) {
     console.error('Failed to create pizza crust:', error)
     return NextResponse.json({ error: 'Failed to create pizza crust' }, { status: 500 })

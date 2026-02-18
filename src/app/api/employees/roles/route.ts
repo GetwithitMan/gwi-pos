@@ -19,7 +19,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({ roles })
+    return NextResponse.json({ data: { roles } })
   } catch (error) {
     console.error('Failed to fetch roles:', error)
     return NextResponse.json({ error: 'Failed to fetch roles' }, { status: 500 })

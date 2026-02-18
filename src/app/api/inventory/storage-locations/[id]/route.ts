@@ -27,7 +27,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Storage location not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       storageLocation: {
         ...storageLocation,
         inventoryItems: storageLocation.inventoryItems.map(item => ({
@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(
           parLevel: item.parLevel ? Number(item.parLevel) : null,
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Get storage location error:', error)
     return NextResponse.json({ error: 'Failed to fetch storage location' }, { status: 500 })
@@ -74,7 +74,7 @@ export const PUT = withVenue(async function PUT(
       data: updateData,
     })
 
-    return NextResponse.json({ storageLocation })
+    return NextResponse.json({ data: { storageLocation } })
   } catch (error) {
     console.error('Update storage location error:', error)
     if ((error as { code?: string }).code === 'P2002') {
@@ -116,7 +116,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete storage location error:', error)
     return NextResponse.json({ error: 'Failed to delete storage location' }, { status: 500 })

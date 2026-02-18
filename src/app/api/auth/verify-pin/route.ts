@@ -68,7 +68,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Return minimal employee info for verification
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       employee: {
         id: matchedEmployee.id,
         firstName: matchedEmployee.firstName,
@@ -76,7 +76,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         role: matchedEmployee.role.name,
       },
       verified: true,
-    })
+    } })
   } catch (error) {
     console.error('PIN verification error:', error)
     return NextResponse.json(

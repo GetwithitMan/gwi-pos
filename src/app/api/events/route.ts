@@ -79,7 +79,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ],
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       events: events.map(event => ({
         id: event.id,
         name: event.name,
@@ -107,7 +107,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         })),
         createdAt: event.createdAt.toISOString(),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch events:', error)
     return NextResponse.json(
@@ -242,7 +242,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       event: {
         id: event.id,
         name: event.name,
@@ -265,7 +265,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       message: conflicts.length > 0
         ? `Event created as draft. ${conflicts.length} reservation(s) conflict with this event and must be resolved before publishing.`
         : 'Event created successfully. Use the publish endpoint to make it available for sale.',
-    })
+    } })
   } catch (error) {
     console.error('Failed to create event:', error)
     return NextResponse.json(

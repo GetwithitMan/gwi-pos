@@ -30,7 +30,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ storageLocations })
+    return NextResponse.json({ data: { storageLocations } })
   } catch (error) {
     console.error('Storage locations list error:', error)
     return NextResponse.json({ error: 'Failed to fetch storage locations' }, { status: 500 })
@@ -69,7 +69,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ storageLocation })
+    return NextResponse.json({ data: { storageLocation } })
   } catch (error) {
     console.error('Create storage location error:', error)
     if ((error as { code?: string }).code === 'P2002') {

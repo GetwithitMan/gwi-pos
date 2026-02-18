@@ -141,7 +141,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
       alertSentAt: error.alertSentAt,
     }))
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       errors: formattedErrors,
       pagination: {
@@ -150,7 +150,7 @@ export const GET = withVenue(async function GET(req: NextRequest) {
         offset,
         hasMore: offset + limit < total,
       },
-    })
+    } })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to fetch errors:', error)

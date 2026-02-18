@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(
 
     const waitMinutes = Math.floor((new Date().getTime() - entry.requestedAt.getTime()) / 1000 / 60)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entry: {
         id: entry.id,
         customerName: entry.customerName,
@@ -59,7 +59,7 @@ export const GET = withVenue(async function GET(
         seatedAt: entry.seatedAt?.toISOString() || null,
         expiresAt: entry.expiresAt?.toISOString() || null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch waitlist entry:', error)
     return NextResponse.json(
@@ -207,7 +207,7 @@ export const PATCH = withVenue(async function PATCH(
     // Dispatch real-time update
     dispatchFloorPlanUpdate(locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entry: {
         id: updatedEntry.id,
         customerName: updatedEntry.customerName,
@@ -224,7 +224,7 @@ export const PATCH = withVenue(async function PATCH(
         seatedAt: updatedEntry.seatedAt?.toISOString() || null,
       },
       message: `Updated waitlist entry status to ${status || 'modified'}`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update waitlist entry:', error)
     return NextResponse.json(
@@ -309,10 +309,10 @@ export const DELETE = withVenue(async function DELETE(
     // Dispatch real-time update
     dispatchFloorPlanUpdate(locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: `Removed ${entry.customerName || 'entry'} from waitlist`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to delete waitlist entry:', error)
     return NextResponse.json(

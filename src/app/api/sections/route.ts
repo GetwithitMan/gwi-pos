@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       sections: sections.map(section => ({
         id: section.id,
         name: section.name,
@@ -56,7 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             `${a.employee.firstName} ${a.employee.lastName}`,
         })),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch sections:', error)
     return NextResponse.json(
@@ -105,7 +105,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'created', entityId: section.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       section: {
         id: section.id,
         name: section.name,
@@ -121,7 +121,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         tableCount: 0,
         assignedEmployees: [],
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to create section:', error)
     return NextResponse.json(

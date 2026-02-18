@@ -52,7 +52,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: modifierGroup.id,
       name: modifierGroup.name,
       displayName: modifierGroup.displayName,
@@ -107,7 +107,7 @@ export const GET = withVenue(async function GET(
         id: link.menuItem.id,
         name: link.menuItem.name,
       }))
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch modifier group:', error)
     return NextResponse.json(
@@ -269,7 +269,7 @@ export const PUT = withVenue(async function PUT(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: modifierGroup.locationId, domain: 'menu', action: 'updated', entityId: id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: updated!.id,
       name: updated!.name,
       displayName: updated!.displayName,
@@ -313,7 +313,7 @@ export const PUT = withVenue(async function PUT(
           pourCost: mod.linkedBottleProduct.pourCost ? Number(mod.linkedBottleProduct.pourCost) : null,
         } : null,
       }))
-    })
+    } })
   } catch (error) {
     console.error('Failed to update modifier group:', error)
     return NextResponse.json(
@@ -344,7 +344,7 @@ export const DELETE = withVenue(async function DELETE(
       void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'deleted', entityId: id })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete modifier group:', error)
     return NextResponse.json(

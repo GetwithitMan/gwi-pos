@@ -65,7 +65,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       screen: {
         id: screen.id,
@@ -79,7 +79,7 @@ export const POST = withVenue(async function POST(
         playSound: screen.playSound,
         flashOnNew: screen.flashOnNew,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update KDS screen heartbeat:', error)
     return NextResponse.json({ error: 'Failed to update heartbeat' }, { status: 500 })

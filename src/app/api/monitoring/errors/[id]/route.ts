@@ -50,7 +50,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       error: {
         ...error,
@@ -59,7 +59,7 @@ export const GET = withVenue(async function GET(
           name: error.employee.displayName || `${error.employee.firstName} ${error.employee.lastName}`,
         } : null,
       },
-    })
+    } })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to fetch error details:', error)
@@ -132,7 +132,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       error: {
         ...updatedError,
@@ -141,7 +141,7 @@ export const PUT = withVenue(async function PUT(
           name: updatedError.employee.displayName || `${updatedError.employee.firstName} ${updatedError.employee.lastName}`,
         } : null,
       },
-    })
+    } })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to update error:', error)
@@ -170,10 +170,10 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: 'Error log deleted',
-    })
+    } })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to delete error:', error)

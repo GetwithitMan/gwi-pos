@@ -34,7 +34,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       role: {
         id: role.id,
         name: role.name,
@@ -47,7 +47,7 @@ export const GET = withVenue(async function GET(
         createdAt: role.createdAt.toISOString(),
         updatedAt: role.updatedAt.toISOString(),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch role:', error)
     return NextResponse.json(
@@ -116,7 +116,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       role: {
         id: role.id,
         name: role.name,
@@ -127,7 +127,7 @@ export const PUT = withVenue(async function PUT(
         trackLaborCost: role.trackLaborCost,
         updatedAt: role.updatedAt.toISOString(),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update role:', error)
     return NextResponse.json(
@@ -175,7 +175,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete role:', error)
     return NextResponse.json(

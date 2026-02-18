@@ -18,7 +18,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ printer })
+    return NextResponse.json({ data: { printer } })
   } catch (error) {
     console.error('Failed to fetch printer:', error)
     return NextResponse.json({ error: 'Failed to fetch printer' }, { status: 500 })
@@ -88,7 +88,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({ printer })
+    return NextResponse.json({ data: { printer } })
   } catch (error) {
     console.error('Failed to update printer:', error)
     return NextResponse.json({ error: 'Failed to update printer' }, { status: 500 })
@@ -118,7 +118,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete printer:', error)
     return NextResponse.json({ error: 'Failed to delete printer' }, { status: 500 })

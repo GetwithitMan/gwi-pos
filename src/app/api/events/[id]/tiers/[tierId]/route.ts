@@ -47,7 +47,7 @@ export const GET = withVenue(async function GET(
       return acc
     }, {} as Record<string, number>)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       tier: {
         id: tier.id,
         eventId: tier.eventId,
@@ -78,7 +78,7 @@ export const GET = withVenue(async function GET(
         createdAt: tier.createdAt.toISOString(),
         updatedAt: tier.updatedAt.toISOString(),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch pricing tier:', error)
     return NextResponse.json(
@@ -172,7 +172,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       tier: {
         id: updated.id,
@@ -188,7 +188,7 @@ export const PUT = withVenue(async function PUT(
         sortOrder: updated.sortOrder,
         isActive: updated.isActive,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update pricing tier:', error)
     return NextResponse.json(
@@ -254,10 +254,10 @@ export const DELETE = withVenue(async function DELETE(
         db.eventPricingTier.update({ where: { id: tierId }, data: { deletedAt: now } }),
       ])
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         message: 'Pricing tier permanently deleted',
-      })
+      } })
     } else {
       // Soft delete
       await db.eventPricingTier.update({
@@ -268,10 +268,10 @@ export const DELETE = withVenue(async function DELETE(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         message: 'Pricing tier deactivated',
-      })
+      } })
     }
   } catch (error) {
     console.error('Failed to delete pricing tier:', error)

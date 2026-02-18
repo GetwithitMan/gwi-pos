@@ -56,12 +56,12 @@ export const POST = withVenue(async function POST(
       data: { deletedAt: new Date(), status: 'available' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       releasedCount: result.count,
       releasedTicketIds: ticketsToRelease.map(t => t.id),
       message: `${result.count} ticket(s) released successfully`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to release tickets:', error)
     return NextResponse.json(
@@ -98,13 +98,13 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date(), status: 'available' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       releasedCount: result.count,
       message: expiredOnly
         ? `${result.count} expired hold(s) released`
         : `${result.count} held ticket(s) released`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to release tickets:', error)
     return NextResponse.json(

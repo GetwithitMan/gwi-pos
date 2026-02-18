@@ -215,7 +215,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Calculate item pairings (frequently ordered together)
     const pairings = await calculateItemPairings(orderItems)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalRevenue,
         totalCost,
@@ -239,7 +239,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         start: dateFilter.gte,
         end: dateFilter.lte || new Date(),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate product mix report:', error)
     return NextResponse.json(

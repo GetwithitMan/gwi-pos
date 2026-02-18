@@ -35,7 +35,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       roles: roles.map(role => ({
         id: role.id,
         name: role.name,
@@ -53,7 +53,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         value,
         category: value.split('.')[0],
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch roles:', error)
     return NextResponse.json(
@@ -116,7 +116,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: role.id,
       name: role.name,
       permissions: getPermissionsArray(role.permissions),
@@ -125,7 +125,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       cashHandlingMode: role.cashHandlingMode,
       trackLaborCost: role.trackLaborCost,
       createdAt: role.createdAt.toISOString(),
-    })
+    } })
   } catch (error) {
     console.error('Failed to create role:', error)
     return NextResponse.json(

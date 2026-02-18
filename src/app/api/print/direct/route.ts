@@ -49,12 +49,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Send to printer via TCP
     await sendToPrinter(printerIp, printerPort, buffer)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: `Sent ${buffer.length} bytes to ${printerIp}:${printerPort}`,
       bytesSent: buffer.length,
       ...(warning && { warning }),
-    })
+    } })
   } catch (error) {
     console.error('Direct print failed:', error)
     return NextResponse.json(

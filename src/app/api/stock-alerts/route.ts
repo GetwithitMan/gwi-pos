@@ -29,7 +29,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
     const itemMap = Object.fromEntries(items.map(i => [i.id, i]))
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       alerts: alerts.map(a => ({
         id: a.id,
         menuItemId: a.menuItemId,
@@ -49,7 +49,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         lowStock: alerts.filter(a => a.alertType === 'low_stock' && a.status === 'active').length,
         outOfStock: alerts.filter(a => a.alertType === 'out_of_stock' && a.status === 'active').length,
       },
-    })
+    } })
   } catch (error) {
     console.error('Stock alerts error:', error)
     return NextResponse.json({ error: 'Failed to fetch alerts' }, { status: 500 })
@@ -88,7 +88,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ success: true, updatedCount: alertIds.length })
+    return NextResponse.json({ data: { success: true, updatedCount: alertIds.length } })
   } catch (error) {
     console.error('Update alerts error:', error)
     return NextResponse.json({ error: 'Failed to update alerts' }, { status: 500 })

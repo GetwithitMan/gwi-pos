@@ -185,7 +185,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       discount: {
         id: discount.id,
         name: discount.name,
@@ -199,7 +199,7 @@ export const POST = withVenue(async function POST(
         total: totals.total,
       },
       requiresApproval,
-    })
+    } })
   } catch (error) {
     console.error('Failed to apply discount:', error)
     return NextResponse.json(
@@ -230,7 +230,7 @@ export const GET = withVenue(async function GET(
       orderBy: { createdAt: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       discounts: discounts.map(d => ({
         id: d.id,
         name: d.name,
@@ -242,7 +242,7 @@ export const GET = withVenue(async function GET(
         reason: d.reason,
         createdAt: d.createdAt.toISOString(),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch order discounts:', error)
     return NextResponse.json(
@@ -315,7 +315,7 @@ export const DELETE = withVenue(async function DELETE(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       orderTotals: {
         subtotal: totals.subtotal,
@@ -323,7 +323,7 @@ export const DELETE = withVenue(async function DELETE(
         taxTotal: totals.taxTotal,
         total: totals.total,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to remove discount:', error)
     return NextResponse.json(

@@ -321,7 +321,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const empName = (emp: { displayName: string | null; firstName: string; lastName: string }) =>
       emp.displayName || `${emp.firstName} ${emp.lastName}`
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       byEmployee: Array.from(employeeSummaries.values()).map(emp => ({
         ...emp,
         grossTips: Math.round(emp.grossTips * 100) / 100,
@@ -382,7 +382,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         totalCollected: Math.round(summary.totalCollected * 100) / 100,
         totalPaidOut: Math.round(summary.totalPaidOut * 100) / 100,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate tips report:', error)
     return NextResponse.json(

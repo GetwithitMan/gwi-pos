@@ -355,7 +355,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       grandTotal: Math.round(payrollReport.reduce((sum, e) => sum + e.grossPay, 0) * 100) / 100,
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary,
       employees: payrollReport,
       filters: {
@@ -364,7 +364,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         employeeId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate payroll report:', error)
     return NextResponse.json(

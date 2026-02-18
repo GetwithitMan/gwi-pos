@@ -23,13 +23,13 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Waste log entry not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entry: {
         ...entry,
         quantity: Number(entry.quantity),
         costImpact: entry.costImpact ? Number(entry.costImpact) : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Get waste log entry error:', error)
     return NextResponse.json({ error: 'Failed to fetch waste log entry' }, { status: 500 })
@@ -67,13 +67,13 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entry: {
         ...entry,
         quantity: Number(entry.quantity),
         costImpact: entry.costImpact ? Number(entry.costImpact) : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Update waste log entry error:', error)
     return NextResponse.json({ error: 'Failed to update waste log entry' }, { status: 500 })
@@ -137,7 +137,7 @@ export const DELETE = withVenue(async function DELETE(
       }),
     ])
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete waste log entry error:', error)
     return NextResponse.json({ error: 'Failed to delete waste log entry' }, { status: 500 })

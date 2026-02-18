@@ -204,7 +204,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ? (totalVarianceCost / totalTheoreticalCost) * 100
       : 0
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       report: {
         locationId,
         startDate: start.toISOString(),
@@ -222,7 +222,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           itemsUnderTheoretical: varianceItems.filter(i => i.variance < 0).length,
         },
       },
-    })
+    } })
   } catch (error) {
     console.error('Variance report error:', error)
     return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 })

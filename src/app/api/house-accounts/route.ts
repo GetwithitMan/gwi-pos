@@ -132,11 +132,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...account,
       creditLimit: Number(account.creditLimit),
       currentBalance: Number(account.currentBalance),
-    }, { status: 201 })
+    } }, { status: 201 })
   } catch (error) {
     console.error('Failed to create house account:', error)
     return NextResponse.json(

@@ -76,7 +76,7 @@ export const GET = withVenue(async function GET(
       bankAccountNumber: null, // Never return full account number
     }
 
-    return NextResponse.json({ employee: safeEmployee })
+    return NextResponse.json({ data: { employee: safeEmployee } })
   } catch (error) {
     console.error('Failed to fetch employee payment info:', error)
     return NextResponse.json(
@@ -160,13 +160,13 @@ export const PUT = withVenue(async function PUT(
       data: updateData,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: 'Payment preferences updated',
       employee: {
         id: updated.id,
         paymentMethod: updated.paymentMethod,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update employee payment info:', error)
     return NextResponse.json(

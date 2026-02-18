@@ -169,13 +169,13 @@ export const DELETE = withVenue(async function DELETE(
     }).catch(() => {})
 
     if (merged) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'Last split merged back to parent',
         merged: true,
-      })
+      } })
     }
 
-    return NextResponse.json({ message: 'Check deleted' })
+    return NextResponse.json({ data: { message: 'Check deleted' } })
   } catch (error) {
     return handleApiError(error, 'Failed to delete check')
   }

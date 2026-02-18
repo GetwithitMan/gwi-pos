@@ -52,7 +52,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       table: {
         id: table.id,
         name: table.name,
@@ -86,7 +86,7 @@ export const GET = withVenue(async function GET(
           })),
         } : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch table:', error)
     return NextResponse.json(
@@ -206,7 +206,7 @@ export const PUT = withVenue(async function PUT(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: table.locationId, domain: 'floorplan', action: 'updated', entityId: table.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       table: {
         id: table.id,
         name: table.name,
@@ -223,7 +223,7 @@ export const PUT = withVenue(async function PUT(
         status: table.status,
         section: table.section,
       },
-    })
+    } })
   } catch (error) {
     // Handle Prisma P2025 error (record not found)
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
@@ -289,7 +289,7 @@ export const DELETE = withVenue(async function DELETE(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: table.locationId, domain: 'floorplan', action: 'deleted', entityId: id })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete table:', error)
     return NextResponse.json(

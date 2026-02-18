@@ -133,12 +133,12 @@ export const GET = withVenue(async function GET(
       }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orderId,
       currentCourse: order.currentCourse,
       courseMode: order.courseMode,
       courses: Object.values(courses).sort((a, b) => a.courseNumber - b.courseNumber),
-    })
+    } })
   } catch (error) {
     console.error('Failed to get courses:', error)
     return NextResponse.json(
@@ -183,10 +183,10 @@ export const POST = withVenue(async function POST(
         data: { courseMode },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         courseMode: updated.courseMode,
-      })
+      } })
     }
 
     // Handle set current course
@@ -196,10 +196,10 @@ export const POST = withVenue(async function POST(
         data: { currentCourse: courseNumber },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         currentCourse: updated.currentCourse,
-      })
+      } })
     }
 
     // For other actions, courseNumber is required
@@ -236,11 +236,11 @@ export const POST = withVenue(async function POST(
           })
         }
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsFired: firedItems.count,
-        })
+        } })
 
       case 'fire_all':
         // Fire all items in this course including held items
@@ -267,11 +267,11 @@ export const POST = withVenue(async function POST(
           })
         }
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsFired: allFiredItems.count,
-        })
+        } })
 
       case 'hold':
         // Hold all pending items in this course
@@ -288,11 +288,11 @@ export const POST = withVenue(async function POST(
           },
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsHeld: heldItems.count,
-        })
+        } })
 
       case 'release':
         // Release hold on all items in this course
@@ -309,11 +309,11 @@ export const POST = withVenue(async function POST(
           },
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsReleased: releasedItems.count,
-        })
+        } })
 
       case 'mark_ready':
         // Mark all fired items in course as ready
@@ -331,11 +331,11 @@ export const POST = withVenue(async function POST(
           },
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsReady: readyItems.count,
-        })
+        } })
 
       case 'mark_served':
         // Mark all ready items in course as served
@@ -353,11 +353,11 @@ export const POST = withVenue(async function POST(
           },
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           courseNumber,
           itemsServed: servedItems.count,
-        })
+        } })
 
       default:
         return NextResponse.json(

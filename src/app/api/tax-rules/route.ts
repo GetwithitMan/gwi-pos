@@ -17,7 +17,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { priority: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       taxRules: taxRules.map(r => ({
         id: r.id,
         name: r.name,
@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isCompounded: r.isCompounded,
         isActive: r.isActive,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Tax rules error:', error)
     return NextResponse.json({ error: 'Failed to fetch tax rules' }, { status: 500 })
@@ -72,7 +72,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       taxRule: {
         id: taxRule.id,
         name: taxRule.name,
@@ -81,7 +81,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         appliesTo: taxRule.appliesTo,
         isActive: taxRule.isActive,
       },
-    })
+    } })
   } catch (error) {
     console.error('Create tax rule error:', error)
     return NextResponse.json({ error: 'Failed to create tax rule' }, { status: 500 })

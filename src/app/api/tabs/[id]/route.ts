@@ -52,7 +52,7 @@ export const GET = withVenue(async function GET(
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + Number(p.totalAmount), 0)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: tab.id,
       tabName: tab.tabName || `Tab #${tab.orderNumber}`,
       orderNumber: tab.orderNumber,
@@ -107,7 +107,7 @@ export const GET = withVenue(async function GET(
       })),
       openedAt: tab.openedAt.toISOString(),
       paidAt: tab.paidAt?.toISOString() || null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch tab:', error)
     return NextResponse.json(
@@ -203,7 +203,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: updated.id,
       tabName: updated.tabName || `Tab #${updated.orderNumber}`,
       orderNumber: updated.orderNumber,
@@ -219,7 +219,7 @@ export const PUT = withVenue(async function PUT(
         amount: updated.preAuthAmount ? Number(updated.preAuthAmount) : null,
         expiresAt: updated.preAuthExpiresAt?.toISOString(),
       } : null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update tab:', error)
     return NextResponse.json(
@@ -276,7 +276,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.order.update({ where: { id }, data: { deletedAt: new Date() } })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete tab:', error)
     return NextResponse.json(

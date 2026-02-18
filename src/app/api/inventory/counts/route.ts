@@ -33,14 +33,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { countDate: 'desc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       counts: counts.map(count => ({
         ...count,
         varianceValue: count.varianceValue ? Number(count.varianceValue) : null,
         expectedValue: count.expectedValue ? Number(count.expectedValue) : null,
         countedValue: count.countedValue ? Number(count.countedValue) : null,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Inventory counts list error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory counts' }, { status: 500 })
@@ -134,7 +134,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ count })
+    return NextResponse.json({ data: { count } })
   } catch (error) {
     console.error('Create inventory count error:', error)
     return NextResponse.json({ error: 'Failed to create inventory count' }, { status: 500 })

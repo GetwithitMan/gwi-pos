@@ -43,10 +43,10 @@ export const GET = withVenue(async function GET(
       ...(personalLayout || {}),
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       layout: mergedLayout,
       hasPersonalSettings: !!personalLayout,
-    })
+    } })
   } catch (error) {
     console.error('Failed to get employee layout:', error)
     return NextResponse.json(
@@ -103,10 +103,10 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       layout: { ...DEFAULT_LAYOUT_SETTINGS, ...updatedLayout },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update employee layout:', error)
     return NextResponse.json(
@@ -131,10 +131,10 @@ export const DELETE = withVenue(async function DELETE(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       layout: DEFAULT_LAYOUT_SETTINGS,
-    })
+    } })
   } catch (error) {
     console.error('Failed to reset employee layout:', error)
     return NextResponse.json(

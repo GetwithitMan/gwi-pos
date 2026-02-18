@@ -600,7 +600,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // BUILD RESPONSE
     // ============================================
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       employee: {
         id: employee.id,
         name: employee.displayName || `${employee.firstName} ${employee.lastName}`,
@@ -786,7 +786,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         bevAvg: round(bevAvg),
         retailAvg: round(retailAvg),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate employee shift report:', error)
     return NextResponse.json(

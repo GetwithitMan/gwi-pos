@@ -87,7 +87,7 @@ export const POST = withVenue(async function POST(
       return updated
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: 'Ticket refunded successfully',
       refund: {
@@ -105,7 +105,7 @@ export const POST = withVenue(async function POST(
         id: ticket.event.id,
         name: ticket.event.name,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to refund ticket:', error)
     return NextResponse.json(

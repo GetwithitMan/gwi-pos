@@ -182,13 +182,13 @@ export const POST = withVenue(withTiming(async function POST(
           where: { id: orderId },
           data: { status: 'paid', paidAt: new Date() },
         })
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           orderId,
           orderStatus: 'paid',
           message: 'Order closed with $0 balance (all items voided/comped)',
           totals: { subtotal: 0, tax: 0, total: 0, tip: 0 },
-        })
+        } })
       }
     }
 
@@ -213,7 +213,7 @@ export const POST = withVenue(withTiming(async function POST(
       )
       if (duplicatePayments.length > 0) {
         // Return success with existing data — don't process again
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           duplicate: true,
           payments: duplicatePayments.map(p => ({
@@ -226,7 +226,7 @@ export const POST = withVenue(withTiming(async function POST(
           })),
           orderStatus: order.status || 'unknown',
           remainingBalance: 0,
-        })
+        } })
       }
     }
 
@@ -271,12 +271,12 @@ export const POST = withVenue(withTiming(async function POST(
         where: { id: orderId },
         data: { status: 'paid', paidAt: new Date() },
       })
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         orderId,
         message: 'Order closed with $0 balance (all items voided/comped)',
         totals: { subtotal: 0, tax: 0, total: 0, tip: 0 },
-      })
+      } })
     }
 
     // Calculate total being paid now
@@ -1102,7 +1102,7 @@ export const POST = withVenue(withTiming(async function POST(
     }
 
     // Return response
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       payments: createdPayments.map(p => ({
         id: p.id,
@@ -1124,7 +1124,7 @@ export const POST = withVenue(withTiming(async function POST(
       // Loyalty info
       loyaltyPointsEarned: pointsEarned,
       customerId: order.customer?.id || null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to process payment:', error)
 

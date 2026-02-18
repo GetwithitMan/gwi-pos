@@ -15,12 +15,12 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Size not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...size,
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
-    })
+    } })
   } catch (error) {
     console.error('Failed to get pizza size:', error)
     return NextResponse.json({ error: 'Failed to get pizza size' }, { status: 500 })
@@ -66,12 +66,12 @@ export const PATCH = withVenue(async function PATCH(
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...size,
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
-    })
+    } })
   } catch (error) {
     console.error('Failed to update pizza size:', error)
     return NextResponse.json({ error: 'Failed to update pizza size' }, { status: 500 })
@@ -91,7 +91,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { isActive: false }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete pizza size:', error)
     return NextResponse.json({ error: 'Failed to delete pizza size' }, { status: 500 })

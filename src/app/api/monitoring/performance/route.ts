@@ -65,12 +65,12 @@ export const POST = withVenue(async function POST(req: NextRequest) {
 
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       id: performanceLog.id,
       exceededBy,
       percentOver: percentOver.toFixed(1),
-    })
+    } })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to log performance issue:', error)

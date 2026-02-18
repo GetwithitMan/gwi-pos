@@ -90,7 +90,7 @@ export const GET = withVenue(async function GET(
       ticketCountMap.get(stat.tableId)![stat.status] = stat._count.id
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       eventId: id,
       eventName: event.name,
       ticketingMode: event.ticketingMode,
@@ -132,7 +132,7 @@ export const GET = withVenue(async function GET(
           hasConfiguration: !!config,
         }
       }),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch table configurations:', error)
     return NextResponse.json(
@@ -209,11 +209,11 @@ export const POST = withVenue(async function POST(
       )
     )
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       configured: results.length,
       message: `${results.length} table configuration(s) updated`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to configure tables:', error)
     return NextResponse.json(

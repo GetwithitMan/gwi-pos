@@ -208,7 +208,7 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
       }),
     ])
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Error deleting modifier group:', error)
     return NextResponse.json({ error: 'Failed to delete modifier group' }, { status: 500 })

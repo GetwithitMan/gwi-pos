@@ -117,7 +117,7 @@ export const GET = withVenue(async function GET(
     const heldCount = seatsWithStatus.filter(s => s.status === 'held').length
     const soldCount = seatsWithStatus.filter(s => s.status === 'sold').length
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       eventId: id,
       eventName: event.name,
       ticketingMode: event.ticketingMode,
@@ -154,7 +154,7 @@ export const GET = withVenue(async function GET(
             ? 'partial'
             : 'available',
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch table configuration:', error)
     return NextResponse.json(
@@ -274,7 +274,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       configuration: {
         tableId: config.tableId,
@@ -287,7 +287,7 @@ export const PUT = withVenue(async function PUT(
         minPartySize: config.minPartySize,
         maxPartySize: config.maxPartySize,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update table configuration:', error)
     return NextResponse.json(
@@ -343,10 +343,10 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: 'Table configuration removed (reset to defaults)',
-    })
+    } })
   } catch (error) {
     console.error('Failed to delete table configuration:', error)
     return NextResponse.json(

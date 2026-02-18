@@ -176,7 +176,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    const response = NextResponse.json({
+    const response = NextResponse.json({ data: {
       elements: elementsWithOrders,
       summary: {
         total: elementsWithOrders.length,
@@ -186,7 +186,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         maintenance: elementsWithOrders.filter(i => i.status === 'maintenance').length,
         totalWaitlist: elementsWithOrders.reduce((sum, i) => sum + i.waitlistCount, 0),
       },
-    })
+    } })
 
     // Prevent caching of this dynamic data
     response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')

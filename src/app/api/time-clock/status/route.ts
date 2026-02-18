@@ -26,11 +26,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       clockedIn: !!activeEntry,
       entryId: activeEntry?.id || null,
       clockInTime: activeEntry?.clockIn.toISOString() || null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to check clock-in status:', error)
     return NextResponse.json(

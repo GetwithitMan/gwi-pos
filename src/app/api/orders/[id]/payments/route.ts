@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + Number(p.totalAmount), 0)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orderId: order.id,
       orderTotal,
       paidAmount,
@@ -54,7 +54,7 @@ export const GET = withVenue(async function GET(
         refundedAmount: Number(p.refundedAmount),
         processedAt: p.processedAt.toISOString(),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch payments:', error)
     return NextResponse.json(

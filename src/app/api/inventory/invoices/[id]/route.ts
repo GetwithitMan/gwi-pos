@@ -30,7 +30,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       invoice: {
         ...invoice,
         totalAmount: Number(invoice.totalAmount),
@@ -41,7 +41,7 @@ export const GET = withVenue(async function GET(
           totalCost: Number(li.totalCost),
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Get invoice error:', error)
     return NextResponse.json({ error: 'Failed to fetch invoice' }, { status: 500 })
@@ -181,12 +181,12 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       invoice: {
         ...invoice,
         totalAmount: invoice ? Number(invoice.totalAmount) : 0,
       },
-    })
+    } })
   } catch (error) {
     console.error('Update invoice error:', error)
     return NextResponse.json({ error: 'Failed to update invoice' }, { status: 500 })
@@ -220,7 +220,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete invoice error:', error)
     return NextResponse.json({ error: 'Failed to delete invoice' }, { status: 500 })

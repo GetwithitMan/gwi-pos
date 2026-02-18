@@ -42,7 +42,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Section not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ section })
+    return NextResponse.json({ data: { section } })
   } catch (error) {
     console.error('[sections/[id]] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch section' }, { status: 500 })
@@ -108,7 +108,7 @@ export const PUT = withVenue(async function PUT(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated', entityId: id })
 
-    return NextResponse.json({ section })
+    return NextResponse.json({ data: { section } })
   } catch (error) {
     console.error('[sections/[id]] PUT error:', error)
     return NextResponse.json({ error: 'Failed to update section' }, { status: 500 })
@@ -163,7 +163,7 @@ export const DELETE = withVenue(async function DELETE(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'deleted', entityId: id })
 
-    return NextResponse.json({ success: true, tablesMovedToNoSection: tablesInSection })
+    return NextResponse.json({ data: { success: true, tablesMovedToNoSection: tablesInSection } })
   } catch (error) {
     console.error('[sections/[id]] DELETE error:', error)
     return NextResponse.json({ error: 'Failed to delete section' }, { status: 500 })

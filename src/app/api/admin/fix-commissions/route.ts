@@ -56,11 +56,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const menuItemIds = menuItemsWithCommission.map(mi => mi.id)
 
     if (menuItemIds.length === 0) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'No menu items with commission settings found',
         itemsUpdated: 0,
         ordersUpdated: 0,
-      })
+      } })
     }
 
     // Find all order items that have commission-enabled menu items
@@ -118,7 +118,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (dryRun) {
       // Return what would be updated without making changes
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         dryRun: true,
         message: 'Dry run complete - no changes made',
         menuItemsWithCommission: menuItemsWithCommission.map(mi => ({
@@ -131,7 +131,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ordersToUpdate: Object.keys(orderUpdates).length,
         itemDetails: itemUpdates.slice(0, 20), // Show first 20 for preview
         totalCommissionToAdd: itemUpdates.reduce((sum, i) => sum + i.commissionAmount, 0),
-      })
+      } })
     }
 
     // Apply the updates
@@ -165,13 +165,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       ordersUpdated++
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       dryRun: false,
       message: 'Commission fix complete',
       itemsUpdated,
       ordersUpdated,
       totalCommissionAdded: itemUpdates.reduce((sum, i) => sum + i.commissionAmount, 0),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fix commissions:', error)
     return NextResponse.json(
@@ -221,7 +221,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       menuItemsWithCommission: menuItemsWithCommission.map(mi => ({
         id: mi.id,
         name: mi.name,
@@ -235,7 +235,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         apply: 'POST with { "dryRun": false } to apply changes',
         locationId: 'Optionally add "locationId" to filter by location',
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to preview commission fix:', error)
     return NextResponse.json(

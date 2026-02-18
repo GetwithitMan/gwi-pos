@@ -118,7 +118,7 @@ export const GET = withVenue(async function GET(
         createdAt: res.createdAt.toISOString(),
       }))
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       eventId: event.id,
       eventName: event.name,
       eventDate: event.eventDate.toISOString().split('T')[0],
@@ -129,7 +129,7 @@ export const GET = withVenue(async function GET(
       conflictCount: conflicts.length,
       totalAffectedGuests: conflicts.reduce((sum, c) => sum + c.partySize, 0),
       conflicts,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch conflicts:', error)
     return NextResponse.json(

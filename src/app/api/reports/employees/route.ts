@@ -304,7 +304,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         totalOrders: Object.values(employees).reduce((sum, e) => sum + e.orders, 0),
       }))
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalEmployees: employeeReport.length,
         totalOrders,
@@ -323,7 +323,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         employeeId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate employee report:', error)
     return NextResponse.json(

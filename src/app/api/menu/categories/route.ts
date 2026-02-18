@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       categories: categories.map(c => ({
         id: c.id,
         name: c.name,
@@ -41,7 +41,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isActive: c.isActive,
         itemCount: c._count.menuItems,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch categories:', error)
     return NextResponse.json(
@@ -108,7 +108,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: category.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
       color: category.color,
@@ -117,7 +117,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isActive: category.isActive,
       printerIds: category.printerIds,
       itemCount: 0
-    })
+    } })
   } catch (error) {
     console.error('Failed to create category:', error)
     return NextResponse.json(

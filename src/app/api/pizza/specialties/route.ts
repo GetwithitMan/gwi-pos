@@ -126,7 +126,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...specialty,
       toppings: specialty.toppings as Array<{
         toppingId: string
@@ -138,7 +138,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ...specialty.menuItem,
         price: Number(specialty.menuItem.price),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to create pizza specialty:', error)
     return NextResponse.json({ error: 'Failed to create pizza specialty' }, { status: 500 })

@@ -162,7 +162,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       logs,
       summary: {
         ...summary,
@@ -176,7 +176,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         start: start.toISOString(),
         end: end.toISOString(),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch void report:', error)
     return NextResponse.json(

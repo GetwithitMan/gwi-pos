@@ -35,7 +35,7 @@ export const GET = withVenue(async function GET(
       orderBy: { seatNumber: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seats: seats.map(seat => ({
         id: seat.id,
         tableId: seat.tableId,
@@ -53,7 +53,7 @@ export const GET = withVenue(async function GET(
         shape: table.shape,
         capacity: table.capacity,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch seats:', error)
     return NextResponse.json(
@@ -146,7 +146,7 @@ export const POST = withVenue(async function POST(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seat: {
         id: seat.id,
         tableId: seat.tableId,
@@ -168,7 +168,7 @@ export const POST = withVenue(async function POST(
         seatType: s.seatType,
         isActive: s.isActive,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to create seat:', error)
     return NextResponse.json(

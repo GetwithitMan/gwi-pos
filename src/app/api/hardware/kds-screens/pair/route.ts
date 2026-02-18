@@ -57,7 +57,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // Create response with httpOnly cookie for security
-    const response = NextResponse.json({
+    const response = NextResponse.json({ data: {
       success: true,
       deviceToken, // Also return in body for localStorage fallback
       screen: {
@@ -74,7 +74,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         playSound: screen.playSound,
         flashOnNew: screen.flashOnNew,
       },
-    })
+    } })
 
     // Set httpOnly cookie - lasts 1 year, cannot be read by JavaScript
     const isProduction = process.env.NODE_ENV === 'production'

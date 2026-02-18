@@ -50,7 +50,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       employees: employees.map(emp => ({
         id: emp.id,
         firstName: emp.firstName,
@@ -76,7 +76,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch employees:', error)
     return NextResponse.json(
@@ -162,7 +162,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'employees', action: 'created', entityId: employee.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: employee.id,
       firstName: employee.firstName,
       lastName: employee.lastName,
@@ -179,7 +179,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       isActive: employee.isActive,
       color: employee.color,
       createdAt: employee.createdAt.toISOString(),
-    })
+    } })
   } catch (error) {
     console.error('Failed to create employee:', error)
 

@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Inventory count not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       count: {
         ...count,
         varianceValue: count.varianceValue ? Number(count.varianceValue) : null,
@@ -58,7 +58,7 @@ export const GET = withVenue(async function GET(
           },
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Get inventory count error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory count' }, { status: 500 })
@@ -227,14 +227,14 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       count: {
         ...count,
         varianceValue: count.varianceValue ? Number(count.varianceValue) : null,
         expectedValue: count.expectedValue ? Number(count.expectedValue) : null,
         countedValue: count.countedValue ? Number(count.countedValue) : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Update inventory count error:', error)
     return NextResponse.json({ error: 'Failed to update inventory count' }, { status: 500 })
@@ -268,7 +268,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete inventory count error:', error)
     return NextResponse.json({ error: 'Failed to delete inventory count' }, { status: 500 })

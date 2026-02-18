@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       screens: screens.map((s) => ({
         id: s.id,
         locationId: s.locationId,
@@ -68,7 +68,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           station: st.station,
         })),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch KDS screens:', error)
     return NextResponse.json({ error: 'Failed to fetch KDS screens' }, { status: 500 })
@@ -166,7 +166,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ screen: completeScreen })
+    return NextResponse.json({ data: { screen: completeScreen } })
   } catch (error) {
     console.error('Failed to create KDS screen:', error)
     // Check for unique constraint violation

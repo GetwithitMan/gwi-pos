@@ -41,7 +41,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     if (!settings) {
       // Return defaults if no settings exist
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         settings: {
           id: null,
           locationId,
@@ -56,10 +56,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           updatedAt: null,
         },
         isDefault: true,
-      })
+      } })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       settings: {
         ...settings,
         // Tracking mode
@@ -97,7 +97,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           : DEFAULT_SETTINGS.multiplierTriple,
       },
       isDefault: false,
-    })
+    } })
   } catch (error) {
     console.error('Get inventory settings error:', error)
     return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 })
@@ -183,7 +183,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       update: updateData,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       settings: {
         ...settings,
         varianceAlertPct: settings.varianceAlertPct
@@ -212,7 +212,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           ? Number(settings.multiplierTriple)
           : DEFAULT_SETTINGS.multiplierTriple,
       },
-    })
+    } })
   } catch (error) {
     console.error('Save inventory settings error:', error)
     return NextResponse.json({ error: 'Failed to save settings' }, { status: 500 })

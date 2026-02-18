@@ -101,11 +101,11 @@ export const POST = withVenue(async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       id: healthCheck.id,
       status: healthCheck.status,
-    })
+    } })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to log health check:', error)
@@ -170,12 +170,12 @@ export const GET = withVenue(async function GET(req: NextRequest) {
 
     const overallStatus = hasDown ? 'DOWN' : hasDegraded ? 'DEGRADED' : 'HEALTHY'
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       overallStatus,
       checks: healthStatus,
       timestamp: new Date(),
-    })
+    } })
 
   } catch (error) {
     console.error('[Monitoring API] Failed to get health status:', error)

@@ -34,7 +34,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'KDS screen not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ screen })
+    return NextResponse.json({ data: { screen } })
   } catch (error) {
     console.error('Failed to fetch KDS screen:', error)
     return NextResponse.json({ error: 'Failed to fetch KDS screen' }, { status: 500 })
@@ -135,7 +135,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({ screen: completeScreen })
+    return NextResponse.json({ data: { screen: completeScreen } })
   } catch (error) {
     console.error('Failed to update KDS screen:', error)
     return NextResponse.json({ error: 'Failed to update KDS screen' }, { status: 500 })
@@ -165,7 +165,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete KDS screen:', error)
     return NextResponse.json({ error: 'Failed to delete KDS screen' }, { status: 500 })

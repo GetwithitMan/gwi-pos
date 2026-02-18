@@ -310,7 +310,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       // Ignore sales calculation errors
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalShifts,
         totalRegularHours: Math.round(totalRegularHours * 100) / 100,
@@ -336,7 +336,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         employeeId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate labor report:', error)
     return NextResponse.json(

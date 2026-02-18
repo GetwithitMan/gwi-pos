@@ -98,12 +98,12 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       }).catch(() => {})
 
       // No socket dispatches for drafts — invisible to Open Orders & Floor Plan
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         id: order.id,
         orderNumber: order.orderNumber,
         status: 'draft',
         items: [],
-      })
+      } })
     }
 
     // === STANDARD PATH: Full order creation with items ===
@@ -393,7 +393,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
       dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
     }
 
-    return NextResponse.json(response)
+    return NextResponse.json({ data: response })
   } catch (error) {
     console.error('Failed to create order:', error)
 
@@ -468,7 +468,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orders: orders.map(order => ({
         ...mapOrderForResponse(order),
         // Add summary fields for list view
@@ -477,7 +477,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           .filter(p => p.status === 'completed')
           .reduce((sum, p) => sum + Number(p.totalAmount), 0),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch orders:', error)
 

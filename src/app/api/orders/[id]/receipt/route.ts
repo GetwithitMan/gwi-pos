@@ -145,7 +145,7 @@ export const GET = withVenue(async function GET(
       loyaltyPointsEarned: order.customer?.loyaltyPoints ? Math.floor(Number(order.total)) : null,
     }
 
-    return NextResponse.json(receiptData)
+    return NextResponse.json({ data: receiptData })
   } catch (error) {
     console.error('Failed to fetch receipt:', error)
     return NextResponse.json(

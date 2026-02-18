@@ -51,12 +51,12 @@ export const POST = withVenue(async function POST(
     }
 
     if (order.items.length === 0) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         sentItemCount: 0,
         sentItemIds: [],
         message: 'No pending items for this course',
-      })
+      } })
     }
 
     const now = new Date()
@@ -151,7 +151,7 @@ export const POST = withVenue(async function POST(
       console.error('[API /fire-course] Prep stock deduction failed:', err)
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       courseNumber,
       sentItemCount: updatedItemIds.length,
@@ -164,7 +164,7 @@ export const POST = withVenue(async function POST(
           itemCount: m.primaryItems.length,
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fire course:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error'

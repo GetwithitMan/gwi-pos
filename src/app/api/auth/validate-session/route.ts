@@ -48,5 +48,5 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     )
   }
 
-  return NextResponse.json({ valid: true })
+  return NextResponse.json({ data: { valid: true } })
 })

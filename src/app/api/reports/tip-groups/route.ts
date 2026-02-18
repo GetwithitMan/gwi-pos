@@ -196,12 +196,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
     )
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       groups: groupsWithEarnings,
       total,
       limit,
       offset,
-    })
+    } })
   } catch (error) {
     console.error('Failed to get tip group report:', error)
     return NextResponse.json(

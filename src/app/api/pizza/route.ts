@@ -74,7 +74,7 @@ export const GET = withVenue(async function GET() {
       toppingsByCategory[cat].push(topping)
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       config: {
         ...config,
         sectionOptions: config.sectionOptions as number[],
@@ -123,7 +123,7 @@ export const GET = withVenue(async function GET() {
       toppingCategories: ['meat', 'veggie', 'cheese', 'premium', 'seafood', 'standard'].filter(
         cat => toppingsByCategory[cat]?.length > 0
       ),
-    })
+    } })
   } catch (error) {
     console.error('Failed to get pizza data:', error)
     return NextResponse.json({ error: 'Failed to get pizza data' }, { status: 500 })

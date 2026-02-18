@@ -34,7 +34,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: [{ priority: 'desc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({ routes })
+    return NextResponse.json({ data: { routes } })
   } catch (error) {
     console.error('Failed to fetch print routes:', error)
     return NextResponse.json({ error: 'Failed to fetch print routes' }, { status: 500 })
@@ -137,7 +137,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ route })
+    return NextResponse.json({ data: { route } })
   } catch (error) {
     console.error('Failed to create print route:', error)
     return NextResponse.json({ error: 'Failed to create print route' }, { status: 500 })

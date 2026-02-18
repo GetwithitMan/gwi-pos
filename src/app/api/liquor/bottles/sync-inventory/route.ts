@@ -66,11 +66,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (bottlesWithoutInventory.length === 0) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'All bottles already have linked inventory items',
         synced: 0,
         bottles: [],
-      })
+      } })
     }
 
     // Process each bottle and create inventory items
@@ -167,12 +167,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const synced = results.filter(r => r.status === 'created').length
     const errors = results.filter(r => r.status === 'error').length
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: `Synced ${synced} bottles to inventory${errors > 0 ? `, ${errors} errors` : ''}`,
       synced,
       errors,
       bottles: results,
-    })
+    } })
   } catch (error) {
     console.error('Failed to sync inventory:', error)
     return NextResponse.json(
@@ -215,14 +215,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       needsSync: count,
       total,
       synced: total - count,
       message: count > 0
         ? `${count} bottles need to be synced to inventory`
         : 'All bottles are synced to inventory',
-    })
+    } })
   } catch (error) {
     console.error('Failed to check sync status:', error)
     return NextResponse.json(

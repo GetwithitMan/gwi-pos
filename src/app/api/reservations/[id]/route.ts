@@ -22,7 +22,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Reservation not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ reservation })
+    return NextResponse.json({ data: { reservation } })
   } catch (error) {
     console.error('Failed to fetch reservation:', error)
     return NextResponse.json({ error: 'Failed to fetch reservation' }, { status: 500 })
@@ -63,7 +63,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({ reservation })
+    return NextResponse.json({ data: { reservation } })
   } catch (error) {
     console.error('Failed to update reservation:', error)
     return NextResponse.json({ error: 'Failed to update reservation' }, { status: 500 })
@@ -90,11 +90,11 @@ export const DELETE = withVenue(async function DELETE(
         where: { id },
         data: { status: 'cancelled' },
       })
-      return NextResponse.json({ success: true, message: 'Reservation cancelled' })
+      return NextResponse.json({ data: { success: true, message: 'Reservation cancelled' } })
     }
 
     await db.reservation.update({ where: { id }, data: { deletedAt: new Date() } })
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete reservation:', error)
     return NextResponse.json({ error: 'Failed to delete reservation' }, { status: 500 })

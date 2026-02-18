@@ -29,7 +29,7 @@ interface HealthResponse {
 // Track server start time for uptime
 const startTime = Date.now()
 
-export const GET = withVenue(async function GET(): Promise<NextResponse<HealthResponse>> {
+export const GET = withVenue(async function GET(): Promise<NextResponse<{ data: HealthResponse }>> {
   const timestamp = new Date().toISOString()
   const uptime = Math.floor((Date.now() - startTime) / 1000)
   const version = process.env.npm_package_version || '1.0.0'
@@ -78,5 +78,5 @@ export const GET = withVenue(async function GET(): Promise<NextResponse<HealthRe
   // Return appropriate HTTP status
   const httpStatus = status === 'healthy' ? 200 : status === 'degraded' ? 200 : 503
 
-  return NextResponse.json(response, { status: httpStatus })
+  return NextResponse.json({ data: response }, { status: httpStatus })
 })

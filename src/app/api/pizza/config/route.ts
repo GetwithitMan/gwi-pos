@@ -38,7 +38,7 @@ export const GET = withVenue(async function GET() {
       })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...config,
       sectionOptions: config.sectionOptions as number[],
       hybridPricing: config.hybridPricing as Record<string, number> | null,
@@ -48,7 +48,7 @@ export const GET = withVenue(async function GET() {
       builderMode: config.builderMode || 'both',
       defaultBuilderMode: config.defaultBuilderMode || 'quick',
       allowModeSwitch: config.allowModeSwitch ?? true,
-    })
+    } })
   } catch (error) {
     console.error('Failed to get pizza config:', error)
     return NextResponse.json({ error: 'Failed to get pizza config' }, { status: 500 })
@@ -107,7 +107,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...config,
       sectionOptions: config.sectionOptions as number[],
       hybridPricing: config.hybridPricing as Record<string, number> | null,
@@ -117,7 +117,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       builderMode: config.builderMode || 'both',
       defaultBuilderMode: config.defaultBuilderMode || 'quick',
       allowModeSwitch: config.allowModeSwitch ?? true,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update pizza config:', error)
     return NextResponse.json({ error: 'Failed to update pizza config' }, { status: 500 })

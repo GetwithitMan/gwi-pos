@@ -116,7 +116,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         .reduce((sum, e) => sum + Number(e.amount), 0),
     }
 
-    return NextResponse.json({ logs, summary })
+    return NextResponse.json({ data: { logs, summary } })
   } catch (error) {
     console.error('Failed to fetch sync audit logs:', error)
     return NextResponse.json(
@@ -184,7 +184,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ success: true, entry })
+    return NextResponse.json({ data: { success: true, entry } })
   } catch (error) {
     console.error('Failed to create sync audit entry:', error)
     return NextResponse.json(

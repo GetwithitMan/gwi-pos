@@ -191,7 +191,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       order: {
         ...updatedOrder,
@@ -214,7 +214,7 @@ export const POST = withVenue(async function POST(
       sourceOrderVoided: true,
       itemsMoved: movedItems.count,
       discountsMoved: movedDiscounts.count,
-    })
+    } })
   } catch (error) {
     console.error('Failed to merge orders:', error)
     return NextResponse.json(

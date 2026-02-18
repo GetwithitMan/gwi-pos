@@ -353,7 +353,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ? Math.round(turnTimes.reduce((a, b) => a + b, 0) / turnTimes.length)
       : null
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalOrders,
         totalGuests,
@@ -376,7 +376,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         sectionId,
         tableId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate table report:', error)
     return NextResponse.json(

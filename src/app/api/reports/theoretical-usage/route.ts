@@ -44,7 +44,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       department,
     })
 
-    return NextResponse.json({ report: result })
+    return NextResponse.json({ data: { report: result } })
   } catch (error) {
     console.error('Theoretical usage report error:', error)
     return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 })

@@ -60,7 +60,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
       displayName: category.displayName,
@@ -83,7 +83,7 @@ export const GET = withVenue(async function GET(
         upsellPromptText: smg.upsellPromptText,
         defaultTier: smg.defaultTier,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch spirit category:', error)
     return NextResponse.json(
@@ -136,7 +136,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
       displayName: category.displayName,
@@ -147,7 +147,7 @@ export const PUT = withVenue(async function PUT(
       modifierGroupCount: category._count.spiritModifierGroups,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update spirit category:', error)
     return NextResponse.json(
@@ -210,7 +210,7 @@ export const DELETE = withVenue(async function DELETE(
 
     await db.spiritCategory.update({ where: { id }, data: { deletedAt: new Date() } })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete spirit category:', error)
     return NextResponse.json(

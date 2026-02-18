@@ -28,7 +28,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       stations: stations.map(station => ({
         id: station.id,
         name: station.name,
@@ -42,7 +42,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         categoryCount: station._count.categories,
         itemCount: station._count.menuItems,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch prep stations:', error)
     return NextResponse.json(
@@ -108,7 +108,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: station.id,
       name: station.name,
       displayName: station.displayName,
@@ -118,7 +118,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       showAllItems: station.showAllItems,
       autoComplete: station.autoComplete,
       sortOrder: station.sortOrder,
-    })
+    } })
   } catch (error) {
     console.error('Failed to create prep station:', error)
     return NextResponse.json(

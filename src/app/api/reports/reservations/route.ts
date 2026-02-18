@@ -144,7 +144,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return acc
     }, {} as Record<string, { size: string; count: number }>)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalReservations,
         totalCovers,
@@ -183,7 +183,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           orderTotal: order ? Number(order.total) : null,
         }
       }),
-    })
+    } })
   } catch (error) {
     console.error('Reservation report error:', error)
     return NextResponse.json({ error: 'Failed to generate reservation report' }, { status: 500 })

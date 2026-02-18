@@ -154,7 +154,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       })
       .filter(Boolean)
 
-    return NextResponse.json({ orders: expoOrders })
+    return NextResponse.json({ data: { orders: expoOrders } })
   } catch (error) {
     console.error('Failed to fetch expo orders:', error)
     return NextResponse.json(
@@ -227,7 +227,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to update expo items:', error)
     return NextResponse.json(

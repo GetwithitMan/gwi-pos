@@ -551,7 +551,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest, { para
       )
     )
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Error updating modifier group sort orders:', error)
     return NextResponse.json({ error: 'Failed to update sort orders' }, { status: 500 })
@@ -626,7 +626,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error: any) {
     console.error('Error reparenting modifier group:', error)
     const message = error?.message || 'Failed to reparent modifier group'

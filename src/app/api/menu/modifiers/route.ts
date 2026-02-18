@@ -56,7 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       modifierGroups: modifierGroups.map(group => {
         // Filter modifiers based on channel if specified
         let filteredModifiers = group.modifiers
@@ -118,7 +118,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           }))
         }
       })
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch modifier groups:', error)
     return NextResponse.json(
@@ -201,7 +201,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: modifierGroup.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: modifierGroup.id,
       name: modifierGroup.name,
       displayName: modifierGroup.displayName,
@@ -227,7 +227,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         printerRouting: mod.printerRouting,
         printerIds: mod.printerIds,
       }))
-    })
+    } })
   } catch (error) {
     console.error('Failed to create modifier group:', error)
     return NextResponse.json(

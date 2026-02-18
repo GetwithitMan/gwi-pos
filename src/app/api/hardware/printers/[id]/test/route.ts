@@ -167,14 +167,14 @@ export const POST = withVenue(async function POST(
       })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: result.success,
       error: result.error,
       printer: {
         id: printer.id,
         name: printer.name,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to print test page:', error)
     return NextResponse.json({ error: 'Failed to print test page' }, { status: 500 })

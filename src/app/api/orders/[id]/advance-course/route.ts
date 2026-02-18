@@ -94,24 +94,24 @@ export const POST = withVenue(async function POST(
         data: { currentCourse: nextCourse },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         previousCourse: currentCourse,
         currentCourse: nextCourse,
         itemsFired: firedItems.count,
         hasMoreCourses: courseNumbers.indexOf(nextCourse) < courseNumbers.length - 1,
-      })
+      } })
     }
 
     // No more courses
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       previousCourse: currentCourse,
       currentCourse: currentCourse,
       itemsFired: 0,
       hasMoreCourses: false,
       message: 'All courses have been served',
-    })
+    } })
   } catch (error) {
     console.error('Failed to advance course:', error)
     return NextResponse.json(

@@ -30,7 +30,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...coupon,
       discountValue: Number(coupon.discountValue),
       minimumOrder: coupon.minimumOrder ? Number(coupon.minimumOrder) : null,
@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(
         ...r,
         discountAmount: Number(r.discountAmount),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch coupon:', error)
     return NextResponse.json(
@@ -78,20 +78,20 @@ export const PUT = withVenue(async function PUT(
             where: { id },
             data: { isActive: true },
           })
-          return NextResponse.json({
+          return NextResponse.json({ data: {
             ...activated,
             discountValue: Number(activated.discountValue),
-          })
+          } })
 
         case 'deactivate':
           const deactivated = await db.coupon.update({
             where: { id },
             data: { isActive: false },
           })
-          return NextResponse.json({
+          return NextResponse.json({ data: {
             ...deactivated,
             discountValue: Number(deactivated.discountValue),
-          })
+          } })
 
         case 'redeem':
           // Validate and redeem coupon
@@ -183,13 +183,13 @@ export const PUT = withVenue(async function PUT(
             },
           })
 
-          return NextResponse.json({
+          return NextResponse.json({ data: {
             success: true,
             coupon: {
               ...updatedCoupon,
               discountValue: Number(updatedCoupon.discountValue),
             },
-          })
+          } })
 
         default:
           return NextResponse.json(
@@ -222,12 +222,12 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...updated,
       discountValue: Number(updated.discountValue),
       minimumOrder: updated.minimumOrder ? Number(updated.minimumOrder) : null,
       maximumDiscount: updated.maximumDiscount ? Number(updated.maximumDiscount) : null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update coupon:', error)
     return NextResponse.json(
@@ -256,10 +256,10 @@ export const DELETE = withVenue(async function DELETE(
         where: { id },
         data: { isActive: false },
       })
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         message: 'Coupon has redemptions and was deactivated instead of deleted',
-      })
+      } })
     }
 
     await db.coupon.update({
@@ -267,7 +267,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete coupon:', error)
     return NextResponse.json(

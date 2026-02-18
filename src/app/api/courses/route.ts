@@ -42,7 +42,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // If no custom configs, return defaults with location context
     if (courseConfigs.length === 0) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         courses: DEFAULT_COURSES.map((c, idx) => ({
           ...c,
           id: `default-${c.courseNumber}`,
@@ -53,10 +53,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           isDefault: true,
         })),
         isDefault: true,
-      })
+      } })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       courses: courseConfigs.map(c => ({
         id: c.id,
         locationId: c.locationId,
@@ -70,7 +70,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isDefault: false,
       })),
       isDefault: false,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch courses:', error)
     return NextResponse.json(
@@ -129,10 +129,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       courseConfig,
-    })
+    } })
   } catch (error) {
     console.error('Failed to save course config:', error)
     return NextResponse.json(
@@ -185,10 +185,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       )
     )
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       courses: createdConfigs,
-    })
+    } })
   } catch (error) {
     console.error('Failed to initialize courses:', error)
     return NextResponse.json(

@@ -102,11 +102,11 @@ export const POST = withVenue(async function POST(
     }).catch(() => {})
 
     return NextResponse.json(
-      {
+      { data: {
         id: newOrder.id,
         splitIndex: newOrder.splitIndex,
         displayNumber: newOrder.displayNumber,
-      },
+      } },
       { status: 201 }
     )
   } catch (error) {

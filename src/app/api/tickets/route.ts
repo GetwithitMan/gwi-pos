@@ -91,7 +91,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.ticket.count({ where: whereClause }),
     ])
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       tickets: tickets.map(ticket => ({
         id: ticket.id,
         ticketNumber: ticket.ticketNumber,
@@ -136,7 +136,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         offset,
         hasMore: offset + tickets.length < total,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch tickets:', error)
     return NextResponse.json(

@@ -185,9 +185,9 @@ export const DELETE = withVenue(async function DELETE(
         where: { id },
         data: { isActive: false }
       })
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'Tip-out rule has been deactivated (it has historical tip data)'
-      })
+      } })
     }
 
     // Soft delete the rule
@@ -196,9 +196,9 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: 'Tip-out rule deleted successfully'
-    })
+    } })
   } catch (error) {
     console.error('Error deleting tip-out rule:', error)
     return NextResponse.json(

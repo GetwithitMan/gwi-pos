@@ -39,11 +39,11 @@ export const PATCH = withVenue(async function PATCH(
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...cheese,
       price: Number(cheese.price),
       extraPrice: Number(cheese.extraPrice),
-    })
+    } })
   } catch (error) {
     console.error('Failed to update pizza cheese:', error)
     return NextResponse.json({ error: 'Failed to update pizza cheese' }, { status: 500 })
@@ -63,7 +63,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { isActive: false }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete pizza cheese:', error)
     return NextResponse.json({ error: 'Failed to delete pizza cheese' }, { status: 500 })

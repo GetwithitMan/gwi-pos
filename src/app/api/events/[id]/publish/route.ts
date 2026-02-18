@@ -84,7 +84,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: 'Event is now on sale',
       event: {
@@ -94,7 +94,7 @@ export const POST = withVenue(async function POST(
         eventDate: updatedEvent.eventDate.toISOString().split('T')[0],
         totalCapacity: updatedEvent.totalCapacity,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to publish event:', error)
     return NextResponse.json(

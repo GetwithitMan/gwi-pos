@@ -266,7 +266,7 @@ export const POST = withVenue(async function POST(
       console.error('Failed to dispatch order totals update:', err)
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       action,
       orderAutoClosed: shouldAutoClose,
@@ -277,7 +277,7 @@ export const POST = withVenue(async function POST(
         newStatus,
       },
       orderTotals: totals,
-    })
+    } })
   } catch (error) {
     console.error('Failed to comp/void item:', error instanceof Error ? error.message : error)
     return NextResponse.json(
@@ -380,7 +380,7 @@ export const PUT = withVenue(async function PUT(
       data: totals,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       item: {
         id: item.id,
@@ -388,7 +388,7 @@ export const PUT = withVenue(async function PUT(
         restored: true,
       },
       orderTotals: totals,
-    })
+    } })
   } catch (error) {
     console.error('Failed to restore item:', error)
     return NextResponse.json(
@@ -437,7 +437,7 @@ export const GET = withVenue(async function GET(
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       logs: voidLogs.map(log => ({
         id: log.id,
         voidType: log.voidType,
@@ -451,7 +451,7 @@ export const GET = withVenue(async function GET(
         approvedAt: log.approvedAt?.toISOString() || null,
         createdAt: log.createdAt.toISOString(),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch void logs:', error)
     return NextResponse.json(

@@ -60,7 +60,7 @@ export const GET = withVenue(async function GET(
       giftCard.status = 'expired'
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...giftCard,
       initialBalance: Number(giftCard.initialBalance),
       currentBalance: Number(giftCard.currentBalance),
@@ -70,7 +70,7 @@ export const GET = withVenue(async function GET(
         balanceBefore: Number(t.balanceBefore),
         balanceAfter: Number(t.balanceAfter),
       }))
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch gift card:', error)
     return NextResponse.json(
@@ -118,11 +118,11 @@ export const PUT = withVenue(async function PUT(
             frozenReason: reason || 'Manual freeze',
           }
         })
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           ...frozen,
           initialBalance: Number(frozen.initialBalance),
           currentBalance: Number(frozen.currentBalance),
-        })
+        } })
       }
 
       case 'unfreeze': {
@@ -140,11 +140,11 @@ export const PUT = withVenue(async function PUT(
             frozenReason: null,
           }
         })
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           ...unfrozen,
           initialBalance: Number(unfrozen.initialBalance),
           currentBalance: Number(unfrozen.currentBalance),
-        })
+        } })
       }
 
       case 'reload': {
@@ -184,11 +184,11 @@ export const PUT = withVenue(async function PUT(
           include: { transactions: { take: 1, orderBy: { createdAt: 'desc' } } }
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           ...reloaded,
           initialBalance: Number(reloaded.initialBalance),
           currentBalance: Number(reloaded.currentBalance),
-        })
+        } })
       }
 
       case 'redeem': {
@@ -237,12 +237,12 @@ export const PUT = withVenue(async function PUT(
           include: { transactions: { take: 1, orderBy: { createdAt: 'desc' } } }
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           ...redeemed,
           initialBalance: Number(redeemed.initialBalance),
           currentBalance: Number(redeemed.currentBalance),
           amountRedeemed: amount,
-        })
+        } })
       }
 
       case 'refund': {
@@ -278,11 +278,11 @@ export const PUT = withVenue(async function PUT(
           include: { transactions: { take: 1, orderBy: { createdAt: 'desc' } } }
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           ...refunded,
           initialBalance: Number(refunded.initialBalance),
           currentBalance: Number(refunded.currentBalance),
-        })
+        } })
       }
 
       default:

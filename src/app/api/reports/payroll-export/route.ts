@@ -98,7 +98,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // JSON format
-    return NextResponse.json(data)
+    return NextResponse.json({ data })
   } catch (error) {
     console.error('Failed to generate payroll export:', error)
     return NextResponse.json(

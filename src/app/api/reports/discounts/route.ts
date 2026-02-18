@@ -307,7 +307,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.totalAmount - a.totalAmount)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalDiscountCount,
         totalDiscountAmount: Math.round(totalDiscountAmount * 100) / 100,
@@ -346,7 +346,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeId,
         discountRuleId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate discount report:', error)
     return NextResponse.json(

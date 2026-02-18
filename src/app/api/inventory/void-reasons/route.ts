@@ -25,7 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({ voidReasons })
+    return NextResponse.json({ data: { voidReasons } })
   } catch (error) {
     console.error('Void reasons list error:', error)
     return NextResponse.json({ error: 'Failed to fetch void reasons' }, { status: 500 })
@@ -73,7 +73,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ voidReason })
+    return NextResponse.json({ data: { voidReason } })
   } catch (error) {
     console.error('Create void reason error:', error)
     if ((error as { code?: string }).code === 'P2002') {

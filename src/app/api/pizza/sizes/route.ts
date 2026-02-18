@@ -76,12 +76,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...size,
       basePrice: Number(size.basePrice),
       priceMultiplier: Number(size.priceMultiplier),
       toppingMultiplier: Number(size.toppingMultiplier),
-    })
+    } })
   } catch (error) {
     console.error('Failed to create pizza size:', error)
     return NextResponse.json({ error: 'Failed to create pizza size' }, { status: 500 })

@@ -12,10 +12,10 @@ export const GET = withVenue(async function GET() {
   const blocked = checkSimulatedReaderAccess()
   if (blocked) return blocked
 
-  return NextResponse.json({
+  return NextResponse.json({ data: {
     serialNumber: 'SIM-001-DEV',
     firmwareVersion: 'SIM-1.0.0',
     model: 'GWI Simulated Reader',
     status: 'ready',
-  })
+  } })
 })

@@ -89,7 +89,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     if (itemsToPrint.length === 0) {
-      return NextResponse.json({ message: 'No items to print' })
+      return NextResponse.json({ data: { message: 'No items to print' } })
     }
 
     // Get all printers for the location
@@ -217,10 +217,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: results.some(r => r.success),
       results,
-    })
+    } })
   } catch (error) {
     console.error('Failed to print kitchen ticket:', error)
     return NextResponse.json({ error: 'Failed to print kitchen ticket' }, { status: 500 })

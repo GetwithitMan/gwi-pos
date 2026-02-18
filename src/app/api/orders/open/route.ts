@@ -115,7 +115,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
 
       timing.end('db', 'Summary query')
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         orders: summaryOrders.map(o => ({
           id: o.id,
           orderNumber: o.orderNumber,
@@ -202,7 +202,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         })),
         count: summaryOrders.length,
         summary: true,
-      })
+      } })
     }
 
     timing.start('db')
@@ -315,7 +315,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // not tab/order based. Waitlist entries link to FloorPlanElement via elementId.
     // Tab-linked waitlist functionality has been removed.
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orders: orders.map(order => ({
         id: order.id,
         orderNumber: order.orderNumber,
@@ -420,7 +420,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
           isPaid: s.status === 'paid',
         })),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch open orders:', error)
     return NextResponse.json(

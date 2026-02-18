@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       tabs: tabs.map(tab => ({
         id: tab.id,
         tabName: tab.tabName, // Return actual value (null if no custom name)
@@ -94,7 +94,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           .filter(p => p.status === 'completed')
           .reduce((sum, p) => sum + Number(p.totalAmount), 0),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch tabs:', error)
     return NextResponse.json(
@@ -214,7 +214,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }, { isolationLevel: 'Serializable' })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: tab.id,
       tabName: tab.tabName || `Tab #${tab.orderNumber}`,
       orderNumber: tab.orderNumber,
@@ -231,7 +231,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         expiresAt: tab.preAuthExpiresAt?.toISOString(),
       } : null,
       openedAt: tab.openedAt.toISOString(),
-    })
+    } })
   } catch (error) {
     console.error('Failed to create tab:', error)
     return NextResponse.json(

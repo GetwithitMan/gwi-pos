@@ -75,7 +75,7 @@ export const PUT = withVenue(async function PUT(
       })
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to update modifiers:', error)
     return NextResponse.json(

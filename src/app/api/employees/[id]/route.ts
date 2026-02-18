@@ -70,7 +70,7 @@ export const GET = withVenue(async function GET(
       }),
     ])
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: employee.id,
       firstName: employee.firstName,
       lastName: employee.lastName,
@@ -103,7 +103,7 @@ export const GET = withVenue(async function GET(
           ? Number(totalCommission._sum.commissionTotal)
           : 0,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch employee:', error)
     return NextResponse.json(
@@ -264,7 +264,7 @@ export const PUT = withVenue(async function PUT(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: existing.locationId, domain: 'employees', action: 'updated', entityId: id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: employee.id,
       firstName: employee.firstName,
       lastName: employee.lastName,
@@ -283,7 +283,7 @@ export const PUT = withVenue(async function PUT(
       defaultScreen: employee.defaultScreen,
       defaultOrderType: employee.defaultOrderType,
       updatedAt: employee.updatedAt.toISOString(),
-    })
+    } })
   } catch (error) {
     console.error('Failed to update employee:', error)
     return NextResponse.json(
@@ -345,7 +345,7 @@ export const DELETE = withVenue(async function DELETE(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: employee.locationId, domain: 'employees', action: 'deleted', entityId: id })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to deactivate employee:', error)
     return NextResponse.json(

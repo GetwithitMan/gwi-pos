@@ -62,12 +62,12 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         )
       }
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         ...coupon,
         discountValue: Number(coupon.discountValue),
         minimumOrder: coupon.minimumOrder ? Number(coupon.minimumOrder) : null,
         maximumDiscount: coupon.maximumDiscount ? Number(coupon.maximumDiscount) : null,
-      })
+      } })
     }
 
     const coupons = await db.coupon.findMany({
@@ -170,12 +170,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...coupon,
       discountValue: Number(coupon.discountValue),
       minimumOrder: coupon.minimumOrder ? Number(coupon.minimumOrder) : null,
       maximumDiscount: coupon.maximumDiscount ? Number(coupon.maximumDiscount) : null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to create coupon:', error)
     return NextResponse.json(

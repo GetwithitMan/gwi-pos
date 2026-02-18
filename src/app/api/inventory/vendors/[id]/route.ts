@@ -29,7 +29,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Vendor not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ vendor })
+    return NextResponse.json({ data: { vendor } })
   } catch (error) {
     console.error('Get vendor error:', error)
     return NextResponse.json({ error: 'Failed to fetch vendor' }, { status: 500 })
@@ -67,7 +67,7 @@ export const PUT = withVenue(async function PUT(
       data: updateData,
     })
 
-    return NextResponse.json({ vendor })
+    return NextResponse.json({ data: { vendor } })
   } catch (error) {
     console.error('Update vendor error:', error)
     if ((error as { code?: string }).code === 'P2002') {
@@ -98,7 +98,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete vendor error:', error)
     return NextResponse.json({ error: 'Failed to delete vendor' }, { status: 500 })

@@ -65,7 +65,7 @@ export const GET = withVenue(async function GET(
       take: 5,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: customer.id,
       firstName: customer.firstName,
       lastName: customer.lastName,
@@ -99,7 +99,7 @@ export const GET = withVenue(async function GET(
         orderCount: f._count.menuItemId,
         totalQuantity: f._sum.quantity || 0,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch customer:', error)
     return NextResponse.json(
@@ -198,7 +198,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: updated.id,
       firstName: updated.firstName,
       lastName: updated.lastName,
@@ -215,7 +215,7 @@ export const PUT = withVenue(async function PUT(
       lastVisit: updated.lastVisit?.toISOString() || null,
       marketingOptIn: updated.marketingOptIn,
       birthday: updated.birthday?.toISOString() || null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update customer:', error)
     return NextResponse.json(
@@ -254,7 +254,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { isActive: false, deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete customer:', error)
     return NextResponse.json(

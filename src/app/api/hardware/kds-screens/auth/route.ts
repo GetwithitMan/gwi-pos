@@ -105,7 +105,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       authenticated: true,
       screen: {
         id: screen.id,
@@ -129,7 +129,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           color: ss.station.color,
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to authenticate KDS:', error)
     return NextResponse.json({ error: 'Failed to authenticate' }, { status: 500 })

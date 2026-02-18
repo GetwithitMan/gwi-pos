@@ -32,7 +32,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const cached = getMenuCache(cacheKey)
     if (cached) {
       timing.add('cache', 0, 'Hit')
-      return NextResponse.json(cached)
+      return NextResponse.json({ data: cached })
     }
 
     const categoryTypeFilter = categoryType ? { categoryType } : {}
@@ -258,7 +258,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     // Store in cache
     setMenuCache(cacheKey, responseData)
 
-    return NextResponse.json(responseData)
+    return NextResponse.json({ data: responseData })
   } catch (error) {
     console.error('Failed to fetch menu:', error)
     return NextResponse.json(

@@ -32,10 +32,10 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: 'Device unpaired successfully',
-    })
+    } })
   } catch (error) {
     console.error('Failed to unpair device:', error)
     return NextResponse.json({ error: 'Failed to unpair device' }, { status: 500 })

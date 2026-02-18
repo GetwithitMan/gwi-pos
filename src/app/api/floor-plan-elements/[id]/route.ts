@@ -58,7 +58,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Element not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ element })
+    return NextResponse.json({ data: { element } })
   } catch (error) {
     console.error('[floor-plan-elements/[id]] GET error:', error)
     return NextResponse.json({ error: 'Failed to fetch element' }, { status: 500 })
@@ -161,7 +161,7 @@ export const PUT = withVenue(async function PUT(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(element.locationId, { async: true })
 
-    return NextResponse.json({ element })
+    return NextResponse.json({ data: { element } })
   } catch (error) {
     console.error('[floor-plan-elements/[id]] PUT error:', error)
     return NextResponse.json({ error: 'Failed to update element' }, { status: 500 })
@@ -201,7 +201,7 @@ export const DELETE = withVenue(async function DELETE(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(element.locationId, { async: true })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('[floor-plan-elements/[id]] DELETE error:', error)
     return NextResponse.json({ error: 'Failed to delete element' }, { status: 500 })

@@ -70,7 +70,7 @@ export const GET = withVenue(async function GET(
     const topLevelGroups = allGroups.filter(g => !childGroupIds.has(g.id))
 
     // Format response in the shape the POS ModifierModal expects
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       modifierGroups: topLevelGroups.map(group => {
         let filteredModifiers = group.modifiers
         if (channel === 'online') {
@@ -131,7 +131,7 @@ export const GET = withVenue(async function GET(
           })),
         }
       }),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch item modifiers:', error)
     return NextResponse.json(

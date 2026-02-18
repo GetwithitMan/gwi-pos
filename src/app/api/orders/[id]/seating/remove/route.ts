@@ -39,7 +39,7 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
         },
       })
 
-      return NextResponse.json({ success: true })
+      return NextResponse.json({ data: { success: true } })
     })
   } catch (error) {
     console.error('[seating/remove] Shift-down failed:', error)

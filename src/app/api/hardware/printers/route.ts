@@ -21,14 +21,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       printers: printers.map((p) => ({
         ...p,
         port: p.port,
         paperWidth: p.paperWidth,
         sortOrder: p.sortOrder,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch printers:', error)
     return NextResponse.json({ error: 'Failed to fetch printers' }, { status: 500 })
@@ -103,7 +103,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ printer })
+    return NextResponse.json({ data: { printer } })
   } catch (error) {
     console.error('Failed to create printer:', error)
     // Check for unique constraint violation (name must be unique per location)

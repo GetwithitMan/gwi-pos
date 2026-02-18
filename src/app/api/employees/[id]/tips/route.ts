@@ -115,7 +115,7 @@ export const GET = withVenue(async function GET(
     // Also fetch ledger balance for reference (used by other flows)
     const balance = await getLedgerBalance(employeeId)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       pending: {
         tips: roleTipoutCredits.map(entry => ({
           id: entry.id,
@@ -143,7 +143,7 @@ export const GET = withVenue(async function GET(
       // Extra field: ledger balance for UIs that want the true running balance
       ledgerBalanceCents: balance?.currentBalanceCents ?? 0,
       ledgerBalanceDollars: centsToDollars(balance?.currentBalanceCents ?? 0),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch pending tips:', error)
     return NextResponse.json(
@@ -200,13 +200,13 @@ export const POST = withVenue(async function POST(
 
       const totalAccepted = updatedPendingShares.count + updatedBankedShares.count
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: `Accepted ${totalAccepted} tip share(s) - will be added to payroll`,
         acceptedCount: totalAccepted,
         pendingSharesAccepted: updatedPendingShares.count,
         bankedSharesAccepted: updatedBankedShares.count,
         acceptedAt: now.toISOString(),
-      })
+      } })
     }
 
     return NextResponse.json(

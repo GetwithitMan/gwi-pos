@@ -138,7 +138,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       expiresAt: expiresAt.toISOString(),
     }, { async: true }).catch(() => {})
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orderItem: {
         id: updatedItem.id,
         name: updatedItem.name,
@@ -147,7 +147,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         expiresAt: updatedItem.blockTimeExpiresAt?.toISOString(),
       },
       message: `Started ${minutes} minute block time, expires at ${expiresAt.toLocaleTimeString()}`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to start block time:', error)
     return NextResponse.json(
@@ -261,7 +261,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       expiresAt: newExpiresAt.toISOString(),
     }, { async: true }).catch(() => {})
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orderItem: {
         id: updatedItem.id,
         name: updatedItem.name,
@@ -270,7 +270,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         expiresAt: updatedItem.blockTimeExpiresAt?.toISOString(),
       },
       message: `Extended by ${additionalMinutes} minutes, new expiration at ${newExpiresAt.toLocaleTimeString()}`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to extend block time:', error)
     return NextResponse.json(
@@ -391,12 +391,12 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest) {
       expiresAt: null,
     }, { async: true }).catch(() => {})
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       actualMinutesUsed: actualMinutes,
       message: `Stopped block time. ${actualMinutes} minutes used.`,
       menuItem: updatedMenuItem,
-    })
+    } })
   } catch (error) {
     console.error('Failed to stop block time:', error)
     return NextResponse.json(

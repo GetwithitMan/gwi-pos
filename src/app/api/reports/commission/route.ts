@@ -181,7 +181,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Calculate grand total
     const grandTotal = report.reduce((sum, emp) => sum + emp.totalCommission, 0)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       report,
       summary: {
         totalEmployees: report.length,
@@ -194,7 +194,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeId,
         locationId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate commission report:', error)
     return NextResponse.json(

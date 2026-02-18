@@ -25,7 +25,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({ vendors })
+    return NextResponse.json({ data: { vendors } })
   } catch (error) {
     console.error('Vendor list error:', error)
     return NextResponse.json({ error: 'Failed to fetch vendors' }, { status: 500 })
@@ -66,7 +66,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ vendor })
+    return NextResponse.json({ data: { vendor } })
   } catch (error) {
     console.error('Create vendor error:', error)
     if ((error as { code?: string }).code === 'P2002') {

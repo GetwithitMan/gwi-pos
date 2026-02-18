@@ -102,7 +102,7 @@ export const POST = withVenue(async function POST(
         allSplits = [order]
       }
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         type: 'get_splits',
         splits: allSplits.map((s) => {
           const splitOrder = s as typeof s & {
@@ -124,7 +124,7 @@ export const POST = withVenue(async function POST(
           }
         }),
         currentSplitId: order.id,
-      })
+      } })
     }
 
     if (order.status === 'paid' || order.status === 'closed') {
@@ -210,7 +210,7 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         type: 'even',
         parentOrder: {
           id: order.id,
@@ -228,7 +228,7 @@ export const POST = withVenue(async function POST(
         })),
         numWays,
         message: `Order #${order.orderNumber} split into ${numWays} checks`,
-      })
+      } })
     }
 
     if (body.type === 'by_item') {
@@ -375,7 +375,7 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         type: 'by_item',
         originalOrder: {
           id: order.id,
@@ -402,7 +402,7 @@ export const POST = withVenue(async function POST(
             price: Number(item.price),
           })),
         },
-      })
+      } })
     }
 
     if (body.type === 'by_seat') {
@@ -577,7 +577,7 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         type: 'by_seat',
         parentOrder: {
           id: order.id,
@@ -589,7 +589,7 @@ export const POST = withVenue(async function POST(
         splits: splitOrders,
         seatCount: sortedSeats.length,
         message: `Order #${baseOrderNumber} split into ${sortedSeats.length} checks by seat`,
-      })
+      } })
     }
 
     if (body.type === 'by_table') {
@@ -771,7 +771,7 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         type: 'by_table',
         parentOrder: {
           id: order.id,
@@ -783,7 +783,7 @@ export const POST = withVenue(async function POST(
         splits: splitOrders,
         tableCount: tablesWithItems.length,
         message: `Order #${baseOrderNumber} split into ${tablesWithItems.length} checks by table`,
-      })
+      } })
     }
 
     if (body.type === 'custom_amount') {
@@ -805,7 +805,7 @@ export const POST = withVenue(async function POST(
       }
 
       // Return the split info (actual payment happens in /pay endpoint)
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         type: 'custom_amount',
         orderId: order.id,
         orderNumber: order.orderNumber,
@@ -815,7 +815,7 @@ export const POST = withVenue(async function POST(
         remainingBalance: remaining,
         splitAmount: Math.min(amount, remaining),
         newRemaining: Math.max(0, remaining - amount),
-      })
+      } })
     }
 
     return NextResponse.json(

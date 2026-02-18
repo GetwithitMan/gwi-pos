@@ -21,7 +21,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({ orderType })
+    return NextResponse.json({ data: { orderType } })
   } catch (error) {
     console.error('Failed to fetch order type:', error)
     return NextResponse.json(
@@ -80,7 +80,7 @@ export const PUT = withVenue(async function PUT(
         data: updates,
       })
 
-      return NextResponse.json({ orderType })
+      return NextResponse.json({ data: { orderType } })
     }
 
     // For custom types, allow full editing except isSystem and slug
@@ -117,7 +117,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({ orderType })
+    return NextResponse.json({ data: { orderType } })
   } catch (error) {
     console.error('Failed to update order type:', error)
     return NextResponse.json(
@@ -152,10 +152,10 @@ export const DELETE = withVenue(async function DELETE(
         where: { id },
         data: { isActive: false },
       })
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'System order type deactivated',
         orderType,
-      })
+      } })
     }
 
     // Check if any orders use this type
@@ -169,10 +169,10 @@ export const DELETE = withVenue(async function DELETE(
         where: { id },
         data: { isActive: false },
       })
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'Order type deactivated (orders exist using this type)',
         orderType,
-      })
+      } })
     }
 
     // Soft delete if no orders use this type
@@ -181,10 +181,10 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: 'Order type deleted',
       deleted: true,
-    })
+    } })
   } catch (error) {
     console.error('Failed to delete order type:', error)
     return NextResponse.json(

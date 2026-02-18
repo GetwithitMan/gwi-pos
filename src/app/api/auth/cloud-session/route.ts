@@ -117,7 +117,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
   }
 
   // Return employee data + set httpOnly session cookie
-  const response = NextResponse.json({ employee })
+  const response = NextResponse.json({ data: { employee } })
   response.cookies.set('pos-cloud-session', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
@@ -199,7 +199,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     isDevAccess: false,
   }
 
-  return NextResponse.json({ employee })
+  return NextResponse.json({ data: { employee } })
 })
 
 /**
@@ -208,7 +208,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
  * Clear the cloud session cookie (logout).
  */
 export const DELETE = withVenue(async function DELETE() {
-  const response = NextResponse.json({ success: true })
+  const response = NextResponse.json({ data: { success: true } })
   response.cookies.delete('pos-cloud-session')
   return response
 })

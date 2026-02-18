@@ -137,7 +137,7 @@ export const GET = withVenue(async function GET(
       return sum + itemBase + modTotal
     }, 0)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orderId: order.id,
       baseSeatCount: order.baseSeatCount,
       extraSeatCount: order.extraSeatCount,
@@ -150,7 +150,7 @@ export const GET = withVenue(async function GET(
         subtotal: Math.round(sharedSubtotal * 100) / 100,
       },
       orderTotal: Number(order.total),
-    })
+    } })
   } catch (error) {
     console.error('Failed to get seating info:', error)
     return NextResponse.json(
@@ -213,7 +213,7 @@ export const POST = withVenue(async function POST(
         data: { extraSeatCount: 0 },
       })
       void dispatchFloorPlanUpdate(table.locationId, { async: true }).catch(console.error)
-      return NextResponse.json({ action: 'RESET_TABLE', success: true, deletedSeats: deleted.count })
+      return NextResponse.json({ data: { action: 'RESET_TABLE', success: true, deletedSeats: deleted.count } })
     }
 
     // CLEANUP: Remove all temp seats for this order (used when closing panel with no items)
@@ -230,7 +230,7 @@ export const POST = withVenue(async function POST(
       if (cleaned?.tableId) {
         void dispatchFloorPlanUpdate(cleaned.locationId, { async: true }).catch(console.error)
       }
-      return NextResponse.json({ action: 'CLEANUP', success: true })
+      return NextResponse.json({ data: { action: 'CLEANUP', success: true } })
     }
 
     if (!position || position < 1) {
@@ -481,7 +481,7 @@ export const POST = withVenue(async function POST(
       }
     })
 
-    return NextResponse.json(result)
+    return NextResponse.json({ data: result })
 
   } catch (error) {
     console.error('Failed to modify seating:', error)

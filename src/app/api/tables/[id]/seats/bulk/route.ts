@@ -80,7 +80,7 @@ export const PUT = withVenue(async function PUT(
 
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seats: updatedSeats.map(seat => ({
         id: seat.id,
         tableId: seat.tableId,
@@ -92,7 +92,7 @@ export const PUT = withVenue(async function PUT(
         seatType: seat.seatType,
       })),
       updated: updatedSeats.length,
-    })
+    } })
   } catch (error) {
     console.error('Failed to bulk update seats:', error)
     return NextResponse.json(

@@ -80,7 +80,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'updated' })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       updated: results.length,
       tables: results.map(t => ({
@@ -90,7 +90,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         width: t.width,
         height: t.height,
       })),
-    })
+    } })
   } catch (error) {
     console.error('[Tables Bulk Update] Error:', error)
     return NextResponse.json(

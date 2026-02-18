@@ -76,12 +76,12 @@ export const POST = withVenue(async function POST(
         .flatMap(s => s.payments)
         .find(p => p.idempotencyKey === idempotencyKey)
       if (existingPayment) {
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           duplicate: true,
           parentOrderId,
           message: 'Duplicate payment detected — already processed',
-        })
+        } })
       }
     }
 
@@ -201,12 +201,12 @@ export const POST = withVenue(async function POST(
       }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       splitsPaid: unpaidSplits.length,
       totalAmount: Math.round(combinedTotal * 100) / 100,
       parentOrderId,
-    })
+    } })
   } catch (error) {
     console.error('Failed to pay all splits:', error)
     return NextResponse.json(

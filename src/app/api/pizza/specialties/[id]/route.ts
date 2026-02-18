@@ -23,7 +23,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Specialty not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...specialty,
       toppings: specialty.toppings as Array<{
         toppingId: string
@@ -35,7 +35,7 @@ export const GET = withVenue(async function GET(
         ...specialty.menuItem,
         price: Number(specialty.menuItem.price),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to get pizza specialty:', error)
     return NextResponse.json({ error: 'Failed to get pizza specialty' }, { status: 500 })
@@ -79,7 +79,7 @@ export const PATCH = withVenue(async function PATCH(
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...specialty,
       toppings: specialty.toppings as Array<{
         toppingId: string
@@ -91,7 +91,7 @@ export const PATCH = withVenue(async function PATCH(
         ...specialty.menuItem,
         price: Number(specialty.menuItem.price),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update pizza specialty:', error)
     return NextResponse.json({ error: 'Failed to update pizza specialty' }, { status: 500 })
@@ -111,7 +111,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete pizza specialty:', error)
     return NextResponse.json({ error: 'Failed to delete pizza specialty' }, { status: 500 })

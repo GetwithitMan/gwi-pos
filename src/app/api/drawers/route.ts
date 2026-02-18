@@ -43,7 +43,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       drawers: drawers.map(drawer => ({
         id: drawer.id,
         name: drawer.name,
@@ -58,7 +58,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             }
           : null,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch drawers:', error)
     return NextResponse.json(

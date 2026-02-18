@@ -52,7 +52,7 @@ export async function POST(request: Request) {
         break
     }
 
-    return NextResponse.json({ success: true, domain, action })
+    return NextResponse.json({ data: { success: true, domain, action } })
   } catch (err) {
     console.error('[Cache Invalidate] Error:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })

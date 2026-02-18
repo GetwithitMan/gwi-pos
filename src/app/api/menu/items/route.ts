@@ -129,7 +129,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return { status: worstStatus, lowestIngredient }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       items: items.map(item => {
         // Check if this is a pizza item based on category type OR item type
         const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
@@ -189,7 +189,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           } : {}),
         }
       })
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch items:', error)
     return NextResponse.json(
@@ -306,7 +306,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Notify cloud → NUC sync for real-time updates
     void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'created', entityId: item.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: item.id,
       categoryId: item.categoryId,
       name: item.name,
@@ -322,7 +322,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       printerIds: item.printerIds,
       backupPrinterIds: item.backupPrinterIds,
       comboPrintMode: item.comboPrintMode,
-    })
+    } })
   } catch (error) {
     console.error('Failed to create item:', error)
     return NextResponse.json(

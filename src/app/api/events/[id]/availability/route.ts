@@ -203,7 +203,7 @@ export const GET = withVenue(async function GET(
       return acc
     }, {} as Record<string, number>)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       event: {
         id: event.id,
         name: event.name,
@@ -246,7 +246,7 @@ export const GET = withVenue(async function GET(
           refunded: ticketCounts['refunded'] || 0,
         },
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch availability:', error)
     return NextResponse.json(

@@ -193,7 +193,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }
     }).filter(Boolean)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orders: kdsOrders,
       station: station ? {
         id: station.id,
@@ -204,7 +204,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         showAllItems: station.showAllItems,
       } : null,
       timestamp: new Date().toISOString(),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch KDS orders:', error)
     return NextResponse.json(
@@ -327,12 +327,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       itemIds,
       action,
       timestamp: now.toISOString(),
-    })
+    } })
   } catch (error) {
     console.error('Failed to update KDS items:', error)
     return NextResponse.json(

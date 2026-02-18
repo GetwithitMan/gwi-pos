@@ -45,7 +45,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: 20,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       schedules: schedules.map(s => ({
         id: s.id,
         weekStart: s.weekStart.toISOString(),
@@ -68,7 +68,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           status: shift.status,
         })),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch schedules:', error)
     return NextResponse.json({ error: 'Failed to fetch schedules' }, { status: 500 })
@@ -117,7 +117,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       schedule: {
         id: schedule.id,
         weekStart: schedule.weekStart.toISOString(),
@@ -125,7 +125,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         status: schedule.status,
         notes: schedule.notes,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to create schedule:', error)
     return NextResponse.json({ error: 'Failed to create schedule' }, { status: 500 })

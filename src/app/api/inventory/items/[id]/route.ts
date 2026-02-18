@@ -33,7 +33,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       item: {
         ...item,
         purchaseSize: Number(item.purchaseSize),
@@ -54,7 +54,7 @@ export const GET = withVenue(async function GET(
           parLevel: sl.parLevel ? Number(sl.parLevel) : null,
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Get inventory item error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory item' }, { status: 500 })
@@ -137,7 +137,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       item: {
         ...item,
         purchaseSize: Number(item.purchaseSize),
@@ -148,7 +148,7 @@ export const PUT = withVenue(async function PUT(
         yieldCostPerUnit: item.yieldCostPerUnit ? Number(item.yieldCostPerUnit) : null,
         currentStock: Number(item.currentStock),
       },
-    })
+    } })
   } catch (error) {
     console.error('Update inventory item error:', error)
     if ((error as { code?: string }).code === 'P2002') {
@@ -179,7 +179,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete inventory item error:', error)
     return NextResponse.json({ error: 'Failed to delete inventory item' }, { status: 500 })

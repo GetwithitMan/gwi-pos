@@ -50,7 +50,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const url = `/uploads/menu-items/${filename}`
 
-    return NextResponse.json({ url })
+    return NextResponse.json({ data: { url } })
   } catch (error) {
     console.error('Upload failed:', error)
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 })

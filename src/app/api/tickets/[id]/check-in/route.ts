@@ -64,7 +64,7 @@ export const POST = withVenue(async function POST(
 
     // Check if already checked in
     if (ticket.status === 'checked_in') {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: false,
         error: 'Ticket already checked in',
         checkInResult: 'already_checked_in',
@@ -77,7 +77,7 @@ export const POST = withVenue(async function POST(
           table: ticket.table,
           pricingTier: ticket.pricingTier,
         },
-      })
+      } })
     }
 
     // Check ticket status
@@ -158,7 +158,7 @@ export const POST = withVenue(async function POST(
     const soldCount = checkInStats.find(s => s.status === 'sold')?._count.id || 0
     const totalAttendees = checkedInCount + soldCount
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       checkInResult: 'success',
       checkedInAt: now.toISOString(),
@@ -187,7 +187,7 @@ export const POST = withVenue(async function POST(
           ? Math.round((checkedInCount / totalAttendees) * 100)
           : 0,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to check in ticket:', error)
     return NextResponse.json(
@@ -247,11 +247,11 @@ export const DELETE = withVenue(async function DELETE(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: 'Check-in reverted',
       ticket: updated,
-    })
+    } })
   } catch (error) {
     console.error('Failed to undo check-in:', error)
     return NextResponse.json(

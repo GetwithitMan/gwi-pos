@@ -19,7 +19,7 @@ export const GET = withVenue(async function GET() {
       orderBy: { createdAt: 'asc' },
     })
 
-    return NextResponse.json({ locations })
+    return NextResponse.json({ data: { locations } })
   } catch (error) {
     console.error('[locations] GET error:', error)
     return NextResponse.json(

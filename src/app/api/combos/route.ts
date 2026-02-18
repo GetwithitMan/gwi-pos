@@ -119,7 +119,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }])
     )
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       combos: combos.map(c => ({
         id: c.id,
         name: c.name,
@@ -132,7 +132,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isAvailable: c.isAvailable,
         template: templateMap[c.id] || null,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Get combos error:', error)
     return NextResponse.json({ error: 'Failed to fetch combos' }, { status: 500 })
@@ -210,7 +210,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       combo: {
         id: menuItem.id,
         name: menuItem.name,
@@ -222,7 +222,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           components: template.components,
         },
       },
-    })
+    } })
   } catch (error) {
     console.error('Create combo error:', error)
     return NextResponse.json({ error: 'Failed to create combo' }, { status: 500 })

@@ -81,14 +81,14 @@ export const GET = withVenue(async function GET(
     const sellPrice = Number(menuItem.price)
     const profitMargin = sellPrice > 0 ? ((sellPrice - totalPourCost) / sellPrice) * 100 : 0
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       menuItemId: menuItem.id,
       menuItemName: menuItem.name,
       sellPrice,
       ingredients,
       totalPourCost: Math.round(totalPourCost * 100) / 100,
       profitMargin: Math.round(profitMargin * 10) / 10,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch recipe:', error)
     return NextResponse.json(
@@ -228,14 +228,14 @@ export const POST = withVenue(async function POST(
     const sellPrice = Number(menuItem.price)
     const profitMargin = sellPrice > 0 ? ((sellPrice - totalPourCost) / sellPrice) * 100 : 0
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       menuItemId: menuItem.id,
       menuItemName: menuItem.name,
       sellPrice,
       ingredients: resultIngredients,
       totalPourCost: Math.round(totalPourCost * 100) / 100,
       profitMargin: Math.round(profitMargin * 10) / 10,
-    })
+    } })
   } catch (error) {
     console.error('Failed to save recipe:', error)
     return NextResponse.json(
@@ -260,7 +260,7 @@ export const DELETE = withVenue(async function DELETE(
       where: { menuItemId: id },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete recipe:', error)
     return NextResponse.json(

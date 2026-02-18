@@ -69,11 +69,11 @@ export const GET = withVenue(async function GET() {
       taxInclusiveFood,
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       locationId: location.id,
       locationName: location.name,
       settings,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch settings:', error)
     return NextResponse.json(
@@ -159,10 +159,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: location.id, domain: 'settings', action: 'updated' })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       locationId: location.id,
       settings: updatedSettings,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update settings:', error)
     return NextResponse.json(

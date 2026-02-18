@@ -15,11 +15,11 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Topping not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...topping,
       price: Number(topping.price),
       extraPrice: topping.extraPrice ? Number(topping.extraPrice) : null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to get pizza topping:', error)
     return NextResponse.json({ error: 'Failed to get pizza topping' }, { status: 500 })
@@ -56,11 +56,11 @@ export const PATCH = withVenue(async function PATCH(
       }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...topping,
       price: Number(topping.price),
       extraPrice: topping.extraPrice ? Number(topping.extraPrice) : null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update pizza topping:', error)
     return NextResponse.json({ error: 'Failed to update pizza topping' }, { status: 500 })
@@ -80,7 +80,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { isActive: false }
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete pizza topping:', error)
     return NextResponse.json({ error: 'Failed to delete pizza topping' }, { status: 500 })

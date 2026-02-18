@@ -31,7 +31,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: result.success,
       responseTime: result.responseTime,
       error: result.error,
@@ -41,7 +41,7 @@ export const POST = withVenue(async function POST(
         ipAddress: printer.ipAddress,
         port: printer.port,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to ping printer:', error)
     return NextResponse.json({ error: 'Failed to ping printer' }, { status: 500 })

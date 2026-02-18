@@ -162,7 +162,7 @@ export const POST = withVenue(async function POST(
     // In production, send notifications here if notifyGuests is true
     // This would integrate with email/SMS service
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       action,
       cancelledCount: result.length,
@@ -171,7 +171,7 @@ export const POST = withVenue(async function POST(
       message: action === 'ignore'
         ? 'Conflicts marked as handled without cancelling reservations'
         : `${result.length} reservation(s) cancelled successfully`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to resolve conflicts:', error)
     return NextResponse.json(

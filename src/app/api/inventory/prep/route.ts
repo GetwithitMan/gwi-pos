@@ -34,7 +34,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { name: 'asc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       prepItems: prepItems.map(item => ({
         ...item,
         batchYield: Number(item.batchYield),
@@ -48,7 +48,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           } : null,
         })),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Prep items list error:', error)
     return NextResponse.json({ error: 'Failed to fetch prep items' }, { status: 500 })
@@ -127,7 +127,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       prepItem: {
         ...prepItem,
         batchYield: Number(prepItem.batchYield),
@@ -137,7 +137,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           quantity: Number(ing.quantity),
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Create prep item error:', error)
     if ((error as { code?: string }).code === 'P2002') {

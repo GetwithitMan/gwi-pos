@@ -28,11 +28,11 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       pairingCode,
       expiresAt: expiresAt.toISOString(),
       terminalName: terminal.name,
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate pairing code:', error)
     return NextResponse.json({ error: 'Failed to generate pairing code' }, { status: 500 })

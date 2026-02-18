@@ -191,7 +191,7 @@ export const POST = withVenue(async function POST(
       })
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       transferred: {
         itemCount: itemIds.length,
@@ -199,7 +199,7 @@ export const POST = withVenue(async function POST(
         fromOrderId,
         toOrderId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to transfer items:', error)
     return NextResponse.json(
@@ -280,7 +280,7 @@ export const GET = withVenue(async function GET(
       createdAt: order.createdAt.toISOString(),
     }))
 
-    return NextResponse.json({ orders: formattedOrders })
+    return NextResponse.json({ data: { orders: formattedOrders } })
   } catch (error) {
     console.error('Failed to get transfer targets:', error)
     return NextResponse.json(

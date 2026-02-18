@@ -63,7 +63,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const take = limit ? parseInt(limit) : 100
     const currentSkip = skip ? parseInt(skip) : 0
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       transactions: transactions.map(t => ({
         ...t,
         quantityBefore: Number(t.quantityBefore),
@@ -78,7 +78,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         skip: currentSkip,
         hasMore: currentSkip + transactions.length < total,
       },
-    })
+    } })
   } catch (error) {
     console.error('Inventory transactions list error:', error)
     return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 })
@@ -149,7 +149,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       transaction: {
         ...transaction,
         quantityBefore: Number(transaction.quantityBefore),
@@ -158,7 +158,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         unitCost: transaction.unitCost ? Number(transaction.unitCost) : null,
         totalCost: transaction.totalCost ? Number(transaction.totalCost) : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Create inventory transaction error:', error)
     return NextResponse.json({ error: 'Failed to create transaction' }, { status: 500 })

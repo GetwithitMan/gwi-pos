@@ -70,7 +70,7 @@ export const POST = withVenue(async function POST(request: Request) {
   const refNumber = `SIM-${Date.now().toString(36).toUpperCase()}`
 
   if (card.shouldDecline) {
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       approved: false,
       status: 'DECLINED',
       ResponseCode: '05',
@@ -80,10 +80,10 @@ export const POST = withVenue(async function POST(request: Request) {
       amountAuthorized: '0.00',
       ReferenceNumber: refNumber,
       Message: 'DECLINED - Insufficient Funds',
-    })
+    } })
   }
 
-  return NextResponse.json({
+  return NextResponse.json({ data: {
     approved: true,
     status: 'APPROVED',
     ResponseCode: '00',
@@ -96,5 +96,5 @@ export const POST = withVenue(async function POST(request: Request) {
     Message: 'APPROVED',
     // Include customer name for chip reads (real readers return cardholder name)
     ...(entryMethod === 'Chip' && { CardholderName: `${card.firstName} ${card.lastName}` }),
-  })
+  } })
 })

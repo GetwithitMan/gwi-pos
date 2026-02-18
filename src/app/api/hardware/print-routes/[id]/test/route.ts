@@ -107,7 +107,7 @@ export const POST = withVenue(async function POST(
 
     const success = issues.length === 0
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success,
       route: {
         id: route.id,
@@ -126,7 +126,7 @@ export const POST = withVenue(async function POST(
         : null,
       issues,
       warnings,
-    })
+    } })
   } catch (error) {
     console.error('Failed to test print route:', error)
     return NextResponse.json(

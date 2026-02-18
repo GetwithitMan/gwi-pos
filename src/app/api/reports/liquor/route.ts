@@ -295,7 +295,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const totalPourCost = byBottle.reduce((sum, b) => sum + b.totalCost, 0)
     const totalSpiritRevenue = orderItemsWithSpirits.reduce((sum, m) => sum + Number(m.price), 0)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalPours: Math.round(totalPours * 100) / 100,
         totalPourCost: Math.round(totalPourCost * 100) / 100,
@@ -339,7 +339,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         locationId,
         employeeId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate liquor report:', error)
     return NextResponse.json(

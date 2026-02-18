@@ -272,7 +272,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const tipShareSettings = (cachedSettings.tipShares as Record<string, unknown>) || {}
     const tipSharePayoutMethod = (tipShareSettings.payoutMethod as string) || 'payroll'
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       reportPeriod: {
         start: startOfRange.toISOString().split('T')[0],
         end: endOfRange.toISOString().split('T')[0],
@@ -330,7 +330,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         createdAt: share.createdAt.toISOString(),
         shiftDate: share.shift?.startedAt?.toISOString().split('T')[0] || null,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate tip share report:', error)
     return NextResponse.json(
@@ -377,11 +377,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: `Marked ${updated.count} tip share(s) as paid out`,
         updatedCount: updated.count,
         paidAt: now.toISOString(),
-      })
+      } })
     }
 
     if (action === 'mark_paid_all' && employeeId) {
@@ -398,11 +398,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: `Marked all tip shares for employee as paid out`,
         updatedCount: updated.count,
         paidAt: now.toISOString(),
-      })
+      } })
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })

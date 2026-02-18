@@ -80,7 +80,7 @@ export const POST = withVenue(async function POST(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true });
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seats: createdSeats.map((s) => ({
         id: s.id,
         label: s.label,
@@ -91,7 +91,7 @@ export const POST = withVenue(async function POST(
         seatType: s.seatType,
         isActive: s.isActive,
       })),
-    });
+    } });
   } catch (error) {
     console.error('Failed to generate seats:', error);
     return NextResponse.json(

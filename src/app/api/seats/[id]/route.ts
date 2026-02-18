@@ -36,7 +36,7 @@ export const GET = withVenue(async function GET(
       );
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seat: {
         id: seat.id,
         locationId: seat.locationId,
@@ -50,7 +50,7 @@ export const GET = withVenue(async function GET(
         isActive: seat.isActive,
         table: seat.table,
       },
-    });
+    } });
   } catch (error) {
     console.error('Failed to fetch seat:', error);
     return NextResponse.json(
@@ -110,7 +110,7 @@ export const PUT = withVenue(async function PUT(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(currentSeat.locationId, { async: true });
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seat: {
         id: seat.id,
         locationId: seat.locationId,
@@ -123,7 +123,7 @@ export const PUT = withVenue(async function PUT(
         seatType: seat.seatType,
         isActive: seat.isActive,
       },
-    });
+    } });
   } catch (error) {
     console.error('Failed to update seat:', error);
     return NextResponse.json(
@@ -160,7 +160,7 @@ export const DELETE = withVenue(async function DELETE(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(seat.locationId, { async: true });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ data: { success: true } });
   } catch (error) {
     console.error('Failed to delete seat:', error);
     return NextResponse.json(

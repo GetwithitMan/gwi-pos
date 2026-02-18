@@ -156,7 +156,7 @@ export const POST = withVenue(async function POST(
       name: menuItem.name,
     }, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       menuItem: {
         id: menuItem.id,
@@ -165,7 +165,7 @@ export const POST = withVenue(async function POST(
         category: menuItem.category,
         linkedBottleProduct: menuItem.linkedBottleProduct,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to create menu item from bottle:', error)
     return NextResponse.json(

@@ -281,7 +281,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       return { bottle, inventoryItemId: inventoryItem.id }
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: result.bottle.id,
       name: result.bottle.name,
       brand: result.bottle.brand,
@@ -301,7 +301,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       inventoryItemId: result.inventoryItemId,
       createdAt: result.bottle.createdAt,
       updatedAt: result.bottle.updatedAt,
-    })
+    } })
   } catch (error) {
     console.error('Failed to create bottle:', error)
     return NextResponse.json(

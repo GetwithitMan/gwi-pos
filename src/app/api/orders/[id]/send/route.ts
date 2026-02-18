@@ -83,13 +83,13 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Short-circuit: if no items to process, return early without dispatching events
     if (itemsToProcess.length === 0) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         sentItemCount: 0,
         sentItemIds: [],
         delayedItemCount: delayedItems.length,
         routing: { stations: [], unroutedCount: 0 },
-      })
+      } })
     }
     const updatedItemIds: string[] = []
 
@@ -221,7 +221,7 @@ export const POST = withVenue(withTiming(async function POST(
     dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
     dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       sentItemCount: updatedItemIds.length,
       sentItemIds: updatedItemIds,
@@ -234,7 +234,7 @@ export const POST = withVenue(withTiming(async function POST(
         })),
         unroutedCount: routingResult.unroutedItems.length,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to send order to kitchen:', error)
     if (error instanceof Error) {

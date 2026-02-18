@@ -23,7 +23,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Account not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       account: {
         ...account,
         creditLimit: Number(account.creditLimit),
@@ -33,7 +33,7 @@ export const GET = withVenue(async function GET(
           amount: Number(t.amount),
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch account:', error)
     return NextResponse.json({ error: 'Failed to fetch account' }, { status: 500 })
@@ -73,9 +73,9 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       account: { ...account, creditLimit: Number(account.creditLimit), currentBalance: Number(account.currentBalance) },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update account:', error)
     return NextResponse.json({ error: 'Failed to update account' }, { status: 500 })
@@ -114,11 +114,11 @@ export const DELETE = withVenue(async function DELETE(
         where: { id },
         data: { status: 'closed' },
       })
-      return NextResponse.json({ success: true, message: 'Account closed (has transaction history)' })
+      return NextResponse.json({ data: { success: true, message: 'Account closed (has transaction history)' } })
     }
 
     await db.houseAccount.update({ where: { id }, data: { deletedAt: new Date() } })
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete account:', error)
     return NextResponse.json({ error: 'Failed to delete account' }, { status: 500 })

@@ -138,7 +138,7 @@ export const POST = withVenue(async function POST(
     // Notify POS terminals of floor plan update
     dispatchFloorPlanUpdate(table.locationId, { async: true });
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seats: updatedSeats.map((s) => ({
         id: s.id,
         seatNumber: s.seatNumber,
@@ -148,7 +148,7 @@ export const POST = withVenue(async function POST(
         angle: s.angle,
       })),
       message: `Reflowed ${updatedSeats.length} seats`,
-    });
+    } });
   } catch (error) {
     console.error('Failed to reflow seats:', error);
     return NextResponse.json(

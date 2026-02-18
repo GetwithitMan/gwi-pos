@@ -34,12 +34,12 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Payment reader not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       reader: {
         ...reader,
         successRate: reader.successRate ? Number(reader.successRate) : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch payment reader:', error)
     return NextResponse.json({ error: 'Failed to fetch payment reader' }, { status: 500 })
@@ -146,12 +146,12 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       reader: {
         ...reader,
         successRate: reader.successRate ? Number(reader.successRate) : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update payment reader:', error)
     return NextResponse.json({ error: 'Failed to update payment reader' }, { status: 500 })
@@ -200,7 +200,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete payment reader:', error)
     return NextResponse.json({ error: 'Failed to delete payment reader' }, { status: 500 })

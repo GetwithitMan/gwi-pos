@@ -59,7 +59,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: 100,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entries: entries.map(entry => ({
         id: entry.id,
         employeeId: entry.employeeId,
@@ -73,7 +73,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         overtimeHours: entry.overtimeHours ? Number(entry.overtimeHours) : null,
         notes: entry.notes,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch time clock entries:', error)
     return NextResponse.json(
@@ -168,14 +168,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: entry.id,
       employeeId: entry.employeeId,
       employeeName: entry.employee.displayName || `${entry.employee.firstName} ${entry.employee.lastName}`,
       clockIn: entry.clockIn.toISOString(),
       message: 'Clocked in successfully',
       ...(selectedTipGroup ? { selectedTipGroup } : {}),
-    })
+    } })
   } catch (error) {
     console.error('Failed to clock in:', error)
     return NextResponse.json(
@@ -328,7 +328,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       }).catch(err => console.error('Failed to close Break audit record:', err))
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: updated.id,
       employeeId: updated.employeeId,
       employeeName: updated.employee.displayName || `${updated.employee.firstName} ${updated.employee.lastName}`,
@@ -340,7 +340,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       overtimeHours: updated.overtimeHours ? Number(updated.overtimeHours) : null,
       message: action === 'clockOut' ? 'Clocked out successfully' :
                action === 'startBreak' ? 'Break started' : 'Break ended',
-    })
+    } })
   } catch (error) {
     console.error('Failed to update time clock:', error)
     return NextResponse.json(

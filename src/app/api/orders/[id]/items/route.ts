@@ -404,14 +404,14 @@ export const POST = withVenue(async function POST(
       dispatchFloorPlanUpdate(result.updatedOrder.locationId, { async: true }).catch(() => {})
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...response,
       addedItems: result.createdItems.map(item => ({
         id: item.id,
         name: item.name,
         correlationId: (item as { correlationId?: string }).correlationId,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to add items to order:', error)
     if (error instanceof Error) {

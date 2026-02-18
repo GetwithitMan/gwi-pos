@@ -58,7 +58,7 @@ export const PUT = withVenue(async function PUT(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'updated', entityId: category.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
       color: category.color,
@@ -66,7 +66,7 @@ export const PUT = withVenue(async function PUT(
       categoryShow: category.categoryShow,
       isActive: category.isActive,
       printerIds: category.printerIds
-    })
+    } })
   } catch (error) {
     console.error('Failed to update category:', error)
     return NextResponse.json(
@@ -128,7 +128,7 @@ export const DELETE = withVenue(async function DELETE(
       void notifyDataChanged({ locationId: category.locationId, domain: 'menu', action: 'deleted', entityId: id })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete category:', error)
     return NextResponse.json(

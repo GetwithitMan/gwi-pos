@@ -66,11 +66,11 @@ export const POST = withVenue(async function POST(req: NextRequest) {
           },
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           success: true,
           id: existingError.id,
           grouped: true
-        })
+        } })
       }
     }
 
@@ -162,11 +162,11 @@ export const POST = withVenue(async function POST(req: NextRequest) {
       })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       id: errorLog.id,
       groupId: errorLog.groupId,
-    })
+    } })
 
   } catch (error) {
     // Don't let error logging crash

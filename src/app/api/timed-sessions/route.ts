@@ -81,7 +81,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     })
     const menuItemMap = Object.fromEntries(menuItems.map(m => [m.id, m.name]))
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       sessions: sessions.map(s => ({
         id: s.id,
         menuItemId: s.menuItemId,
@@ -93,7 +93,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         rateAmount: Number(s.rateAmount),
         status: s.status,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch timed sessions:', error)
     return NextResponse.json(

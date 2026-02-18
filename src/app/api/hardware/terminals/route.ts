@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({ terminals })
+    return NextResponse.json({ data: { terminals } })
   } catch (error) {
     console.error('Failed to fetch terminals:', error)
     return NextResponse.json({ error: 'Failed to fetch terminals' }, { status: 500 })
@@ -122,7 +122,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ terminal })
+    return NextResponse.json({ data: { terminal } })
   } catch (error) {
     console.error('Failed to create terminal:', error)
     if (error instanceof Error && error.message.includes('Unique constraint')) {

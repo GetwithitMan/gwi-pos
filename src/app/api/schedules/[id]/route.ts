@@ -58,7 +58,7 @@ export const GET = withVenue(async function GET(
       totalLaborCost += hours * Number(shift.employee.hourlyRate || 0)
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       schedule: {
         id: schedule.id,
         weekStart: schedule.weekStart.toISOString(),
@@ -99,7 +99,7 @@ export const GET = withVenue(async function GET(
         totalHours: Math.round(totalHours * 100) / 100,
         totalLaborCost: Math.round(totalLaborCost * 100) / 100,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch schedule:', error)
     return NextResponse.json({ error: 'Failed to fetch schedule' }, { status: 500 })
@@ -148,7 +148,7 @@ export const PUT = withVenue(async function PUT(
       data: updateData,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       schedule: {
         id: updated.id,
         weekStart: updated.weekStart.toISOString(),
@@ -157,7 +157,7 @@ export const PUT = withVenue(async function PUT(
         publishedAt: updated.publishedAt?.toISOString() || null,
         notes: updated.notes,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update schedule:', error)
     return NextResponse.json({ error: 'Failed to update schedule' }, { status: 500 })
@@ -187,7 +187,7 @@ export const DELETE = withVenue(async function DELETE(
     // Soft delete the schedule
     await db.schedule.update({ where: { id }, data: { deletedAt: new Date() } })
 
-    return NextResponse.json({ message: 'Schedule deleted' })
+    return NextResponse.json({ data: { message: 'Schedule deleted' } })
   } catch (error) {
     console.error('Failed to delete schedule:', error)
     return NextResponse.json({ error: 'Failed to delete schedule' }, { status: 500 })

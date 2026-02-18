@@ -350,7 +350,7 @@ export const POST = withVenue(async function POST(
 
     dispatchFloorPlanUpdate(table.locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       seats: result.map(seat => ({
         id: seat.id,
         tableId: seat.tableId,
@@ -368,7 +368,7 @@ export const POST = withVenue(async function POST(
         warning: 'Seats generated with collisions (forceGenerate was true)',
         collisions: collisionResult.collisions,
       } : {}),
-    })
+    } })
   } catch (error) {
     console.error('Failed to auto-generate seats:', error)
     // Return detailed error for debugging

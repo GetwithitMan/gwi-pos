@@ -51,7 +51,7 @@ export const GET = withVenue(async function GET(
       shift.drawerId || null
     )
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       shift: {
         id: shift.id,
         employee: {
@@ -73,7 +73,7 @@ export const GET = withVenue(async function GET(
         notes: shift.notes,
       },
       summary: shiftSummary,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch shift:', error)
     return NextResponse.json(
@@ -278,7 +278,7 @@ export const PUT = withVenue(async function PUT(
         return closed
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         shift: {
           id: updatedShift.id,
           employee: {
@@ -304,7 +304,7 @@ export const PUT = withVenue(async function PUT(
           : variance > 0
             ? `Shift closed. Drawer is OVER by $${variance.toFixed(2)}`
             : `Shift closed. Drawer is SHORT by $${Math.abs(variance).toFixed(2)}`,
-      })
+      } })
     }
 
     // Simple update (notes, etc.)
@@ -315,10 +315,10 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       shift: updatedShift,
       message: 'Shift updated',
-    })
+    } })
   } catch (error) {
     console.error('Failed to update shift:', error)
     return NextResponse.json(

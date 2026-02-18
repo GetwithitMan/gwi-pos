@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { withVenue } from '@/lib/with-venue'
 
 export const GET = withVenue(async function GET() {
-  return NextResponse.json({
+  return NextResponse.json({ data: {
     twilio: {
       configured: !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM_NUMBER),
       fromNumber: process.env.TWILIO_FROM_NUMBER ? `***${process.env.TWILIO_FROM_NUMBER.slice(-4)}` : null,
@@ -13,5 +13,5 @@ export const GET = withVenue(async function GET() {
     slack: {
       configured: !!process.env.SLACK_WEBHOOK_URL,
     },
-  })
+  } })
 })

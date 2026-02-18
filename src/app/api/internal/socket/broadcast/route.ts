@@ -71,10 +71,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       // Socket server not available (serverless deployment or socket.io not initialized)
       console.warn('[Socket Broadcast] Socket server not available:', error)
       // In serverless mode, just log and return success (events will be polled instead)
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         warning: 'Socket server not available. KDS will use polling fallback.',
-      })
+      } })
     }
 
     switch (type) {
@@ -292,7 +292,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         return NextResponse.json({ error: `Unknown event type: ${type}` }, { status: 400 })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('[Socket Broadcast] Error:', error)
     return NextResponse.json(

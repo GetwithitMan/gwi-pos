@@ -142,13 +142,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     dispatchFloorPlanUpdate(locationId, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       totalTables: tables.length,
       tablesUpdated: results.length,
       tablesSkipped: skipped,
       results,
-    })
+    } })
   } catch (error) {
     console.error('[GenerateAllSeats] Failed:', error)
     return NextResponse.json(

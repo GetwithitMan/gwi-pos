@@ -56,7 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       : []
     const itemNameMap = new Map(transactionItems.map(i => [i.id, i.name]))
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       items: items.map(i => ({
         id: i.id,
         name: i.name,
@@ -83,7 +83,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         totalCost: t.totalCost ? Number(t.totalCost) : null,
         createdAt: t.createdAt,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Inventory error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory' }, { status: 500 })
@@ -176,7 +176,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       transaction: {
         id: transaction.id,
         type: transaction.type,
@@ -186,7 +186,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
       newStock: quantityAfter,
       isAvailable,
-    })
+    } })
   } catch (error) {
     console.error('Inventory transaction error:', error)
     return NextResponse.json({ error: 'Failed to record transaction' }, { status: 500 })

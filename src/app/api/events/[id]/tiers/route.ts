@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       eventId: id,
       eventName: event.name,
       tiers: tiers.map(tier => ({
@@ -62,7 +62,7 @@ export const GET = withVenue(async function GET(
         createdAt: tier.createdAt.toISOString(),
         updatedAt: tier.updatedAt.toISOString(),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch pricing tiers:', error)
     return NextResponse.json(
@@ -154,7 +154,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       tier: {
         id: tier.id,
@@ -170,7 +170,7 @@ export const POST = withVenue(async function POST(
         sortOrder: tier.sortOrder,
         isActive: tier.isActive,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to create pricing tier:', error)
     return NextResponse.json(

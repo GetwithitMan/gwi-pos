@@ -51,7 +51,7 @@ export const GET = withVenue(async function GET(
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       hasOpenTabs: openOrders.length > 0,
       count: openOrders.length,
       tabs: openOrders.map(order => ({
@@ -65,7 +65,7 @@ export const GET = withVenue(async function GET(
         itemCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
         createdAt: order.createdAt.toISOString(),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to check open tabs:', error)
     return NextResponse.json(
@@ -120,11 +120,11 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       transferredCount: result.count,
       message: `${result.count} tab(s) transferred successfully`,
-    })
+    } })
   } catch (error) {
     console.error('Failed to transfer tabs:', error)
     return NextResponse.json(

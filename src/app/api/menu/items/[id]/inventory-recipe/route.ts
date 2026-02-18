@@ -53,7 +53,7 @@ export const GET = withVenue(async function GET(
     })
 
     if (!recipe) {
-      return NextResponse.json({ recipe: null, menuItem })
+      return NextResponse.json({ data: { recipe: null, menuItem } })
     }
 
     // Calculate ingredient costs using shared utility
@@ -63,7 +63,7 @@ export const GET = withVenue(async function GET(
     const sellPrice = toNumber(menuItem.price)
     const costing = calculateRecipeCosting(totalCost, sellPrice)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       recipe: {
         ...recipe,
         totalCost,
@@ -74,7 +74,7 @@ export const GET = withVenue(async function GET(
         price: sellPrice,
       },
       costing,
-    })
+    } })
   } catch (error) {
     console.error('Get menu item inventory recipe error:', error)
     return NextResponse.json({ error: 'Failed to fetch recipe' }, { status: 500 })
@@ -222,7 +222,7 @@ export const POST = withVenue(async function POST(
 
     const costing = calculateRecipeCosting(totalCost, sellPrice)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       recipe: {
         ...recipe,
         totalCost,
@@ -230,7 +230,7 @@ export const POST = withVenue(async function POST(
         ingredients: processedIngredients,
       },
       costing,
-    })
+    } })
   } catch (error) {
     console.error('Save menu item inventory recipe error:', error)
     return NextResponse.json({ error: 'Failed to save recipe' }, { status: 500 })
@@ -268,7 +268,7 @@ export const DELETE = withVenue(async function DELETE(
       })
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete menu item inventory recipe error:', error)
     return NextResponse.json({ error: 'Failed to delete recipe' }, { status: 500 })

@@ -27,7 +27,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { sortOrder: 'asc' },
     })
 
-    return NextResponse.json({ orderTypes })
+    return NextResponse.json({ data: { orderTypes } })
   } catch (error) {
     console.error('[Order Types API] Error:', error)
     return NextResponse.json(
@@ -97,7 +97,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ orderType }, { status: 201 })
+    return NextResponse.json({ data: { orderType } }, { status: 201 })
   } catch (error) {
     console.error('Failed to create order type:', error)
     return NextResponse.json(
@@ -129,10 +129,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     })
 
     if (existingTypes.length > 0) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'System order types already initialized',
         orderTypes: existingTypes,
-      })
+      } })
     }
 
     // Create system order types
@@ -159,10 +159,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       createdTypes.push(orderType)
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: 'System order types initialized',
       orderTypes: createdTypes,
-    })
+    } })
   } catch (error) {
     console.error('Failed to initialize system order types:', error)
     return NextResponse.json(

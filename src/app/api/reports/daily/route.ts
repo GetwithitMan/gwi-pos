@@ -707,7 +707,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // BUILD RESPONSE
     // ============================================
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       reportDate: date.toISOString().split('T')[0],
       generatedAt: new Date().toISOString(),
 
@@ -882,7 +882,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         ccTipFees: round((ccTipFees._sum.ccFeeAmountCents || 0) / 100),
         ccTipFeeTransactions: ccTipFees._count || 0,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate daily report:', error)
     return NextResponse.json(

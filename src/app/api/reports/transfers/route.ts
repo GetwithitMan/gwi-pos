@@ -242,7 +242,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         label: `${h.hour.toString().padStart(2, '0')}:00`,
       }))
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalTransfers,
         tabTransfers,
@@ -267,7 +267,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeId,
         type: transferType,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate transfer report:', error)
     return NextResponse.json(

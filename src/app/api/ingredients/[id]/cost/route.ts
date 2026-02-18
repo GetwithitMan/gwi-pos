@@ -163,19 +163,19 @@ export const GET = withVenue(async function GET(
     const result = await calculateIngredientCost(id)
 
     if (result.costPerUnit === null) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         costPerUnit: null,
         costUnit: result.costUnit,
         costSource: 'unknown',
         message: 'No cost data available. Set up purchase price or link to inventory.',
-      })
+      } })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       costPerUnit: result.costPerUnit,
       costUnit: result.costUnit,
       costSource: result.costSource,
-    })
+    } })
   } catch (error) {
     console.error('Failed to calculate ingredient cost:', error)
     return NextResponse.json(

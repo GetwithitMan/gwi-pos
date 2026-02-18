@@ -170,7 +170,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }),
     ])
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orders: orders.map(order => ({
         id: order.id,
         orderNumber: order.orderNumber,
@@ -228,7 +228,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         amount: Number(p._sum.amount || 0),
         tips: Number(p._sum.tipAmount || 0),
       })),
-    })
+    } })
   } catch (error) {
     console.error('Order history error:', error)
     return NextResponse.json({ error: 'Failed to fetch order history' }, { status: 500 })

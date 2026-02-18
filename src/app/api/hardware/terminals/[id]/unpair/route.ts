@@ -33,10 +33,10 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       message: 'Terminal unpaired successfully',
-    })
+    } })
   } catch (error) {
     console.error('Failed to unpair terminal:', error)
     return NextResponse.json({ error: 'Failed to unpair terminal' }, { status: 500 })

@@ -35,11 +35,11 @@ export const GET = withVenue(async function GET(
       }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       preferences: {
         preferredRoomOrder: roomOrder,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to get employee preferences:', error)
     return NextResponse.json(
@@ -88,12 +88,12 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       preferences: {
         preferredRoomOrder,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update employee preferences:', error)
     return NextResponse.json(
@@ -118,12 +118,12 @@ export const DELETE = withVenue(async function DELETE(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       preferences: {
         preferredRoomOrder: [],
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to reset employee preferences:', error)
     return NextResponse.json(

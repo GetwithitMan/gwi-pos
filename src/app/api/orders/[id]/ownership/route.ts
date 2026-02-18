@@ -53,7 +53,7 @@ export const GET = withVenue(async function GET(request: NextRequest, { params }
 
     const ownership = await getActiveOwnership(orderId)
 
-    return NextResponse.json({ ownership })
+    return NextResponse.json({ data: { ownership } })
   } catch (error) {
     console.error('Failed to get order ownership:', error)
     return NextResponse.json(
@@ -154,7 +154,7 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
       customPercent,
     })
 
-    return NextResponse.json({ ownership })
+    return NextResponse.json({ data: { ownership } })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
 
@@ -241,7 +241,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       splits,
     })
 
-    return NextResponse.json({ ownership })
+    return NextResponse.json({ data: { ownership } })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
 
@@ -347,11 +347,11 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
     // null means ownership was deactivated (no owners remaining)
     const deactivated = result === null
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       deactivated,
       ownership: result,
-    })
+    } })
   } catch (error) {
     console.error('Failed to remove order owner:', error)
     return NextResponse.json(

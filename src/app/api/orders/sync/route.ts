@@ -193,12 +193,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       order: completeOrder,
       localId,
       message: 'Offline order synced successfully',
-    })
+    } })
   } catch (error) {
     console.error('Failed to sync offline order:', error)
     return NextResponse.json(

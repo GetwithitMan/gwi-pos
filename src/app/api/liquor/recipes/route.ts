@@ -122,7 +122,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ? withRecipes.reduce((sum, c) => sum + c.profitMargin, 0) / withRecipes.length
       : 0
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       cocktails,
       summary: {
         total: cocktails.length,
@@ -130,7 +130,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         withoutRecipes: cocktails.length - withRecipes.length,
         averageMargin: Math.round(avgMargin * 10) / 10,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch cocktail recipes:', error)
     return NextResponse.json(

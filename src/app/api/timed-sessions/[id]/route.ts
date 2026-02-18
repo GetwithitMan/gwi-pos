@@ -30,12 +30,12 @@ export const GET = withVenue(async function GET(
       select: { name: true },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...session,
       menuItemName: menuItem?.name || 'Unknown',
       rateAmount: Number(session.rateAmount),
       totalCharge: session.totalCharge ? Number(session.totalCharge) : null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch timed session:', error)
     return NextResponse.json(
@@ -114,13 +114,13 @@ export const PUT = withVenue(async function PUT(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         ...updatedSession,
         rateAmount: Number(updatedSession.rateAmount),
         totalCharge: Number(updatedSession.totalCharge),
         totalMinutes,
         totalAmount: totalCharge,
-      })
+      } })
     }
 
     if (action === 'pause') {
@@ -132,10 +132,10 @@ export const PUT = withVenue(async function PUT(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         ...updatedSession,
         rateAmount: Number(updatedSession.rateAmount),
-      })
+      } })
     }
 
     if (action === 'resume') {
@@ -154,10 +154,10 @@ export const PUT = withVenue(async function PUT(
           },
         })
 
-        return NextResponse.json({
+        return NextResponse.json({ data: {
           ...updatedSession,
           rateAmount: Number(updatedSession.rateAmount),
-        })
+        } })
       }
     }
 

@@ -88,7 +88,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
 
     // Create response with httpOnly cookie for the token
-    const response = NextResponse.json({
+    const response = NextResponse.json({ data: {
       success: true,
       terminal: {
         id: updated.id,
@@ -98,7 +98,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         forceAllPrints: updated.forceAllPrints,
         receiptPrinter: updated.receiptPrinter,
       },
-    })
+    } })
 
     // Set httpOnly cookie for security (1 year expiry)
     response.cookies.set('terminal_token', deviceToken, {

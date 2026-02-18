@@ -126,7 +126,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       tab: {
         id: updatedTab.id,
@@ -138,7 +138,7 @@ export const POST = withVenue(async function POST(
             `${updatedTab.employee.firstName} ${updatedTab.employee.lastName}`,
         },
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to transfer tab:', error)
     return NextResponse.json(

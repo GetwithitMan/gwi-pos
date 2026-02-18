@@ -39,7 +39,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Prep item not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       prepItem: {
         ...prepItem,
         batchYield: Number(prepItem.batchYield),
@@ -54,7 +54,7 @@ export const GET = withVenue(async function GET(
           } : null,
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Get prep item error:', error)
     return NextResponse.json({ error: 'Failed to fetch prep item' }, { status: 500 })
@@ -153,7 +153,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       prepItem: {
         ...prepItem,
         batchYield: Number(prepItem.batchYield),
@@ -163,7 +163,7 @@ export const PUT = withVenue(async function PUT(
           quantity: Number(ing.quantity),
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Update prep item error:', error)
     if ((error as { code?: string }).code === 'P2002') {
@@ -203,7 +203,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete prep item error:', error)
     return NextResponse.json({ error: 'Failed to delete prep item' }, { status: 500 })

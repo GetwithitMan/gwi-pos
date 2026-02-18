@@ -20,7 +20,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { startedAt: 'desc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       breaks: breaks.map(b => ({
         id: b.id,
         employeeId: b.employeeId,
@@ -32,7 +32,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         status: b.status,
         notes: b.notes,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Breaks error:', error)
     return NextResponse.json({ error: 'Failed to fetch breaks' }, { status: 500 })
@@ -83,14 +83,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       break: {
         id: breakEntry.id,
         breakType: breakEntry.breakType,
         startedAt: breakEntry.startedAt,
         status: breakEntry.status,
       },
-    })
+    } })
   } catch (error) {
     console.error('Start break error:', error)
     return NextResponse.json({ error: 'Failed to start break' }, { status: 500 })
@@ -146,7 +146,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       break: {
         id: updatedBreak.id,
         breakType: updatedBreak.breakType,
@@ -155,7 +155,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
         duration: updatedBreak.duration,
         status: updatedBreak.status,
       },
-    })
+    } })
   } catch (error) {
     console.error('End break error:', error)
     return NextResponse.json({ error: 'Failed to end break' }, { status: 500 })

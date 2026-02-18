@@ -35,7 +35,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: limit,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       periods: periods.map(p => ({
         id: p.id,
         periodStart: p.periodStart.toISOString(),
@@ -56,7 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeCount: p.payStubs.length,
         notes: p.notes,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch payroll periods:', error)
     return NextResponse.json({ error: 'Failed to fetch payroll periods' }, { status: 500 })
@@ -106,7 +106,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       period: {
         id: period.id,
         periodStart: period.periodStart.toISOString(),
@@ -114,7 +114,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         periodType: period.periodType,
         status: period.status,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to create payroll period:', error)
     return NextResponse.json({ error: 'Failed to create payroll period' }, { status: 500 })

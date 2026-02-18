@@ -119,7 +119,7 @@ export const GET = withVenue(async function GET(
       return acc
     }, {} as Record<string, number>)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       event: {
         id: event.id,
         name: event.name,
@@ -189,7 +189,7 @@ export const GET = withVenue(async function GET(
         offset,
         hasMore: offset + tickets.length < total,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch event tickets:', error)
     return NextResponse.json(

@@ -58,7 +58,7 @@ export const PUT = withVenue(async function PUT(
     // Get loyalty settings
     const settings = parseSettings(order.location.settings)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       customerId: customerId || null,
       customer: customer ? {
@@ -80,7 +80,7 @@ export const PUT = withVenue(async function PUT(
         minimumRedemptionPoints: settings.loyalty.minimumRedemptionPoints,
         maximumRedemptionPercent: settings.loyalty.maximumRedemptionPercent,
       } : null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to link customer:', error)
     return NextResponse.json(
@@ -115,7 +115,7 @@ export const GET = withVenue(async function GET(
 
     const settings = parseSettings(order.location.settings)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       customerId: order.customerId,
       customer: order.customer ? {
         id: order.customer.id,
@@ -136,7 +136,7 @@ export const GET = withVenue(async function GET(
         minimumRedemptionPoints: settings.loyalty.minimumRedemptionPoints,
         maximumRedemptionPercent: settings.loyalty.maximumRedemptionPercent,
       } : null,
-    })
+    } })
   } catch (error) {
     console.error('Failed to get customer:', error)
     return NextResponse.json(

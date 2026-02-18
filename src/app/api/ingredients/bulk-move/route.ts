@@ -52,10 +52,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       return updateResult.count
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       movedCount: result,
-    })
+    } })
   } catch (error) {
     console.error('Failed to bulk move ingredients:', error)
     return NextResponse.json(

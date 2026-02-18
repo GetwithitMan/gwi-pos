@@ -43,7 +43,7 @@ export const PUT = withVenue(async function PUT(req: Request) {
 
     dispatchFloorPlanUpdate(locationId, { async: true })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('[sections/reorder] PUT error:', error)
     return NextResponse.json({ error: 'Failed to reorder sections' }, { status: 500 })

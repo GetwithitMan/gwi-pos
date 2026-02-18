@@ -52,13 +52,13 @@ export const POST = withVenue(async function POST(
         }
       }
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         verified: isOnline,
         isOnline,
         responseTimeMs: responseTime,
         serialNumber: reader.serialNumber,
         beepTriggered: triggerBeep && isOnline,
-      })
+      } })
     } catch (fetchError) {
       const responseTime = Date.now() - startTime
       const errorMessage = fetchError instanceof Error ? fetchError.message : 'Connection failed'
@@ -72,12 +72,12 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         verified: false,
         isOnline: false,
         error: errorMessage,
         responseTimeMs: responseTime,
-      })
+      } })
     }
   } catch (error) {
     console.error('Failed to verify payment reader:', error)

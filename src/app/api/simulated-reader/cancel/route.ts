@@ -11,5 +11,5 @@ export const POST = withVenue(async function POST() {
   const blocked = checkSimulatedReaderAccess()
   if (blocked) return blocked
 
-  return NextResponse.json({ status: 'cancelled' })
+  return NextResponse.json({ data: { status: 'cancelled' } })
 })

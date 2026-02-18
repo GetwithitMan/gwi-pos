@@ -41,11 +41,11 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: isOnline,
         isOnline,
         responseTimeMs: responseTime,
-      })
+      } })
     } catch (fetchError) {
       const responseTime = Date.now() - startTime
       const errorMessage = fetchError instanceof Error ? fetchError.message : 'Connection failed'
@@ -60,12 +60,12 @@ export const POST = withVenue(async function POST(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: false,
         isOnline: false,
         error: errorMessage,
         responseTimeMs: responseTime,
-      })
+      } })
     }
   } catch (error) {
     console.error('Failed to ping payment reader:', error)

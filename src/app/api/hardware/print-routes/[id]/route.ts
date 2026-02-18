@@ -31,7 +31,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Print route not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ route })
+    return NextResponse.json({ data: { route } })
   } catch (error) {
     console.error('Failed to fetch print route:', error)
     return NextResponse.json({ error: 'Failed to fetch print route' }, { status: 500 })
@@ -137,7 +137,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({ route })
+    return NextResponse.json({ data: { route } })
   } catch (error) {
     console.error('Failed to update print route:', error)
     return NextResponse.json({ error: 'Failed to update print route' }, { status: 500 })
@@ -167,7 +167,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete print route:', error)
     return NextResponse.json({ error: 'Failed to delete print route' }, { status: 500 })

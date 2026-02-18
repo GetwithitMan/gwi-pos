@@ -54,7 +54,7 @@ export const GET = withVenue(async function GET(
       return acc
     }, {} as Record<string, number>)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       event: {
         id: event.id,
         locationId: event.locationId,
@@ -116,7 +116,7 @@ export const GET = withVenue(async function GET(
           refunded: ticketCounts['refunded'] || 0,
         },
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch event:', error)
     return NextResponse.json(
@@ -218,7 +218,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       event: {
         id: event.id,
         name: event.name,
@@ -235,7 +235,7 @@ export const PUT = withVenue(async function PUT(
           price: Number(tier.price),
         })),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update event:', error)
     return NextResponse.json(
@@ -296,10 +296,10 @@ export const DELETE = withVenue(async function DELETE(
         db.event.update({ where: { id }, data: { deletedAt: now } }),
       ])
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         message: 'Event permanently deleted',
-      })
+      } })
     } else {
       // Soft delete - set status to cancelled
       await db.event.update({
@@ -310,10 +310,10 @@ export const DELETE = withVenue(async function DELETE(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         success: true,
         message: 'Event cancelled',
-      })
+      } })
     }
   } catch (error) {
     console.error('Failed to delete event:', error)

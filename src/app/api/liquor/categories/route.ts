@@ -126,7 +126,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: category.id,
       name: category.name,
       displayName: category.displayName,
@@ -137,7 +137,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       modifierGroupCount: 0,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
-    })
+    } })
   } catch (error) {
     console.error('Failed to create spirit category:', error)
     return NextResponse.json(

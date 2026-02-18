@@ -93,7 +93,7 @@ export const GET = withVenue(async function GET(
       throw new NotFoundError('Order')
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       parentOrderId: order.id,
       splitOrders: order.splitOrders.map(split => ({
         id: split.id,
@@ -133,7 +133,7 @@ export const GET = withVenue(async function GET(
           })),
         })),
       })),
-    })
+    } })
   } catch (error) {
     return handleApiError(error, 'Failed to get split tickets')
   }
@@ -504,7 +504,7 @@ export const POST = withVenue(async function POST(
       tableId: parentOrder.tableId || undefined,
     }).catch(() => {})
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: 'Split tickets created successfully',
       parentOrderId: parentOrder.id,
       splitOrders: createdSplits.map(split => ({
@@ -518,7 +518,7 @@ export const POST = withVenue(async function POST(
         total: Number(split.total),
         itemCount: split.items.length,
       })),
-    }, { status: 201 })
+    } }, { status: 201 })
   } catch (error) {
     return handleApiError(error, 'Failed to create split tickets')
   }
@@ -651,7 +651,7 @@ export const PATCH = withVenue(async function PATCH(
         tableId: parentOrder.tableId || undefined,
       }).catch(() => {})
 
-      return NextResponse.json({ message: `Item split ${ways} ways` })
+      return NextResponse.json({ data: { message: `Item split ${ways} ways` } })
     }
 
     // Move item between splits (default action)
@@ -740,7 +740,7 @@ export const PATCH = withVenue(async function PATCH(
       tableId: parentOrder.tableId || undefined,
     }).catch(() => {})
 
-    return NextResponse.json({ message: 'Item moved successfully' })
+    return NextResponse.json({ data: { message: 'Item moved successfully' } })
   } catch (error) {
     return handleApiError(error, 'Failed to move split item')
   }
@@ -812,10 +812,10 @@ export const DELETE = withVenue(async function DELETE(
       })
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: 'Split tickets merged successfully',
       parentOrderId: id,
-    })
+    } })
   } catch (error) {
     return handleApiError(error, 'Failed to merge split tickets')
   }

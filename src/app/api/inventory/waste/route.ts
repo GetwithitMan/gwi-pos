@@ -40,13 +40,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { wasteDate: 'desc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entries: entries.map(entry => ({
         ...entry,
         quantity: Number(entry.quantity),
         costImpact: entry.costImpact ? Number(entry.costImpact) : null,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Waste log list error:', error)
     return NextResponse.json({ error: 'Failed to fetch waste log' }, { status: 500 })
@@ -139,13 +139,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       entry: {
         ...entry,
         quantity: Number(entry.quantity),
         costImpact: entry.costImpact ? Number(entry.costImpact) : null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Create waste log entry error:', error)
     return NextResponse.json({ error: 'Failed to create waste log entry' }, { status: 500 })

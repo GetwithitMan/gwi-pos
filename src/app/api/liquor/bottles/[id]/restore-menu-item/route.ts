@@ -49,7 +49,7 @@ export const POST = withVenue(async function POST(
       name: restoredItem.name,
     }, { async: true })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       menuItem: {
         id: restoredItem.id,
@@ -57,7 +57,7 @@ export const POST = withVenue(async function POST(
         price: Number(restoredItem.price),
         category: restoredItem.category,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to restore menu item:', error)
     return NextResponse.json(

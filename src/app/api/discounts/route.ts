@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ],
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       discounts: discounts.map(d => ({
         id: d.id,
         name: d.name,
@@ -57,7 +57,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         isActive: d.isActive,
         isAutomatic: d.isAutomatic,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch discounts:', error)
     return NextResponse.json(
@@ -133,14 +133,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: discount.id,
       name: discount.name,
       displayText: discount.displayText,
       discountType: discount.discountType,
       discountConfig: discount.discountConfig,
       isActive: discount.isActive,
-    })
+    } })
   } catch (error) {
     console.error('Failed to create discount:', error)
     return NextResponse.json(

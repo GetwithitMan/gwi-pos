@@ -19,11 +19,11 @@ export async function POST() {
       // Stop the kiosk service first (prevents auto-restart)
       exec('sudo systemctl stop pulse-kiosk 2>/dev/null; sudo pkill -f "chromium.*localhost" 2>/dev/null', (error) => {
         // Both commands may "fail" (service not running, no process to kill) — that's fine
-        resolve(NextResponse.json({ ok: true }))
+        resolve(NextResponse.json({ data: { ok: true } }))
       })
     })
   }
 
   // In dev mode, just acknowledge
-  return NextResponse.json({ ok: true, dev: true })
+  return NextResponse.json({ data: { ok: true, dev: true } })
 }

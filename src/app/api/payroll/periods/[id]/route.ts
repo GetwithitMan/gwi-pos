@@ -34,7 +34,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Payroll period not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       period: {
         id: period.id,
         periodStart: period.periodStart.toISOString(),
@@ -79,7 +79,7 @@ export const GET = withVenue(async function GET(
         paymentMethod: stub.paymentMethod,
         paidAt: stub.paidAt?.toISOString() || null,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch payroll period:', error)
     return NextResponse.json({ error: 'Failed to fetch payroll period' }, { status: 500 })
@@ -329,7 +329,7 @@ export const PUT = withVenue(async function PUT(
         },
       })
 
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'Payroll processed successfully',
         totals: {
           regularHours: totalRegularHours,
@@ -340,7 +340,7 @@ export const PUT = withVenue(async function PUT(
           bankedTips: totalBankedTips,
           grandTotal,
         },
-      })
+      } })
     }
 
     if (action === 'close') {
@@ -360,7 +360,7 @@ export const PUT = withVenue(async function PUT(
         data: { status: 'approved' },
       })
 
-      return NextResponse.json({ message: 'Payroll period closed' })
+      return NextResponse.json({ data: { message: 'Payroll period closed' } })
     }
 
     if (action === 'pay') {
@@ -431,7 +431,7 @@ export const PUT = withVenue(async function PUT(
         },
       })
 
-      return NextResponse.json({ message: 'Payroll marked as paid, YTD updated' })
+      return NextResponse.json({ data: { message: 'Payroll marked as paid, YTD updated' } })
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
@@ -467,7 +467,7 @@ export const DELETE = withVenue(async function DELETE(
     // Soft delete period
     await db.payrollPeriod.update({ where: { id }, data: { deletedAt: new Date() } })
 
-    return NextResponse.json({ message: 'Payroll period deleted' })
+    return NextResponse.json({ data: { message: 'Payroll period deleted' } })
   } catch (error) {
     console.error('Failed to delete payroll period:', error)
     return NextResponse.json({ error: 'Failed to delete payroll period' }, { status: 500 })

@@ -122,11 +122,11 @@ export const GET = withVenue(async function GET(
       prepCount: prepItems.length,
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       inventoryItem: formattedInventoryItem,
       recipeIngredients,
       prepItems,
-    })
+    } })
   } catch (error) {
     console.error('Error fetching ingredient hierarchy:', error)
     return NextResponse.json(

@@ -268,7 +268,7 @@ export const POST = withVenue(async function POST(
       0
     )
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       holdExpiresAt: holdUntil.toISOString(),
       holdDurationMinutes,
@@ -288,7 +288,7 @@ export const POST = withVenue(async function POST(
         totalPrice: Number(ticket.totalPrice),
         status: ticket.status,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to hold tickets:', error)
     return NextResponse.json(

@@ -98,7 +98,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     // Return with pagination info if paginating
     if (take) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         items: mappedItems,
         pagination: {
           total,
@@ -107,11 +107,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           hasMore,
           nextCursor: hasMore && returnItems.length > 0 ? returnItems[returnItems.length - 1].id : null,
         },
-      })
+      } })
     }
 
     // Legacy response format (no pagination)
-    return NextResponse.json({ items: mappedItems })
+    return NextResponse.json({ data: { items: mappedItems } })
   } catch (error) {
     console.error('Inventory items list error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory items' }, { status: 500 })
@@ -212,7 +212,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       item: {
         ...item,
         purchaseSize: Number(item.purchaseSize),
@@ -223,7 +223,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         yieldCostPerUnit: item.yieldCostPerUnit ? Number(item.yieldCostPerUnit) : null,
         currentStock: Number(item.currentStock),
       },
-    })
+    } })
   } catch (error) {
     console.error('Create inventory item error:', error)
     if ((error as { code?: string }).code === 'P2002') {

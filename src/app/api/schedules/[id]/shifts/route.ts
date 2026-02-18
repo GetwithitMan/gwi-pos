@@ -76,7 +76,7 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       shift: {
         id: shift.id,
         employee: {
@@ -91,7 +91,7 @@ export const POST = withVenue(async function POST(
         status: shift.status,
         notes: shift.notes,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to create shift:', error)
     return NextResponse.json({ error: 'Failed to create shift' }, { status: 500 })
@@ -171,10 +171,10 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: 'Shifts updated',
       count: results.length,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update shifts:', error)
     return NextResponse.json({ error: 'Failed to update shifts' }, { status: 500 })

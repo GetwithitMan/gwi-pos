@@ -355,7 +355,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       results,
       summary: {
@@ -365,7 +365,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         voided: voidedCount,
         failed: failedSyncs,
       },
-    })
+    } })
   } catch (error) {
     console.error('Sync resolution batch failed:', error)
     return NextResponse.json(
@@ -458,7 +458,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       take: 20,
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalTransactions,
         offlineCaptures,
@@ -478,7 +478,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         syncAttempts: p.syncAttempts,
         needsReconciliation: p.needsReconciliation,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to get sync audit stats:', error)
     return NextResponse.json(

@@ -60,10 +60,10 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: upsellEvent.id,
       wasAccepted: upsellEvent.wasAccepted,
-    })
+    } })
   } catch (error) {
     console.error('Failed to record upsell event:', error)
     return NextResponse.json(
@@ -138,7 +138,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const acceptanceRate = totalShown > 0 ? (totalAccepted / totalShown) * 100 : 0
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalShown,
         totalAccepted,
@@ -156,7 +156,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         employeeId: e.employeeId,
         totalPrompts: e._count,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch upsell stats:', error)
     return NextResponse.json(

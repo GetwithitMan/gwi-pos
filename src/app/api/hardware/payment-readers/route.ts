@@ -30,7 +30,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       readers: readers.map((r) => ({
         ...r,
         avgResponseTime: r.avgResponseTime,
@@ -40,7 +40,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ? `...${r.serialNumber.slice(-6)}`
           : r.serialNumber,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch payment readers:', error)
     return NextResponse.json({ error: 'Failed to fetch payment readers' }, { status: 500 })
@@ -120,7 +120,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({ reader })
+    return NextResponse.json({ data: { reader } })
   } catch (error) {
     console.error('Failed to create payment reader:', error)
     if (error instanceof Error && error.message.includes('Unique constraint')) {

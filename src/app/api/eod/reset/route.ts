@@ -74,7 +74,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     if (dryRun) {
       // Return what WOULD be reset without actually doing it
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         dryRun: true,
         wouldReset: {
           orphanedTables: {
@@ -92,7 +92,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           },
         },
         message: 'Dry run complete. No changes made.',
-      })
+      } })
     }
 
     const now = new Date()
@@ -193,7 +193,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       dispatchOpenOrdersChanged(locationId, { trigger: 'updated' as any }, { async: true }).catch(() => {})
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       stats: {
         tablesReset: stats.tablesReset,
@@ -203,7 +203,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         ? [`${staleOpenOrders.length} stale order(s) detected. Please review manually.`]
         : [],
       message: 'EOD reset completed successfully',
-    })
+    } })
   } catch (error) {
     console.error('[EOD Reset] Failed:', error)
     return NextResponse.json(
@@ -265,7 +265,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const needsReset = occupiedTablesWithoutOrders > 0 || staleOrderCount > 0
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       needsReset,
       summary: {
         occupiedTablesWithoutOrders,
@@ -275,7 +275,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       recommendation: needsReset
         ? 'Run EOD reset to clean up orphaned data'
         : 'No reset needed - location is clean',
-    })
+    } })
   } catch (error) {
     console.error('[EOD Reset] Check failed:', error)
     return NextResponse.json(

@@ -163,7 +163,7 @@ export const POST = withVenue(async function POST(
       return updatedTickets
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       success: true,
       purchasedAt: now.toISOString(),
       orderSummary: {
@@ -200,7 +200,7 @@ export const POST = withVenue(async function POST(
         totalPrice: Number(ticket.totalPrice),
         status: ticket.status,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to purchase tickets:', error)
     return NextResponse.json(

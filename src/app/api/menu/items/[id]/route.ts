@@ -38,7 +38,7 @@ export const GET = withVenue(async function GET(
     // Check if this is a pizza item based on category type OR item type
     const isPizzaItem = item.itemType === 'pizza' || item.category?.categoryType === 'pizza'
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       item: {
         id: item.id,
         categoryId: item.categoryId,
@@ -90,7 +90,7 @@ export const GET = withVenue(async function GET(
         defaultPourSize: item.defaultPourSize,
         imageUrl: item.imageUrl,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to get item:', error)
     return NextResponse.json(
@@ -256,7 +256,7 @@ export const PUT = withVenue(async function PUT(
     // Notify cloud → NUC sync for real-time updates
     void notifyDataChanged({ locationId: item.locationId, domain: 'menu', action: 'updated', entityId: item.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: item.id,
       categoryId: item.categoryId,
       name: item.name,
@@ -276,7 +276,7 @@ export const PUT = withVenue(async function PUT(
       printerIds: item.printerIds,
       backupPrinterIds: item.backupPrinterIds,
       comboPrintMode: item.comboPrintMode,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update item:', error)
     return NextResponse.json(
@@ -325,7 +325,7 @@ export const DELETE = withVenue(async function DELETE(
       void notifyDataChanged({ locationId: item.locationId, domain: 'menu', action: 'deleted', entityId: id })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete item:', error)
     return NextResponse.json(

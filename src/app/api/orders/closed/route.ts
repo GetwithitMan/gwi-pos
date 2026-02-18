@@ -191,14 +191,14 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const nextCursor = hasMore ? resultOrders[resultOrders.length - 1].id : null
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       orders: mappedOrders,
       pagination: {
         hasMore,
         nextCursor,
         limit,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch closed orders:', error)
     return NextResponse.json(

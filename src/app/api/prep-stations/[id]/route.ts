@@ -19,7 +19,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Prep station not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ station })
+    return NextResponse.json({ data: { station } })
   } catch (error) {
     console.error('Failed to fetch prep station:', error)
     return NextResponse.json({ error: 'Failed to fetch prep station' }, { status: 500 })
@@ -55,7 +55,7 @@ export const PUT = withVenue(async function PUT(
       include: { categories: { select: { id: true, name: true } } },
     })
 
-    return NextResponse.json({ station })
+    return NextResponse.json({ data: { station } })
   } catch (error) {
     console.error('Failed to update prep station:', error)
     return NextResponse.json({ error: 'Failed to update prep station' }, { status: 500 })
@@ -76,7 +76,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await db.prepStation.update({ where: { id }, data: { deletedAt: new Date() } })
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete prep station:', error)
     return NextResponse.json({ error: 'Failed to delete prep station' }, { status: 500 })

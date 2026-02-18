@@ -49,7 +49,7 @@ export const GET = withVenue(async function GET(
       }
 
       const response = mapOrderForResponse(order)
-      return NextResponse.json({ ...response, paidAmount: 0 })
+      return NextResponse.json({ data: { ...response, paidAmount: 0 } })
     }
 
     const order = await db.order.findUnique({
@@ -107,10 +107,10 @@ export const GET = withVenue(async function GET(
       .filter(p => p.status === 'completed')
       .reduce((sum, p) => sum + Number(p.totalAmount), 0)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       ...response,
       paidAmount,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch order:', error)
     return apiError.internalError('Failed to fetch order', ERROR_CODES.INTERNAL_ERROR)
@@ -243,7 +243,7 @@ export const PUT = withVenue(async function PUT(
       }, { async: true }).catch(console.error)
     }
 
-    return NextResponse.json(response)
+    return NextResponse.json({ data: response })
   } catch (error) {
     console.error('Failed to update order:', error)
     return apiError.internalError('Failed to update order', ERROR_CODES.INTERNAL_ERROR)
@@ -371,7 +371,7 @@ export const PATCH = withVenue(async function PATCH(
       }, { async: true }).catch(console.error)
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: updatedOrder.id,
       locationId: updatedOrder.locationId,
       tableId: updatedOrder.tableId,
@@ -386,7 +386,7 @@ export const PATCH = withVenue(async function PATCH(
       discountTotal: Number(updatedOrder.discountTotal),
       total: Number(updatedOrder.total),
       notes: updatedOrder.notes,
-    })
+    } })
   } catch (error) {
     console.error('Failed to patch order:', error)
     return apiError.internalError('Failed to update order', ERROR_CODES.INTERNAL_ERROR)

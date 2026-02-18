@@ -22,7 +22,7 @@ export const GET = withVenue(async function GET(
       )
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       discount: {
         id: discount.id,
         name: discount.name,
@@ -41,7 +41,7 @@ export const GET = withVenue(async function GET(
         createdAt: discount.createdAt.toISOString(),
         updatedAt: discount.updatedAt.toISOString(),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch discount:', error)
     return NextResponse.json(
@@ -106,7 +106,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       discount: {
         id: discount.id,
         name: discount.name,
@@ -116,7 +116,7 @@ export const PUT = withVenue(async function PUT(
         isActive: discount.isActive,
         updatedAt: discount.updatedAt.toISOString(),
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update discount:', error)
     return NextResponse.json(
@@ -151,7 +151,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete discount:', error)
     return NextResponse.json(

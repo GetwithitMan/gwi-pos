@@ -347,7 +347,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const vipThreshold = Math.ceil(totalCustomers * 0.1)
     const vipCustomers = sortedCustomers.slice(0, Math.max(vipThreshold, frequencyBuckets.vip))
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         totalCustomers,
         totalRevenue: Math.round(totalRevenue * 100) / 100,
@@ -386,7 +386,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         minSpent,
         sortBy,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate customer report:', error)
     return NextResponse.json(

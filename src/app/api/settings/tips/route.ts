@@ -40,10 +40,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 
     const settings = parseSettings(location.settings)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       tipBank: settings.tipBank,
       tipShares: settings.tipShares,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch tip settings:', error)
     return NextResponse.json(
@@ -129,10 +129,10 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       tipBank: mergedTipBank,
       tipShares: mergedTipShares,
-    })
+    } })
   } catch (error) {
     console.error('Failed to update tip settings:', error)
     return NextResponse.json(

@@ -47,7 +47,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       orderBy: { startedAt: 'desc' },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       shifts: shifts.map(shift => ({
         id: shift.id,
         employee: {
@@ -68,7 +68,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         tipsDeclared: shift.tipsDeclared ? Number(shift.tipsDeclared) : null,
         notes: shift.notes,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch shifts:', error)
     return NextResponse.json(
@@ -199,7 +199,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       shift: {
         id: shift.id,
         employee: {
@@ -211,7 +211,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         status: shift.status,
       },
       message: 'Shift started successfully',
-    })
+    } })
   } catch (error) {
     console.error('Failed to start shift:', error)
     return NextResponse.json(

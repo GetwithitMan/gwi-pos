@@ -362,7 +362,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.amount - a.amount)
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       summary: {
         orderCount,
         itemCount,
@@ -399,7 +399,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
         orderType,
         tableId,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to generate sales report:', error)
     return NextResponse.json(

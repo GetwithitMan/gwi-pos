@@ -48,7 +48,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Terminal not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ terminal })
+    return NextResponse.json({ data: { terminal } })
   } catch (error) {
     console.error('Failed to fetch terminal:', error)
     return NextResponse.json({ error: 'Failed to fetch terminal' }, { status: 500 })
@@ -230,7 +230,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({ terminal })
+    return NextResponse.json({ data: { terminal } })
   } catch (error) {
     console.error('Failed to update terminal:', error)
     if (error instanceof Error && error.message.includes('Unique constraint')) {
@@ -267,7 +267,7 @@ export const DELETE = withVenue(async function DELETE(
       },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete terminal:', error)
     return NextResponse.json({ error: 'Failed to delete terminal' }, { status: 500 })

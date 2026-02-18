@@ -103,7 +103,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       ],
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       tables: tables.map(table => ({
         id: table.id,
         name: table.name,
@@ -145,7 +145,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
             : undefined,
         } : null,
       })),
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch tables:', error)
     return NextResponse.json(
@@ -269,7 +269,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'floorplan', action: 'created', entityId: table.id })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       table: {
         id: table.id,
         name: table.name,
@@ -288,7 +288,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         isLocked: false,
         currentOrder: null,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to create table:', error)
     return NextResponse.json(

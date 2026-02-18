@@ -56,7 +56,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       customers: customers.map(c => ({
         id: c.id,
         firstName: c.firstName,
@@ -79,7 +79,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       total,
       limit,
       offset,
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch customers:', error)
     return NextResponse.json(
@@ -153,7 +153,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       id: customer.id,
       firstName: customer.firstName,
       lastName: customer.lastName,
@@ -171,7 +171,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       marketingOptIn: customer.marketingOptIn,
       birthday: customer.birthday?.toISOString() || null,
       createdAt: customer.createdAt.toISOString(),
-    })
+    } })
   } catch (error) {
     console.error('Failed to create customer:', error)
     return NextResponse.json(

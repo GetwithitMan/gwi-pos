@@ -39,21 +39,21 @@ export const GET = withVenue(async function GET(
     }
 
     if (!modifier.inventoryLink) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         modifier: {
           id: modifier.id,
           name: modifier.name,
           price: toNumber(modifier.price),
         },
         inventoryLink: null
-      })
+      } })
     }
 
     const link = modifier.inventoryLink
     const unitCost = link.inventoryItem ? getEffectiveCost(link.inventoryItem) : 0
     const totalCost = toNumber(link.usageQuantity) * unitCost
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       modifier: {
         id: modifier.id,
         name: modifier.name,
@@ -69,7 +69,7 @@ export const GET = withVenue(async function GET(
         unitCost,
         totalCost,
       },
-    })
+    } })
   } catch (error) {
     console.error('Get modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to fetch inventory link' }, { status: 500 })
@@ -179,7 +179,7 @@ export const POST = withVenue(async function POST(
       data: { calculatedCost: totalCost },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       modifier: {
         id: modifier.id,
         name: modifier.name,
@@ -195,7 +195,7 @@ export const POST = withVenue(async function POST(
         unitCost,
         totalCost,
       },
-    })
+    } })
   } catch (error) {
     console.error('Save modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to save inventory link' }, { status: 500 })
@@ -223,7 +223,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete modifier inventory link error:', error)
     return NextResponse.json({ error: 'Failed to delete inventory link' }, { status: 500 })

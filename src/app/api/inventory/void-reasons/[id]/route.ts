@@ -18,7 +18,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Void reason not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ voidReason })
+    return NextResponse.json({ data: { voidReason } })
   } catch (error) {
     console.error('Get void reason error:', error)
     return NextResponse.json({ error: 'Failed to fetch void reason' }, { status: 500 })
@@ -56,7 +56,7 @@ export const PUT = withVenue(async function PUT(
       data: updateData,
     })
 
-    return NextResponse.json({ voidReason })
+    return NextResponse.json({ data: { voidReason } })
   } catch (error) {
     console.error('Update void reason error:', error)
     if ((error as { code?: string }).code === 'P2002') {
@@ -87,7 +87,7 @@ export const DELETE = withVenue(async function DELETE(
       data: { deletedAt: new Date() },
     })
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Delete void reason error:', error)
     return NextResponse.json({ error: 'Failed to delete void reason' }, { status: 500 })

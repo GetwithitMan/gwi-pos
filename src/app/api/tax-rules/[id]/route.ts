@@ -16,7 +16,7 @@ export const GET = withVenue(async function GET(
       return NextResponse.json({ error: 'Tax rule not found' }, { status: 404 })
     }
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       taxRule: {
         id: taxRule.id,
         name: taxRule.name,
@@ -30,7 +30,7 @@ export const GET = withVenue(async function GET(
         isCompounded: taxRule.isCompounded,
         isActive: taxRule.isActive,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to fetch tax rule:', error)
     return NextResponse.json({ error: 'Failed to fetch tax rule' }, { status: 500 })
@@ -66,7 +66,7 @@ export const PUT = withVenue(async function PUT(
       },
     })
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       taxRule: {
         id: taxRule.id,
         name: taxRule.name,
@@ -75,7 +75,7 @@ export const PUT = withVenue(async function PUT(
         appliesTo: taxRule.appliesTo,
         isActive: taxRule.isActive,
       },
-    })
+    } })
   } catch (error) {
     console.error('Failed to update tax rule:', error)
     return NextResponse.json({ error: 'Failed to update tax rule' }, { status: 500 })
@@ -96,7 +96,7 @@ export const DELETE = withVenue(async function DELETE(
     }
 
     await prisma.taxRule.update({ where: { id }, data: { deletedAt: new Date() } })
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ data: { success: true } })
   } catch (error) {
     console.error('Failed to delete tax rule:', error)
     return NextResponse.json({ error: 'Failed to delete tax rule' }, { status: 500 })

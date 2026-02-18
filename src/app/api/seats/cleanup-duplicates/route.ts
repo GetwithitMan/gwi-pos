@@ -69,15 +69,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     if (duplicates.length === 0) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'No duplicate seats found',
         duplicatesFound: 0,
-      });
+      } });
     }
 
     // If dry run, just report what would be deleted
     if (dryRun) {
-      return NextResponse.json({
+      return NextResponse.json({ data: {
         message: 'Dry run complete - no changes made',
         duplicatesFound: duplicates.length,
         totalToDelete: duplicates.reduce((sum, d) => sum + d.deleteIds.length, 0),
@@ -87,7 +87,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           keeping: d.keepId,
           deleting: d.deleteIds.length,
         })),
-      });
+      } });
     }
 
     // Actually delete (soft delete) the duplicates
@@ -101,7 +101,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({
+    return NextResponse.json({ data: {
       message: `Cleaned up ${allDeleteIds.length} duplicate seats`,
       duplicatesFound: duplicates.length,
       seatsDeleted: allDeleteIds.length,
@@ -110,7 +110,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         seatNumber: d.seatNumber,
         deleted: d.deleteIds.length,
       })),
-    });
+    } });
   } catch (error) {
     console.error('Failed to cleanup duplicate seats:', error);
     return NextResponse.json(
