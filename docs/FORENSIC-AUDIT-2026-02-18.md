@@ -3,7 +3,7 @@
 **Date:** February 18, 2026
 **Audited by:** 10-agent parallel forensic team (Claude Opus 4.6)
 **Scope:** APIs, sockets, bridges, performance, legacy code, data integrity, UX
-**Status:** ACTIVE — Waves 1-5 COMPLETE, Hotfix Wave COMPLETE, Wave 6A COMPLETE, Wave 6B in progress
+**Status:** ACTIVE — Waves 1-6F COMPLETE. Resume with "finish forensic audit".
 
 ---
 
@@ -753,10 +753,23 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 **Root cause:** Prisma `$extends` middleware only filters top-level queries, not nested `include` relations. Items with `deletedAt` set were returned by the API and reloaded into local state.
 **Commit:** `737484c`
 
-### Wave 6F+ — Remaining Backlog
+### Wave 6F — Ingredient Modifications Fix (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 61 | Add `ingredientModifications: true` to GET /api/orders/[id] split view query | ingredient-fix | ✅ |
+| 62 | Add `ingredientModifications: true` to GET /api/orders/[id] full view query | ingredient-fix | ✅ |
+| 63 | Add `ingredientModifications: true` to GET /api/tabs items include | ingredient-fix | ✅ |
+| 64 | Add `ingredientModifications: true` to POST /api/orders creation response include | ingredient-fix | ✅ |
+| 65 | Add `ingredientModifications: true` to GET /api/orders list query items include | ingredient-fix | ✅ |
+
+**Root cause:** `GET /api/orders/[id]` fetched items with `modifiers` and `pizzaData` but NOT `ingredientModifications`. The response mapper (`order-response-mapper.ts`) already handled the data correctly — it just was never fetched from DB. Ingredient modifications (no, lite, side, extra) applied to items like Classic Burger were invisible in the order panel after send.
+**Files fixed:** `src/app/api/orders/[id]/route.ts`, `src/app/api/tabs/route.ts`, `src/app/api/orders/route.ts`
+**Impact:** All 5 item-reading queries now include ingredient modifications. Order panel correctly shows "NO onion", "LITE lettuce", "SIDE mayo" etc.
+
+### Wave 6G+ — Remaining Backlog
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 61 | Response format normalization | P2 | 68+ routes |
+| 66 | Response format normalization | P2 | 68+ routes |
 
 ---
 
@@ -781,4 +794,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 6E + Hotfix COMPLETE — 60/60 tasks complete, 505+ individual fixes applied across 108+ files*
+*Last updated: Wave 6F COMPLETE — 65/65 tasks complete, 510+ individual fixes applied across 111+ files*

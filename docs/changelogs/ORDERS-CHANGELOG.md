@@ -1,5 +1,23 @@
 # Orders Domain - Change Log
 
+## 2026-02-18 — Forensic Audit Wave 6
+
+### Bug Fixes
+- **Deleted items reappearing**: Added `where: { deletedAt: null }` to nested includes in 5 API routes (Prisma `$extends` doesn't cascade to nested relations)
+- **Ingredient modifications not showing**: Added `ingredientModifications: true` to 5 item-reading queries across 3 API routes
+
+### UX Improvements
+- Comp/Void flow reduced from 5-6 taps to 3 (auto-detect, auto-select first reason)
+- "Same Again" reorder button on closed order actions
+- ÷2 quick-split button in order panel actions
+- Clickable seat headers in order panel for seat selection
+
+### Hook Extractions
+- `usePaymentFlow` (7 states), `useModifierModal` (5), `useItemOperations` (5), `useComboBuilder` (4)
+- orders/page.tsx reduced from ~51 to ~30 useState calls
+
+---
+
 ## Session: February 17, 2026 — Split Combined View, Inline Split Creation, UI Polish (Skills 370-372)
 
 ### Summary

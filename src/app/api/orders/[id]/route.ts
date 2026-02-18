@@ -38,6 +38,7 @@ export const GET = withVenue(async function GET(
                   depth: true, preModifier: true, linkedMenuItemId: true,
                 },
               },
+              ingredientModifications: true,
             },
           },
         },
@@ -76,6 +77,7 @@ export const GET = withVenue(async function GET(
               },
             },
             pizzaData: true,
+            ingredientModifications: true,
           },
         },
         payments: {

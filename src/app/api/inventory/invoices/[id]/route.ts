@@ -78,7 +78,17 @@ export const PUT = withVenue(async function PUT(
       const invItemMap = new Map(invItems.map(i => [i.id, i]))
 
       // Apply invoice to inventory - update stock levels and costs
-      const transactionData: Parameters<typeof db.inventoryItemTransaction.create>[0]['data'][] = []
+      const transactionData: Array<{
+        locationId: string
+        inventoryItemId: string
+        type: string
+        quantityBefore: number
+        quantityChange: number
+        quantityAfter: number
+        unitCost: number
+        totalCost: number
+        reason: string
+      }> = []
 
       for (const lineItem of existing.lineItems) {
         if (!lineItem.inventoryItemId) continue

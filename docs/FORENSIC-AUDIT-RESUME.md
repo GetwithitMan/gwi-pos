@@ -1,0 +1,100 @@
+# Forensic Audit — Resume Point
+
+**Last saved:** February 18, 2026
+**Trigger phrase:** "finish forensic audit"
+**Full audit report:** `docs/FORENSIC-AUDIT-2026-02-18.md`
+
+---
+
+## Completed Waves
+
+| Wave | Description | Tasks | Status |
+|------|-------------|-------|--------|
+| 1 | Initial Scan Fixes (soft deletes, sockets, console.log, UX) | 10 | ✅ |
+| 2 | Deep Audit (deletedAt middleware, hard deletes, sockets, indexes) | 6 | ✅ |
+| 3 | Performance & Security (locationId, cache, N+1, memo, security) | 7 | ✅ |
+| 4 | Backlog Cleanup (dead sockets, TODOs, N+1, UX, dead code) | 7 | ✅ |
+| 5 | Schema Cleanup & Hook Extraction | 3 | ✅ |
+| Hotfix | Post-Wave 5 Live Testing (8 runtime bugs) | 8 | ✅ |
+| 6A | Hook Extractions (usePaymentFlow, useModifierModal, useItemOperations, useComboBuilder) | 4 | ✅ |
+| 6B | Void Flow Simplification (5-6 taps → 3) | 2 | ✅ |
+| 6C | Quick Tab + Payment Skip + Clickable Seats | 3 | ✅ |
+| 6D | Same Again + Split Evenly | 2 | ✅ |
+| 6E | Multi-Card Tab Support (7 sub-fixes) | 7 | ✅ |
+| 6E-HF | Deleted Items Reappearing (Prisma nested include bug) | 1 | ✅ |
+| 6F | Ingredient Modifications Fix (5 query paths) | 5 | ✅ |
+
+**Total completed:** 65 tasks, 510+ individual fixes across 111+ files
+
+---
+
+## Remaining Backlog (What "finish forensic audit" should pick up)
+
+### Priority 1 — Bug Fixes & Data Integrity
+- None currently known
+
+### Priority 2 — Code Quality
+1. **Response format normalization** — 68+ routes need `{ data: T }` wrapper per API convention
+2. **orders/page.tsx** — Still ~30 useState calls. Continue hook extraction.
+
+### Priority 3 — Large File Splits
+| Lines | File |
+|------:|------|
+| 3,753 | `app/(pos)/orders/page.tsx` |
+| 2,754 | `components/menu/ItemEditor.tsx` |
+| 2,689 | `components/floor-plan/FloorPlanHome.tsx` |
+| 2,602 | `domains/floor-plan/admin/EditorCanvas.tsx` |
+| 2,173 | `components/hardware/ReceiptVisualEditor.tsx` |
+| 2,087 | `lib/inventory-calculations.ts` |
+| 1,928 | `components/bartender/BartenderView.tsx` |
+| 1,620 | `app/(admin)/liquor-builder/page.tsx` |
+| 1,602 | `app/(admin)/pizza/page.tsx` |
+| 1,558 | `domains/floor-plan/admin/FloorPlanEditor.tsx` |
+
+### Priority 4 — Socket & UX
+- ~129 missing socket dispatches (P2 — most are non-critical)
+- Remaining UX friction points from audit (transfer tab shortcut, last order recall, menu search keyboard shortcut, etc.)
+
+---
+
+## Key Architecture Notes for Resume
+
+### Dual Pricing
+- Items stored at CASH price in DB
+- Card price = cash × (1 + cashDiscountPercent/100)
+- Default display = card price (higher)
+
+### Prisma $extends Limitation
+- Auto-injects `deletedAt: null` on TOP-LEVEL reads only
+- Nested `include` relations MUST have explicit `where: { deletedAt: null }`
+- This was the root cause of the "deleted items reappearing" bug
+
+### Critical File Paths
+- Orders page: `src/app/(pos)/orders/page.tsx`
+- Bartender view: `src/components/bartender/BartenderView.tsx`
+- Order API: `src/app/api/orders/[id]/route.ts`
+- Items API: `src/app/api/orders/[id]/items/route.ts`
+- Payment modal: `src/components/payment/PaymentModal.tsx`
+- Response mapper: `src/lib/api/order-response-mapper.ts`
+- Socket dispatch: `src/lib/socket-dispatch.ts`
+
+### Custom Hooks (extracted during audit)
+- `src/hooks/usePaymentFlow.ts` — 7 payment states
+- `src/hooks/useModifierModal.ts` — 5 modifier states
+- `src/hooks/useItemOperations.ts` — 5 item operation states
+- `src/hooks/useComboBuilder.ts` — 4 combo states
+- `src/hooks/useSplitTickets.ts` — 13 split states
+- `src/hooks/useShiftManagement.ts` — 5 shift states
+- `src/hooks/useTimedRentals.ts` — 7 timed rental states
+
+---
+
+## How to Resume
+
+When the user says **"finish forensic audit"**, read this file and `docs/FORENSIC-AUDIT-2026-02-18.md`, then:
+
+1. Check the **Remaining Backlog** section above for next priorities
+2. Start with the highest priority incomplete items
+3. Follow the wave pattern: research → fix → commit → update audit doc
+4. Save to git after every phase
+5. Update this resume file with new completion status

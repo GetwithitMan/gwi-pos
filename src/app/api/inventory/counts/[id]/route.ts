@@ -183,7 +183,7 @@ export const PUT = withVenue(async function PUT(
         await db.inventoryItem.update({
           where: { id: item.inventoryItemId },
           data: {
-            currentStock: item.countedQty,
+            currentStock: item.countedQty ?? 0,
           },
         })
 

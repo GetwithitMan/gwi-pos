@@ -1,5 +1,19 @@
 # Tabs & Bottle Service Domain Changelog
 
+## 2026-02-18 — Multi-Card Tab Support + Bug Fixes
+
+### New Features
+- **Multi-card tabs**: Tabs can hold multiple cards. "Add Card to Tab" button (bright orange) on payment method and card steps
+- **Card picker**: When closing tab with 2+ cards, choose which to charge
+- **Quick tab**: 1-tap tab creation wired to OpenOrdersPanel in BartenderView
+
+### Bug Fixes
+- **Deleted items reappearing**: Added `where: { deletedAt: null }` to tab list API items include
+- **Ingredient modifications not showing**: Added `ingredientModifications: true` to tab list items include
+- **Tab cards not showing on Credit click**: Added card fetch to Card button handler path
+
+---
+
 ## Session: February 17, 2026 — Bar Send Tab Name Prompt + On-Screen Keyboard (Skills 368-369)
 
 ### Summary

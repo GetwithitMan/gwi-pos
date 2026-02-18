@@ -1,5 +1,18 @@
 # Payments Domain Changelog
 
+## 2026-02-18 — Multi-Card Tab Payments
+
+### New Features
+- **Multi-card tab support**: "Add Card to Tab" button in PaymentModal (method + card steps)
+- **Card selection on close**: `orderCardId` parameter on close-tab API to charge specific card
+- **Tab card display**: Existing cards shown on datacap_card step with "Charge •••XXXX" buttons
+- **Payment skip**: Auto-set credit method when pre-auth tab cards exist
+
+### Bug Fixes
+- **Deleted items in payment totals**: Added `where: { deletedAt: null }` to pay route items include
+
+---
+
 ## Session: February 17, 2026 — Task Board Update
 
 ### Summary

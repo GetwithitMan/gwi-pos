@@ -329,6 +329,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         items: {
           include: {
             modifiers: true,
+            ingredientModifications: true,
           },
         },
         employee: {
@@ -457,6 +458,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           where: { deletedAt: null },
           include: {
             modifiers: { where: { deletedAt: null } },
+            ingredientModifications: true,
           },
         },
         payments: true,
