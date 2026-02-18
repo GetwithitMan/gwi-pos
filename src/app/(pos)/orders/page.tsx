@@ -31,6 +31,7 @@ import { calculateCardPrice } from '@/lib/pricing'
 import { debugPizzaPricing } from '@/lib/pizza-helpers'
 import { buildPizzaModifiers, getPizzaBasePrice } from '@/lib/pizza-order-utils'
 import { fetchAndLoadSplitOrder } from '@/lib/split-order-loader'
+import { isTempId } from '@/lib/order-utils'
 const PaymentModal = lazy(() => import('@/components/payment/PaymentModal').then(m => ({ default: m.PaymentModal })))
 const DiscountModal = lazy(() => import('@/components/orders/DiscountModal').then(m => ({ default: m.DiscountModal })))
 const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
@@ -3444,9 +3445,10 @@ export default function OrdersPage() {
                 onComplete={async (result) => {
                   setShowCardTabFlow(false)
                   if (result.approved) {
-                    // Capture items before clearing
+                    // Capture only UNSAVED items (temp IDs) — saveItemToDb already persisted the rest
                     const store = useOrderStore.getState()
-                    const capturedItems = [...(store.currentOrder?.items || [])]
+                    const allItems = store.currentOrder?.items || []
+                    const capturedItems = allItems.filter(i => isTempId(i.id))
                     const orderId = cardTabOrderId!
                     const capturedEmployeeId = employee?.id
 
