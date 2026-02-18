@@ -7,6 +7,7 @@ import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast-store'
 
 interface Table {
@@ -77,6 +78,7 @@ export default function ReservationsPage() {
   const [tables, setTables] = useState<Table[]>([])
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
 
   // Auth guard
   useEffect(() => {
@@ -128,17 +130,21 @@ export default function ReservationsPage() {
     }
   }
 
-  async function deleteReservation(id: string) {
-    if (!confirm('Are you sure you want to delete this reservation?')) return
-
-    try {
-      await fetch(`/api/reservations/${id}`, { method: 'DELETE' })
-      fetchReservations()
-      toast.success('Reservation deleted')
-    } catch (error) {
-      console.error('Failed to delete reservation:', error)
-      toast.error('Failed to delete reservation')
-    }
+  function deleteReservation(id: string) {
+    setConfirmAction({
+      title: 'Delete Reservation',
+      message: 'Are you sure you want to delete this reservation?',
+      action: async () => {
+        try {
+          await fetch(`/api/reservations/${id}`, { method: 'DELETE' })
+          fetchReservations()
+          toast.success('Reservation deleted')
+        } catch (error) {
+          console.error('Failed to delete reservation:', error)
+          toast.error('Failed to delete reservation')
+        }
+      },
+    })
   }
 
   const filteredReservations = reservations.filter(r => {
@@ -311,6 +317,16 @@ export default function ReservationsPage() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || 'Confirm'}
+        description={confirmAction?.message}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { confirmAction?.action(); setConfirmAction(null) }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   )
 }

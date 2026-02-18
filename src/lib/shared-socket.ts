@@ -47,7 +47,7 @@ export function getSharedSocket(): Socket {
       path: socketPath,
       transports: ['websocket', 'polling'],
       reconnection: true,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 30000,
     })

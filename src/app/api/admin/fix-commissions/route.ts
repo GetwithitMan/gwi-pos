@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
 // Helper to calculate commission for an item
@@ -23,8 +25,18 @@ function calculateItemCommission(
 // POST - Retroactively calculate and fix commissions for existing orders
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
+    // Auth check — require API key or admin permission
+    const apiKey = request.headers.get('x-api-key')
+    const hasApiKey = apiKey && apiKey === process.env.PROVISION_API_KEY
+
     const body = await request.json().catch(() => ({}))
-    const { locationId, dryRun = true } = body as { locationId?: string; dryRun?: boolean }
+    const { locationId, dryRun = true, requestingEmployeeId } = body as { locationId?: string; dryRun?: boolean; requestingEmployeeId?: string }
+
+    if (!hasApiKey) {
+      if (!locationId) return NextResponse.json({ error: 'locationId is required' }, { status: 400 })
+      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.ADMIN)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     // Get all menu items with commission settings
     const menuItemsWithCommission = await db.menuItem.findMany({

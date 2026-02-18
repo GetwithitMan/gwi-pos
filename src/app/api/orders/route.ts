@@ -33,19 +33,6 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
 
-    const lastOrder = await db.order.findFirst({
-      where: {
-        locationId,
-        createdAt: {
-          gte: today,
-          lt: tomorrow,
-        },
-      },
-      orderBy: { orderNumber: 'desc' },
-    })
-
-    const orderNumber = (lastOrder?.orderNumber || 0) + 1
-
     // === FAST PATH: Draft shell creation (no items) ===
     // When items is empty, create a lightweight order shell without tax/commission/totals computation.
     // This enables background pre-creation on table tap so "Send to Kitchen" is near-instant.
@@ -57,34 +44,44 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         initialSeatTimestamps[i.toString()] = now
       }
 
+      // Serializable transaction: prevents duplicate order numbers under concurrent requests
       timing.start('db-draft')
-      const order = await db.order.create({
-        data: {
-          locationId,
-          employeeId,
-          orderNumber,
-          orderType,
-          orderTypeId: orderTypeId || null,
-          tableId: tableId || null,
-          tabName: tabName || null,
-          guestCount: initialSeatCount,
-          baseSeatCount: initialSeatCount,
-          extraSeatCount: 0,
-          seatVersion: 0,
-          seatTimestamps: initialSeatTimestamps,
-          status: 'draft',
-          subtotal: 0,
-          discountTotal: 0,
-          taxTotal: 0,
-          taxFromInclusive: 0,
-          taxFromExclusive: 0,
-          tipTotal: 0,
-          total: 0,
-          commissionTotal: 0,
-          notes: notes || null,
-          customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
-        },
-      })
+      const order = await db.$transaction(async (tx) => {
+        const lastOrder = await tx.order.findFirst({
+          where: { locationId, createdAt: { gte: today, lt: tomorrow } },
+          orderBy: { orderNumber: 'desc' },
+          select: { orderNumber: true },
+        })
+        const orderNumber = (lastOrder?.orderNumber || 0) + 1
+
+        return tx.order.create({
+          data: {
+            locationId,
+            employeeId,
+            orderNumber,
+            orderType,
+            orderTypeId: orderTypeId || null,
+            tableId: tableId || null,
+            tabName: tabName || null,
+            guestCount: initialSeatCount,
+            baseSeatCount: initialSeatCount,
+            extraSeatCount: 0,
+            seatVersion: 0,
+            seatTimestamps: initialSeatTimestamps,
+            status: 'draft',
+            subtotal: 0,
+            discountTotal: 0,
+            taxTotal: 0,
+            taxFromInclusive: 0,
+            taxFromExclusive: 0,
+            tipTotal: 0,
+            total: 0,
+            commissionTotal: 0,
+            notes: notes || null,
+            customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
+          },
+        })
+      }, { isolationLevel: 'Serializable' })
 
       timing.end('db-draft', 'Draft order create')
 
@@ -96,20 +93,30 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           action: 'order_draft_created',
           entityType: 'order',
           entityId: order.id,
-          details: { orderNumber, orderType, tableId: tableId || null },
+          details: { orderNumber: order.orderNumber, orderType, tableId: tableId || null },
         },
       }).catch(() => {})
 
       // No socket dispatches for drafts — invisible to Open Orders & Floor Plan
       return NextResponse.json({
         id: order.id,
-        orderNumber,
+        orderNumber: order.orderNumber,
         status: 'draft',
         items: [],
       })
     }
 
     // === STANDARD PATH: Full order creation with items ===
+
+    // Get order number atomically (serializable transaction prevents duplicates)
+    const { orderNumber } = await db.$transaction(async (tx) => {
+      const lastOrder = await tx.order.findFirst({
+        where: { locationId, createdAt: { gte: today, lt: tomorrow } },
+        orderBy: { orderNumber: 'desc' },
+        select: { orderNumber: true },
+      })
+      return { orderNumber: (lastOrder?.orderNumber || 0) + 1 }
+    }, { isolationLevel: 'Serializable' })
 
     // Fetch menu items to get commission settings
     const menuItemIds = items.map(item => item.menuItemId)

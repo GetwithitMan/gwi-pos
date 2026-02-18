@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { toast } from '@/stores/toast-store'
 
 interface TrayConfig {
@@ -45,6 +46,7 @@ export default function DailyCountsSettingsPage() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [prepItems, setPrepItems] = useState<PrepItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
 
   // New tray form state
@@ -156,30 +158,34 @@ export default function DailyCountsSettingsPage() {
     }
   }
 
-  const handleDeleteTray = async (prepItemId: string, trayId: string) => {
-    if (!confirm('Delete this tray configuration?')) return
+  const handleDeleteTray = (prepItemId: string, trayId: string) => {
+    setConfirmAction({
+      title: 'Delete Tray',
+      message: 'Delete this tray configuration?',
+      action: async () => {
+        try {
+          const response = await fetch(`/api/inventory/prep-tray-configs/${trayId}`, {
+            method: 'DELETE',
+          })
 
-    try {
-      const response = await fetch(`/api/inventory/prep-tray-configs/${trayId}`, {
-        method: 'DELETE',
-      })
-
-      if (response.ok) {
-        setPrepItems(items =>
-          items.map(i =>
-            i.id === prepItemId
-              ? { ...i, trayConfigs: i.trayConfigs.filter(t => t.id !== trayId) }
-              : i
-          )
-        )
-        toast.success('Tray configuration deleted')
-      } else {
-        toast.error('Failed to delete tray')
-      }
-    } catch (error) {
-      console.error('Failed to delete tray:', error)
-      toast.error('Failed to delete tray')
-    }
+          if (response.ok) {
+            setPrepItems(items =>
+              items.map(i =>
+                i.id === prepItemId
+                  ? { ...i, trayConfigs: i.trayConfigs.filter(t => t.id !== trayId) }
+                  : i
+              )
+            )
+            toast.success('Tray configuration deleted')
+          } else {
+            toast.error('Failed to delete tray')
+          }
+        } catch (error) {
+          console.error('Failed to delete tray:', error)
+          toast.error('Failed to delete tray')
+        }
+      },
+    })
   }
 
   const dailyCountItems = prepItems.filter(i => i.isDailyCountItem)
@@ -506,6 +512,16 @@ export default function DailyCountsSettingsPage() {
           </Card>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || 'Confirm'}
+        description={confirmAction?.message}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { confirmAction?.action(); setConfirmAction(null) }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   )
 }

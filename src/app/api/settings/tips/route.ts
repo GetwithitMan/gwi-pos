@@ -21,7 +21,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     }
 
     // Permission check (soft mode — allow through if no employeeId sent yet)
-    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.TIPS_MANAGE_SETTINGS, { soft: true })
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.TIPS_MANAGE_SETTINGS)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
@@ -72,7 +72,7 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
     }
 
     // Permission check
-    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.TIPS_MANAGE_SETTINGS, { soft: true })
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.TIPS_MANAGE_SETTINGS)
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }

@@ -1,6 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { randomBytes } from 'crypto'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { getLocationId } from '@/lib/location-cache'
 import { withVenue } from '@/lib/with-venue'
 
@@ -52,12 +54,18 @@ export const GET = withVenue(async function GET() {
   }
 })
 
-export const POST = withVenue(async function POST() {
+export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const locationId = await getLocationId()
     if (!locationId) {
       return NextResponse.json({ error: 'No location found' }, { status: 404 })
     }
+
+    // Auth check — require settings.hardware permission
+    const body = await request.json().catch(() => ({}))
+    const { employeeId } = body as { employeeId?: string }
+    const auth = await requirePermission(employeeId, locationId, PERMISSIONS.SETTINGS_HARDWARE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     // Revoke any existing PENDING tokens for this location
     await db.serverRegistrationToken.updateMany({

@@ -43,7 +43,7 @@ export const GET = withVenue(async function GET(
     // Self-access: employees can always view their own ledger
     const isSelfAccess = targetEmployeeId && requestingEmployeeId && targetEmployeeId === requestingEmployeeId
     if (!isSelfAccess) {
-      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.TIPS_VIEW_LEDGER, { soft: true })
+      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.TIPS_VIEW_LEDGER)
       if (!auth.authorized) {
         return NextResponse.json({ error: auth.error }, { status: auth.status })
       }

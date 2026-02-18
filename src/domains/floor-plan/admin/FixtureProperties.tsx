@@ -10,6 +10,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { Fixture } from '../shared/types';
 import { FloorCanvasAPI } from '../canvas';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FIXTURE_TYPES, getFixtureTypeMetadata } from './types';
 
 // =============================================================================
@@ -38,6 +39,7 @@ export function FixtureProperties({
 }: FixturePropertiesProps) {
   const [fixture, setFixture] = useState<Fixture | null>(null);
   const [label, setLabel] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [color, setColor] = useState('#424242');
   const [thickness, setThickness] = useState(0.5);
   const [opacity, setOpacity] = useState(1);
@@ -223,8 +225,8 @@ export function FixtureProperties({
   }, []);
 
   const handleDelete = () => {
-    if (fixtureId && window.confirm('Delete this fixture?')) {
-      onDelete(fixtureId);
+    if (fixtureId) {
+      setShowDeleteConfirm(true);
     }
   };
 
@@ -697,6 +699,16 @@ export function FixtureProperties({
       >
         Delete Fixture
       </button>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Fixture"
+        description="Delete this fixture?"
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { setShowDeleteConfirm(false); if (fixtureId) onDelete(fixtureId); }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

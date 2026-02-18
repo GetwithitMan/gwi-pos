@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface Role {
@@ -227,28 +228,33 @@ export default function EmployeesPage() {
     }
   }
 
+  const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
+
   const handleToggleActive = async (emp: Employee) => {
     if (emp.isActive) {
-      // Deactivate
-      if (!confirm(`Are you sure you want to deactivate ${emp.displayName}?`)) {
-        return
-      }
+      // Deactivate — show confirm dialog
+      setConfirmAction({
+        title: 'Deactivate Employee',
+        message: `Are you sure you want to deactivate ${emp.displayName}?`,
+        action: async () => {
+          try {
+            const response = await fetch(`/api/employees/${emp.id}`, {
+              method: 'DELETE',
+            })
 
-      try {
-        const response = await fetch(`/api/employees/${emp.id}`, {
-          method: 'DELETE',
-        })
+            if (!response.ok) {
+              const data = await response.json()
+              toast.error(data.error || 'Failed to deactivate employee')
+              return
+            }
 
-        if (!response.ok) {
-          const data = await response.json()
-          toast.error(data.error || 'Failed to deactivate employee')
-          return
-        }
-
-        loadData()
-      } catch (err) {
-        toast.error('Failed to deactivate employee')
-      }
+            loadData()
+          } catch (err) {
+            toast.error('Failed to deactivate employee')
+          }
+        },
+      })
+      return
     } else {
       // Reactivate
       try {
@@ -657,6 +663,16 @@ export default function EmployeesPage() {
           </div>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || 'Confirm'}
+        description={confirmAction?.message}
+        confirmLabel="Confirm"
+        destructive
+        onConfirm={() => { confirmAction?.action(); setConfirmAction(null) }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   )
 }

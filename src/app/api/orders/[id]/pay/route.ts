@@ -617,65 +617,53 @@ export const POST = withVenue(withTiming(async function POST(
           )
         }
 
-        // Find the gift card
-        let giftCard = await db.giftCard.findUnique({
-          where: { id: payment.giftCardId || '' }
-        })
-
-        if (!giftCard && payment.giftCardNumber) {
-          giftCard = await db.giftCard.findUnique({
-            where: { cardNumber: payment.giftCardNumber.toUpperCase() }
-          })
-        }
-
-        if (!giftCard) {
-          return NextResponse.json(
-            { error: 'Gift card not found' },
-            { status: 404 }
-          )
-        }
-
-        if (giftCard.status !== 'active') {
-          return NextResponse.json(
-            { error: `Gift card is ${giftCard.status}` },
-            { status: 400 }
-          )
-        }
-
-        // Check expiration
-        if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
-          await db.giftCard.update({
-            where: { id: giftCard.id },
-            data: { status: 'expired' }
-          })
-          return NextResponse.json(
-            { error: 'Gift card has expired' },
-            { status: 400 }
-          )
-        }
-
-        const cardBalance = Number(giftCard.currentBalance)
-        const paymentAmount = payment.amount + (payment.tipAmount || 0)
-
-        if (paymentAmount > cardBalance) {
-          return NextResponse.json(
-            { error: `Insufficient gift card balance. Available: $${cardBalance.toFixed(2)}`, currentBalance: cardBalance },
-            { status: 400 }
-          )
-        }
-
-        // Deduct from gift card + create payment atomically
-        const newBalance = cardBalance - paymentAmount
-
-        paymentRecord = {
-          ...paymentRecord,
-          transactionId: `GC:${giftCard.cardNumber}`,
-          cardLast4: giftCard.cardNumber.slice(-4),
-        }
-
+        // Find gift card and deduct balance atomically inside a single transaction
+        // This prevents TOCTOU race conditions on the gift card balance
         const gcResult = await db.$transaction(async (tx) => {
+          let giftCard = await tx.giftCard.findUnique({
+            where: { id: payment.giftCardId || '' }
+          })
+
+          if (!giftCard && payment.giftCardNumber) {
+            giftCard = await tx.giftCard.findUnique({
+              where: { cardNumber: payment.giftCardNumber.toUpperCase() }
+            })
+          }
+
+          if (!giftCard) {
+            throw new Error('GC_NOT_FOUND')
+          }
+
+          if (giftCard.status !== 'active') {
+            throw new Error(`GC_STATUS:${giftCard.status}`)
+          }
+
+          // Check expiration
+          if (giftCard.expiresAt && new Date() > giftCard.expiresAt) {
+            await tx.giftCard.update({
+              where: { id: giftCard.id },
+              data: { status: 'expired' }
+            })
+            throw new Error('GC_EXPIRED')
+          }
+
+          const cardBalance = Number(giftCard.currentBalance)
+          const paymentAmount = payment.amount + (payment.tipAmount || 0)
+
+          if (paymentAmount > cardBalance) {
+            throw new Error(`GC_INSUFFICIENT:${cardBalance.toFixed(2)}`)
+          }
+
+          const newBalance = cardBalance - paymentAmount
+
+          paymentRecord = {
+            ...paymentRecord,
+            transactionId: `GC:${giftCard.cardNumber}`,
+            cardLast4: giftCard.cardNumber.slice(-4),
+          }
+
           await tx.giftCard.update({
-            where: { id: giftCard!.id },
+            where: { id: giftCard.id },
             data: {
               currentBalance: newBalance,
               status: newBalance === 0 ? 'depleted' : 'active',
@@ -694,7 +682,31 @@ export const POST = withVenue(withTiming(async function POST(
             }
           })
           return tx.payment.create({ data: paymentRecord })
+        }).catch((err: Error) => {
+          // Convert transaction errors to HTTP responses
+          if (err.message === 'GC_NOT_FOUND') {
+            return { error: 'Gift card not found', status: 404 } as const
+          }
+          if (err.message.startsWith('GC_STATUS:')) {
+            return { error: `Gift card is ${err.message.split(':')[1]}`, status: 400 } as const
+          }
+          if (err.message === 'GC_EXPIRED') {
+            return { error: 'Gift card has expired', status: 400 } as const
+          }
+          if (err.message.startsWith('GC_INSUFFICIENT:')) {
+            const balance = err.message.split(':')[1]
+            return { error: `Insufficient gift card balance. Available: $${balance}`, status: 400, currentBalance: parseFloat(balance) } as const
+          }
+          throw err // Re-throw unexpected errors
         })
+
+        // If the transaction returned an error object, return it as HTTP response
+        if ('error' in gcResult) {
+          return NextResponse.json(
+            { error: gcResult.error, ...('currentBalance' in gcResult ? { currentBalance: gcResult.currentBalance } : {}) },
+            { status: gcResult.status }
+          )
+        }
 
         createdPayments.push(gcResult)
         totalTips += payment.tipAmount || 0
@@ -830,7 +842,32 @@ export const POST = withVenue(withTiming(async function POST(
       updateData.closedAt = new Date()
     }
 
-    // Create default payments + update order status atomically
+    // Pre-compute loyalty points BEFORE the transaction (avoid nested findUnique inside tx)
+    let pointsEarned = 0
+    let loyaltyEarningBase = 0
+    if (updateData.status === 'paid' && order.customer && settings.loyalty.enabled) {
+      loyaltyEarningBase = settings.loyalty.earnOnSubtotal
+        ? Number(order.subtotal)
+        : Number(order.total)
+      if (settings.loyalty.earnOnTips) {
+        loyaltyEarningBase += newTipTotal
+      }
+      if (loyaltyEarningBase >= settings.loyalty.minimumEarnAmount) {
+        pointsEarned = Math.floor(loyaltyEarningBase * settings.loyalty.pointsPerDollar)
+      }
+    }
+
+    // Pre-compute averageTicket using already-fetched customer data (no extra query needed)
+    let newAverageTicket: number | null = null
+    if (pointsEarned > 0 && order.customer) {
+      const currentTotalSpent = Number((order.customer as any).totalSpent ?? 0)
+      const currentTotalOrders = (order.customer as any).totalOrders ?? 0
+      const newTotal = currentTotalSpent + Number(order.total)
+      const newOrders = currentTotalOrders + 1
+      newAverageTicket = newTotal / newOrders
+    }
+
+    // Create default payments + update order status + loyalty points atomically
     timing.start('db-pay')
     await db.$transaction(async (tx) => {
       for (const record of pendingDefaultRecords) {
@@ -875,6 +912,20 @@ export const POST = withVenue(withTiming(async function POST(
               paymentCount: createdPayments.length,
               paymentMethods: [...new Set(createdPayments.map(p => p.paymentMethod))],
             },
+          },
+        })
+      }
+
+      // Award loyalty points atomically with the payment (moved inside transaction)
+      if (pointsEarned > 0 && order.customer) {
+        await tx.customer.update({
+          where: { id: order.customer.id },
+          data: {
+            loyaltyPoints: { increment: pointsEarned },
+            totalSpent: { increment: Number(order.total) },
+            totalOrders: { increment: 1 },
+            lastVisit: new Date(),
+            averageTicket: newAverageTicket!,
           },
         })
       }
@@ -961,49 +1012,6 @@ export const POST = withVenue(withTiming(async function POST(
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     if (updateData.status === 'paid') {
       dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
-    }
-
-    // Award loyalty points if order is fully paid and has a customer
-    let pointsEarned = 0
-    if (updateData.status === 'paid' && order.customer && settings.loyalty.enabled) {
-      // Calculate earning base (subtotal or total based on settings)
-      let earningBase = settings.loyalty.earnOnSubtotal
-        ? Number(order.subtotal)
-        : Number(order.total)
-
-      // Add tips if configured
-      if (settings.loyalty.earnOnTips) {
-        earningBase += newTipTotal
-      }
-
-      // Check minimum earning amount
-      if (earningBase >= settings.loyalty.minimumEarnAmount) {
-        // Calculate points (1 point per dollar by default)
-        pointsEarned = Math.floor(earningBase * settings.loyalty.pointsPerDollar)
-
-        if (pointsEarned > 0) {
-          // Update customer loyalty points and stats
-          await db.customer.update({
-            where: { id: order.customer.id },
-            data: {
-              loyaltyPoints: { increment: pointsEarned },
-              totalSpent: { increment: Number(order.total) },
-              totalOrders: { increment: 1 },
-              lastVisit: new Date(),
-              averageTicket: {
-                set: await db.customer.findUnique({
-                  where: { id: order.customer.id },
-                }).then(c => {
-                  if (!c) return Number(order.total)
-                  const newTotal = Number(c.totalSpent) + Number(order.total)
-                  const newOrders = c.totalOrders + 1
-                  return newTotal / newOrders
-                }),
-              },
-            },
-          })
-        }
-      }
     }
 
     // If this is a split order that was just paid, check if all siblings are paid

@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
-import { emitToLocation } from '@/lib/socket-server'
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { processLiquorInventory } from '@/lib/liquor-inventory'
+import { deductInventoryForOrder } from '@/lib/inventory-calculations'
+import { allocateTipsForPayment } from '@/lib/domain/tips'
+import { parseSettings } from '@/lib/settings'
 
 const PayAllSplitsSchema = z.object({
   method: z.enum(['cash', 'credit', 'debit']),
   employeeId: z.string().min(1, 'employeeId is required'),
   terminalId: z.string().optional(),
+  idempotencyKey: z.string().optional(),
   // Card details (required for credit/debit)
   cardBrand: z.string().optional(),
   cardLast4: z.string().optional(),
@@ -38,16 +42,18 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    const { method, employeeId, terminalId, cardBrand, cardLast4, authCode, datacapRecordNo, datacapRefNumber, datacapSequenceNo, entryMethod, amountAuthorized } = validation.data
+    const { method, employeeId, terminalId, idempotencyKey, cardBrand, cardLast4, authCode, datacapRecordNo, datacapRefNumber, datacapSequenceNo, entryMethod, amountAuthorized } = validation.data
 
     // Fetch parent order with its split children
     const parentOrder = await db.order.findUnique({
       where: { id: parentOrderId },
       include: {
+        location: true,
+        customer: true,
         splitOrders: {
           where: { deletedAt: null },
           include: {
-            payments: { where: { status: 'completed' }, select: { totalAmount: true } },
+            payments: { where: { status: 'completed' }, select: { totalAmount: true, idempotencyKey: true } },
           },
         },
       },
@@ -62,6 +68,21 @@ export const POST = withVenue(async function POST(
         { error: 'Order is not a split parent. Only orders with status "split" can use this endpoint.' },
         { status: 400 }
       )
+    }
+
+    // Idempotency check — if any split already has a payment with this key, it's a duplicate
+    if (idempotencyKey) {
+      const existingPayment = parentOrder.splitOrders
+        .flatMap(s => s.payments)
+        .find(p => p.idempotencyKey === idempotencyKey)
+      if (existingPayment) {
+        return NextResponse.json({
+          success: true,
+          duplicate: true,
+          parentOrderId,
+          message: 'Duplicate payment detected — already processed',
+        })
+      }
     }
 
     // Find unpaid split children
@@ -105,6 +126,7 @@ export const POST = withVenue(async function POST(
             ...(datacapSequenceNo && { datacapSequenceNo }),
             ...(entryMethod && { entryMethod }),
             ...(amountAuthorized && { amountAuthorized }),
+            ...(idempotencyKey && { idempotencyKey }),
           },
         })
 
@@ -137,12 +159,6 @@ export const POST = withVenue(async function POST(
     })
 
     // Fire-and-forget socket events
-    void emitToLocation(parentOrder.locationId, 'orders:list-changed', {
-      orderId: parentOrderId,
-      status: 'paid',
-      trigger: 'pay-all-splits',
-    }).catch(() => {})
-
     void dispatchOpenOrdersChanged(parentOrder.locationId, {
       trigger: 'paid',
       orderId: parentOrderId,
@@ -151,6 +167,38 @@ export const POST = withVenue(async function POST(
 
     if (parentOrder.tableId) {
       void dispatchFloorPlanUpdate(parentOrder.locationId, { async: true }).catch(() => {})
+    }
+
+    // Fire-and-forget: inventory deductions for the parent order
+    processLiquorInventory(parentOrderId, employeeId).catch(err => {
+      console.error('Background liquor inventory failed (pay-all-splits):', err)
+    })
+    deductInventoryForOrder(parentOrderId, employeeId).catch(err => {
+      console.error('Background inventory deduction failed (pay-all-splits):', err)
+    })
+
+    // Fire-and-forget: loyalty points if customer exists and loyalty enabled
+    const settings = parseSettings(parentOrder.location.settings)
+    if (parentOrder.customer && settings.loyalty.enabled) {
+      const earningBase = settings.loyalty.earnOnSubtotal
+        ? Number(parentOrder.splitOrders.reduce((sum, s) => sum + Number(s.total), 0))
+        : combinedTotal
+      if (earningBase >= settings.loyalty.minimumEarnAmount) {
+        const pointsEarned = Math.floor(earningBase * settings.loyalty.pointsPerDollar)
+        if (pointsEarned > 0) {
+          void db.customer.update({
+            where: { id: parentOrder.customer.id },
+            data: {
+              loyaltyPoints: { increment: pointsEarned },
+              totalSpent: { increment: combinedTotal },
+              totalOrders: { increment: 1 },
+              lastVisit: new Date(),
+            },
+          }).catch(err => {
+            console.error('Background loyalty points failed (pay-all-splits):', err)
+          })
+        }
+      }
     }
 
     return NextResponse.json({

@@ -81,7 +81,7 @@ export function ModeToggleMini({ currentMode, onModeChange, disabled = false }: 
         type="button"
         onClick={() => !disabled && onModeChange('bar')}
         disabled={disabled}
-        className={`px-2 py-1 text-xs font-bold rounded-l-md border transition-colors ${
+        className={`px-3 py-2 text-sm font-bold rounded-l-md border transition-colors min-h-[44px] ${
           currentMode === 'bar'
             ? 'bg-blue-500 text-white border-blue-500'
             : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
@@ -93,7 +93,7 @@ export function ModeToggleMini({ currentMode, onModeChange, disabled = false }: 
         type="button"
         onClick={() => !disabled && onModeChange('food')}
         disabled={disabled}
-        className={`px-2 py-1 text-xs font-bold rounded-r-md border-t border-r border-b transition-colors ${
+        className={`px-3 py-2 text-sm font-bold rounded-r-md border-t border-r border-b transition-colors min-h-[44px] ${
           currentMode === 'food'
             ? 'bg-orange-500 text-white border-orange-500'
             : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'

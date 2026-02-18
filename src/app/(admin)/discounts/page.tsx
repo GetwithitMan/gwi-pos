@@ -128,7 +128,7 @@ export default function DiscountsPage() {
     if (!employee?.location?.id) return
 
     const payload = {
-      locationId: employee.location.id,
+      locationId: employee?.location?.id,
       name: formData.name,
       displayText: formData.displayText,
       description: formData.description || null,

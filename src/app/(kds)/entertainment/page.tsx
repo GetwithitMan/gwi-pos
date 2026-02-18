@@ -86,7 +86,7 @@ export default function EntertainmentKDSPage() {
       socket.emit('join_station', {
         locationId,
         tags: ['entertainment'],
-        terminalId: 'entertainment-kds-' + Date.now(),
+        terminalId: `entertainment-kds-${locationId || 'fallback'}`,
       })
     }
 

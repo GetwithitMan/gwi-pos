@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hashPin } from '@/lib/auth'
+import { hashPin, PERMISSIONS } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
 import { withVenue } from '@/lib/with-venue'
 
@@ -120,6 +121,11 @@ export const PUT = withVenue(async function PUT(
   try {
     const { id } = await params
     const body = await request.json()
+
+    // Auth check — require staff.edit_profile permission
+    const auth = await requirePermission(body.requestingEmployeeId, body.locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
     const {
       firstName,
       lastName,
@@ -294,6 +300,15 @@ export const DELETE = withVenue(async function DELETE(
 ) {
   try {
     const { id } = await params
+
+    // Auth check — require staff.edit_profile permission
+    const { searchParams } = new URL(request.url)
+    const requestingEmployeeId = searchParams.get('requestingEmployeeId')
+    const locationId = searchParams.get('locationId')
+    if (locationId) {
+      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_EDIT_PROFILE)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     const employee = await db.employee.findUnique({
       where: { id },

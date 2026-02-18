@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { writeFile, mkdir } from 'fs/promises'
 import path from 'path'
 import crypto from 'crypto'
+import { PERMISSIONS } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'menu-items')
@@ -11,6 +13,15 @@ const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
+
+    // Auth check — require menu.edit_items permission
+    const employeeId = formData.get('employeeId') as string | null
+    const locationId = formData.get('locationId') as string | null
+    if (locationId) {
+      const auth = await requirePermission(employeeId, locationId, PERMISSIONS.MENU_EDIT_ITEMS)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
+
     const file = formData.get('file') as File | null
 
     if (!file) {

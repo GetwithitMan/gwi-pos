@@ -28,7 +28,7 @@ import type { RoutingResult } from '@/types/routing'
 import { withVenue } from '@/lib/with-venue'
 
 // In production, verify internal API secret
-const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET || 'dev-internal-secret'
+const INTERNAL_SECRET = process.env.INTERNAL_API_SECRET
 
 interface BroadcastRequest {
   type: 'NEW_ORDER' | 'ITEM_STATUS' | 'ORDER_BUMPED' | 'ENTERTAINMENT_UPDATE' | 'LOCATION_ALERT' | 'VOID_APPROVAL' | 'FLOOR_PLAN_UPDATE' | 'MENU_UPDATE' | 'INGREDIENT_LIBRARY_UPDATE' | 'INVENTORY_ADJUSTMENT' | 'STOCK_LEVEL_CHANGE' | 'MENU_ITEM_CHANGED' | 'MENU_STOCK_CHANGED' | 'MENU_STRUCTURE_CHANGED' | 'ENTERTAINMENT_STATUS_CHANGED' | 'ORDER_TOTALS_UPDATE' | 'OPEN_ORDERS_CHANGED' | 'TIP_GROUP_UPDATE'
@@ -38,12 +38,13 @@ interface BroadcastRequest {
 }
 
 export const POST = withVenue(async function POST(request: NextRequest) {
-  // Verify internal secret (skip in development for easier testing)
-  if (process.env.NODE_ENV === 'production') {
-    const secret = request.headers.get('X-Internal-Secret')
-    if (secret !== INTERNAL_SECRET) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+  // Verify internal secret
+  if (!INTERNAL_SECRET) {
+    return NextResponse.json({ error: 'Internal API secret not configured' }, { status: 500 })
+  }
+  const secret = request.headers.get('X-Internal-Secret')
+  if (secret !== INTERNAL_SECRET) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {

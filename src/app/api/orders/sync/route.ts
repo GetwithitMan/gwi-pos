@@ -72,7 +72,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Create the order with items in a transaction
+    // Create the order with items in a serializable transaction (prevents duplicate order numbers)
     const order = await db.$transaction(async (tx) => {
       // Generate order number (sequential per location per day)
       const today = new Date()
@@ -174,7 +174,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
 
       return newOrder
-    })
+    }, { isolationLevel: 'Serializable' })
 
     // Fetch the complete order with items
     const completeOrder = await db.order.findUnique({

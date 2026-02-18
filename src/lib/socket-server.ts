@@ -50,42 +50,6 @@ interface JoinStationPayload {
   stationId?: string
 }
 
-interface OrderRoutingManifest {
-  locationId: string
-  destinations: Array<{
-    tag: string
-    stationId: string
-    stationName: string
-    orderData: unknown
-  }>
-}
-
-interface ItemBumpPayload {
-  orderId: string
-  itemId: string
-  status: 'pending' | 'cooking' | 'ready' | 'served' | 'bumped'
-  stationId: string
-  bumpedBy: string
-}
-
-interface OrderBumpPayload {
-  orderId: string
-  stationId: string
-  bumpedBy: string
-  allItemsServed: boolean
-}
-
-interface EntertainmentUpdatePayload {
-  sessionId: string
-  tableId: string
-  tableName: string
-  action: 'started' | 'extended' | 'stopped' | 'warning'
-  expiresAt: string | null
-  addedMinutes?: number
-  partyName?: string
-  locationId: string
-}
-
 // Track connected terminals for debugging
 const connectedTerminals = new Map<string, {
   socketId: string
@@ -164,6 +128,9 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
         }
       }
 
+      // Store locationId on socket data for event handlers
+      socket.data.locationId = locationId
+
       // Track connection
       connectedTerminals.set(terminalId, {
         socketId: socket.id,
@@ -188,95 +155,6 @@ export async function initializeSocketServer(httpServer: HTTPServer): Promise<So
     socket.on('leave_station', ({ terminalId }: { terminalId: string }) => {
       connectedTerminals.delete(terminalId)
       // Socket.io automatically cleans up room memberships on disconnect
-    })
-
-    // ==================== Order Events ====================
-
-    /**
-     * New order "fired" to kitchen
-     * Dispatches to tag-based rooms from routing manifest
-     */
-    socket.on('new_order', (manifest: OrderRoutingManifest) => {
-      console.log(`[Socket] New order routing to ${manifest.destinations.length} destinations`)
-
-      manifest.destinations.forEach((dest) => {
-        // Send to tag-specific room
-        socketServer.to(`tag:${dest.tag}`).emit('kds:order-received', dest.orderData)
-
-        // Also send to expo (they see everything)
-        if (dest.tag !== 'expo') {
-          const expoData = typeof dest.orderData === 'object' && dest.orderData !== null
-            ? { ...(dest.orderData as Record<string, unknown>), isExpoView: true }
-            : { orderData: dest.orderData, isExpoView: true }
-          socketServer.to('tag:expo').emit('kds:order-received', expoData)
-        }
-      })
-
-      // Broadcast to location for general awareness
-      socketServer.to(`location:${manifest.locationId}`).emit('order:created', {
-        destinations: manifest.destinations.map(d => d.stationName),
-      })
-    })
-
-    // ==================== Item/Ticket Bumping ====================
-
-    /**
-     * Item status changed (cooking → ready, etc.)
-     * Notify Expo and the originating terminal
-     */
-    socket.on('item_status', (payload: ItemBumpPayload) => {
-      const update = {
-        orderId: payload.orderId,
-        itemId: payload.itemId,
-        status: payload.status,
-        updatedBy: payload.bumpedBy,
-        updatedAt: new Date().toISOString(),
-        stationId: payload.stationId,
-      }
-
-      // Notify all expo stations
-      socketServer.to('tag:expo').emit('kds:item-status', update)
-
-      // Notify all stations (they may need to update reference items)
-      socketServer.to(`location:${socket.data.locationId}`).emit('kds:item-status', update)
-
-      console.log(`[Socket] Item ${payload.itemId} → ${payload.status}`)
-    })
-
-    /**
-     * Order bumped from station (all items done)
-     */
-    socket.on('order_bumped', (payload: OrderBumpPayload) => {
-      const update = {
-        orderId: payload.orderId,
-        stationId: payload.stationId,
-        bumpedBy: payload.bumpedBy,
-        bumpedAt: new Date().toISOString(),
-        allItemsServed: payload.allItemsServed,
-      }
-
-      // Notify expo
-      socketServer.to('tag:expo').emit('kds:order-bumped', update)
-
-      // Notify location
-      socketServer.to(`location:${socket.data.locationId}`).emit('kds:order-bumped', update)
-
-      console.log(`[Socket] Order ${payload.orderId} bumped from ${payload.stationId}`)
-    })
-
-    // ==================== Entertainment Events ====================
-
-    /**
-     * Entertainment session update (timer started/extended/stopped)
-     */
-    socket.on('entertainment_update', (payload: EntertainmentUpdatePayload) => {
-      // Broadcast to entertainment tag
-      socketServer.to('tag:entertainment').emit('entertainment:session-update', payload)
-
-      // Also broadcast to location for POS terminals
-      socketServer.to(`location:${payload.locationId}`).emit('entertainment:session-update', payload)
-
-      console.log(`[Socket] Entertainment ${payload.action}: ${payload.tableName}`)
     })
 
     // ==================== Direct Terminal Messages ====================

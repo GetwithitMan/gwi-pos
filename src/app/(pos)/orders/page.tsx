@@ -659,7 +659,7 @@ export default function OrdersPage() {
     if (!employee?.location?.id || !employee?.id || bootstrapLoadedRef.current) return
     bootstrapLoadedRef.current = true
 
-    fetch(`/api/session/bootstrap?locationId=${employee.location.id}&employeeId=${employee.id}`)
+    fetch(`/api/session/bootstrap?locationId=${employee?.location?.id}&employeeId=${employee.id}`)
       .then(res => res.json())
       .then(({ data }) => {
         if (!data) return
@@ -727,7 +727,7 @@ export default function OrdersPage() {
   const loadMenu = useCallback(async () => {
     if (!employee?.location?.id) return
     try {
-      const response = await fetch(`/api/menu?locationId=${employee.location.id}`, {
+      const response = await fetch(`/api/menu?locationId=${employee?.location?.id}`, {
         cache: 'no-store',
       })
       if (response.ok) {
@@ -749,7 +749,7 @@ export default function OrdersPage() {
   const loadOrderTypes = useCallback(async () => {
     if (!employee?.location?.id) return
     try {
-      const response = await fetch(`/api/order-types?locationId=${employee.location.id}`)
+      const response = await fetch(`/api/order-types?locationId=${employee?.location?.id}`)
       if (response.ok) {
         const data = await response.json()
         setOrderTypes(data.orderTypes || [])
@@ -821,7 +821,7 @@ export default function OrdersPage() {
   const loadActiveSessions = async () => {
     if (!employee?.location?.id) return
     try {
-      const params = new URLSearchParams({ locationId: employee.location.id, status: 'active' })
+      const params = new URLSearchParams({ locationId: employee?.location?.id, status: 'active' })
       const response = await fetch(`/api/timed-sessions?${params}`)
       if (response.ok) {
         const data = await response.json()
@@ -843,7 +843,7 @@ export default function OrdersPage() {
     if (!employee?.id || !employee?.location?.id) return
     try {
       const params = new URLSearchParams({
-        locationId: employee.location.id,
+        locationId: employee?.location?.id,
         employeeId: employee.id,
         status: 'open',
       })
@@ -879,7 +879,7 @@ export default function OrdersPage() {
     clearTimeout(loadOpenOrdersCountRef.current)
     loadOpenOrdersCountRef.current = setTimeout(async () => {
       try {
-        const params = new URLSearchParams({ locationId: employee.location.id, summary: 'true' })
+        const params = new URLSearchParams({ locationId: employee?.location?.id, summary: 'true' })
         const response = await fetch(`/api/orders/open?${params}`)
         if (response.ok) {
           const data = await response.json()
@@ -1930,7 +1930,7 @@ export default function OrdersPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          locationId: employee.location.id,
+          locationId: employee?.location?.id,
           menuItemId: selectedTimedItem.id,
           rateType: effectiveRateType,
           rateAmount,
@@ -2128,7 +2128,7 @@ export default function OrdersPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          locationId: employee.location.id,
+          locationId: employee?.location?.id,
           employeeId: employee.id,
           orderType: 'bar_tab',
           tabName,
@@ -2159,7 +2159,7 @@ export default function OrdersPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orderItemId: itemData.data.id,
-            locationId: employee.location.id,
+            locationId: employee?.location?.id,
             minutes: pkg.minutes,
           }),
         })
@@ -2199,7 +2199,7 @@ export default function OrdersPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             orderItemId: itemData.data.id,
-            locationId: employee.location.id,
+            locationId: employee?.location?.id,
             minutes: pkg.minutes,
           }),
         })
@@ -2432,7 +2432,7 @@ export default function OrdersPage() {
             tabName={currentOrder?.tabName}
             tableName={currentOrder?.tableName}
             tableId={currentOrder?.tableId}
-            locationId={employee.location.id}
+            locationId={employee?.location?.id}
             employeeId={employee.id}
             items={filteredOrderPanelItems}
             filterSeatNumber={filterSeatNumber}
@@ -2991,7 +2991,7 @@ export default function OrdersPage() {
         {viewMode === 'floor-plan' && (
           <FloorPlanHome
             orderTypes={orderTypes}
-            locationId={employee.location.id}
+            locationId={employee?.location?.id}
             employeeId={employee.id}
             isEditingFavorites={isEditingFavorites}
             isEditingCategories={isEditingCategories}
@@ -3041,7 +3041,7 @@ export default function OrdersPage() {
         )}
         {viewMode === 'bartender' && (
           <BartenderView
-            locationId={employee.location.id}
+            locationId={employee?.location?.id}
             employeeId={employee.id}
             employeePermissions={permissionsArray}
             dualPricing={dualPricing}
@@ -3107,7 +3107,7 @@ export default function OrdersPage() {
             )}
             <div className={isTabManagerExpanded ? '' : 'fixed left-0 top-0 bottom-0 w-80 bg-slate-900 shadow-xl z-50'} style={!showTabsPanel && !isTabManagerExpanded ? { display: 'none' } : undefined}>
               <OpenOrdersPanel
-                locationId={employee.location.id}
+                locationId={employee?.location?.id}
                 employeeId={employee.id}
                 employeePermissions={permissionsArray}
                 refreshTrigger={tabsRefreshTrigger}
@@ -3660,7 +3660,7 @@ export default function OrdersPage() {
               unpaidCount={orderSplitChips.filter(c => !c.isPaid).length}
               terminalId={TERMINAL_ID}
               employeeId={employee.id}
-              locationId={employee.location.id}
+              locationId={employee?.location?.id}
               onPayCash={() => callPayAllSplitsAPI('cash')}
               onPayCard={(cardResult) => callPayAllSplitsAPI('credit', cardResult)}
               onClose={() => { setShowPayAllSplitsConfirm(false); setPayAllSplitsParentId(null); setPayAllSplitsStep('confirm') }}

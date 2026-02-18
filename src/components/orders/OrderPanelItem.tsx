@@ -317,12 +317,18 @@ export const OrderPanelItem = memo(function OrderPanelItem({
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* Name row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-            <span style={{
-              fontSize: '14px',
-              fontWeight: 500,
-              color: isCompedOrVoided ? '#94a3b8' : '#e2e8f0',
-              textDecoration: isCompedOrVoided ? 'line-through' : 'none',
-            }}>
+            <span
+              title={item.name}
+              style={{
+                fontSize: '14px',
+                fontWeight: 500,
+                color: isCompedOrVoided ? '#94a3b8' : '#e2e8f0',
+                textDecoration: isCompedOrVoided ? 'line-through' : 'none',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                maxWidth: '180px',
+              }}>
               {item.name}
             </span>
 
@@ -660,7 +666,7 @@ export const OrderPanelItem = memo(function OrderPanelItem({
                     }`}
                     style={{ paddingLeft: `${indent}px` }}
                   >
-                    <span>
+                    <span className="truncate" title={mod.name}>
                       {depth === 0 ? '• ' : '↳ '}
                       {mod.preModifier ? (
                         <span className={`font-semibold uppercase text-[10px] mr-1 ${

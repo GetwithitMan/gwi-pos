@@ -215,7 +215,7 @@ export default function HouseAccountsPage() {
 
     // Include locationId only for create
     if (!editingAccount) {
-      payload.locationId = employee.location.id
+      payload.locationId = employee?.location?.id
     }
 
     const ok = await handleSave(payload)

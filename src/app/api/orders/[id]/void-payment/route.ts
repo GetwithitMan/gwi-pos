@@ -65,17 +65,6 @@ export const POST = withVenue(async function POST(
       )
     }
 
-    // Update payment to voided
-    const voidedPayment = await db.payment.update({
-      where: { id: paymentId },
-      data: {
-        status: 'voided',
-        voidedAt: new Date(),
-        voidedBy: managerId,
-        voidReason: reason,
-      },
-    })
-
     // Check if there are other valid payments
     const activePayments = order.payments.filter(
       (p) => p.id !== paymentId && p.status !== 'voided'
@@ -88,37 +77,54 @@ export const POST = withVenue(async function POST(
       newOrderStatus = 'voided'
     }
 
-    await db.order.update({
-      where: { id: orderId },
-      data: {
-        status: newOrderStatus,
-      },
-    })
-
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        locationId: order.locationId,
-        employeeId: managerId,
-        action: 'payment_voided',
-        entityType: 'payment',
-        entityId: paymentId,
-        details: {
-          orderId,
-          orderNumber: order.orderNumber,
-          paymentId,
-          amount: Number(payment.amount),
-          tipAmount: Number(payment.tipAmount),
-          totalAmount: Number(payment.totalAmount),
-          paymentMethod: payment.paymentMethod,
-          reason,
-          notes: notes || null,
-          oldOrderStatus: order.status,
-          newOrderStatus,
+    // Wrap all critical writes in a single transaction
+    const voidedPayment = await db.$transaction(async (tx) => {
+      // 1. Update payment to voided
+      const updated = await tx.payment.update({
+        where: { id: paymentId },
+        data: {
+          status: 'voided',
+          voidedAt: new Date(),
+          voidedBy: managerId,
+          voidReason: reason,
         },
-        ipAddress: request.headers.get('x-forwarded-for'),
-        userAgent: request.headers.get('user-agent'),
-      },
+      })
+
+      // 2. Update order status
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          status: newOrderStatus,
+        },
+      })
+
+      // 3. Create audit log
+      await tx.auditLog.create({
+        data: {
+          locationId: order.locationId,
+          employeeId: managerId,
+          action: 'payment_voided',
+          entityType: 'payment',
+          entityId: paymentId,
+          details: {
+            orderId,
+            orderNumber: order.orderNumber,
+            paymentId,
+            amount: Number(payment.amount),
+            tipAmount: Number(payment.tipAmount),
+            totalAmount: Number(payment.totalAmount),
+            paymentMethod: payment.paymentMethod,
+            reason,
+            notes: notes || null,
+            oldOrderStatus: order.status,
+            newOrderStatus,
+          },
+          ipAddress: request.headers.get('x-forwarded-for'),
+          userAgent: request.headers.get('user-agent'),
+        },
+      })
+
+      return updated
     })
 
     // Reverse tip allocations for this voided payment (fire-and-forget)

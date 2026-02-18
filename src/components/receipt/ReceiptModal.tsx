@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Receipt, type ReceiptData } from './Receipt'
 import { Modal } from '@/components/ui/modal'
+import { toast } from '@/stores/toast-store'
 import type { ReceiptSettings } from '@/lib/settings'
 
 interface ReceiptModalProps {
@@ -68,7 +69,11 @@ export function ReceiptModal({
   const handlePrint = () => {
     // Create a new window with just the receipt content
     const printWindow = window.open('', '_blank', 'width=400,height=600')
-    if (!printWindow || !receiptRef.current) return
+    if (!printWindow) {
+      toast.error('Could not open print window. Please allow popups or use the hardware printer.')
+      return
+    }
+    if (!receiptRef.current) return
 
     const receiptHtml = receiptRef.current.innerHTML
 

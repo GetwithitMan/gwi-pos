@@ -10,6 +10,7 @@ import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 interface InventoryItem {
   id: string
@@ -82,6 +83,7 @@ export default function InventoryItemsPage() {
   // Modal state
   const [showModal, setShowModal] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
   const [showAdjustModal, setShowAdjustModal] = useState(false)
 
   // Debounce timer for search
@@ -190,21 +192,26 @@ export default function InventoryItemsPage() {
     return items
   }, [items])
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this item?')) return
-    try {
-      const res = await fetch(`/api/inventory/items/${id}`, { method: 'DELETE' })
-      if (res.ok) {
-        toast.success('Item deleted')
-        if (selectedItem?.id === id) setSelectedItem(null)
-        loadData()
-      } else {
-        toast.error('Failed to delete item')
-      }
-    } catch (error) {
-      console.error('Failed to delete item:', error)
-      toast.error('Failed to delete item')
-    }
+  const handleDelete = (id: string) => {
+    setConfirmAction({
+      title: 'Delete Item',
+      message: 'Are you sure you want to delete this item?',
+      action: async () => {
+        try {
+          const res = await fetch(`/api/inventory/items/${id}`, { method: 'DELETE' })
+          if (res.ok) {
+            toast.success('Item deleted')
+            if (selectedItem?.id === id) setSelectedItem(null)
+            loadData()
+          } else {
+            toast.error('Failed to delete item')
+          }
+        } catch (error) {
+          console.error('Failed to delete item:', error)
+          toast.error('Failed to delete item')
+        }
+      },
+    })
   }
 
   if (!isAuthenticated) return null
@@ -395,6 +402,16 @@ export default function InventoryItemsPage() {
           onSave={() => { setShowAdjustModal(false); loadData() }}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || 'Confirm'}
+        description={confirmAction?.message}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { confirmAction?.action(); setConfirmAction(null) }}
+        onCancel={() => setConfirmAction(null)}
+      />
       </div>
     </div>
   )

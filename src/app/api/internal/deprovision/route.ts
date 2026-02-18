@@ -51,7 +51,8 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Terminate active connections before dropping
     await db.$executeRawUnsafe(
-      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${databaseName}' AND pid <> pg_backend_pid()`
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+      databaseName
     )
 
     // Drop the database

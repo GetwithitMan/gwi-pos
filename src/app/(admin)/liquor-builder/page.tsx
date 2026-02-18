@@ -111,6 +111,8 @@ function LiquorBuilderContent() {
 
   // Socket connection for real-time updates (shared socket)
   useEffect(() => {
+    if (!employee?.location?.id) return
+
     const socket = getSharedSocket()
     socketRef.current = socket
 
@@ -139,7 +141,7 @@ function LiquorBuilderContent() {
       socketRef.current = null
       releaseSharedSocket()
     }
-  }, [])
+  }, [employee?.location?.id])
 
 
   const loadData = async () => {

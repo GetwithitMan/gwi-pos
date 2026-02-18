@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { ItemTreeView } from '@/components/menu/ItemTreeView'
 import { ItemEditor, IngredientLibraryItem } from '@/components/menu/ItemEditor'
 import { ModifierFlowEditor } from '@/components/menu/ModifierFlowEditor'
@@ -207,6 +208,7 @@ export default function MenuManagementPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
   const [editingCategory, setEditingCategory] = useState<Category | null>(null)
+  const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
   const [selectedItemForEditor, setSelectedItemForEditor] = useState<MenuItem | null>(null)
   const [selectedTreeNode, setSelectedTreeNode] = useState<{ type: string; id: string } | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -437,29 +439,39 @@ export default function MenuManagementPage() {
   }
 
 
-  const handleDeleteCategory = async (id: string) => {
-    if (!confirm('Delete this category and all its items?')) return
-    try {
-      await fetch(`/api/menu/categories/${id}`, { method: 'DELETE' })
-      loadMenu()
-      if (selectedCategory === id) {
-        setSelectedCategory(categories[0]?.id || null)
-      }
-    } catch (error) {
-      console.error('Failed to delete category:', error)
-      toast.error('Failed to delete category')
-    }
+  const handleDeleteCategory = (id: string) => {
+    setConfirmAction({
+      title: 'Delete Category',
+      message: 'Delete this category and all its items?',
+      action: async () => {
+        try {
+          await fetch(`/api/menu/categories/${id}`, { method: 'DELETE' })
+          loadMenu()
+          if (selectedCategory === id) {
+            setSelectedCategory(categories[0]?.id || null)
+          }
+        } catch (error) {
+          console.error('Failed to delete category:', error)
+          toast.error('Failed to delete category')
+        }
+      },
+    })
   }
 
-  const handleDeleteItem = async (id: string) => {
-    if (!confirm('Delete this item?')) return
-    try {
-      await fetch(`/api/menu/items/${id}`, { method: 'DELETE' })
-      loadMenu()
-    } catch (error) {
-      console.error('Failed to delete item:', error)
-      toast.error('Failed to delete item')
-    }
+  const handleDeleteItem = (id: string) => {
+    setConfirmAction({
+      title: 'Delete Item',
+      message: 'Delete this item?',
+      action: async () => {
+        try {
+          await fetch(`/api/menu/items/${id}`, { method: 'DELETE' })
+          loadMenu()
+        } catch (error) {
+          console.error('Failed to delete item:', error)
+          toast.error('Failed to delete item')
+        }
+      },
+    })
   }
 
   const handleToggleItem86 = async (item: MenuItem) => {
@@ -857,6 +869,16 @@ export default function MenuManagementPage() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || 'Confirm'}
+        description={confirmAction?.message}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { confirmAction?.action(); setConfirmAction(null) }}
+        onCancel={() => setConfirmAction(null)}
+      />
 
     </div>
   )

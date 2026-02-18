@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { PERMISSIONS } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
 // Helper to safely get permissions as an array
@@ -66,7 +67,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight } = body as {
+    const { locationId, name, permissions, cashHandlingMode, trackLaborCost, isTipped, tipWeight, requestingEmployeeId } = body as {
       locationId: string
       name: string
       permissions: string[]
@@ -74,7 +75,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       trackLaborCost?: boolean
       isTipped?: boolean
       tipWeight?: number
+      requestingEmployeeId?: string
     }
+
+    // Auth check — require staff.manage_roles permission
+    const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.STAFF_MANAGE_ROLES)
+    if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
     if (!locationId || !name) {
       return NextResponse.json(

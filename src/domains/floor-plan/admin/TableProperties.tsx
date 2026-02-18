@@ -10,6 +10,7 @@
 import React, { useState, useEffect } from 'react';
 import type { EditorTable, TableShape, SeatPattern } from './types';
 import { TABLE_SHAPES } from './types';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // =============================================================================
 // TYPES
@@ -32,6 +33,7 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats, 
   const [name, setName] = useState('');
   const [abbreviation, setAbbreviation] = useState('');
   const [capacity, setCapacity] = useState(4);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [width, setWidth] = useState(100);
   const [height, setHeight] = useState(100);
   const [rotation, setRotation] = useState(0);
@@ -419,11 +421,7 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats, 
           Regen Seats
         </button>
         <button
-          onClick={() => {
-            if (window.confirm(`Delete table "${table.name}"?`)) {
-              onDelete(table.id);
-            }
-          }}
+          onClick={() => setShowDeleteConfirm(true)}
           style={{
             flex: 1,
             padding: '6px 8px',
@@ -439,6 +437,16 @@ export function TableProperties({ table, onUpdate, onDelete, onRegenerateSeats, 
           Delete
         </button>
       </div>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Table"
+        description={`Delete table "${table.name}"?`}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => { setShowDeleteConfirm(false); onDelete(table.id); }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

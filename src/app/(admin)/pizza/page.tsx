@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { PizzaPrintSettings } from '@/types/print'
 import { PizzaPrintSettingsEditor } from '@/components/hardware/PizzaPrintSettingsEditor'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -119,6 +120,7 @@ export default function PizzaAdminPage() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const [activeTab, setActiveTab] = useState<TabType>('sizes')
   const [isLoading, setIsLoading] = useState(true)
+  const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null)
 
   // Data states
   const [config, setConfig] = useState<PizzaConfig | null>(null)
@@ -210,14 +212,19 @@ export default function PizzaAdminPage() {
     }
   }
 
-  const handleDeleteSize = async (id: string) => {
-    if (!confirm('Delete this size?')) return
-    try {
-      await fetch(`/api/pizza/sizes/${id}`, { method: 'DELETE' })
-      await loadAllData()
-    } catch (error) {
-      console.error('Failed to delete size:', error)
-    }
+  const handleDeleteSize = (id: string) => {
+    setConfirmAction({
+      title: 'Delete Size',
+      message: 'Delete this size?',
+      action: async () => {
+        try {
+          await fetch(`/api/pizza/sizes/${id}`, { method: 'DELETE' })
+          await loadAllData()
+        } catch (error) {
+          console.error('Failed to delete size:', error)
+        }
+      },
+    })
   }
 
   // Crust handlers
@@ -240,14 +247,19 @@ export default function PizzaAdminPage() {
     }
   }
 
-  const handleDeleteCrust = async (id: string) => {
-    if (!confirm('Delete this crust?')) return
-    try {
-      await fetch(`/api/pizza/crusts/${id}`, { method: 'DELETE' })
-      await loadAllData()
-    } catch (error) {
-      console.error('Failed to delete crust:', error)
-    }
+  const handleDeleteCrust = (id: string) => {
+    setConfirmAction({
+      title: 'Delete Crust',
+      message: 'Delete this crust?',
+      action: async () => {
+        try {
+          await fetch(`/api/pizza/crusts/${id}`, { method: 'DELETE' })
+          await loadAllData()
+        } catch (error) {
+          console.error('Failed to delete crust:', error)
+        }
+      },
+    })
   }
 
   // Sauce handlers
@@ -270,14 +282,19 @@ export default function PizzaAdminPage() {
     }
   }
 
-  const handleDeleteSauce = async (id: string) => {
-    if (!confirm('Delete this sauce?')) return
-    try {
-      await fetch(`/api/pizza/sauces/${id}`, { method: 'DELETE' })
-      await loadAllData()
-    } catch (error) {
-      console.error('Failed to delete sauce:', error)
-    }
+  const handleDeleteSauce = (id: string) => {
+    setConfirmAction({
+      title: 'Delete Sauce',
+      message: 'Delete this sauce?',
+      action: async () => {
+        try {
+          await fetch(`/api/pizza/sauces/${id}`, { method: 'DELETE' })
+          await loadAllData()
+        } catch (error) {
+          console.error('Failed to delete sauce:', error)
+        }
+      },
+    })
   }
 
   // Cheese handlers
@@ -300,14 +317,19 @@ export default function PizzaAdminPage() {
     }
   }
 
-  const handleDeleteCheese = async (id: string) => {
-    if (!confirm('Delete this cheese?')) return
-    try {
-      await fetch(`/api/pizza/cheeses/${id}`, { method: 'DELETE' })
-      await loadAllData()
-    } catch (error) {
-      console.error('Failed to delete cheese:', error)
-    }
+  const handleDeleteCheese = (id: string) => {
+    setConfirmAction({
+      title: 'Delete Cheese',
+      message: 'Delete this cheese?',
+      action: async () => {
+        try {
+          await fetch(`/api/pizza/cheeses/${id}`, { method: 'DELETE' })
+          await loadAllData()
+        } catch (error) {
+          console.error('Failed to delete cheese:', error)
+        }
+      },
+    })
   }
 
   // Topping handlers
@@ -480,6 +502,16 @@ export default function PizzaAdminPage() {
             onClose={() => { setShowToppingModal(false); setEditingTopping(null) }}
           />
         )}
+
+        <ConfirmDialog
+          open={!!confirmAction}
+          title={confirmAction?.title || 'Confirm'}
+          description={confirmAction?.message}
+          confirmLabel="Delete"
+          destructive
+          onConfirm={() => { confirmAction?.action(); setConfirmAction(null) }}
+          onCancel={() => setConfirmAction(null)}
+        />
       </div>
     </div>
   )

@@ -11,6 +11,7 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { FloorCanvasAPI } from './floorCanvasAPI';
 import type { FloorPlan, Fixture, Point } from '../shared/types';
 import { toast } from '@/stores/toast-store';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // =============================================================================
 // TYPES
@@ -365,6 +366,7 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
   const [rooms, setRooms] = useState<FloorPlan[]>([]);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [deleteRoomTarget, setDeleteRoomTarget] = useState<FloorPlan | null>(null);
 
   useEffect(() => {
     setRooms(FloorCanvasAPI.getAllRooms());
@@ -392,10 +394,7 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
 
   const handleDeleteRoom = (room: FloorPlan, event: React.MouseEvent) => {
     event.stopPropagation();
-    if (window.confirm(`Delete room "${room.name}"?\n\nThis will remove all fixtures in this room.`)) {
-      // TODO: Implement room deletion via FloorCanvasAPI
-      toast.info('Delete Room feature coming soon');
-    }
+    setDeleteRoomTarget(room);
   };
 
   if (rooms.length === 0) {
@@ -494,6 +493,20 @@ export function RoomSelector({ selectedRoomId, onRoomSelect }: RoomSelectorProps
       >
         + Add Room
       </button>
+
+      <ConfirmDialog
+        open={!!deleteRoomTarget}
+        title="Delete Room"
+        description={`Delete room "${deleteRoomTarget?.name}"?\n\nThis will remove all fixtures in this room.`}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => {
+          // TODO: Implement room deletion via FloorCanvasAPI
+          toast.info('Delete Room feature coming soon');
+          setDeleteRoomTarget(null);
+        }}
+        onCancel={() => setDeleteRoomTarget(null)}
+      />
     </div>
   );
 }

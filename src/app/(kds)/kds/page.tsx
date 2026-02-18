@@ -270,15 +270,23 @@ function KDSContent() {
       socket.emit('join_station', {
         locationId,
         tags,
-        terminalId: `kds-${screenConfig?.id || 'fallback'}-${Date.now()}`,
+        terminalId: `kds-${screenConfig?.id || 'fallback'}`,
         stationId: stationIds?.[0],
       })
     }
 
-    const onOrderReceived = () => loadOrders()
-    const onItemStatus = () => loadOrders()
-    const onOrderBumped = () => loadOrders()
-    const onOrderCreated = () => loadOrders()
+    const loadOrdersDebounceRef = { current: null as NodeJS.Timeout | null }
+    const debouncedLoadOrders = () => {
+      if (loadOrdersDebounceRef.current) clearTimeout(loadOrdersDebounceRef.current)
+      loadOrdersDebounceRef.current = setTimeout(() => {
+        loadOrders()
+      }, 200)
+    }
+
+    const onOrderReceived = () => debouncedLoadOrders()
+    const onItemStatus = () => debouncedLoadOrders()
+    const onOrderBumped = () => debouncedLoadOrders()
+    const onOrderCreated = () => debouncedLoadOrders()
     const onDisconnect = () => setSocketConnected(false)
 
     socket.on('connect', onConnect)
@@ -294,6 +302,7 @@ function KDSContent() {
 
     socketRef.current = socket
     return () => {
+      if (loadOrdersDebounceRef.current) clearTimeout(loadOrdersDebounceRef.current)
       socket.off('connect', onConnect)
       socket.off('kds:order-received', onOrderReceived)
       socket.off('kds:item-status', onItemStatus)

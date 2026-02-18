@@ -162,17 +162,6 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const resolvedLocationId = locationId || employee.locationId
     const settings = parseSettings(employee.location.settings)
 
-    // If we didn't already fetch lastOrder in parallel, do it now
-    const resolvedLastOrder = lastOrder ?? await db.order.findFirst({
-      where: {
-        locationId: resolvedLocationId,
-        createdAt: { gte: today, lt: tomorrow },
-      },
-      orderBy: { orderNumber: 'desc' },
-    })
-
-    const orderNumber = (resolvedLastOrder?.orderNumber || 0) + 1
-
     // Create pre-auth data if provided
     let preAuthData = {}
     if (preAuth && preAuth.cardLast4) {
@@ -192,24 +181,36 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       }
     }
 
-    // Create the tab (order with type bar_tab)
-    const tab = await db.order.create({
-      data: {
-        locationId: resolvedLocationId,
-        employeeId,
-        orderNumber,
-        orderType: 'bar_tab',
-        tabName: tabName || null,
-        status: 'open',
-        guestCount: 1,
-        ...preAuthData,
-      },
-      include: {
-        employee: {
-          select: { id: true, displayName: true, firstName: true, lastName: true },
+    // Create the tab atomically with order number generation (serializable prevents duplicates)
+    const tab = await db.$transaction(async (tx) => {
+      const resolvedLastOrder = lastOrder ?? await tx.order.findFirst({
+        where: {
+          locationId: resolvedLocationId,
+          createdAt: { gte: today, lt: tomorrow },
         },
-      },
-    })
+        orderBy: { orderNumber: 'desc' },
+        select: { orderNumber: true },
+      })
+      const orderNumber = (resolvedLastOrder?.orderNumber || 0) + 1
+
+      return tx.order.create({
+        data: {
+          locationId: resolvedLocationId,
+          employeeId,
+          orderNumber,
+          orderType: 'bar_tab',
+          tabName: tabName || null,
+          status: 'open',
+          guestCount: 1,
+          ...preAuthData,
+        },
+        include: {
+          employee: {
+            select: { id: true, displayName: true, firstName: true, lastName: true },
+          },
+        },
+      })
+    }, { isolationLevel: 'Serializable' })
 
     return NextResponse.json({
       id: tab.id,

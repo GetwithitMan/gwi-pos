@@ -129,10 +129,7 @@ export function useAdminCRUD<T>(config: UseAdminCRUDConfig<T>): UseAdminCRUDRetu
     }
   }, [editingItem, apiBase, getId, resourceName, loadItems, onSaveSuccess])
 
-  const handleDelete = useCallback(async (id: string, confirmMessage?: string): Promise<boolean> => {
-    const message = confirmMessage || `Are you sure you want to delete this ${resourceName}?`
-    if (!confirm(message)) return false
-
+  const handleDelete = useCallback(async (id: string, _confirmMessage?: string): Promise<boolean> => {
     try {
       const res = await fetch(`${apiBase}/${id}`, { method: 'DELETE' })
 

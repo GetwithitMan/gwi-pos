@@ -118,6 +118,7 @@ export function PaymentModal({
   const [tipAmount, setTipAmount] = useState(0)
   const [customTip, setCustomTip] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
+  const [idempotencyKey] = useState(() => crypto.randomUUID())
   const [error, setError] = useState<string | null>(null)
 
   // Cash payment state
@@ -479,6 +480,7 @@ export function PaymentModal({
       } : {}),
     })),
     employeeId,
+    idempotencyKey,
   })
 
   const processPayments = async (payments: PendingPayment[]) => {
@@ -489,29 +491,29 @@ export function PaymentModal({
       return
     }
 
-    // Fire-and-forget for cash-only full payment (most common bar flow)
-    // Close UI immediately — /pay runs in background
+    // Cash-only full payment — await the API before closing so failures are surfaced
     const isCashOnly = payments.every(p => p.method === 'cash') && pendingPayments.length === 0
     if (isCashOnly) {
-      onPaymentComplete() // no receiptData → parent skips receipt modal
-      const payOrderId = orderId
-      const payBody = buildPayBody(payments)
-      ;(async () => {
-        try {
-          if (waitForOrderReady) await waitForOrderReady()
-          const res = await fetch(`/api/orders/${payOrderId}/pay`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payBody),
-          })
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}))
-            toast.error(`Cash payment save failed: ${data.error || 'Server error'}. Check Open Orders.`)
-          }
-        } catch {
-          toast.error('Cash payment failed to save. Check Open Orders.')
+      setIsProcessing(true)
+      setError(null)
+      try {
+        if (waitForOrderReady) await waitForOrderReady()
+        const res = await fetch(`/api/orders/${orderId}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildPayBody(payments)),
+        })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          toast.error(`Cash payment failed: ${data.error || 'Server error'}`)
+          setIsProcessing(false)
+          return
         }
-      })()
+        onPaymentComplete() // no receiptData → parent skips receipt modal
+      } catch {
+        toast.error('Cash payment failed — check network connection')
+        setIsProcessing(false)
+      }
       return
     }
 
@@ -1181,6 +1183,25 @@ export function PaymentModal({
               employeeId={employeeId}
               locationId={locationId}
               onSuccess={handleDatacapSuccess}
+              onPartialApproval={(result) => {
+                const partialPayment: PendingPayment = {
+                  method: selectedMethod === 'debit' ? 'debit' : 'credit',
+                  amount: result.amountAuthorized,
+                  tipAmount: result.tipAmount,
+                  cardBrand: result.cardBrand || 'card',
+                  cardLast4: result.cardLast4 || '0000',
+                  datacapRecordNo: result.recordNo,
+                  datacapRefNumber: result.refNumber,
+                  datacapSequenceNo: result.sequenceNo,
+                  authCode: result.authCode,
+                  entryMethod: result.entryMethod,
+                  signatureData: result.signatureData,
+                  amountAuthorized: result.amountAuthorized,
+                }
+                setPendingPayments(prev => [...prev, partialPayment])
+                toast.info(`Partial approval: ${formatCurrency(result.amountAuthorized)} charged. ${formatCurrency(result.remainingBalance)} remaining.`)
+                setStep('method')
+              }}
               onCancel={() => setStep('method')}
             />
           )}

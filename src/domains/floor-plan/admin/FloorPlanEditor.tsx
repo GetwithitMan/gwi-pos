@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { FloorCanvasAPI, RoomSelector } from '../canvas';
 import { EditorCanvas } from './EditorCanvas';
 import { FixtureToolbar } from './FixtureToolbar';
@@ -247,6 +248,7 @@ export function FloorPlanEditor({
 
   // Selection
   const [selectedFixtureId, setSelectedFixtureId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{ action: () => void; title: string; message: string } | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
 
@@ -919,33 +921,28 @@ export function FloorPlanEditor({
           // Collision detected - ask user if they want to force generate
           const collisionCount = data.collisions?.length || 0;
           const collisionTypes = data.collisions?.map((c: { collidedWith: string }) => c.collidedWith).slice(0, 3).join(', ');
-          const confirmed = window.confirm(
-            `⚠️ Seat Collision Warning\n\n` +
-            `${collisionCount} seat(s) would collide with: ${collisionTypes}${collisionCount > 3 ? '...' : ''}\n\n` +
-            `Options:\n` +
-            `• Click "Cancel" to abort and move/resize the table first\n` +
-            `• Click "OK" to generate seats anyway (they may overlap)`
-          );
+          setConfirmAction({
+            title: 'Seat Collision Warning',
+            message: `${collisionCount} seat(s) would collide with: ${collisionTypes}${collisionCount > 3 ? '...' : ''}\n\nGenerate seats anyway? They may overlap.`,
+            action: async () => {
+              const forceResponse = await fetch(`/api/tables/${tableId}/seats/auto-generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  count: table.capacity,
+                  seatPattern: table.seatPattern,
+                  replaceExisting: true,
+                  checkCollisions: true,
+                  forceGenerate: true,
+                }),
+              });
 
-          if (confirmed) {
-            // Force generate despite collisions
-            const forceResponse = await fetch(`/api/tables/${tableId}/seats/auto-generate`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                count: table.capacity,
-                seatPattern: table.seatPattern,
-                replaceExisting: true,
-                checkCollisions: true,
-                forceGenerate: true,
-              }),
-            });
-
-            if (forceResponse.ok) {
-              await fetchTables();
-              setTimeout(() => setRefreshKey((prev) => prev + 1), 50);
-            }
-          }
+              if (forceResponse.ok) {
+                await fetchTables();
+                setTimeout(() => setRefreshKey((prev) => prev + 1), 50);
+              }
+            },
+          });
           return;
         }
 
@@ -1080,21 +1077,25 @@ export function FloorPlanEditor({
   }, [onSave, useDatabase]);
 
   // Handle reset
-  const handleReset = useCallback(async () => {
-    if (window.confirm('Reset the floor plan to default? This will delete all fixtures.')) {
-      if (useDatabase) {
-        // Delete all elements
-        for (const el of dbElements) {
-          await fetch(`/api/floor-plan-elements/${el.id}`, { method: 'DELETE' });
+  const handleReset = useCallback(() => {
+    setConfirmAction({
+      title: 'Reset Floor Plan',
+      message: 'Reset the floor plan to default? This will delete all fixtures.',
+      action: async () => {
+        if (useDatabase) {
+          // Delete all elements
+          for (const el of dbElements) {
+            await fetch(`/api/floor-plan-elements/${el.id}`, { method: 'DELETE' });
+          }
+          setDbElements([]);
+        } else {
+          const fixtures = FloorCanvasAPI.getFixtures(selectedRoomId);
+          fixtures.forEach((f) => FloorCanvasAPI.removeFixture(f.id));
         }
-        setDbElements([]);
-      } else {
-        const fixtures = FloorCanvasAPI.getFixtures(selectedRoomId);
-        fixtures.forEach((f) => FloorCanvasAPI.removeFixture(f.id));
-      }
-      setSelectedFixtureId(null);
-      setRefreshKey((prev) => prev + 1);
-    }
+        setSelectedFixtureId(null);
+        setRefreshKey((prev) => prev + 1);
+      },
+    });
   }, [selectedRoomId, useDatabase, dbElements]);
 
   // Handle keyboard shortcuts
@@ -1540,6 +1541,16 @@ export function FloorPlanEditor({
           onAddElement={handleAddEntertainment}
         />
       )}
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmAction?.title || 'Confirm'}
+        description={confirmAction?.message}
+        confirmLabel="Confirm"
+        destructive
+        onConfirm={() => { confirmAction?.action(); setConfirmAction(null) }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

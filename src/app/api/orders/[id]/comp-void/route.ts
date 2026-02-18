@@ -135,50 +135,93 @@ export const POST = withVenue(async function POST(
     // Update the item status
     const newStatus = action === 'comp' ? 'comped' : 'voided'
     const itemWasMade = action === 'comp' ? true : (wasMade ?? false)
-    await db.orderItem.update({
-      where: { id: itemId },
-      data: {
-        status: newStatus,
-        voidReason: reason,
-        wasMade: itemWasMade,
-      },
-    })
 
     // Determine the approving manager (from remote approval or direct)
     const effectiveApprovedById = remoteApproval?.manager.id || approvedById || null
     const effectiveApprovedAt = remoteApproval?.approvedAt || (approvedById ? new Date() : null)
 
-    // Create void log entry
-    await db.voidLog.create({
-      data: {
-        locationId: order.locationId,
-        orderId,
-        employeeId,
-        voidType: 'item',
-        itemId,
-        amount: itemTotal,
-        reason,
-        wasMade: action === 'comp' ? true : (wasMade ?? false),
-        approvedById: effectiveApprovedById,
-        approvedAt: effectiveApprovedAt,
-        remoteApprovalId: remoteApproval?.id || null,
-      },
-    })
-
-    // If remote approval was used, mark it as used
-    if (remoteApproval) {
-      await db.remoteVoidApproval.update({
-        where: { id: remoteApproval.id },
+    // Wrap all critical writes in a single transaction
+    const { activeItems, totals, shouldAutoClose } = await db.$transaction(async (tx) => {
+      // 1. Update item status
+      await tx.orderItem.update({
+        where: { id: itemId },
         data: {
-          status: 'used',
-          usedAt: new Date(),
+          status: newStatus,
+          voidReason: reason,
+          wasMade: itemWasMade,
         },
       })
-    }
 
-    // Deduct inventory for voids where food was made (fire-and-forget)
-    // For comps, food was definitely made so always deduct
-    // For voids, use explicit wasMade flag from UI (falls back to reason-based detection)
+      // 2. Create void log entry
+      await tx.voidLog.create({
+        data: {
+          locationId: order.locationId,
+          orderId,
+          employeeId,
+          voidType: 'item',
+          itemId,
+          amount: itemTotal,
+          reason,
+          wasMade: action === 'comp' ? true : (wasMade ?? false),
+          approvedById: effectiveApprovedById,
+          approvedAt: effectiveApprovedAt,
+          remoteApprovalId: remoteApproval?.id || null,
+        },
+      })
+
+      // 3. If remote approval was used, mark it as used
+      if (remoteApproval) {
+        await tx.remoteVoidApproval.update({
+          where: { id: remoteApproval.id },
+          data: {
+            status: 'used',
+            usedAt: new Date(),
+          },
+        })
+      }
+
+      // 4. Recalculate order totals — get all active items
+      const txActiveItems = await tx.orderItem.findMany({
+        where: {
+          orderId,
+          status: 'active',
+        },
+        include: { modifiers: true },
+      })
+
+      let newSubtotal = 0
+      txActiveItems.forEach(activeItem => {
+        const mods = activeItem.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
+        newSubtotal += (Number(activeItem.price) + mods) * activeItem.quantity
+      })
+
+      // Get existing discounts
+      const discounts = await tx.orderDiscount.findMany({
+        where: { orderId },
+      })
+      const discountTotal = discounts.reduce((sum, d) => sum + Number(d.amount), 0)
+
+      // Recalculate order totals using centralized tax engine
+      const txTotals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
+
+      // If all items are voided/comped (total is $0 with no active items), auto-close the order
+      const txShouldAutoClose = txActiveItems.length === 0
+
+      // 5. Update order with recalculated totals
+      await tx.order.update({
+        where: { id: orderId },
+        data: {
+          ...txTotals,
+          ...(txShouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
+        },
+      })
+
+      return { activeItems: txActiveItems, totals: txTotals, shouldAutoClose: txShouldAutoClose }
+    })
+
+    // Fire-and-forget side effects OUTSIDE the transaction
+
+    // Deduct inventory for voids where food was made
     const normalizedReason = reason.toLowerCase().replace(/\s+/g, '_')
     const shouldDeductInventory = action === 'comp'
       || (wasMade !== undefined ? wasMade : WASTE_VOID_REASONS.includes(normalizedReason))
@@ -188,47 +231,10 @@ export const POST = withVenue(async function POST(
         console.error('Background waste inventory deduction failed:', err)
       })
     } else {
-      // For voids where food was NOT made, restore prep stock (fire-and-forget)
-      // This handles cases like "never_made", "customer_left", "mistake", etc.
       restorePrepStockForVoid(orderId, [itemId], false).catch(err => {
         console.error('Background prep stock restoration failed:', err)
       })
     }
-
-    // Recalculate order totals
-    // Get all active items
-    const activeItems = await db.orderItem.findMany({
-      where: {
-        orderId,
-        status: 'active',
-      },
-      include: { modifiers: true },
-    })
-
-    let newSubtotal = 0
-    activeItems.forEach(activeItem => {
-      const mods = activeItem.modifiers.reduce((sum, m) => sum + Number(m.price), 0)
-      newSubtotal += (Number(activeItem.price) + mods) * activeItem.quantity
-    })
-
-    // Get existing discounts
-    const discounts = await db.orderDiscount.findMany({
-      where: { orderId },
-    })
-    const discountTotal = discounts.reduce((sum, d) => sum + Number(d.amount), 0)
-
-    // Recalculate order totals using centralized tax engine
-    const totals = calculateOrderTotals(newSubtotal, discountTotal, order.location.settings as { tax?: { defaultRate?: number } })
-
-    // If all items are voided/comped (total is $0 with no active items), auto-close the order
-    const shouldAutoClose = activeItems.length === 0
-    await db.order.update({
-      where: { id: orderId },
-      data: {
-        ...totals,
-        ...(shouldAutoClose ? { status: 'cancelled', paidAt: new Date() } : {}),
-      },
-    })
 
     // Clean up temporary seats if order auto-closed, then refresh floor plan
     if (shouldAutoClose) {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { dispatchInventoryAdjustment, dispatchStockLevelChange } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
@@ -115,7 +117,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { ingredientId, operation, quantity, reason, employeeId } = body
+    const { ingredientId, operation, quantity, reason, employeeId, locationId } = body
+
+    // Auth check — require inventory.adjust_prep_stock permission
+    if (locationId && employeeId) {
+      const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     if (!ingredientId || operation === undefined || quantity === undefined) {
       return NextResponse.json(
@@ -279,7 +287,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 export const PATCH = withVenue(async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { adjustments, employeeId } = body
+    const { adjustments, employeeId, locationId } = body
 
     if (!adjustments || !Array.isArray(adjustments)) {
       return NextResponse.json(
@@ -293,6 +301,12 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
         { error: 'employeeId is required for stock adjustments' },
         { status: 400 }
       )
+    }
+
+    // Auth check — require inventory.adjust_prep_stock permission
+    if (locationId) {
+      const auth = await requirePermission(employeeId, locationId, PERMISSIONS.INVENTORY_ADJUST_PREP_STOCK)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Get employee info for audit trail
@@ -317,7 +331,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
       error?: string
     }> = []
 
-    let locationId: string | null = null
+    let resolvedLocationId: string | null = locationId || null
     let totalCostImpact = 0
 
     // Process each adjustment
@@ -358,7 +372,7 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
           continue
         }
 
-        locationId = ingredient.locationId
+        resolvedLocationId = ingredient.locationId
         const currentStock = Number(ingredient.currentPrepStock) || 0
         let newStock: number
 
@@ -473,8 +487,8 @@ export const PATCH = withVenue(async function PATCH(request: NextRequest) {
     const failCount = results.filter(r => !r.success).length
 
     // Dispatch real-time update for all changes
-    if (locationId && successCount > 0) {
-      dispatchInventoryAdjustment(locationId, {
+    if (resolvedLocationId && successCount > 0) {
+      dispatchInventoryAdjustment(resolvedLocationId, {
         adjustments: results
           .filter(r => r.success)
           .map(r => ({

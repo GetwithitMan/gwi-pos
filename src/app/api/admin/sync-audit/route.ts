@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { PERMISSIONS } from '@/lib/auth'
+import { requirePermission } from '@/lib/api-auth'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -131,6 +133,10 @@ export const GET = withVenue(async function GET(request: NextRequest) {
  */
 export const POST = withVenue(async function POST(request: NextRequest) {
   try {
+    // Auth check — require API key or admin permission
+    const apiKey = request.headers.get('x-api-key')
+    const hasApiKey = apiKey && apiKey === process.env.PROVISION_API_KEY
+
     const body = await request.json()
     const {
       locationId,
@@ -146,6 +152,12 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       statusNote,
       cardLast4,
     } = body
+
+    // Auth check — require API key or admin permission
+    if (!hasApiKey) {
+      const auth = await requirePermission(employeeId, locationId, PERMISSIONS.ADMIN)
+      if (!auth.authorized) return NextResponse.json({ error: auth.error }, { status: auth.status })
+    }
 
     // Validate required fields
     if (!locationId || !orderId || !terminalId || !idempotencyKey || !status) {

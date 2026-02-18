@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EditorCanvasDB } from './EditorCanvasDB';
 import { FixtureToolbar } from './FixtureToolbar';
 import { FixturePropertiesDB } from './FixturePropertiesDB';
@@ -84,6 +85,7 @@ export function FloorPlanEditorDB({
 
   // Selection
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // Elements (fixtures)
   const [elements, setElements] = useState<FloorPlanElement[]>([]);
@@ -287,9 +289,11 @@ export function FloorPlanEditorDB({
   }, [locationId, onSave]);
 
   // Handle reset
-  const handleReset = useCallback(async () => {
-    if (!window.confirm('Reset this room? This will delete all fixtures.')) return;
+  const handleReset = useCallback(() => {
+    setShowResetConfirm(true);
+  }, []);
 
+  const executeReset = useCallback(async () => {
     try {
       // Delete all elements in this section
       for (const element of elements) {
@@ -534,6 +538,16 @@ export function FloorPlanEditorDB({
           1-5: Switch tools | Delete: Remove selected | Esc: Deselect
         </span>
       </div>
+
+      <ConfirmDialog
+        open={showResetConfirm}
+        title="Reset Room"
+        description="Reset this room? This will delete all fixtures."
+        confirmLabel="Reset"
+        destructive
+        onConfirm={() => { setShowResetConfirm(false); executeReset(); }}
+        onCancel={() => setShowResetConfirm(false)}
+      />
     </div>
   );
 }

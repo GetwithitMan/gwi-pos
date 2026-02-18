@@ -30,7 +30,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     // Self-access: employees can always view their own tips report
     const isSelfAccess = employeeId && requestingEmployeeId && employeeId === requestingEmployeeId
     if (!isSelfAccess) {
-      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE, { soft: true })
+      const auth = await requirePermission(requestingEmployeeId, locationId, PERMISSIONS.REPORTS_SALES_BY_EMPLOYEE)
       if (!auth.authorized) {
         return NextResponse.json({ error: auth.error }, { status: auth.status })
       }
