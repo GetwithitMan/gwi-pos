@@ -25,8 +25,9 @@
 | 6F | Ingredient Modifications Fix (5 query paths) | 5 | ✅ |
 | 6G | Hook Wiring + New Extractions (56→30 useState) | 7 | ✅ |
 | 6H | API Response Format Normalization (460+ violations) | 5 | ✅ |
+| 6H-HF | Client-Side Response Unwrapping (150+ fixes in 120 files) | 3 | ✅ |
 
-**Total completed:** 77 tasks, 970+ individual fixes across 370+ files
+**Total completed:** 80 tasks, 1120+ individual fixes across 490+ files
 
 ---
 

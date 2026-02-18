@@ -794,6 +794,17 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 **Impact:** 460+ success responses across 260 route files now use `{ data: T }` convention. Error responses (`{ error: string }`) untouched. 5-agent parallel team completed in single pass.
 **Commit:** `f4f829b`
 
+### Hotfix — Client-Side Response Unwrapping (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 78 | Fix POS page + component API consumers (30+ locations in 10 files) | fix-pos | ✅ |
+| 79 | Fix admin page API consumers (55+ files) | fix-admin | ✅ |
+| 80 | Fix hooks, libs, stores, component API consumers (70+ files, 80+ fixes) | fix-libs | ✅ |
+
+**Root cause:** Wave 6H normalized API responses to `{ data: T }` but did not update client-side fetch consumers. All `data.property` accesses became `undefined` since the actual data moved to `data.data.property`.
+**Impact:** 150+ response property accesses fixed across 120 files. Runtime crash in OpenOrdersPanel resolved. All client code now correctly unwraps `{ data: T }` responses.
+**Commit:** `96ced1e`
+
 ---
 
 ## Considerations & Risks
@@ -817,4 +828,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 6H COMPLETE — 77/77 tasks complete, 970+ individual fixes applied across 370+ files*
+*Last updated: Wave 6H + Hotfix COMPLETE — 80/80 tasks complete, 1120+ individual fixes applied across 490+ files*
