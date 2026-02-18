@@ -160,7 +160,7 @@ interface FloorPlanHomeProps {
   // Pizza builder modal callback
   onOpenPizzaBuilder?: (item: MenuItem, onComplete: (config: PizzaOrderConfig) => void) => void
   // Order to load (from Open Orders panel) - set this to load an existing order
-  orderToLoad?: { id: string; orderNumber: number; tableId?: string; tabName?: string; orderType: string } | null
+  orderToLoad?: { id: string; orderNumber: number; tableId?: string; tableName?: string; tabName?: string; orderType: string } | null
   // Callback when order is loaded (to clear the orderToLoad prop)
   onOrderLoaded?: () => void
   // Order ID that was just paid - triggers clearing of order panel
@@ -1012,6 +1012,7 @@ export function FloorPlanHome({
           orderNumber: data.orderNumber ?? orderToLoad.orderNumber,
           orderType: data.orderType || orderToLoad.orderType || 'dine_in',
           tableId: data.tableId || orderToLoad.tableId,
+          tableName: data.tableName || orderToLoad.tableName,
           tabName: data.tabName,
           guestCount: data.guestCount || 1,
           status: data.status,

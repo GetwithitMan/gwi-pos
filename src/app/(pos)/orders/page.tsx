@@ -260,7 +260,7 @@ export default function OrdersPage() {
   const [paymentTabCards, setPaymentTabCards] = useState<Array<{ id: string; cardType: string; cardLast4: string; cardholderName?: string | null; authAmount: number; isDefault: boolean }>>([])
 
   // Order to load into FloorPlanHome (for editing from Open Orders panel)
-  const [orderToLoad, setOrderToLoad] = useState<{ id: string; orderNumber: number; tableId?: string; tabName?: string; orderType: string } | null>(null)
+  const [orderToLoad, setOrderToLoad] = useState<{ id: string; orderNumber: number; tableId?: string; tableName?: string; tabName?: string; orderType: string } | null>(null)
 
   // BartenderView tab deselect callback (registered via onRegisterDeselectTab)
   const bartenderDeselectTabRef = useRef<(() => void) | null>(null)
@@ -3113,6 +3113,7 @@ export default function OrdersPage() {
                     id: order.id,
                     orderNumber: order.orderNumber,
                     tableId: order.tableId || undefined,
+                    tableName: order.table?.name || undefined,
                     tabName: order.tabName || undefined,
                     orderType: order.orderType,
                   })
@@ -3133,6 +3134,7 @@ export default function OrdersPage() {
                     id: order.id,
                     orderNumber: order.orderNumber,
                     tableId: order.tableId || undefined,
+                    tableName: order.table?.name || undefined,
                     tabName: order.tabName || undefined,
                     orderType: order.orderType,
                   })

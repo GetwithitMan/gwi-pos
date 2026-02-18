@@ -858,7 +858,7 @@ export function BartenderView({
             orderNumber: order.orderNumber,
             orderType: order.orderType || 'bar_tab',
             tableId: order.tableId || undefined,
-            tableName: order.table?.name || undefined,
+            tableName: order.tableName || order.table?.name || undefined,
             tabName: order.tabName || undefined,
             guestCount: order.guestCount || 1,
             status: order.status || 'open',
