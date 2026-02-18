@@ -571,12 +571,14 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
     const orderId = currentOrder?.id
 
     try {
-      // If order is saved, delete from API
-      if (orderId) {
+      // If order is saved AND item has a real DB ID, delete from API
+      if (orderId && !isTempId(itemId)) {
         const res = await fetch(`/api/orders/${orderId}/items/${itemId}`, {
           method: 'DELETE',
         })
         if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}))
+          console.error('[useActiveOrder] DELETE failed:', res.status, errBody)
           toast.error('Failed to remove item')
           return
         }

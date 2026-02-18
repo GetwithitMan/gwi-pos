@@ -187,3 +187,73 @@ export const PUT = withVenue(async function PUT(
     )
   }
 })
+
+// DELETE - Remove an order item (only if not yet sent to kitchen)
+export const DELETE = withVenue(async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string; itemId: string }> }
+) {
+  try {
+    const { id: orderId, itemId } = await params
+
+    // Verify order exists and is in a deletable state
+    const order = await db.order.findUnique({
+      where: { id: orderId },
+      select: { id: true, status: true },
+    })
+
+    if (!order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    // Only allow item deletion on open/draft/sent orders (not paid/closed/voided/cancelled)
+    const deletableStatuses = ['open', 'sent', 'draft']
+    if (!deletableStatuses.includes(order.status)) {
+      return NextResponse.json(
+        { error: `Cannot delete items on a ${order.status} order` },
+        { status: 400 }
+      )
+    }
+
+    // Verify item exists and belongs to this order
+    const item = await db.orderItem.findFirst({
+      where: { id: itemId, orderId },
+    })
+
+    if (!item) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 })
+    }
+
+    // Don't allow deleting items already sent to kitchen — use comp/void
+    if (item.kitchenStatus !== 'pending') {
+      return NextResponse.json(
+        { error: 'Cannot delete an item that has been sent to the kitchen. Use comp/void instead.' },
+        { status: 400 }
+      )
+    }
+
+    // Don't allow deleting voided/comped items
+    if (item.status !== 'active') {
+      return NextResponse.json(
+        { error: `Cannot delete a ${item.status} item` },
+        { status: 400 }
+      )
+    }
+
+    // Delete modifiers first, then the item
+    await db.orderItemModifier.deleteMany({
+      where: { orderItemId: itemId },
+    })
+    await db.orderItem.delete({
+      where: { id: itemId },
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Failed to delete order item:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete order item' },
+      { status: 500 }
+    )
+  }
+})

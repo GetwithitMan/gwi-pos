@@ -3459,7 +3459,10 @@ export default function OrdersPage() {
                       cardType: result.cardType,
                     })
                     toast.success(`Tab opened — •••${result.cardLast4}`)
-                    clearOrder()
+                    // Use raw Zustand clearOrder (local-only) — NOT activeOrder.clearOrder
+                    // which PATCHes the draft to 'cancelled' in DB. The card-tab order is
+                    // actively being sent by the fire-and-forget block below.
+                    useOrderStore.getState().clearOrder()
                     setSavedOrderId(null)
                     setOrderSent(false)
                     setSelectedOrderType(null)
@@ -3470,7 +3473,8 @@ export default function OrdersPage() {
                     // Fire-and-forget: append items + update tabName + send + auto-increment
                     void (async () => {
                       try {
-                        // Append items to the draft shell
+                        // Append unsaved items to the draft shell
+                        // (items with real IDs were already persisted by saveItemToDb)
                         if (capturedItems.length > 0) {
                           const appendRes = await fetch(`/api/orders/${orderId}/items`, {
                             method: 'POST',
@@ -3492,7 +3496,10 @@ export default function OrdersPage() {
                             }),
                           })
                           if (!appendRes.ok) {
-                            console.error('[CardTab] Failed to append items')
+                            const errBody = await appendRes.json().catch(() => ({}))
+                            console.error('[CardTab] Failed to append items:', appendRes.status, errBody)
+                            toast.error('Failed to save tab items — check open orders')
+                            return // Don't continue to send/auto-increment for a broken order
                           }
                         }
 
