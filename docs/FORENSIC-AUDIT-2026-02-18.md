@@ -3,7 +3,7 @@
 **Date:** February 18, 2026
 **Audited by:** 10-agent parallel forensic team (Claude Opus 4.6)
 **Scope:** APIs, sockets, bridges, performance, legacy code, data integrity, UX
-**Status:** ACTIVE — Waves 1-5 COMPLETE, Wave 6 (UX features) ready
+**Status:** ACTIVE — Waves 1-5 COMPLETE, Hotfix Wave COMPLETE, Wave 6 (UX features) ready
 
 ---
 
@@ -38,8 +38,8 @@
 | window.alert() | 0 | 0 | 0 | — | — | — |
 
 **Previous Grade: B+** (Feb 18 initial scan)
-**Current Grade: A++** (after Waves 1-5 complete)
-**Path to A+++: ~50 remaining items (large file splits, UX features, missing socket dispatches)**
+**Current Grade: A++** (after Waves 1-5 + hotfix wave complete)
+**Path to A+++: ~45 remaining items (large file splits, UX features, missing socket dispatches)**
 
 ---
 
@@ -342,6 +342,53 @@
 
 ---
 
+## HOTFIX WAVE — COMPLETED ✅ (Post-Wave 5 Live Testing)
+
+Runtime issues discovered during live bartender testing. All fixed and pushed.
+
+### ✅ HF-001: Unassigned seat items invisible in order panel
+**File:** `src/components/orders/OrderPanel.tsx`
+**Was:** `autoSeatGroups` only created groups for items WITH seatNumber — unassigned items disappeared
+**Now:** Added "No Seat" group (neutral gray) for items without seatNumber
+**Also:** `src/components/orders/SplitCheckScreen.tsx` — added `minHeight: 0` for scroll fix
+
+### ✅ HF-002: Transaction timeout on item save (Neon cold start)
+**File:** `src/lib/db.ts`
+**Was:** Default 5s Prisma transaction timeout exceeded by Neon cold starts + Turbopack compilation
+**Now:** Global `transactionOptions: { maxWait: 10000, timeout: 15000 }`
+
+### ✅ HF-003: Random "92h1hdgk" in order header
+**File:** `src/components/orders/OrderPanel.tsx`
+**Was:** `tabName` (truncated CUID) displayed for all orders, `orderId.slice(-8)` shown in header
+**Now:** Removed both — tabName display removed entirely, orderId hash removed
+
+### ✅ HF-004: No hide button on bar screen
+**File:** `src/components/orders/OrderPanel.tsx`
+**Was:** `onHide` callback passed but no button rendered; bar screen had X button instead of "Hide"
+**Now:** "Hide" text button matching table view style, positioned in header
+
+### ✅ HF-005: Dual pricing math mismatch (subtotal + tax ≠ total)
+**Files:** `usePricing.ts`, `OrderPanelActions.tsx`, `orders/page.tsx`, `OrderPanel.tsx`
+**Was:** Default `paymentMethod: 'cash'` meant tax came from cash calculation while subtotal/total showed card prices. $12.44 + $0.96 ≠ $13.44.
+**Now:** Default `paymentMethod: 'card'`; returns `cashTax`/`cardTax` separately; `displayTax` matches Cash/Card toggle; subtotal line uses `displaySubtotal`; tip basis uses mode-aware subtotal
+
+### ✅ HF-006: Split chips showing cash total instead of card total
+**Files:** `OrderPanel.tsx`, `orders/page.tsx`
+**Was:** Split chips displayed `split.total` (cash/DB price) with no card adjustment
+**Now:** `cardPriceMultiplier` prop applied to chip totals when dual pricing enabled
+
+### ✅ HF-007: Pay All splits charging wrong amount for card
+**Files:** `PayAllSplitsModal.tsx`, `orders/page.tsx`, `useSplitTickets.ts`
+**Was:** Pay All passed cash total to DatacapPaymentProcessor regardless of payment method
+**Now:** Computes `cardTotal` via `calculateCardPrice`, shows cash vs card amounts, passes `cardTotal` to processor
+
+### ✅ HF-008: Table name not showing in bar view order panel
+**Files:** `BartenderView.tsx`, `orders/page.tsx`, `FloorPlanHome.tsx`
+**Was:** BartenderView accessed `order.table?.name` but API returns flat `order.tableName`; `orderToLoad` state didn't include `tableName`
+**Now:** Reads `order.tableName || order.table?.name`; threads `tableName` through `orderToLoad` → FloorPlanHome → `store.loadOrder()`
+
+---
+
 ## PENDING FIXES — WAVE 6 (Backlog)
 
 #### P0: orders/page.tsx still has 51 useState calls
@@ -632,16 +679,28 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 | 32 | 2 final locationId PUT handler gaps | fix-locationid | ✅ |
 | 33 | 25 useState → 3 custom hooks (split, shift, timed) | extract-hooks | ✅ |
 
+### Hotfix Wave — Post-Wave 5 Live Testing (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 34 | Unassigned seat items invisible + split scroll | team-lead | ✅ |
+| 35 | Transaction timeout (Neon cold start) | team-lead | ✅ |
+| 36 | Random tabName/orderId in header | team-lead | ✅ |
+| 37 | No hide button on bar screen → "Hide" text button | team-lead | ✅ |
+| 38 | Dual pricing math mismatch (tax basis vs display) | team-lead | ✅ |
+| 39 | Split chips showing cash total | team-lead | ✅ |
+| 40 | Pay All charging wrong card amount | team-lead | ✅ |
+| 41 | Table name not showing in bar view | team-lead | ✅ |
+
 ### Wave 6 — Remaining Backlog (Not Started)
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 34 | Continue orders/page.tsx hook extraction (51 remaining) | P1 | orders/page.tsx |
-| 35 | Response format normalization | P2 | 68+ routes |
-| 36 | "Same Again" reorder feature | P0 UX | New feature |
-| 37 | Split evenly quick action | P1 UX | SplitCheckScreen |
-| 38 | Void flow simplification (6→3 taps) | P1 UX | CompVoidModal |
-| 39 | Payment method skip for pre-auth | P1 UX | PaymentMethodStep |
-| 40 | Quick tab without name modal | P1 UX | NewTabModal |
+| 42 | Continue orders/page.tsx hook extraction (51 remaining) | P1 | orders/page.tsx |
+| 43 | Response format normalization | P2 | 68+ routes |
+| 44 | "Same Again" reorder feature | P0 UX | New feature |
+| 45 | Split evenly quick action | P1 UX | SplitCheckScreen |
+| 46 | Void flow simplification (6→3 taps) | P1 UX | CompVoidModal |
+| 47 | Payment method skip for pre-auth | P1 UX | PaymentMethodStep |
+| 48 | Quick tab without name modal | P1 UX | NewTabModal |
 
 ---
 
@@ -666,4 +725,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Wave 5 COMPLETE — 33/33 tasks complete, 450+ individual fixes applied across 85+ files*
+*Last updated: Hotfix Wave COMPLETE — 41/41 tasks complete, 460+ individual fixes applied across 90+ files*
