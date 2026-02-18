@@ -490,6 +490,14 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-18 — Forensic Audit Wave 6, Skill 373)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 373 | Forensic Audit Wave 6 | **6A:** 4 hook extractions (usePaymentFlow, useModifierModal, useItemOperations, useComboBuilder — 21 states). **6B:** Void flow simplified from 5-6 taps to 3 (auto-detect wasMade, auto-select first reason). **6C:** Quick tab 1-tap creation, payment skip for pre-auth tabs, clickable seat headers. **6D:** "Same Again" reorder button, ÷2 quick-split. **6E:** Multi-card tab support (Add Card to Tab, card picker, charge specific card). **6E-HF:** Fixed deleted items reappearing (Prisma `$extends` doesn't cascade to nested includes). **6F:** Fixed ingredient modifications not showing (added `ingredientModifications: true` to 5 query paths). Also fixed deployment errors: removed dead scripts referencing removed schema fields, fixed inventory TS errors. |
+
+---
+
 ## Recently Completed (2026-02-17 — Split Combined View, Inline Split Creation, UI Polish, Skills 370-372)
 
 | Skill | Name | What Was Built |
@@ -1122,6 +1130,7 @@ These skills emerged during development and are now part of the system:
 | 367 | Dynamic Order Type Tabs | DONE | Orders, UI | 358, 09 | Dynamic header tabs from admin config. Table enforcement for dine_in. NavTab accentColor. isTablesActive fix. |
 | 368 | On-Screen Virtual Keyboard | DONE | UI, Hardware | 345 | QWERTY/numeric/phone keyboard for kiosk. Dark+light themes. 5 dialog integrations. |
 | 369 | Bar Send Tab Name Prompt | DONE | Orders, Tabs | 20, 368 | Send shows tab name modal with keyboard. pendingSendAfterTabRef. sendItemsToTab shared helper. |
+| 373 | Forensic Audit Wave 6 | DONE | Orders, Payments, Tabs, UX | - | 7 sub-phases (6A-6F): 4 hook extractions, void flow simplification, quick tab, multi-card tabs, deleted items fix, ingredient modifications fix. 65 tasks, 510+ fixes. |
 
 ---
 
