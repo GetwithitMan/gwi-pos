@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface DiscountRule {
   id: string
@@ -31,10 +32,28 @@ interface DiscountRule {
 export default function DiscountsPage() {
   const router = useRouter()
   const { employee, isAuthenticated } = useAuthStore()
-  const [discounts, setDiscounts] = useState<DiscountRule[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
-  const [editingDiscount, setEditingDiscount] = useState<DiscountRule | null>(null)
+
+  const crud = useAdminCRUD<DiscountRule>({
+    apiBase: '/api/discounts',
+    locationId: employee?.location?.id,
+    resourceName: 'discount',
+    parseResponse: (data) => data.discounts || [],
+  })
+
+  const {
+    items: discounts,
+    isLoading,
+    showModal,
+    editingItem: editingDiscount,
+    isSaving,
+    modalError,
+    loadItems,
+    openAddModal,
+    openEditModal,
+    closeModal,
+    handleSave,
+    handleDelete,
+  } = crud
 
   // Form state
   const [formData, setFormData] = useState({
@@ -61,27 +80,9 @@ export default function DiscountsPage() {
 
   useEffect(() => {
     if (employee?.location?.id) {
-      loadDiscounts()
+      loadItems()
     }
-  }, [employee?.location?.id])
-
-  const loadDiscounts = async () => {
-    if (!employee?.location?.id) return
-
-    setIsLoading(true)
-    try {
-      const params = new URLSearchParams({ locationId: employee.location.id })
-      const response = await fetch(`/api/discounts?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setDiscounts(data.discounts || [])
-      }
-    } catch (error) {
-      console.error('Failed to load discounts:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  }, [employee?.location?.id, loadItems])
 
   const resetForm = () => {
     setFormData({
@@ -99,11 +100,9 @@ export default function DiscountsPage() {
       isActive: true,
       isAutomatic: false,
     })
-    setEditingDiscount(null)
   }
 
   const handleEdit = (discount: DiscountRule) => {
-    setEditingDiscount(discount)
     setFormData({
       name: discount.name,
       displayText: discount.displayText,
@@ -119,12 +118,11 @@ export default function DiscountsPage() {
       isActive: discount.isActive,
       isAutomatic: discount.isAutomatic,
     })
-    setShowModal(true)
+    openEditModal(discount)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault()
-
     if (!employee?.location?.id) return
 
     const payload = {
@@ -146,47 +144,8 @@ export default function DiscountsPage() {
       isAutomatic: formData.isAutomatic,
     }
 
-    try {
-      const url = editingDiscount
-        ? `/api/discounts/${editingDiscount.id}`
-        : '/api/discounts'
-      const method = editingDiscount ? 'PUT' : 'POST'
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-
-      if (response.ok) {
-        loadDiscounts()
-        setShowModal(false)
-        resetForm()
-      } else {
-        const data = await response.json()
-        toast.error(data.error || 'Failed to save discount')
-      }
-    } catch (error) {
-      console.error('Failed to save discount:', error)
-      toast.error('Failed to save discount')
-    }
-  }
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this discount?')) return
-
-    try {
-      const response = await fetch(`/api/discounts/${id}`, { method: 'DELETE' })
-      if (response.ok) {
-        loadDiscounts()
-      } else {
-        const data = await response.json()
-        toast.error(data.error || 'Failed to delete discount')
-      }
-    } catch (error) {
-      console.error('Failed to delete discount:', error)
-      toast.error('Failed to delete discount')
-    }
+    const ok = await handleSave(payload)
+    if (ok) resetForm()
   }
 
   const handleToggleActive = async (discount: DiscountRule) => {
@@ -198,7 +157,7 @@ export default function DiscountsPage() {
       })
 
       if (response.ok) {
-        loadDiscounts()
+        loadItems()
       }
     } catch (error) {
       console.error('Failed to toggle discount:', error)
@@ -215,7 +174,7 @@ export default function DiscountsPage() {
             variant="primary"
             onClick={() => {
               resetForm()
-              setShowModal(true)
+              openAddModal()
             }}
           >
             Add Discount
@@ -233,7 +192,7 @@ export default function DiscountsPage() {
               variant="primary"
               onClick={() => {
                 resetForm()
-                setShowModal(true)
+                openAddModal()
               }}
             >
               Create First Discount
@@ -333,8 +292,14 @@ export default function DiscountsPage() {
               </h2>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4 overflow-y-auto max-h-[70vh]">
+            <form onSubmit={handleSubmitForm} className="p-4 overflow-y-auto max-h-[70vh]">
               <div className="space-y-4">
+                {modalError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                    {modalError}
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Internal Name
@@ -496,14 +461,14 @@ export default function DiscountsPage() {
                   variant="outline"
                   className="flex-1"
                   onClick={() => {
-                    setShowModal(false)
+                    closeModal()
                     resetForm()
                   }}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" variant="primary" className="flex-1">
-                  {editingDiscount ? 'Save Changes' : 'Create Discount'}
+                <Button type="submit" variant="primary" className="flex-1" disabled={isSaving}>
+                  {isSaving ? 'Saving...' : editingDiscount ? 'Save Changes' : 'Create Discount'}
                 </Button>
               </div>
             </form>

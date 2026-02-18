@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { PERMISSION_GROUPS, DEFAULT_ROLES, hasPermission } from '@/lib/auth-utils'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { useAdminCRUD } from '@/hooks/useAdminCRUD'
 
 interface Role {
   id: string
@@ -26,14 +27,15 @@ interface Role {
 export default function RolesPage() {
   const router = useRouter()
   const { employee: currentEmployee, isAuthenticated } = useAuthStore()
-  const [roles, setRoles] = useState<Role[]>([])
-  const [isLoading, setIsLoading] = useState(true)
 
-  // Modal state
-  const [showModal, setShowModal] = useState(false)
-  const [editingRole, setEditingRole] = useState<Role | null>(null)
-  const [isSaving, setIsSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const crud = useAdminCRUD<Role>({
+    apiBase: '/api/roles',
+    locationId: currentEmployee?.location?.id,
+    resourceName: 'role',
+    parseResponse: (data) => data.roles || [],
+  })
+
+  const { items: roles, isLoading, showModal, editingItem: editingRole, isSaving, modalError, loadItems, closeModal, handleSave: crudSave, handleDelete: crudDelete } = crud
 
   // Form state
   const [roleName, setRoleName] = useState('')
@@ -51,48 +53,28 @@ export default function RolesPage() {
 
   useEffect(() => {
     if (currentEmployee?.location?.id) {
-      loadRoles()
+      loadItems()
     }
-  }, [currentEmployee])
-
-  const loadRoles = async () => {
-    if (!currentEmployee?.location?.id) return
-
-    try {
-      const response = await fetch(`/api/roles?locationId=${currentEmployee.location.id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setRoles(data.roles)
-      }
-    } catch (err) {
-      console.error('Failed to load roles:', err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  }, [currentEmployee?.location?.id, loadItems])
 
   const openAddModal = () => {
-    setEditingRole(null)
     setRoleName('')
     setSelectedPermissions([])
     setCashHandlingMode('drawer')
     setTrackLaborCost(true)
     setIsTipped(false)
-    setError(null)
     setExpandedGroups(Object.keys(PERMISSION_GROUPS))
-    setShowModal(true)
+    crud.openAddModal()
   }
 
   const openEditModal = (role: Role) => {
-    setEditingRole(role)
     setRoleName(role.name)
     setSelectedPermissions(role.permissions)
     setCashHandlingMode(role.cashHandlingMode || 'drawer')
     setTrackLaborCost(role.trackLaborCost !== false)
     setIsTipped(role.isTipped || false)
-    setError(null)
     setExpandedGroups(Object.keys(PERMISSION_GROUPS))
-    setShowModal(true)
+    crud.openEditModal(role)
   }
 
   const togglePermission = (permission: string) => {
@@ -140,57 +122,25 @@ export default function RolesPage() {
   }
 
   const handleSave = async () => {
-    setError(null)
-
     if (!roleName.trim()) {
-      setError('Role name is required')
+      crud.setModalError('Role name is required')
       return
     }
 
-    setIsSaving(true)
-
-    try {
-      let response: Response
-
-      if (editingRole) {
-        response = await fetch(`/api/roles/${editingRole.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: roleName.trim(),
-            permissions: selectedPermissions,
-            cashHandlingMode,
-            trackLaborCost,
-            isTipped,
-          }),
-        })
-      } else {
-        response = await fetch('/api/roles', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            locationId: currentEmployee?.location?.id,
-            name: roleName.trim(),
-            permissions: selectedPermissions,
-            cashHandlingMode,
-            trackLaborCost,
-            isTipped,
-          }),
-        })
-      }
-
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to save role')
-      }
-
-      setShowModal(false)
-      loadRoles()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save role')
-    } finally {
-      setIsSaving(false)
+    const payload: Record<string, unknown> = {
+      name: roleName.trim(),
+      permissions: selectedPermissions,
+      cashHandlingMode,
+      trackLaborCost,
+      isTipped,
     }
+
+    // Add locationId only for new roles
+    if (!editingRole) {
+      payload.locationId = currentEmployee?.location?.id
+    }
+
+    await crudSave(payload)
   }
 
   const handleDelete = async (role: Role) => {
@@ -198,26 +148,7 @@ export default function RolesPage() {
       toast.warning(`Cannot delete "${role.name}" - ${role.employeeCount} employee(s) have this role. Reassign them first.`)
       return
     }
-
-    if (!confirm(`Are you sure you want to delete the "${role.name}" role?`)) {
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/roles/${role.id}`, {
-        method: 'DELETE',
-      })
-
-      if (!response.ok) {
-        const data = await response.json()
-        toast.error(data.error || 'Failed to delete role')
-        return
-      }
-
-      loadRoles()
-    } catch (err) {
-      toast.error('Failed to delete role')
-    }
+    await crudDelete(role.id, `Are you sure you want to delete the "${role.name}" role?`)
   }
 
   // Get permission count for a role
@@ -376,14 +307,14 @@ export default function RolesPage() {
       {/* Add/Edit Modal */}
       <Modal
         isOpen={showModal}
-        onClose={() => setShowModal(false)}
+        onClose={closeModal}
         title={editingRole ? 'Edit Role' : 'Create New Role'}
         size="lg"
       >
         <div className="space-y-4">
-          {error && (
+          {modalError && (
             <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-              {error}
+              {modalError}
             </div>
           )}
 
@@ -594,7 +525,7 @@ export default function RolesPage() {
             <Button
               variant="ghost"
               className="flex-1"
-              onClick={() => setShowModal(false)}
+              onClick={closeModal}
               disabled={isSaving}
             >
               Cancel
