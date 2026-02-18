@@ -3,7 +3,7 @@
 **Date:** February 18, 2026
 **Audited by:** 10-agent parallel forensic team (Claude Opus 4.6)
 **Scope:** APIs, sockets, bridges, performance, legacy code, data integrity, UX
-**Status:** ACTIVE — Waves 1-5 COMPLETE, Hotfix Wave COMPLETE, Wave 6 (UX features) ready
+**Status:** ACTIVE — Waves 1-5 COMPLETE, Hotfix Wave COMPLETE, Wave 6A COMPLETE, Wave 6B in progress
 
 ---
 
@@ -29,7 +29,7 @@
 | Over-fetching (include vs select) | 5 | **3** | 2 | 0 | 5 | 0 |
 | Zustand destructuring | 2 | **2** | 0 | 0 | 2 | 0 |
 | Missing React.memo | 5 | **5** | 0 | 0 | 5 | 0 |
-| Excessive useState (>15) | 22 | **1** | 21 | 1 | 10 | 11 |
+| Excessive useState (>15) | 22 | **5** | 17 | 1 | 10 | 11 |
 | Socket security | 2 | **2** | 0 | 0 | 2 | 0 |
 | UX friction points | 25 | 3 | 22 | 1 | 9 | 12 |
 | Dead code / commented-out blocks | 5 | **5** | 0 | 0 | 5 | 0 |
@@ -691,16 +691,27 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 | 40 | Pay All charging wrong card amount | team-lead | ✅ |
 | 41 | Table name not showing in bar view | team-lead | ✅ |
 
-### Wave 6 — Remaining Backlog (Not Started)
+### Wave 6A — Hook Extractions (COMPLETED)
+| # | Fix | Agent | Status |
+|---|-----|-------|--------|
+| 42 | Extract usePaymentFlow (7 states: paymentMethod, showPaymentModal, initialPayMethod, orderToPayId, paymentTabCards, showDiscountModal, appliedDiscounts) | hook-payment | ✅ |
+| 43 | Extract useModifierModal (5 states: showModifierModal, selectedItem, itemModifierGroups, loadingModifiers, editingOrderItem) | hook-modifier | ✅ |
+| 44 | Extract useItemOperations (5 states: showCompVoidModal, resendModal, resendNote, resendLoading, compVoidItem) | hook-items | ✅ |
+| 45 | Extract useComboBuilder (4 states: showComboModal, selectedComboItem, comboTemplate, comboSelections) | hook-combo | ✅ |
+
+**Impact:** orders/page.tsx reduced from ~51 useState calls to ~30 (21 states moved to 4 dedicated hooks)
+**Files created:** `src/hooks/usePaymentFlow.ts`, `src/hooks/useModifierModal.ts`, `src/hooks/useItemOperations.ts`, `src/hooks/useComboBuilder.ts`
+**Commit:** `da6a456`
+
+### Wave 6B+ — Remaining Backlog (In Progress)
 | # | Fix | Priority | Scope |
 |---|-----|----------|-------|
-| 42 | Continue orders/page.tsx hook extraction (51 remaining) | P1 | orders/page.tsx |
-| 43 | Response format normalization | P2 | 68+ routes |
-| 44 | "Same Again" reorder feature | P0 UX | New feature |
-| 45 | Split evenly quick action | P1 UX | SplitCheckScreen |
 | 46 | Void flow simplification (6→3 taps) | P1 UX | CompVoidModal |
 | 47 | Payment method skip for pre-auth | P1 UX | PaymentMethodStep |
 | 48 | Quick tab without name modal | P1 UX | NewTabModal |
+| 49 | Response format normalization | P2 | 68+ routes |
+| 50 | "Same Again" reorder feature | P0 UX | New feature |
+| 51 | Split evenly quick action | P1 UX | SplitCheckScreen |
 
 ---
 
@@ -725,4 +736,4 @@ menu:item-changed, menu:stock-changed, menu:structure-changed, tip-group:updated
 ---
 
 *Generated and maintained by forensic audit team, February 18, 2026*
-*Last updated: Hotfix Wave COMPLETE — 41/41 tasks complete, 460+ individual fixes applied across 90+ files*
+*Last updated: Wave 6A COMPLETE — 45/45 tasks complete, 470+ individual fixes applied across 95+ files*
