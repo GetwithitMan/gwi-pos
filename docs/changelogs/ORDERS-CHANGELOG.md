@@ -1,5 +1,71 @@
 # Orders Domain - Change Log
 
+## Session: February 17, 2026 — Split Combined View, Inline Split Creation, UI Polish (Skills 370-372)
+
+### Summary
+Major split order enhancements: combined view shows all split items when tapping a split table, inline split creation from order panel, and item-add guard prevents orphaned items on split parents. Also includes UI polish (button layout changes) and numerous bug fixes for split flow, stale closures, and state management.
+
+### What Changed
+
+#### Skill 370: Split Order Combined View
+1. **Fetch & merge child split items** — When tapping a table with splits, all child items fetched from `/api/orders/{id}/split-tickets` and merged into parent order view
+2. **Split labels** — Items tagged with `splitLabel` (e.g. "75-1", "75-2") for visual grouping
+3. **Purple group headers** — "Check 75-1", "Check 75-2" headers with per-check subtotals in OrderPanel
+4. **API response fix** — Corrected parsing from `{ data: [...] }` to `{ splitOrders: [...] }`
+5. **Field mapping fix** — Split items need `menuItemId`, `sentToKitchen: true`, `kitchenStatus: 'sent'`, and modifier `modifierId`
+6. **Type extensions** — Added `splitLabel?: string` to OrderItem, LoadedOrderData, OrderPanelItemData, InlineOrderItem
+
+#### Skill 371: Inline Split Creation
+1. **"+ New" button** — Dashed purple border button at end of split chips row
+2. **API creation** — Calls `POST /api/orders/{parentId}/split-tickets/create-check` to create empty child
+3. **Immediate load** — New chip added to row, new split loaded for item entry — no screen change
+4. **Context preservation fix** — useEffect checks `splitParentId` instead of stale `orderSplitChips` array
+
+#### Skill 372: Split Parent Item Add Guard
+1. **Add guard** — Blocks adding items when viewing split parent (`status === 'split'`)
+2. **Toast message** — "Select a split check or add a new one"
+3. **Flash animation** — Purple pulse 3x on split chips row to draw attention
+4. **Two entry points guarded** — `handleAddItem` (orders/page.tsx) and `handleMenuItemTap` (useOrderingEngine.ts)
+
+#### UI Polish
+1. **Removed bottom Hide button** — Redundant with top Hide button in OrderPanelActions
+2. **Moved Print button** — Now between Cash and Card in quick-pay row
+3. **Moved Other button** — Now between Cash and Card in payment buttons row
+4. **Hidden seat section** — "Assign to seat" hidden when order has splits (`hasSplitChips`)
+
+#### Bug Fixes (Prior Session, Same Commit)
+1. **Status field missing** — Added `status: data.status` to all 3 `loadOrder` callers (FloorPlanHome x2, split-order-loader)
+2. **Early return removed** — Split orders no longer skip handleTableTap
+3. **Stale closure fix** — handleCategoryClick/handleQuickBarItemClick use useRef pattern
+4. **SplitCheckScreen ID fix** — Was receiving child ID instead of parent ID for manage mode
+5. **Zustand mutation fix** — Direct tabName mutation replaced with proper `updateOrderType`
+6. **Tab name modal cleanup** — State reset on all exit paths
+7. **Auto-create deps fix** — Removed viewMode from auto-create order useEffect dependencies
+8. **Split clearOrder guard** — Added split status check before clearing order
+
+### Commits
+- `c1155d5` — feat: split combined view, inline split creation, add guard, UI polish, bug fixes
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `src/stores/order-store.ts` | splitLabel on OrderItem/LoadedOrderData, status in loadOrder |
+| `src/components/floor-plan/FloorPlanHome.tsx` | Split items fetch/merge, hide seats for splits, splitLabel mapping |
+| `src/components/orders/OrderPanel.tsx` | splitGroups memo, purple headers, flash animation, "+ New" button |
+| `src/components/orders/OrderPanelActions.tsx` | Removed bottom Hide, moved Print/Other to quick-pay row |
+| `src/components/orders/OrderPanelItem.tsx` | splitLabel on OrderPanelItemData |
+| `src/app/(pos)/orders/page.tsx` | Split add guard, splitChipsFlashing, onAddSplit, context fix |
+| `src/hooks/useOrderingEngine.ts` | Split add guard in handleMenuItemTap |
+| `src/lib/split-order-loader.ts` | Added status field |
+
+### Skill Docs
+- `docs/skills/370-SPLIT-ORDER-COMBINED-VIEW.md`
+- `docs/skills/371-INLINE-SPLIT-CREATION.md`
+- `docs/skills/372-SPLIT-PARENT-ADD-GUARD.md`
+
+---
+
 ## Session: February 17, 2026 — Order Types Overhaul, Duplicate Prevention, Bar Send Fix (Skills 366-367, 369)
 
 ### Summary

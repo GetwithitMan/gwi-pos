@@ -1,5 +1,23 @@
 # Floor Plan Domain - Change Log
 
+## Session: February 17, 2026 — Split Order Combined View in Floor Plan (Skill 370)
+
+### Summary
+When tapping a table with split orders from the floor plan, all child split items are now fetched and merged into the parent order view. Seat assignment section is hidden when viewing split orders.
+
+### What Changed
+1. **Split items fetch** — FloorPlanHome fetches child split items from API when loading a split-status order, merges them with `splitLabel` tags
+2. **Hidden seats for splits** — "Assign to seat" section hidden when `hasSplitChips` is true (splits replace seat-based ordering)
+3. **Status field propagation** — Both `loadOrder` callers in FloorPlanHome now pass `status: data.status` to the order store
+
+### Files Modified
+- `src/components/floor-plan/FloorPlanHome.tsx` — Split items fetch/merge, hide seats, status propagation
+
+### Skill Docs
+- `docs/skills/370-SPLIT-ORDER-COMBINED-VIEW.md`
+
+---
+
 ## Session: February 16, 2026 — Shape Standardization & Optimistic Updates (Skills 354-355)
 
 ### Summary

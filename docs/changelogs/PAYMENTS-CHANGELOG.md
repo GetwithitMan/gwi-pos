@@ -1,5 +1,18 @@
 # Payments Domain Changelog
 
+## Session: February 17, 2026 — Task Board Update
+
+### Summary
+Added T-079 to PM Task Board for partial payment approval flow handling.
+
+### What Changed
+1. **T-079: Handle Partial Payment Approval Flow** — Added P1 task to PM Task Board (PM: Payments). Covers scenario where payment terminal approves a partial amount (e.g., card with insufficient funds approves $50 of $80). Needs UI flow for server to handle remaining balance.
+
+### Files Modified
+- `docs/PM-TASK-BOARD.md` — Added T-079
+
+---
+
 ## Session: Feb 11, 2026 — Cash Rounding Pipeline Fix (Skill 327)
 
 ### Summary

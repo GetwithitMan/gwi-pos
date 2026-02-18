@@ -369,7 +369,7 @@
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
 | Mission Control (Phase 2) | 22 | 0 | 8 | 30 | 73% |
 | Performance Overhaul | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **205** | **7** | **24** | **236** | **91%** |
+| **TOTAL** | **208** | **7** | **24** | **239** | **91%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -489,6 +489,16 @@ Skills that can be developed simultaneously:
 - Status: TODO
 
 ---
+
+## Recently Completed (2026-02-17 — Split Combined View, Inline Split Creation, UI Polish, Skills 370-372)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 370 | Split Order Combined View | Tapping a split table fetches ALL child split items from `/api/orders/{id}/split-tickets` and merges into parent view. Items tagged with `splitLabel` (e.g. "75-1"). Purple "Check 75-1" headers with subtotals. Fixed API response parsing (`splitOrders` not `data`), field mapping (`menuItemId`, `sentToKitchen`, `modifierId`). |
+| 371 | Inline Split Creation | "+ New" button (dashed purple) at end of split chips row. Calls `POST create-check` API, adds chip, loads new split for immediate item entry. Fixed context preservation: useEffect checks `splitParentId` instead of stale `orderSplitChips` array. |
+| 372 | Split Parent Item Add Guard | Blocks adding items to split parent (status === 'split'). Toast: "Select a split check or add a new one". Purple flash animation (3x pulse) on split chips row. Guard in both `handleAddItem` and `handleMenuItemTap`. |
+| — | UI Polish | Removed bottom Hide button (redundant). Moved Print between Cash/Card in quick-pay. Moved Other between Cash/Card in payment buttons. Hidden seat section when order has splits. |
+| — | Prior Session Bug Fixes | Added `status: data.status` to all 3 `loadOrder` callers. Removed early-return for split orders in handleTableTap. Fixed stale closure in handleCategoryClick/handleQuickBarItemClick with useRef. Fixed SplitCheckScreen receiving child ID instead of parent. Fixed Zustand mutation (tabName) with updateOrderType. Tab name modal state cleanup. Removed viewMode from auto-create deps. Split status guard on clearOrder. |
 
 ## Recently Completed (2026-02-17 — Real-Time Sync, Order Types Overhaul, On-Screen Keyboard, Skills 365-369)
 
@@ -1085,7 +1095,7 @@ These skills emerged during development and are now part of the system:
 | 348 | Per-Seat Color System | DONE | Floor Plan, Orders | 206, 328 | 8-color palette in seat-utils.ts, colors on floor plan seats, order panel badges, group headers, seat picker buttons. Temp seats use same colors (no more orange dashed). |
 | 349 | Per-Seat Check Cards & Seat Filtering | DONE | Orders, Floor Plan | 348, 11 | Auto seat-grouped check cards with per-seat subtotals, seat filter bar on floor plan seat tap, pre-split foundation. |
 
-### Split Tickets (93, 350-353, 356)
+### Split Tickets (93, 350-353, 356, 370-372)
 | Skill | Name | Status | Domain | Dependencies | Notes |
 |-------|------|--------|--------|--------------|-------|
 | 93 | Split Ticket View | DONE | Orders | 30, 88 | Create multiple tickets from one order (30-1, 30-2), hybrid pricing with proportional discounts |
@@ -1096,6 +1106,9 @@ These skills emerged during development and are now part of the system:
 | 354 | Table Shape Standardization | DONE | Floor Plan | 326 | Unified 18 files to 5 DB-canonical shapes (rectangle, circle, square, booth, bar). Removed round, oval, hexagon, bar_seat, high_top, custom. Ellipse detection via width !== height. |
 | 355 | Optimistic Floor Plan Updates | DONE | Floor Plan, Orders | 344 | Replaced blocking loadFloorPlanData with instant Zustand patches for seat add (addSeatToTable) and send-to-kitchen (addTableOrder). 1-5s delay → instant. |
 | 356 | Split Payment Bug Fix | DONE | Orders, Payments | 352 | Fixed orphaned items: parent zeroed after split, pay route blocks split parents, "Pay All" pays children via loop. Prevents undercharging. |
+| 370 | Split Order Combined View | DONE | Orders, Floor Plan | 352, 351 | Fetch all child split items and merge into parent view with splitLabel tags. Purple group headers with subtotals. Fixed API response parsing and field mapping. |
+| 371 | Inline Split Creation | DONE | Orders | 352, 370 | "+ New" dashed purple button in split chips row. Creates empty child split via API, loads immediately for item entry. Fixed splitParentId context preservation. |
+| 372 | Split Parent Item Add Guard | DONE | Orders | 352, 370 | Blocks adding items to split parent. Toast + purple flash animation (3x pulse) on split chips. Guard in handleAddItem and handleMenuItemTap. |
 | 357 | POS Overhaul — Performance Phase 6 | DONE | Orders, Performance | 339-344 | React.memo, 47 atomic selectors, delta sockets, optimistic splits, ~13K lines dead code removed, client caching. |
 | 358 | Unified POS Header | DONE | Orders, UI | - | Extracted ~700 lines from FloorPlanHome into shared UnifiedPOSHeader.tsx. One header for floor plan + bartender views. |
 | 359 | Batch Pay All Splits API | DONE | Orders, Payments | 356 | POST /api/orders/[id]/pay-all-splits — atomic batch payment with Datacap card integration. Fixed $0.00 display for split parents. |
