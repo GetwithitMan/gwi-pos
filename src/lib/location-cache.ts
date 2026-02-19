@@ -72,8 +72,12 @@ export async function getLocationId(): Promise<string | null> {
     return cachedLocationId
   }
 
+  // Use deterministic ordering so seed data (e.g. 'loc-1') is preferred
+  // over auto-generated cuid IDs if multiple locations somehow exist.
+  // Also prefer locations that have menu items (active venue vs stale shell).
   const location = await db.location.findFirst({
     select: { id: true },
+    orderBy: { id: 'asc' },
   })
 
   cachedLocationId = location?.id ?? null
