@@ -1060,6 +1060,34 @@ function postJson(urlPath, data) {
   })
 }
 
+function getJson(urlPath) {
+  return new Promise(function(resolve, reject) {
+    var url = new URL(urlPath, MC_URL)
+    var mod = url.protocol === 'https:' ? https : http
+    var req = mod.get(url, { headers: authHeaders('') }, function(res) {
+      var d = ''
+      res.on('data', function(c) { d += c })
+      res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
+    })
+    req.on('error', reject)
+  })
+}
+
+function putJsonLocal(urlPath, data) {
+  return new Promise(function(resolve, reject) {
+    var body = JSON.stringify(data)
+    var url = new URL(urlPath, 'http://localhost:3005')
+    var req = http.request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' } }, function(res) {
+      var d = ''
+      res.on('data', function(c) { d += c })
+      res.on('end', function() { resolve({ status: res.statusCode, body: d }) })
+    })
+    req.on('error', reject)
+    req.write(body)
+    req.end()
+  })
+}
+
 // ── Shell exec ─────────────────────────────────────────────────────────────
 function run(cmd, cwd, timeoutSec) {
   try {
@@ -1122,7 +1150,7 @@ function ack(cmdId, result) {
 }
 
 // ── Process received command ───────────────────────────────────────────────
-function processCommand(dataStr) {
+async function processCommand(dataStr) {
   try {
     var cmd = JSON.parse(dataStr)
     log('[Sync] Command: ' + cmd.type + ' (' + cmd.id + ')')
@@ -1130,6 +1158,39 @@ function processCommand(dataStr) {
     var result
     if (cmd.type === 'FORCE_UPDATE') {
       result = handleForceUpdate(cmd.payload || {})
+    } else if (cmd.type === 'DATA_CHANGED') {
+      var domain = (cmd.payload && cmd.payload.domain) || 'unknown'
+      log('[Sync] DATA_CHANGED for domain: ' + domain)
+
+      if (domain === 'settings') {
+        try {
+          var settingsRes = await getJson('/api/fleet/sync/settings')
+          if (settingsRes.status === 200) {
+            var data = JSON.parse(settingsRes.body)
+            var payload = data.data || data  // MC wraps in { data: ... }
+            var settings = payload.settings
+            var version = payload.settingsVersion || 'unknown'
+            // Push settings to local POS
+            var localRes = await putJsonLocal('/api/settings', { settings: settings })
+            if (localRes.status === 200) {
+              log('[Sync] Settings applied locally, version ' + version)
+              result = { ok: true, settingsVersion: version }
+            } else {
+              log('[Sync] Local settings update failed: HTTP ' + localRes.status)
+              result = { ok: false, error: 'local-update-failed' }
+            }
+          } else {
+            log('[Sync] Failed to fetch settings from MC: HTTP ' + settingsRes.status)
+            result = { ok: false, error: 'fetch-failed' }
+          }
+        } catch (err) {
+          log('[Sync] Settings sync error: ' + err.message)
+          result = { ok: false, error: err.message }
+        }
+      } else {
+        log('[Sync] Unhandled DATA_CHANGED domain: ' + domain)
+        result = { ok: true }
+      }
     } else if (cmd.type === 'KILL_SWITCH') {
       log('[Sync] KILL_SWITCH received — acknowledged')
       result = { ok: true }
@@ -1176,7 +1237,7 @@ function connectStream() {
         if (line === '') {
           // End of event
           if (evt.event === 'command' && evt.data) {
-            processCommand(evt.data)
+            processCommand(evt.data).catch(function(e) { log('[Sync] Command error: ' + e.message) })
           } else if (evt.data) {
             log('[SSE] Ignoring non-command event: ' + (evt.event || 'none'))
           }
