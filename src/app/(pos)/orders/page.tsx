@@ -2791,6 +2791,7 @@ export default function OrdersPage() {
               setOrderCustomFields({})
               setOrderSent(false)
               setAppliedDiscounts([])
+              useFloorPlanStore.getState().clearSelectedSeat()
             }}
             onHide={() => {
               // Deselect tab/table in the active view
@@ -2803,6 +2804,7 @@ export default function OrdersPage() {
               setSelectedOrderType(null)
               setOrderCustomFields({})
               setOrderSent(false)
+              useFloorPlanStore.getState().clearSelectedSeat()
             }}
             selectedItemId={quickPickSelectedId}
             selectedItemIds={quickPickSelectedIds}
