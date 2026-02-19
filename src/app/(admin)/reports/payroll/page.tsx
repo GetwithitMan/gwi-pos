@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface EmployeePayroll {
   employeeId: string
@@ -76,6 +78,7 @@ export default function PayrollReportPage() {
   const router = useRouter()
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const employee = useAuthStore(s => s.employee)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<PayrollReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null)
@@ -175,6 +178,14 @@ export default function PayrollReportPage() {
             </div>
           </CardContent>
         </Card>
+
+        <WebReportBanner
+          startDate={startDate}
+          endDate={endDate}
+          reportType="payroll"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
 
         {/* Summary Cards */}
         {report && (

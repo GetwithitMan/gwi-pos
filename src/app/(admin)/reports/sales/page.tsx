@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface SalesReport {
   summary: {
@@ -35,6 +37,7 @@ export default function SalesReportPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<SalesReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('summary')
@@ -145,6 +148,14 @@ export default function SalesReportPage() {
             </div>
           </CardContent>
         </Card>
+
+        <WebReportBanner
+          startDate={startDate}
+          endDate={endDate}
+          reportType="sales"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
 
         {/* Tabs */}
         <div className="flex gap-2 mb-6 overflow-x-auto pb-2">

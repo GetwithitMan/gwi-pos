@@ -11,6 +11,8 @@ import { AdjustTipModal } from '@/components/orders/AdjustTipModal'
 import { VoidPaymentModal } from '@/components/orders/VoidPaymentModal'
 import { ReopenOrderModal } from '@/components/orders/ReopenOrderModal'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface Payment {
   id: string
@@ -74,6 +76,7 @@ export default function OrderHistoryPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [orders, setOrders] = useState<Order[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [statusBreakdown, setStatusBreakdown] = useState<StatusBreakdown[]>([])
@@ -251,6 +254,14 @@ export default function OrderHistoryPage() {
             </form>
           </CardContent>
         </Card>
+
+        <WebReportBanner
+          startDate={startDate}
+          endDate={endDate}
+          reportType="order-history"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
 
         {/* Summary Cards */}
         {summary && (

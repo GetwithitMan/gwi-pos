@@ -8,6 +8,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { toast } from '@/stores/toast-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface DailyReport {
   reportDate: string
@@ -128,6 +130,7 @@ export default function DailyReportPage() {
   const router = useRouter()
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const employee = useAuthStore(s => s.employee)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<DailyReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
@@ -222,6 +225,14 @@ export default function DailyReportPage() {
       />
 
       <div className="max-w-6xl mx-auto print:p-0 print:max-w-none">
+        <WebReportBanner
+          startDate={selectedDate}
+          endDate={selectedDate}
+          reportType="daily"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
+
         {isLoading ? (
           <div className="text-center py-12 text-gray-500">Loading report...</div>
         ) : !report ? (

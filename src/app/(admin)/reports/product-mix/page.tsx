@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 import { useAuthStore } from '@/stores/auth-store'
 
 interface ProductMixItem {
@@ -72,6 +74,7 @@ export default function ProductMixReportPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const { retentionDays, venueSlug } = useDataRetention()
   const locationId = employee?.location?.id
 
   const [report, setReport] = useState<ReportData | null>(null)
@@ -193,6 +196,14 @@ export default function ProductMixReportPage() {
           </button>
         </div>
       </div>
+
+      <WebReportBanner
+        startDate={startDate}
+        endDate={endDate}
+        reportType="product-mix"
+        retentionDays={retentionDays}
+        venueSlug={venueSlug}
+      />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-5 gap-4 mb-6">

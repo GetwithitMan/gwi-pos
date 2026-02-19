@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface VoidLog {
   id: string
@@ -47,6 +49,7 @@ export default function VoidReportsPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [logs, setLogs] = useState<VoidLog[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -183,6 +186,14 @@ export default function VoidReportsPage() {
             </Button>
           </div>
         </Card>
+
+        <WebReportBanner
+          startDate={startDate}
+          endDate={endDate}
+          reportType="voids"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
       </div>
 
       {/* Summary Cards */}

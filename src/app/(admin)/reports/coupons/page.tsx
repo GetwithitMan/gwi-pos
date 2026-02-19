@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface CouponStat {
   id: string
@@ -59,6 +61,7 @@ export default function CouponReportsPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [summary, setSummary] = useState<Summary | null>(null)
   const [coupons, setCoupons] = useState<CouponStat[]>([])
   const [dailyTrend, setDailyTrend] = useState<DailyTrend[]>([])
@@ -180,6 +183,14 @@ export default function CouponReportsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <WebReportBanner
+          startDate={startDate}
+          endDate={endDate}
+          reportType="coupons"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
 
         {isLoading ? (
           <div className="text-center py-8 text-gray-500">Loading report...</div>

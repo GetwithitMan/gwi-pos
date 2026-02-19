@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface TierData {
   tier: string
@@ -110,6 +112,7 @@ export default function LiquorReportPage() {
   const router = useRouter()
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const employee = useAuthStore(s => s.employee)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<LiquorReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('overview')
@@ -206,6 +209,14 @@ export default function LiquorReportPage() {
             </div>
           </CardContent>
         </Card>
+
+        <WebReportBanner
+          startDate={startDate}
+          endDate={endDate}
+          reportType="liquor"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
 
         {/* Tabs */}
         <div className="mb-6 border-b bg-white rounded-t-lg">

@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface CommissionOrder {
   orderId: string
@@ -42,6 +44,7 @@ export default function CommissionReportPage() {
   const router = useRouter()
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const employee = useAuthStore(s => s.employee)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<CommissionReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [startDate, setStartDate] = useState(() => {
@@ -134,6 +137,14 @@ export default function CommissionReportPage() {
             </div>
           </CardContent>
         </Card>
+
+        <WebReportBanner
+          startDate={startDate}
+          endDate={endDate}
+          reportType="commission"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
 
         {/* Summary Cards */}
         {report && (

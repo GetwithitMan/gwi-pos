@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface EmployeeShiftReport {
   employee: {
@@ -138,6 +140,7 @@ function EmployeeShiftReportContent() {
   const searchParams = useSearchParams()
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const currentEmployee = useAuthStore(s => s.employee)
+  const { retentionDays, venueSlug } = useDataRetention()
 
   const [report, setReport] = useState<EmployeeShiftReport | null>(null)
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -275,6 +278,14 @@ function EmployeeShiftReportContent() {
       />
 
       <div className="max-w-5xl mx-auto print:p-0 print:max-w-none">
+        <WebReportBanner
+          startDate={selectedDate}
+          endDate={selectedDate}
+          reportType="shift"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
+
         {isLoading ? (
           <div className="text-center py-12 text-gray-500">Loading report...</div>
         ) : !report ? (

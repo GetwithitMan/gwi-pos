@@ -8,6 +8,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { useAuthStore } from '@/stores/auth-store'
 import { formatCurrency } from '@/lib/utils'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
+import { WebReportBanner } from '@/components/admin/WebReportBanner'
+import { useDataRetention } from '@/hooks/useDataRetention'
 
 interface EmployeeTipSummary {
   employeeId: string
@@ -67,6 +69,7 @@ export default function TipsReportPage() {
   const router = useRouter()
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
   const employee = useAuthStore(s => s.employee)
+  const { retentionDays, venueSlug } = useDataRetention()
   const [report, setReport] = useState<TipsReport | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<TabType>('summary')
@@ -183,6 +186,14 @@ export default function TipsReportPage() {
             </div>
           </CardContent>
         </Card>
+
+        <WebReportBanner
+          startDate={startDate}
+          endDate={endDate}
+          reportType="tips"
+          retentionDays={retentionDays}
+          venueSlug={venueSlug}
+        />
 
         {/* Summary Cards */}
         {report && (

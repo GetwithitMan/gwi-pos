@@ -372,6 +372,7 @@ export interface LocationSettings {
   clockOut: ClockOutSettings
   businessDay: BusinessDaySettings
   receiptDisplay: GlobalReceiptSettings  // Controls WHAT features are available in the Visual Editor
+  localDataRetention?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | '60days' | '90days'
 }
 
 // Default settings for new locations
@@ -544,6 +545,7 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     graceMinutes: 15,
   },
   receiptDisplay: DEFAULT_GLOBAL_RECEIPT_SETTINGS,
+  localDataRetention: 'monthly',
 }
 
 // Merge partial settings with defaults
@@ -618,6 +620,7 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
       ...(partial.businessDay || {}),
     },
     receiptDisplay: mergeGlobalReceiptSettings(partial.receiptDisplay),
+    localDataRetention: partial.localDataRetention ?? DEFAULT_SETTINGS.localDataRetention,
   }
 }
 
