@@ -531,9 +531,26 @@ Key priorities:
 9. Real-Time Menu Updates & Online Ordering (Skill 217 — infrastructure done, client pending)
 10. Table Capacity/Seats Sync
 
+## Living Log (MANDATORY)
+
+**Location:** `/docs/LIVING-LOG.md`
+
+**RULE: Update the Living Log at the end of every work session.** Add a new entry at the top with:
+1. Date + Sprint/Theme name
+2. Session summary (1-2 sentences)
+3. Commits per repo (hash + description)
+4. Deployments (what was deployed where)
+5. Features delivered (user-facing changes)
+6. Bug fixes (table format)
+7. Resolved task board items (if any)
+8. Known issues / blockers
+
+This is the team-shared record of all development work. Newest entries go at the top.
+
 ## Recent Changes
 
-All change history is maintained in domain changelogs and skill docs:
+All change history is maintained in the Living Log and domain changelogs:
+- **Living Log:** `/docs/LIVING-LOG.md` (rolling session-by-session record)
 - **Domain changelogs:** `/docs/changelogs/[DOMAIN]-CHANGELOG.md`
 - **Skill docs:** `/docs/skills/` (indexed in `/docs/skills/SKILLS-INDEX.md`)
 
