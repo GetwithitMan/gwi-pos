@@ -27,8 +27,9 @@
 | 6H | API Response Format Normalization (460+ violations) | 5 | ✅ |
 | 6H-HF | Client-Side Response Unwrapping (150+ fixes in 120 files) | 3 | ✅ |
 | 7 | Missing Socket Dispatches (48 routes, 530 lines added) | 4 | ✅ |
+| 8 | Large File Splits (4 files → 15 new modules, ~4,200 lines extracted) | 4 | ✅ |
 
-**Total completed:** 84 tasks, 1650+ individual fixes across 538+ files
+**Total completed:** 88 tasks, 1670+ individual fixes across 553+ files
 
 ---
 
@@ -42,13 +43,18 @@
 2. **orders/page.tsx** — Now at 30 useState calls (down from 56 in Wave 6G). Remaining states are mostly independent UI toggles — further extraction has diminishing returns.
 
 ### Priority 3 — Large File Splits
+✅ **Wave 8 split 4 of 10 files** (the 4 largest):
+| Before | After | File | Status |
+|-------:|------:|------|--------|
+| 3,753 | ~3,100 | `app/(pos)/orders/page.tsx` | ✅ Split (modal layer + hook extracted) |
+| 2,754 | ~1,480 | `components/menu/ItemEditor.tsx` | ✅ Split (4 hooks + types extracted) |
+| 2,602 | ~1,800 | `domains/floor-plan/admin/EditorCanvas.tsx` | ✅ Split (4 pure modules extracted) |
+| 2,173 | ~730 | `components/hardware/ReceiptVisualEditor.tsx` | ✅ Split (hook + 3 components extracted) |
+
+**Remaining large files (not yet split):**
 | Lines | File |
 |------:|------|
-| 3,753 | `app/(pos)/orders/page.tsx` |
-| 2,754 | `components/menu/ItemEditor.tsx` |
 | 2,689 | `components/floor-plan/FloorPlanHome.tsx` |
-| 2,602 | `domains/floor-plan/admin/EditorCanvas.tsx` |
-| 2,173 | `components/hardware/ReceiptVisualEditor.tsx` |
 | 2,087 | `lib/inventory-calculations.ts` |
 | 1,928 | `components/bartender/BartenderView.tsx` |
 | 1,620 | `app/(admin)/liquor-builder/page.tsx` |
@@ -90,6 +96,12 @@
 - `src/hooks/useSplitTickets.ts` — 13 split states
 - `src/hooks/useShiftManagement.ts` — 5 shift states
 - `src/hooks/useTimedRentals.ts` — 7 timed rental states
+- `src/app/(pos)/orders/useOrderPageModals.ts` — modal visibility state (Wave 8)
+- `src/components/menu/useIngredientOperations.ts` — ingredient CRUD (Wave 8)
+- `src/components/menu/useModifierGroupManager.ts` — modifier group CRUD (Wave 8)
+- `src/components/menu/useModifierEditor.ts` — modifier operations (Wave 8)
+- `src/components/menu/useIngredientCreation.ts` — inline ingredient creation (Wave 8)
+- `src/components/hardware/usePrintTemplateEditor.ts` — receipt settings + undo/redo (Wave 8)
 
 ---
 
