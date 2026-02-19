@@ -473,6 +473,17 @@ export function FloorPlanHome({
   const selectedSeat = useFloorPlanStore(s => s.selectedSeat)
   const flashingTables = useFloorPlanStore(s => s.flashingTables)
 
+  // Sync selectedSeat from store → activeSeatNumber for item assignment
+  // This ensures tapping a seat header in OrderPanel also sets the active seat
+  useEffect(() => {
+    if (selectedSeat && selectedSeat.tableId === activeTableId) {
+      setActiveSeatNumber(selectedSeat.seatNumber)
+      setActiveSourceTableId(selectedSeat.tableId)
+    } else if (!selectedSeat) {
+      setActiveSeatNumber(null)
+    }
+  }, [selectedSeat, activeTableId])
+
   // Actions — Zustand guarantees stable function references, no re-renders
   const setTables = useFloorPlanStore(s => s.setTables)
   const setSections = useFloorPlanStore(s => s.setSections)
