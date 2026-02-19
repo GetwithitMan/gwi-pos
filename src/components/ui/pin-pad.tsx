@@ -6,13 +6,16 @@ import { cn } from '@/lib/utils'
 
 interface PinPadProps {
   onSubmit: (pin: string) => void
+  onSecondarySubmit?: (pin: string) => void
+  submitLabel?: string
+  secondaryLabel?: string
   maxLength?: number
   isLoading?: boolean
   error?: string
   showClear?: boolean
 }
 
-export function PinPad({ onSubmit, maxLength = 6, isLoading, error, showClear = true }: PinPadProps) {
+export function PinPad({ onSubmit, onSecondarySubmit, submitLabel = 'Login', secondaryLabel, maxLength = 6, isLoading, error, showClear = true }: PinPadProps) {
   const [pin, setPin] = useState('')
 
   const handleDigit = useCallback((digit: string) => {
@@ -35,6 +38,13 @@ export function PinPad({ onSubmit, maxLength = 6, isLoading, error, showClear = 
       setPin('')
     }
   }, [pin, onSubmit])
+
+  const handleSecondarySubmit = useCallback(() => {
+    if (pin.length >= 4 && onSecondarySubmit) {
+      onSecondarySubmit(pin)
+      setPin('')
+    }
+  }, [pin, onSecondarySubmit])
 
   const digits = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '']
 
@@ -112,18 +122,30 @@ export function PinPad({ onSubmit, maxLength = 6, isLoading, error, showClear = 
         ))}
       </div>
 
-      {/* Submit Button */}
-      <Button
-        variant="primary"
-        size="xl"
-        className="w-full max-w-[268px]"
-        onClick={handleSubmit}
-        disabled={pin.length < 4 || isLoading}
-        isLoading={isLoading}
-        data-testid="pin-submit"
-      >
-        Clock In
-      </Button>
+      <div className="flex flex-col gap-2 w-full max-w-[268px]">
+        <Button
+          variant="primary"
+          size="xl"
+          className="w-full"
+          onClick={handleSubmit}
+          disabled={pin.length < 4 || isLoading}
+          isLoading={isLoading}
+          data-testid="pin-submit"
+        >
+          {submitLabel}
+        </Button>
+        {onSecondarySubmit && secondaryLabel && (
+          <Button
+            variant="outline"
+            size="lg"
+            className="w-full text-sm"
+            onClick={handleSecondarySubmit}
+            disabled={pin.length < 4 || isLoading}
+          >
+            {secondaryLabel}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

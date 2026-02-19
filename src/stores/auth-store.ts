@@ -32,6 +32,7 @@ interface AuthState {
   isAuthenticated: boolean
   clockedIn: boolean
   clockInTime: string | null
+  entryId: string | null
   workingRole: AvailableRole | null
 
   // Actions
@@ -39,7 +40,7 @@ interface AuthState {
   logout: () => void
   setLocation: (locationId: string) => void
   setWorkingRole: (role: AvailableRole) => void
-  clockIn: () => void
+  clockIn: (data?: { entryId?: string; clockInTime?: string }) => void
   clockOut: () => void
 }
 
@@ -51,6 +52,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       clockedIn: false,
       clockInTime: null,
+      entryId: null,
       workingRole: null,
 
       login: (employee) =>
@@ -67,6 +69,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           clockedIn: false,
           clockInTime: null,
+          entryId: null,
           workingRole: null,
         }),
 
@@ -76,16 +79,18 @@ export const useAuthStore = create<AuthState>()(
       setWorkingRole: (role) =>
         set({ workingRole: role }),
 
-      clockIn: () =>
+      clockIn: (data) =>
         set({
           clockedIn: true,
-          clockInTime: new Date().toISOString(),
+          clockInTime: data?.clockInTime ?? new Date().toISOString(),
+          entryId: data?.entryId ?? null,
         }),
 
       clockOut: () =>
         set({
           clockedIn: false,
           clockInTime: null,
+          entryId: null,
           workingRole: null, // Reset working role on clock out
         }),
     }),
@@ -97,6 +102,7 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         clockedIn: state.clockedIn,
         clockInTime: state.clockInTime,
+        entryId: state.entryId,
         workingRole: state.workingRole,
       }),
     }

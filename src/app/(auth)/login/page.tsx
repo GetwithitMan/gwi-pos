@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuthStore } from '@/stores/auth-store'
 import { useDevStore } from '@/stores/dev-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
+import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
 
 function LoginContent() {
   const router = useRouter()
@@ -17,12 +18,13 @@ function LoginContent() {
   const setWorkingRole = useAuthStore((state) => state.setWorkingRole)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [showClockInPrompt, setShowClockInPrompt] = useState(false)
   const [showRolePicker, setShowRolePicker] = useState(false)
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null)
   const [pendingEmployee, setPendingEmployee] = useState<{ id: string; locationId: string } | null>(null)
   const [pendingAvailableRoles, setPendingAvailableRoles] = useState<{ id: string; name: string; cashHandlingMode: string; isPrimary: boolean }[]>([])
-  const [clockingIn, setClockingIn] = useState(false)
+  const [showTimeClockModal, setShowTimeClockModal] = useState(false)
+
+  const employee = useAuthStore((state) => state.employee)
 
   const getRedirectPath = useCallback((employee: { defaultScreen?: string; permissions?: string[] }) => {
     const redirectParam = searchParams.get('redirect')
@@ -46,48 +48,46 @@ function LoginContent() {
     }
   }, [searchParams])
 
-  const handleClockInYes = async () => {
-    if (!pendingEmployee) return
-    // If multi-role and no role selected yet, show role picker first
-    const workingRole = useAuthStore.getState().workingRole
-    if (pendingAvailableRoles.length > 1 && !workingRole) {
-      setShowClockInPrompt(false)
-      setShowRolePicker(true)
-      return
-    }
-    setClockingIn(true)
-    try {
-      const res = await fetch('/api/time-clock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId: pendingEmployee.locationId,
-          employeeId: pendingEmployee.id,
-          ...(workingRole ? { workingRoleId: workingRole.id } : {}),
-        }),
-      })
-      if (res.ok) {
-        clockInStore()
-      }
-    } catch {
-      // Non-blocking: clock-in failure shouldn't prevent POS access
-    } finally {
-      setClockingIn(false)
-      setShowClockInPrompt(false)
-      if (pendingRedirect) router.push(pendingRedirect)
-    }
-  }
-
-  const handleClockInNo = () => {
-    setShowClockInPrompt(false)
-    if (pendingRedirect) router.push(pendingRedirect)
-  }
-
   const handleRoleSelected = (role: { id: string; name: string; cashHandlingMode: string; isPrimary: boolean }) => {
     setWorkingRole(role)
     setShowRolePicker(false)
-    // Now proceed with clock-in using the selected role
-    setShowClockInPrompt(true)
+    setShowTimeClockModal(true)
+  }
+
+  const handleTimeClockClose = async () => {
+    setShowTimeClockModal(false)
+  }
+
+  const handleClockInSuccess = (entryId: string) => {
+    clockInStore({ entryId })
+  }
+
+  const authenticatePin = async (pin: string) => {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    })
+
+    const json = await response.json()
+
+    if (!response.ok) {
+      throw new Error(json.error || 'Invalid PIN')
+    }
+
+    const data = json.data
+    setHasDevAccess(data.employee.isDevAccess || false)
+    login(data.employee)
+
+    const roles = data.employee.availableRoles || []
+    if (roles.length === 1) {
+      setWorkingRole(roles[0])
+    }
+    setPendingAvailableRoles(roles)
+    setPendingEmployee({ id: data.employee.id, locationId: data.employee.location.id })
+    setPendingRedirect(getRedirectPath(data.employee))
+
+    return data.employee
   }
 
   const handlePinSubmit = async (pin: string) => {
@@ -95,56 +95,44 @@ function LoginContent() {
     setError('')
 
     try {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin }),
-      })
+      const emp = await authenticatePin(pin)
 
-      const data = await response.json()
-
-      if (!response.ok) {
-        setError(data.error || 'Invalid PIN')
-        return
-      }
-
-      // Set dev access if employee has dev permissions
-      setHasDevAccess(data.employee.isDevAccess || false)
-
-      login(data.employee)
-
-      const redirect = getRedirectPath(data.employee)
-      const roles = data.employee.availableRoles || []
-
-      // If single role (or no EmployeeRole records), auto-select it
-      if (roles.length === 1) {
-        setWorkingRole(roles[0])
-      }
-      setPendingAvailableRoles(roles)
-
-      // Check clock-in status
       try {
-        const statusRes = await fetch(`/api/time-clock/status?employeeId=${data.employee.id}`)
+        const statusRes = await fetch(`/api/time-clock/status?employeeId=${emp.id}`)
         const statusData = await statusRes.json()
+        const clockData = statusData.data ?? statusData
 
-        if (statusRes.ok && statusData.clockedIn) {
-          // Already clocked in — update store and redirect
-          clockInStore()
-          router.push(redirect)
+        if (statusRes.ok && clockData.clockedIn) {
+          clockInStore({ entryId: clockData.entryId, clockInTime: clockData.clockInTime })
+          router.push(getRedirectPath(emp))
           return
         }
-      } catch {
-        // Status check failed — just redirect (non-blocking)
-        router.push(redirect)
+      } catch {}
+
+      setError('Must clock in first')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Connection error. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleClockInOutSubmit = async (pin: string) => {
+    setIsLoading(true)
+    setError('')
+
+    try {
+      const emp = await authenticatePin(pin)
+
+      const workingRole = useAuthStore.getState().workingRole
+      if ((emp.availableRoles || []).length > 1 && !workingRole) {
+        setShowRolePicker(true)
         return
       }
 
-      // Not clocked in — show prompt
-      setPendingEmployee({ id: data.employee.id, locationId: data.employee.location.id })
-      setPendingRedirect(redirect)
-      setShowClockInPrompt(true)
+      setShowTimeClockModal(true)
     } catch (err) {
-      setError('Connection error. Please try again.')
+      setError(err instanceof Error ? err.message : 'Connection error. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -181,36 +169,21 @@ function LoginContent() {
     )
   }
 
-  if (showClockInPrompt) {
-    return (
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Not Clocked In</CardTitle>
-          <CardDescription className="text-base mt-2">
-            You are not currently clocked in. Would you like to clock in now?
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex gap-4 justify-center">
-          <button
-            onClick={handleClockInYes}
-            disabled={clockingIn}
-            className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg text-lg disabled:opacity-50 transition-colors"
-          >
-            {clockingIn ? 'Clocking In...' : 'Yes, Clock In'}
-          </button>
-          <button
-            onClick={handleClockInNo}
-            disabled={clockingIn}
-            className="px-8 py-3 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg text-lg disabled:opacity-50 transition-colors"
-          >
-            No, Skip
-          </button>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
+    <>
+    {showTimeClockModal && pendingEmployee && employee && (
+      <TimeClockModal
+        isOpen={showTimeClockModal}
+        onClose={handleTimeClockClose}
+        employeeId={pendingEmployee.id}
+        employeeName={employee.displayName || `${employee.firstName} ${employee.lastName}`}
+        locationId={pendingEmployee.locationId}
+        permissions={employee.permissions}
+        workingRoleId={useAuthStore.getState().workingRole?.id}
+        onClockInSuccess={handleClockInSuccess}
+      />
+    )}
+
     <Card className="w-full max-w-md">
       <CardHeader className="text-center">
         <div className="mx-auto mb-4">
@@ -236,11 +209,15 @@ function LoginContent() {
       <CardContent>
         <PinPad
           onSubmit={handlePinSubmit}
+          onSecondarySubmit={handleClockInOutSubmit}
+          submitLabel="Login"
+          secondaryLabel="Clock In / Out"
           isLoading={isLoading}
           error={error}
         />
       </CardContent>
     </Card>
+    </>
   )
 }
 

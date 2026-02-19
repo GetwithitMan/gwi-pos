@@ -64,6 +64,8 @@ interface TimeClockModalProps {
   locationId: string
   permissions?: string[]
   onClockOut?: () => void
+  workingRoleId?: string
+  onClockInSuccess?: (entryId: string) => void
 }
 
 export function TimeClockModal({
@@ -74,6 +76,8 @@ export function TimeClockModal({
   locationId,
   permissions = [],
   onClockOut,
+  workingRoleId,
+  onClockInSuccess,
 }: TimeClockModalProps) {
   const router = useRouter()
   const [currentEntry, setCurrentEntry] = useState<TimeClockEntry | null>(null)
@@ -225,10 +229,17 @@ export function TimeClockModal({
       const response = await fetch('/api/time-clock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ locationId, employeeId }),
+        body: JSON.stringify({
+          locationId,
+          employeeId,
+          ...(workingRoleId ? { workingRoleId } : {}),
+        }),
       })
 
       if (response.ok) {
+        const result = await response.json()
+        const newEntryId = result.data?.id
+        if (newEntryId) onClockInSuccess?.(newEntryId)
         await loadCurrentEntry()
       } else {
         const data = await response.json()
