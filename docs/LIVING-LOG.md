@@ -5,6 +5,75 @@
 
 ---
 
+## 2026-02-19 (PM) — Device Fleet Management & Live Venue Fixes
+
+### Session Summary
+Built full device fleet management across POS and MC repos (5-agent team). Fixed live venue deployment issues, voided stale orders, removed kiosk --incognito for performance.
+
+### Commits (POS — `gwi-pos`)
+
+| Commit | Description |
+|--------|-------------|
+| `1f7815d` | Add device fleet endpoints + SystemReloadListener for Mission Control |
+| `819ed89` | Remove --incognito from kiosk Chromium flags for faster terminal loads |
+| `0362305` | Clean up repo: remove Datacap Word docs, update task board and schema |
+
+### Commits (Mission Control — `gwi-mission-control`)
+
+| Commit | Description |
+|--------|-------------|
+| `30604fa` | Add device fleet management — visibility + remote control from Mission Control |
+| `4f40149` | Fix FORCE_UPDATE to use db push, add deploy failure + version mismatch alerts |
+
+### Deployments
+
+| App | URL | Status |
+|-----|-----|--------|
+| POS | barpos.restaurant | Auto-deployed via Vercel |
+| Mission Control | app.thepasspos.com | Auto-deployed via Vercel |
+
+### Features Delivered
+
+**Device Fleet Management (MC)**
+- Device inventory synced via NUC heartbeat — terminals, handhelds, KDS, printers, payment readers
+- DeviceInventoryCard with count vs. limit progress bars, status dots, relative timestamps
+- Remote actions: Restart Kiosk, Reload All Terminals from MC dashboard
+- Release "Requires kiosk restart" checkbox — auto-reloads terminals after deploy
+- Deploy failure alerts (red banner) and version mismatch warnings (amber banner)
+
+**POS Endpoints**
+- Internal device-inventory API for heartbeat sync
+- Internal reload-terminals and reload-terminal APIs for remote control
+- SystemReloadListener component — auto-refreshes browser on socket event
+- License enforcement (fail-open) for device count limits
+
+**Live Venue Fixes**
+- Voided 4 stale open orders from Feb 17 at Fruita Bar & Grill
+- Fixed FORCE_UPDATE handler: uses prisma db push instead of prisma migrate, aborts on failure
+- Removed --incognito from kiosk service on both live NUCs for faster loads
+
+### Bug Fixes
+
+| Fix | Impact |
+|-----|--------|
+| FORCE_UPDATE used prisma migrate (failed silently) | NUCs now use prisma db push and abort on schema failure |
+| DeviceInventoryCard crashed on null data | Rewrote to handle nested device object + null guards |
+| Kiosk --incognito caused slow cold starts | Terminals now cache assets, load faster after restart |
+| 4 stale open orders showing on terminal | Voided via direct DB update |
+
+### New Skills Documented
+
+| Skill | Name |
+|-------|------|
+| 376 | Device Fleet Management |
+| 377 | Remote Device Actions |
+| 378 | Deploy Alerts & Version Mismatch |
+| 379 | Terminal License Enforcement |
+| 380 | Kiosk Performance (Incognito Removal) |
+| 381 | Release Kiosk Restart |
+
+---
+
 ## 2026-02-19 — Sprint 2B/2C: Cloud Admin + Settings + P0 Fixes
 
 ### Session Summary

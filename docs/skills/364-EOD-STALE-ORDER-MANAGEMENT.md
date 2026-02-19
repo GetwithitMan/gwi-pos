@@ -2,7 +2,7 @@
 
 **Date:** February 17, 2026
 **Domain:** Orders / Operations
-**Status:** PLANNED (tasks added to PM-TASK-BOARD.md)
+**Status:** DONE (deployed as commit 3500e4d — auto-close API route)
 
 ## Context
 

@@ -141,6 +141,12 @@
 | 346 | Kiosk Exit Zone | DONE | Hardware / DevOps | 345 | Hidden 5-tap zone (top-left corner, 64×64px) to exit Chromium kiosk mode. Root layout placement, exit-kiosk API, sudoers integration. |
 | 347 | MC Heartbeat IP Display & Auto-Provisioning | DONE | Mission Control | 303, 345 | Heartbeat accepts posLocationId, auto-provisions CloudLocation. localIp displayed in admin dashboard, venue portal, portal server list. |
 | 375 | NUC-to-Cloud Event Pipeline | DONE | Cloud Sync, Payments | 345, 347 | HMAC-signed fire-and-forget event emitter (`cloud-events.ts`), local PG retry queue (`cloud-event-queue.ts`), wired in pay route. Java 25 backoffice ingests events idempotently. Phase 1 proven: 7+ orders, $50.71 gross. |
+| 376 | Device Fleet Management | DONE | Mission Control | 303, 322, 345 | Device inventory via heartbeat, MC DeviceInventoryCard, count vs limit progress bars |
+| 377 | Remote Device Actions | DONE | Mission Control | 307, 308, 376 | RESTART_KIOSK/RELOAD_TERMINALS/RELOAD_TERMINAL commands, SystemReloadListener, RemoteActionsCard |
+| 378 | Deploy Alerts & Version Mismatch | DONE | Mission Control | 334, 308 | Red deploy failure banner, amber version mismatch warning, FORCE_UPDATE fix (db push not migrate) |
+| 379 | Terminal License Enforcement | DONE | Mission Control | 304, 322, 376 | POS-side checkDeviceLimit(), fail-open design, progress bar UI in MC |
+| 380 | Kiosk Performance (Incognito Removal) | DONE | DevOps | 345, 377 | Remove --incognito from kiosk Chromium flags, cache assets between restarts |
+| 381 | Release Kiosk Restart | DONE | Mission Control | 334, 377 | requiresKioskRestart on Release, auto-reload terminals after deploy |
 
 ### Performance Overhaul (Feb 14, 2026)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -369,9 +375,10 @@
 | Payment System Lockdown (221-227) | 7 | 0 | 0 | 7 | 100% |
 | Tips & Tip Bank | 38 | 0 | 0 | 38 | 100% |
 | KDS Browser Compat | 1 | 0 | 0 | 1 | 100% |
-| Mission Control (Phase 2) | 22 | 0 | 8 | 30 | 73% |
+| Mission Control (Phase 2) | 28 | 0 | 2 | 30 | 93% |
+| DevOps | 1 | 0 | 0 | 1 | 100% |
 | Performance Overhaul | 7 | 0 | 0 | 7 | 100% |
-| **TOTAL** | **208** | **7** | **24** | **239** | **91%** |
+| **TOTAL** | **215** | **7** | **18** | **240** | **92%** |
 
 ### Parallel Development Groups (Remaining)
 
@@ -1135,7 +1142,7 @@ These skills emerged during development and are now part of the system:
 | 361 | Default Port Migration | DONE | Deployment | - | Port 3000 → 3005 across 9 files. Avoids PM2/service conflicts. |
 | 362 | Kiosk Service Hardening | DONE | Deployment, Hardware | 345, 346 | Fixed duplicate tabs (Restart=on-failure), pkill self-match, killall missing. Both server + terminal kiosk. |
 | 363 | Installer HTTP Auto-Prepend | DONE | Deployment | 345 | Auto-prepend http:// for bare IPs. Fixed .env copy failure on re-install. |
-| 364 | EOD Stale Order Management | PLANNED | Orders | - | T-077: auto-cancel $0 drafts at shift close. T-078: admin UI for stale orders. |
+| 364 | EOD Stale Order Management | DONE | Orders | - | T-077: auto-cancel $0 drafts at shift close. T-078: admin UI for stale orders. |
 | 365 | Cloud-to-Terminal Real-Time Sync | DONE | Mission Control, Deployment | 345, 347 | Fixed 3-bug sync chain: FLEET_NOTIFY_SECRET trim, posLocationId lookup, installer chown -R. |
 | 366 | Duplicate Order Prevention | DONE | Orders | 02, 07 | Ref-based sendInProgressRef guard. React state too slow for multi-tap. |
 | 367 | Dynamic Order Type Tabs | DONE | Orders, UI | 358, 09 | Dynamic header tabs from admin config. Table enforcement for dine_in. NavTab accentColor. isTablesActive fix. |
