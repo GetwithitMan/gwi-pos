@@ -146,7 +146,7 @@ After=graphical.target [pulse-pos.service for server]
 User=<posuser>
 Environment=DISPLAY=:0
 ExecStart=/usr/bin/chromium-browser --kiosk --noerrdialogs --disable-infobars \
-  --incognito --check-for-update-interval=31536000 <target-url>
+  --check-for-update-interval=31536000 <target-url>
 Restart=always
 RestartSec=3
 
