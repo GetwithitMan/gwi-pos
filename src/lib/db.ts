@@ -10,7 +10,7 @@ const globalForPrisma = globalThis as unknown as {
 /**
  * Models that do NOT have a `deletedAt` column — skip soft-delete filtering.
  */
-const NO_SOFT_DELETE_MODELS = new Set(['Organization', 'Location', 'SyncAuditEntry'])
+const NO_SOFT_DELETE_MODELS = new Set(['Organization', 'Location', 'SyncAuditEntry', 'CloudEventQueue'])
 
 /**
  * Prisma actions that read data and should auto-filter soft-deleted rows.
