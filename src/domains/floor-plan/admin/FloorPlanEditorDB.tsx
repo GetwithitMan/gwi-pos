@@ -183,6 +183,7 @@ export function FloorPlanEditorDB({
         if (!res.ok) {
           const error = await res.json();
           console.error('[FloorPlanEditorDB] Create error:', error);
+          toast.error('Failed to create element');
           return;
         }
 
@@ -193,6 +194,7 @@ export function FloorPlanEditorDB({
         dispatchFloorPlanUpdate(locationId, { async: true });
       } catch (error) {
         console.error('[FloorPlanEditorDB] Create error:', error);
+        toast.error('Failed to create element');
       }
     },
     [locationId, selectedSectionId]
@@ -201,6 +203,14 @@ export function FloorPlanEditorDB({
   // Handle element update
   const handleElementUpdate = useCallback(
     async (elementId: string, updates: Partial<FloorPlanElement>) => {
+      // Capture original state for rollback
+      let originalElements: FloorPlanElement[] = [];
+      setElements(prev => {
+        originalElements = prev;
+        // Optimistic update
+        return prev.map(el => el.id === elementId ? { ...el, ...updates } : el);
+      });
+
       try {
         const res = await fetch(`/api/floor-plan-elements/${elementId}`, {
           method: 'PUT',
@@ -211,13 +221,15 @@ export function FloorPlanEditorDB({
         if (!res.ok) {
           const error = await res.json();
           console.error('[FloorPlanEditorDB] Update error:', error);
-          return;
+          throw new Error(error.error || 'Failed to update element');
         }
 
         // Refresh elements
         setRefreshKey((prev) => prev + 1);
       } catch (error) {
-        console.error('[FloorPlanEditorDB] Update error:', error);
+        // Rollback on failure
+        setElements(originalElements);
+        toast.error(`Failed to save changes: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     },
     []
@@ -226,6 +238,19 @@ export function FloorPlanEditorDB({
   // Handle element deletion
   const handleElementDelete = useCallback(
     async (elementId: string) => {
+      // Capture original state for rollback
+      let originalElements: FloorPlanElement[] = [];
+      let originalSelectedId: string | null = null;
+
+      setElements(prev => {
+        originalElements = prev;
+        return prev.filter(el => el.id !== elementId);
+      });
+      setSelectedElementId(prev => {
+        originalSelectedId = prev;
+        return null;
+      });
+
       try {
         const res = await fetch(`/api/floor-plan-elements/${elementId}`, {
           method: 'DELETE',
@@ -234,10 +259,8 @@ export function FloorPlanEditorDB({
         if (!res.ok) {
           const error = await res.json();
           console.error('[FloorPlanEditorDB] Delete error:', error);
-          return;
+          throw new Error(error.error || 'Failed to delete element');
         }
-
-        setSelectedElementId(null);
 
         // Refresh elements
         setRefreshKey((prev) => prev + 1);
@@ -245,7 +268,10 @@ export function FloorPlanEditorDB({
         // Dispatch socket event for real-time sync
         dispatchFloorPlanUpdate(locationId, { async: true });
       } catch (error) {
-        console.error('[FloorPlanEditorDB] Delete error:', error);
+        // Rollback on failure
+        setElements(originalElements);
+        setSelectedElementId(originalSelectedId);
+        toast.error(`Failed to delete element: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     },
     [locationId]

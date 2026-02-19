@@ -281,6 +281,7 @@ export function FloorPlanEditor({
           }
         } catch (error) {
           console.error('Failed to create element:', error);
+          toast.error('Failed to create element');
         }
       } else {
         FloorCanvasAPI.addFixture(fixture);
@@ -548,6 +549,7 @@ export function FloorPlanEditor({
       }
     } catch (error) {
       console.error('Failed to add entertainment:', error);
+      toast.error('Failed to add entertainment element');
     }
   }, [locationId, selectedRoomId]);
 
@@ -607,9 +609,11 @@ export function FloorPlanEditor({
           // Other error
           const errData = await response.json().catch(() => ({}));
           console.error('Failed to create table:', errData.error || response.statusText);
+          toast.error(`Failed to create table: ${errData.error || response.statusText}`);
           return;
         } catch (error) {
           console.error('Failed to create table:', error);
+          toast.error('Failed to create table');
           return;
         }
       }
