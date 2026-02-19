@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   DndContext,
@@ -15,8 +15,6 @@ import {
   arrayMove,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
-import { Button } from '@/components/ui/button'
-import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
 import { useOrderStore } from '@/stores/order-store'
 import { useDevStore } from '@/stores/dev-store'
@@ -26,31 +24,15 @@ import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { useActiveOrder } from '@/hooks/useActiveOrder'
 import { usePricing } from '@/hooks/usePricing'
 import { useOrderPanelItems } from '@/hooks/useOrderPanelItems'
-import { POSDisplaySettingsModal } from '@/components/orders/POSDisplaySettings'
 import { formatCurrency } from '@/lib/utils'
 import { calculateCardPrice } from '@/lib/pricing'
 import { debugPizzaPricing } from '@/lib/pizza-helpers'
 import { buildPizzaModifiers, getPizzaBasePrice } from '@/lib/pizza-order-utils'
 import { fetchAndLoadSplitOrder } from '@/lib/split-order-loader'
 import { isTempId } from '@/lib/order-utils'
-const PaymentModal = lazy(() => import('@/components/payment/PaymentModal').then(m => ({ default: m.PaymentModal })))
-const DiscountModal = lazy(() => import('@/components/orders/DiscountModal').then(m => ({ default: m.DiscountModal })))
-const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
-const ItemTransferModal = lazy(() => import('@/components/orders/ItemTransferModal').then(m => ({ default: m.ItemTransferModal })))
-const SplitCheckScreen = lazy(() => import('@/components/orders/SplitCheckScreen').then(m => ({ default: m.SplitCheckScreen })))
-const PayAllSplitsModal = lazy(() => import('@/components/orders/PayAllSplitsModal').then(m => ({ default: m.PayAllSplitsModal })))
-import { NoteEditModal } from '@/components/orders/NoteEditModal'
-import { OpenOrdersPanel, type OpenOrder } from '@/components/orders/OpenOrdersPanel'
-import { TimeClockModal } from '@/components/time-clock/TimeClockModal'
-import { ShiftStartModal } from '@/components/shifts/ShiftStartModal'
-const ShiftCloseoutModal = lazy(() => import('@/components/shifts/ShiftCloseoutModal').then(m => ({ default: m.ShiftCloseoutModal })))
-const ReceiptModal = lazy(() => import('@/components/receipt/ReceiptModal').then(m => ({ default: m.ReceiptModal })))
+import { type OpenOrder } from '@/components/orders/OpenOrdersPanel'
 import type { OrderTypeConfig, OrderCustomFields, WorkflowRules } from '@/types/order-types'
 import type { IngredientModificationType } from '@/types/orders'
-const ModifierModal = lazy(() => import('@/components/modifiers/ModifierModal').then(m => ({ default: m.ModifierModal })))
-const PizzaBuilderModal = lazy(() => import('@/components/pizza/PizzaBuilderModal').then(m => ({ default: m.PizzaBuilderModal })))
-const EntertainmentSessionStart = lazy(() => import('@/components/entertainment/EntertainmentSessionStart').then(m => ({ default: m.EntertainmentSessionStart })))
-const TimedRentalStartModal = lazy(() => import('@/components/entertainment/TimedRentalStartModal').then(m => ({ default: m.TimedRentalStartModal })))
 import type { PrepaidPackage } from '@/lib/entertainment-pricing'
 import { FloorPlanHome } from '@/components/floor-plan'
 import { useFloorPlanStore, type FloorPlanTable, type FloorPlanSection, type FloorPlanElement } from '@/components/floor-plan/use-floor-plan'
@@ -63,7 +45,6 @@ import { useQuickPick } from '@/hooks/useQuickPick'
 import { useOrderPanelCallbacks } from '@/hooks/useOrderPanelCallbacks'
 import { useOrderingEngine } from '@/hooks/useOrderingEngine'
 import { toast } from '@/stores/toast-store'
-import type { DatacapResult } from '@/hooks/useDatacap'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { useOrderSockets } from '@/hooks/useOrderSockets'
 import { useSplitTickets } from '@/hooks/useSplitTickets'
@@ -76,9 +57,8 @@ import { useComboBuilder } from '@/hooks/useComboBuilder'
 import { useCardTabFlow } from '@/hooks/useCardTabFlow'
 import { useTabsPanel } from '@/hooks/useTabsPanel'
 import { usePizzaBuilder } from '@/hooks/usePizzaBuilder'
-const TipAdjustmentOverlay = lazy(() => import('@/components/tips/TipAdjustmentOverlay'))
-const CardFirstTabFlow = lazy(() => import('@/components/tabs/CardFirstTabFlow').then(m => ({ default: m.CardFirstTabFlow })))
-const TabNamePromptModal = lazy(() => import('@/components/tabs/TabNamePromptModal').then(m => ({ default: m.TabNamePromptModal })))
+import { useOrderPageModals } from './useOrderPageModals'
+import { OrderPageModals } from './OrderPageModals'
 import type { Category, MenuItem, SelectedModifier, PizzaOrderConfig, OrderItem } from '@/types'
 
 // DEFERRED: Replace with dynamic terminal ID from device provisioning — tracked in PM-TASK-BOARD.md
@@ -248,8 +228,18 @@ export default function OrdersPage() {
     paymentMethod,
   })
 
-  // Display settings modal
-  const [showDisplaySettings, setShowDisplaySettings] = useState(false)
+  // Modal visibility state (extracted to useOrderPageModals hook)
+  const {
+    showDisplaySettings, setShowDisplaySettings,
+    showReceiptModal, setShowReceiptModal,
+    receiptOrderId, setReceiptOrderId,
+    preloadedReceiptData, setPreloadedReceiptData,
+    showTabNamePrompt, setShowTabNamePrompt,
+    tabNameCallback, setTabNameCallback,
+    showItemTransferModal, setShowItemTransferModal,
+    editingNotesItemId, setEditingNotesItemId,
+    editingNotesText, setEditingNotesText,
+  } = useOrderPageModals()
 
   const [isEditingFavorites, setIsEditingFavorites] = useState(false)
   const [isEditingMenuItems, setIsEditingMenuItems] = useState(false)
@@ -274,20 +264,11 @@ export default function OrdersPage() {
   // Background items-persist promise (started when PaymentModal opens, awaited before /pay)
   const orderReadyPromiseRef = useRef<Promise<string | null> | null>(null)
 
-  // Receipt modal state
-  const [showReceiptModal, setShowReceiptModal] = useState(false)
-  const [receiptOrderId, setReceiptOrderId] = useState<string | null>(null)
-  const [preloadedReceiptData, setPreloadedReceiptData] = useState<any>(null)
-
   // Order that was just paid - triggers FloorPlanHome to clear its state
   const [paidOrderId, setPaidOrderId] = useState<string | null>(null)
 
   // Floor plan refresh trigger - increment to force FloorPlanHome to refresh
   const [floorPlanRefreshTrigger, setFloorPlanRefreshTrigger] = useState(0)
-
-  // Tab name prompt state
-  const [showTabNamePrompt, setShowTabNamePrompt] = useState(false)
-  const [tabNameCallback, setTabNameCallback] = useState<(() => void) | null>(null)
 
   // Card-first tab flow state (extracted to useCardTabFlow hook)
   const {
@@ -304,9 +285,6 @@ export default function OrdersPage() {
     resendLoading, setResendLoading,
     compVoidItem, setCompVoidItem,
   } = useItemOperations()
-
-  // Item Transfer modal state
-  const [showItemTransferModal, setShowItemTransferModal] = useState(false)
 
   // Split Ticket Manager state (extracted to useSplitTickets hook)
   const {
@@ -418,10 +396,6 @@ export default function OrdersPage() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentOrder?.id, currentOrder?.status])
-
-  // Item notes modal state (for quick note editing)
-  const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null)
-  const [editingNotesText, setEditingNotesText] = useState('')
 
   // Shift management state (extracted to useShiftManagement hook)
   const {
@@ -3101,669 +3075,383 @@ export default function OrdersPage() {
           </BartenderView>
         )}
 
-        {/* Shared Modals — one set for both views */}
-        <POSDisplaySettingsModal
-          isOpen={showDisplaySettings}
-          onClose={() => setShowDisplaySettings(false)}
-          settings={displaySettings}
-          onUpdate={updateSetting}
-          onBatchUpdate={updateSettings}
-        />
-          <>
-            {showTabsPanel && !isTabManagerExpanded && (
-              <div
-                className="fixed inset-0 bg-black/30 z-40"
-                onClick={() => setShowTabsPanel(false)}
-              />
-            )}
-            <div className={isTabManagerExpanded ? '' : 'fixed left-0 top-0 bottom-0 w-80 bg-slate-900 shadow-xl z-50'} style={!showTabsPanel && !isTabManagerExpanded ? { display: 'none' } : undefined}>
-              <OpenOrdersPanel
-                locationId={employee?.location?.id}
-                employeeId={employee.id}
-                employeePermissions={permissionsArray}
-                refreshTrigger={tabsRefreshTrigger}
-                isExpanded={isTabManagerExpanded}
-                onToggleExpand={() => setIsTabManagerExpanded(!isTabManagerExpanded)}
-                currentOrderId={savedOrderId || undefined}
-                onSelectOrder={(order) => {
-                  setOrderToLoad({
-                    id: order.id,
-                    orderNumber: order.orderNumber,
-                    tableId: order.tableId || undefined,
-                    tableName: order.table?.name || undefined,
-                    tabName: order.tabName || undefined,
-                    orderType: order.orderType,
-                  })
-                  // Restore tab card info from pre-auth data
-                  if (order.hasPreAuth && order.preAuth?.last4) {
-                    setTabCardInfo({
-                      cardholderName: order.cardholderName || undefined,
-                      cardLast4: order.preAuth.last4,
-                      cardType: order.preAuth.cardBrand,
-                    })
-                  }
-                  setSavedOrderId(order.id)
-                  setShowTabsPanel(false)
-                  setIsTabManagerExpanded(false)
-                }}
-                onViewOrder={(order) => {
-                  setOrderToLoad({
-                    id: order.id,
-                    orderNumber: order.orderNumber,
-                    tableId: order.tableId || undefined,
-                    tableName: order.table?.name || undefined,
-                    tabName: order.tabName || undefined,
-                    orderType: order.orderType,
-                  })
-                  // Restore tab card info from pre-auth data
-                  if (order.hasPreAuth && order.preAuth?.last4) {
-                    setTabCardInfo({
-                      cardholderName: order.cardholderName || undefined,
-                      cardLast4: order.preAuth.last4,
-                      cardType: order.preAuth.cardBrand,
-                    })
-                  }
-                  setSavedOrderId(order.id)
-                  setShowTabsPanel(false)
-                  setIsTabManagerExpanded(false)
-                }}
-                onNewTab={() => {
-                  setShowTabsPanel(false)
-                  setIsTabManagerExpanded(false)
-                }}
-                onClosedOrderAction={() => setTabsRefreshTrigger(prev => prev + 1)}
-                onOpenTipAdjustment={() => setShowTipAdjustment(true)}
-                onViewReceipt={(orderId) => {
-                  setReceiptOrderId(orderId)
-                  setShowReceiptModal(true)
-                }}
-              />
-            </div>
-          </>
-        {showModifierModal && selectedItem && (
-          <Suspense fallback={null}>
-            <ModifierModal
-              item={selectedItem}
-              modifierGroups={itemModifierGroups}
-              loading={loadingModifiers}
-              editingItem={editingOrderItem}
-              dualPricing={dualPricing}
-              initialNotes={editingOrderItem?.specialNotes}
-              onConfirm={editingOrderItem && !inlineModifierCallbackRef.current ? handleUpdateItemWithModifiers : handleAddItemWithModifiers}
-              onCancel={() => {
-                setShowModifierModal(false)
-                setSelectedItem(null)
-                setItemModifierGroups([])
-                setEditingOrderItem(null)
-                inlineModifierCallbackRef.current = null
-              }}
-            />
-          </Suspense>
-        )}
-        {showPizzaModal && selectedPizzaItem && (
-          <Suspense fallback={null}>
-            <PizzaBuilderModal
-              item={selectedPizzaItem}
-              editingItem={editingPizzaItem}
-              onConfirm={handleAddPizzaToOrder}
-              onCancel={() => {
-                setShowPizzaModal(false)
-                setSelectedPizzaItem(null)
-                setEditingPizzaItem(null)
-                inlinePizzaCallbackRef.current = null
-              }}
-            />
-          </Suspense>
-        )}
-        {showEntertainmentStart && entertainmentItem && (
-          <Suspense fallback={null}>
-          <Modal isOpen={showEntertainmentStart && !!entertainmentItem} onClose={() => { setShowEntertainmentStart(false); setEntertainmentItem(null) }} size="md">
-            <EntertainmentSessionStart
-              itemName={entertainmentItem.name}
-              itemId={entertainmentItem.id}
-              locationId={employee?.location?.id || ''}
-              ratePerMinute={entertainmentItem.ratePerMinute || 0.25}
-              prepaidPackages={entertainmentItem.prepaidPackages}
-              happyHour={entertainmentItem.happyHourEnabled ? {
-                enabled: true,
-                discount: 0,
-                start: '',
-                end: '',
-                days: [],
-              } : undefined}
-              currentOrderId={savedOrderId || null}
-              currentOrderName={currentOrder?.tabName || null}
-              openTabs={[]}
-              onStartWithCurrentOrder={handleStartEntertainmentWithCurrentOrder}
-              onStartWithNewTab={handleStartEntertainmentWithNewTab}
-              onStartWithExistingTab={handleStartEntertainmentWithExistingTab}
-              onClose={() => {
-                setShowEntertainmentStart(false)
-                setEntertainmentItem(null)
-              }}
-            />
-          </Modal>
-          </Suspense>
-        )}
-        {showTimedRentalModal && selectedTimedItem && (
-          <Suspense fallback={null}>
-            <TimedRentalStartModal
-              isOpen={showTimedRentalModal && !!selectedTimedItem}
-              item={selectedTimedItem}
-              onStart={handleStartTimedSession}
-              onClose={() => { setShowTimedRentalModal(false); setSelectedTimedItem(null); inlineTimedRentalCallbackRef.current = null }}
-              loading={loadingSession}
-            />
-          </Suspense>
-        )}
-        {showPaymentModal && orderToPayId && (
-          <Suspense fallback={null}>
-            <PaymentModal
-              key={orderToPayId}
-              isOpen={showPaymentModal}
-              initialMethod={initialPayMethod}
-              onClose={() => {
-                setShowPaymentModal(false)
-                setOrderToPayId(null)
-                setInitialPayMethod(undefined)
-              }}
-              orderId={orderToPayId}
-              orderTotal={currentOrder?.total ?? 0}
-              subtotal={currentOrder?.subtotal}
-              remainingBalance={currentOrder?.total ?? 0}
-              tabCards={paymentTabCards}
-              onTabCardsChanged={handleTabCardsChanged}
-              dualPricing={dualPricing}
-              paymentSettings={paymentSettings}
-              priceRounding={priceRounding}
-              onPaymentComplete={(receiptData) => {
-                const paidId = orderToPayId
-                setShowPaymentModal(false)
-                setOrderToPayId(null)
-                setInitialPayMethod(undefined)
-
-                // If we were paying a split child...
-                if (splitParentToReturnTo) {
-                  // Auto-cycle: if more splits queued from "Pay All", pay the next one
-                  if (payAllSplitsQueue.length > 0) {
-                    const nextSplitId = payAllSplitsQueue[0]
-                    setPayAllSplitsQueue(prev => prev.slice(1))
-                    clearOrder()
-                    setOrderToPayId(nextSplitId)
-                    setShowPaymentModal(true)
-                    // Skip receipt for intermediate splits — keep cycling
-                    setFloorPlanRefreshTrigger(prev => prev + 1)
-                    setTabsRefreshTrigger(prev => prev + 1)
-                    return
-                  }
-                  // Queue empty — all splits paid. Show receipt for last split only.
-                  if (paidId && receiptData) {
-                    setPreloadedReceiptData(receiptData)
-                    setReceiptOrderId(paidId)
-                    setShowReceiptModal(true)
-                  }
-                  setSavedOrderId(splitParentToReturnTo)
-                  setSplitManageMode(true)
-                  setShowSplitTicketManager(true)
-                  setSplitParentToReturnTo(null)
-                  setPayAllSplitsQueue([])
-                  clearOrder()
-                  setFloorPlanRefreshTrigger(prev => prev + 1)
-                  setTabsRefreshTrigger(prev => prev + 1)
-                  return
-                }
-
-                // Non-split payment: show receipt if provided
-                if (paidId && receiptData) {
-                  setPreloadedReceiptData(receiptData)
-                  setReceiptOrderId(paidId)
-                  setShowReceiptModal(true)
-                }
-                // Clear the order panel after payment
-                clearOrder()
-                setSavedOrderId(null)
-                setOrderSent(false)
-                setSelectedOrderType(null)
-                setOrderCustomFields({})
-                setTabsRefreshTrigger(prev => prev + 1)
-                setFloorPlanRefreshTrigger(prev => prev + 1)
-              }}
-              employeeId={employee?.id}
-              terminalId={TERMINAL_ID}
-              locationId={employee?.location?.id}
-              waitForOrderReady={async () => {
-                if (orderReadyPromiseRef.current) {
-                  await orderReadyPromiseRef.current
-                  orderReadyPromiseRef.current = null
-                }
-              }}
-            />
-          </Suspense>
-        )}
-        <Suspense fallback={null}>
-          <ReceiptModal
-            isOpen={showReceiptModal}
-            onClose={() => {
-              if (receiptOrderId) {
-                setPaidOrderId(receiptOrderId)
-              }
-              setShowReceiptModal(false)
-              setReceiptOrderId(null)
-              setPreloadedReceiptData(null)
-            }}
-            orderId={receiptOrderId}
-            locationId={employee.location?.id || ''}
-            receiptSettings={receiptSettings}
-            preloadedData={preloadedReceiptData}
-          />
-        </Suspense>
-        <Suspense fallback={null}>
-          <TipAdjustmentOverlay
-            isOpen={showTipAdjustment}
-            onClose={() => setShowTipAdjustment(false)}
-            locationId={employee?.location?.id}
-            employeeId={employee?.id}
-          />
-        </Suspense>
-
-        {/* Card-First Tab Flow Modal */}
-        {showCardTabFlow && cardTabOrderId && employee && (
-          <Suspense fallback={null}>
-          <Modal isOpen={showCardTabFlow && !!cardTabOrderId && !!employee} onClose={() => setShowCardTabFlow(false)} size="md">
-            <div className="rounded-2xl shadow-2xl w-full overflow-hidden -m-5" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid rgba(255,255,255,0.1)' }}>
-              <CardFirstTabFlow
-                orderId={cardTabOrderId}
-                readerId="reader-1"
-                employeeId={employee.id}
-                onComplete={async (result) => {
-                  setShowCardTabFlow(false)
-                  if (result.approved) {
-                    // Capture only UNSAVED items (temp IDs) — saveItemToDb already persisted the rest
-                    const store = useOrderStore.getState()
-                    const allItems = store.currentOrder?.items || []
-                    const capturedItems = allItems.filter(i => isTempId(i.id))
-                    const orderId = cardTabOrderId!
-                    const capturedEmployeeId = employee?.id
-
-                    // Clear UI instantly — ready for next customer
-                    setTabCardInfo({
-                      cardholderName: result.cardholderName,
-                      cardLast4: result.cardLast4,
-                      cardType: result.cardType,
-                    })
-                    toast.success(`Tab opened — •••${result.cardLast4}`)
-                    // Use raw Zustand clearOrder (local-only) — NOT activeOrder.clearOrder
-                    // which PATCHes the draft to 'cancelled' in DB. The card-tab order is
-                    // actively being sent by the fire-and-forget block below.
-                    useOrderStore.getState().clearOrder()
-                    setSavedOrderId(null)
-                    setOrderSent(false)
-                    setSelectedOrderType(null)
-                    setOrderCustomFields({})
-                    setCardTabOrderId(null)
-                    startOrder('bar_tab')
-
-                    // Fire-and-forget: append items + update tabName + send + auto-increment
-                    void (async () => {
-                      try {
-                        // Append unsaved items to the draft shell
-                        // (items with real IDs were already persisted by saveItemToDb)
-                        if (capturedItems.length > 0) {
-                          const appendRes = await fetch(`/api/orders/${orderId}/items`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              items: capturedItems.map(item => ({
-                                menuItemId: item.menuItemId,
-                                name: item.name,
-                                price: item.price,
-                                quantity: item.quantity,
-                                modifiers: (item.modifiers || []).map(m => ({
-                                  modifierId: m.modifierId || m.id,
-                                  name: m.name,
-                                  price: Number(m.price),
-                                  preModifier: m.preModifier ?? null,
-                                  depth: m.depth ?? 0,
-                                })),
-                              })),
-                            }),
-                          })
-                          if (!appendRes.ok) {
-                            const errBody = await appendRes.json().catch(() => ({}))
-                            console.error('[CardTab] Failed to append items:', appendRes.status, errBody)
-                            toast.error('Failed to save tab items — check open orders')
-                            return // Don't continue to send/auto-increment for a broken order
-                          }
-                        }
-
-                        // Update tabName from cardholder
-                        if (result.cardholderName) {
-                          await fetch(`/api/orders/${orderId}`, {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ tabName: result.cardholderName }),
-                          })
-                        }
-
-                        // Send to kitchen
-                        await fetch(`/api/orders/${orderId}/send`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ employeeId: capturedEmployeeId }),
-                        })
-
-                        // Auto-increment (fire-and-forget)
-                        fetch(`/api/orders/${orderId}/auto-increment`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ employeeId: capturedEmployeeId }),
-                        }).catch(() => {})
-                      } catch (err) {
-                        console.error('[CardTab] Background send failed:', err)
-                        toast.error('Tab may not have saved — check open orders')
-                      } finally {
-                        setTabsRefreshTrigger(prev => prev + 1)
-                      }
-                    })()
-                  } else {
-                    setCardTabOrderId(null)
-                  }
-                }}
-                onCancel={() => {
-                  setShowCardTabFlow(false)
-                  setCardTabOrderId(null)
-                }}
-              />
-            </div>
-          </Modal>
-          </Suspense>
-        )}
-
-        {/* Tab Name Prompt Modal */}
-        {/* Discount Modal */}
-        {showDiscountModal && currentOrder && savedOrderId && employee && (
-          <Suspense fallback={null}>
-            <DiscountModal
-              isOpen={showDiscountModal}
-              onClose={() => setShowDiscountModal(false)}
-              orderId={savedOrderId}
-              orderSubtotal={currentOrder.subtotal || 0}
-              locationId={employee.location?.id || ''}
-              employeeId={employee.id}
-              appliedDiscounts={appliedDiscounts}
-              onDiscountApplied={handleDiscountApplied}
-            />
-          </Suspense>
-        )}
-
-        {/* Comp/Void Modal */}
-        {showCompVoidModal && (savedOrderId || orderToPayId) && compVoidItem && employee && (
-          <Suspense fallback={null}>
-            <CompVoidModal
-              isOpen={showCompVoidModal}
-              onClose={() => {
-                setShowCompVoidModal(false)
-                setCompVoidItem(null)
-              }}
-              orderId={(savedOrderId || orderToPayId)!}
-              item={compVoidItem as OrderItem}
-              employeeId={employee.id}
-              locationId={employee.location?.id || ''}
-              onComplete={handleCompVoidComplete}
-            />
-          </Suspense>
-        )}
-
-        {/* Resend to Kitchen Modal */}
-        {resendModal && (
-          <Modal isOpen={!!resendModal} onClose={() => { setResendModal(null); setResendNote('') }} title="Resend to Kitchen" size="md">
-              <p className="text-gray-600 mb-4">
-                Resend &quot;{resendModal.itemName}&quot; to kitchen?
-              </p>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Note for kitchen (optional)
-                </label>
-                <input
-                  type="text"
-                  value={resendNote}
-                  onChange={(e) => setResendNote(e.target.value)}
-                  placeholder="e.g., Make it well done"
-                  className="w-full p-3 border rounded-lg text-lg"
-                  autoFocus
-                />
-              </div>
-              <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setResendModal(null)
-                    setResendNote('')
-                  }}
-                  disabled={resendLoading}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  className="flex-1 bg-blue-600 hover:bg-blue-700"
-                  onClick={confirmResendItem}
-                  disabled={resendLoading}
-                >
-                  {resendLoading ? 'Sending...' : 'Resend'}
-                </Button>
-              </div>
-          </Modal>
-        )}
-
-        {/* Item Transfer Modal */}
-        {showItemTransferModal && savedOrderId && employee && (
-          <Suspense fallback={null}>
-            <ItemTransferModal
-              isOpen={showItemTransferModal}
-              onClose={() => setShowItemTransferModal(false)}
-              currentOrderId={savedOrderId}
-              items={currentOrder?.items.map((item) => ({
-                id: item.id,
-                tempId: item.id,
-                name: item.name,
-                price: item.price,
-                quantity: item.quantity,
-                modifiers: item.modifiers.map((mod) => ({
-                  name: mod.name,
-                  price: mod.price,
-                })),
-                sent: item.sentToKitchen,
-              })) || []}
-              locationId={employee.location?.id || ''}
-              employeeId={employee.id}
-              onTransferComplete={async (transferredItemIds) => {
-                try {
-                  const response = await fetch(`/api/orders/${savedOrderId}`)
-                  if (response.ok) {
-                    const orderData = await response.json()
-                    // Pass raw API data — store.loadOrder handles all mapping
-                    loadOrder(orderData)
-                  }
-                } catch (error) {
-                  console.error('Failed to reload order:', error)
-                }
-              }}
-            />
-          </Suspense>
-        )}
-
-        {/* Split Check Screen */}
-        {showSplitTicketManager && (currentOrder || splitManageMode) && (
-          <Suspense fallback={null}>
-            <SplitCheckScreen
-              mode={splitManageMode ? 'manage' : 'edit'}
-              orderId={splitManageMode ? (splitParentId || savedOrderId || '') : (savedOrderId || '')}
-              parentOrderId={splitManageMode ? (splitParentId || savedOrderId || '') : undefined}
-              items={splitManageMode ? [] : splitCheckItems}
-              onClose={() => {
-                setShowSplitTicketManager(false)
-                setSplitManageMode(false)
-                setFloorPlanRefreshTrigger(prev => prev + 1) // refresh so split chips update
-              }}
-              onSplitApplied={() => {
-                // After creating splits in edit mode, switch to manage mode
-                setSplitManageMode(true)
-                setFloorPlanRefreshTrigger(prev => prev + 1)
-              }}
-              onPaySplit={(splitId) => {
-                const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
-                setSplitParentToReturnTo(parentId)
-                setShowSplitTicketManager(false)
-                setSplitManageMode(false)
-                clearOrder()
-                setOrderToPayId(splitId)
-                setShowPaymentModal(true)
-              }}
-              onPayAllSplits={(splitIds, combinedTotal) => {
-                if (splitIds.length === 0) return
-                const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
-                const combinedCardTotal = pricing.isDualPricingEnabled
-                  ? calculateCardPrice(combinedTotal, pricing.cashDiscountRate)
-                  : combinedTotal
-                setPayAllSplitsParentId(parentId)
-                setPayAllSplitsTotal(combinedTotal)
-                setPayAllSplitsCardTotal(combinedCardTotal)
-                setShowPayAllSplitsConfirm(true)
-              }}
-              onAddCard={(splitId) => {
-                setShowSplitTicketManager(false)
-                setCardTabOrderId(splitId)
-                setShowCardTabFlow(true)
-              }}
-              onAddItems={async (splitId) => {
-                setShowSplitTicketManager(false)
-                setSplitManageMode(false)
-                setEditingChildSplit(true)
-                try {
-                  const res = await fetch(`/api/orders/${splitId}?view=split`)
-                  if (res.ok) {
-                    const { data } = await res.json()
-                    useOrderStore.getState().loadOrder(data)
-                    setSavedOrderId(splitId)
-                  }
-                } catch (err) {
-                  console.error('Failed to load split order', err)
-                }
-              }}
-            />
-          </Suspense>
-        )}
-
-        {/* Kitchen Note Editor */}
-        <NoteEditModal
-          isOpen={!!activeOrderFull.noteEditTarget}
-          onClose={activeOrderFull.closeNoteEditor}
-          onSave={async (note) => {
-            if (activeOrderFull.noteEditTarget?.itemId) {
-              await activeOrderFull.saveNote(activeOrderFull.noteEditTarget.itemId, note)
-            }
-            activeOrderFull.closeNoteEditor()
-          }}
-          currentNote={activeOrderFull.noteEditTarget?.currentNote}
-          itemName={activeOrderFull.noteEditTarget?.itemName}
-        />
-
-        {/* Pay All Splits Confirmation */}
-        {showPayAllSplitsConfirm && payAllSplitsParentId && employee?.location?.id && (
-          <Suspense fallback={null}>
-            <PayAllSplitsModal
-              isOpen={showPayAllSplitsConfirm && !!payAllSplitsParentId}
-              parentOrderId={payAllSplitsParentId}
-              total={payAllSplitsTotal}
-              cardTotal={payAllSplitsCardTotal !== payAllSplitsTotal ? payAllSplitsCardTotal : undefined}
-              unpaidCount={orderSplitChips.filter(c => !c.isPaid).length}
-              terminalId={TERMINAL_ID}
-              employeeId={employee.id}
-              locationId={employee?.location?.id}
-              onPayCash={() => callPayAllSplitsAPI('cash')}
-              onPayCard={(cardResult) => callPayAllSplitsAPI('credit', cardResult)}
-              onClose={() => { setShowPayAllSplitsConfirm(false); setPayAllSplitsParentId(null); setPayAllSplitsStep('confirm') }}
-              processing={payAllSplitsProcessing}
-            />
-          </Suspense>
-        )}
-
-        {showTabNamePrompt && (
-          <Suspense fallback={null}>
-            <TabNamePromptModal
-              isOpen={showTabNamePrompt}
-              onClose={() => { setShowTabNamePrompt(false); setTabNameCallback(null) }}
-              onSubmit={(name) => {
-                if (name) {
-                  useOrderStore.getState().updateOrderType('bar_tab', { tabName: name })
-                }
-                setShowTabNamePrompt(false)
-                tabNameCallback?.()
-                setTabNameCallback(null)
-              }}
-              cardInfo={tabCardInfo}
-            />
-          </Suspense>
-        )}
-
-        {/* Time Clock Modal */}
-        <TimeClockModal
-          isOpen={showTimeClockModal}
-          onClose={() => setShowTimeClockModal(false)}
-          employeeId={employee?.id || ''}
-          employeeName={employee?.displayName || `${employee?.firstName} ${employee?.lastName}` || ''}
-          locationId={employee?.location?.id || ''}
-          onClockOut={() => {
-            if (currentShift) {
-              setShowShiftCloseoutModal(true)
-            }
-          }}
-        />
-
-        {/* Shift Start Modal */}
-        <ShiftStartModal
-          isOpen={showShiftStartModal}
-          onClose={() => setShowShiftStartModal(false)}
-          employeeId={employee?.id || ''}
-          employeeName={employee?.displayName || `${employee?.firstName} ${employee?.lastName}` || ''}
-          locationId={employee?.location?.id || ''}
-          cashHandlingMode={useAuthStore.getState().workingRole?.cashHandlingMode || employee?.availableRoles?.find(r => r.isPrimary)?.cashHandlingMode || 'drawer'}
-          workingRoleId={useAuthStore.getState().workingRole?.id || null}
-          onShiftStarted={(shiftId) => {
-            fetch(`/api/shifts/${shiftId}`)
-              .then(res => res.json())
-              .then(data => {
-                setCurrentShift({
-                  id: data.shift.id,
-                  startedAt: data.shift.startedAt,
-                  startingCash: data.shift.startingCash,
-                  employee: {
-                    ...data.shift.employee,
-                    roleId: employee?.role?.id,
-                  },
-                  locationId: employee?.location?.id,
-                })
+        {/* Shared Modals — extracted to OrderPageModals component */}
+        <OrderPageModals
+          employee={employee}
+          permissionsArray={permissionsArray}
+          showDisplaySettings={showDisplaySettings}
+          onCloseDisplaySettings={() => setShowDisplaySettings(false)}
+          displaySettings={displaySettings}
+          onUpdateSetting={updateSetting}
+          onBatchUpdateSettings={updateSettings}
+          showTabsPanel={showTabsPanel}
+          setShowTabsPanel={setShowTabsPanel}
+          isTabManagerExpanded={isTabManagerExpanded}
+          setIsTabManagerExpanded={setIsTabManagerExpanded}
+          tabsRefreshTrigger={tabsRefreshTrigger}
+          setTabsRefreshTrigger={setTabsRefreshTrigger}
+          savedOrderId={savedOrderId}
+          onSelectOpenOrder={(order) => {
+            setOrderToLoad({
+              id: order.id,
+              orderNumber: order.orderNumber,
+              tableId: order.tableId || undefined,
+              tableName: order.table?.name || undefined,
+              tabName: order.tabName || undefined,
+              orderType: order.orderType,
+            })
+            if (order.hasPreAuth && order.preAuth?.last4) {
+              setTabCardInfo({
+                cardholderName: order.cardholderName || undefined,
+                cardLast4: order.preAuth.last4,
+                cardType: order.preAuth.cardBrand,
               })
-              .catch(err => console.error('Failed to fetch shift:', err))
+            }
+            setSavedOrderId(order.id)
+            setShowTabsPanel(false)
+            setIsTabManagerExpanded(false)
           }}
-        />
+          onViewOpenOrder={(order) => {
+            setOrderToLoad({
+              id: order.id,
+              orderNumber: order.orderNumber,
+              tableId: order.tableId || undefined,
+              tableName: order.table?.name || undefined,
+              tabName: order.tabName || undefined,
+              orderType: order.orderType,
+            })
+            if (order.hasPreAuth && order.preAuth?.last4) {
+              setTabCardInfo({
+                cardholderName: order.cardholderName || undefined,
+                cardLast4: order.preAuth.last4,
+                cardType: order.preAuth.cardBrand,
+              })
+            }
+            setSavedOrderId(order.id)
+            setShowTabsPanel(false)
+            setIsTabManagerExpanded(false)
+          }}
+          onNewTab={() => {
+            setShowTabsPanel(false)
+            setIsTabManagerExpanded(false)
+          }}
+          onClosedOrderAction={() => setTabsRefreshTrigger(prev => prev + 1)}
+          onOpenTipAdjustment={() => setShowTipAdjustment(true)}
+          onViewReceipt={(orderId) => {
+            setReceiptOrderId(orderId)
+            setShowReceiptModal(true)
+          }}
+          showModifierModal={showModifierModal}
+          setShowModifierModal={setShowModifierModal}
+          selectedItem={selectedItem}
+          setSelectedItem={setSelectedItem}
+          itemModifierGroups={itemModifierGroups}
+          setItemModifierGroups={setItemModifierGroups}
+          loadingModifiers={loadingModifiers}
+          editingOrderItem={editingOrderItem}
+          setEditingOrderItem={setEditingOrderItem}
+          dualPricing={dualPricing}
+          inlineModifierCallbackRef={inlineModifierCallbackRef}
+          onAddItemWithModifiers={handleAddItemWithModifiers}
+          onUpdateItemWithModifiers={handleUpdateItemWithModifiers}
+          showPizzaModal={showPizzaModal}
+          setShowPizzaModal={setShowPizzaModal}
+          selectedPizzaItem={selectedPizzaItem}
+          setSelectedPizzaItem={setSelectedPizzaItem}
+          editingPizzaItem={editingPizzaItem}
+          setEditingPizzaItem={setEditingPizzaItem}
+          inlinePizzaCallbackRef={inlinePizzaCallbackRef}
+          onAddPizzaToOrder={handleAddPizzaToOrder}
+          showEntertainmentStart={showEntertainmentStart}
+          setShowEntertainmentStart={setShowEntertainmentStart}
+          entertainmentItem={entertainmentItem}
+          setEntertainmentItem={setEntertainmentItem}
+          onStartEntertainmentWithCurrentOrder={handleStartEntertainmentWithCurrentOrder}
+          onStartEntertainmentWithNewTab={handleStartEntertainmentWithNewTab}
+          onStartEntertainmentWithExistingTab={handleStartEntertainmentWithExistingTab}
+          showTimedRentalModal={showTimedRentalModal}
+          setShowTimedRentalModal={setShowTimedRentalModal}
+          selectedTimedItem={selectedTimedItem}
+          setSelectedTimedItem={setSelectedTimedItem}
+          inlineTimedRentalCallbackRef={inlineTimedRentalCallbackRef}
+          onStartTimedSession={handleStartTimedSession}
+          loadingSession={loadingSession}
+          showPaymentModal={showPaymentModal}
+          setShowPaymentModal={setShowPaymentModal}
+          orderToPayId={orderToPayId}
+          setOrderToPayId={setOrderToPayId}
+          initialPayMethod={initialPayMethod}
+          setInitialPayMethod={setInitialPayMethod}
+          paymentTabCards={paymentTabCards}
+          onTabCardsChanged={handleTabCardsChanged}
+          paymentSettings={paymentSettings}
+          priceRounding={priceRounding}
+          currentOrder={currentOrder}
+          onPaymentComplete={(receiptData) => {
+            const paidId = orderToPayId
+            setShowPaymentModal(false)
+            setOrderToPayId(null)
+            setInitialPayMethod(undefined)
 
-        {/* Shift Closeout Modal */}
-        {currentShift && (
-          <Suspense fallback={null}>
-            <ShiftCloseoutModal
-              isOpen={showShiftCloseoutModal}
-              onClose={() => setShowShiftCloseoutModal(false)}
-              shift={currentShift}
-              onCloseoutComplete={() => {
-                setCurrentShift(null)
-              }}
-              permissions={permissionsArray}
-              cashHandlingMode={useAuthStore.getState().workingRole?.cashHandlingMode || employee?.availableRoles?.find(r => r.isPrimary)?.cashHandlingMode || 'drawer'}
-            />
-          </Suspense>
-        )}
+            if (splitParentToReturnTo) {
+              if (payAllSplitsQueue.length > 0) {
+                const nextSplitId = payAllSplitsQueue[0]
+                setPayAllSplitsQueue(prev => prev.slice(1))
+                clearOrder()
+                setOrderToPayId(nextSplitId)
+                setShowPaymentModal(true)
+                setFloorPlanRefreshTrigger(prev => prev + 1)
+                setTabsRefreshTrigger(prev => prev + 1)
+                return
+              }
+              if (paidId && receiptData) {
+                setPreloadedReceiptData(receiptData)
+                setReceiptOrderId(paidId)
+                setShowReceiptModal(true)
+              }
+              setSavedOrderId(splitParentToReturnTo)
+              setSplitManageMode(true)
+              setShowSplitTicketManager(true)
+              setSplitParentToReturnTo(null)
+              setPayAllSplitsQueue([])
+              clearOrder()
+              setFloorPlanRefreshTrigger(prev => prev + 1)
+              setTabsRefreshTrigger(prev => prev + 1)
+              return
+            }
+
+            if (paidId && receiptData) {
+              setPreloadedReceiptData(receiptData)
+              setReceiptOrderId(paidId)
+              setShowReceiptModal(true)
+            }
+            clearOrder()
+            setSavedOrderId(null)
+            setOrderSent(false)
+            setSelectedOrderType(null)
+            setOrderCustomFields({})
+            setTabsRefreshTrigger(prev => prev + 1)
+            setFloorPlanRefreshTrigger(prev => prev + 1)
+          }}
+          orderReadyPromiseRef={orderReadyPromiseRef}
+          terminalId={TERMINAL_ID}
+          showReceiptModal={showReceiptModal}
+          setShowReceiptModal={setShowReceiptModal}
+          receiptOrderId={receiptOrderId}
+          setReceiptOrderId={setReceiptOrderId}
+          preloadedReceiptData={preloadedReceiptData}
+          setPreloadedReceiptData={setPreloadedReceiptData}
+          receiptSettings={receiptSettings}
+          setPaidOrderId={setPaidOrderId}
+          showTipAdjustment={showTipAdjustment}
+          setShowTipAdjustment={setShowTipAdjustment}
+          showCardTabFlow={showCardTabFlow}
+          setShowCardTabFlow={setShowCardTabFlow}
+          cardTabOrderId={cardTabOrderId}
+          onCardTabComplete={async (result) => {
+            setShowCardTabFlow(false)
+            if (result.approved) {
+              const store = useOrderStore.getState()
+              const allItems = store.currentOrder?.items || []
+              const capturedItems = allItems.filter(i => isTempId(i.id))
+              const orderId = cardTabOrderId!
+              const capturedEmployeeId = employee?.id
+
+              setTabCardInfo({
+                cardholderName: result.cardholderName,
+                cardLast4: result.cardLast4,
+                cardType: result.cardType,
+              })
+              toast.success(`Tab opened — •••${result.cardLast4}`)
+              useOrderStore.getState().clearOrder()
+              setSavedOrderId(null)
+              setOrderSent(false)
+              setSelectedOrderType(null)
+              setOrderCustomFields({})
+              setCardTabOrderId(null)
+              startOrder('bar_tab')
+
+              void (async () => {
+                try {
+                  if (capturedItems.length > 0) {
+                    const appendRes = await fetch(`/api/orders/${orderId}/items`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        items: capturedItems.map(item => ({
+                          menuItemId: item.menuItemId,
+                          name: item.name,
+                          price: item.price,
+                          quantity: item.quantity,
+                          modifiers: (item.modifiers || []).map(m => ({
+                            modifierId: m.modifierId || m.id,
+                            name: m.name,
+                            price: Number(m.price),
+                            preModifier: m.preModifier ?? null,
+                            depth: m.depth ?? 0,
+                          })),
+                        })),
+                      }),
+                    })
+                    if (!appendRes.ok) {
+                      const errBody = await appendRes.json().catch(() => ({}))
+                      console.error('[CardTab] Failed to append items:', appendRes.status, errBody)
+                      toast.error('Failed to save tab items — check open orders')
+                      return
+                    }
+                  }
+
+                  if (result.cardholderName) {
+                    await fetch(`/api/orders/${orderId}`, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ tabName: result.cardholderName }),
+                    })
+                  }
+
+                  await fetch(`/api/orders/${orderId}/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employeeId: capturedEmployeeId }),
+                  })
+
+                  fetch(`/api/orders/${orderId}/auto-increment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ employeeId: capturedEmployeeId }),
+                  }).catch(() => {})
+                } catch (err) {
+                  console.error('[CardTab] Background send failed:', err)
+                  toast.error('Tab may not have saved — check open orders')
+                } finally {
+                  setTabsRefreshTrigger(prev => prev + 1)
+                }
+              })()
+            } else {
+              setCardTabOrderId(null)
+            }
+          }}
+          onCardTabCancel={() => {
+            setShowCardTabFlow(false)
+            setCardTabOrderId(null)
+          }}
+          showDiscountModal={showDiscountModal}
+          setShowDiscountModal={setShowDiscountModal}
+          appliedDiscounts={appliedDiscounts}
+          onDiscountApplied={handleDiscountApplied}
+          showCompVoidModal={showCompVoidModal}
+          setShowCompVoidModal={setShowCompVoidModal}
+          compVoidItem={compVoidItem}
+          setCompVoidItem={setCompVoidItem}
+          onCompVoidComplete={handleCompVoidComplete}
+          resendModal={resendModal}
+          setResendModal={setResendModal}
+          resendNote={resendNote}
+          setResendNote={setResendNote}
+          resendLoading={resendLoading}
+          onConfirmResend={confirmResendItem}
+          showItemTransferModal={showItemTransferModal}
+          setShowItemTransferModal={setShowItemTransferModal}
+          onTransferComplete={async () => {
+            try {
+              const response = await fetch(`/api/orders/${savedOrderId}`)
+              if (response.ok) {
+                const orderData = await response.json()
+                loadOrder(orderData)
+              }
+            } catch (error) {
+              console.error('Failed to reload order:', error)
+            }
+          }}
+          showSplitTicketManager={showSplitTicketManager}
+          setShowSplitTicketManager={setShowSplitTicketManager}
+          splitManageMode={splitManageMode}
+          setSplitManageMode={setSplitManageMode}
+          splitParentId={splitParentId}
+          splitCheckItems={splitCheckItems}
+          setFloorPlanRefreshTrigger={setFloorPlanRefreshTrigger}
+          splitParentToReturnTo={splitParentToReturnTo}
+          setSplitParentToReturnTo={setSplitParentToReturnTo}
+          payAllSplitsQueue={payAllSplitsQueue}
+          setPayAllSplitsQueue={setPayAllSplitsQueue}
+          editingChildSplit={editingChildSplit}
+          setEditingChildSplit={setEditingChildSplit}
+          setSavedOrderId={setSavedOrderId}
+          clearOrder={clearOrder}
+          setOrderSent={setOrderSent}
+          onSplitApplied={() => {
+            setSplitManageMode(true)
+            setFloorPlanRefreshTrigger(prev => prev + 1)
+          }}
+          onPaySplit={(splitId) => {
+            const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
+            setSplitParentToReturnTo(parentId)
+            setShowSplitTicketManager(false)
+            setSplitManageMode(false)
+            clearOrder()
+            setOrderToPayId(splitId)
+            setShowPaymentModal(true)
+          }}
+          onPayAllSplits={(splitIds, combinedTotal) => {
+            if (splitIds.length === 0) return
+            const parentId = splitParentId || savedOrderId || useOrderStore.getState().currentOrder?.id || ''
+            const combinedCardTotal = pricing.isDualPricingEnabled
+              ? calculateCardPrice(combinedTotal, pricing.cashDiscountRate)
+              : combinedTotal
+            setPayAllSplitsParentId(parentId)
+            setPayAllSplitsTotal(combinedTotal)
+            setPayAllSplitsCardTotal(combinedCardTotal)
+            setShowPayAllSplitsConfirm(true)
+          }}
+          onAddCard={(splitId) => {
+            setShowSplitTicketManager(false)
+            setCardTabOrderId(splitId)
+            setShowCardTabFlow(true)
+          }}
+          onAddItems={async (splitId) => {
+            setShowSplitTicketManager(false)
+            setSplitManageMode(false)
+            setEditingChildSplit(true)
+            try {
+              const res = await fetch(`/api/orders/${splitId}?view=split`)
+              if (res.ok) {
+                const { data } = await res.json()
+                useOrderStore.getState().loadOrder(data)
+                setSavedOrderId(splitId)
+              }
+            } catch (err) {
+              console.error('Failed to load split order', err)
+            }
+          }}
+          noteEditTarget={activeOrderFull.noteEditTarget}
+          closeNoteEditor={activeOrderFull.closeNoteEditor}
+          saveNote={activeOrderFull.saveNote}
+          showPayAllSplitsConfirm={showPayAllSplitsConfirm}
+          setShowPayAllSplitsConfirm={setShowPayAllSplitsConfirm}
+          payAllSplitsParentId={payAllSplitsParentId}
+          setPayAllSplitsParentId={setPayAllSplitsParentId}
+          payAllSplitsTotal={payAllSplitsTotal}
+          payAllSplitsCardTotal={payAllSplitsCardTotal}
+          setPayAllSplitsStep={setPayAllSplitsStep}
+          payAllSplitsProcessing={payAllSplitsProcessing}
+          orderSplitChips={orderSplitChips}
+          onPayAllCash={() => callPayAllSplitsAPI('cash')}
+          onPayAllCard={(cardResult) => callPayAllSplitsAPI('credit', cardResult)}
+          showTabNamePrompt={showTabNamePrompt}
+          setShowTabNamePrompt={setShowTabNamePrompt}
+          tabNameCallback={tabNameCallback}
+          setTabNameCallback={setTabNameCallback}
+          tabCardInfo={tabCardInfo}
+          showTimeClockModal={showTimeClockModal}
+          setShowTimeClockModal={setShowTimeClockModal}
+          currentShift={currentShift}
+          setCurrentShift={setCurrentShift}
+          setShowShiftCloseoutModal={setShowShiftCloseoutModal}
+          showShiftStartModal={showShiftStartModal}
+          setShowShiftStartModal={setShowShiftStartModal}
+          showShiftCloseoutModal={showShiftCloseoutModal}
+          pricing={pricing}
+        />
       </div>
     )
   }

@@ -9,14 +9,11 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { FloorCanvasAPI } from '../canvas';
-import type { Fixture, Point, FixtureGeometry } from '../shared/types';
+import type { Fixture, Point } from '../shared/types';
 import type { EditorToolMode, FixtureType, EditorTable, TableShape, EditorSeat } from './types';
 import { getFixtureTypeMetadata, getTableShapeMetadata } from './types';
-import { TableRenderer, type ResizeHandle } from './TableRenderer';
-import { SeatRenderer } from './SeatRenderer';
-import { EntertainmentVisual, type EntertainmentVisualType } from '@/components/floor-plan/entertainment-visuals';
+import { type ResizeHandle } from './TableRenderer';
 import { useZoomPan } from './hooks/useZoomPan';
-import { FixtureResizeHandles } from './components/FixtureResizeHandles';
 import {
   SEAT_RADIUS,
   SEAT_HIT_RADIUS,
@@ -30,6 +27,31 @@ import {
 } from '@/lib/floorplan/constants';
 import { logger } from '@/lib/logger';
 
+// Extracted pure math modules
+import {
+  checkTableFixtureCollision,
+  checkTableCollision,
+  checkSeatCollision,
+} from './collisionDetection';
+import {
+  calculateAvailableSpace,
+  compressSeatsToFit,
+  type AvailableSpace,
+} from './spaceCalculation';
+import {
+  screenToFloor as screenToFloorFn,
+  calculateAngle as calculateAngleFn,
+} from './coordinateTransform';
+
+// Extracted render helpers
+import {
+  renderFixtures as renderFixturesFn,
+  renderEntertainmentElements as renderEntertainmentElementsFn,
+  renderTables as renderTablesFn,
+  renderSeats as renderSeatsFn,
+  renderPreview as renderPreviewFn,
+} from './editorCanvasRenderers';
+
 // =============================================================================
 // TYPES
 // =============================================================================
@@ -41,14 +63,6 @@ interface VirtualFloorPlan {
   widthFeet: number;
   heightFeet: number;
   gridSizeFeet: number;
-}
-
-// Available space around a table (in pixels)
-interface AvailableSpace {
-  top: number;    // pixels to nearest obstacle above
-  bottom: number; // pixels to nearest obstacle below
-  left: number;   // pixels to nearest obstacle left
-  right: number;  // pixels to nearest obstacle right
 }
 
 interface EditorCanvasProps {
@@ -192,386 +206,36 @@ export function EditorCanvas({
   const [showBoundaryDebug, setShowBoundaryDebug] = useState(false);
 
 
-  // Constants imported from @/lib/floorplan/constants
+  // Resolved lists for collision/space helpers
+  const fixtureList = useDatabase ? (dbFixtures || []) : fixtures;
+  const tableList = useDatabase ? (dbTables || []) : tables;
 
-  // Check if a table would collide with any fixture
-  const checkTableFixtureCollision = useCallback((
-    tablePosX: number,  // in pixels
-    tablePosY: number,  // in pixels
-    tableWidth: number, // in pixels
-    tableHeight: number // in pixels
+  // Collision detection wrappers (delegate to pure functions)
+  const checkTableFixtureCollisionCb = useCallback((
+    tablePosX: number, tablePosY: number, tableWidth: number, tableHeight: number
   ): boolean => {
-    const fixtureList = useDatabase ? (dbFixtures || []) : fixtures;
+    return checkTableFixtureCollision(tablePosX, tablePosY, tableWidth, tableHeight, fixtureList);
+  }, [fixtureList]);
 
-    for (const fixture of fixtureList) {
-      if (fixture.geometry.type === 'rectangle') {
-        // Convert fixture position from feet to pixels
-        const fx = FloorCanvasAPI.feetToPixels(fixture.geometry.position.x);
-        const fy = FloorCanvasAPI.feetToPixels(fixture.geometry.position.y);
-        const fw = FloorCanvasAPI.feetToPixels(fixture.geometry.width);
-        const fh = FloorCanvasAPI.feetToPixels(fixture.geometry.height);
-
-        // AABB collision check
-        if (tablePosX < fx + fw &&
-            tablePosX + tableWidth > fx &&
-            tablePosY < fy + fh &&
-            tablePosY + tableHeight > fy) {
-          return true;
-        }
-      } else if (fixture.geometry.type === 'circle') {
-        // Convert circle center and radius from feet to pixels
-        const cx = FloorCanvasAPI.feetToPixels(fixture.geometry.center.x);
-        const cy = FloorCanvasAPI.feetToPixels(fixture.geometry.center.y);
-        const cr = FloorCanvasAPI.feetToPixels(fixture.geometry.radius);
-
-        // Simple bounding box check for circle
-        if (tablePosX < cx + cr &&
-            tablePosX + tableWidth > cx - cr &&
-            tablePosY < cy + cr &&
-            tablePosY + tableHeight > cy - cr) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }, [useDatabase, dbFixtures, fixtures]);
-
-  // Check if a table would collide with any other table
-  const checkTableCollision = useCallback((
-    tablePosX: number,   // in pixels
-    tablePosY: number,   // in pixels
-    tableWidth: number,  // in pixels
-    tableHeight: number, // in pixels
-    excludeTableId?: string  // Table being moved (exclude from collision check)
+  const checkTableCollisionCb = useCallback((
+    tablePosX: number, tablePosY: number, tableWidth: number, tableHeight: number, excludeTableId?: string
   ): boolean => {
-    const tableList = useDatabase ? (dbTables || []) : tables;
+    return checkTableCollision(tablePosX, tablePosY, tableWidth, tableHeight, tableList, excludeTableId);
+  }, [tableList]);
 
-    for (const table of tableList) {
-      // Skip the table being moved
-      if (excludeTableId && table.id === excludeTableId) {
-        continue;
-      }
-
-      // AABB collision check
-      if (tablePosX < table.posX + table.width &&
-          tablePosX + tableWidth > table.posX &&
-          tablePosY < table.posY + table.height &&
-          tablePosY + tableHeight > table.posY) {
-        return true; // Collision detected
-      }
-    }
-    return false;
-  }, [useDatabase, dbTables, tables]);
-
-  // Check if a seat position collides with other seats
-  const checkSeatCollision = useCallback((
-    posX: number,
-    posY: number,
-    tableId: string,
-    excludeSeatId?: string
+  const checkSeatCollisionCb = useCallback((
+    posX: number, posY: number, tableId: string, excludeSeatId?: string
   ): boolean => {
-    const tableSeats = seats.filter(s => s.tableId === tableId && s.id !== excludeSeatId);
-    const table = tables.find(t => t.id === tableId);
-    if (!table) return false;
-
-    const tableCenterX = table.posX + table.width / 2;
-    const tableCenterY = table.posY + table.height / 2;
-
-    for (const seat of tableSeats) {
-      // Calculate absolute position of existing seat
-      const seatAbsX = tableCenterX + seat.relativeX;
-      const seatAbsY = tableCenterY + seat.relativeY;
-
-      // Check distance between seat centers
-      const distance = Math.hypot(posX - seatAbsX, posY - seatAbsY);
-
-      // Collision if distance < 2 * SEAT_COLLISION_RADIUS (seats touching)
-      if (distance < SEAT_COLLISION_RADIUS * 2 + 4) { // Using smaller collision radius
-        return true;
-      }
-    }
-    return false;
+    return checkSeatCollision(posX, posY, tableId, seats, tables, excludeSeatId);
   }, [seats, tables]);
 
-  // Check if any seat of a table would collide with obstacles at a given table position
-  const checkSeatsObstacleCollision = useCallback((
-    tableId: string,
-    newTablePosX: number,
-    newTablePosY: number,
-    tableWidth: number,
-    tableHeight: number,
-    tableRotation: number = 0
-  ): boolean => {
-    // Get seats for this table
-    const tableSeats = seats.filter(s => s.tableId === tableId);
-    if (tableSeats.length === 0) return false;
-
-    const tableCenterX = newTablePosX + tableWidth / 2;
-    const tableCenterY = newTablePosY + tableHeight / 2;
-    const rotation = tableRotation * Math.PI / 180;
-    const cos = Math.cos(rotation);
-    const sin = Math.sin(rotation);
-
-    // Check each seat against all obstacles
-    for (const seat of tableSeats) {
-      // Calculate absolute seat position at the new table location
-      const rotatedX = seat.relativeX * cos - seat.relativeY * sin;
-      const rotatedY = seat.relativeX * sin + seat.relativeY * cos;
-      const seatAbsX = tableCenterX + rotatedX;
-      const seatAbsY = tableCenterY + rotatedY;
-
-      // Check against other tables (exclude current table)
-      const tableList = useDatabase ? (dbTables || []) : tables;
-      for (const otherTable of tableList) {
-        if (otherTable.id === tableId) continue;
-
-        // Simple AABB check with seat radius
-        if (seatAbsX + SEAT_RADIUS > otherTable.posX &&
-            seatAbsX - SEAT_RADIUS < otherTable.posX + otherTable.width &&
-            seatAbsY + SEAT_RADIUS > otherTable.posY &&
-            seatAbsY - SEAT_RADIUS < otherTable.posY + otherTable.height) {
-          return true; // Collision with another table
-        }
-
-        // Check against seats of other tables
-        const otherTableSeats = seats.filter(s => s.tableId === otherTable.id);
-        const otherTableCenterX = otherTable.posX + otherTable.width / 2;
-        const otherTableCenterY = otherTable.posY + otherTable.height / 2;
-        const otherRotation = (otherTable.rotation || 0) * Math.PI / 180;
-        const otherCos = Math.cos(otherRotation);
-        const otherSin = Math.sin(otherRotation);
-
-        for (const otherSeat of otherTableSeats) {
-          const otherRotatedX = otherSeat.relativeX * otherCos - otherSeat.relativeY * otherSin;
-          const otherRotatedY = otherSeat.relativeX * otherSin + otherSeat.relativeY * otherCos;
-          const otherSeatAbsX = otherTableCenterX + otherRotatedX;
-          const otherSeatAbsY = otherTableCenterY + otherRotatedY;
-
-          const distance = Math.hypot(seatAbsX - otherSeatAbsX, seatAbsY - otherSeatAbsY);
-          if (distance < SEAT_COLLISION_RADIUS * 2 + 4) {
-            return true; // Collision with seat from another table
-          }
-        }
-      }
-
-      // Check against fixtures
-      const fixtureList = useDatabase ? (dbFixtures || []) : fixtures;
-      for (const fixture of fixtureList) {
-        if (fixture.geometry.type === 'rectangle') {
-          const fx = FloorCanvasAPI.feetToPixels(fixture.geometry.position.x);
-          const fy = FloorCanvasAPI.feetToPixels(fixture.geometry.position.y);
-          const fw = FloorCanvasAPI.feetToPixels(fixture.geometry.width);
-          const fh = FloorCanvasAPI.feetToPixels(fixture.geometry.height);
-
-          if (seatAbsX + SEAT_RADIUS > fx &&
-              seatAbsX - SEAT_RADIUS < fx + fw &&
-              seatAbsY + SEAT_RADIUS > fy &&
-              seatAbsY - SEAT_RADIUS < fy + fh) {
-            return true; // Collision with fixture
-          }
-        } else if (fixture.geometry.type === 'circle') {
-          const cx = FloorCanvasAPI.feetToPixels(fixture.geometry.center.x);
-          const cy = FloorCanvasAPI.feetToPixels(fixture.geometry.center.y);
-          const cr = FloorCanvasAPI.feetToPixels(fixture.geometry.radius);
-
-          const dist = Math.hypot(seatAbsX - cx, seatAbsY - cy);
-          if (dist < cr + SEAT_RADIUS) {
-            return true; // Collision with circular fixture
-          }
-        }
-        // Lines (walls) - simplified bounding box check
-        else if (fixture.geometry.type === 'line') {
-          const { start, end } = fixture.geometry;
-          const thickness = fixture.thickness || 0.5;
-          const x1 = FloorCanvasAPI.feetToPixels(Math.min(start.x, end.x) - thickness);
-          const x2 = FloorCanvasAPI.feetToPixels(Math.max(start.x, end.x) + thickness);
-          const y1 = FloorCanvasAPI.feetToPixels(Math.min(start.y, end.y) - thickness);
-          const y2 = FloorCanvasAPI.feetToPixels(Math.max(start.y, end.y) + thickness);
-
-          if (seatAbsX + SEAT_RADIUS > x1 &&
-              seatAbsX - SEAT_RADIUS < x2 &&
-              seatAbsY + SEAT_RADIUS > y1 &&
-              seatAbsY - SEAT_RADIUS < y2) {
-            return true; // Collision with wall
-          }
-        }
-      }
-    }
-
-    return false; // No collisions
-  }, [seats, tables, fixtures, useDatabase, dbTables, dbFixtures]);
-
-  // Calculate available space around a table (in pixels)
-  const calculateAvailableSpace = useCallback((
-    tableId: string,
-    tablePosX: number,
-    tablePosY: number,
-    tableWidth: number,
-    tableHeight: number,
-    tableRotation: number = 0
+  // Space calculation wrappers (delegate to pure functions)
+  const calculateAvailableSpaceCb = useCallback((
+    tableId: string, tablePosX: number, tablePosY: number,
+    tableWidth: number, tableHeight: number, tableRotation: number = 0
   ): AvailableSpace => {
-    // Default to maximum boundary if no obstacles nearby
-    const defaultSpace = SEAT_BOUNDARY_DISTANCE + SEAT_RADIUS;
-    let topSpace = defaultSpace;
-    let bottomSpace = defaultSpace;
-    let leftSpace = defaultSpace;
-    let rightSpace = defaultSpace;
-
-    const tableList = useDatabase ? (dbTables || []) : tables;
-    const fixtureList = useDatabase ? (dbFixtures || []) : fixtures;
-
-    // For simplicity, assume rectangular bounding box (ignore rotation for obstacle distance)
-    const tableTop = tablePosY;
-    const tableBottom = tablePosY + tableHeight;
-    const tableLeft = tablePosX;
-    const tableRight = tablePosX + tableWidth;
-
-    // Check distance to other tables
-    for (const otherTable of tableList) {
-      if (otherTable.id === tableId) continue;
-
-      const otherTop = otherTable.posY;
-      const otherBottom = otherTable.posY + otherTable.height;
-      const otherLeft = otherTable.posX;
-      const otherRight = otherTable.posX + otherTable.width;
-
-      // Check if tables are aligned horizontally (check top/bottom space)
-      if (!(tableRight < otherLeft || tableLeft > otherRight)) {
-        // Tables overlap horizontally, check vertical distance
-        if (otherBottom <= tableTop) {
-          // Other table is above
-          const distance = tableTop - otherBottom;
-          topSpace = Math.min(topSpace, distance);
-        } else if (otherTop >= tableBottom) {
-          // Other table is below
-          const distance = otherTop - tableBottom;
-          bottomSpace = Math.min(bottomSpace, distance);
-        }
-      }
-
-      // Check if tables are aligned vertically (check left/right space)
-      if (!(tableBottom < otherTop || tableTop > otherBottom)) {
-        // Tables overlap vertically, check horizontal distance
-        if (otherRight <= tableLeft) {
-          // Other table is to the left
-          const distance = tableLeft - otherRight;
-          leftSpace = Math.min(leftSpace, distance);
-        } else if (otherLeft >= tableRight) {
-          // Other table is to the right
-          const distance = otherLeft - tableRight;
-          rightSpace = Math.min(rightSpace, distance);
-        }
-      }
-    }
-
-    // Check distance to fixtures
-    for (const fixture of fixtureList) {
-      if (fixture.geometry.type === 'rectangle') {
-        const fx = FloorCanvasAPI.feetToPixels(fixture.geometry.position.x);
-        const fy = FloorCanvasAPI.feetToPixels(fixture.geometry.position.y);
-        const fw = FloorCanvasAPI.feetToPixels(fixture.geometry.width);
-        const fh = FloorCanvasAPI.feetToPixels(fixture.geometry.height);
-
-        const fixtureTop = fy;
-        const fixtureBottom = fy + fh;
-        const fixtureLeft = fx;
-        const fixtureRight = fx + fw;
-
-        // Check horizontal alignment
-        if (!(tableRight < fixtureLeft || tableLeft > fixtureRight)) {
-          if (fixtureBottom <= tableTop) {
-            const distance = tableTop - fixtureBottom;
-            topSpace = Math.min(topSpace, distance);
-          } else if (fixtureTop >= tableBottom) {
-            const distance = fixtureTop - tableBottom;
-            bottomSpace = Math.min(bottomSpace, distance);
-          }
-        }
-
-        // Check vertical alignment
-        if (!(tableBottom < fixtureTop || tableTop > fixtureBottom)) {
-          if (fixtureRight <= tableLeft) {
-            const distance = tableLeft - fixtureRight;
-            leftSpace = Math.min(leftSpace, distance);
-          } else if (fixtureLeft >= tableRight) {
-            const distance = fixtureLeft - tableRight;
-            rightSpace = Math.min(rightSpace, distance);
-          }
-        }
-      }
-      // Simplified: treat circles and lines as not affecting space for now
-      // (more complex geometry would require more sophisticated calculations)
-    }
-
-    return {
-      top: Math.max(0, topSpace),
-      bottom: Math.max(0, bottomSpace),
-      left: Math.max(0, leftSpace),
-      right: Math.max(0, rightSpace),
-    };
-  }, [tables, fixtures, useDatabase, dbTables, dbFixtures]);
-
-  // Compress seats to fit within available space
-  const compressSeatsToFit = useCallback((
-    tableId: string,
-    tableSeats: EditorSeat[],
-    table: EditorTable,
-    availableSpace: AvailableSpace
-  ): EditorSeat[] => {
-    if (tableSeats.length === 0) return tableSeats;
-
-    const halfWidth = table.width / 2;
-    const halfHeight = table.height / 2;
-
-    return tableSeats.map((seat) => {
-      const absX = Math.abs(seat.relativeX);
-      const absY = Math.abs(seat.relativeY);
-
-      // Determine which side the seat is on
-      const normalizedX = absX / halfWidth;
-      const normalizedY = absY / halfHeight;
-
-      let newRelativeX = seat.relativeX;
-      let newRelativeY = seat.relativeY;
-
-      // Calculate dynamic offset for each side based on available space
-      const baseOffset = 25; // Default offset from table edge
-
-      if (normalizedY >= normalizedX) {
-        // Seat is on top or bottom edge
-        const direction = seat.relativeY >= 0 ? 1 : -1;
-        const availableOnSide = direction > 0 ? availableSpace.bottom : availableSpace.top;
-
-        // Calculate dynamic offset (compressed if space is tight)
-        const dynamicOffset = Math.max(
-          SEAT_MIN_DISTANCE,
-          Math.min(baseOffset, availableOnSide - SEAT_RADIUS)
-        );
-
-        // Apply dynamic offset
-        newRelativeY = direction * (halfHeight + dynamicOffset);
-      } else {
-        // Seat is on left or right edge
-        const direction = seat.relativeX >= 0 ? 1 : -1;
-        const availableOnSide = direction > 0 ? availableSpace.right : availableSpace.left;
-
-        // Calculate dynamic offset (compressed if space is tight)
-        const dynamicOffset = Math.max(
-          SEAT_MIN_DISTANCE,
-          Math.min(baseOffset, availableOnSide - SEAT_RADIUS)
-        );
-
-        // Apply dynamic offset
-        newRelativeX = direction * (halfWidth + dynamicOffset);
-      }
-
-      return {
-        ...seat,
-        relativeX: Math.round(newRelativeX),
-        relativeY: Math.round(newRelativeY),
-      };
-    });
-  }, []);
+    return calculateAvailableSpace(tableId, tablePosX, tablePosY, tableWidth, tableHeight, tableRotation, tableList, fixtureList);
+  }, [tableList, fixtureList]);
 
 
   // Load floor plan and fixtures
@@ -702,30 +366,14 @@ export function EditorCanvas({
     heightPx: CANVAS_HEIGHT,
   };
 
-  // Calculate angle from table center to mouse position
+  // Coordinate transform wrappers (delegate to pure functions)
   const calculateAngle = useCallback((tableCenter: Point, mousePos: Point): number => {
-    const dx = mousePos.x - tableCenter.x;
-    const dy = mousePos.y - tableCenter.y;
-    return Math.atan2(dy, dx) * (180 / Math.PI) + 90; // 0 degrees = up
+    return calculateAngleFn(tableCenter, mousePos);
   }, []);
 
-  // Convert screen position to floor position (feet)
   const screenToFloor = useCallback(
     (screenX: number, screenY: number): Point => {
-      if (!canvasRef.current) return { x: 0, y: 0 };
-      const rect = canvasRef.current.getBoundingClientRect();
-      // Account for zoom when converting screen coords to canvas coords
-      const x = (screenX - rect.left) / zoom;
-      const y = (screenY - rect.top) / zoom;
-      const position: Point = {
-        x: FloorCanvasAPI.pixelsToFeet(x),
-        y: FloorCanvasAPI.pixelsToFeet(y),
-      };
-      // Snap to grid
-      if (floorPlan) {
-        return FloorCanvasAPI.snapToGrid(position, floorPlan.gridSizeFeet);
-      }
-      return position;
+      return screenToFloorFn(screenX, screenY, canvasRef.current, zoom, floorPlan?.gridSizeFeet);
     },
     [floorPlan, zoom]
   );
@@ -970,13 +618,13 @@ export function EditorCanvas({
         const posY = FloorCanvasAPI.feetToPixels(point.y) - shapeMetadata.defaultHeight / 2;
 
         // Check for collision with fixtures
-        if (checkTableFixtureCollision(posX, posY, shapeMetadata.defaultWidth, shapeMetadata.defaultHeight)) {
+        if (checkTableFixtureCollisionCb(posX, posY, shapeMetadata.defaultWidth, shapeMetadata.defaultHeight)) {
           logger.log('[EditorCanvas] Cannot place table: collision with fixture');
           return;
         }
 
         // Check for collision with other tables
-        if (checkTableCollision(posX, posY, shapeMetadata.defaultWidth, shapeMetadata.defaultHeight)) {
+        if (checkTableCollisionCb(posX, posY, shapeMetadata.defaultWidth, shapeMetadata.defaultHeight)) {
           logger.log('[EditorCanvas] Cannot place table: collision with another table');
           return;
         }
@@ -1161,8 +809,8 @@ export function EditorCanvas({
       onTableDelete,
       onSeatSelect,
       refreshFixtures,
-      checkTableFixtureCollision,
-      checkTableCollision,
+      checkTableFixtureCollisionCb,
+      checkTableCollisionCb,
       placementOffset,
       SEAT_RADIUS,
     ]
@@ -1409,8 +1057,8 @@ export function EditorCanvas({
         newPosX = Math.round(newPosX / gridPx) * gridPx;
         newPosY = Math.round(newPosY / gridPx) * gridPx;
 
-        if (checkTableFixtureCollision(newPosX, newPosY, newWidth, newHeight)) return;
-        if (checkTableCollision(newPosX, newPosY, newWidth, newHeight, selectedTableId)) return;
+        if (checkTableFixtureCollisionCb(newPosX, newPosY, newWidth, newHeight)) return;
+        if (checkTableCollisionCb(newPosX, newPosY, newWidth, newHeight, selectedTableId)) return;
 
         // Note: After resize, seats are reflowed. Check if reflowed positions would collide.
         // For simplicity, check if expanded table footprint + seat boundary would hit obstacles
@@ -1419,8 +1067,8 @@ export function EditorCanvas({
         const expandedPosX = newPosX - SEAT_BOUNDARY_DISTANCE;
         const expandedPosY = newPosY - SEAT_BOUNDARY_DISTANCE;
 
-        if (checkTableFixtureCollision(expandedPosX, expandedPosY, expandedWidth, expandedHeight)) return;
-        if (checkTableCollision(expandedPosX, expandedPosY, expandedWidth, expandedHeight, selectedTableId)) return;
+        if (checkTableFixtureCollisionCb(expandedPosX, expandedPosY, expandedWidth, expandedHeight)) return;
+        if (checkTableCollisionCb(expandedPosX, expandedPosY, expandedWidth, expandedHeight, selectedTableId)) return;
 
         onTableUpdate(selectedTableId, {
           width: newWidth,
@@ -1569,19 +1217,19 @@ export function EditorCanvas({
         const currentTable = tables.find(t => t.id === selectedTableId);
         if (currentTable) {
           // Check for collision with fixtures
-          if (checkTableFixtureCollision(newPosX, newPosY, currentTable.width, currentTable.height)) {
+          if (checkTableFixtureCollisionCb(newPosX, newPosY, currentTable.width, currentTable.height)) {
             // Don't update position if collision detected
             return;
           }
 
           // Check for collision with other tables (exclude self)
-          if (checkTableCollision(newPosX, newPosY, currentTable.width, currentTable.height, selectedTableId)) {
+          if (checkTableCollisionCb(newPosX, newPosY, currentTable.width, currentTable.height, selectedTableId)) {
             // Don't allow table to overlap another table
             return;
           }
 
           // Calculate available space at new position
-          const availableSpace = calculateAvailableSpace(
+          const availableSpace = calculateAvailableSpaceCb(
             selectedTableId,
             newPosX,
             newPosY,
@@ -1648,7 +1296,7 @@ export function EditorCanvas({
         refreshFixtures();
       }
     },
-    [floorPlan, isDragging, isDraggingTable, isDraggingSeat, draggedSeatId, seatDragOffset, isRotatingTable, isResizingTable, resizeHandle, resizeStartDimensions, resizeStartPos, resizeStartMousePos, selectedFixtureId, selectedTableId, dragOffset, tableDragOffset, rotationStartAngle, rotationStartMouseAngle, fixtures, tables, seats, screenToFloor, calculateAngle, onFixtureUpdate, onTableUpdate, refreshFixtures, checkTableFixtureCollision, checkTableCollision]
+    [floorPlan, isDragging, isDraggingTable, isDraggingSeat, draggedSeatId, seatDragOffset, isRotatingTable, isResizingTable, resizeHandle, resizeStartDimensions, resizeStartPos, resizeStartMousePos, selectedFixtureId, selectedTableId, dragOffset, tableDragOffset, rotationStartAngle, rotationStartMouseAngle, fixtures, tables, seats, screenToFloor, calculateAngle, onFixtureUpdate, onTableUpdate, refreshFixtures, checkTableFixtureCollisionCb, checkTableCollisionCb]
   );
 
   // Handle mouse up
@@ -1675,7 +1323,7 @@ export function EditorCanvas({
           const absY = tableCenterY + (finalRelX * Math.sin(rotation) + finalRelY * Math.cos(rotation));
 
           // Check if final position collides with another seat
-          if (checkSeatCollision(absX, absY, table.id, draggedSeatId)) {
+          if (checkSeatCollisionCb(absX, absY, table.id, draggedSeatId)) {
             // Find the colliding seat
             const otherSeats = seats.filter(s => s.tableId === table.id && s.id !== draggedSeatId);
             let collidingSeat: typeof seat | undefined;
@@ -1773,7 +1421,7 @@ export function EditorCanvas({
         const currentTable = (useDatabase ? (dbTables || []) : tables).find(t => t.id === selectedTableId);
         if (currentTable && onSeatUpdate) {
           // Calculate available space at final position
-          const availableSpace = calculateAvailableSpace(
+          const availableSpace = calculateAvailableSpaceCb(
             selectedTableId,
             currentTable.posX,
             currentTable.posY,
@@ -1868,428 +1516,58 @@ export function EditorCanvas({
   );
 
   // Render preview for current drawing
-  const renderPreview = () => {
-    if (!currentPoint) return null;
-
-    // WALL mode: Preview line from start point to current
-    if (toolMode === 'WALL' && startPoint) {
-      const start = startPoint;
-      const end = currentPoint;
-      const dx = end.x - start.x;
-      const dy = end.y - start.y;
-      const length = Math.sqrt(dx * dx + dy * dy);
-      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-
-      return (
-        <div
-          style={{
-            position: 'absolute',
-            left: FloorCanvasAPI.feetToPixels(start.x),
-            top: FloorCanvasAPI.feetToPixels(start.y - 0.25),
-            width: FloorCanvasAPI.feetToPixels(length),
-            height: FloorCanvasAPI.feetToPixels(0.5),
-            backgroundColor: '#3498db',
-            opacity: 0.5,
-            transform: `rotate(${angle}deg)`,
-            transformOrigin: 'left center',
-            pointerEvents: 'none',
-          }}
-        />
-      );
-    }
-
-    // RECTANGLE mode: Preview rectangle
-    if (toolMode === 'RECTANGLE' && isDrawing && startPoint) {
-      const width = Math.abs(currentPoint.x - startPoint.x);
-      const height = Math.abs(currentPoint.y - startPoint.y);
-      const position = {
-        x: Math.min(startPoint.x, currentPoint.x),
-        y: Math.min(startPoint.y, currentPoint.y),
-      };
-
-      return (
-        <div
-          style={{
-            position: 'absolute',
-            left: FloorCanvasAPI.feetToPixels(position.x),
-            top: FloorCanvasAPI.feetToPixels(position.y),
-            width: FloorCanvasAPI.feetToPixels(width),
-            height: FloorCanvasAPI.feetToPixels(height),
-            backgroundColor: getFixtureTypeMetadata(fixtureType).defaultColor,
-            opacity: 0.5,
-            border: '2px dashed #3498db',
-            pointerEvents: 'none',
-          }}
-        />
-      );
-    }
-
-    return null;
-  };
+  // Render preview delegates to extracted function
+  const renderPreview = () => renderPreviewFn({
+    currentPoint, toolMode, startPoint, isDrawing, fixtureType,
+  });
 
   // =============================================================================
-  // RENDER FUNCTIONS
+  // RENDER FUNCTIONS (delegates to extracted editorCanvasRenderers)
   // =============================================================================
 
-  // Render fixtures with selection highlight
-  const renderFixtures = () => {
-    return fixtures.map((fixture) => {
-      const isSelected = fixture.id === selectedFixtureId;
-      const baseStyle: React.CSSProperties = {
-        position: 'absolute',
-        backgroundColor: fixture.color,
-        opacity: fixture.opacity,
-        cursor: toolMode === 'SELECT' ? 'move' : toolMode === 'DELETE' ? 'pointer' : 'default',
-        border: isSelected ? '2px solid #3498db' : 'none',
-        boxShadow: isSelected ? '0 0 8px rgba(52, 152, 219, 0.5)' : 'none',
-      };
+  // Handle rotation start for tables (needed by renderTables)
+  const handleRotateStart = useCallback((e: React.MouseEvent, table: EditorTable) => {
+    if (!onTableSelect || !onTableUpdate) return;
 
-      if (fixture.geometry.type === 'rectangle') {
-        const { position, width, height, rotation } = fixture.geometry;
-        const widthPx = FloorCanvasAPI.feetToPixels(width);
-        const heightPx = FloorCanvasAPI.feetToPixels(height);
+    // Select this table
+    onTableSelect(table.id);
 
-        return (
-          <div
-            key={fixture.id}
-            style={{
-              ...baseStyle,
-              left: FloorCanvasAPI.feetToPixels(position.x),
-              top: FloorCanvasAPI.feetToPixels(position.y),
-              width: widthPx,
-              height: heightPx,
-              transform: `rotate(${rotation}deg)`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title={fixture.label}
-          >
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: '#fff',
-                textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: '90%',
-                textAlign: 'center',
-              }}
-            >
-              {fixture.label}
-            </span>
+    // Start rotation
+    setIsRotatingTable(true);
 
-            {/* Resize handles */}
-            <FixtureResizeHandles
-              fixtureId={fixture.id}
-              toolMode={toolMode}
-              isSelected={isSelected}
-              onResizeStart={handleFixtureResizeStart}
-            />
-          </div>
-        );
-      }
+    // Store initial rotation angle
+    setRotationStartAngle(table.rotation);
 
-      if (fixture.geometry.type === 'circle') {
-        const { center, radius } = fixture.geometry;
-        return (
-          <div
-            key={fixture.id}
-            style={{
-              ...baseStyle,
-              left: FloorCanvasAPI.feetToPixels(center.x - radius),
-              top: FloorCanvasAPI.feetToPixels(center.y - radius),
-              width: FloorCanvasAPI.feetToPixels(radius * 2),
-              height: FloorCanvasAPI.feetToPixels(radius * 2),
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title={fixture.label}
-          >
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: '#fff',
-                textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-                textAlign: 'center',
-              }}
-            >
-              {fixture.label}
-            </span>
-          </div>
-        );
-      }
+    // Calculate initial mouse angle relative to table center
+    const pointFeet = screenToFloor(e.clientX, e.clientY);
+    const pointPx = {
+      x: FloorCanvasAPI.feetToPixels(pointFeet.x),
+      y: FloorCanvasAPI.feetToPixels(pointFeet.y),
+    };
+    const tableCenter = {
+      x: table.posX + table.width / 2,
+      y: table.posY + table.height / 2,
+    };
+    const initialMouseAngle = calculateAngle(tableCenter, pointPx);
+    setRotationStartMouseAngle(initialMouseAngle);
+  }, [onTableSelect, onTableUpdate, screenToFloor, calculateAngle]);
 
-      if (fixture.geometry.type === 'line') {
-        const { start, end } = fixture.geometry;
-        const thickness = fixture.thickness || 0.5;
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
-        const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  const renderFixtures = () => renderFixturesFn({
+    fixtures, selectedFixtureId, toolMode, handleFixtureResizeStart,
+  });
 
-        return (
-          <div
-            key={fixture.id}
-            style={{
-              ...baseStyle,
-              left: FloorCanvasAPI.feetToPixels(start.x),
-              top: FloorCanvasAPI.feetToPixels(start.y - thickness / 2),
-              width: FloorCanvasAPI.feetToPixels(length),
-              height: FloorCanvasAPI.feetToPixels(thickness),
-              transform: `rotate(${angle}deg)`,
-              transformOrigin: 'left center',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-            title={fixture.label}
-          >
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: '#fff',
-                textShadow: '1px 1px 2px rgba(0,0,0,0.8)',
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-                backgroundColor: 'rgba(0,0,0,0.3)',
-                padding: '2px 6px',
-                borderRadius: 3,
-              }}
-            >
-              {fixture.label}
-            </span>
+  const renderEntertainmentElements = () => renderEntertainmentElementsFn({
+    fixtures, selectedFixtureId, toolMode, handleFixtureResizeStart,
+  });
 
-            {/* Resize handles for line endpoints */}
-            {isSelected && toolMode === 'SELECT' && (
-              <>
-                <div
-                  className="resize-handle start"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'start')}
-                  style={{
-                    position: 'absolute',
-                    left: -4,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'ew-resize',
-                    zIndex: 10,
-                    borderRadius: '50%',
-                  }}
-                />
-                <div
-                  className="resize-handle end"
-                  onMouseDown={(e) => handleFixtureResizeStart(e, fixture.id, 'end')}
-                  style={{
-                    position: 'absolute',
-                    right: -4,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: 8,
-                    height: 8,
-                    background: 'white',
-                    border: '1px solid #3498db',
-                    cursor: 'ew-resize',
-                    zIndex: 10,
-                    borderRadius: '50%',
-                  }}
-                />
-              </>
-            )}
-          </div>
-        );
-      }
+  const renderTables = () => renderTablesFn({
+    tables, selectedTableId, isDraggingTable, isRotatingTable, isResizingTable,
+    onTableSelect, onRotateStart: handleRotateStart, onResizeStart: handleResizeStart,
+  });
 
-      return null;
-    });
-  };
-
-  // Render entertainment elements
-  const renderEntertainmentElements = () => {
-    // Filter entertainment from fixtures (they come from dbElements via props)
-    const entertainmentFixtures = fixtures.filter(f =>
-      (f as any).elementType === 'entertainment'
-    );
-
-    return entertainmentFixtures.map((fixture) => {
-      const isSelected = fixture.id === selectedFixtureId;
-      const visualType = ((fixture as any).visualType || 'game_table') as EntertainmentVisualType;
-
-      // Get position from fixture geometry or direct props
-      const geo = fixture.geometry as { type: string; position?: { x: number; y: number }; width?: number; height?: number } | undefined;
-      const posX = geo?.position?.x ?? (fixture as any).x ?? 0;
-      const posY = geo?.position?.y ?? (fixture as any).y ?? 0;
-      const width = geo?.width ?? (fixture as any).width ?? 5;
-      const height = geo?.height ?? (fixture as any).height ?? 3;
-      const rotation = (fixture as any).rotation ?? 0;
-
-      const pixelX = FloorCanvasAPI.feetToPixels(posX);
-      const pixelY = FloorCanvasAPI.feetToPixels(posY);
-      const pixelWidth = FloorCanvasAPI.feetToPixels(width);
-      const pixelHeight = FloorCanvasAPI.feetToPixels(height);
-
-      return (
-        <div
-          key={fixture.id}
-          style={{
-            position: 'absolute',
-            left: pixelX,
-            top: pixelY,
-            width: pixelWidth,
-            height: pixelHeight,
-            transform: `rotate(${rotation}deg)`,
-            transformOrigin: 'center center',
-            cursor: toolMode === 'SELECT' ? 'move' : toolMode === 'DELETE' ? 'pointer' : 'default',
-            zIndex: isSelected ? 100 : 10,
-            border: isSelected ? '2px solid #9333ea' : 'none',
-            boxShadow: isSelected ? '0 0 12px rgba(147, 51, 234, 0.5)' : 'none',
-            borderRadius: 8,
-          }}
-        >
-          {/* SVG Visual */}
-          <EntertainmentVisual
-            visualType={visualType}
-            status="available"
-            width={pixelWidth}
-            height={pixelHeight}
-          />
-
-          {/* Label below */}
-          <div style={{
-            position: 'absolute',
-            bottom: -20,
-            left: '50%',
-            transform: `translateX(-50%) rotate(-${rotation}deg)`,
-            backgroundColor: 'rgba(0,0,0,0.8)',
-            color: 'white',
-            padding: '2px 8px',
-            borderRadius: 4,
-            fontSize: 10,
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-          }}>
-            {fixture.label || (fixture as any).name}
-          </div>
-
-          {/* Resize handles when selected */}
-          <FixtureResizeHandles
-            fixtureId={fixture.id}
-            toolMode={toolMode}
-            isSelected={isSelected}
-            onResizeStart={handleFixtureResizeStart}
-            color="#9333ea"
-            cornersOnly
-          />
-        </div>
-      );
-    });
-  };
-
-  // Render tables
-  const renderTables = () => {
-    return tables.map((table) => (
-      <TableRenderer
-        key={table.id}
-        table={table}
-        isSelected={table.id === selectedTableId}
-        isDragging={isDraggingTable && table.id === selectedTableId}
-        isRotating={isRotatingTable && table.id === selectedTableId}
-        onSelect={() => {
-          if (onTableSelect) {
-            onTableSelect(table.id);
-          }
-        }}
-        onRotateStart={(e) => {
-          if (!onTableSelect || !onTableUpdate) return;
-
-          // Select this table
-          onTableSelect(table.id);
-
-          // Start rotation
-          setIsRotatingTable(true);
-
-          // Store initial rotation angle
-          setRotationStartAngle(table.rotation);
-
-          // Calculate initial mouse angle relative to table center
-          const pointFeet = screenToFloor(e.clientX, e.clientY);
-          const pointPx = {
-            x: FloorCanvasAPI.feetToPixels(pointFeet.x),
-            y: FloorCanvasAPI.feetToPixels(pointFeet.y),
-          };
-          const tableCenter = {
-            x: table.posX + table.width / 2,
-            y: table.posY + table.height / 2,
-          };
-          const initialMouseAngle = calculateAngle(tableCenter, pointPx);
-          setRotationStartMouseAngle(initialMouseAngle);
-        }}
-        isResizing={isResizingTable && table.id === selectedTableId}
-        onResizeStart={handleResizeStart}
-      />
-    ));
-  };
-
-  // Render seats
-  const renderSeats = () => {
-    return seats.map((seat) => {
-      const table = tables.find(t => t.id === seat.tableId);
-      if (!table) return null;
-
-      const tableCenterX = table.posX + table.width / 2;
-      const tableCenterY = table.posY + table.height / 2;
-
-      // Use preview position if dragging this seat
-      const seatData = (isDraggingSeat && draggedSeatId === seat.id && seatDragPreview)
-        ? { ...seat, relativeX: seatDragPreview.relativeX, relativeY: seatDragPreview.relativeY }
-        : seat;
-
-      // Calculate absolute position with table rotation
-      const rotation = (table.rotation || 0) * Math.PI / 180;
-      const cos = Math.cos(rotation);
-      const sin = Math.sin(rotation);
-      const rotatedX = seatData.relativeX * cos - seatData.relativeY * sin;
-      const rotatedY = seatData.relativeX * sin + seatData.relativeY * cos;
-
-      const seatAbsX = tableCenterX + rotatedX;
-      const seatAbsY = tableCenterY + rotatedY;
-
-      return (
-        <div
-          key={seat.id}
-          style={{
-            position: 'absolute',
-            left: seatAbsX - 10, // Center the 20px SeatRenderer
-            top: seatAbsY - 10,
-            width: 20,  // Match SeatRenderer's seatSize (20px)
-            height: 20,
-            cursor: toolMode === 'SELECT' ? 'move' : 'default',
-            pointerEvents: 'auto',
-          }}
-        >
-          <SeatRenderer
-            seat={seatData}
-            tableRotation={table.rotation || 0}
-            isSelected={draggedSeatId === seat.id}
-            isHighlighted={false}
-            hasItems={false}
-          />
-        </div>
-      );
-    });
-  };
+  const renderSeats = () => renderSeatsFn({
+    seats, tables, toolMode, isDraggingSeat, draggedSeatId, seatDragPreview,
+  });
 
   // Grid is now rendered via CSS backgroundImage on the canvas div
   // No SVG grid needed - this improves performance and avoids visual conflicts

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { IngredientHierarchyPicker } from './IngredientHierarchyPicker'
 import { formatCurrency } from '@/lib/utils'
@@ -9,97 +9,14 @@ import { useOrderSettings } from '@/hooks/useOrderSettings'
 import { calculateCardPrice } from '@/lib/pricing'
 import { isItemTaxInclusive } from '@/lib/order-calculations'
 import { ItemSettingsModal } from './ItemSettingsModal'
+import { useIngredientOperations } from './useIngredientOperations'
+import { useModifierGroupManager } from './useModifierGroupManager'
+import { useModifierEditor } from './useModifierEditor'
+import { useIngredientCreation } from './useIngredientCreation'
+import type { Ingredient, IngredientLibraryItem, IngredientCategory, Modifier, ModifierGroup, MenuItem } from './item-editor-types'
 
-interface Ingredient {
-  id: string
-  ingredientId: string
-  name: string
-  category?: string | null     // Ingredient category code from API
-  isIncluded: boolean
-  allowNo: boolean
-  allowLite: boolean
-  allowExtra: boolean
-  allowOnSide: boolean
-  allowSwap: boolean
-  extraPrice: number
-  needsVerification?: boolean  // ← Verification status
-}
-
-export interface IngredientLibraryItem {
-  id: string
-  name: string
-  category: string | null
-  categoryName: string | null       // from categoryRelation.name
-  categoryId: string | null         // actual category relation ID
-  parentIngredientId: string | null  // to identify child items
-  parentName: string | null         // parent ingredient's name for sub-headers
-  needsVerification: boolean        // verification flag
-  allowNo: boolean
-  allowLite: boolean
-  allowOnSide: boolean
-  allowExtra: boolean
-  extraPrice: number
-  allowSwap: boolean
-  swapModifierGroupId: string | null
-  swapUpcharge: number
-}
-
-interface IngredientCategory {
-  id: string
-  code: number
-  name: string
-  icon: string | null
-  color: string | null
-  sortOrder: number
-  isActive: boolean
-  ingredientCount: number
-  needsVerification?: boolean
-}
-
-interface Modifier {
-  id: string
-  name: string
-  price: number
-  allowNo?: boolean
-  allowLite?: boolean
-  allowOnSide?: boolean
-  allowExtra?: boolean
-  extraPrice?: number
-  isDefault?: boolean
-  sortOrder: number
-  ingredientId?: string | null
-  ingredientName?: string | null
-  childModifierGroupId?: string | null
-  childModifierGroup?: ModifierGroup | null
-  isLabel?: boolean
-  printerRouting?: string  // "follow" | "also" | "only"
-  printerIds?: string[]    // Printer IDs for "also" or "only" mode
-}
-
-interface ModifierGroup {
-  id: string
-  name: string
-  displayName?: string
-  minSelections: number
-  maxSelections: number
-  isRequired: boolean
-  allowStacking?: boolean
-  tieredPricingConfig?: any
-  exclusionGroupKey?: string | null
-  sortOrder: number
-  modifiers: Modifier[]
-}
-
-interface MenuItem {
-  id: string
-  name: string
-  price: number
-  description?: string
-  categoryId: string
-  categoryType?: string
-  isActive: boolean
-  isAvailable: boolean
-}
+// Re-export types for external consumers
+export type { IngredientLibraryItem } from './item-editor-types'
 
 interface ItemEditorProps {
   item: MenuItem | null
@@ -116,8 +33,6 @@ interface ItemEditorProps {
 }
 
 export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = [], locationId = '', onItemUpdated, onIngredientCreated, onCategoryCreated, onToggle86, onDelete, refreshKey, onSelectGroup }: ItemEditorProps) {
-  const [ingredients, setIngredients] = useState<Ingredient[]>([])
-  const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -139,57 +54,94 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
   // Collapse states
   const [ingredientsExpanded, setIngredientsExpanded] = useState(false)
 
-  // Forms
-  const [showIngredientPicker, setShowIngredientPicker] = useState(false)
-  const [relinkingIngredientId, setRelinkingIngredientId] = useState<string | null>(null)
-  const [ingredientSearch, setIngredientSearch] = useState('')
-
-  // Modifier group editing state
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-  const toggleExpanded = (groupId: string) => {
-    setExpandedGroups(prev => {
-      const next = new Set(prev)
-      if (next.has(groupId)) next.delete(groupId)
-      else next.add(groupId)
-      return next
-    })
-  }
-  const [showNewGroupForm, setShowNewGroupForm] = useState(false)
-  const [newGroupName, setNewGroupName] = useState('')
-  const [addingModifierTo, setAddingModifierTo] = useState<string | null>(null)
-  const [newModName, setNewModName] = useState('')
-  const [newModPrice, setNewModPrice] = useState('')
-  const [linkingModifier, setLinkingModifier] = useState<{ groupId: string; modId: string } | null>(null)
-  const [modIngredientSearch, setModIngredientSearch] = useState('')
-
-  // Hierarchical dropdown state
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
-  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set())
-  const [creatingInventoryInCategory, setCreatingInventoryInCategory] = useState<string | null>(null)
-  const [creatingPrepUnderParent, setCreatingPrepUnderParent] = useState<string | null>(null)
-  const [newInventoryName, setNewInventoryName] = useState('')
-  const [newPrepName, setNewPrepName] = useState('')
-  const [creatingIngredientLoading, setCreatingIngredientLoading] = useState(false)
-  const [creatingNewCategory, setCreatingNewCategory] = useState(false)
-  const [newCategoryName, setNewCategoryName] = useState('')
-
-  const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null)
-  const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null)
-  const [dragOverDropZone, setDragOverDropZone] = useState<string | null>(null) // 'top-level' or modifier ID for nesting
-  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const [addingType, setAddingType] = useState<'item' | 'choice' | null>(null)
-  const [editingModifierId, setEditingModifierId] = useState<string | null>(null)
-  const [editModValues, setEditModValues] = useState<{ name: string; price: string; extraPrice: string }>({ name: '', price: '', extraPrice: '' })
-  const [draggedModifierId, setDraggedModifierId] = useState<string | null>(null)
-  const [dragOverModifierId, setDragOverModifierId] = useState<string | null>(null)
-
   // Item settings modal state
   const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   // Printer routing state
   const [printers, setPrinters] = useState<Array<{ id: string; name: string }>>([])
   const [printerRoutingModifier, setPrinterRoutingModifier] = useState<{ groupId: string; modId: string } | null>(null)
+
+  // --- Stable loadData via ref pattern (hooks need loadData, loadData needs hook setters) ---
+  const loadDataRef = useRef<(showSpinner?: boolean) => Promise<void>>(async () => {})
+  const loadData = useCallback(async (showSpinner?: boolean) => {
+    await loadDataRef.current(showSpinner)
+  }, [])
+
+  // --- Hook 1: Ingredient Operations ---
+  const ingredientOps = useIngredientOperations({
+    itemId: item?.id,
+    ingredientsLibrary,
+    loadData,
+    setSaving,
+  })
+
+  // --- Hook 2: Modifier Group Manager ---
+  const modGroupManager = useModifierGroupManager({
+    itemId: item?.id,
+    loadData,
+    setSaving,
+  })
+
+  // --- Refs for cross-hook dependencies ---
+  const resetCreationExpansionRef = useRef<() => void>(() => {})
+  const linkIngredientRef = useRef<((groupId: string, modId: string, ingredientId: string | null) => Promise<void>) | undefined>(undefined)
+  const linkingModifierRef = useRef<{ groupId: string; modId: string } | null>(null)
+
+  // --- Hook 4: Ingredient Creation (created before modEditor to resolve circular dep) ---
+  const ingredientCreation = useIngredientCreation({
+    locationId,
+    onIngredientCreated,
+    onCategoryCreated,
+    onItemUpdated,
+    linkIngredientRef,
+    linkingModifierRef,
+    showIngredientPicker: ingredientOps.showIngredientPicker,
+    ingredients: ingredientOps.ingredients,
+    saveIngredients: ingredientOps.saveIngredients,
+    setShowIngredientPicker: ingredientOps.setShowIngredientPicker,
+    setIngredientSearch: ingredientOps.setIngredientSearch,
+  })
+
+  // --- Hook 3: Modifier Editor ---
+  const modEditor = useModifierEditor({
+    itemId: item?.id,
+    ingredientsLibrary,
+    loadData,
+    setSaving,
+    modifierGroups: modGroupManager.modifierGroups,
+    setModifierGroups: modGroupManager.setModifierGroups,
+    findGroupById: modGroupManager.findGroupById,
+    findModifierById: modGroupManager.findModifierById,
+    resetCreationExpansionRef,
+  })
+
+  // --- Wire up cross-hook refs (safe: called during render, functions only invoked from event handlers) ---
+  resetCreationExpansionRef.current = () => {
+    ingredientCreation.setExpandedCategories(new Set())
+    ingredientCreation.setExpandedParents(new Set())
+  }
+  linkIngredientRef.current = modEditor.linkIngredient
+  linkingModifierRef.current = modEditor.linkingModifier
+
+  // --- Wire up loadData implementation (needs hook setters) ---
+  loadDataRef.current = async (showSpinner = false) => {
+    if (!item?.id) return
+    if (showSpinner) setLoading(true)
+    try {
+      const [ingRes, groupsRes] = await Promise.all([
+        fetch(`/api/menu/items/${item.id}/ingredients`),
+        fetch(`/api/menu/items/${item.id}/modifier-groups`),
+      ])
+      const [ingData, groupsData] = await Promise.all([ingRes.json(), groupsRes.json()])
+      ingredientOps.setIngredients(ingData.data || [])
+      modGroupManager.setModifierGroups(groupsData.data || [])
+    } catch (e) {
+      console.error('Failed to load data:', e)
+      toast.error('Failed to load modifier data')
+    } finally {
+      if (showSpinner) setLoading(false)
+    }
+  }
 
   // Compute ingredient-to-modifier mapping for bidirectional link indicators
   const ingredientToModifiers = useMemo(() => {
@@ -213,17 +165,17 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
       })
     }
 
-    modifierGroups.forEach(group => {
+    modGroupManager.modifierGroups.forEach(group => {
       processModifiers(group.modifiers, group.name)
     })
     return map
-  }, [modifierGroups])
+  }, [modGroupManager.modifierGroups])
 
   // Load data when item changes or refreshKey updates
   useEffect(() => {
     if (!item?.id) {
-      setIngredients([])
-      setModifierGroups([])
+      ingredientOps.setIngredients([])
+      modGroupManager.setModifierGroups([])
       return
     }
     loadData(true) // Show spinner only on initial/item-change load
@@ -268,1059 +220,58 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [printerRoutingModifier])
 
-  const loadData = async (showSpinner = false) => {
-    if (!item?.id) return
-    if (showSpinner) setLoading(true)
-    try {
-      const [ingRes, groupsRes] = await Promise.all([
-        fetch(`/api/menu/items/${item.id}/ingredients`),
-        fetch(`/api/menu/items/${item.id}/modifier-groups`),
-      ])
-      const [ingData, groupsData] = await Promise.all([ingRes.json(), groupsRes.json()])
-      setIngredients(ingData.data || [])
-      setModifierGroups(groupsData.data || [])
-    } catch (e) {
-      console.error('Failed to load data:', e)
-      toast.error('Failed to load modifier data')
-    } finally {
-      if (showSpinner) setLoading(false)
-    }
-  }
-
-  // Ingredient functions
-  const saveIngredients = async (newIngredients: typeof ingredients) => {
-    if (!item?.id) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/menu/items/${item.id}/ingredients`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ingredients: newIngredients.map(i => ({
-            ingredientId: i.ingredientId,
-            isIncluded: i.isIncluded,
-            allowNo: i.allowNo,
-            allowLite: i.allowLite,
-            allowExtra: i.allowExtra,
-            allowOnSide: i.allowOnSide,
-            extraPrice: i.extraPrice,
-          }))
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Unknown error' }))
-        console.error('Save ingredients failed:', res.status, err)
-        toast.error(err.error || `Save failed (${res.status})`)
-        return
-      }
-      await loadData()
-      // No onItemUpdated() — ingredient toggles are local-only, no tree change
-    } catch (e) {
-      console.error('Failed to save:', e)
-      toast.error('Failed to save ingredients')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const addIngredient = (ingredientId: string) => {
-    const lib = ingredientsLibrary.find(i => i.id === ingredientId)
-    if (!lib) return
-    const newIngredients = [...ingredients, {
-      id: '',
-      ingredientId,
-      name: lib.name,
-      isIncluded: true,
-      allowNo: true,
-      allowLite: true,
-      allowExtra: true,
-      allowOnSide: true,
-      allowSwap: true,
-      extraPrice: 0,
-    }]
-    saveIngredients(newIngredients)
-    setShowIngredientPicker(false)
-    setIngredientSearch('')
-  }
-
-  const removeIngredient = (ingredientId: string) => {
-    saveIngredients(ingredients.filter(i => i.ingredientId !== ingredientId))
-  }
-
-  // Swap an ingredient link — replace one ingredientId with another
-  const swapIngredientLink = async (oldIngredientId: string, newIngredientId: string) => {
-    const lib = ingredientsLibrary.find(i => i.id === newIngredientId)
-    if (!lib) return
-    setRelinkingIngredientId(null)
-    setIngredientSearch('')
-    await saveIngredients(ingredients.map(i =>
-      i.ingredientId === oldIngredientId
-        ? { ...i, ingredientId: newIngredientId, name: lib.name }
-        : i
-    ))
-    toast.success(`Linked to ${lib.name}`)
-  }
-
-  const toggleIngredientOption = (ingredientId: string, option: 'allowNo' | 'allowLite' | 'allowExtra' | 'allowOnSide' | 'allowSwap') => {
-    saveIngredients(ingredients.map(i => i.ingredientId === ingredientId ? { ...i, [option]: !i[option] } : i))
-  }
-
-  const updateExtraPrice = (ingredientId: string, price: number) => {
-    saveIngredients(ingredients.map(i => i.ingredientId === ingredientId ? { ...i, extraPrice: price } : i))
-  }
-
-  // Modifier group CRUD functions
-  const createGroup = async () => {
-    if (!item?.id || !newGroupName.trim()) return
-    setSaving(true)
-    try {
-      await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newGroupName.trim(), minSelections: 0, maxSelections: 1 }),
-      })
-      setNewGroupName('')
-      setShowNewGroupForm(false)
-      await loadData()
-      // No onItemUpdated() — creating a modifier group is local to this item, no tree change
-    } catch (e) {
-      console.error('Failed to create group:', e)
-      toast.error('Failed to create modifier group')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const updateGroup = async (groupId: string, updates: Partial<ModifierGroup>) => {
-    if (!item?.id) return
-    // Optimistic: update local state immediately, no flash
-    setModifierGroups(prev => {
-      const updateInGroups = (groups: ModifierGroup[]): ModifierGroup[] =>
-        groups.map(g => {
-          const updated = g.id === groupId ? { ...g, ...updates } : g
-          return {
-            ...updated,
-            modifiers: updated.modifiers.map(m => {
-              if (m.childModifierGroup) {
-                return { ...m, childModifierGroup: updateInGroups([m.childModifierGroup])[0] }
-              }
-              return m
-            }),
-          }
-        })
-      return updateInGroups(prev)
-    })
-    try {
-      const res = await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      })
-      if (!res.ok) {
-        await loadData() // Revert on error
-        toast.error('Failed to update modifier group')
-      }
-      // No onItemUpdated() — rename/toggle/settings are local-only, no full menu refetch needed
-    } catch (e) {
-      console.error('Failed to update group:', e)
-      await loadData() // Revert on error
-      toast.error('Failed to update modifier group')
-    }
-  }
-
-  const startRename = (groupId: string, currentName: string) => {
-    setRenamingGroupId(groupId)
-    setRenameValue(currentName)
-  }
-
-  // Helper to find a group by ID (recursive search through child groups)
-  const findGroupById = (id: string, groups?: ModifierGroup[], visited?: Set<string>): ModifierGroup | undefined => {
-    const searchGroups = groups || modifierGroups
-    const seen = visited || new Set<string>()
-
-    for (const g of searchGroups) {
-      if (seen.has(g.id)) continue  // Cycle detection
-      seen.add(g.id)
-      if (g.id === id) return g
-      for (const m of g.modifiers) {
-        if (m.childModifierGroup) {
-          if (m.childModifierGroup.id === id) return m.childModifierGroup
-          const found = findGroupById(id, [m.childModifierGroup], seen)
-          if (found) return found
-        }
-      }
-    }
-    return undefined
-  }
-
-  // Helper to find a modifier by ID (recursive search through child groups)
-  const findModifierById = (id: string, groups?: ModifierGroup[], visited?: Set<string>): Modifier | undefined => {
-    const searchGroups = groups || modifierGroups
-    const seen = visited || new Set<string>()
-
-    for (const g of searchGroups) {
-      if (seen.has(g.id)) continue
-      seen.add(g.id)
-      for (const m of g.modifiers) {
-        if (m.id === id) return m
-        if (m.childModifierGroup) {
-          const found = findModifierById(id, [m.childModifierGroup], seen)
-          if (found) return found
-        }
-      }
-    }
-    return undefined
-  }
-
-  const commitRename = async (groupId: string) => {
-    const trimmed = renameValue.trim()
-    if (trimmed) {
-      // Find the group name (could be top-level or a nested child group)
-      const currentGroup = findGroupById(groupId)
-      if (!currentGroup || currentGroup.name !== trimmed) {
-        await updateGroup(groupId, { name: trimmed })
-      }
-    }
-    setRenamingGroupId(null)
-    setRenameValue('')
-  }
-
-  const deleteGroup = async (groupId: string) => {
-    if (!item?.id) return
-    // Step 1: Preview — get cascade counts
-    try {
-      const previewRes = await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}?preview=true`, { method: 'DELETE' })
-      const previewData = await previewRes.json()
-      const { groupCount, modifierCount, groupName } = previewData.data || {}
-
-      // Step 2: First confirmation
-      const childGroupCount = (groupCount || 1) - 1 // exclude the group itself
-      let msg = `Delete "${groupName || 'this group'}"?`
-      if (childGroupCount > 0 || modifierCount > 0) {
-        msg += `\n\nThis will also delete:`
-        if (modifierCount > 0) msg += `\n  • ${modifierCount} modifier${modifierCount > 1 ? 's' : ''}`
-        if (childGroupCount > 0) msg += `\n  • ${childGroupCount} child group${childGroupCount > 1 ? 's' : ''}`
-      }
-      if (!confirm(msg)) return
-
-      // Step 3: Second confirmation for groups with children
-      if (childGroupCount > 0) {
-        if (!confirm('⚠️ Are you SURE? All nested groups and modifiers will be permanently deleted.')) return
-      }
-    } catch (e) {
-      // If preview fails, fall back to simple confirm
-      if (!confirm('Delete this modifier group and all its contents?')) return
-    }
-
-    // Step 4: Execute delete
-    setSaving(true)
-    try {
-      await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}`, { method: 'DELETE' })
-      // Optimistic: remove from local state
-      setModifierGroups(prev => prev.filter(g => g.id !== groupId))
-      toast.success('Modifier group deleted')
-      await loadData(false)
-    } catch (e) {
-      console.error('Failed to delete group:', e)
-      toast.error('Failed to delete modifier group')
-      await loadData(false)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const duplicateGroup = async (groupId: string, targetParentGroupId?: string) => {
-    if (!item?.id) return
-    setSaving(true)
-    try {
-      // Step 1: Create the duplicate (always creates at top-level)
-      const res = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ duplicateFromGroupId: groupId }),
-      })
-      const resData = await res.json()
-      const newGroupId = resData.data?.id
-
-      // Step 2: If the source was a child group, re-nest the duplicate in the same parent group
-      // OR if a specific target parent group was provided, nest it there
-      if (newGroupId) {
-        // Find the parent modifier that links to the source group (if it's a child)
-        let parentGroupId = targetParentGroupId
-        if (!parentGroupId) {
-          for (const g of modifierGroups) {
-            for (const m of g.modifiers) {
-              if (m.childModifierGroupId === groupId) {
-                parentGroupId = g.id
-                break
-              }
-            }
-            if (parentGroupId) break
-          }
-        }
-
-        if (parentGroupId) {
-          // Create a modifier in the parent group to hold the duplicate
-          const sourceGroup = modifierGroups.find(g => g.id === groupId)
-          const modRes = await fetch(`/api/menu/items/${item.id}/modifier-groups/${parentGroupId}/modifiers`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: sourceGroup?.name ? `${sourceGroup.name} (Copy)` : 'Copy', price: 0 }),
-          })
-          const modData = await modRes.json()
-          const newModId = modData.data?.id
-
-          if (newModId) {
-            // Reparent the duplicate group to be a child of the new modifier
-            await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ groupId: newGroupId, targetParentModifierId: newModId }),
-            })
-          }
-        }
-      }
-
-      toast.success('Group duplicated')
-      await loadData()
-    } catch (e) {
-      console.error('Failed to duplicate group:', e)
-      toast.error('Failed to duplicate modifier group')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const reorderGroups = async (fromId: string, toId: string) => {
-    if (!item?.id || fromId === toId) return
-
-    // Build top-level list (same filter as the render)
-    const childGroupIdSet = new Set<string>()
-    modifierGroups.forEach(g => {
-      g.modifiers.forEach(m => {
-        if (m.childModifierGroupId) childGroupIdSet.add(m.childModifierGroupId)
-      })
-    })
-    const topLevel = modifierGroups.filter(g => !childGroupIdSet.has(g.id))
-
-    const fromIndex = topLevel.findIndex(g => g.id === fromId)
-    const toIndex = topLevel.findIndex(g => g.id === toId)
-    if (fromIndex === -1 || toIndex === -1) return
-
-    // Reorder the top-level list
-    const reordered = [...topLevel]
-    const [moved] = reordered.splice(fromIndex, 1)
-    reordered.splice(toIndex, 0, moved)
-
-    // Build new full list: reordered top-level + unchanged child groups
-    const newFull = [
-      ...reordered,
-      ...modifierGroups.filter(g => childGroupIdSet.has(g.id)),
-    ]
-    setModifierGroups(newFull)
-
-    // Persist only top-level sort orders
-    try {
-      const resp = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sortOrders: reordered.map((g, i) => ({ id: g.id, sortOrder: i })),
-        }),
-      })
-      if (!resp.ok) {
-        const err = await resp.json()
-        console.error('Failed to reorder groups:', err)
-        toast.error(err.error || 'Failed to reorder groups')
-        await loadData() // Rollback
-        return
-      }
-      // No onItemUpdated() — reorder is optimistic, already updated local state
-    } catch (e) {
-      console.error('Failed to reorder groups:', e)
-      toast.error('Failed to reorder groups')
-      await loadData() // Rollback on failure
-    }
-  }
-
-  const reorderModifiers = async (groupId: string, fromModId: string, toModId: string) => {
-    if (!item?.id || fromModId === toModId) return
-
-    // Find the group (could be top-level or child)
-    const group = findGroupById(groupId)
-    if (!group) return
-
-    const mods = [...group.modifiers]
-    const fromIdx = mods.findIndex(m => m.id === fromModId)
-    const toIdx = mods.findIndex(m => m.id === toModId)
-    if (fromIdx === -1 || toIdx === -1) return
-
-    const [moved] = mods.splice(fromIdx, 1)
-    mods.splice(toIdx, 0, moved)
-
-    // Optimistic UI update
-    const newGroups = modifierGroups.map(g => {
-      if (g.id === groupId) {
-        return { ...g, modifiers: mods }
-      }
-      // Also check child groups
-      return {
-        ...g,
-        modifiers: g.modifiers.map(m => {
-          if (m.childModifierGroup?.id === groupId) {
-            return { ...m, childModifierGroup: { ...m.childModifierGroup, modifiers: mods } }
-          }
-          return m
-        })
-      }
-    })
-    setModifierGroups(newGroups)
-
-    // Persist: update sort orders for all modifiers in the group
-    try {
-      await Promise.all(mods.map((m, idx) =>
-        fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}/modifiers`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ modifierId: m.id, sortOrder: idx }),
-        })
-      ))
-      // No onItemUpdated() — reorder is optimistic, already updated local state
-    } catch (e) {
-      console.error('Failed to reorder modifiers:', e)
-      toast.error('Failed to reorder modifiers')
-      await loadData() // rollback
-    }
-  }
-
-  // Helper to check if a group is a descendant of another (cycle prevention for drag-drop)
-  const isDescendantOf = (ancestorGroupId: string, targetGroupId: string, visited = new Set<string>()): boolean => {
-    if (ancestorGroupId === targetGroupId) return true
-    if (visited.has(ancestorGroupId)) return false
-    visited.add(ancestorGroupId)
-
-    const group = findGroupById(ancestorGroupId)
-    if (!group) return false
-
-    for (const mod of group.modifiers) {
-      if (mod.childModifierGroup) {
-        if (mod.childModifierGroup.id === targetGroupId) return true
-        if (isDescendantOf(mod.childModifierGroup.id, targetGroupId, visited)) return true
-      }
-    }
-    return false
-  }
-
-  // Reparent a group: move it to top-level or make it a child of a modifier
-  const reparentGroup = async (groupId: string, targetParentModifierId: string | null) => {
-    if (!item?.id) return
-    setSaving(true)
-    try {
-      const resp = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId, targetParentModifierId }),
-      })
-      if (!resp.ok) {
-        const err = await resp.json()
-        toast.error(err.error || 'Failed to move group')
-        return
-      }
-      toast.success('Group moved successfully')
-      await loadData()
-      // No onItemUpdated() — reparenting a modifier group is local to this item, no tree change
-    } catch (e) {
-      console.error('Failed to reparent group:', e)
-      toast.error('Failed to move group')
-      await loadData()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // Handle drop of a group onto a top-level reorder target OR onto a modifier (nesting)
-  const handleGroupDrop = async (e: React.DragEvent, targetGroupId: string) => {
-    e.preventDefault()
-    if (!draggedGroupId || draggedGroupId === targetGroupId) {
-      setDraggedGroupId(null)
-      setDragOverGroupId(null)
-      setDragOverDropZone(null)
-      return
-    }
-
-    // Check if the dragged group is currently a child group
-    const childGroupIdSet = new Set<string>()
-    modifierGroups.forEach(g => {
-      g.modifiers.forEach(m => {
-        if (m.childModifierGroupId) childGroupIdSet.add(m.childModifierGroupId)
-      })
-    })
-    const draggedIsChild = childGroupIdSet.has(draggedGroupId)
-    const targetIsChild = childGroupIdSet.has(targetGroupId)
-
-    if (draggedIsChild && !targetIsChild) {
-      // Child being dropped on a top-level group → promote to top-level then reorder
-      await reparentGroup(draggedGroupId, null)
-      // After reparent, reorder will happen naturally from the new loadData
-    } else if (!draggedIsChild && !targetIsChild) {
-      // Both top-level → simple reorder
-      await reorderGroups(draggedGroupId, targetGroupId)
-    } else {
-      // Both are children or dragging top-level onto child → just reorder
-      await reorderGroups(draggedGroupId, targetGroupId)
-    }
-
-    setDraggedGroupId(null)
-    setDragOverGroupId(null)
-    setDragOverDropZone(null)
-  }
-
-  // Handle dropping a group onto a modifier to make it a child
-  const handleGroupDropOnModifier = async (e: React.DragEvent, targetModifierId: string, targetGroupId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!draggedGroupId) return
-
-    // Prevent cycle: can't drop a group onto a modifier that's inside it
-    if (isDescendantOf(draggedGroupId, targetGroupId)) {
-      toast.error('Cannot nest a group inside its own descendant')
-      setDraggedGroupId(null)
-      setDragOverGroupId(null)
-      setDragOverDropZone(null)
-      return
-    }
-
-    // Check if target modifier already has a child group — offer to replace
-    const targetMod = findModifierById(targetModifierId)
-    if (targetMod?.childModifierGroupId) {
-      const existingChild = findGroupById(targetMod.childModifierGroupId)
-      const existingName = existingChild?.name || 'existing child group'
-      if (!confirm(`"${targetMod.name}" already has a child group "${existingName}". Replace it?`)) {
-        setDraggedGroupId(null)
-        setDragOverGroupId(null)
-        setDragOverDropZone(null)
-        return
-      }
-      // Unlink the existing child group (promote it to top-level)
-      await reparentGroup(targetMod.childModifierGroupId, null)
-    }
-
-    await reparentGroup(draggedGroupId, targetModifierId)
-    setDraggedGroupId(null)
-    setDragOverGroupId(null)
-    setDragOverDropZone(null)
-  }
-
-  // Nest a group inside another group: auto-create a modifier in targetGroupId, then reparent draggedGroupId to it
-  const nestGroupInGroup = async (draggedId: string, targetGroupId: string) => {
-    if (!item?.id) return
-    // Find the dragged group name for the auto-created modifier
-    const draggedGroup = modifierGroups.find(g => g.id === draggedId)
-    const modName = draggedGroup?.name || 'Sub-Group'
-
-    setSaving(true)
-    try {
-      // Step 1: Create a modifier in the target group
-      const modRes = await fetch(`/api/menu/items/${item.id}/modifier-groups/${targetGroupId}/modifiers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: modName, price: 0 }),
-      })
-      const modData = await modRes.json()
-      const newModId = modData.data?.id
-      if (!newModId) throw new Error('Failed to create modifier for nesting')
-
-      // Step 2: Reparent the dragged group to be a child of the new modifier
-      const resp = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ groupId: draggedId, targetParentModifierId: newModId }),
-      })
-      if (!resp.ok) {
-        const err = await resp.json()
-        toast.error(err.error || 'Failed to nest group')
-        return
-      }
-      toast.success('Group nested successfully')
-      await loadData()
-    } catch (e) {
-      console.error('Failed to nest group:', e)
-      toast.error('Failed to nest group')
-      await loadData()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const addModifier = async (groupId: string) => {
-    if (!item?.id || !newModName.trim()) return
-    setSaving(true)
-    try {
-      const parsedPrice = parseFloat(newModPrice)
-      const price = Number.isFinite(parsedPrice) ? parsedPrice : 0
-      await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}/modifiers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newModName.trim(), price }),
-      })
-      setNewModName('')
-      setNewModPrice('')
-      setAddingModifierTo(null)
-      setAddingType(null)
-      await loadData()
-      // No onItemUpdated() — adding a modifier within a group is local-only
-    } catch (e) {
-      console.error('Failed to add modifier:', e)
-      toast.error('Failed to add modifier')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // Helper: recursively update a modifier in local state (handles child groups)
-  const updateModifierInGroups = (groups: ModifierGroup[], targetGroupId: string, modId: string, updates: Partial<Modifier>): ModifierGroup[] => {
-    return groups.map(g => {
-      const updatedModifiers = g.modifiers.map(m => {
-        // Update the target modifier
-        const updatedMod = (g.id === targetGroupId && m.id === modId)
-          ? { ...m, ...updates }
-          : m
-        // Recurse into child groups
-        if (updatedMod.childModifierGroup) {
-          return {
-            ...updatedMod,
-            childModifierGroup: updateModifierInGroups([updatedMod.childModifierGroup], targetGroupId, modId, updates)[0]
-          }
-        }
-        return updatedMod
-      })
-      return { ...g, modifiers: updatedModifiers }
-    })
-  }
-
-  const updateModifier = async (groupId: string, modifierId: string, updates: Partial<Modifier>) => {
-    if (!item?.id) return
-
-    // Optimistic local update — no flash, instant feedback
-    setModifierGroups(prev => updateModifierInGroups(prev, groupId, modifierId, updates))
-
-    try {
-      const res = await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}/modifiers`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modifierId, ...updates }),
-      })
-      if (!res.ok) {
-        // Revert on failure
-        await loadData()
-        toast.error('Failed to update modifier')
-      }
-    } catch (e) {
-      console.error('Failed to update modifier:', e)
-      await loadData() // Revert on error
-      toast.error('Failed to update modifier')
-    }
-  }
-
-  // Toggle isDefault with group rule enforcement (respects maxSelections)
-  const toggleDefault = async (groupId: string, modifierId: string, currentlyDefault: boolean) => {
-    if (!item?.id) return
-    const group = findGroupById(groupId)
-    if (!group) return
-
-    if (!currentlyDefault && group.maxSelections > 0) {
-      // Turning ON — check if we'd exceed maxSelections
-      const currentDefaults = group.modifiers.filter(m => m.isDefault && m.id !== modifierId)
-      if (currentDefaults.length >= group.maxSelections) {
-        // Optimistically clear excess defaults locally (API does same server-side)
-        const excessCount = currentDefaults.length - group.maxSelections + 1
-        const idsToUndefault = currentDefaults.slice(0, excessCount).map(d => d.id)
-        setModifierGroups(prev => {
-          let updated = prev
-          for (const clearId of idsToUndefault) {
-            updated = updateModifierInGroups(updated, groupId, clearId, { isDefault: false })
-          }
-          return updated
-        })
-        toast.info(`Max ${group.maxSelections} default${group.maxSelections > 1 ? 's' : ''} — replacing previous`)
-      }
-    }
-
-    // This will also optimistically update the target modifier
-    await updateModifier(groupId, modifierId, { isDefault: !currentlyDefault })
-    // After API responds, do a background refresh to get canonical server state
-    loadData()
-  }
-
-  const deleteModifier = async (groupId: string, modifierId: string) => {
-    if (!item?.id) return
-    setSaving(true)
-    try {
-      await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}/modifiers?modifierId=${modifierId}`, {
-        method: 'DELETE',
-      })
-      await loadData()
-      // No onItemUpdated() — removing a modifier within a group is local-only
-    } catch (e) {
-      console.error('Failed to delete modifier:', e)
-      toast.error('Failed to delete modifier')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const startEditModifier = (mod: Modifier) => {
-    setEditingModifierId(mod.id)
-    setEditModValues({
-      name: mod.name,
-      price: String(mod.price ?? 0),
-      extraPrice: String(mod.extraPrice ?? 0),
-    })
-  }
-
-  const commitEditModifier = async (groupId: string, modId: string) => {
-    const updates: Partial<Modifier> = {}
-    const currentMod = findModifierById(modId)
-
-    if (!currentMod) { setEditingModifierId(null); return }
-
-    const newName = editModValues.name.trim()
-    const parsedPrice = parseFloat(editModValues.price)
-    const newPrice = Number.isFinite(parsedPrice) ? parsedPrice : 0
-    const parsedExtra = parseFloat(editModValues.extraPrice)
-    const newExtraPrice = Number.isFinite(parsedExtra) ? parsedExtra : 0
-
-    if (newName && newName !== currentMod.name) updates.name = newName
-    if (newPrice !== currentMod.price) updates.price = newPrice
-    if (newExtraPrice !== (currentMod.extraPrice ?? 0)) updates.extraPrice = newExtraPrice
-
-    if (Object.keys(updates).length > 0) {
-      await updateModifier(groupId, modId, updates)
-    }
-    setEditingModifierId(null)
-  }
-
-  const createChildGroup = async (parentModifierId: string) => {
-    if (!item?.id) return
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'New Sub-Group',
-          minSelections: 0,
-          maxSelections: 1,
-          parentModifierId
-        }),
-      })
-      await loadData()
-      // No onItemUpdated() — creating a child group is local to this item, no tree change
-    } catch (e) {
-      console.error('Failed to create child group:', e)
-      toast.error('Failed to create child group')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const addChoice = async (groupId: string) => {
-    if (!item?.id || !newModName.trim()) return
-    setSaving(true)
-    try {
-      // Step 1: Create modifier with isLabel=true, price=0, all pre-mods false
-      const modRes = await fetch(`/api/menu/items/${item.id}/modifier-groups/${groupId}/modifiers`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newModName.trim(),
-          price: 0,
-          allowNo: false,
-          allowLite: false,
-          allowOnSide: false,
-          allowExtra: false,
-          isLabel: true,
-        }),
-      })
-      const modData = await modRes.json()
-      const modifierId = modData.data?.id
-      if (!modifierId) throw new Error('Failed to create choice modifier')
-
-      // Step 2: Create child group linked to this modifier (same name)
-      await fetch(`/api/menu/items/${item.id}/modifier-groups`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newModName.trim(),
-          minSelections: 0,
-          maxSelections: 1,
-          parentModifierId: modifierId,
-        }),
-      })
-
-      setNewModName('')
-      setNewModPrice('')
-      setAddingModifierTo(null)
-      setAddingType(null)
-      await loadData()
-      // No onItemUpdated() — adding a choice is local to this item, no tree change
-    } catch (e) {
-      console.error('Failed to add choice:', e)
-      toast.error('Failed to add choice')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const linkIngredient = async (groupId: string, modifierId: string, ingredientId: string | null) => {
-    // Include ingredientName in optimistic update so badge renders immediately
-    const ingredientName = ingredientId
-      ? ingredientsLibrary.find(i => i.id === ingredientId)?.name || null
-      : null
-    await updateModifier(groupId, modifierId, { ingredientId, ingredientName } as Partial<Modifier>)
-    // Refresh data to update the 🔗 badge immediately
-    await loadData()
-    // Reset ALL linking state to prevent stale data on next open
-    setLinkingModifier(null)
-    setModIngredientSearch('')
-    setExpandedCategories(new Set())
-    setExpandedParents(new Set())
-  }
-
-
-  // Create new ingredient category inline
-  const createCategory = async () => {
-    if (!newCategoryName.trim()) return
-    setCreatingIngredientLoading(true)
-
-    try {
-      const response = await fetch('/api/ingredient-categories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          name: newCategoryName.trim(),
-          needsVerification: true,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        toast.error(errorData.error || 'Failed to create category')
-        return
-      }
-
-      const { data } = await response.json()
-      onCategoryCreated?.(data)
-      setNewCategoryName('')
-      setCreatingNewCategory(false)
-
-      // Auto-expand the new category and open inventory item creation
-      setExpandedCategories(prev => {
-        const next = new Set(prev)
-        next.add(data.id)
-        return next
-      })
-      setCreatingInventoryInCategory(data.id)
-      toast.success(`Created "${data.name}" — now add an inventory item`)
-    } catch (error) {
-      console.error('Error creating category:', error)
-      toast.error('Failed to create category')
-    } finally {
-      setCreatingIngredientLoading(false)
-    }
-  }
-
-  // Create inventory item (parent)
-  const createInventoryItem = async (categoryId: string) => {
-    if (!newInventoryName.trim()) return
-    setCreatingIngredientLoading(true)
-
-    try {
-      const response = await fetch('/api/ingredients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          name: newInventoryName.trim(),
-          categoryId,
-          parentIngredientId: null,
-          needsVerification: true,
-          isBaseIngredient: true,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-
-        // 409 = duplicate name — auto-expand the existing item so user can add a prep item under it
-        if (response.status === 409 && errorData.existing) {
-          const existingId = errorData.existing.id
-          const existingCatId = errorData.existing.categoryId || categoryId
-          setNewInventoryName('')
-          setCreatingInventoryInCategory(null)
-
-          // Expand the category and the existing inventory item, then open prep creation
-          setExpandedCategories(prev => {
-            const next = new Set(prev)
-            next.add(existingCatId)
-            return next
-          })
-          setExpandedParents(prev => {
-            const next = new Set(prev)
-            next.add(existingId)
-            return next
-          })
-          setCreatingPrepUnderParent(existingId)
-          toast.info(`"${errorData.existing.name}" already exists — add a prep item below`)
-          return
-        }
-
-        toast.error(errorData.error || 'Failed to create ingredient')
-        return
-      }
-
-      const { data } = await response.json()
-      onIngredientCreated?.(data)  // Optimistic local update + socket event
-      setNewInventoryName('')
-      setCreatingInventoryInCategory(null)
-
-      // Auto-expand the new inventory item and prompt to add a prep item
-      setExpandedCategories(prev => {
-        const next = new Set(prev)
-        next.add(categoryId)
-        return next
-      })
-      setExpandedParents(prev => {
-        const next = new Set(prev)
-        next.add(data.id)
-        return next
-      })
-      setCreatingPrepUnderParent(data.id)
-      toast.success(`Created "${data.name}" — now add a prep item below`)
-
-      // Defer full refresh so optimistic update renders first (prevents race with loadMenu replacing data)
-      setTimeout(() => onItemUpdated(), 100)
-    } catch (error) {
-      console.error('Error creating inventory item:', error)
-      toast.error('Failed to create ingredient')
-    } finally {
-      setCreatingIngredientLoading(false)
-    }
-  }
-
-  // Create prep item (child) with auto-link
-  const createPrepItem = async (parentId: string, categoryId: string) => {
-    if (!newPrepName.trim()) return
-    setCreatingIngredientLoading(true)
-
-    try {
-      const response = await fetch('/api/ingredients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          locationId,
-          name: newPrepName.trim(),
-          categoryId,
-          parentIngredientId: parentId,
-          needsVerification: true,
-          isBaseIngredient: false,
-        }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-
-        // 409 = duplicate name — if it's a prep item, offer to use the existing one
-        if (response.status === 409 && errorData.existing) {
-          const existingItem = errorData.existing
-          const isPrepItem = !!existingItem.parentIngredientId
-
-          if (isPrepItem) {
-            // It's an existing prep item — ask if they want to use it
-            const useExisting = confirm(
-              `"${existingItem.name}" already exists as a prep item. Use the existing one instead?`
-            )
-            if (useExisting) {
-              // Auto-link or auto-add the existing prep item
-              if (linkingModifier) {
-                await linkIngredient(linkingModifier.groupId, linkingModifier.modId, existingItem.id)
-                toast.success(`Linked existing "${existingItem.name}"`)
-              } else if (showIngredientPicker) {
-                const alreadyAdded = ingredients.some(i => i.ingredientId === existingItem.id)
-                if (alreadyAdded) {
-                  toast.info(`"${existingItem.name}" is already added to this item`)
-                } else {
-                  const newIngredients = [...ingredients, {
-                    id: '', ingredientId: existingItem.id, name: existingItem.name,
-                    isIncluded: true, allowNo: true, allowLite: true, allowExtra: true,
-                    allowOnSide: true, allowSwap: true, extraPrice: 0,
-                  }]
-                  saveIngredients(newIngredients)
-                  setShowIngredientPicker(false)
-                  setIngredientSearch('')
-                  toast.success(`Added existing "${existingItem.name}"`)
-                }
-              }
-              setNewPrepName('')
-              setCreatingPrepUnderParent(null)
-              return
-            }
-            // User said no — keep the form open so they can change the name
-            toast.info('Change the name to create a new prep item')
-            return
-          } else {
-            // It's an inventory item with the same name — tell user to pick a different name
-            toast.error(`"${existingItem.name}" exists as an inventory item. Use a different name for the prep item.`)
-            return
-          }
-        }
-
-        toast.error(errorData.error || 'Failed to create prep item')
-        return
-      }
-
-      const { data } = await response.json()
-      onIngredientCreated?.(data)  // Optimistic local update + socket event
-
-      // Auto-link to modifier OR auto-add to ingredients
-      if (linkingModifier) {
-        await linkIngredient(linkingModifier.groupId, linkingModifier.modId, data.id)
-        toast.success(`Created "${data.name}" and linked - pending verification`)
-      } else if (showIngredientPicker) {
-        // Auto-add to ingredients when called from green ingredient picker
-        const newIngredients = [...ingredients, {
-          id: '',
-          ingredientId: data.id,
-          name: data.name,
-          isIncluded: true,
-          allowNo: true,
-          allowLite: true,
-          allowExtra: true,
-          allowOnSide: true,
-          allowSwap: true,
-          extraPrice: 0,
-        }]
-        saveIngredients(newIngredients)
-        setShowIngredientPicker(false)
-        setIngredientSearch('')
-        toast.success(`Created "${data.name}" and added - pending verification`)
-      } else {
-        toast.success(`Created "${data.name}" - pending verification`)
-      }
-
-      setNewPrepName('')
-      setCreatingPrepUnderParent(null)
-
-      // Defer full refresh so optimistic update renders first
-      setTimeout(() => onItemUpdated(), 100)
-    } catch (error) {
-      console.error('Error creating prep item:', error)
-      toast.error('Failed to create prep item')
-    } finally {
-      setCreatingIngredientLoading(false)
-    }
-  }
+  // --- Destructure hook returns for cleaner render code ---
+  const {
+    ingredients, showIngredientPicker, setShowIngredientPicker,
+    relinkingIngredientId, setRelinkingIngredientId,
+    ingredientSearch, setIngredientSearch,
+    addIngredient, removeIngredient, swapIngredientLink,
+    toggleIngredientOption, updateExtraPrice,
+  } = ingredientOps
+
+  const {
+    modifierGroups, expandedGroups, toggleExpanded,
+    showNewGroupForm, setShowNewGroupForm,
+    newGroupName, setNewGroupName,
+    draggedGroupId, setDraggedGroupId,
+    dragOverGroupId, setDragOverGroupId,
+    dragOverDropZone, setDragOverDropZone,
+    renamingGroupId, setRenamingGroupId: _setRenamingGroupId,
+    renameValue, setRenameValue,
+    createGroup, updateGroup, deleteGroup, duplicateGroup,
+    reorderGroups, reorderModifiers,
+    findGroupById, findModifierById, isDescendantOf,
+    reparentGroup, handleGroupDrop, handleGroupDropOnModifier,
+    nestGroupInGroup, startRename, commitRename,
+  } = modGroupManager
+
+  const {
+    addingModifierTo, setAddingModifierTo,
+    newModName, setNewModName,
+    newModPrice, setNewModPrice,
+    addingType, setAddingType,
+    editingModifierId, setEditingModifierId,
+    editModValues, setEditModValues,
+    linkingModifier, setLinkingModifier,
+    modIngredientSearch, setModIngredientSearch,
+    draggedModifierId, setDraggedModifierId,
+    dragOverModifierId, setDragOverModifierId,
+    addModifier, updateModifier, toggleDefault, deleteModifier,
+    startEditModifier, commitEditModifier,
+    createChildGroup, addChoice, linkIngredient,
+  } = modEditor
+
+  const {
+    expandedCategories, expandedParents,
+    creatingInventoryInCategory, setCreatingInventoryInCategory,
+    creatingPrepUnderParent, setCreatingPrepUnderParent,
+    newInventoryName, setNewInventoryName,
+    newPrepName, setNewPrepName,
+    creatingIngredientLoading,
+    creatingNewCategory, setCreatingNewCategory,
+    newCategoryName, setNewCategoryName,
+    createCategory, createInventoryItem, createPrepItem,
+  } = ingredientCreation
 
   // Helper to render a choice row (navigation modifier with child group)
   const renderChoiceRow = (groupId: string, mod: Modifier, depth: number = 0, siblingIndex: number = 0) => {
@@ -1562,12 +513,12 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 // Closing current modifier's dropdown — reset everything
                 setLinkingModifier(null)
                 setModIngredientSearch('')
-                setExpandedCategories(new Set())
-                setExpandedParents(new Set())
+                ingredientCreation.setExpandedCategories(new Set())
+                ingredientCreation.setExpandedParents(new Set())
               } else {
                 // Opening dropdown for a new modifier — reset and open
-                setExpandedCategories(new Set())
-                setExpandedParents(new Set())
+                ingredientCreation.setExpandedCategories(new Set())
+                ingredientCreation.setExpandedParents(new Set())
                 setModIngredientSearch('')
                 setLinkingModifier({ groupId, modId: mod.id })
               }
@@ -1934,7 +885,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                 onBlur={() => commitRename(childGroup.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') commitRename(childGroup.id)
-                  if (e.key === 'Escape') { setRenamingGroupId(null); setRenameValue('') }
+                  if (e.key === 'Escape') { modGroupManager.setRenamingGroupId(null); setRenameValue('') }
                 }}
                 className="flex-1 px-1 py-0.5 text-sm font-medium border rounded bg-white"
                 autoFocus
@@ -2587,7 +1538,7 @@ export function ItemEditor({ item, ingredientsLibrary, ingredientCategories = []
                               onBlur={() => commitRename(group.id)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') commitRename(group.id)
-                                if (e.key === 'Escape') { setRenamingGroupId(null); setRenameValue('') }
+                                if (e.key === 'Escape') { modGroupManager.setRenamingGroupId(null); setRenameValue('') }
                               }}
                               className="flex-1 px-1 py-0.5 text-sm font-medium border rounded bg-white"
                               autoFocus
