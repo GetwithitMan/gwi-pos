@@ -30,6 +30,7 @@ BACKUP_DIR="$APP_BASE/backups"
 BACKUP_SCRIPT="$APP_BASE/backup-pos.sh"
 MC_URL="https://app.thepasspos.com"
 MC_REGISTER_URL="$MC_URL/api/fleet/register"
+BACKOFFICE_API_URL="${BACKOFFICE_API_URL_OVERRIDE:-https://api.ordercontrolcenter.com}"
 GIT_REPO="https://github.com/GetwithitMan/gwi-pos.git"
 
 # Color output
@@ -410,6 +411,9 @@ HARDWARE_FINGERPRINT=$HARDWARE_FINGERPRINT
 MISSION_CONTROL_URL=$MC_URL
 LOCATION_ID=$LOCATION_ID
 
+# Cloud Backoffice (NUC → Cloud event pipeline)
+BACKOFFICE_API_URL=$BACKOFFICE_API_URL
+
 # Database
 DATABASE_URL=$DATABASE_URL
 DIRECT_URL=$DIRECT_URL
@@ -442,6 +446,14 @@ elif [[ "$STATION_ROLE" == "server" ]]; then
       HARDWARE_FINGERPRINT) HARDWARE_FINGERPRINT="$val" ;;
     esac
   done < "$ENV_FILE"
+
+  # Ensure backoffice URL is present (added in later installer versions)
+  if ! grep -q "^BACKOFFICE_API_URL=" "$ENV_FILE" 2>/dev/null; then
+    echo "" >> "$ENV_FILE"
+    echo "# Cloud Backoffice (NUC → Cloud event pipeline)" >> "$ENV_FILE"
+    echo "BACKOFFICE_API_URL=$BACKOFFICE_API_URL" >> "$ENV_FILE"
+    log "Added BACKOFFICE_API_URL to existing .env"
+  fi
 
   # Determine local PG
   if [[ -z "$DATABASE_URL" ]] || [[ "$DATABASE_URL" == *"localhost"* ]] || [[ "$DATABASE_URL" == *"127.0.0.1"* ]]; then
