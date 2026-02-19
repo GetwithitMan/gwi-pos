@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { LocationSettings, DEFAULT_SETTINGS } from '@/lib/settings'
-import { formatCurrency, calculateCashPrice } from '@/lib/pricing'
+import { formatCurrency } from '@/lib/pricing'
 import { useAuthStore } from '@/stores/auth-store'
 import { hasPermission, PERMISSIONS } from '@/lib/auth-utils'
 import { HardwareHealthWidget } from '@/components/hardware/HardwareHealthWidget'
@@ -119,13 +119,6 @@ export default function SettingsPage() {
     }
   }
 
-  const updateDualPricing = (updates: Partial<LocationSettings['dualPricing']>) => {
-    setSettings(prev => ({
-      ...prev,
-      dualPricing: { ...prev.dualPricing, ...updates },
-    }))
-  }
-
   const updateTax = (updates: Partial<LocationSettings['tax']>) => {
     setSettings(prev => ({
       ...prev,
@@ -209,100 +202,94 @@ export default function SettingsPage() {
       />
 
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Cash Discount Program Section */}
+        {/* Cash Discount Program Section (Read-Only) */}
         <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-lg font-semibold">Cash Discount Program</h2>
-              <p className="text-sm text-gray-500">Card price is the default - cash customers receive a discount</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={settings.dualPricing.enabled}
-                onChange={(e) => updateDualPricing({ enabled: e.target.checked })}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-lg font-semibold">Cash Discount Program</h2>
+            {settings.dualPricing.enabled ? (
+              <span className="flex items-center gap-1.5 text-sm font-medium text-green-600">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-green-500" />
+                Enabled
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-sm font-medium text-gray-400">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-gray-300" />
+                Disabled
+              </span>
+            )}
           </div>
 
-          {settings.dualPricing.enabled && (
-            <div className="space-y-4 border-t pt-4">
-              {/* Cash Discount Percentage */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Cash Discount Percentage
-                  {!isSuperAdmin && (
-                    <span className="ml-2 text-xs text-orange-600">(Super Admin only)</span>
-                  )}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    step="0.1"
-                    min="0"
-                    max="10"
-                    value={settings.dualPricing.cashDiscountPercent || 4.0}
-                    onChange={(e) => updateDualPricing({ cashDiscountPercent: parseFloat(e.target.value) || 0 })}
-                    disabled={!isSuperAdmin}
-                    className={`w-24 px-3 py-2 border rounded-lg ${!isSuperAdmin ? 'bg-gray-100 text-gray-500' : ''}`}
-                  />
-                  <span className="text-gray-500">%</span>
+          {settings.dualPricing.enabled ? (
+            <>
+              <p className="text-sm text-gray-500 mb-4">
+                Card price is the default - cash customers receive a discount
+              </p>
+
+              {/* Current Rate */}
+              <div className="mb-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">Current Rate</p>
+                <div className="bg-gray-50 border rounded-lg p-4">
+                  <p className="text-2xl font-bold text-gray-900">{discountPercent}%</p>
+                  <p className="text-sm text-gray-500 mb-3">Cash Discount</p>
+                  <p className="text-sm text-gray-600">
+                    {formatCurrency(exampleCashPrice)} → Card: {formatCurrency(exampleCardPrice)} | Cash: {formatCurrency(exampleCashPrice)}
+                  </p>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  You enter: {formatCurrency(exampleCashPrice)} → Card price: {formatCurrency(exampleCardPrice)} (displayed) → Cash discount: -{formatCurrency(exampleCardPrice - exampleCashPrice)}
-                </p>
               </div>
 
               {/* Card Types */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Card Types (full price)
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.dualPricing.applyToCredit}
-                      onChange={(e) => updateDualPricing({ applyToCredit: e.target.checked })}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm">Credit Cards</span>
-                  </label>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.dualPricing.applyToDebit}
-                      onChange={(e) => updateDualPricing({ applyToDebit: e.target.checked })}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm">Debit Cards</span>
-                  </label>
+              <div className="mb-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">Card Types</p>
+                <div className="space-y-1.5">
+                  {settings.dualPricing.applyToCredit && (
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Credit Cards (full price)
+                    </div>
+                  )}
+                  {settings.dualPricing.applyToDebit && (
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Debit Cards (full price)
+                    </div>
+                  )}
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Checked = pays full card price. Unchecked = receives cash discount.
-                </p>
               </div>
 
               {/* Display Options */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Display Options
-                </label>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={settings.dualPricing.showSavingsMessage}
-                      onChange={(e) => updateDualPricing({ showSavingsMessage: e.target.checked })}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-sm">Show &quot;Save by paying cash&quot; message at checkout</span>
-                  </label>
+              {settings.dualPricing.showSavingsMessage && (
+                <div className="flex items-center gap-2 text-sm text-gray-700 mb-4">
+                  <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Savings message shown at checkout
                 </div>
-              </div>
-            </div>
+              )}
+
+              {/* Info Note */}
+              <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Contact your administrator to change processing rates
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-gray-500 mb-4">
+                Cash discount program is not currently active
+              </p>
+              <p className="text-xs text-gray-400 flex items-center gap-1.5">
+                <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Contact your administrator to enable
+              </p>
+            </>
           )}
         </Card>
 
