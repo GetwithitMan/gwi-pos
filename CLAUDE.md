@@ -13,15 +13,23 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                  MISSION CONTROL (Cloud — Vercel)                │
-│  Onboard locations • Push updates • Monitor • Aggregate reports │
-│  app.thepasspos.com • Clerk B2B auth • Neon PostgreSQL          │
+│  Onboard locations • Push updates • Monitor fleet                │
+│  app.thepasspos.com • Clerk B2B auth • Neon PostgreSQL           │
+│  GWI-INTERNAL ONLY                                               │
 └─────────────────────────────────────────────────────────────────┘
-                              ▲ Heartbeat + Sync ▼
+                              ▲ Fleet Mgmt ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                  LOCAL SERVER (Ubuntu NUC)                       │
-│  Node.js (systemd) + Neon PostgreSQL + Socket.io                │
-│  Provisioned via installer.run • Works 100% offline             │
-│  Heartbeat (60s cron) • Sync agent (SSE) • Kiosk mode          │
+│              VENUE BACKOFFICE (Cloud — Java 25 + Spring Boot)    │
+│  Event ingestion • Reporting • Admin dashboard                   │
+│  api.ordercontrolcenter.com (API) │ {slug}.occ.com/admin (UI)    │
+│  HMAC-SHA256 auth • Neon PostgreSQL (shared cloud DB)            │
+└─────────────────────────────────────────────────────────────────┘
+                     ▲ Events (HMAC-signed, fire-and-forget) ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  LOCAL SERVER (Ubuntu NUC)                        │
+│  Node.js (systemd) + Neon PostgreSQL + Socket.io                 │
+│  Provisioned via installer.run • Works 100% offline              │
+│  Heartbeat (60s cron) • Sync agent (SSE) • Kiosk mode           │
 └─────────────────────────────────────────────────────────────────┘
               ▲ Local network (WiFi/Ethernet) ▼
          Terminals (Chromium kiosk) + Phones/iPads (PWA)
@@ -30,25 +38,25 @@ GWI POS is a **hybrid SaaS** system with local servers at each location for spee
 | Phase | What | Status |
 |-------|------|--------|
 | **1** | Build the POS (`gwi-pos`) | 🔄 In Progress |
+| **1.5** | Build Venue Backoffice (`gwi-backoffice`) | 🔄 In Progress |
 | **2** | Build Admin Console (`gwi-mission-control`) | 🔄 In Progress |
 | **3** | Deployment Infrastructure | 🔄 In Progress |
 
 **Full architecture details:** See `/docs/GWI-ARCHITECTURE.md`
 
-### Two Separate Repos & Deployments
+### Three Separate Repos & Deployments
 
-This system is split across **two independent repositories**. Never put Mission Control features in the POS repo or vice versa.
+This system is split across **three independent repositories**. Never put Mission Control features in the POS repo, backoffice features in the POS repo, or vice versa.
 
-| | GWI POS | GWI Mission Control |
-|---|---------|-------------------|
-| **Repo** | `gwi-pos` | `gwi-mission-control` |
-| **Local path** | `/Users/brianlewis/Documents/My websites/2-8 2026-B-am GWI POINT OF SALE` | `/Users/brianlewis/Documents/My websites/gwi-mission-control` |
-| **Vercel domain** | `www.barpos.restaurant` | `app.thepasspos.com` |
-| **Venue subdomains** | `{slug}.ordercontrolcenter.com` | N/A |
-| **Purpose** | POS app (ordering, payments, KDS, floor plan, menu, reports) | Admin console (onboard venues, fleet management, monitoring, billing) |
-| **Database** | Neon PostgreSQL — one database per venue (`gwi_pos_{slug}`) | Neon PostgreSQL — single master database |
-| **Prisma schema** | `prisma/schema.prisma` (POS models: Order, MenuItem, Table, etc.) | Own `prisma/schema.prisma` (Cloud models: CloudOrganization, CloudLocation, ServerNode, etc.) |
-| **Auth** | Employee PIN login (per-venue) | Clerk B2B (org-level admin users) |
+| | GWI POS | GWI Mission Control | GWI Backoffice |
+|---|---------|-------------------|----------------|
+| **Repo** | `gwi-pos` | `gwi-mission-control` | `gwi-backoffice` |
+| **Local path** | `/Users/brianlewis/Documents/My websites/2-8 2026-B-am GWI POINT OF SALE` | `/Users/brianlewis/Documents/My websites/gwi-mission-control` | `/Users/brianlewis/Documents/My websites/gwi-backoffice` |
+| **Domain** | `www.barpos.restaurant` | `app.thepasspos.com` | `api.ordercontrolcenter.com` (API) / `{slug}.ordercontrolcenter.com/admin` (UI proxy) |
+| **Venue subdomains** | `{slug}.ordercontrolcenter.com` | N/A | N/A |
+| **Purpose** | POS app (ordering, payments, KDS, floor plan, menu, reports) | Admin console (onboard venues, fleet management, monitoring, billing) | Venue backoffice (event ingestion, reporting, admin dashboard) |
+| **Database** | Neon PostgreSQL — one database per venue (`gwi_pos_{slug}`) | Neon PostgreSQL — single master database | Neon PostgreSQL — single shared cloud database |
+| **Auth** | Employee PIN login (per-venue) | Clerk B2B (org-level admin users) | HMAC-SHA256 (NUC events), API key (reports) |
 
 **Release workflow:**
 1. New POS features → commit & push to `gwi-pos` → Vercel auto-deploys to `barpos.restaurant` / `*.ordercontrolcenter.com`
@@ -68,10 +76,15 @@ This system is split across **two independent repositories**. Never put Mission 
 | Employee management, roles, permissions | **POS** |
 | Hardware (printers, KDS screens, payment readers) | **POS** |
 | Venue settings (name, address, timezone) | **POS** |
+| Event ingestion, cloud sync | **Backoffice** |
+| Cloud reporting (daily totals, trends) | **Backoffice** |
+| Venue admin dashboard | **Backoffice** |
 
 **NEVER do this:**
 - Add fleet/registration/provisioning code to the POS repo
 - Add POS ordering/menu/payment logic to the MC repo
+- Add event ingestion or cloud reporting to the POS repo
+- Duplicate payment/order models that exist in the backoffice schema
 - Duplicate models that exist in the other repo's schema
 
 ## Tech Stack

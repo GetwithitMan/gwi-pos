@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from 'crypto'
 import { queueCloudEvent } from '@/lib/cloud-event-queue'
 
 export async function emitCloudEvent(eventType: string, payload: unknown): Promise<void> {
-  const cloudUrl = process.env.CLOUD_BACKOFFICE_URL
+  const cloudUrl = process.env.BACKOFFICE_API_URL
   if (!cloudUrl) return
 
   const eventId = randomUUID()

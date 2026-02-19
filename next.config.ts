@@ -15,6 +15,18 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: require('./package.json').version,
   },
+
+  // Proxy /admin routes to the Java backoffice service
+  async rewrites() {
+    const backofficeUrl = process.env.BACKOFFICE_API_URL
+    if (!backofficeUrl) return []
+    return [
+      {
+        source: '/admin/:path*',
+        destination: `${backofficeUrl}/admin/:path*`,
+      },
+    ]
+  },
 };
 
 export default nextConfig;

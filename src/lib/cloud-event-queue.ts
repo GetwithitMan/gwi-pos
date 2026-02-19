@@ -40,7 +40,7 @@ export async function queueCloudEvent(
 }
 
 async function processQueue(): Promise<void> {
-  const cloudUrl = process.env.CLOUD_BACKOFFICE_URL
+  const cloudUrl = process.env.BACKOFFICE_API_URL
   if (!cloudUrl) return
 
   try {
