@@ -261,6 +261,9 @@ export function BartenderView({
       delayMinutes: item.delayMinutes,
       delayStartedAt: item.delayStartedAt,
       delayFiredAt: item.delayFiredAt,
+      status: item.status,
+      voidReason: item.voidReason,
+      wasMade: item.wasMade,
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeOrder.items])
@@ -329,6 +332,7 @@ export function BartenderView({
   // Calculate subtotal from local items for usePricing
   const orderSubtotal = useMemo(() => {
     return orderItems.reduce((sum, item) => {
+      if (item.status === 'voided' || item.status === 'comped') return sum
       const itemTotal = item.price * item.quantity
       const modTotal = (item.modifiers || []).reduce((m, mod) => m + mod.price, 0) * item.quantity
       return sum + itemTotal + modTotal
