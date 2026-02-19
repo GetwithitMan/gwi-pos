@@ -18,6 +18,7 @@ import { calculateCardPrice, calculateCashDiscount, applyPriceRounding } from '@
 import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderTotalsUpdate, dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
+import { emitCloudEvent } from '@/lib/cloud-events'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
 
 /**
@@ -1017,6 +1018,32 @@ export const POST = withVenue(withTiming(async function POST(
     // Dispatch open orders list changed when order is fully paid (fire-and-forget)
     if (updateData.status === 'paid') {
       dispatchOpenOrdersChanged(order.locationId, { trigger: 'paid', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
+    }
+
+    // Emit cloud event for fully paid orders (fire-and-forget)
+    if (updateData.status === 'paid') {
+      void emitCloudEvent('order_paid', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        venueId: order.locationId,
+        employeeId: order.employeeId,
+        customerId: order.customerId,
+        orderType: order.orderType,
+        paidAt: updateData.paidAt,
+        subtotal: Number(order.subtotal),
+        taxTotal: Number(order.taxTotal),
+        tipTotal: newTipTotal,
+        discountTotal: Number(order.discountTotal),
+        total: Number(order.total),
+        payments: createdPayments.map(p => ({
+          id: p.id,
+          method: p.paymentMethod,
+          amount: Number(p.amount),
+          tipAmount: Number(p.tipAmount),
+          totalAmount: Number(p.totalAmount),
+          cardLast4: p.cardLast4 ?? null,
+        })),
+      }).catch(console.error)
     }
 
     // If this is a split order that was just paid, check if all siblings are paid

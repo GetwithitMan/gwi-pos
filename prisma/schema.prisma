@@ -6377,3 +6377,20 @@ model ServerRegistrationToken {
   @@index([locationId])
   @@index([locationId, status, expiresAt])
 }
+
+// ============================================
+// CLOUD EVENT QUEUE (NUC → Cloud retry pipeline)
+// ============================================
+
+model CloudEventQueue {
+  id          String   @id @default(uuid())
+  venueId     String
+  eventType   String
+  body        Json
+  nextRetryAt DateTime @default(now())
+  attempts    Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  @@index([nextRetryAt])
+  @@map("cloud_event_queue")
+}

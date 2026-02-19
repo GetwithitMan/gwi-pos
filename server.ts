@@ -14,6 +14,7 @@ import next from 'next'
 import { initializeSocketServer } from './src/lib/socket-server'
 import { requestStore } from './src/lib/request-context'
 import { getDbForVenue, masterClient } from './src/lib/db'
+import { startCloudEventWorker } from './src/lib/cloud-event-queue'
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
@@ -57,6 +58,7 @@ async function main() {
     console.log(`[Server] GWI POS ready on http://${hostname}:${port}`)
     console.log(`[Server] Socket.io: ws://${hostname}:${port}/api/socket`)
     console.log(`[Server] Mode: ${dev ? 'development' : 'production'}`)
+    startCloudEventWorker()
   })
 }
 
