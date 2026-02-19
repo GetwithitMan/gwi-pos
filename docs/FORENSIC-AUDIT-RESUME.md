@@ -1,6 +1,6 @@
 # Forensic Audit — Resume Point
 
-**Last saved:** February 18, 2026
+**Last saved:** February 19, 2026
 **Trigger phrase:** "finish forensic audit"
 **Full audit report:** `docs/FORENSIC-AUDIT-2026-02-18.md`
 
@@ -26,8 +26,9 @@
 | 6G | Hook Wiring + New Extractions (56→30 useState) | 7 | ✅ |
 | 6H | API Response Format Normalization (460+ violations) | 5 | ✅ |
 | 6H-HF | Client-Side Response Unwrapping (150+ fixes in 120 files) | 3 | ✅ |
+| 7 | Missing Socket Dispatches (48 routes, 530 lines added) | 4 | ✅ |
 
-**Total completed:** 80 tasks, 1120+ individual fixes across 490+ files
+**Total completed:** 84 tasks, 1650+ individual fixes across 538+ files
 
 ---
 
@@ -55,7 +56,7 @@
 | 1,558 | `domains/floor-plan/admin/FloorPlanEditor.tsx` |
 
 ### Priority 4 — Socket & UX
-- ~129 missing socket dispatches (P2 — most are non-critical)
+- ~~~129 missing socket dispatches~~ — ✅ DONE (Wave 7: 48 routes fixed, 530 lines added across orders, menu, employees, shifts, ingredients, liquor, tables)
 - Remaining UX friction points from audit (transfer tab shortcut, last order recall, menu search keyboard shortcut, etc.)
 
 ---
