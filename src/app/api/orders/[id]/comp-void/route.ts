@@ -6,6 +6,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { dispatchOpenOrdersChanged, dispatchOrderTotalsUpdate, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { cleanupTemporarySeats } from '@/lib/cleanup-temp-seats'
+import { emitCloudEvent } from '@/lib/cloud-events'
 import { withVenue } from '@/lib/with-venue'
 
 interface CompVoidRequest {
@@ -246,6 +247,22 @@ export const POST = withVenue(async function POST(
         })
         .catch(console.error)
     }
+
+    // Emit cloud event for void/comp (fire-and-forget)
+    void emitCloudEvent("order_voided", {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      employeeId,
+      voidType: action,
+      reason: reason || null,
+      amount: itemTotal,
+      items: [{
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: Number(item.price),
+      }],
+    }).catch(console.error)
 
     // Dispatch real-time updates (fire-and-forget)
     dispatchOpenOrdersChanged(order.locationId, {

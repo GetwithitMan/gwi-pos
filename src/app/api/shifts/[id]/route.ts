@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@/lib/auth-utils'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { emitToLocation } from '@/lib/socket-server'
+import { emitCloudEvent } from '@/lib/cloud-events'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 
@@ -281,6 +282,18 @@ export const PUT = withVenue(async function PUT(
 
       // Real-time cross-terminal update
       void emitToLocation(shift.locationId, 'shifts:changed', { action: 'closed', shiftId: id, employeeId: shift.employeeId }).catch(() => {})
+
+      // Emit cloud event for shift closed (fire-and-forget)
+      void emitCloudEvent("shift_closed", {
+        employeeId: shift.employeeId,
+        shiftId: updatedShift.id,
+        totalSales: summary.totalSales,
+        cashSales: summary.cashSales,
+        cardSales: summary.cardSales,
+        totalTips: summary.totalTips,
+        variance: Number(updatedShift.variance),
+        closedAt: updatedShift.endedAt?.toISOString() || new Date().toISOString(),
+      }).catch(console.error)
 
       return NextResponse.json({ data: {
         shift: {

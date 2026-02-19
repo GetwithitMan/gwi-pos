@@ -15,6 +15,7 @@ import {
   centsToDollars,
   getLedgerBalance,
 } from '@/lib/domain/tips'
+import { emitCloudEvent } from '@/lib/cloud-events'
 import { withVenue } from '@/lib/with-venue'
 
 // ─── POST: Cash out tips for a single employee ──────────────────────────────
@@ -103,6 +104,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
+
+    // Emit cloud event for tip payout (fire-and-forget)
+    void emitCloudEvent("tip_settled", {
+      employeeId,
+      shiftId: shiftId || null,
+      payoutAmountCents: result.payoutAmountCents,
+      payoutAmountDollars: centsToDollars(result.payoutAmountCents),
+      previousBalanceCents: result.previousBalanceCents,
+      newBalanceCents: result.newBalanceCents,
+      settledAt: new Date().toISOString(),
+    }).catch(console.error)
 
     // ── Return success ────────────────────────────────────────────────────
     return NextResponse.json({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { assignEmployeeToTemplateGroup } from '@/lib/domain/tips/tip-group-templates'
 import { emitToLocation } from '@/lib/socket-server'
+import { emitCloudEvent } from '@/lib/cloud-events'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List time clock entries
@@ -138,6 +139,14 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Fire-and-forget socket dispatch for real-time clock updates
     void emitToLocation(locationId, 'employee:clock-changed', { employeeId }).catch(() => {})
+
+    // Emit cloud event for clock-in (fire-and-forget)
+    void emitCloudEvent("time_clock", {
+      employeeId,
+      entryId: entry.id,
+      action: "clock_in",
+      clockTime: entry.clockIn.toISOString(),
+    }).catch(console.error)
 
     // If a tip group template was selected, assign the employee to its runtime group.
     // Wrapped in try/catch so clock-in still succeeds even if group assignment fails.
@@ -297,6 +306,18 @@ export const PUT = withVenue(async function PUT(request: NextRequest) {
 
     // Fire-and-forget socket dispatch for real-time clock updates
     void emitToLocation(entry.locationId, 'employee:clock-changed', { employeeId: entry.employeeId }).catch(() => {})
+
+    // Emit cloud event for clock-out (fire-and-forget)
+    if (action === 'clockOut' && updated.clockOut) {
+      void emitCloudEvent("time_clock", {
+        employeeId: entry.employeeId,
+        entryId: entry.id,
+        action: "clock_out",
+        clockTime: updated.clockOut.toISOString(),
+        regularHours: updated.regularHours ? Number(updated.regularHours) : 0,
+        overtimeHours: updated.overtimeHours ? Number(updated.overtimeHours) : 0,
+      }).catch(console.error)
+    }
 
     // Break audit trail: create/close Break records
     if (action === 'startBreak') {

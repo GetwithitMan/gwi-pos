@@ -375,6 +375,18 @@ if [[ "$ALREADY_REGISTERED" == "false" ]] && [[ "$STATION_ROLE" == "server" ]]; 
   DIRECT_URL=$(decrypt_rsa "$ENCRYPTED_DIRECT_URL" "directUrl")
   DEPLOY_TOKEN=$(decrypt_rsa "$ENCRYPTED_DEPLOY_TOKEN" "deployToken")
 
+  # Decrypt backoffice URL (if provided by Mission Control)
+  ENCRYPTED_BACKOFFICE_URL=$(echo "$REG_RESPONSE" | jq -r '.data.encryptedBackofficeUrl // empty')
+  if [[ -n "$ENCRYPTED_BACKOFFICE_URL" ]]; then
+    DECRYPTED_BO_URL=$(decrypt_rsa "$ENCRYPTED_BACKOFFICE_URL" "backofficeUrl")
+    if [[ -n "$DECRYPTED_BO_URL" ]]; then
+      BACKOFFICE_API_URL="$DECRYPTED_BO_URL"
+      log "Backoffice URL from registration: $BACKOFFICE_API_URL"
+    else
+      log "Backoffice URL decryption failed — using default: $BACKOFFICE_API_URL"
+    fi
+  fi
+
   if [[ -z "$SERVER_API_KEY" ]]; then
     err "Failed to decrypt server API key."
     err ""
