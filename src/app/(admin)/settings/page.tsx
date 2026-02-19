@@ -168,6 +168,27 @@ export default function SettingsPage() {
     }))
   }
 
+  const updateBarTabs = (updates: Partial<LocationSettings['barTabs']>) => {
+    setSettings(prev => ({
+      ...prev,
+      barTabs: { ...prev.barTabs, ...updates },
+    }))
+  }
+
+  const updateReceipts = (updates: Partial<LocationSettings['receipts']>) => {
+    setSettings(prev => ({
+      ...prev,
+      receipts: { ...prev.receipts, ...updates },
+    }))
+  }
+
+  const updatePosDisplay = (updates: Partial<LocationSettings['posDisplay']>) => {
+    setSettings(prev => ({
+      ...prev,
+      posDisplay: { ...prev.posDisplay, ...updates },
+    }))
+  }
+
   // Calculate example prices for display
   // Cash price is what you enter, card price is calculated (adds the fee)
   const exampleCashPrice = 10.00
@@ -432,6 +453,26 @@ export default function SettingsPage() {
                 className="rounded border-gray-300"
               />
               <span className="text-sm">Calculate tax after discounts</span>
+            </label>
+
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.tax.taxInclusiveLiquor}
+                onChange={(e) => updateTax({ taxInclusiveLiquor: e.target.checked })}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm">Liquor & alcohol prices include tax</span>
+            </label>
+
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings.tax.taxInclusiveFood}
+                onChange={(e) => updateTax({ taxInclusiveFood: e.target.checked })}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm">Food prices include tax</span>
             </label>
 
           </div>
@@ -959,6 +1000,562 @@ export default function SettingsPage() {
                   type="checkbox"
                   checked={settings.clockOut?.allowTransferOnClockOut ?? true}
                   onChange={(e) => updateClockOut({ allowTransferOnClockOut: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+          </div>
+        </Card>
+
+        {/* Bar Tab Settings */}
+        <Card className="p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Bar Tab Settings</h2>
+            <p className="text-sm text-gray-500">Card requirements, timeouts, and shift close validation</p>
+          </div>
+
+          <div className="space-y-4">
+            {/* Card Requirements */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Require card to open a tab</span>
+                <p className="text-xs text-gray-500">Customers must swipe a credit card to start a bar tab</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.barTabs?.requireCardForTab ?? false}
+                  onChange={(e) => updateBarTabs({ requireCardForTab: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Auto-fill customer name from card</span>
+                <p className="text-xs text-gray-500">Use cardholder name when opening a tab with a card</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.barTabs?.pullCustomerFromCard ?? true}
+                  onChange={(e) => updateBarTabs({ pullCustomerFromCard: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Allow name-only tabs</span>
+                <p className="text-xs text-gray-500">Allow opening tabs with just a name (no card required)</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.barTabs?.allowNameOnlyTab ?? true}
+                  onChange={(e) => updateBarTabs({ allowNameOnlyTab: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Tab Timeout */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tab Timeout Warning
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="30"
+                  min="30"
+                  max="720"
+                  value={settings.barTabs?.tabTimeoutMinutes ?? 240}
+                  onChange={(e) => updateBarTabs({ tabTimeoutMinutes: parseInt(e.target.value) || 240 })}
+                  className="w-24 px-3 py-2 border rounded-lg"
+                />
+                <span className="text-gray-500">minutes</span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Show timeout warning after this many minutes of tab inactivity
+              </p>
+            </div>
+
+            {/* Shift Close Validation */}
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Require tabs closed before shift close</span>
+                <p className="text-xs text-gray-500">Block shift close if employee has open orders</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.barTabs?.requireCloseTabsBeforeShift ?? true}
+                  onChange={(e) => updateBarTabs({ requireCloseTabsBeforeShift: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Manager exempt from tab close</span>
+                <p className="text-xs text-gray-500">Managers can close shift even with open tabs</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.barTabs?.managerExemptFromTabClose ?? true}
+                  onChange={(e) => updateBarTabs({ managerExemptFromTabClose: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            {/* Declined Capture */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Max Capture Retries
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="10"
+                  value={settings.barTabs?.maxCaptureRetries ?? 3}
+                  onChange={(e) => updateBarTabs({ maxCaptureRetries: parseInt(e.target.value) || 3 })}
+                  className="w-20 px-3 py-2 border rounded-lg"
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Max retry attempts before flagging as walkout
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-sm font-medium text-gray-700">Auto-flag walkout after declines</span>
+                <p className="text-xs text-gray-500">Automatically create walkout flag after max capture retries</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.barTabs?.autoFlagWalkoutAfterDeclines ?? true}
+                  onChange={(e) => updateBarTabs({ autoFlagWalkoutAfterDeclines: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+          </div>
+        </Card>
+
+        {/* Payment Settings */}
+        <Card className="p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Payment Settings</h2>
+            <p className="text-sm text-gray-500">Payment methods, pre-auth, and tip configuration</p>
+          </div>
+
+          <div className="space-y-6">
+            {/* Accepted Payment Methods */}
+            <div>
+              <h3 className="font-medium text-gray-900 mb-3">Accepted Payment Methods</h3>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={settings.payments.acceptCash} onChange={(e) => updatePayments({ acceptCash: e.target.checked })} className="rounded border-gray-300" />
+                  <span className="text-sm">Cash</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={settings.payments.acceptCredit} onChange={(e) => updatePayments({ acceptCredit: e.target.checked })} className="rounded border-gray-300" />
+                  <span className="text-sm">Credit Cards</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={settings.payments.acceptDebit} onChange={(e) => updatePayments({ acceptDebit: e.target.checked })} className="rounded border-gray-300" />
+                  <span className="text-sm">Debit Cards</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={settings.payments.acceptGiftCards} onChange={(e) => updatePayments({ acceptGiftCards: e.target.checked })} className="rounded border-gray-300" />
+                  <span className="text-sm">Gift Cards</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={settings.payments.acceptHouseAccounts} onChange={(e) => updatePayments({ acceptHouseAccounts: e.target.checked })} className="rounded border-gray-300" />
+                  <span className="text-sm">House Accounts</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Pre-Auth */}
+            <div>
+              <h3 className="font-medium text-gray-900 mb-3">Pre-Authorization</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Enable pre-auth for tabs</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.payments.enablePreAuth}
+                      onChange={(e) => updatePayments({ enablePreAuth: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {settings.payments.enablePreAuth && (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-gray-700 w-48">Default pre-auth amount:</label>
+                      <span className="text-gray-500">$</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="5"
+                        value={settings.payments.defaultPreAuthAmount}
+                        onChange={(e) => updatePayments({ defaultPreAuthAmount: parseFloat(e.target.value) || 100 })}
+                        className="w-24 px-3 py-2 border rounded-lg"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-gray-700 w-48">Pre-auth expiration:</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="30"
+                        value={settings.payments.preAuthExpirationDays}
+                        onChange={(e) => updatePayments({ preAuthExpirationDays: parseInt(e.target.value) || 7 })}
+                        className="w-20 px-3 py-2 border rounded-lg"
+                      />
+                      <span className="text-sm text-gray-500">days</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Pay / Tip Suggestions */}
+            <div>
+              <h3 className="font-medium text-gray-900 mb-3">Quick Pay & Tip Suggestions</h3>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Enable Quick Pay</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.payments.quickPayEnabled}
+                      onChange={(e) => updatePayments({ quickPayEnabled: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 w-48">Dollar tip threshold:</label>
+                  <span className="text-gray-500">$</span>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={settings.payments.tipDollarAmountThreshold}
+                    onChange={(e) => updatePayments({ tipDollarAmountThreshold: parseFloat(e.target.value) || 15 })}
+                    className="w-20 px-3 py-2 border rounded-lg"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 ml-[12.5rem]">
+                  Under this amount, show dollar tip suggestions instead of percentages
+                </p>
+
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1">Dollar tip suggestions (for small orders):</label>
+                  <div className="flex gap-2">
+                    {(settings.payments.tipDollarSuggestions || [1, 2, 3]).map((amt, idx) => (
+                      <div key={idx} className="flex items-center gap-1">
+                        <span className="text-gray-500 text-sm">$</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={amt}
+                          onChange={(e) => {
+                            const newArr = [...(settings.payments.tipDollarSuggestions || [1, 2, 3])]
+                            newArr[idx] = parseInt(e.target.value) || 0
+                            updatePayments({ tipDollarSuggestions: newArr })
+                          }}
+                          className="w-16 px-2 py-2 border rounded-lg text-center"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-700 mb-1">Percent tip suggestions (for larger orders):</label>
+                  <div className="flex gap-2">
+                    {(settings.payments.tipPercentSuggestions || [18, 20, 25]).map((pct, idx) => (
+                      <input
+                        key={idx}
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={pct}
+                        onChange={(e) => {
+                          const newArr = [...(settings.payments.tipPercentSuggestions || [18, 20, 25])]
+                          newArr[idx] = parseInt(e.target.value) || 0
+                          updatePayments({ tipPercentSuggestions: newArr })
+                        }}
+                        className="w-16 px-2 py-2 border rounded-lg text-center"
+                      />
+                    ))}
+                    <span className="text-gray-500 self-center">%</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-sm font-medium text-gray-700">Require custom for zero tip</span>
+                    <p className="text-xs text-gray-500">Customer must tap Custom to skip tipping</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.payments.requireCustomForZeroTip}
+                      onChange={(e) => updatePayments({ requireCustomForZeroTip: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Processor */}
+            <div>
+              <h3 className="font-medium text-gray-900 mb-3">Card Processor</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Processor</label>
+                  <select
+                    value={settings.payments.processor}
+                    onChange={(e) => updatePayments({ processor: e.target.value as 'none' | 'simulated' | 'datacap' })}
+                    className="px-3 py-2 border rounded-lg"
+                  >
+                    <option value="none">None</option>
+                    <option value="simulated">Simulated (Testing)</option>
+                    <option value="datacap">Datacap Direct</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">Test Mode</span>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={settings.payments.testMode}
+                      onChange={(e) => updatePayments({ testMode: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="text-sm text-gray-700 w-48">Reader timeout:</label>
+                  <input
+                    type="number"
+                    min="10"
+                    max="120"
+                    step="5"
+                    value={settings.payments.readerTimeoutSeconds}
+                    onChange={(e) => updatePayments({ readerTimeoutSeconds: parseInt(e.target.value) || 30 })}
+                    className="w-20 px-3 py-2 border rounded-lg"
+                  />
+                  <span className="text-sm text-gray-500">seconds</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* POS Display Settings */}
+        <Card className="p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">POS Display Settings</h2>
+            <p className="text-sm text-gray-500">Menu item sizing, layout, and display preferences</p>
+          </div>
+
+          <div className="space-y-4">
+            {/* Menu Item Size */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Menu Item Size</label>
+              <div className="flex gap-4">
+                {(['compact', 'normal', 'large'] as const).map(size => (
+                  <label key={size} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="menuItemSize"
+                      checked={settings.posDisplay?.menuItemSize === size}
+                      onChange={() => updatePosDisplay({ menuItemSize: size })}
+                      className="text-blue-600"
+                    />
+                    <span className="text-sm capitalize">{size}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Items Per Row */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Menu Items Per Row</label>
+              <select
+                value={settings.posDisplay?.menuItemsPerRow ?? 5}
+                onChange={(e) => updatePosDisplay({ menuItemsPerRow: parseInt(e.target.value) as 3 | 4 | 5 | 6 })}
+                className="px-3 py-2 border rounded-lg"
+              >
+                <option value={3}>3 per row</option>
+                <option value={4}>4 per row</option>
+                <option value={5}>5 per row</option>
+                <option value={6}>6 per row</option>
+              </select>
+            </div>
+
+            {/* Category Size */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Category Button Size</label>
+              <div className="flex gap-4">
+                {([
+                  { value: 'sm', label: 'Small' },
+                  { value: 'md', label: 'Medium' },
+                  { value: 'lg', label: 'Large' },
+                ] as const).map(({ value, label }) => (
+                  <label key={value} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="categorySize"
+                      checked={settings.posDisplay?.categorySize === value}
+                      onChange={() => updatePosDisplay({ categorySize: value })}
+                      className="text-blue-600"
+                    />
+                    <span className="text-sm">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Order Panel Width */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Order Panel Width</label>
+              <div className="flex gap-4">
+                {(['narrow', 'normal', 'wide'] as const).map(width => (
+                  <label key={width} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="orderPanelWidth"
+                      checked={settings.posDisplay?.orderPanelWidth === width}
+                      onChange={() => updatePosDisplay({ orderPanelWidth: width })}
+                      className="text-blue-600"
+                    />
+                    <span className="text-sm capitalize">{width}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Color Mode */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Category Color Mode</label>
+              <div className="flex gap-4">
+                {(['solid', 'subtle', 'outline'] as const).map(mode => (
+                  <label key={mode} className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="categoryColorMode"
+                      checked={settings.posDisplay?.categoryColorMode === mode}
+                      onChange={() => updatePosDisplay({ categoryColorMode: mode })}
+                      className="text-blue-600"
+                    />
+                    <span className="text-sm capitalize">{mode}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Show Prices */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">Show prices on menu items</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.posDisplay?.showPriceOnMenuItems ?? true}
+                  onChange={(e) => updatePosDisplay({ showPriceOnMenuItems: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+          </div>
+        </Card>
+
+        {/* Receipt Settings */}
+        <Card className="p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Receipt Settings</h2>
+            <p className="text-sm text-gray-500">Customize receipt header, footer, and display options</p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Header Text</label>
+              <input
+                type="text"
+                value={settings.receipts?.headerText ?? ''}
+                onChange={(e) => updateReceipts({ headerText: e.target.value })}
+                placeholder="Thank you for your visit!"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Footer Text</label>
+              <input
+                type="text"
+                value={settings.receipts?.footerText ?? ''}
+                onChange={(e) => updateReceipts({ footerText: e.target.value })}
+                placeholder="See you next time!"
+                className="w-full px-3 py-2 border rounded-lg"
+              />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">Show server name on receipt</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.receipts?.showServerName ?? true}
+                  onChange={(e) => updateReceipts({ showServerName: e.target.checked })}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-700">Show table number on receipt</span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={settings.receipts?.showTableNumber ?? true}
+                  onChange={(e) => updateReceipts({ showTableNumber: e.target.checked })}
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
