@@ -105,6 +105,7 @@
 | T-077 | EOD Auto-Close Stale Orders — At end-of-day (shift close or manual trigger): (1) Auto-cancel all $0 draft orders and reset their tables to available. (2) Orders with balances that were declined or left open should roll forward to the next business day (keep status, keep table assignment). (3) Add manager notification/summary showing how many orders were auto-closed vs rolled forward. | PM: Orders | PM: Orders | 2026-02-17 | P1 | 54 stale $0 drafts found from draft pre-creation feature (table tap creates shell). Need cleanup cron or shift-close hook. Files: shift closeout flow, new `/api/orders/eod-cleanup` route, FloorPlanHome table reset. |
 | T-078 | Open/Stale Orders Manager UI — Admin screen to view and manage all open orders across days. Filter by date, status (draft/open/split), amount ($0 vs has balance). Bulk actions: cancel selected, void selected, reassign table. Accessible from Open Orders panel or admin menu. Shows order age, last activity, table assignment. | PM: Orders | PM: Orders | 2026-02-17 | P2 | Currently no way to see/manage stale orders from previous days. Discovered 63 orphaned orders during testing. |
 | T-079 | Handle partial payment approval flow — "Accept Partial" button doesn't proceed past the modal. Also: simulated payments showing partial approval when requested == approved ($65.82/$65.82 with $0.00 remaining). Needs: (1) Fix false-positive partial detection (requested == approved should be full approval). (2) "Accept Partial" should record partial payment, calculate remaining balance, and prompt for second payment method. (3) "Void & Retry" should void the partial auth and restart payment. (4) Support split-tender (card + cash, card + card) for remaining balance. | PM: Payments | PM: Payments | 2026-02-17 | P1 | Screenshot shows partial approval modal stuck — neither button works past it. Files: PaymentModal, useDatacap hook, /api/datacap/sale, /api/orders/[id]/pay |
+| T-080 | Full Pricing Program System — Expand beyond Cash Discount to support all standard processing models. See detailed spec below. | PM: Payments | PM: Payments | 2026-02-19 | P2 | Multi-sprint feature. Current system only supports Cash Discount (dual pricing). Touches: pricing engine, MC admin, POS checkout, receipts, backoffice reports. |
 
 ## In Progress
 
@@ -177,3 +178,143 @@ When a task touches files in MULTIPLE domains:
 4. If a worker prompt touches another domain's files, that domain's PM must review it
 
 **Example:** "Add ingredient fallback to deduction engine" → Assigned to PM: Inventory (owns `inventory-calculations.ts`) even though it touches modifier data from PM: Menu's domain.
+
+---
+
+## T-080: Full Pricing Program System — Detailed Spec
+
+### Overview
+
+Expand the pricing engine from a single "Cash Discount" model to support all standard credit card processing models. GWI admins configure the pricing program per-location in Mission Control; merchants see a read-only display on POS.
+
+### Supported Pricing Models
+
+| Model | How It Works | Who Pays the Fee | Legal Notes |
+|-------|-------------|-----------------|-------------|
+| **Cash Discount** (done) | Card price is base, cash gets a discount | Customer (indirectly) | Legal in all 50 states |
+| **Surcharge** | Cash price is base, card pays extra fee | Customer (explicit line item) | Banned in CT, MA, PR. Visa/MC cap at 3%. Must be disclosed. |
+| **Flat Rate** | Simple % + per-txn fee (like Square/Stripe) | Merchant (absorbed) | No customer-facing impact |
+| **Interchange Plus** | Pass-through interchange + fixed markup | Merchant (absorbed) | No customer-facing impact |
+| **Tiered** | Qualified / Mid-qualified / Non-qualified rates | Merchant (absorbed) | No customer-facing impact |
+
+### Data Model
+
+```typescript
+// Replace DualPricingSettings with:
+interface PricingProgram {
+  model: 'cash_discount' | 'surcharge' | 'flat_rate' | 'interchange_plus' | 'tiered' | 'none'
+  enabled: boolean
+
+  // Cash Discount settings (model === 'cash_discount')
+  cashDiscountPercent?: number        // 0-10%
+  applyToCredit?: boolean
+  applyToDebit?: boolean
+  showSavingsMessage?: boolean
+
+  // Surcharge settings (model === 'surcharge')
+  surchargePercent?: number           // 0-4% (Visa/MC cap at 3%)
+  surchargeApplyToCredit?: boolean    // Usually credit only
+  surchargeApplyToDebit?: boolean     // Usually false (prohibited by some networks)
+  surchargeDisclosure?: string        // Required disclosure text
+
+  // Flat Rate settings (model === 'flat_rate')
+  flatRatePercent?: number            // e.g., 2.9%
+  flatRatePerTxn?: number             // e.g., $0.30
+
+  // Interchange Plus settings (model === 'interchange_plus')
+  markupPercent?: number              // e.g., 0.3% above interchange
+  markupPerTxn?: number               // e.g., $0.10
+
+  // Tiered settings (model === 'tiered')
+  qualifiedRate?: number              // e.g., 1.69%
+  midQualifiedRate?: number           // e.g., 2.39%
+  nonQualifiedRate?: number           // e.g., 3.49%
+  tieredPerTxn?: number               // e.g., $0.25
+
+  // State compliance
+  venueState?: string                 // For surcharge legality checks
+}
+```
+
+### Implementation Phases
+
+#### Phase 1: Refactor Pricing Engine (POS)
+**Files:** `src/lib/pricing.ts`, `src/lib/settings.ts`
+- Replace `DualPricingSettings` with `PricingProgram` interface
+- Add strategy functions per model:
+  - `calculateSurcharge(cashPrice, percent)` → adds fee as separate line
+  - `calculateFlatRateCost(amount, percent, perTxn)` → merchant cost calc
+  - `calculateInterchangePlusCost(amount, interchange, markup, perTxn)` → merchant cost calc
+- Keep `calculateCardPrice()` and `calculateCashDiscount()` working (backward compat)
+- Flat Rate / Interchange Plus / Tiered don't change customer-facing prices — they're merchant cost tracking only
+- Add `getSurchargeAmount()` for receipt line item display
+- Add state compliance check: `isSurchargeLegal(state)` → returns false for CT, MA, PR
+
+#### Phase 2: MC Admin UI
+**Files:** `gwi-mission-control/src/components/admin/CashDiscountCard.tsx` → rename to `PricingProgramCard.tsx`
+- Replace current card with model selector dropdown
+- Conditional form fields based on selected model
+- Surcharge: show compliance warning for restricted states, cap at 3% with validation
+- Flat Rate / Interchange Plus / Tiered: show "merchant cost" calculator (not customer-facing)
+- Example calculation display adapts per model:
+  - Cash Discount: `$10.00 → Card: $10.40 | Cash: $10.00`
+  - Surcharge: `$10.00 + $0.30 surcharge = $10.30`
+  - Flat Rate: `$10.00 sale → Your cost: $0.59 (2.9% + $0.30)`
+- Save as `settings.pricingProgram` (migrate from `settings.dualPricing`)
+
+#### Phase 3: POS Checkout UI
+**Files:** `src/components/payment/PaymentModal.tsx`, `src/hooks/usePricing.ts`
+- Surcharge model: show surcharge as separate line item before total
+  - "Credit Card Surcharge (3.0%): $0.30"
+  - Customer must see surcharge BEFORE they confirm payment
+- Cash Discount model: keep current behavior (toggle between cash/card totals)
+- Flat Rate / Interchange Plus / Tiered: no change to customer display (merchant-absorbed)
+- Required surcharge disclosure text at bottom of payment screen
+
+#### Phase 4: POS Read-Only Viewer
+**Files:** `src/app/(admin)/settings/page.tsx`
+- Extend current read-only viewer to show active model name
+- Model-specific display (surcharge shows rate + disclosure, flat rate shows merchant cost, etc.)
+- Same "Contact your administrator" note
+
+#### Phase 5: Receipt & Print
+**Files:** `src/components/receipt/Receipt.tsx`, `src/lib/escpos/`
+- Surcharge: print as separate line item on receipt (legally required)
+- Cash Discount: print savings message (already done)
+- Flat Rate / Interchange Plus / Tiered: no receipt change (merchant internal)
+- Surcharge disclosure statement must print on receipt
+
+#### Phase 6: Backoffice Reports
+**Files:** `gwi-backoffice/` report endpoints
+- Add processing cost tracking: actual merchant cost per transaction
+- Effective rate report: total fees / total volume
+- Model-specific breakdowns in daily/monthly reports
+- P&L impact: revenue vs processing costs
+
+### Migration Path
+
+```sql
+-- CloudLocation.settings JSON migration
+-- Old: { "dualPricing": { "enabled": true, "cashDiscountPercent": 4, ... } }
+-- New: { "pricingProgram": { "model": "cash_discount", "enabled": true, "cashDiscountPercent": 4, ... } }
+```
+
+Write a one-time migration that:
+1. Reads existing `settings.dualPricing`
+2. Maps to new `settings.pricingProgram` with `model: 'cash_discount'`
+3. Keeps backward compat: pricing engine falls back to `dualPricing` if `pricingProgram` missing
+
+### Compliance Checklist
+
+- [ ] Surcharge banned states: Connecticut, Massachusetts, Puerto Rico
+- [ ] Visa/Mastercard surcharge cap: 3% (validate in MC admin)
+- [ ] Surcharge cannot exceed merchant's actual cost of acceptance
+- [ ] Surcharge must be disclosed at point of entry (signage), point of sale (before confirmation), and on receipt
+- [ ] Surcharge typically credit-only (debit surcharging prohibited by many networks)
+- [ ] Merchant must notify card brands 30 days before starting surcharge program
+
+### Dependencies
+
+- **Blocked by:** None (can start anytime)
+- **Nice to have first:** T-079 (partial payment flow) — split-tender interacts with surcharge calculations
+- **Touches:** `pricing.ts`, `usePricing.ts`, `PaymentModal.tsx`, `Receipt.tsx`, MC `PricingProgramCard`, backoffice reports

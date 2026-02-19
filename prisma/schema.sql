@@ -572,41 +572,16 @@ CREATE TABLE "Table" (
     "timedItemId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'available',
     "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "combinedWithId" TEXT,
-    "combinedTableIds" JSONB,
-    "originalName" TEXT,
-    "originalPosX" INTEGER,
-    "originalPosY" INTEGER,
     "defaultPosX" INTEGER,
     "defaultPosY" INTEGER,
     "defaultSectionId" TEXT,
     "isLocked" BOOLEAN NOT NULL DEFAULT false,
-    "virtualGroupId" TEXT,
-    "virtualGroupPrimary" BOOLEAN NOT NULL DEFAULT false,
-    "virtualGroupColor" TEXT,
-    "virtualGroupCreatedAt" TIMESTAMP(3),
-    "virtualGroupOffsetX" INTEGER,
-    "virtualGroupOffsetY" INTEGER,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
     "syncedAt" TIMESTAMP(3),
 
     CONSTRAINT "Table_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "VirtualGroup" (
-    "id" TEXT NOT NULL,
-    "locationId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "primaryTableId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-    "syncedAt" TIMESTAMP(3),
-
-    CONSTRAINT "VirtualGroup_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -1589,9 +1564,6 @@ CREATE TABLE "Seat" (
     "originalRelativeY" INTEGER,
     "originalAngle" INTEGER,
     "seatType" TEXT NOT NULL DEFAULT 'standard',
-    "virtualGroupId" TEXT,
-    "virtualSeatNumber" INTEGER,
-    "virtualGroupCreatedAt" TIMESTAMP(3),
     "isTemporary" BOOLEAN NOT NULL DEFAULT false,
     "sourceOrderId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'available',
@@ -3480,6 +3452,9 @@ CREATE INDEX "Customer_locationId_idx" ON "Customer"("locationId");
 CREATE INDEX "Customer_lastName_firstName_idx" ON "Customer"("lastName", "firstName");
 
 -- CreateIndex
+CREATE INDEX "Customer_locationId_isActive_deletedAt_idx" ON "Customer"("locationId", "isActive", "deletedAt");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Customer_locationId_email_key" ON "Customer"("locationId", "email");
 
 -- CreateIndex
@@ -3499,6 +3474,9 @@ CREATE INDEX "Employee_roleId_idx" ON "Employee"("roleId");
 
 -- CreateIndex
 CREATE INDEX "Employee_locationId_isActive_idx" ON "Employee"("locationId", "isActive");
+
+-- CreateIndex
+CREATE INDEX "Employee_locationId_isActive_deletedAt_idx" ON "Employee"("locationId", "isActive", "deletedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Employee_locationId_pin_key" ON "Employee"("locationId", "pin");
@@ -3525,6 +3503,12 @@ CREATE INDEX "TimeClockEntry_employeeId_idx" ON "TimeClockEntry"("employeeId");
 CREATE INDEX "TimeClockEntry_clockIn_idx" ON "TimeClockEntry"("clockIn");
 
 -- CreateIndex
+CREATE INDEX "TimeClockEntry_locationId_employeeId_clockOut_idx" ON "TimeClockEntry"("locationId", "employeeId", "clockOut");
+
+-- CreateIndex
+CREATE INDEX "TimeClockEntry_locationId_clockIn_idx" ON "TimeClockEntry"("locationId", "clockIn");
+
+-- CreateIndex
 CREATE INDEX "Shift_locationId_idx" ON "Shift"("locationId");
 
 -- CreateIndex
@@ -3538,6 +3522,15 @@ CREATE INDEX "Shift_timeClockEntryId_idx" ON "Shift"("timeClockEntryId");
 
 -- CreateIndex
 CREATE INDEX "Shift_drawerId_idx" ON "Shift"("drawerId");
+
+-- CreateIndex
+CREATE INDEX "Shift_locationId_status_idx" ON "Shift"("locationId", "status");
+
+-- CreateIndex
+CREATE INDEX "Shift_locationId_startedAt_idx" ON "Shift"("locationId", "startedAt");
+
+-- CreateIndex
+CREATE INDEX "Shift_locationId_employeeId_status_idx" ON "Shift"("locationId", "employeeId", "status");
 
 -- CreateIndex
 CREATE INDEX "Drawer_locationId_idx" ON "Drawer"("locationId");
@@ -3582,6 +3575,9 @@ CREATE INDEX "Category_categoryType_idx" ON "Category"("categoryType");
 CREATE INDEX "Category_locationId_isActive_deletedAt_idx" ON "Category"("locationId", "isActive", "deletedAt");
 
 -- CreateIndex
+CREATE INDEX "Category_locationId_sortOrder_idx" ON "Category"("locationId", "sortOrder");
+
+-- CreateIndex
 CREATE INDEX "MenuItem_locationId_idx" ON "MenuItem"("locationId");
 
 -- CreateIndex
@@ -3595,6 +3591,9 @@ CREATE INDEX "MenuItem_isActive_showOnPOS_idx" ON "MenuItem"("isActive", "showOn
 
 -- CreateIndex
 CREATE INDEX "MenuItem_locationId_isActive_deletedAt_idx" ON "MenuItem"("locationId", "isActive", "deletedAt");
+
+-- CreateIndex
+CREATE INDEX "MenuItem_locationId_isActive_idx" ON "MenuItem"("locationId", "isActive");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MenuItem_locationId_sku_key" ON "MenuItem"("locationId", "sku");
@@ -3625,6 +3624,12 @@ CREATE INDEX "Modifier_locationId_linkedMenuItemId_idx" ON "Modifier"("locationI
 
 -- CreateIndex
 CREATE INDEX "MenuItemModifierGroup_locationId_idx" ON "MenuItemModifierGroup"("locationId");
+
+-- CreateIndex
+CREATE INDEX "MenuItemModifierGroup_modifierGroupId_idx" ON "MenuItemModifierGroup"("modifierGroupId");
+
+-- CreateIndex
+CREATE INDEX "MenuItemModifierGroup_menuItemId_idx" ON "MenuItemModifierGroup"("menuItemId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MenuItemModifierGroup_menuItemId_modifierGroupId_key" ON "MenuItemModifierGroup"("menuItemId", "modifierGroupId");
@@ -3666,6 +3671,9 @@ CREATE INDEX "SectionAssignment_sectionId_idx" ON "SectionAssignment"("sectionId
 CREATE INDEX "SectionAssignment_employeeId_idx" ON "SectionAssignment"("employeeId");
 
 -- CreateIndex
+CREATE INDEX "SectionAssignment_sectionId_unassignedAt_deletedAt_idx" ON "SectionAssignment"("sectionId", "unassignedAt", "deletedAt");
+
+-- CreateIndex
 CREATE INDEX "Table_locationId_idx" ON "Table"("locationId");
 
 -- CreateIndex
@@ -3675,19 +3683,13 @@ CREATE INDEX "Table_sectionId_idx" ON "Table"("sectionId");
 CREATE INDEX "Table_status_idx" ON "Table"("status");
 
 -- CreateIndex
-CREATE INDEX "Table_virtualGroupId_idx" ON "Table"("virtualGroupId");
-
--- CreateIndex
 CREATE INDEX "Table_locationId_status_idx" ON "Table"("locationId", "status");
 
 -- CreateIndex
 CREATE INDEX "Table_locationId_isActive_deletedAt_idx" ON "Table"("locationId", "isActive", "deletedAt");
 
 -- CreateIndex
-CREATE INDEX "VirtualGroup_locationId_idx" ON "VirtualGroup"("locationId");
-
--- CreateIndex
-CREATE INDEX "VirtualGroup_primaryTableId_idx" ON "VirtualGroup"("primaryTableId");
+CREATE INDEX "Table_locationId_sectionId_idx" ON "Table"("locationId", "sectionId");
 
 -- CreateIndex
 CREATE INDEX "FloorPlanElement_locationId_idx" ON "FloorPlanElement"("locationId");
@@ -3700,6 +3702,9 @@ CREATE INDEX "FloorPlanElement_linkedMenuItemId_idx" ON "FloorPlanElement"("link
 
 -- CreateIndex
 CREATE INDEX "FloorPlanElement_status_idx" ON "FloorPlanElement"("status");
+
+-- CreateIndex
+CREATE INDEX "FloorPlanElement_locationId_elementType_isVisible_idx" ON "FloorPlanElement"("locationId", "elementType", "isVisible");
 
 -- CreateIndex
 CREATE INDEX "EntertainmentWaitlist_locationId_idx" ON "EntertainmentWaitlist"("locationId");
@@ -3777,6 +3782,18 @@ CREATE INDEX "Order_locationId_status_openedAt_idx" ON "Order"("locationId", "st
 CREATE INDEX "Order_locationId_tabStatus_idx" ON "Order"("locationId", "tabStatus");
 
 -- CreateIndex
+CREATE INDEX "Order_locationId_status_closedAt_idx" ON "Order"("locationId", "status", "closedAt");
+
+-- CreateIndex
+CREATE INDEX "Order_locationId_orderType_status_idx" ON "Order"("locationId", "orderType", "status");
+
+-- CreateIndex
+CREATE INDEX "Order_locationId_paidAt_idx" ON "Order"("locationId", "paidAt");
+
+-- CreateIndex
+CREATE INDEX "Order_locationId_createdAt_status_idx" ON "Order"("locationId", "createdAt", "status");
+
+-- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
 
 -- CreateIndex
@@ -3793,6 +3810,9 @@ CREATE INDEX "OrderItem_orderId_kitchenStatus_idx" ON "OrderItem"("orderId", "ki
 
 -- CreateIndex
 CREATE INDEX "OrderItem_orderId_status_idx" ON "OrderItem"("orderId", "status");
+
+-- CreateIndex
+CREATE INDEX "OrderItem_orderId_status_deletedAt_idx" ON "OrderItem"("orderId", "status", "deletedAt");
 
 -- CreateIndex
 CREATE INDEX "OrderItemModifier_locationId_idx" ON "OrderItemModifier"("locationId");
@@ -3834,6 +3854,24 @@ CREATE INDEX "Payment_needsReconciliation_idx" ON "Payment"("needsReconciliation
 CREATE INDEX "Payment_locationId_createdAt_idx" ON "Payment"("locationId", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "Payment_locationId_paymentMethod_createdAt_idx" ON "Payment"("locationId", "paymentMethod", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "Payment_locationId_status_createdAt_idx" ON "Payment"("locationId", "status", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "Payment_shiftId_idx" ON "Payment"("shiftId");
+
+-- CreateIndex
+CREATE INDEX "Payment_drawerId_idx" ON "Payment"("drawerId");
+
+-- CreateIndex
+CREATE INDEX "Payment_idempotencyKey_idx" ON "Payment"("idempotencyKey");
+
+-- CreateIndex
+CREATE INDEX "Payment_offlineIntentId_idx" ON "Payment"("offlineIntentId");
+
+-- CreateIndex
 CREATE INDEX "SyncAuditEntry_locationId_idx" ON "SyncAuditEntry"("locationId");
 
 -- CreateIndex
@@ -3852,6 +3890,9 @@ CREATE INDEX "SyncAuditEntry_createdAt_idx" ON "SyncAuditEntry"("createdAt");
 CREATE INDEX "SyncAuditEntry_idempotencyKey_idx" ON "SyncAuditEntry"("idempotencyKey");
 
 -- CreateIndex
+CREATE INDEX "SyncAuditEntry_locationId_idempotencyKey_idx" ON "SyncAuditEntry"("locationId", "idempotencyKey");
+
+-- CreateIndex
 CREATE INDEX "Coupon_locationId_idx" ON "Coupon"("locationId");
 
 -- CreateIndex
@@ -3859,6 +3900,9 @@ CREATE INDEX "Coupon_code_idx" ON "Coupon"("code");
 
 -- CreateIndex
 CREATE INDEX "Coupon_isActive_idx" ON "Coupon"("isActive");
+
+-- CreateIndex
+CREATE INDEX "Coupon_locationId_isActive_validUntil_idx" ON "Coupon"("locationId", "isActive", "validUntil");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Coupon_locationId_code_key" ON "Coupon"("locationId", "code");
@@ -3891,10 +3935,16 @@ CREATE INDEX "Reservation_tableId_idx" ON "Reservation"("tableId");
 CREATE INDEX "Reservation_customerId_idx" ON "Reservation"("customerId");
 
 -- CreateIndex
+CREATE INDEX "Reservation_locationId_reservationDate_status_idx" ON "Reservation"("locationId", "reservationDate", "status");
+
+-- CreateIndex
 CREATE INDEX "DiscountRule_locationId_idx" ON "DiscountRule"("locationId");
 
 -- CreateIndex
 CREATE INDEX "DiscountRule_isActive_isAutomatic_idx" ON "DiscountRule"("isActive", "isAutomatic");
+
+-- CreateIndex
+CREATE INDEX "DiscountRule_locationId_isActive_idx" ON "DiscountRule"("locationId", "isActive");
 
 -- CreateIndex
 CREATE INDEX "OrderDiscount_locationId_idx" ON "OrderDiscount"("locationId");
@@ -3925,6 +3975,9 @@ CREATE INDEX "VoidLog_employeeId_idx" ON "VoidLog"("employeeId");
 
 -- CreateIndex
 CREATE INDEX "VoidLog_createdAt_idx" ON "VoidLog"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "VoidLog_locationId_createdAt_idx" ON "VoidLog"("locationId", "createdAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "RemoteVoidApproval_approvalToken_key" ON "RemoteVoidApproval"("approvalToken");
@@ -3961,6 +4014,9 @@ CREATE INDEX "AuditLog_action_idx" ON "AuditLog"("action");
 
 -- CreateIndex
 CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "AuditLog_locationId_createdAt_idx" ON "AuditLog"("locationId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "TipPool_locationId_idx" ON "TipPool"("locationId");
@@ -4080,10 +4136,19 @@ CREATE INDEX "TipGroupMembership_employeeId_idx" ON "TipGroupMembership"("employ
 CREATE INDEX "TipGroupMembership_status_idx" ON "TipGroupMembership"("status");
 
 -- CreateIndex
+CREATE INDEX "TipGroupMembership_locationId_idx" ON "TipGroupMembership"("locationId");
+
+-- CreateIndex
+CREATE INDEX "TipGroupMembership_locationId_status_idx" ON "TipGroupMembership"("locationId", "status");
+
+-- CreateIndex
 CREATE INDEX "TipGroupSegment_groupId_idx" ON "TipGroupSegment"("groupId");
 
 -- CreateIndex
 CREATE INDEX "TipGroupSegment_startedAt_idx" ON "TipGroupSegment"("startedAt");
+
+-- CreateIndex
+CREATE INDEX "TipGroupSegment_locationId_idx" ON "TipGroupSegment"("locationId");
 
 -- CreateIndex
 CREATE INDEX "TipDebt_locationId_idx" ON "TipDebt"("locationId");
@@ -4189,9 +4254,6 @@ CREATE INDEX "Seat_locationId_idx" ON "Seat"("locationId");
 
 -- CreateIndex
 CREATE INDEX "Seat_tableId_idx" ON "Seat"("tableId");
-
--- CreateIndex
-CREATE INDEX "Seat_virtualGroupId_idx" ON "Seat"("virtualGroupId");
 
 -- CreateIndex
 CREATE INDEX "Seat_sourceOrderId_idx" ON "Seat"("sourceOrderId");
@@ -4317,6 +4379,9 @@ CREATE INDEX "InventoryItem_revenueCenter_idx" ON "InventoryItem"("revenueCenter
 CREATE INDEX "InventoryItem_category_idx" ON "InventoryItem"("category");
 
 -- CreateIndex
+CREATE INDEX "InventoryItem_locationId_category_idx" ON "InventoryItem"("locationId", "category");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "InventoryItem_locationId_name_key" ON "InventoryItem"("locationId", "name");
 
 -- CreateIndex
@@ -4324,6 +4389,9 @@ CREATE INDEX "InventoryItemStorage_locationId_idx" ON "InventoryItemStorage"("lo
 
 -- CreateIndex
 CREATE INDEX "InventoryItemStorage_storageLocationId_idx" ON "InventoryItemStorage"("storageLocationId");
+
+-- CreateIndex
+CREATE INDEX "InventoryItemStorage_inventoryItemId_idx" ON "InventoryItemStorage"("inventoryItemId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "InventoryItemStorage_inventoryItemId_storageLocationId_key" ON "InventoryItemStorage"("inventoryItemId", "storageLocationId");
@@ -4356,10 +4424,22 @@ CREATE INDEX "MenuItemRecipeIngredient_locationId_idx" ON "MenuItemRecipeIngredi
 CREATE INDEX "MenuItemRecipeIngredient_recipeId_idx" ON "MenuItemRecipeIngredient"("recipeId");
 
 -- CreateIndex
+CREATE INDEX "MenuItemRecipeIngredient_inventoryItemId_idx" ON "MenuItemRecipeIngredient"("inventoryItemId");
+
+-- CreateIndex
+CREATE INDEX "MenuItemRecipeIngredient_prepItemId_idx" ON "MenuItemRecipeIngredient"("prepItemId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "ModifierInventoryLink_modifierId_key" ON "ModifierInventoryLink"("modifierId");
 
 -- CreateIndex
 CREATE INDEX "ModifierInventoryLink_locationId_idx" ON "ModifierInventoryLink"("locationId");
+
+-- CreateIndex
+CREATE INDEX "ModifierInventoryLink_inventoryItemId_idx" ON "ModifierInventoryLink"("inventoryItemId");
+
+-- CreateIndex
+CREATE INDEX "ModifierInventoryLink_prepItemId_idx" ON "ModifierInventoryLink"("prepItemId");
 
 -- CreateIndex
 CREATE INDEX "InventoryCount_locationId_idx" ON "InventoryCount"("locationId");
@@ -4392,6 +4472,9 @@ CREATE INDEX "InventoryItemTransaction_type_idx" ON "InventoryItemTransaction"("
 CREATE INDEX "InventoryItemTransaction_createdAt_idx" ON "InventoryItemTransaction"("createdAt");
 
 -- CreateIndex
+CREATE INDEX "InventoryItemTransaction_inventoryItemId_createdAt_idx" ON "InventoryItemTransaction"("inventoryItemId", "createdAt");
+
+-- CreateIndex
 CREATE INDEX "Vendor_locationId_idx" ON "Vendor"("locationId");
 
 -- CreateIndex
@@ -4416,6 +4499,9 @@ CREATE INDEX "InvoiceLineItem_locationId_idx" ON "InvoiceLineItem"("locationId")
 CREATE INDEX "InvoiceLineItem_invoiceId_idx" ON "InvoiceLineItem"("invoiceId");
 
 -- CreateIndex
+CREATE INDEX "InvoiceLineItem_inventoryItemId_idx" ON "InvoiceLineItem"("inventoryItemId");
+
+-- CreateIndex
 CREATE INDEX "WasteLogEntry_locationId_idx" ON "WasteLogEntry"("locationId");
 
 -- CreateIndex
@@ -4423,6 +4509,9 @@ CREATE INDEX "WasteLogEntry_wasteDate_idx" ON "WasteLogEntry"("wasteDate");
 
 -- CreateIndex
 CREATE INDEX "WasteLogEntry_reason_idx" ON "WasteLogEntry"("reason");
+
+-- CreateIndex
+CREATE INDEX "WasteLogEntry_inventoryItemId_idx" ON "WasteLogEntry"("inventoryItemId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "InventorySettings_locationId_key" ON "InventorySettings"("locationId");
@@ -4561,6 +4650,9 @@ CREATE INDEX "MenuItemIngredient_menuItemId_idx" ON "MenuItemIngredient"("menuIt
 
 -- CreateIndex
 CREATE INDEX "MenuItemIngredient_locationId_ingredientId_idx" ON "MenuItemIngredient"("locationId", "ingredientId");
+
+-- CreateIndex
+CREATE INDEX "MenuItemIngredient_menuItemId_deletedAt_idx" ON "MenuItemIngredient"("menuItemId", "deletedAt");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "MenuItemIngredient_menuItemId_ingredientId_key" ON "MenuItemIngredient"("menuItemId", "ingredientId");
@@ -4714,6 +4806,9 @@ CREATE INDEX "PrintJob_printerId_idx" ON "PrintJob"("printerId");
 
 -- CreateIndex
 CREATE INDEX "PrintJob_createdAt_idx" ON "PrintJob"("createdAt");
+
+-- CreateIndex
+CREATE INDEX "PrintJob_locationId_status_idx" ON "PrintJob"("locationId", "status");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "PizzaConfig_locationId_key" ON "PizzaConfig"("locationId");
@@ -5024,6 +5119,9 @@ CREATE UNIQUE INDEX "ServerRegistrationToken_token_key" ON "ServerRegistrationTo
 -- CreateIndex
 CREATE INDEX "ServerRegistrationToken_locationId_idx" ON "ServerRegistrationToken"("locationId");
 
+-- CreateIndex
+CREATE INDEX "ServerRegistrationToken_locationId_status_expiresAt_idx" ON "ServerRegistrationToken"("locationId", "status", "expiresAt");
+
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -5182,9 +5280,6 @@ ALTER TABLE "Table" ADD CONSTRAINT "Table_locationId_fkey" FOREIGN KEY ("locatio
 
 -- AddForeignKey
 ALTER TABLE "Table" ADD CONSTRAINT "Table_sectionId_fkey" FOREIGN KEY ("sectionId") REFERENCES "Section"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "VirtualGroup" ADD CONSTRAINT "VirtualGroup_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "FloorPlanElement" ADD CONSTRAINT "FloorPlanElement_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "Location"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
