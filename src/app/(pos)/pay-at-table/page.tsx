@@ -1,10 +1,13 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import TablePayment from '@/components/pay-at-table/TablePayment'
 import SplitSelector from '@/components/pay-at-table/SplitSelector'
 import TipScreen from '@/components/pay-at-table/TipScreen'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
+import { PAT_EVENTS } from '@/types/multi-surface'
+import type { PayAtTableResultEvent } from '@/types/multi-surface'
 
 type PayState = 'loading' | 'summary' | 'split' | 'tip' | 'processing' | 'done' | 'error'
 
@@ -43,6 +46,41 @@ function PayAtTableContent() {
   const [currentSplit, setCurrentSplit] = useState(0)
   const [tipAmount, setTipAmount] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const socketRef = useRef<ReturnType<typeof getSharedSocket> | null>(null)
+
+  // Wire socket for real-time payment sync with POS terminal
+  useEffect(() => {
+    if (!orderId) return
+
+    const socket = getSharedSocket()
+    socketRef.current = socket
+
+    const onPayResult = (data: PayAtTableResultEvent) => {
+      if (data.orderId !== orderId) return
+
+      if (data.success) {
+        // If more splits to process
+        if (currentSplit + 1 < splitCount) {
+          setCurrentSplit(prev => prev + 1)
+          setTipAmount(0)
+          setState('tip')
+        } else {
+          setState('done')
+        }
+      } else {
+        setError(data.error || 'Payment declined')
+        setState('error')
+      }
+    }
+
+    socket.on(PAT_EVENTS.PAY_RESULT, onPayResult)
+
+    return () => {
+      socket.off(PAT_EVENTS.PAY_RESULT, onPayResult)
+      socketRef.current = null
+      releaseSharedSocket()
+    }
+  }, [orderId, currentSplit, splitCount])
 
   // Load order on mount
   useEffect(() => {
@@ -98,6 +136,14 @@ function PayAtTableContent() {
     if (!orderId || !readerId || !employeeId || !order) return
 
     setState('processing')
+
+    // Notify POS terminal that pay-at-table payment is in progress
+    socketRef.current?.emit(PAT_EVENTS.PAY_REQUEST, {
+      orderId,
+      readerId,
+      tipMode: tip > 0 ? 'device' : 'screen',
+      employeeId,
+    })
 
     try {
       const splitAmount = splitCount > 1

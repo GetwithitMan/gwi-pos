@@ -14,6 +14,7 @@ import { usePOSLayout } from '@/hooks/usePOSLayout'
 import { QuickAccessBar } from '@/components/pos/QuickAccessBar'
 import { MenuItemContextMenu } from '@/components/pos/MenuItemContextMenu'
 import { FloorPlanMenuItem } from './FloorPlanMenuItem'
+import { QuantityMultiplier } from './QuantityMultiplier'
 import { useFloorPlanModals } from '@/hooks/useFloorPlanModals'
 const CompVoidModal = lazy(() => import('@/components/orders/CompVoidModal').then(m => ({ default: m.CompVoidModal })))
 import { TableOptionsPopover } from '@/components/orders/TableOptionsPopover'
@@ -433,6 +434,21 @@ export function FloorPlanHome({
     onOpenPizzaBuilder: onOpenPizzaBuilder as any,
     onOpenTimedRental: onOpenTimedRental as any,
   })
+
+  // Keyboard shortcut: number keys 1-5 set quantity multiplier when menu is showing
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if user is typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (viewMode !== 'menu') return
+      const num = parseInt(e.key, 10)
+      if (num >= 1 && num <= 5) {
+        engine.setQuantityMultiplier(num)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [viewMode, engine.setQuantityMultiplier])
 
   // Context menu state — managed by useFloorPlanModals hook
 
@@ -1734,6 +1750,7 @@ export function FloorPlanHome({
           setSelectedCategoryId(null)
           setViewMode('tables')
           setMenuItems([])
+          engine.resetQuantity()
         } else {
           closeInfoPanel()
           selectTable(null)
@@ -1744,7 +1761,7 @@ export function FloorPlanHome({
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [viewMode, closeInfoPanel, selectTable, handleCloseOrderPanel])
+  }, [viewMode, closeInfoPanel, selectTable, handleCloseOrderPanel, engine.resetQuantity])
 
   const selectedCategory = categories.find(c => c.id === selectedCategoryId)
 
@@ -2085,26 +2102,32 @@ export function FloorPlanHome({
                   <p style={{ fontSize: '12px', marginTop: '4px', opacity: 0.6 }}>Tap the category again to go back</p>
                 </div>
               ) : (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
-                      gap: '16px',
-                    }}
-                  >
-                    {menuItems.map((item) => (
-                      <FloorPlanMenuItem
-                        key={item.id}
-                        item={item}
-                        customStyle={menuItemColors[item.id]}
-                        inQuickBar={isInQuickBar(item.id)}
-                        pricing={pricing}
-                        onTap={handleMenuItemTap}
-                        onContextMenu={handleMenuItemContextMenu}
-                        onUnavailable={(reason) => toast.warning(reason)}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <QuantityMultiplier
+                      quantity={engine.quantityMultiplier}
+                      onSetQuantity={engine.setQuantityMultiplier}
+                    />
+                    <div
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
+                        gap: '16px',
+                      }}
+                    >
+                      {menuItems.map((item) => (
+                        <FloorPlanMenuItem
+                          key={item.id}
+                          item={item}
+                          customStyle={menuItemColors[item.id]}
+                          inQuickBar={isInQuickBar(item.id)}
+                          pricing={pricing}
+                          onTap={handleMenuItemTap}
+                          onContextMenu={handleMenuItemContextMenu}
+                          onUnavailable={(reason) => toast.warning(reason)}
+                        />
+                      ))}
+                    </div>
+                  </>
                 )}
             </div>
           )}

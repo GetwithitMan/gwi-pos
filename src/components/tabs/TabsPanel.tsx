@@ -142,7 +142,7 @@ export function TabsPanel({ employeeId, onSelectTab, onNewTab, refreshTrigger, p
 
       {/* Tab List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-2">
-        {isLoading ? (
+        {isLoading && tabs.length === 0 ? (
           <div className="text-center text-gray-500 py-4">Loading tabs...</div>
         ) : sortedTabs.length === 0 ? (
           <div className="text-center text-gray-500 py-8">

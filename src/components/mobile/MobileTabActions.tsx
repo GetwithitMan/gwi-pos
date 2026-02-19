@@ -1,59 +1,122 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { MOBILE_EVENTS } from '@/types/multi-surface'
+import type { TabClosedEvent, TabStatusUpdateEvent } from '@/types/multi-surface'
 
 interface MobileTabActionsProps {
   tabId: string
   employeeId: string
+  onTabClosed?: (data: TabClosedEvent) => void
+  onStatusUpdate?: (data: TabStatusUpdateEvent) => void
 }
 
-export default function MobileTabActions({ tabId, employeeId }: MobileTabActionsProps) {
+export default function MobileTabActions({ tabId, employeeId, onTabClosed, onStatusUpdate }: MobileTabActionsProps) {
   const [actionState, setActionState] = useState<'idle' | 'confirming' | 'processing'>('idle')
   const [pendingAction, setPendingAction] = useState<string | null>(null)
+  const [resultMessage, setResultMessage] = useState<string | null>(null)
+
+  // Wire socket listeners for tab responses from terminal
+  useEffect(() => {
+    const socket = getSharedSocket()
+
+    const onClosed = (data: TabClosedEvent) => {
+      if (data.orderId !== tabId) return
+      setActionState('idle')
+      setPendingAction(null)
+      if (data.success) {
+        setResultMessage('Tab closed successfully')
+      } else {
+        setResultMessage(data.error || 'Failed to close tab')
+      }
+      setTimeout(() => setResultMessage(null), 3000)
+      onTabClosed?.(data)
+    }
+
+    const onStatusChange = (data: TabStatusUpdateEvent) => {
+      if (data.orderId !== tabId) return
+      onStatusUpdate?.(data)
+    }
+
+    socket.on(MOBILE_EVENTS.TAB_CLOSED, onClosed)
+    socket.on(MOBILE_EVENTS.TAB_STATUS_UPDATE, onStatusChange)
+
+    return () => {
+      socket.off(MOBILE_EVENTS.TAB_CLOSED, onClosed)
+      socket.off(MOBILE_EVENTS.TAB_STATUS_UPDATE, onStatusChange)
+      releaseSharedSocket()
+    }
+  }, [tabId, onTabClosed, onStatusUpdate])
 
   const handleAction = (action: string) => {
     setPendingAction(action)
     setActionState('confirming')
   }
 
+  const emitToSocket = useCallback((event: string, data: unknown) => {
+    const socket = getSharedSocket()
+    socket.emit(event, data)
+    releaseSharedSocket()
+  }, [])
+
   const confirmAction = async () => {
     if (!pendingAction) return
     setActionState('processing')
 
-    // These will emit socket events to the terminal
-    // Simulate socket event
     try {
       switch (pendingAction) {
         case 'close_device_tip':
-          // Emit tab:close-request with tipMode=device to terminal
-          // Terminal activates reader for capture with tip prompt
+          emitToSocket(MOBILE_EVENTS.TAB_CLOSE_REQUEST, {
+            orderId: tabId,
+            tipMode: 'device',
+            employeeId,
+          })
           break
         case 'close_receipt_tip':
-          // Emit tab:close-request with tipMode=receipt to terminal
-          // Terminal captures without tip, prints receipt
+          emitToSocket(MOBILE_EVENTS.TAB_CLOSE_REQUEST, {
+            orderId: tabId,
+            tipMode: 'receipt',
+            employeeId,
+          })
           break
         case 'transfer':
-          // Emit tab:transfer-request
+          emitToSocket(MOBILE_EVENTS.TAB_TRANSFER_REQUEST, {
+            orderId: tabId,
+            employeeId,
+          })
           break
         case 'alert_manager':
-          // Emit tab:alert-manager
-          break
+          emitToSocket(MOBILE_EVENTS.TAB_ALERT_MANAGER, {
+            orderId: tabId,
+            employeeId,
+          })
+          // Alert is fire-and-forget, reset immediately
+          setTimeout(() => {
+            setActionState('idle')
+            setPendingAction(null)
+          }, 1000)
+          return
       }
     } catch {
-      // Error handling
-    }
-
-    // Reset after brief delay
-    setTimeout(() => {
       setActionState('idle')
       setPendingAction(null)
-    }, 2000)
+      setResultMessage('Action failed')
+      setTimeout(() => setResultMessage(null), 3000)
+    }
   }
 
   const cancelAction = () => {
     setActionState('idle')
     setPendingAction(null)
+  }
+
+  if (resultMessage) {
+    return (
+      <div className="p-4 border-t border-white/10 flex items-center justify-center">
+        <span className="text-white/60 text-sm">{resultMessage}</span>
+      </div>
+    )
   }
 
   if (actionState === 'processing') {

@@ -134,6 +134,16 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
   // Pending item state for modal coordination
   const [pendingItem, setPendingItem] = useState<PendingItem | null>(null)
 
+  // Quantity multiplier — defaults to 1, auto-resets after each item add
+  const [quantityMultiplier, setQuantityMultiplier] = useState(1)
+  const quantityMultiplierRef = useRef(1)
+  quantityMultiplierRef.current = quantityMultiplier
+
+  /** Reset multiplier back to 1 */
+  const resetQuantity = useCallback(() => {
+    setQuantityMultiplier(1)
+  }, [])
+
   /**
    * Ensure an order exists in the store before adding items.
    */
@@ -201,6 +211,11 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
     // Haptic feedback
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
       navigator.vibrate(10)
+    }
+
+    // Auto-reset quantity multiplier after adding an item
+    if (quantityMultiplierRef.current > 1) {
+      setQuantityMultiplier(1)
     }
   }, [ensureOrder])
 
@@ -438,6 +453,7 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
                 menuItemId: item.id,
                 name: item.name,
                 price: item.price,
+                quantity: quantityMultiplierRef.current,
                 modifiers: defaultMods,
                 categoryType: item.categoryType,
               })
@@ -450,12 +466,15 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       }
 
       // Defaults don't cover requirements → open modifier modal
+      // Capture the multiplier now since it resets after add
+      const qtyForModifiers = quantityMultiplierRef.current
       setPendingItem({ type: 'modifier', menuItem: item })
       onOpenModifiers(item, (modifiers, ingredientMods) => {
         addItemDirectly({
           menuItemId: item.id,
           name: item.name,
           price: item.price,
+          quantity: qtyForModifiers,
           modifiers,
           ingredientModifications: ingredientMods,
           categoryType: item.categoryType,
@@ -465,11 +484,12 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
       return
     }
 
-    // 4. Simple item → add directly
+    // 4. Simple item → add directly (with quantity multiplier)
     addItemDirectly({
       menuItemId: item.id,
       name: item.name,
       price: item.price,
+      quantity: quantityMultiplierRef.current,
       categoryType: item.categoryType,
     })
   }, [onOpenModifiers, onOpenPizzaBuilder, onOpenTimedRental, addItemDirectly, ensureOrder])
@@ -554,6 +574,11 @@ export function useOrderingEngine(options: UseOrderingEngineOptions) {
     // Item selection
     handleMenuItemTap,
     addItemDirectly,
+
+    // Quantity multiplier
+    quantityMultiplier,
+    setQuantityMultiplier,
+    resetQuantity,
 
     // Modal coordination
     pendingItem,

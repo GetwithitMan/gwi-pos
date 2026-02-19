@@ -214,6 +214,22 @@ export default function MenuManagementPage() {
   const [refreshKey, setRefreshKey] = useState(0)
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null)
+  const [itemSearch, setItemSearch] = useState('')
+  const itemSearchRef = useRef<HTMLInputElement>(null)
+
+  // "/" keyboard shortcut to focus search input
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey &&
+          document.activeElement?.tagName !== 'INPUT' &&
+          document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault()
+        itemSearchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // Keep selected item in sync when items reload (e.g. after editing name/price)
   useEffect(() => {
@@ -537,7 +553,11 @@ export default function MenuManagementPage() {
     })
   }, [])
 
-  const filteredItems = items.filter(item => item.categoryId === selectedCategory)
+  const filteredItems = items.filter(item => {
+    if (item.categoryId !== selectedCategory) return false
+    if (itemSearch && !item.name.toLowerCase().includes(itemSearch.toLowerCase())) return false
+    return true
+  })
   const selectedCategoryData = categories.find(c => c.id === selectedCategory)
 
   if (!isAuthenticated) return null
@@ -586,6 +606,7 @@ export default function MenuManagementPage() {
                     setSelectedCategory(category.id)
                     setSelectedItemForEditor(null)
                     setSelectedGroupId(null)
+                    setItemSearch('')
                   }}
                   className={`shrink-0 px-3 py-1.5 rounded-lg border-2 transition-all flex items-center gap-1.5 text-sm ${
                     isSelected
@@ -650,6 +671,14 @@ export default function MenuManagementPage() {
                 → Opens in Entertainment Builder
               </span>
             )}
+            <input
+              ref={itemSearchRef}
+              type="text"
+              value={itemSearch}
+              onChange={(e) => setItemSearch(e.target.value)}
+              placeholder="Search items... ( / )"
+              className="h-6 text-xs px-2 border rounded w-36 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
             <Button
               variant="ghost"
               size="sm"

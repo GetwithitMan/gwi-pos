@@ -1197,7 +1197,7 @@ export const OrderPanel = memo(function OrderPanel({
                 )}
                 {/* Card status */}
                 {hasCard !== undefined && (
-                  <div style={{ marginTop: '6px' }}>
+                  <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {hasCard && cardLast4 ? (
                       <span style={{
                         display: 'inline-flex',
@@ -1212,18 +1212,40 @@ export const OrderPanel = memo(function OrderPanel({
                         💳 ****{cardLast4}
                       </span>
                     ) : (
-                      <span style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        fontSize: '11px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        background: 'rgba(239, 68, 68, 0.15)',
-                        color: '#f87171',
-                      }}>
-                        ⚠️ No Card
-                      </span>
+                      <>
+                        <span style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '11px',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          color: '#f87171',
+                        }}>
+                          ⚠️ No Card
+                        </span>
+                        {onStartTab && (orderType === 'bar_tab' || orderType?.includes('tab')) && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onStartTab() }}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              fontSize: '11px',
+                              fontWeight: 600,
+                              padding: '2px 10px',
+                              borderRadius: '4px',
+                              background: 'rgba(245, 158, 11, 0.2)',
+                              border: '1px solid rgba(245, 158, 11, 0.4)',
+                              color: '#fbbf24',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            💳 Attach Card
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 )}

@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CFDIdleScreen from '@/components/cfd/CFDIdleScreen'
 import CFDOrderDisplay from '@/components/cfd/CFDOrderDisplay'
 import CFDTipScreen from '@/components/cfd/CFDTipScreen'
 import CFDSignatureScreen from '@/components/cfd/CFDSignatureScreen'
 import CFDApprovedScreen from '@/components/cfd/CFDApprovedScreen'
+import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import type {
   CFDScreenState,
   CFDShowOrderEvent,
@@ -35,58 +36,74 @@ function CFDContent() {
   const [signatureData, setSignatureData] = useState<CFDSignatureRequestEvent | null>(null)
   const [approvedData, setApprovedData] = useState<CFDApprovedEvent | null>(null)
   const [declineReason, setDeclineReason] = useState<string>('')
-  const [socket, setSocket] = useState<WebSocket | null>(null)
+  const socketRef = useRef<ReturnType<typeof getSharedSocket> | null>(null)
 
-  // Connect to socket room for this terminal
+  // Connect to socket and wire CFD events
   useEffect(() => {
     if (!terminalId) return
 
-    // Socket.io connection will be wired when socket infrastructure is in place
-    // For now, this page renders all screen states for development/preview
+    const socket = getSharedSocket()
+    socketRef.current = socket
+
+    // Join CFD room for this terminal
+    if (socket.connected) {
+      socket.emit('join', `cfd:${terminalId}`)
+    }
+    const onConnect = () => socket.emit('join', `cfd:${terminalId}`)
+    socket.on('connect', onConnect)
+
+    // POS → CFD event handlers
+    const onShowOrder = (data: CFDShowOrderEvent) => {
+      setOrderData(data)
+      setScreenState('order')
+    }
+    const onPaymentStarted = () => setScreenState('payment')
+    const onTipPrompt = (data: CFDTipPromptEvent) => {
+      setTipData(data)
+      setScreenState('tip')
+    }
+    const onSignatureRequest = (data: CFDSignatureRequestEvent) => {
+      setSignatureData(data)
+      setScreenState('signature')
+    }
+    const onProcessing = () => setScreenState('processing')
+    const onApproved = (data: CFDApprovedEvent) => {
+      setApprovedData(data)
+      setScreenState('approved')
+    }
+    const onDeclined = (data: CFDDeclinedEvent) => {
+      setDeclineReason(data.reason)
+      setScreenState('declined')
+    }
+    const onIdle = () => setScreenState('idle')
+
+    socket.on(CFD_EVENTS.SHOW_ORDER, onShowOrder)
+    socket.on(CFD_EVENTS.PAYMENT_STARTED, onPaymentStarted)
+    socket.on(CFD_EVENTS.TIP_PROMPT, onTipPrompt)
+    socket.on(CFD_EVENTS.SIGNATURE_REQUEST, onSignatureRequest)
+    socket.on(CFD_EVENTS.PROCESSING, onProcessing)
+    socket.on(CFD_EVENTS.APPROVED, onApproved)
+    socket.on(CFD_EVENTS.DECLINED, onDeclined)
+    socket.on(CFD_EVENTS.IDLE, onIdle)
 
     return () => {
-      socket?.close()
+      socket.off('connect', onConnect)
+      socket.off(CFD_EVENTS.SHOW_ORDER, onShowOrder)
+      socket.off(CFD_EVENTS.PAYMENT_STARTED, onPaymentStarted)
+      socket.off(CFD_EVENTS.TIP_PROMPT, onTipPrompt)
+      socket.off(CFD_EVENTS.SIGNATURE_REQUEST, onSignatureRequest)
+      socket.off(CFD_EVENTS.PROCESSING, onProcessing)
+      socket.off(CFD_EVENTS.APPROVED, onApproved)
+      socket.off(CFD_EVENTS.DECLINED, onDeclined)
+      socket.off(CFD_EVENTS.IDLE, onIdle)
+      socketRef.current = null
+      releaseSharedSocket()
     }
-  }, [terminalId, socket])
-
-  // Handle incoming events (will be wired to Socket.io)
-  const handleSocketEvent = useCallback((event: string, data: unknown) => {
-    switch (event) {
-      case CFD_EVENTS.SHOW_ORDER:
-        setOrderData(data as CFDShowOrderEvent)
-        setScreenState('order')
-        break
-      case CFD_EVENTS.PAYMENT_STARTED:
-        setScreenState('payment')
-        break
-      case CFD_EVENTS.TIP_PROMPT:
-        setTipData(data as CFDTipPromptEvent)
-        setScreenState('tip')
-        break
-      case CFD_EVENTS.SIGNATURE_REQUEST:
-        setSignatureData(data as CFDSignatureRequestEvent)
-        setScreenState('signature')
-        break
-      case CFD_EVENTS.PROCESSING:
-        setScreenState('processing')
-        break
-      case CFD_EVENTS.APPROVED:
-        setApprovedData(data as CFDApprovedEvent)
-        setScreenState('approved')
-        break
-      case CFD_EVENTS.DECLINED:
-        setDeclineReason((data as CFDDeclinedEvent).reason)
-        setScreenState('declined')
-        break
-      case CFD_EVENTS.IDLE:
-        setScreenState('idle')
-        break
-    }
-  }, [])
+  }, [terminalId])
 
   // Send event back to POS terminal
-  const emitEvent = useCallback((_event: string, _data: unknown) => {
-    // Will be wired to Socket.io
+  const emitEvent = useCallback((event: string, data: unknown) => {
+    socketRef.current?.emit(event, data)
   }, [])
 
   const handleTipSelected = (amount: number, isPercent: boolean) => {
