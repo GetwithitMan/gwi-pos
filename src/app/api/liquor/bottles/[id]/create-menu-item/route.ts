@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
+import { dispatchMenuUpdate, dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -148,13 +148,17 @@ export const POST = withVenue(async function POST(
       },
     })
 
-    // Dispatch socket event for real-time update
-    dispatchMenuUpdate(bottle.locationId, {
+    // Dispatch socket events for real-time update (fire-and-forget)
+    void dispatchMenuUpdate(bottle.locationId, {
       action: 'created',
       menuItemId: menuItem.id,
       bottleId: bottleId,
       name: menuItem.name,
-    }, { async: true })
+    }).catch(() => {})
+    void dispatchMenuItemChanged(bottle.locationId, {
+      itemId: menuItem.id,
+      action: 'created',
+    }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

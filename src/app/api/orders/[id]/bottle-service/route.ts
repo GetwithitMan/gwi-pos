@@ -4,6 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 
 // POST - Open a bottle service tab (with tier selection + deposit pre-auth)
 export const POST = withVenue(async function POST(
@@ -145,6 +146,12 @@ export const POST = withVenue(async function POST(
         },
       }),
     ])
+
+    // Fire-and-forget socket dispatch for cross-terminal sync
+    void dispatchOrderUpdated(order.locationId, {
+      orderId,
+      changes: ['bottle-service', 'tabStatus'],
+    }).catch(() => {})
 
     return NextResponse.json({
       data: {

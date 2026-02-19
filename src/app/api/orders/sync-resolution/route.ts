@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -353,6 +354,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
           error: error instanceof Error ? error.message : 'Unknown error - retry required',
         })
       }
+    }
+
+    // Dispatch socket event for synced payments (fire-and-forget)
+    if (successfulSyncs > 0) {
+      void dispatchOpenOrdersChanged(locationId, {
+        trigger: 'paid',
+      }, { async: true }).catch(() => {})
     }
 
     return NextResponse.json({ data: {

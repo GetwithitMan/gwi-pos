@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 
 // PUT - Link or unlink customer to/from order
 export const PUT = withVenue(async function PUT(
@@ -54,6 +55,12 @@ export const PUT = withVenue(async function PUT(
       where: { id: orderId },
       data: { customerId: customerId || null },
     })
+
+    // Fire-and-forget socket dispatch for cross-terminal sync
+    void dispatchOrderUpdated(order.locationId, {
+      orderId,
+      changes: ['customer'],
+    }).catch(() => {})
 
     // Get loyalty settings
     const settings = parseSettings(order.location.settings)

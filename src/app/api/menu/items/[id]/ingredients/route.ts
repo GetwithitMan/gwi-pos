@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
@@ -184,6 +185,13 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
 
     // Filter out links where ingredient was soft-deleted
     const activeUpdated = updated.filter(mi => mi.ingredient && !mi.ingredient.deletedAt)
+
+    // Fire-and-forget socket dispatch for real-time menu updates
+    void dispatchMenuItemChanged(menuItem.locationId, {
+      itemId: menuItemId,
+      action: 'updated',
+      changes: { ingredients: true },
+    }).catch(() => {})
 
     return NextResponse.json({
       data: activeUpdated.map(mi => ({

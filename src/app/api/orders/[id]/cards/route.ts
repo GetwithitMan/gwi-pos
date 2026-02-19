@@ -4,6 +4,7 @@ import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchPaymentProcessed } from '@/lib/socket-dispatch'
 
 // GET - List all cards on a tab
 export const GET = withVenue(async function GET(
@@ -118,6 +119,13 @@ export const POST = withVenue(async function POST(
         status: 'authorized',
       },
     })
+
+    // Fire-and-forget socket dispatch for cross-terminal sync
+    void dispatchPaymentProcessed(locationId, {
+      orderId,
+      paymentId: orderCard.id,
+      status: 'authorized',
+    }).catch(() => {})
 
     return NextResponse.json({
       data: {

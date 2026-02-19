@@ -4,6 +4,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Merge another order into this one
@@ -173,6 +174,18 @@ export const POST = withVenue(async function POST(
 
       return { movedItems: moved, movedDiscounts: movedDisc }
     })
+
+    // Dispatch socket events for both orders (fire-and-forget)
+    void dispatchOpenOrdersChanged(targetOrder.locationId, {
+      trigger: 'voided',
+      orderId: sourceOrderId,
+      tableId: sourceOrder.tableId || undefined,
+    }, { async: true }).catch(() => {})
+    void dispatchOpenOrdersChanged(targetOrder.locationId, {
+      trigger: 'transferred' as any,
+      orderId: targetOrderId,
+      tableId: targetOrder.tableId || undefined,
+    }, { async: true }).catch(() => {})
 
     // Return updated target order
     const updatedOrder = await db.order.findUnique({

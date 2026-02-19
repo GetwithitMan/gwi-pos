@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
+import { dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // POST - Void an unclosed tab (releases all card holds)
@@ -79,6 +80,18 @@ export const POST = withVenue(async function POST(
         notes: reason ? `Tab voided: ${reason}` : order.notes,
       },
     })
+
+    // Dispatch socket events for voided tab (fire-and-forget)
+    if (allVoided) {
+      void dispatchOpenOrdersChanged(locationId, {
+        trigger: 'voided',
+        orderId,
+        tableId: order.tableId || undefined,
+      }, { async: true }).catch(() => {})
+      if (order.tableId) {
+        void dispatchFloorPlanUpdate(locationId, { async: true }).catch(() => {})
+      }
+    }
 
     return NextResponse.json({
       data: {

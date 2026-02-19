@@ -17,6 +17,7 @@ import {
   updateOwnershipSplits,
 } from '@/lib/domain/tips/table-ownership'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -240,6 +241,12 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       orderId,
       splits,
     })
+
+    // Fire-and-forget socket dispatch for cross-terminal sync
+    void dispatchOrderUpdated(locationId, {
+      orderId,
+      changes: ['ownership'],
+    }).catch(() => {})
 
     return NextResponse.json({ data: { ownership } })
   } catch (error) {

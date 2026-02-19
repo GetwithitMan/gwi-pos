@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 
 // Default course names for display
 const DEFAULT_COURSE_NAMES: Record<number, { name: string; color: string }> = {
@@ -183,6 +184,8 @@ export const POST = withVenue(async function POST(
         data: { courseMode },
       })
 
+      void dispatchOrderUpdated(order.locationId, { orderId, changes: ['courseMode'] }).catch(() => {})
+
       return NextResponse.json({ data: {
         success: true,
         courseMode: updated.courseMode,
@@ -195,6 +198,8 @@ export const POST = withVenue(async function POST(
         where: { id: orderId },
         data: { currentCourse: courseNumber },
       })
+
+      void dispatchOrderUpdated(order.locationId, { orderId, changes: ['currentCourse'] }).catch(() => {})
 
       return NextResponse.json({ data: {
         success: true,
@@ -236,6 +241,8 @@ export const POST = withVenue(async function POST(
           })
         }
 
+        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired'] }).catch(() => {})
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
@@ -267,6 +274,8 @@ export const POST = withVenue(async function POST(
           })
         }
 
+        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-fired-all'] }).catch(() => {})
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
@@ -288,6 +297,8 @@ export const POST = withVenue(async function POST(
           },
         })
 
+        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-held'] }).catch(() => {})
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
@@ -308,6 +319,8 @@ export const POST = withVenue(async function POST(
             isHeld: false,
           },
         })
+
+        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-released'] }).catch(() => {})
 
         return NextResponse.json({ data: {
           success: true,
@@ -331,6 +344,8 @@ export const POST = withVenue(async function POST(
           },
         })
 
+        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-ready'] }).catch(() => {})
+
         return NextResponse.json({ data: {
           success: true,
           courseNumber,
@@ -352,6 +367,8 @@ export const POST = withVenue(async function POST(
             kitchenStatus: 'delivered',
           },
         })
+
+        void dispatchOrderUpdated(order.locationId, { orderId, changes: ['course-served'] }).catch(() => {})
 
         return NextResponse.json({ data: {
           success: true,

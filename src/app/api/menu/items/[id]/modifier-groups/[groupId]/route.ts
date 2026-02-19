@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Prisma } from '@prisma/client'
 import { db } from '@/lib/db'
+import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
@@ -67,6 +68,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         },
       },
     })
+
+    // Fire-and-forget socket dispatch for real-time menu structure updates
+    void dispatchMenuStructureChanged(group.locationId, {
+      action: 'modifier-group-updated',
+      entityId: groupId,
+      entityType: 'modifier-group',
+    }).catch(() => {})
 
     return NextResponse.json({
       data: {
@@ -207,6 +215,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
         data: { deletedAt: now },
       }),
     ])
+
+    // Fire-and-forget socket dispatch for real-time menu structure updates
+    void dispatchMenuStructureChanged(group.locationId, {
+      action: 'modifier-group-updated',
+      entityId: groupId,
+      entityType: 'modifier-group',
+    }).catch(() => {})
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

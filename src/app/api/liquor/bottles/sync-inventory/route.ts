@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 
@@ -166,6 +167,11 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const synced = results.filter(r => r.status === 'created').length
     const errors = results.filter(r => r.status === 'error').length
+
+    // Real-time cross-terminal update
+    if (synced > 0 && locationId) {
+      void emitToLocation(locationId, 'inventory:changed', { action: 'liquor-sync' }).catch(() => {})
+    }
 
     return NextResponse.json({ data: {
       message: `Synced ${synced} bottles to inventory${errors > 0 ? `, ${errors} errors` : ''}`,

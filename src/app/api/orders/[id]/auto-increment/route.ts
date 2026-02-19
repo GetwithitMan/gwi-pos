@@ -4,6 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchTabUpdated } from '@/lib/socket-dispatch'
 
 // POST - Check if tab needs auto-increment and fire IncrementalAuth if so
 // Called after adding items to a tab. Fires silently in the background.
@@ -130,6 +131,12 @@ export const POST = withVenue(async function POST(
             data: { preAuthAmount: newAuthAmount },
           }),
         ])
+
+        // Fire-and-forget socket dispatch for cross-terminal sync
+        void dispatchTabUpdated(locationId, {
+          orderId,
+          status: 'incremented',
+        }).catch(() => {})
 
         return NextResponse.json({
           data: {

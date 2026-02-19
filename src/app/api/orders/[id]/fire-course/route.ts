@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
-import { dispatchNewOrder, dispatchEntertainmentUpdate } from '@/lib/socket-dispatch'
+import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { withVenue } from '@/lib/with-venue'
 
@@ -145,6 +145,12 @@ export const POST = withVenue(async function POST(
         })
       }
     }
+
+    // Fire-and-forget socket dispatch for order update
+    void dispatchOrderUpdated(order.locationId, {
+      orderId: order.id,
+      changes: ['course-fired', `course-${courseNumber}`],
+    }).catch(() => {})
 
     // Deduct prep stock for fired items (fire and forget)
     deductPrepStockForOrder(order.id, updatedItemIds).catch((err) => {

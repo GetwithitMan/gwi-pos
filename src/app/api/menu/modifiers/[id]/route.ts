@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 
 // GET single modifier group with modifiers
 export const GET = withVenue(async function GET(
@@ -269,6 +270,13 @@ export const PUT = withVenue(async function PUT(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: modifierGroup.locationId, domain: 'menu', action: 'updated', entityId: id })
 
+    // Fire-and-forget socket dispatch for real-time menu structure updates
+    void dispatchMenuStructureChanged(modifierGroup.locationId, {
+      action: 'modifier-group-updated',
+      entityId: id,
+      entityType: 'modifier-group',
+    }).catch(() => {})
+
     return NextResponse.json({ data: {
       id: updated!.id,
       name: updated!.name,
@@ -342,6 +350,12 @@ export const DELETE = withVenue(async function DELETE(
       invalidateMenuCache(group.locationId)
       // Notify cloud → NUC sync
       void notifyDataChanged({ locationId: group.locationId, domain: 'menu', action: 'deleted', entityId: id })
+      // Fire-and-forget socket dispatch for real-time menu structure updates
+      void dispatchMenuStructureChanged(group.locationId, {
+        action: 'modifier-group-updated',
+        entityId: id,
+        entityType: 'modifier-group',
+      }).catch(() => {})
     }
 
     return NextResponse.json({ data: { success: true } })

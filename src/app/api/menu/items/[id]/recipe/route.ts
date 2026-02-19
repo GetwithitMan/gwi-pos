@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -228,6 +229,13 @@ export const POST = withVenue(async function POST(
     const sellPrice = Number(menuItem.price)
     const profitMargin = sellPrice > 0 ? ((sellPrice - totalPourCost) / sellPrice) * 100 : 0
 
+    // Fire-and-forget socket dispatch for real-time menu updates
+    void dispatchMenuItemChanged(menuItem.locationId, {
+      itemId: id,
+      action: 'updated',
+      changes: { recipe: true },
+    }).catch(() => {})
+
     return NextResponse.json({ data: {
       menuItemId: menuItem.id,
       menuItemName: menuItem.name,
@@ -256,9 +264,24 @@ export const DELETE = withVenue(async function DELETE(
   try {
     const { id } = await params
 
+    // Get locationId for socket dispatch
+    const menuItem = await db.menuItem.findUnique({
+      where: { id },
+      select: { locationId: true },
+    })
+
     await db.recipeIngredient.deleteMany({
       where: { menuItemId: id },
     })
+
+    // Fire-and-forget socket dispatch for real-time menu updates
+    if (menuItem) {
+      void dispatchMenuItemChanged(menuItem.locationId, {
+        itemId: id,
+        action: 'updated',
+        changes: { recipe: true },
+      }).catch(() => {})
+    }
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

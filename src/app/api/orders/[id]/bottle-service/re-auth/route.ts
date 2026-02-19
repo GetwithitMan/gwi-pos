@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 
 // POST - Re-authorize (IncrementalAuth) when bottle service tab exceeds deposit
 // Called when bartender acknowledges re-auth alert, or manually from tab management
@@ -71,6 +72,11 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // Fire-and-forget socket dispatch for cross-terminal sync
+      void dispatchOrderUpdated(order.locationId, {
+        orderId,
+        changes: ['bottle-service-reauth', 'preAuthAmount'],
+      }).catch(() => {})
     }
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
@@ -386,6 +387,13 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         })),
       })
 
+      // Fire-and-forget socket dispatch for real-time menu structure updates
+      void dispatchMenuStructureChanged(menuItem.locationId, {
+        action: 'modifier-group-updated',
+        entityId: newGroup.id,
+        entityType: 'modifier-group',
+      }).catch(() => {})
+
       // Return same format as existing POST response
       return NextResponse.json({
         data: formatGroup(newGroup),
@@ -478,6 +486,13 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
 
       return newGroup
     })
+
+    // Fire-and-forget socket dispatch for real-time menu structure updates
+    void dispatchMenuStructureChanged(menuItem.locationId, {
+      action: 'modifier-group-updated',
+      entityId: group.id,
+      entityType: 'modifier-group',
+    }).catch(() => {})
 
     return NextResponse.json({
       data: {

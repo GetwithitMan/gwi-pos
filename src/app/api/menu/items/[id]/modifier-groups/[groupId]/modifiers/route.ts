@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { Prisma } from '@prisma/client'
+import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
@@ -83,6 +84,13 @@ export const POST = withVenue(async function POST(request: NextRequest, { params
         },
       },
     })
+
+    // Fire-and-forget socket dispatch for real-time menu structure updates
+    void dispatchMenuStructureChanged(group.locationId, {
+      action: 'modifier-group-updated',
+      entityId: groupId,
+      entityType: 'modifier-group',
+    }).catch(() => {})
 
     return NextResponse.json({
       data: {
@@ -212,6 +220,13 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
       },
     })
 
+    // Fire-and-forget socket dispatch for real-time menu structure updates
+    void dispatchMenuStructureChanged(modifier.locationId, {
+      action: 'modifier-group-updated',
+      entityId: groupId,
+      entityType: 'modifier-group',
+    }).catch(() => {})
+
     return NextResponse.json({
       data: {
         id: updated.id,
@@ -276,6 +291,13 @@ export const DELETE = withVenue(async function DELETE(request: NextRequest, { pa
         data: { deletedAt: new Date() },
       })
     }
+
+    // Fire-and-forget socket dispatch for real-time menu structure updates
+    void dispatchMenuStructureChanged(modifier.locationId, {
+      action: 'modifier-group-updated',
+      entityId: groupId,
+      entityType: 'modifier-group',
+    }).catch(() => {})
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

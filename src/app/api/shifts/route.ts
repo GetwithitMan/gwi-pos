@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List shifts with optional filters
@@ -198,6 +199,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    // Real-time cross-terminal update
+    void emitToLocation(locationId, 'shifts:changed', { action: 'started', shiftId: shift.id, employeeId }).catch(() => {})
 
     return NextResponse.json({ data: {
       shift: {

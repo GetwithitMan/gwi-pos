@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 /**
@@ -85,6 +86,9 @@ export const POST = withVenue(async function POST(
 
       return updatedSeats
     })
+
+    // Fire-and-forget socket dispatch for real-time floor plan updates
+    void dispatchFloorPlanUpdate(locationId).catch(() => {})
 
     return NextResponse.json({
       data: {

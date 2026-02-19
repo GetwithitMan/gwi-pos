@@ -4,6 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { requireDatacapClient, validateReader } from '@/lib/datacap/helpers'
 import { parseError } from '@/lib/datacap/xml-parser'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchTabUpdated, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 
 /**
  * Normalize cardholder name from card reader.
@@ -176,6 +177,17 @@ export const POST = withVenue(async function POST(
         },
       }),
     ])
+
+    // Fire-and-forget socket dispatches for cross-terminal sync
+    void dispatchTabUpdated(locationId, {
+      orderId,
+      status: 'open',
+    }).catch(() => {})
+    void dispatchOpenOrdersChanged(locationId, {
+      trigger: 'created',
+      orderId,
+      tableId: order.tableId || undefined,
+    }).catch(() => {})
 
     return NextResponse.json({
       data: {

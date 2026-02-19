@@ -4,6 +4,7 @@ import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { createEmployeeSchema, validateRequest } from '@/lib/validations'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - List employees for a location with pagination
@@ -161,6 +162,9 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'employees', action: 'created', entityId: employee.id })
+
+    // Real-time cross-terminal update
+    void emitToLocation(locationId, 'employees:changed', { action: 'created', employeeId: employee.id }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: employee.id,

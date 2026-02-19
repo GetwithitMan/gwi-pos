@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 
 interface ApplyDiscountRequest {
   // Either use a preset discount rule or custom values
@@ -185,6 +186,20 @@ export const POST = withVenue(async function POST(
       },
     })
 
+    // Fire-and-forget socket dispatches for cross-terminal sync
+    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+      subtotal: totals.subtotal,
+      taxTotal: totals.taxTotal,
+      tipTotal: Number(order.tipTotal),
+      discountTotal: totals.discountTotal,
+      total: totals.total,
+      commissionTotal: Number(order.commissionTotal || 0),
+    }, { async: true }).catch(() => {})
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'created',
+      orderId,
+    }, { async: true }).catch(() => {})
+
     return NextResponse.json({ data: {
       discount: {
         id: discount.id,
@@ -314,6 +329,20 @@ export const DELETE = withVenue(async function DELETE(
         total: totals.total,
       },
     })
+
+    // Fire-and-forget socket dispatches for cross-terminal sync
+    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+      subtotal: totals.subtotal,
+      taxTotal: totals.taxTotal,
+      tipTotal: Number(order.tipTotal),
+      discountTotal: totals.discountTotal,
+      total: totals.total,
+      commissionTotal: Number(order.commissionTotal || 0),
+    }, { async: true }).catch(() => {})
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'created',
+      orderId,
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

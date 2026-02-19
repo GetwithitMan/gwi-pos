@@ -1,5 +1,6 @@
 import { db } from '@/lib/db'
 import { NextResponse } from 'next/server'
+import { dispatchOrderUpdated, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 export const POST = withVenue(async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +39,20 @@ export const POST = withVenue(async function POST(req: Request, { params }: { pa
           seatVersion: { increment: 1 },
         },
       })
+
+      // Get order for locationId and tableId (needed for socket dispatch)
+      const orderData = await tx.order.findUnique({
+        where: { id: orderId },
+        select: { locationId: true, tableId: true },
+      })
+
+      if (orderData) {
+        // Dispatch socket events (fire-and-forget, outside transaction)
+        void dispatchOrderUpdated(orderData.locationId, { orderId, changes: ['seats'] }).catch(() => {})
+        if (orderData.tableId) {
+          void dispatchFloorPlanUpdate(orderData.locationId, { async: true }).catch(() => {})
+        }
+      }
 
       return NextResponse.json({ data: { success: true } })
     })

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 
 export const PATCH = withVenue(async function PATCH(
   request: NextRequest,
@@ -84,6 +85,16 @@ export const PATCH = withVenue(async function PATCH(
         tipTotal: newOrderTipTotal,
       },
     })
+
+    // Fire-and-forget socket dispatch for cross-terminal sync
+    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+      subtotal: Number(order.subtotal),
+      taxTotal: Number(order.taxTotal),
+      tipTotal: newOrderTipTotal,
+      discountTotal: Number(order.discountTotal),
+      total: Number(order.total),
+      commissionTotal: Number(order.commissionTotal || 0),
+    }, { async: true }).catch(() => {})
 
     // Create audit log
     await db.auditLog.create({

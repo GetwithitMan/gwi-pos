@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { parseSettings } from '@/lib/settings'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 
 // POST - Mark an open tab as a walkout and create retry records
 export const POST = withVenue(async function POST(
@@ -52,6 +53,13 @@ export const POST = withVenue(async function POST(
         walkoutMarkedBy: employeeId,
       },
     })
+
+    // Fire-and-forget socket dispatch for cross-terminal sync
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'voided',
+      orderId,
+      tableId: order.tableId || undefined,
+    }, { async: true }).catch(() => {})
 
     // Create walkout retry records for each authorized card
     const retries = []

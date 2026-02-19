@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { getLocationId } from '@/lib/location-cache'
 
@@ -280,6 +281,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
       return { bottle, inventoryItemId: inventoryItem.id }
     })
+
+    // Real-time cross-terminal update
+    void dispatchMenuUpdate(spiritCategory.locationId, {
+      action: 'created',
+      bottleId: result.bottle.id,
+      name: result.bottle.name,
+    }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: result.bottle.id,

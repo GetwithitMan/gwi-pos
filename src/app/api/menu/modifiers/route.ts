@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
 import { invalidateMenuCache } from '@/lib/menu-cache'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { dispatchMenuStructureChanged } from '@/lib/socket-dispatch'
 import { getLocationId } from '@/lib/location-cache'
 
 // GET all modifier groups with their modifiers
@@ -200,6 +201,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId, domain: 'menu', action: 'created', entityId: modifierGroup.id })
+
+    // Fire-and-forget socket dispatch for real-time menu structure updates
+    void dispatchMenuStructureChanged(locationId, {
+      action: 'modifier-group-updated',
+      entityId: modifierGroup.id,
+      entityType: 'modifier-group',
+    }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: modifierGroup.id,

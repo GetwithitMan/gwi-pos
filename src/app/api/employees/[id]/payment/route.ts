@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get employee payment preferences
@@ -159,6 +160,9 @@ export const PUT = withVenue(async function PUT(
       where: { id },
       data: updateData,
     })
+
+    // Real-time cross-terminal update
+    void emitToLocation(employee.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(() => {})
 
     return NextResponse.json({ data: {
       message: 'Payment preferences updated',

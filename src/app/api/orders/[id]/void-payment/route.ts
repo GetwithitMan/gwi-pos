@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
 import { handleTipChargeback } from '@/lib/domain/tips/tip-chargebacks'
+import { dispatchPaymentProcessed, dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 export const POST = withVenue(async function POST(
@@ -126,6 +127,20 @@ export const POST = withVenue(async function POST(
 
       return updated
     })
+
+    // Dispatch socket events for voided payment (fire-and-forget)
+    void dispatchPaymentProcessed(order.locationId, {
+      orderId,
+      paymentId,
+      status: 'voided',
+    }).catch(() => {})
+    void dispatchOrderTotalsUpdate(order.locationId, orderId, {
+      subtotal: Number(order.subtotal),
+      taxTotal: Number(order.taxTotal),
+      tipTotal: Number(order.tipTotal),
+      discountTotal: Number(order.discountTotal),
+      total: Number(order.total),
+    }, { async: true }).catch(() => {})
 
     // Reverse tip allocations for this voided payment (fire-and-forget)
     // The chargeback policy (BUSINESS_ABSORBS vs EMPLOYEE_CHARGEBACK) is

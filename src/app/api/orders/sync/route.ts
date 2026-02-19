@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // POST sync an offline order
@@ -192,6 +193,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    // Dispatch socket event for synced order (fire-and-forget)
+    if (completeOrder) {
+      void dispatchOpenOrdersChanged(completeOrder.locationId, {
+        trigger: 'created',
+        orderId: completeOrder.id,
+        tableId: completeOrder.tableId || undefined,
+      }, { async: true }).catch(() => {})
+    }
 
     return NextResponse.json({ data: {
       success: true,

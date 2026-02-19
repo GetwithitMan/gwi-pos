@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 interface RouteParams {
@@ -386,6 +387,9 @@ export const PUT = withVenue(async function PUT(request: NextRequest, { params }
         },
       },
     })
+
+    // Real-time cross-terminal update
+    void emitToLocation(existing.locationId, 'inventory:changed', { ingredientId: id }).catch(() => {})
 
     return NextResponse.json({
       data: {

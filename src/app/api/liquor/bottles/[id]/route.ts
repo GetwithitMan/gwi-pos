@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchMenuUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 const ML_PER_OZ = 29.5735
@@ -263,6 +264,13 @@ export const PUT = withVenue(async function PUT(
 
       return updatedBottle
     })
+
+    // Real-time cross-terminal update
+    void dispatchMenuUpdate(existing.locationId, {
+      action: 'updated',
+      bottleId: id,
+      name: bottle.name,
+    }).catch(() => {})
 
     return NextResponse.json({ data: {
       id: bottle.id,

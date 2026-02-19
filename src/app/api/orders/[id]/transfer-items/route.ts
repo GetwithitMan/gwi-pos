@@ -4,6 +4,7 @@ import { parseSettings } from '@/lib/settings'
 import { requirePermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { calculateSimpleOrderTotals as calculateOrderTotals } from '@/lib/order-calculations'
+import { dispatchOpenOrdersChanged, dispatchOrderUpdated } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 interface TransferItemsRequest {
@@ -190,6 +191,15 @@ export const POST = withVenue(async function POST(
         },
       })
     })
+
+    // Dispatch socket events for both orders (fire-and-forget)
+    void dispatchOrderUpdated(fromOrder.locationId, { orderId: fromOrderId, changes: ['items'] }).catch(() => {})
+    void dispatchOrderUpdated(fromOrder.locationId, { orderId: toOrderId, changes: ['items'] }).catch(() => {})
+    void dispatchOpenOrdersChanged(fromOrder.locationId, {
+      trigger: 'transferred',
+      orderId: fromOrderId,
+      tableId: fromOrder.tableId || undefined,
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

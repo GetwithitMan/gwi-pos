@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderUpdated } from '@/lib/socket-dispatch'
 
 // POST - Advance to next course
 // Marks current course as served and fires the next course
@@ -94,6 +95,12 @@ export const POST = withVenue(async function POST(
         data: { currentCourse: nextCourse },
       })
 
+      // Fire-and-forget socket dispatch for cross-terminal sync
+      void dispatchOrderUpdated(order.locationId, {
+        orderId,
+        changes: ['course-advanced', `course-${nextCourse}`],
+      }).catch(() => {})
+
       return NextResponse.json({ data: {
         success: true,
         previousCourse: currentCourse,
@@ -102,6 +109,12 @@ export const POST = withVenue(async function POST(
         hasMoreCourses: courseNumbers.indexOf(nextCourse) < courseNumbers.length - 1,
       } })
     }
+
+    // Fire-and-forget socket dispatch for cross-terminal sync
+    void dispatchOrderUpdated(order.locationId, {
+      orderId,
+      changes: ['courses-complete'],
+    }).catch(() => {})
 
     // No more courses
     return NextResponse.json({ data: {

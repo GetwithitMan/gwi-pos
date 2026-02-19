@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getLocationTaxRate, calculateTax } from '@/lib/order-calculations'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 interface SplitRequest {
@@ -210,6 +211,15 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // Dispatch socket events for new split orders (fire-and-forget)
+      for (const s of splitOrders) {
+        void dispatchOpenOrdersChanged(order.locationId, {
+          trigger: 'created',
+          orderId: s.id,
+          tableId: order.tableId || undefined,
+        }, { async: true }).catch(() => {})
+      }
+
       return NextResponse.json({ data: {
         type: 'even',
         parentOrder: {
@@ -374,6 +384,13 @@ export const POST = withVenue(async function POST(
           total: remainingTotal,
         },
       })
+
+      // Dispatch socket events for split (fire-and-forget)
+      void dispatchOpenOrdersChanged(order.locationId, {
+        trigger: 'created',
+        orderId: newOrder.id,
+        tableId: order.tableId || undefined,
+      }, { async: true }).catch(() => {})
 
       return NextResponse.json({ data: {
         type: 'by_item',
@@ -577,6 +594,15 @@ export const POST = withVenue(async function POST(
         },
       })
 
+      // Dispatch socket events for seat splits (fire-and-forget)
+      for (const s of splitOrders) {
+        void dispatchOpenOrdersChanged(order.locationId, {
+          trigger: 'created',
+          orderId: s.id,
+          tableId: order.tableId || undefined,
+        }, { async: true }).catch(() => {})
+      }
+
       return NextResponse.json({ data: {
         type: 'by_seat',
         parentOrder: {
@@ -770,6 +796,15 @@ export const POST = withVenue(async function POST(
             : `[Split by table: ${tablesWithItems.length} tables]`,
         },
       })
+
+      // Dispatch socket events for table splits (fire-and-forget)
+      for (const s of splitOrders) {
+        void dispatchOpenOrdersChanged(order.locationId, {
+          trigger: 'created',
+          orderId: s.id,
+          tableId: s.tableId || undefined,
+        }, { async: true }).catch(() => {})
+      }
 
       return NextResponse.json({ data: {
         type: 'by_table',

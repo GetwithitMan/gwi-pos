@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { withVenue } from '@/lib/with-venue'
+import { dispatchOrderTotalsUpdate } from '@/lib/socket-dispatch'
 
 interface TipAdjustment {
   orderId: string
@@ -32,6 +33,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
     const results: { orderId: string; success: boolean; error?: string }[] = []
     let totalTips = 0
+    const dispatchInfos: { locationId: string; orderId: string; subtotal: number; taxTotal: number; tipTotal: number; discountTotal: number; total: number; commissionTotal: number }[] = []
 
     // Process each adjustment in a transaction
     await db.$transaction(async (tx) => {
@@ -110,8 +112,30 @@ export const POST = withVenue(async function POST(request: NextRequest) {
 
         totalTips += adj.tipAmount
         results.push({ orderId: adj.orderId, success: true })
+        dispatchInfos.push({
+          locationId: order.locationId,
+          orderId: adj.orderId,
+          subtotal: Number(order.subtotal),
+          taxTotal: Number(order.taxTotal),
+          tipTotal: newOrderTipTotal,
+          discountTotal: Number(order.discountTotal),
+          total: Number(order.total),
+          commissionTotal: Number(order.commissionTotal || 0),
+        })
       }
     })
+
+    // Fire-and-forget socket dispatches for cross-terminal sync
+    for (const info of dispatchInfos) {
+      void dispatchOrderTotalsUpdate(info.locationId, info.orderId, {
+        subtotal: info.subtotal,
+        taxTotal: info.taxTotal,
+        tipTotal: info.tipTotal,
+        discountTotal: info.discountTotal,
+        total: info.total,
+        commissionTotal: info.commissionTotal,
+      }, { async: true }).catch(() => {})
+    }
 
     const adjusted = results.filter(r => r.success).length
     const errors = results.filter(r => !r.success)

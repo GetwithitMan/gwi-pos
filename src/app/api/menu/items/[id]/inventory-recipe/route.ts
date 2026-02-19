@@ -5,6 +5,7 @@ import {
   calculateRecipeCosting,
   toNumber
 } from '@/lib/inventory-calculations'
+import { dispatchMenuItemChanged } from '@/lib/socket-dispatch'
 import { createMenuItemRecipeSchema, validateRequest } from '@/lib/validations'
 import { withVenue } from '@/lib/with-venue'
 
@@ -222,6 +223,13 @@ export const POST = withVenue(async function POST(
 
     const costing = calculateRecipeCosting(totalCost, sellPrice)
 
+    // Fire-and-forget socket dispatch for real-time menu updates
+    void dispatchMenuItemChanged(menuItem.locationId, {
+      itemId: id,
+      action: 'updated',
+      changes: { recipe: true },
+    }).catch(() => {})
+
     return NextResponse.json({ data: {
       recipe: {
         ...recipe,
@@ -267,6 +275,13 @@ export const DELETE = withVenue(async function DELETE(
         data: { deletedAt: new Date() },
       })
     })
+
+    // Fire-and-forget socket dispatch for real-time menu updates
+    void dispatchMenuItemChanged(recipe.locationId, {
+      itemId: id,
+      action: 'updated',
+      changes: { recipe: true },
+    }).catch(() => {})
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {

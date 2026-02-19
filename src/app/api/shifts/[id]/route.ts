@@ -4,6 +4,7 @@ import { requireAnyPermission } from '@/lib/api-auth'
 import { PERMISSIONS } from '@/lib/auth-utils'
 import { postToTipLedger, dollarsToCents } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
+import { emitToLocation } from '@/lib/socket-server'
 import { parseSettings } from '@/lib/settings'
 import { getLocationSettings } from '@/lib/location-cache'
 
@@ -278,6 +279,9 @@ export const PUT = withVenue(async function PUT(
         return closed
       })
 
+      // Real-time cross-terminal update
+      void emitToLocation(shift.locationId, 'shifts:changed', { action: 'closed', shiftId: id, employeeId: shift.employeeId }).catch(() => {})
+
       return NextResponse.json({ data: {
         shift: {
           id: updatedShift.id,
@@ -314,6 +318,9 @@ export const PUT = withVenue(async function PUT(
         ...(notes !== undefined ? { notes } : {}),
       },
     })
+
+    // Real-time cross-terminal update
+    void emitToLocation(shift.locationId, 'shifts:changed', { action: 'updated', shiftId: id }).catch(() => {})
 
     return NextResponse.json({ data: {
       shift: updatedShift,

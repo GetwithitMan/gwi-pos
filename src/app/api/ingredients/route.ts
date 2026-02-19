@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { dispatchIngredientLibraryUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 // GET /api/ingredients - List ingredients with filtering and grouping
@@ -497,6 +498,17 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         },
       },
     })
+
+    // Real-time cross-terminal update
+    void dispatchIngredientLibraryUpdate(locationId, {
+      ingredient: {
+        id: ingredient.id,
+        name: ingredient.name,
+        categoryId: ingredient.categoryId || '',
+        parentIngredientId: ingredient.parentIngredientId,
+        isBaseIngredient: ingredient.isBaseIngredient,
+      },
+    }).catch(() => {})
 
     return NextResponse.json({
       data: {

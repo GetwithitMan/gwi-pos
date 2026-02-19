@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { hasPermission } from '@/lib/auth-utils'
+import { dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 
 export const POST = withVenue(async function POST(
@@ -85,6 +86,13 @@ export const POST = withVenue(async function POST(
         userAgent: request.headers.get('user-agent'),
       },
     })
+
+    // Dispatch socket event for reopened order (fire-and-forget)
+    void dispatchOpenOrdersChanged(order.locationId, {
+      trigger: 'reopened',
+      orderId,
+      tableId: order.tableId || undefined,
+    }, { async: true }).catch(() => {})
 
     return NextResponse.json({
       data: {

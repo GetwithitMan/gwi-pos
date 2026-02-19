@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { hashPin, PERMISSIONS } from '@/lib/auth'
 import { requirePermission } from '@/lib/api-auth'
 import { notifyDataChanged } from '@/lib/cloud-notify'
+import { emitToLocation } from '@/lib/socket-server'
 import { withVenue } from '@/lib/with-venue'
 
 // GET - Get employee details
@@ -264,6 +265,9 @@ export const PUT = withVenue(async function PUT(
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: existing.locationId, domain: 'employees', action: 'updated', entityId: id })
 
+    // Real-time cross-terminal update
+    void emitToLocation(existing.locationId, 'employees:changed', { action: 'updated', employeeId: id }).catch(() => {})
+
     return NextResponse.json({ data: {
       id: employee.id,
       firstName: employee.firstName,
@@ -344,6 +348,9 @@ export const DELETE = withVenue(async function DELETE(
 
     // Notify cloud → NUC sync
     void notifyDataChanged({ locationId: employee.locationId, domain: 'employees', action: 'deleted', entityId: id })
+
+    // Real-time cross-terminal update
+    void emitToLocation(employee.locationId, 'employees:changed', { action: 'deleted', employeeId: id }).catch(() => {})
 
     return NextResponse.json({ data: { success: true } })
   } catch (error) {
