@@ -28,8 +28,9 @@
 | 6H-HF | Client-Side Response Unwrapping (150+ fixes in 120 files) | 3 | ✅ |
 | 7 | Missing Socket Dispatches (48 routes, 530 lines added) | 4 | ✅ |
 | 8 | Large File Splits (4 files → 15 new modules, ~4,200 lines extracted) | 4 | ✅ |
+| 8B | Remaining File Splits (6 files → 22 new modules, inventory fully decomposed) | 4 | ✅ |
 
-**Total completed:** 88 tasks, 1670+ individual fixes across 553+ files
+**Total completed:** 92 tasks, 1700+ individual fixes across 580+ files
 
 ---
 
@@ -51,15 +52,17 @@
 | 2,602 | ~1,800 | `domains/floor-plan/admin/EditorCanvas.tsx` | ✅ Split (4 pure modules extracted) |
 | 2,173 | ~730 | `components/hardware/ReceiptVisualEditor.tsx` | ✅ Split (hook + 3 components extracted) |
 
-**Remaining large files (not yet split):**
-| Lines | File |
-|------:|------|
-| 2,689 | `components/floor-plan/FloorPlanHome.tsx` |
-| 2,087 | `lib/inventory-calculations.ts` |
-| 1,928 | `components/bartender/BartenderView.tsx` |
-| 1,620 | `app/(admin)/liquor-builder/page.tsx` |
-| 1,602 | `app/(admin)/pizza/page.tsx` |
-| 1,558 | `domains/floor-plan/admin/FloorPlanEditor.tsx` |
+**Wave 8B split remaining 6 files:**
+| Before | After | File | Status |
+|-------:|------:|------|--------|
+| 2,711 | ~2,560 | `components/floor-plan/FloorPlanHome.tsx` | ✅ Split (MenuItem + modals hook) |
+| 2,087 | barrel | `lib/inventory-calculations.ts` | ✅ Split (8 modules under lib/inventory/) |
+| 1,951 | ~1,820 | `components/bartender/BartenderView.tsx` | ✅ Split (FavoriteItem + settings) |
+| 1,620 | ~1,000 | `app/(admin)/liquor-builder/page.tsx` | ✅ Split (3 modals + types) |
+| 1,602 | ~400 | `app/(admin)/pizza/page.tsx` | ✅ Split (6 tabs + 5 modals + types) |
+| 1,558 | ~1,373 | `domains/floor-plan/admin/FloorPlanEditor.tsx` | ✅ Split (db-conversion) |
+
+All 10 original large files have been split. Some handler extractions were skipped where cross-dependencies made extraction impractical without major refactoring.
 
 ### Priority 4 — Socket & UX
 - ~~~129 missing socket dispatches~~ — ✅ DONE (Wave 7: 48 routes fixed, 530 lines added across orders, menu, employees, shifts, ingredients, liquor, tables)
