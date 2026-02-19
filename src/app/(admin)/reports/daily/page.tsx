@@ -149,7 +149,7 @@ export default function DailyReportPage() {
     setIsLoading(true)
     try {
       const response = await fetch(
-        `/api/reports/daily?locationId=${employee.location.id}&date=${selectedDate}`
+        `/api/reports/daily?locationId=${employee.location.id}&date=${selectedDate}&employeeId=${employee.id}`
       )
       if (response.ok) {
         const data = await response.json()

@@ -119,6 +119,7 @@ export default function OrderHistoryPage() {
     try {
       const params = new URLSearchParams({
         locationId: employee.location.id,
+        employeeId: employee.id,
         page: page.toString(),
         limit: '50',
       })

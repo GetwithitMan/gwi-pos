@@ -209,7 +209,7 @@ function EmployeeShiftReportContent() {
   const loadReportByShift = async (shiftId: string) => {
     setIsLoading(true)
     try {
-      const response = await fetch(`/api/reports/employee-shift?shiftId=${shiftId}`)
+      const response = await fetch(`/api/reports/employee-shift?shiftId=${shiftId}&employeeId=${currentEmployee?.id}&locationId=${currentEmployee?.location?.id}`)
       if (response.ok) {
         const data = await response.json()
         setReport(data.data)

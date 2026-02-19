@@ -107,6 +107,7 @@ export default function PayrollReportPage() {
     try {
       const params = new URLSearchParams()
       params.append('locationId', employee.location.id)
+      params.append('employeeId', employee.id)
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)
 

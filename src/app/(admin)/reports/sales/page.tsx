@@ -63,6 +63,7 @@ export default function SalesReportPage() {
     try {
       const params = new URLSearchParams({
         locationId: employee.location.id,
+        employeeId: employee.id,
       })
       if (startDate) params.append('startDate', startDate)
       if (endDate) params.append('endDate', endDate)

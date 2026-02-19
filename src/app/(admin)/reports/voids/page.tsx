@@ -105,6 +105,7 @@ export default function VoidReportsPage() {
         locationId: employee.location.id,
         startDate,
         endDate,
+        requestingEmployeeId: employee.id,
       })
 
       if (selectedEmployeeId) {

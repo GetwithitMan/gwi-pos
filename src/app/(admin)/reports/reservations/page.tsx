@@ -115,6 +115,7 @@ export default function ReservationReportsPage() {
         locationId: employee.location.id,
         startDate,
         endDate,
+        employeeId: employee.id,
       })
 
       const res = await fetch(`/api/reports/reservations?${params}`)

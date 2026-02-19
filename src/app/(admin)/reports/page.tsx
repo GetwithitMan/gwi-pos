@@ -63,6 +63,7 @@ export default function ReportsHubPage() {
         locationId: employee.location.id,
         startDate: today,
         endDate: today,
+        employeeId: employee.id,
       })
 
       const response = await fetch(`/api/reports/sales?${params}`)

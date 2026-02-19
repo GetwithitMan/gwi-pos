@@ -91,6 +91,7 @@ export default function CouponReportsPage() {
         locationId: employee.location.id,
         startDate,
         endDate,
+        employeeId: employee.id,
       })
 
       const res = await fetch(`/api/reports/coupons?${params}`)
