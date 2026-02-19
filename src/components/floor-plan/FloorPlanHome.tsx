@@ -338,6 +338,7 @@ export function FloorPlanHome({
     setActiveSeatNumber(null)
     setActiveSourceTableId(null)
     useOrderStore.getState().clearOrder()
+    useFloorPlanStore.getState().clearSelectedSeat()
     setActiveTableId(null)
     setShowOrderPanel(false)
   }, [])
@@ -479,7 +480,9 @@ export function FloorPlanHome({
     if (selectedSeat && selectedSeat.tableId === activeTableId) {
       setActiveSeatNumber(selectedSeat.seatNumber)
       setActiveSourceTableId(selectedSeat.tableId)
-    } else if (!selectedSeat) {
+    } else {
+      // Clear when no seat selected OR when activeTableId doesn't match
+      // (e.g., switching to bar mode, hiding panel, changing tables)
       setActiveSeatNumber(null)
     }
   }, [selectedSeat, activeTableId])
