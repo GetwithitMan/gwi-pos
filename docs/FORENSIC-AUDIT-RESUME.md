@@ -29,8 +29,9 @@
 | 7 | Missing Socket Dispatches (48 routes, 530 lines added) | 4 | ✅ |
 | 8 | Large File Splits (4 files → 15 new modules, ~4,200 lines extracted) | 4 | ✅ |
 | 8B | Remaining File Splits (6 files → 22 new modules, inventory fully decomposed) | 4 | ✅ |
+| 9 | UX Friction Points (TabsPanel, Attach Card, search shortcut, quantity multiplier, socket wiring) | 3 | ✅ |
 
-**Total completed:** 92 tasks, 1700+ individual fixes across 580+ files
+**Total completed:** 95 tasks, 1710+ individual fixes across 589+ files
 
 ---
 
@@ -66,7 +67,13 @@ All 10 original large files have been split. Some handler extractions were skipp
 
 ### Priority 4 — Socket & UX
 - ~~~129 missing socket dispatches~~ — ✅ DONE (Wave 7: 48 routes fixed, 530 lines added across orders, menu, employees, shifts, ingredients, liquor, tables)
-- Remaining UX friction points from audit (transfer tab shortcut, last order recall, menu search keyboard shortcut, etc.)
+- ~~Remaining UX friction points~~ — ✅ DONE (Wave 9: TabsPanel loading fix, "Attach Card" CTA, menu search "/" shortcut, quantity multiplier ×1-5, CFD/mobile/pay-at-table socket wiring)
+- **Still remaining (complex, out of audit scope):**
+  - EOD stale order cleanup (auto-cancel $0 drafts at shift close)
+  - Open/stale orders manager admin page
+  - Partial payment approval flow fix
+  - Transfer tab shortcut (Transfer All button)
+  - Last order recall (recent closed orders list)
 
 ---
 
