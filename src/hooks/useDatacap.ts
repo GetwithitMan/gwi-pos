@@ -453,7 +453,10 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
           txResult.amountAuthorized || txResult.AmountAuthorized ||
           txResult.AuthorizedAmount || txResult.Amount || params.amount.toString()
         )
-        const isPartialApproval = amountAuthorized > 0 && amountAuthorized < amountRequested
+        // Use cent-level tolerance to avoid false-positive partials from floating-point rounding
+        // e.g., $65.82 requested vs $65.82 authorized should NOT be flagged as partial
+        const isPartialApproval = amountAuthorized > 0 &&
+          (amountRequested - amountAuthorized) > 0.01
 
         // Parse Datacap response
         const result: DatacapResult = {

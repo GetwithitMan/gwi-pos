@@ -21,6 +21,7 @@ interface DatacapPaymentProcessorProps {
   employeeId: string
   locationId: string
   tipMode?: 'suggestive' | 'prompt' | 'included' | 'none'
+  readerId?: string
   onSuccess: (result: DatacapResult & { tipAmount: number }) => void
   onPartialApproval?: (result: DatacapResult & { tipAmount: number; remainingBalance: number }) => void
   onCancel: () => void
@@ -35,6 +36,7 @@ export function DatacapPaymentProcessor({
   employeeId,
   locationId,
   tipMode: externalTipMode,
+  readerId,
   onSuccess,
   onPartialApproval,
   onCancel,
@@ -43,6 +45,7 @@ export function DatacapPaymentProcessor({
   const [customTip, setCustomTip] = useState('')
   const [showCustomTip, setShowCustomTip] = useState(false)
   const [partialResult, setPartialResult] = useState<(DatacapResult & { tipAmount: number }) | null>(null)
+  const [isVoiding, setIsVoiding] = useState(false)
 
   const {
     reader,
@@ -107,6 +110,40 @@ export function DatacapPaymentProcessor({
     })
 
     // Success is handled via onSuccess callback
+  }
+
+  // Void a partial authorization and restart the payment flow
+  const handleVoidPartial = async () => {
+    if (!partialResult?.recordNo) {
+      // No recordNo to void — just reset
+      setPartialResult(null)
+      cancelTransaction()
+      return
+    }
+
+    setIsVoiding(true)
+    try {
+      const res = await fetch('/api/datacap/void', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          locationId,
+          readerId: readerId || reader?.id,
+          recordNo: partialResult.recordNo,
+          employeeId,
+        }),
+      })
+      const data = await res.json()
+      if (!data.data?.approved) {
+        console.error('[DatacapPaymentProcessor] Void failed:', data.data?.error)
+      }
+    } catch (err) {
+      console.error('[DatacapPaymentProcessor] Void request failed:', err)
+    } finally {
+      setIsVoiding(false)
+      setPartialResult(null)
+      cancelTransaction()
+    }
   }
 
   const handleConfirmSwap = () => {
@@ -326,13 +363,11 @@ export function DatacapPaymentProcessor({
 
               <div className="flex gap-3">
                 <button
-                  onClick={() => {
-                    setPartialResult(null)
-                    cancelTransaction()
-                  }}
-                  className="flex-1 py-3 bg-amber-700 text-white rounded-xl font-bold"
+                  onClick={handleVoidPartial}
+                  disabled={isVoiding}
+                  className="flex-1 py-3 bg-amber-700 text-white rounded-xl font-bold disabled:opacity-50"
                 >
-                  Void & Retry
+                  {isVoiding ? 'Voiding...' : 'Void & Retry'}
                 </button>
                 <button
                   onClick={() => {
@@ -340,7 +375,8 @@ export function DatacapPaymentProcessor({
                     onPartialApproval?.({ ...partialResult, remainingBalance: remaining })
                     setPartialResult(null)
                   }}
-                  className="flex-1 py-3 bg-white text-amber-700 rounded-xl font-bold"
+                  disabled={isVoiding}
+                  className="flex-1 py-3 bg-white text-amber-700 rounded-xl font-bold disabled:opacity-50"
                 >
                   Accept Partial
                 </button>
