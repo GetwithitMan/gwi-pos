@@ -123,6 +123,11 @@ function KDSContent() {
   const employee = useAuthStore(s => s.employee)
   const isEmployeeAuthenticated = useAuthStore(s => s.isAuthenticated)
 
+  // Hydration guard: wait for Zustand to rehydrate from localStorage
+  // before checking employee fallback auth
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+
   // Authentication state
   const [authState, setAuthState] = useState<AuthState>('checking')
   const [screenConfig, setScreenConfig] = useState<ScreenConfig | null>(null)
@@ -139,10 +144,10 @@ function KDSContent() {
   const [socketConnected, setSocketConnected] = useState(false)
   const socketRef = useRef<Socket | null>(null)
 
-  // Authenticate device on mount
+  // Authenticate device on mount (after hydration so employee fallback works)
   useEffect(() => {
-    authenticateDevice()
-  }, [screenParam])
+    if (hydrated) authenticateDevice()
+  }, [screenParam, hydrated])
 
   const authenticateDevice = async () => {
     setAuthState('checking')

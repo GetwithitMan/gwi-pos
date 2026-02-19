@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { useEvents } from '@/lib/events/use-events'
 import { motion, AnimatePresence } from 'framer-motion'
 import { formatCurrency, formatTime } from '@/lib/utils'
@@ -34,8 +35,7 @@ type SortOption = 'recent' | 'oldest' | 'highest' | 'lowest' | 'name'
 
 export default function TabsPage() {
   const router = useRouter()
-  const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const { isReady, employee, isAuthenticated } = useAuthGuard()
   const logout = useAuthStore(s => s.logout)
   const [tabs, setTabs] = useState<TabOrder[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -45,13 +45,6 @@ export default function TabsPage() {
   const [selectedTab, setSelectedTab] = useState<TabOrder | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [isClosingTab, setIsClosingTab] = useState(false)
-
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login')
-    }
-  }, [isAuthenticated, router])
 
   const { subscribe, isConnected } = useEvents()
 
@@ -101,7 +94,7 @@ export default function TabsPage() {
     if (!employee?.location?.id) return
 
     try {
-      const res = await fetch(`/api/orders?locationId=${employee.location.id}&orderType=bar_tab&status=open`)
+      const res = await fetch(`/api/orders?locationId=${employee?.location?.id}&orderType=bar_tab&status=open`)
       if (res.ok) {
         const data = await res.json()
         setTabs(data.data?.orders || [])
@@ -185,7 +178,7 @@ export default function TabsPage() {
     return `${hours}h ${mins}m`
   }
 
-  if (!isAuthenticated || !employee) {
+  if (!isReady) {
     return null
   }
 
@@ -208,7 +201,7 @@ export default function TabsPage() {
               <div>
                 <h1 className="text-xl font-bold text-white">Open Tabs</h1>
                 <p className="text-sm text-slate-400">
-                  {filteredTabs.length} tabs • {employee.displayName}
+                  {filteredTabs.length} tabs • {employee?.displayName}
                 </p>
               </div>
             </div>

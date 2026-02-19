@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { getSharedSocket, releaseSharedSocket } from '@/lib/shared-socket'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthGuard } from '@/hooks/useAuthGuard'
 import { Button } from '@/components/ui/button'
 import { EntertainmentItemCard } from '@/components/entertainment/EntertainmentItemCard'
 import { WaitlistPanel } from '@/components/entertainment/WaitlistPanel'
@@ -16,8 +17,7 @@ const REFRESH_INTERVAL = 30000 // 30s fallback only when socket disconnected
 
 export default function EntertainmentKDSPage() {
   const router = useRouter()
-  const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const { isReady, employee } = useAuthGuard()
 
   const [items, setItems] = useState<EntertainmentItem[]>([])
   const [allWaitlist, setAllWaitlist] = useState<WaitlistEntry[]>([])
@@ -34,13 +34,6 @@ export default function EntertainmentKDSPage() {
 
   // Get location ID from employee context
   const locationId = employee?.location?.id || ''
-
-  // Redirect to login if not authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/entertainment')
-    }
-  }, [isAuthenticated, router])
 
   // Fetch entertainment status
   const fetchStatus = useCallback(async () => {
@@ -372,7 +365,7 @@ export default function EntertainmentKDSPage() {
     waitlistTotal: allWaitlist.filter(w => !w.status || w.status === 'waiting').length,
   }
 
-  if (!locationId) {
+  if (!isReady || !locationId) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-white text-center">
