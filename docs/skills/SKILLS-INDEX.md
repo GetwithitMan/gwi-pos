@@ -140,6 +140,7 @@
 | 345 | NUC Installer Package | DONE | Mission Control / DevOps | 302, 303 | `installer.run` (~1,454 lines) provisions Ubuntu/Kubuntu NUCs. RSA key exchange, heartbeat with localIp + posLocationId, sync agent, kiosk + RealVNC. Server and Terminal roles. |
 | 346 | Kiosk Exit Zone | DONE | Hardware / DevOps | 345 | Hidden 5-tap zone (top-left corner, 64×64px) to exit Chromium kiosk mode. Root layout placement, exit-kiosk API, sudoers integration. |
 | 347 | MC Heartbeat IP Display & Auto-Provisioning | DONE | Mission Control | 303, 345 | Heartbeat accepts posLocationId, auto-provisions CloudLocation. localIp displayed in admin dashboard, venue portal, portal server list. |
+| 375 | NUC-to-Cloud Event Pipeline | DONE | Cloud Sync, Payments | 345, 347 | HMAC-signed fire-and-forget event emitter (`cloud-events.ts`), local PG retry queue (`cloud-event-queue.ts`), wired in pay route. Java 25 backoffice ingests events idempotently. Phase 1 proven: 7+ orders, $50.71 gross. |
 
 ### Performance Overhaul (Feb 14, 2026)
 | Skill | Name | Status | Domain | Dependencies | Notes |
@@ -271,6 +272,7 @@
 | 73 | Customer Reports | DONE | Reports | 51 | Spend tiers, frequency, tags, at-risk customers |
 | 104 | Daily Store Report | DONE | Reports | 42, 43, 50 | Comprehensive EOD report: revenue, payments, cash, sales by category/type, voids, discounts, labor, tips |
 | 105 | Tip Share Report | DONE | Reports | - | Standalone tip share report, by recipient/giver, mark as paid, payroll/manual settings |
+| 374 | Reports Auth Fix (14 Pages) | DONE | Reports, Auth | 104 | All 14 report pages missing `employeeId` in fetch calls causing 401. Fixed all pages + deterministic `getLocationId()` + stale location cleanup. |
 | 106 | Interactive Floor Plan (SVG) | DONE | Floor Plan | 16, 80 | SVG floor plan with zoom, pan, status colors, seat display |
 | 107 | Table Combine/Split | DONE | Floor Plan | 106 | Drag-combine, split-all, remove-single undo, 5min window, clockwise seats from top-left |
 | 108 | Event Ticketing APIs | TODO | Events | 106 | Event CRUD, seat hold/release, ticket purchase, check-in |
@@ -487,6 +489,15 @@ Skills that can be developed simultaneously:
 - Sync when reconnected
 - Dependencies: ALL
 - Status: TODO
+
+---
+
+## Recently Completed (2026-02-19 — Reports Auth Fix + NUC-Cloud Pipeline, Skills 374-375)
+
+| Skill | Name | What Was Built |
+|-------|------|----------------|
+| 374 | Reports Auth Fix (14 Pages) | All 14 report pages in `src/app/(admin)/reports/` were missing `employeeId` in API fetch calls, causing `requirePermission()` to return 401 and show "no data." Fixed by adding `employeeId` from auth store to every fetch URL. Also fixed `getLocationId()` in `location-cache.ts` to use deterministic `orderBy: { id: 'asc' }` and deleted stale location record `cmlkcq9ut0001ky04fv4ph4hh` ("gwi-admin-dev"). |
+| 375 | NUC-to-Cloud Event Pipeline | Built end-to-end event pipeline: `cloud-events.ts` (HMAC-SHA256 signed emitter), `cloud-event-queue.ts` (local PG retry queue with exponential backoff), wired `order_paid` in pay route (fire-and-forget). Java 25 backoffice at `gwi-backoffice` ingests events idempotently (`ON CONFLICT DO NOTHING`). Added `CloudEventQueue` to `NO_SOFT_DELETE_MODELS`. Phase 1 proven working: 7+ orders, $50.71 gross sales. 3 bugs found and fixed (field mappings, soft-delete filter, orderNumber type cast). |
 
 ---
 

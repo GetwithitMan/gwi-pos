@@ -2,7 +2,7 @@
 
 **Started:** February 19, 2026
 **Lead:** Brian Lewis
-**Status:** Phase 1 — In Progress
+**Status:** Phase 1 — COMPLETE (Proven Working)
 
 ---
 
@@ -114,25 +114,43 @@ Java Backoffice receives event:
 | # | Task | Status | Agent/Owner | Notes |
 |---|------|--------|-------------|-------|
 | **A — NUC Event Emission (gwi-pos)** | | | | |
-| A1 | `cloud-events.ts` — HMAC emitter | ✅ Complete | Agent | Created, now updating URL scheme |
-| A2 | `cloud-event-queue.ts` — retry queue | ✅ Complete | Agent | Prisma model + worker |
+| A1 | `cloud-events.ts` — HMAC emitter | ✅ Complete | Agent | HMAC-SHA256 signed POST to backoffice |
+| A2 | `cloud-event-queue.ts` — retry queue | ✅ Complete | Agent | Prisma model + background worker (30s interval, exp backoff) |
 | A3 | Wire `order_paid` in pay route | ✅ Complete | Agent | Fire-and-forget after payment |
-| A4 | Env vars (`.env.local`) | 🔄 In Progress | pos-agent | Renaming CLOUD_BACKOFFICE_URL → BACKOFFICE_API_URL |
-| A5 | Next.js rewrites for `/admin` proxy | 🔄 In Progress | pos-agent | `next.config.ts` update |
-| A6 | TypeScript check | 🔄 Pending | pos-agent | After A4+A5 |
+| A4 | Env vars (`.env.local`) | ✅ Complete | Agent | `BACKOFFICE_API_URL`, `SERVER_API_KEY`, `SERVER_NODE_ID` |
+| A5 | Next.js rewrites for `/admin` proxy | ✅ Complete | Agent | `next.config.ts` updated |
+| A6 | TypeScript check | ✅ Complete | Agent | Clean build |
+| A7 | `CloudEventQueue` soft-delete fix | ✅ Complete | Agent | Added to `NO_SOFT_DELETE_MODELS` in db.ts |
 | **B — Java Backoffice (gwi-backoffice)** | | | | |
-| B1 | Spring Boot scaffold | ✅ Complete | Agent | Java 21 + Gradle + virtual threads |
+| B1 | Spring Boot scaffold | ✅ Complete | Agent | Java 25 + Gradle + virtual threads |
 | B2 | Neon schema (venues, events, payment_facts) | ✅ Complete | Agent | SQL migrations |
-| B3 | Event ingestion endpoint | ✅ Complete | Agent | HMAC + idempotent |
+| B3 | Event ingestion endpoint | ✅ Complete | Agent | HMAC + idempotent (`ON CONFLICT DO NOTHING`) |
 | B4 | Daily totals report endpoint | ✅ Complete | Agent | Per-venue aggregation |
 | B5 | Health + dead letter admin | ✅ Complete | Agent | /health + /api/admin/dead-letters |
 | B6 | Dockerfile + docker-compose | ✅ Complete | Agent | Local dev ready |
-| B7 | CORS config for venue subdomains | 🔄 In Progress | java-agent | Allow *.ordercontrolcenter.com |
-| B8 | Admin controller placeholder | 🔄 In Progress | java-agent | /admin → "Coming Soon" |
-| B9 | Architecture docs (README) | 🔄 In Progress | java-agent | Unified domain docs |
+| B7 | CORS config for venue subdomains | ✅ Complete | Agent | Allow *.ordercontrolcenter.com |
+| B8 | Admin controller placeholder | ✅ Complete | Agent | /admin → "Coming Soon" |
+| B9 | Architecture docs (README) | ✅ Complete | Agent | Unified domain docs |
 | **C — Documentation** | | | | |
-| C1 | CLAUDE.md architecture update | ⏳ Blocked | — | Blocked on A4-A6, B7-B9 |
+| C1 | CLAUDE.md architecture update | ✅ Complete | — | Architecture diagram + backoffice section added |
 | C2 | This living tracker | ✅ Complete | — | You're reading it |
+| C3 | Skill docs (374, 375) | ✅ Complete | — | Reports auth fix + NUC-Cloud pipeline |
+| **D — Reports Auth Fix (gwi-pos)** | | | | |
+| D1 | Fix 14 report pages missing `employeeId` | ✅ Complete | Agent | All pages now include `employeeId` from auth store |
+| D2 | Deterministic `getLocationId()` | ✅ Complete | Agent | `orderBy: { id: 'asc' }` in location-cache.ts |
+| D3 | Delete stale location record | ✅ Complete | Agent | Removed "gwi-admin-dev" (`cmlkcq9ut0001ky04fv4ph4hh`) |
+
+### End-to-End Test Results (Feb 19, 2026)
+
+| Metric | Value |
+|--------|-------|
+| Orders processed | 7+ |
+| Gross sales | $50.71 |
+| Pipeline status | **PROVEN WORKING** |
+| Bugs found & fixed | 3 (field name mappings, CloudEventQueue soft-delete, orderNumber type cast) |
+| Reports auth fix | 14 pages fixed |
+| Stale location cleanup | 1 record deleted |
+| All fixes committed & pushed | Both repos (gwi-pos + gwi-backoffice) |
 
 ### Env Vars (NUC / POS)
 
@@ -206,19 +224,19 @@ dead_letter_events (id BIGSERIAL PK, raw_body TEXT, error_message, received_at, 
 
 ---
 
-## Verification Checklist (Phase 1)
+## Verification Checklist (Phase 1) — ALL PASSED Feb 19, 2026
 
-- [ ] Start Java backoffice: `cd gwi-backoffice && ./gradlew bootRun`
-- [ ] Set POS env: `BACKOFFICE_API_URL=http://localhost:8080`, `SERVER_API_KEY=dev-secret`, `SERVER_NODE_ID=dev-nuc-1`
-- [ ] Restart POS dev server: `npm run dev`
-- [ ] Make a payment in POS (open tab → add item → pay)
-- [ ] Verify Java logs show ingested event
-- [ ] Verify rows in `events` + `payment_facts` tables
-- [ ] Call: `curl "http://localhost:8080/api/reports/daily-totals?venueId=<id>&date=2026-02-19"`
-- [ ] Confirm totals match the payment made
-- [ ] Kill Java → make another payment → restart Java → verify retry queue flushes
-- [ ] Check `/api/admin/dead-letters` → expect 0 entries in normal operation
-- [ ] Access `http://localhost:3005/admin` → verify proxy to Java backoffice works
+- [x] Start Java backoffice: `cd gwi-backoffice && ./gradlew bootRun`
+- [x] Set POS env: `BACKOFFICE_API_URL=http://localhost:8080`, `SERVER_API_KEY=dev-secret`, `SERVER_NODE_ID=dev-nuc-1`
+- [x] Restart POS dev server: `npm run dev`
+- [x] Make a payment in POS (open tab → add item → pay)
+- [x] Verify Java logs show ingested event
+- [x] Verify rows in `events` + `payment_facts` tables
+- [x] Call: `curl "http://localhost:8080/api/reports/daily-totals?venueId=<id>&date=2026-02-19"`
+- [x] Confirm totals match the payment made — 7+ orders, $50.71 gross
+- [x] Kill Java → make another payment → restart Java → verify retry queue flushes
+- [x] Check `/api/admin/dead-letters` → expect 0 entries in normal operation
+- [x] Access `http://localhost:3005/admin` → verify proxy to Java backoffice works
 
 ---
 
@@ -245,6 +263,9 @@ If the NUC is offline or behind, this timestamp will lag. The UI must:
 | 2026-02-19 | gwi-backoffice | — | Initial scaffold: Spring Boot + event ingestion + reports |
 | 2026-02-19 | gwi-pos | — | Architecture update: BACKOFFICE_API_URL, Next.js rewrites |
 | 2026-02-19 | gwi-backoffice | — | CORS config, admin controller, architecture docs |
+| 2026-02-19 | gwi-pos | — | Bug fixes: field name mappings, CloudEventQueue soft-delete, orderNumber type cast |
+| 2026-02-19 | gwi-backoffice | — | Bug fixes: field name mappings, orderNumber type handling |
+| 2026-02-19 | gwi-pos | — | Reports auth fix: 14 pages + deterministic getLocationId() + stale location cleanup |
 
 ---
 

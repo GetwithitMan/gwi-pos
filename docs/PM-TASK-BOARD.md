@@ -143,6 +143,9 @@
 | T-069 | Remove hardcoded DEFAULT_LOCATION_ID (Skill 337) | PM: Mission Control | 2026-02-13 | Resolved by withVenue() — all routes now read from request context, not hardcoded IDs |
 | NEW | Multi-Tenant DB Routing (Skill 337) | PM: Mission Control | 2026-02-13 | AsyncLocalStorage + withVenue() for all 348 API routes. Per-venue Neon DB. Safety rail on slug mismatch. |
 | NEW | Cloud Session Validation & Guard (Skill 338) | PM: Mission Control | 2026-02-13 | validate-session endpoint, useCloudSessionGuard layout guard, cloud sign-out, fixes stale locationId |
+| NEW | Reports Auth Fix — 14 pages (Skill 374) | PM: Reports | 2026-02-19 | All 14 report pages missing `employeeId` in fetch → 401. Fixed all pages + deterministic `getLocationId()` + deleted stale location record. |
+| NEW | NUC-to-Cloud Event Pipeline (Skill 375) | PM: Cloud Sync | 2026-02-19 | Phase 1 COMPLETE. cloud-events.ts + cloud-event-queue.ts + pay route wiring. 7+ orders, $50.71 gross. 3 bugs fixed. Both repos committed & pushed. |
+| NEW | Stale location cleanup | PM: Reports | 2026-02-19 | Deleted `cmlkcq9ut0001ky04fv4ph4hh` ("gwi-admin-dev") causing wrong locationId in reports. |
 
 ---
 
