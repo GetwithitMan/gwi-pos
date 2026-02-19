@@ -640,9 +640,11 @@ export async function dispatchOrderTotalsUpdate(
 export async function dispatchOpenOrdersChanged(
   locationId: string,
   payload: {
-    trigger: 'created' | 'paid' | 'voided' | 'transferred' | 'reopened'
+    trigger: 'created' | 'paid' | 'voided' | 'transferred' | 'reopened' | 'sent'
     orderId?: string
     tableId?: string
+    orderNumber?: number
+    status?: string
   },
   options: DispatchOptions = {}
 ): Promise<boolean> {

@@ -833,7 +833,9 @@ export default function OrdersPage() {
   }, [employee?.location?.id, tabsRefreshTrigger, loadOpenOrdersCount])
 
   useEffect(() => {
-    if (!currentOrder) {
+    // Don't auto-create when on floor-plan — after send, clearOrder() sets currentOrder=null
+    // but we don't want to start a new order until user taps a table
+    if (!currentOrder && viewMode !== 'floor-plan') {
       if (viewMode === 'bartender') {
         startOrder('bar_tab')
       } else {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { OrderRouter } from '@/lib/order-router'
-import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
+import { dispatchNewOrder, dispatchEntertainmentUpdate, dispatchEntertainmentStatusChanged, dispatchOpenOrdersChanged } from '@/lib/socket-dispatch'
 import { deductPrepStockForOrder } from '@/lib/inventory-calculations'
 import { startEntertainmentSession, batchUpdateOrderItemStatus } from '@/lib/batch-updates'
 import { getEligibleKitchenItems } from '@/lib/kitchen-item-filter'
@@ -217,9 +217,8 @@ export const POST = withVenue(withTiming(async function POST(
       console.error('[API /orders/[id]/send] Audit log failed:', err)
     })
 
-    // Dispatch open orders + floor plan update so all terminals refresh table status instantly
-    dispatchOpenOrdersChanged(order.locationId, { trigger: 'created', orderId: order.id, tableId: order.tableId || undefined }, { async: true }).catch(() => {})
-    dispatchFloorPlanUpdate(order.locationId, { async: true }).catch(() => {})
+    // Dispatch open orders update with 'sent' trigger — delta-only, no full snapshot reload
+    dispatchOpenOrdersChanged(order.locationId, { trigger: 'sent', orderId: order.id, tableId: order.tableId || undefined, orderNumber: order.orderNumber, status: 'occupied' }, { async: true }).catch(() => {})
 
     return NextResponse.json({ data: {
       success: true,

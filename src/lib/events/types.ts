@@ -288,6 +288,8 @@ export interface OrdersListChangedEvent {
   trigger: string
   orderId?: string
   tableId?: string
+  orderNumber?: number
+  status?: string
 }
 
 // Void Approval Events

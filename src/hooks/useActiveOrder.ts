@@ -959,20 +959,13 @@ export function useActiveOrder(options: UseActiveOrderOptions = {}): UseActiveOr
         // ═══ STANDARD SEND — FIRE-AND-FORGET (INSTANT UI) ═══
         // (sendInProgressRef already set at top of handleSendToKitchen)
 
-        // Wait for any in-flight autosave to finish (so temp IDs are mapped)
-        if (autosavePromiseRef.current) {
-          await autosavePromiseRef.current
-        }
-
-        // Wait for any event-based item saves to finish
-        if (pendingSavesRef.current.size > 0) {
-          await Promise.all(pendingSavesRef.current.values())
-        }
-
-        // Only await the draft promise (near-instant — created on table tap).
-        // Items append + /send run entirely in background.
-        if (draftPromiseRef.current) {
-          await draftPromiseRef.current
+        // Wait for all in-flight saves in parallel (autosave, event saves, draft)
+        {
+          const waits: Promise<unknown>[] = []
+          if (autosavePromiseRef.current) waits.push(autosavePromiseRef.current)
+          if (pendingSavesRef.current.size > 0) waits.push(Promise.all(pendingSavesRef.current.values()))
+          if (draftPromiseRef.current) waits.push(draftPromiseRef.current)
+          if (waits.length > 0) await Promise.all(waits)
           draftPromiseRef.current = null
         }
 

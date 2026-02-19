@@ -772,8 +772,13 @@ export function FloorPlanHome({
   useEffect(() => {
     if (!isConnected) return
 
+    // Debounced refreshAll: multiple socket events within 300ms trigger only one snapshot fetch
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
     const refreshAll = () => {
-      loadFloorPlanData(false) // snapshot includes count
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        loadFloorPlanData(false) // snapshot includes count
+      }, 300)
     }
 
     const unsubs = [
@@ -784,26 +789,37 @@ export function FloorPlanHome({
       }),
       // Open orders list changed (create/send/pay/void)
       subscribe('orders:list-changed', (data) => {
-        const { trigger, tableId } = data || {}
+        const { trigger, tableId, orderNumber, status } = data || {}
         logger.log(`[FloorPlanHome] orders:list-changed trigger=${trigger} tableId=${tableId}`)
-        if ((trigger === 'paid' || trigger === 'voided') && tableId) {
+        if ((trigger === 'sent' || trigger === 'created') && tableId) {
+          // Delta: order sent/created on a table — patch locally, no full reload.
+          // Optimistic state is already set by addTableOrder before viewMode switches.
+          // Other terminals: add order to table if not already present.
+          const currentTables = tablesRef.current
+          const table = currentTables.find(t => t.id === tableId)
+          if (table && !table.currentOrder) {
+            addTableOrder(tableId, {
+              id: data.orderId || '',
+              orderNumber: orderNumber || 0,
+              guestCount: 1,
+              total: 0,
+              openedAt: new Date().toISOString(),
+              server: '',
+              status: status || 'occupied',
+            })
+          }
+          // If table already has an order, optimistic state matches — no-op
+        } else if ((trigger === 'paid' || trigger === 'voided') && tableId) {
           // Delta: remove order from table locally — zero network
           removeTableOrder(tableId)
         } else {
-          // created/transferred/reopened or no tableId — full reload
+          // transferred/reopened or no tableId — full reload
           refreshAll()
         }
       }),
-      // New order created — table status changes
-      subscribe('order:created', () => {
-        logger.log('[FloorPlanHome] order:created — full reload')
-        refreshAll()
-      }),
-      // Order updated (items added, metadata changed)
-      subscribe('order:updated', () => {
-        logger.log('[FloorPlanHome] order:updated — full reload')
-        refreshAll()
-      }),
+      // order:created is KDS-only (emitted by dispatchNewOrder for station routing).
+      // order:updated is order-content only (items/metadata) — doesn't affect floor plan table status.
+      // Floor plan updates are handled by orders:list-changed delta handlers above.
       // Order totals changed — delta patch the table's displayed total
       subscribe('order:totals-updated', (data) => {
         const { orderId, totals } = data || {}
@@ -814,11 +830,9 @@ export function FloorPlanHome({
           if (table) {
             logger.log(`[FloorPlanHome] order:totals-updated — delta patch table ${table.id}`)
             patchTableOrder(table.id, { total: totals.total })
-            return
           }
+          // No table found = bar tab or non-table order — no floor plan action needed
         }
-        // Fallback: full reload
-        refreshAll()
       }),
       // Explicit table status change
       subscribe('table:status-changed', (data) => {
@@ -830,11 +844,7 @@ export function FloorPlanHome({
           refreshAll()
         }
       }),
-      // Payment processed — table goes back to available
-      subscribe('payment:processed', () => {
-        logger.log('[FloorPlanHome] payment:processed — full reload')
-        refreshAll()
-      }),
+      // payment:processed — already handled by orders:list-changed trigger='paid' (delta remove).
       // Entertainment session update — status glow changes
       subscribe('entertainment:session-update', () => {
         logger.log('[FloorPlanHome] entertainment:session-update — full reload')
@@ -842,14 +852,22 @@ export function FloorPlanHome({
       }),
     ]
 
-    return () => unsubs.forEach(unsub => unsub())
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      unsubs.forEach(unsub => unsub())
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, subscribe])
 
   // Parent-triggered refresh (e.g., after send-to-kitchen in orders page)
+  // Delayed 3s — optimistic state is already set by addTableOrder before viewMode switches,
+  // so this is just a background consistency check, not needed for instant UI.
   useEffect(() => {
     if (refreshTrigger && refreshTrigger > 0) {
-      loadFloorPlanData(false) // snapshot includes count
+      const timer = setTimeout(() => {
+        loadFloorPlanData(false) // snapshot includes count
+      }, 3000)
+      return () => clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTrigger])
@@ -979,11 +997,13 @@ export function FloorPlanHome({
     try {
       const res = await fetch(`/api/floorplan/snapshot?locationId=${locationId}`)
       if (res.ok) {
-        const data = await res.json()
-        setTables(data.data?.tables || [])
-        setSections(data.data?.sections || [])
-        setElements(data.data?.elements || [])
-        setOpenOrdersCount(data.openOrdersCount ?? 0)
+        const snapshot = await res.json()
+        // Snapshot route returns { tables, sections, elements, openOrdersCount } directly (no .data wrapper)
+        const payload = snapshot.data ?? snapshot
+        setTables(payload.tables || [])
+        setSections(payload.sections || [])
+        setElements(payload.elements || [])
+        setOpenOrdersCount(payload.openOrdersCount ?? 0)
       }
     } catch (error) {
       console.error('[FloorPlanHome] Snapshot load error:', error)
