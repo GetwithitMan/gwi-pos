@@ -14,7 +14,7 @@ import {
   ESCPOS,
   PAPER_WIDTH,
 } from '@/lib/escpos/commands'
-import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings } from '@/types/print'
+import { PizzaPrintSettings, DEFAULT_PIZZA_PRINT_SETTINGS, PrinterSettings, getDefaultPrinterSettings, RouteSpecificSettings } from '@/types/print'
 import { withVenue } from '@/lib/with-venue'
 
 interface PrintKitchenRequest {
@@ -36,7 +36,16 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         location: true,
         items: {
           include: {
-            modifiers: true,
+            modifiers: {
+              include: {
+                modifier: {
+                  select: {
+                    printerRouting: true,
+                    printerIds: true,
+                  },
+                },
+              },
+            },
             ingredientModifications: true,
             // Source table for seat tracking
             sourceTable: {
@@ -93,13 +102,15 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     }
 
     // Get all printers for the location
-    const printers = await db.printer.findMany({
+    const allPrinters = await db.printer.findMany({
       where: {
         locationId: order.locationId,
         isActive: true,
         printerRole: { in: ['kitchen', 'bar'] },
       },
     })
+    // Alias for existing code compatibility
+    const printers = allPrinters
 
     // Get default kitchen printer
     const defaultKitchenPrinter = printers.find(p => p.printerRole === 'kitchen' && p.isDefault)
@@ -110,12 +121,19 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     })
     const pizzaPrinterIds = (pizzaConfig?.printerIds as unknown as string[]) || []
     const printSettings: PizzaPrintSettings = (pizzaConfig?.printSettings as unknown as PizzaPrintSettings) || DEFAULT_PIZZA_PRINT_SETTINGS
+
+    // Fetch PrintRoutes ordered by priority (highest first)
+    const printRoutes = await db.printRoute.findMany({
+      where: { locationId: order.locationId, isActive: true, deletedAt: null },
+      orderBy: { priority: 'desc' },
+    })
+
     // Group items by printer
+    // Also track which PrintRoute corresponds to each printer group for failover
     const itemsByPrinter: Map<string, typeof itemsToPrint> = new Map()
+    const routeForPrinterMap: Map<string, typeof printRoutes[0]> = new Map()
 
     for (const item of itemsToPrint) {
-      let targetPrinterId: string | null = null
-
       // Check if this is a pizza item
       if (item.pizzaData && pizzaPrinterIds.length > 0) {
         // Pizza items go to all configured pizza printers
@@ -127,19 +145,50 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         continue
       }
 
-      // Priority: Item printers > Category printers > Default kitchen printer
+      // Priority: PrintRoute > Item printers > Category printers > Default kitchen printer
       // Multiple printers are supported at each level
       let targetPrinterIds: string[] = []
+      let matchedRoute: typeof printRoutes[0] | null = null
 
-      const itemPrinterIds = item.menuItem?.printerIds as string[] | null
-      const categoryPrinterIds = item.menuItem?.category?.printerIds as string[] | null
+      // 1. Check PrintRoutes first (highest priority tier)
+      for (const route of printRoutes) {
+        if (!route.printerId) continue
+        const routeCategoryIds = route.categoryIds as string[] | null
+        const routeItemTypes = route.itemTypes as string[] | null
 
-      if (itemPrinterIds && itemPrinterIds.length > 0) {
-        targetPrinterIds = itemPrinterIds
-      } else if (categoryPrinterIds && categoryPrinterIds.length > 0) {
-        targetPrinterIds = categoryPrinterIds
-      } else if (defaultKitchenPrinter) {
-        targetPrinterIds = [defaultKitchenPrinter.id]
+        if (
+          route.routeType === 'category' &&
+          routeCategoryIds &&
+          item.menuItem?.categoryId &&
+          routeCategoryIds.includes(item.menuItem.categoryId)
+        ) {
+          targetPrinterIds = [route.printerId]
+          matchedRoute = route
+          break
+        } else if (
+          route.routeType === 'item_type' &&
+          routeItemTypes &&
+          item.menuItem?.category?.categoryType &&
+          routeItemTypes.includes(item.menuItem.category.categoryType)
+        ) {
+          targetPrinterIds = [route.printerId]
+          matchedRoute = route
+          break
+        }
+      }
+
+      // 2. Fall back to item/category/default if no PrintRoute matched
+      if (targetPrinterIds.length === 0) {
+        const itemPrinterIds = item.menuItem?.printerIds as string[] | null
+        const categoryPrinterIds = item.menuItem?.category?.printerIds as string[] | null
+
+        if (itemPrinterIds && itemPrinterIds.length > 0) {
+          targetPrinterIds = itemPrinterIds
+        } else if (categoryPrinterIds && categoryPrinterIds.length > 0) {
+          targetPrinterIds = categoryPrinterIds
+        } else if (defaultKitchenPrinter) {
+          targetPrinterIds = [defaultKitchenPrinter.id]
+        }
       }
 
       // If still no printer, log it
@@ -147,11 +196,51 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         console.error('[Kitchen Print] No printer found for item:', item.name)
       }
 
-      // Add item to each target printer
+      // Determine which modifiers follow the main item vs. route elsewhere
+      const mainItemModifiers = item.modifiers.filter(mod => {
+        const modPrinterRouting = mod.modifier?.printerRouting ?? 'follow'
+        // If follow (default), always stays with main item
+        if (modPrinterRouting === 'follow') return true
+        // If routing is 'only', exclude from main item
+        if (modPrinterRouting === 'only') return false
+        // If routing is 'also', keep in main item (AND also send elsewhere)
+        return true
+      })
+
+      // Build synthetic item for main printer groups (with filtered modifiers)
+      const mainItem = mainItemModifiers.length === item.modifiers.length
+        ? item
+        : { ...item, modifiers: mainItemModifiers }
+
+      // Add main item to each target printer
       for (const printerId of targetPrinterIds) {
         const existing = itemsByPrinter.get(printerId) || []
-        existing.push(item)
+        existing.push(mainItem)
         itemsByPrinter.set(printerId, existing)
+        if (matchedRoute && !routeForPrinterMap.has(printerId)) {
+          routeForPrinterMap.set(printerId, matchedRoute)
+        }
+      }
+
+      // Handle modifier routing: 'also' and 'only' modifiers go to their own printers
+      for (const mod of item.modifiers) {
+        const modPrinterRouting = mod.modifier?.printerRouting ?? 'follow'
+        const modPrinterIds = mod.modifier?.printerIds as string[] | null
+        if (modPrinterRouting === 'follow') continue
+        if (!modPrinterIds || modPrinterIds.length === 0) continue
+
+        // 'also' and 'only' both route this modifier to its own printers
+        const syntheticItem = {
+          ...item,
+          modifiers: [mod],
+          _modifierOnlyFor: item.name,
+        } as typeof itemsToPrint[0] & { _modifierOnlyFor: string }
+
+        for (const modPrinterId of modPrinterIds) {
+          const existing = itemsByPrinter.get(modPrinterId) || []
+          existing.push(syntheticItem)
+          itemsByPrinter.set(modPrinterId, existing)
+        }
       }
     }
 
@@ -177,8 +266,41 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         const document = printer.supportsCut
           ? buildDocument(...ticketContent)
           : buildDocumentNoCut(...ticketContent)
-        // Send to printer
-        const result = await sendToPrinter(printer.ipAddress, printer.port, document)
+        // Send to printer — with backup printer failover
+        let result = await sendToPrinter(printer.ipAddress, printer.port, document)
+
+        if (!result.success) {
+          // Try backup printer if available (from PrintRoute or printer's backupPrinterIds)
+          const routeForPrinter = routeForPrinterMap.get(printerId) ?? null
+          const backupPrinterId: string | null =
+            routeForPrinter?.backupPrinterId ??
+            ((printer.printSettings as unknown as { backupPrinterId?: string })?.backupPrinterId) ??
+            null
+
+          if (backupPrinterId) {
+            const backupPrinter = allPrinters.find(p => p.id === backupPrinterId)
+            if (backupPrinter) {
+              const backupResult = await sendToPrinter(backupPrinter.ipAddress, backupPrinter.port, document)
+              if (backupResult.success) {
+                // Log the failover print job
+                void db.printJob.create({
+                  data: {
+                    locationId: order.locationId,
+                    jobType: 'kitchen',
+                    orderId: order.id,
+                    printerId: backupPrinter.id,
+                    status: 'sent',
+                    sentAt: new Date(),
+                  },
+                }).catch(console.error)
+                // Treat the overall result as success via backup
+                result = backupResult
+              } else {
+                console.error('[Print] Backup printer also failed:', backupResult.error)
+              }
+            }
+          }
+        }
 
         // Log the print job
         await db.printJob.create({

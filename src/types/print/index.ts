@@ -42,3 +42,7 @@ export {
   DEFAULT_PIZZA_PRINT_SETTINGS,
   PIZZA_PRINT_PRESETS,
 } from './pizza-print-settings'
+
+// Route-specific print settings (PrintRoute.settings JSON shape)
+export type { RouteSpecificSettings } from './route-specific-settings'
+export { DEFAULT_ROUTE_SETTINGS } from './route-specific-settings'
