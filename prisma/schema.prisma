@@ -5011,14 +5011,17 @@ model PaymentReader {
   // Identity
   name         String // "Bar Reader", "Lobby Reader", "Mobile Reader 1"
   serialNumber String @unique // Datacap reader serial - key for identity verification
-  ipAddress    String // Reader IP address on local network
+  ipAddress    String @default("127.0.0.1") // Reader IP (for IP-mode readers); USB/BT use 127.0.0.1
   port         Int    @default(8080) // Datacap default port
+
+  // Connection Type — drives which settings/rules apply
+  connectionType String @default("IP") // "USB" | "IP" | "BLUETOOTH" | "WIFI"
 
   // Datacap Configuration
   merchantId        String? // Datacap merchant ID if different per reader
   terminalId        String? // Datacap terminal ID (their concept, not ours)
   lastSequenceNo    String  @default("0010010010") // Track Datacap SequenceNo per device
-  deviceType        String  @default("PAX")        // PAX | INGENICO — determines port/protocol
+  deviceType        String  @default("PAX")        // PAX | INGENICO | IDTECH — determines port/protocol
   communicationMode String  @default("local")      // local | cloud | local_with_cloud_fallback | simulated
   cloudUsername     String?                         // Basic Auth username (cloud mode)
   cloudPassword     String?                         // Basic Auth password (cloud mode, encrypted)
@@ -5050,12 +5053,12 @@ model PaymentReader {
   terminals Terminal[] @relation("TerminalPaymentReader")
   backupFor Terminal[] @relation("TerminalBackupReader")
 
-  @@unique([locationId, ipAddress])
   @@unique([locationId, name])
   @@index([locationId])
   @@index([isActive])
   @@index([isOnline])
   @@index([serialNumber])
+  @@index([connectionType])
 }
 
 model PrintRule {

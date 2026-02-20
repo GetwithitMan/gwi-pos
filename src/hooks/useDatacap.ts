@@ -19,6 +19,7 @@ export interface PaymentReader {
   ipAddress: string
   port: number
   serialNumber: string
+  communicationMode?: string | null
   isOnline: boolean
   lastSeenAt?: string | null
 }
@@ -165,7 +166,9 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
       }
 
       // Track whether this is a simulated reader (update both state and ref)
-      const simulated = terminal.paymentProvider === 'SIMULATED'
+      // Simulated if paymentProvider is SIMULATED *or* the bound reader's communicationMode is 'simulated'
+      const simulated = terminal.paymentProvider === 'SIMULATED' ||
+        terminal.paymentReader?.communicationMode === 'simulated'
       setIsSimulated(simulated)
       isSimulatedRef.current = simulated
 
@@ -173,7 +176,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         setReader(terminal.paymentReader)
         readerRef.current = terminal.paymentReader
         // Simulated readers are always online
-        if (terminal.paymentProvider === 'SIMULATED') {
+        if (simulated) {
           setIsReaderOnline(true)
         } else {
           setIsReaderOnline(terminal.paymentReader.isOnline || false)
@@ -213,10 +216,14 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
       // Fire-and-forget cancel to the reader so it doesn't hang waiting for a card
       // that nobody will present (e.g., user navigated away mid-transaction)
       let cancelUrl: string | null = null
-      if (isSimulatedRef.current) {
+      if (isSimulatedRef.current || readerRef.current?.communicationMode === 'simulated') {
         cancelUrl = '/api/simulated-reader/cancel'
       } else if (readerRef.current) {
-        cancelUrl = `http://${readerRef.current.ipAddress}:${readerRef.current.port}/cancel`
+        if (readerRef.current.communicationMode === 'cloud') {
+          cancelUrl = `/api/hardware/payment-readers/${readerRef.current.id}/cloud/cancel`
+        } else {
+          cancelUrl = `http://${readerRef.current.ipAddress}:${readerRef.current.port}/cancel`
+        }
       }
       if (cancelUrl) {
         fetch(cancelUrl, { method: 'POST' }).catch(() => {})
@@ -306,7 +313,9 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
 
   /**
    * Build URL for reader communication.
-   * Routes to local API for simulated readers, direct HTTP for physical readers.
+   * - Simulated: routes to local /api/simulated-reader/* API
+   * - Cloud (USB VP3350 etc.): routes to server-side proxy /api/hardware/payment-readers/[id]/cloud/*
+   * - Local IP: routes direct to reader's HTTP server
    * Uses isSimulatedRef to avoid race condition on first mount.
    */
   const getReaderUrl = useCallback((path: string) => {
@@ -314,6 +323,13 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
       return `/api/simulated-reader${path}`
     }
     if (!reader) return ''
+    // Safety net: if reader itself is marked simulated, never send to real hardware
+    if (reader.communicationMode === 'simulated') {
+      return `/api/simulated-reader${path}`
+    }
+    if (reader.communicationMode === 'cloud') {
+      return `/api/hardware/payment-readers/${reader.id}/cloud${path}`
+    }
     return `http://${reader.ipAddress}:${reader.port}${path}`
   }, [reader])
 

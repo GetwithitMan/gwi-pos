@@ -66,10 +66,11 @@ export const PUT = withVenue(async function PUT(
     const {
       name,
       serialNumber,
-      ipAddress,
+      connectionType,
+      ipAddress: rawIp,
       port,
       verificationType,
-      merchantId,
+      // merchantId intentionally NOT accepted — managed by Mission Control via location settings
       terminalId,
       communicationMode,
       isActive,
@@ -81,10 +82,19 @@ export const PUT = withVenue(async function PUT(
       avgResponseTime,
       successRate,
       sortOrder,
+      assignTerminalIds,  // string[] — replace terminal assignments
     } = body
 
-    // Validate IP address format if provided (skip for simulated readers)
-    if (ipAddress) {
+    // Resolve connection type for validation
+    const resolvedConnectionType = connectionType ?? existing.connectionType
+    const isNetworkType = resolvedConnectionType === 'IP' || resolvedConnectionType === 'WIFI'
+    // For USB/BT, always store 127.0.0.1; for network, use provided value
+    const ipAddress = rawIp !== undefined
+      ? (isNetworkType ? rawIp : '127.0.0.1')
+      : undefined
+
+    // Validate IP address format if provided for network readers
+    if (ipAddress && isNetworkType) {
       const resolvedMode = communicationMode || existing.communicationMode
       const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/
       if (resolvedMode !== 'simulated' && !ipv4Regex.test(ipAddress)) {
@@ -110,8 +120,8 @@ export const PUT = withVenue(async function PUT(
       }
     }
 
-    // Check for duplicate IP at this location (if changing)
-    if (ipAddress && ipAddress !== existing.ipAddress) {
+    // Check for duplicate IP only for network readers (USB/BT share 127.0.0.1)
+    if (ipAddress && isNetworkType && ipAddress !== existing.ipAddress && ipAddress !== '127.0.0.1') {
       const duplicateIp = await db.paymentReader.findFirst({
         where: { locationId: existing.locationId, ipAddress, deletedAt: null, id: { not: id } },
       })
@@ -128,10 +138,10 @@ export const PUT = withVenue(async function PUT(
       data: {
         ...(name !== undefined && { name }),
         ...(serialNumber !== undefined && { serialNumber }),
+        ...(connectionType !== undefined && { connectionType }),
         ...(ipAddress !== undefined && { ipAddress }),
         ...(port !== undefined && { port }),
         ...(verificationType !== undefined && { verificationType }),
-        ...(merchantId !== undefined && { merchantId }),
         ...(terminalId !== undefined && { terminalId }),
         ...(communicationMode !== undefined && { communicationMode }),
         ...(isActive !== undefined && { isActive }),
@@ -145,6 +155,22 @@ export const PUT = withVenue(async function PUT(
         ...(sortOrder !== undefined && { sortOrder }),
       },
     })
+
+    // Update terminal assignments if provided
+    if (Array.isArray(assignTerminalIds)) {
+      // Remove this reader from all terminals that currently have it
+      await db.terminal.updateMany({
+        where: { paymentReaderId: id, locationId: existing.locationId },
+        data: { paymentReaderId: null, paymentProvider: 'SIMULATED' },
+      })
+      // Assign to the new list
+      if (assignTerminalIds.length > 0) {
+        await db.terminal.updateMany({
+          where: { id: { in: assignTerminalIds }, locationId: existing.locationId },
+          data: { paymentReaderId: id, paymentProvider: 'DATACAP_DIRECT' },
+        })
+      }
+    }
 
     return NextResponse.json({ data: {
       reader: {
@@ -194,10 +220,14 @@ export const DELETE = withVenue(async function DELETE(
       )
     }
 
-    // Soft delete
+    // Soft delete — mangle name + serial so they can be reused immediately
     await db.paymentReader.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: {
+        deletedAt: new Date(),
+        name: `${reader.name}__deleted__${id}`,
+        serialNumber: `${reader.serialNumber}__deleted__${id}`,
+      },
     })
 
     return NextResponse.json({ data: { success: true } })
