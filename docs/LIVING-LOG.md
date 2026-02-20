@@ -5,6 +5,55 @@
 
 ---
 
+## 2026-02-20 — Self-Updating Sync Agent + Batch Monitoring + Auto-Reboot (Skills 399-401)
+
+**Session Summary:** Built three interconnected infrastructure features: the sync agent now self-updates on every deploy (no more SSH-to-fix-NUCs), Mission Control now shows live batch status per venue (with unadjusted tip warnings and 24h no-batch alerts), and servers can automatically reboot after the nightly Datacap batch closes.
+
+### Commits
+
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | a38a8cf | feat(sync): self-updating sync agent + batch monitoring + auto-reboot |
+| gwi-mission-control | cde2cc9 | feat(batch): batch monitoring, auto-reboot, and fleet alerts |
+
+### Deployments
+- gwi-pos → Vercel auto-deploy (triggered by push to main)
+- gwi-mission-control → Vercel auto-deploy (triggered by push to main)
+
+### Features Delivered
+
+**Self-Updating Sync Agent (Skill 399)**
+- `public/sync-agent.js` extracted from installer.run heredoc into a standalone versioned file
+- Every FORCE_UPDATE deploy now automatically copies the new sync agent from the repo and restarts `pulse-sync` 15 seconds after ACK (gives the current process time to confirm success before being replaced)
+- New fleet commands: `SCHEDULE_REBOOT` (sudo shutdown -r +N) and `CANCEL_REBOOT` (sudo shutdown -c)
+- `installer.run` updated: fresh provisions copy agent from repo instead of embedding it; sudoers adds shutdown + pulse-sync restart permissions
+
+**Batch Monitoring in Mission Control (Skill 400)**
+- New `GET /api/system/batch-status` POS endpoint: live open order count, unadjusted tip count, current batch total
+- `datacap/batch` POST now writes `/opt/gwi-pos/last-batch.json` after each close
+- Heartbeat reports full batch state to MC every 60 seconds
+- MC `BatchStatusCard`: green (<26h) / yellow (26-48h) / red (>48h) freshness badge, last batch time + dollar total, open order count, amber "⚠ N orders with unadjusted tips" warning, red 24h no-batch alert
+- MC fleet dashboard: compact colored dot + relative time per venue; `⚠ No batch` amber badge when stale
+
+**Auto-Reboot After Batch (Skill 401)**
+- MC Config tab: `AutoRebootCard` — toggle + delay minutes (1-60), defaults off / 15 min
+- Setting synced to NUC via `DATA_CHANGED` fleet command
+- MC heartbeat route: detects new batch close → creates `SCHEDULE_REBOOT` fleet command if setting enabled
+- Sync agent executes the reboot on schedule, preventing memory buildup overnight
+
+### Bug Fixes
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| Sync agent never updated on deploys | Extracted to sync-agent.js; FORCE_UPDATE self-copies + restarts pulse-sync | a38a8cf |
+| `git pull --ff-only` fails on diverged branches | Already fixed in prior session (621e0b7); batch reports now prevent repeat stuck states | — |
+
+### Known Issues / Blockers
+- Two NUCs (Fruita Grill, Shanes Admin Demo) still need one-time manual SSH reset to get onto the new sync agent. All future deploys will be automatic.
+- Terminal 5-tap kiosk exit zone not yet implemented (deferred — requires separate terminal agent process).
+
+---
+
 ## 2026-02-20 — Datacap Payment Verification Report
 
 **Session Summary:** Built a Payment Verification report so owners can see which card payments went through live, which are sitting in offline/SAF mode, and cross-reference against Datacap's cloud records when a Reporting API key is configured.

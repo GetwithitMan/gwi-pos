@@ -1,5 +1,40 @@
 # Mission Control Changelog
 
+## 2026-02-20 — Self-Updating Sync Agent + Batch Monitoring + Auto-Reboot (Skills 399-401)
+
+### Summary
+Three interconnected infrastructure features: sync agent self-updates on every deploy, MC fleet dashboard now shows live batch status per venue, and servers can auto-reboot after the nightly Datacap batch closes.
+
+### What Changed
+
+#### Skill 399: Self-Updating Sync Agent
+- `public/sync-agent.js` (gwi-pos) extracted from `installer.run` heredoc into a standalone versioned file
+- FORCE_UPDATE fleet command now self-copies the new agent from repo and restarts `pulse-sync` 15s after ACK
+- New fleet commands added: `SCHEDULE_REBOOT` (`sudo shutdown -r +N`) and `CANCEL_REBOOT` (`sudo shutdown -c`)
+- `installer.run` updated: fresh provisions copy agent from repo; sudoers grants shutdown + pulse-sync restart permissions
+
+#### Skill 400: Batch Monitoring in Mission Control
+- MC `BatchStatusCard` component: green/yellow/red freshness badge based on hours since last batch (<26h / 26-48h / >48h), last batch time + dollar total, open order count, amber unadjusted-tip warning, red 24h no-batch alert
+- MC fleet dashboard: compact colored dot + relative time per venue; `⚠ No batch` amber badge when stale
+- Heartbeat route updated to ingest batch state from NUC heartbeat payload
+
+#### Skill 401: Auto-Reboot After Batch
+- MC Config tab: `AutoRebootCard` — toggle + delay minutes (1-60), defaults off / 15 min
+- Setting synced to NUC via `DATA_CHANGED` fleet command
+- MC heartbeat route: detects new batch close → creates `SCHEDULE_REBOOT` fleet command when enabled
+- Prevents overnight memory buildup on NUC servers
+
+### Commits
+| Repo | Hash | Description |
+|------|------|-------------|
+| gwi-pos | a38a8cf | feat(sync): self-updating sync agent + batch monitoring + auto-reboot |
+| gwi-mission-control | cde2cc9 | feat(batch): batch monitoring, auto-reboot, and fleet alerts |
+
+### Known Issues
+- Two NUCs (Fruita Grill, Shanes Admin Demo) still need one-time manual SSH reset to get onto the new self-updating agent. All future deploys will be automatic.
+
+---
+
 ## Session: February 17, 2026 — Cloud-to-Terminal Real-Time Sync + Team Member Fix (Skill 365)
 
 ### Summary

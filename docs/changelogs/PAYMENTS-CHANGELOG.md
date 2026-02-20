@@ -1,5 +1,18 @@
 # Payments Domain Changelog
 
+## 2026-02-20 — Batch Monitoring Endpoint (Skill 400)
+
+### New Features
+
+- **`GET /api/system/batch-status`**: New POS endpoint returning live open order count, unadjusted tip count, and current batch total. Consumed by NUC heartbeat every 60 seconds to report batch state to Mission Control.
+- **`datacap/batch` POST persistence**: After each batch close, writes `/opt/gwi-pos/last-batch.json` with timestamp and batch total — enables MC to calculate batch freshness and trigger auto-reboot if configured.
+- **Unadjusted tip detection**: Batch status endpoint surfaces count of open orders with unadjusted tips, surfaced as an amber warning in MC fleet dashboard.
+
+### Commit
+`a38a8cf` — feat(sync): self-updating sync agent + batch monitoring + auto-reboot
+
+---
+
 ## 2026-02-20 (PM5) — Third-Party Audit Bulletproofing (Commit 14de60e)
 
 ### New Features / Hardening

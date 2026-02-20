@@ -499,6 +499,16 @@ Skills that can be developed simultaneously:
 
 ---
 
+## Recently Completed (2026-02-20 — Self-Updating Sync Agent + Batch Monitoring, Skills 399-401)
+
+| Skill | Name | Status | Domain | Dependencies | Notes |
+|-------|------|--------|--------|--------------|-------|
+| 399 | SELF-UPDATING-SYNC-AGENT | DONE | Infrastructure / NUC | 345, 347 | sync-agent.js extracted from installer heredoc; FORCE_UPDATE self-copies agent + schedules pulse-sync restart; SCHEDULE_REBOOT + CANCEL_REBOOT command handlers; sudoers updated |
+| 400 | BATCH-MONITORING | DONE | Payments / MC Fleet | 345, 347, 398 | GET /api/system/batch-status; last-batch.json written on batch close; heartbeat reports batch fields; MC BatchStatusCard with green/yellow/red badge + unadjusted tips warning; fleet dashboard batch dot |
+| 401 | AUTO-REBOOT-AFTER-BATCH | DONE | Infrastructure / MC Config | 399, 400 | AutoRebootCard in MC Config tab; heartbeat triggers SCHEDULE_REBOOT fleet command after batch close; sync agent reboots server N minutes later; setting synced to NUC via DATA_CHANGED |
+
+---
+
 ## Recently Completed (2026-02-19 — Reports Auth Fix + NUC-Cloud Pipeline, Skills 374-375)
 
 | Skill | Name | What Was Built |
@@ -1174,6 +1184,9 @@ These skills emerged during development and are now part of the system:
 | 396 | MULTI-VENUE-OWNER-ROUTING | DONE | Auth / Cloud / Multi-Tenancy | - | Multi-venue owner detection after Clerk auth; venue picker UI; cross-domain owner token (10min HMAC JWT); /auth/owner landing + /api/auth/owner-session; MC /api/owner/venues endpoint |
 | 397 | PASSWORD-RESET-SYSTEM | DONE | Auth / Cloud | - | Venue self-service forgot-password (Clerk FAPI email_code, stays on {slug}.occ.com); MC admin trigger with copyable deep-link; 4 new routes + OwnerResetCard |
 | 398 | DATACAP-PAYMENT-VERIFICATION-REPORT | DONE | Payments / Reports | - | /reports/datacap — local card payments with Live/Offline-SAF/Voided status badges; optional Datacap Reporting V3 cross-reference (DATACAP_REPORTING_API_KEY); summary cards; Datacap Cloud tab |
+| 399 | SELF-UPDATING-SYNC-AGENT | DONE | Infrastructure / NUC | - | sync-agent.js extracted; self-copies on FORCE_UPDATE; SCHEDULE_REBOOT/CANCEL_REBOOT handlers; sudoers updated |
+| 400 | BATCH-MONITORING | DONE | Payments / MC Fleet | - | Live batch status API; MC BatchStatusCard + fleet dashboard; unadjusted tips alert; 24h no-batch warning |
+| 401 | AUTO-REBOOT-AFTER-BATCH | DONE | Infrastructure / MC Config | - | AutoRebootCard in MC Config; SCHEDULE_REBOOT fleet command after batch close; configurable delay |
 
 ---
 
