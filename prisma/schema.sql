@@ -736,6 +736,7 @@ CREATE TABLE "Order" (
     "offlineLocalId" TEXT,
     "offlineTimestamp" TIMESTAMP(3),
     "offlineTerminalId" TEXT,
+    "businessDayDate" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "deletedAt" TIMESTAMP(3),
@@ -2656,8 +2657,9 @@ CREATE TABLE "PaymentReader" (
     "locationId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "serialNumber" TEXT NOT NULL,
-    "ipAddress" TEXT NOT NULL,
+    "ipAddress" TEXT NOT NULL DEFAULT '127.0.0.1',
     "port" INTEGER NOT NULL DEFAULT 8080,
+    "connectionType" TEXT NOT NULL DEFAULT 'IP',
     "merchantId" TEXT,
     "terminalId" TEXT,
     "lastSequenceNo" TEXT NOT NULL DEFAULT '0010010010',
@@ -3808,6 +3810,9 @@ CREATE INDEX "Order_locationId_paidAt_idx" ON "Order"("locationId", "paidAt");
 CREATE INDEX "Order_locationId_createdAt_status_idx" ON "Order"("locationId", "createdAt", "status");
 
 -- CreateIndex
+CREATE INDEX "Order_locationId_businessDayDate_idx" ON "Order"("locationId", "businessDayDate");
+
+-- CreateIndex
 CREATE INDEX "OrderItem_locationId_idx" ON "OrderItem"("locationId");
 
 -- CreateIndex
@@ -4780,7 +4785,7 @@ CREATE INDEX "PaymentReader_isOnline_idx" ON "PaymentReader"("isOnline");
 CREATE INDEX "PaymentReader_serialNumber_idx" ON "PaymentReader"("serialNumber");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "PaymentReader_locationId_ipAddress_key" ON "PaymentReader"("locationId", "ipAddress");
+CREATE INDEX "PaymentReader_connectionType_idx" ON "PaymentReader"("connectionType");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "PaymentReader_locationId_name_key" ON "PaymentReader"("locationId", "name");
