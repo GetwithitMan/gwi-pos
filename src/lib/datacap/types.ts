@@ -116,6 +116,8 @@ export interface DatacapRequestFields {
   duplicate?: 'Override'
   // CardholderID for card recognition
   cardHolderId?: 'Allow_V2'
+  // Level II data (B2B transactions — lowers interchange rate)
+  customerCode?: string   // PO number or customer code (max 17 chars per Datacap spec)
   // Collect card data (no charge)
   collectData?: boolean
   // Simulator-only: override response scenario (dev/testing)
@@ -167,6 +169,7 @@ export interface DatacapResponse {
   safAmount?: string      // Total amount of queued SAF transactions
   safForwarded?: string   // Number forwarded in SAF_ForwardAll response
   storedOffline?: boolean // True when transaction was stored offline (not processed online)
+  level2Status?: string   // 'Accepted', 'Rejected', or undefined if not Level II
   // Raw XML for debugging
   rawXml: string
 }
@@ -191,6 +194,9 @@ export interface SaleParams {
   requestRecordNo?: boolean
   allowPartialAuth?: boolean
   forceOffline?: boolean  // Force SAF storage (for certification test 18.x)
+  // Level II — reduces interchange for B2B cards
+  customerCode?: string   // PO number or customer reference (max 17 chars)
+  // Note: taxAmount goes in amounts.tax
 }
 
 export interface PreAuthParams {

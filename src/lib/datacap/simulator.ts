@@ -109,6 +109,7 @@ export function simulateResponse(
         <AID>A0000000031010</AID>
         <CVM>NO_CVM</CVM>
         ${gratuity ? `<Gratuity>${gratuity}</Gratuity>` : ''}
+        ${fields.customerCode ? '<Level2Status>Accepted</Level2Status>' : ''}
         <Line1>${card.type} ${tranCode === 'EMVPreAuth' ? 'PRE-AUTH' : 'SALE'}</Line1>
         <Line2>Card: ***${card.last4}</Line2>
         <Line3>Auth: ${authCode}</Line3>

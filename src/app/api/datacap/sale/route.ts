@@ -12,6 +12,8 @@ interface SaleRequest {
   tipMode?: 'suggestive' | 'prompt' | 'included' | 'none'
   tipSuggestions?: number[]
   employeeId: string
+  customerCode?: string   // Level II — PO number or customer code
+  taxAmount?: number      // Level II — tax for interchange qualification
 }
 
 export const POST = withVenue(async function POST(request: NextRequest) {
@@ -31,11 +33,13 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       amounts: {
         purchase: amount,
         gratuity: tipMode === 'included' ? tipAmount : undefined,
+        tax: body.taxAmount,   // Level II tax
       },
       tipMode: tipMode || 'none',
       tipSuggestions,
       requestRecordNo: true,
       allowPartialAuth: true,
+      customerCode: body.customerCode,
     })
 
     const error = parseError(response)
@@ -70,6 +74,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
         gratuity: response.gratuityAmount,
         printData: response.printData,
         cvm: response.cvm,
+        level2Status: response.level2Status,
         sequenceNo: response.sequenceNo,
         error: error ? { code: error.code, message: error.text, isRetryable: error.isRetryable } : null,
       },

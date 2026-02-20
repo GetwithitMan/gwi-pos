@@ -397,6 +397,7 @@ export class DatacapClient {
         recordNumberRequested: params.requestRecordNo !== false,
         frequency: 'OneTime',
         cardHolderId: 'Allow_V2',
+        customerCode: params.customerCode,
         forceOffline: params.forceOffline,
       }
 

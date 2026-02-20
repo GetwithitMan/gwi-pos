@@ -194,6 +194,9 @@ export function buildRequest(fields: DatacapRequestFields): string {
   // ForceOffline — SAF storage flag (certification test 18.x)
   if (fields.forceOffline) parts.push('<ForceOffline>Yes</ForceOffline>')
 
+  // Level II — customer/PO code for B2B interchange qualification
+  if (fields.customerCode) parts.push(tag('CustomerCode', fields.customerCode.slice(0, 17)))
+
   // Simulator scenario tag (dev only — read back by send() for simulator routing)
   if (fields.simScenario) parts.push(`<SimScenario>${fields.simScenario}</SimScenario>`)
 

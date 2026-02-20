@@ -154,6 +154,9 @@ export function parseResponse(xml: string): DatacapResponse {
   const storedOffline = textResponse.toUpperCase().includes('STORED') ||
     extractTag(xml, 'StoredOffline') === 'Yes'
 
+  // Level II response
+  const level2Status = extractTag(xml, 'Level2Status')
+
   return {
     cmdStatus,
     dsixReturnCode,
@@ -184,6 +187,7 @@ export function parseResponse(xml: string): DatacapResponse {
     safAmount,
     safForwarded,
     storedOffline,
+    level2Status,
     rawXml: xml,
   }
 }
