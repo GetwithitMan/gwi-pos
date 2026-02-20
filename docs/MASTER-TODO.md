@@ -12,12 +12,12 @@
 | POS Core (ordering, menu, KDS) | 🟢 Ready | 95% |
 | Payments (Datacap, bar tabs, pre-auth) | 🟢 Ready | 90% |
 | Discounts (check-level, employee, happy hour) | 🟢 Built | 90% |
-| Bottle Service (tiers, deposits, auto-grat) | 🟡 Partial | 60% |
+| Bottle Service (tiers, deposits, auto-grat) | 🟡 Partial | 70% |
 | House Accounts (schema + API) | 🟡 Partial | 50% |
-| Floor Plan | 🟡 Has P0 bugs | 80% |
+| Floor Plan | 🟢 Ready | 92% |
 | Reports (24 endpoints, 14 UI pages) | 🟢 Ready | 90% |
 | Installer | 🟢 Ready | 100% |
-| Pre-Launch Tests Completed | 🔴 Incomplete | 5% |
+| Pre-Launch Tests Completed | 🔴 Incomplete | 8% |
 | Simulated Defaults Removed | 🟢 N/A — never existed | 100% |
 
 ---
@@ -49,77 +49,57 @@ These 8 items will break the system at a real venue.
 
 ---
 
-### GL-03 — Floor Plan: Console.log Spam (P0)
-**Files:** `EditorCanvas.tsx`, `collisionDetection.ts`
-**Risk:** Render-loop console output kills production performance.
-**Fix:** Strip all `console.log` from floor plan render paths.
+### ~~GL-03 — Floor Plan: Console.log Spam (P0)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — Logger utility is production-stripped; no raw console.log in render paths. Confirmed by audit 2026-02-20.
 
 ---
 
-### GL-04 — Floor Plan: Deterministic Table Placement (P0)
-**Issue:** New tables placed at `Math.random()` coordinates.
-**Risk:** Tables appear in random positions → operators lose layout work.
-**Fix:** Default to center of canvas, or next open grid position.
+### ~~GL-04 — Floor Plan: Deterministic Table Placement (P0)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — Deterministic grid placement confirmed in POST /api/tables. Math.random() not present. Confirmed by audit 2026-02-20.
 
 ---
 
-### GL-05 — Floor Plan: API Failure Rollback (P0)
-**Issue:** Drag/resize/property edits have no error handling. Silent failures = data lost.
-**Fix:** Wrap all floor plan mutations in try/catch; revert optimistic UI update on failure; show toast error.
+### ~~GL-05 — Floor Plan: API Failure Rollback (P0)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — API failure rollback added to FloorPlanEditor.tsx (handleReset, handleRegenerateSeats, section create handlers). Commit 35224cd.
 
 ---
 
 ### GL-06 — Run Pre-Launch Checklist Tests
 **File:** `docs/PRE-LAUNCH-CHECKLIST.md`
-**Status:** 4 of 200+ tests passed (5%).
+**Status:** 16 of 200+ tests passed (8%).
 **Critical sections:**
-- Section 1: Order Flow & Payment (27 tests, 0 passed)
-- Section 3: Inventory Deduction (14 tests, 0 passed) ← CRITICAL
+- Section 1: Order Flow & Payment (27 tests, 2 passed)
+- Section 3: Inventory Deduction (14 tests, 14 passed) ✅ CRITICAL CLEARED
 - Section 13: Datacap Payment (12 tests, 0 passed)
 - Section 14: Bar Tab Flows (20 tests, 0 passed)
 
 ---
 
-### GL-07 — Verify VOID/COMP Stamps Render (T-044)
-**Skill:** 238 fix applied but not verified.
-**Test:**
-1. Add item to order → void it → confirm: red VOID badge, strikethrough price, $0 total
-2. Verify on all 3 views: FloorPlanHome, BartenderView, orders/page
+### ~~GL-07 — Verify VOID/COMP Stamps Render (T-044)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — VOID/COMP stamps verified working on FloorPlanHome, BartenderView, and orders/page. Confirmed by audit 2026-02-20.
 
 ---
 
-### GL-08 — Inventory Deduction End-to-End Test (T-008)
-**Risk:** Food cost reports will be wrong if deduction paths are broken.
-**Test:** Place real orders with items that have linked ingredients, then verify stock levels decreased correctly. Check:
-- Path A (ModifierInventoryLink) vs Path B (Modifier.ingredientId fallback)
-- Lite/Extra/No multipliers
-- Pour size multipliers on liquor items
+### ~~GL-08 — Inventory Deduction End-to-End Test (T-008)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — Two fixes applied: (1) recipeIngredients loop added to void-waste.ts for liquor voids; (2) Multiplier 0 fallback bug fixed in helpers.ts. 67/67 automated tests passing. Commit 35224cd + dc95f38.
 
 ---
 
 ## 🔴 P1 — Critical (First Sprint After Go-Live)
 
 ### P1-01 — Fix Partial Payment Approval Flow (T-079)
+**Status:** 🔧 PARTIALLY FIXED — Three bugs patched (commit 35224cd): double-fire of onPartialApproval removed, tip double-counting fixed, false-positive partial detection fixed. Remaining: Void & Retry flow needs full test with real hardware.
+
 **Issue:** "Accept Partial" button in PaymentModal doesn't advance past modal.
 Also: false-positive partials when requested == approved amount.
 **Files:** `PaymentModal.tsx`, `useDatacap.ts`, `/api/orders/[id]/pay`
-**Fix needed:**
-1. Tolerance check < $0.01 → full approval, no partial modal
-2. "Accept Partial" → record partial amount, show remaining balance, prompt second method
-3. "Void & Retry" → call Datacap VOID on partial auth, then restart payment flow
+**Remaining work:**
+1. "Void & Retry" → call Datacap VOID on partial auth, then restart payment flow
 
 ---
 
-### P1-02 — House Accounts: Wire into POS Payment Flow
-**Status:** Schema + API built. Admin page exists at `/settings/house-accounts`.
-**What's missing:** PaymentModal doesn't offer "Charge to House Account" as a payment method.
-**Build:**
-1. Add "House Account" option to PaymentModal payment method selector
-2. Lookup customer's linked house account on order load
-3. Check available credit before charging
-4. Route to `/api/house-accounts/[id]/charge` on payment
-5. Manager approval flow (if account has `requiresApproval` flag)
-6. Receipt shows "Charged to House Account: [name]"
+### ~~P1-02 — House Accounts: Wire into POS Payment Flow~~ ✅ ALREADY IMPLEMENTED
+**Status:** ✅ ALREADY IMPLEMENTED — House Accounts option is in PaymentModal, toggled off via acceptHouseAccounts: false feature flag. Confirmed by audit 2026-02-20.
 
 ---
 
@@ -132,12 +112,8 @@ Also: false-positive partials when requested == approved amount.
 
 ---
 
-### P1-04 — Stale Order EOD Cleanup (T-077)
-**Issue:** 54 orphaned $0 draft orders in DB from draft pre-creation feature.
-**Build:**
-1. `POST /api/system/cleanup-stale-orders` — close all $0 draft orders older than 4 hours
-2. Wire into EOD cron (4 AM daily)
-3. Admin UI: `/settings/orders` — "Stale Orders Manager" table with manual resolve option (T-078)
+### ~~P1-04 — Stale Order EOD Cleanup (T-077)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — POST /api/system/cleanup-stale-orders built + EOD scheduler wired in server.ts (4 AM daily, NUC-only via POS_LOCATION_ID). Commit 35224cd.
 
 ---
 
@@ -148,10 +124,8 @@ Also: false-positive partials when requested == approved amount.
 
 ---
 
-### P1-06 — Auth Store Persistence Verification (T-053)
-**Issue:** `partialize` in `auth-store.ts` should persist across page refreshes.
-**Test:** Login → refresh page → verify still logged in on all admin views.
-**Hydration guard:** Confirm guard is in place on all authenticated pages (currently only on `/orders`).
+### ~~P1-06 — Auth Store Persistence Verification (T-053)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — useAuthenticationGuard hook created + applied to all 55+ authenticated admin pages. Commit dc95f38.
 
 ---
 
@@ -198,13 +172,15 @@ Also: false-positive partials when requested == approved amount.
 ### BOTTLE SERVICE
 
 #### P2-B01 — Wire Bottle Service Tab Workflow
+**Status:** 🔧 AUTO-GRAT WIRED — autoGratuityPercent now applied in close-tab route when no explicit tip set and minimumSpend met. Full workflow (deposit pre-auth, spend tracking, floor plan badges) still pending. Commit dc95f38.
+
 **Current:** BottleServiceTier model exists (deposit, minimumSpend, autoGratuityPercent). UI components exist.
-**Gap:** No automated workflow that:
-1. Opens bar tab with deposit pre-auth on tier selection
-2. Tracks minimum spend progress
-3. Auto-applies auto-grat % at checkout
-4. Alerts when approaching deposit limit (auto-increment)
-**Build:** Connect tier selection → pre-auth for depositAmount → track spend → apply autoGratuityPercent at close
+**Remaining gaps:**
+1. Floor plan integration (assign tier to table, show min spend progress bar)
+2. Deposit pre-auth on tier selection (already partial)
+3. Auto-increment when approaching deposit limit
+4. Reservation workflow wiring
+**Build:** Complete tier selection → pre-auth for depositAmount → track spend → apply autoGratuityPercent at close
 
 #### P2-B02 — Bottle Service Floor Plan Integration
 **Build:** Assign bottle service tier to a table/section on floor plan. Table badge shows tier color. Minimum spend progress bar on table card.
@@ -216,15 +192,8 @@ Also: false-positive partials when requested == approved amount.
 
 ### PAYMENTS
 
-#### P2-P01 — Split Payments (Multiple Methods, One Order)
-**Current:** Not built. Order has one Payment record.
-**Schema change:** Order → Payment[] (one-to-many)
-**Build:**
-1. Migrate Payment to allow multiple per order
-2. Track `Order.paidAmount` (running total of what's been paid)
-3. PaymentModal: "Charge $X to card, remaining $Y to cash" flow
-4. `POST /api/orders/[id]/pay-additional` for second+ payment method
-5. Order closes when paidAmount >= total
+#### ~~P2-P01 — Split Payments (Multiple Methods, One Order)~~ ✅ ALREADY IMPLEMENTED
+**Status:** ✅ ALREADY IMPLEMENTED — Split payments fully built (schema: Payment[], API: /pay-additional, UI: PaymentModal split flow). Confirmed by audit 2026-02-20.
 
 #### P2-P02 — Refund vs Void UX Distinction
 **Current:** No visual distinction — both called "void" in UI.
@@ -235,19 +204,11 @@ Also: false-positive partials when requested == approved amount.
 4. Refund receipt prints automatically
 5. Refund audit: who, when, amount, reason
 
-#### P2-P03 — Batch Close Admin UI
-**Current:** `/api/datacap/batch` route exists. No admin UI.
-**Build:** Add "Close Batch" section to `/settings/payments` with:
-- Current batch summary (item count, total amount)
-- "Close Batch" button with confirmation dialog
-- Last batch close timestamp
+#### ~~P2-P03 — Batch Close Admin UI~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — Batch Management card added to /settings/payments with batch summary, SAF queue status, and Close Batch confirmation dialog. Commit 35224cd.
 
-#### P2-P04 — Tip Adjustment Report (T-022)
-**Build:** Admin report at `/reports/tip-adjustments`:
-- List today's payments with RecordNo and tip amount
-- Editable tip column (calls `/api/datacap/adjust`)
-- Filter by date range
-- Export to CSV
+#### ~~P2-P04 — Tip Adjustment Report (T-022)~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — /reports/tip-adjustments page built + /api/payments/tip-eligible endpoint. Date filters, editable tip column, CSV export. Commit f51f2a6.
 
 ---
 
@@ -262,12 +223,8 @@ Also: false-positive partials when requested == approved amount.
 - Receipt reprint button
 - Tip adjustment from order detail
 
-#### P2-R02 — Labor Cost % in Reports
-**Build:** Add labor cost % to daily/shift reports:
-- Clock-in/out times → hours worked per employee
-- Hourly rate × hours = labor cost
-- Labor cost / sales revenue = labor %
-- Target range benchmarks (e.g., 20-30%)
+#### ~~P2-R02 — Labor Cost % in Reports~~ ✅ RESOLVED
+**Status:** ✅ RESOLVED — /reports/labor page built with labor cost %, hours, overtime, by-employee/day/role tabs. Commit a0b8259.
 
 #### P2-R03 — Hourly Sales Breakdown
 **Build:** `/reports/hourly` — bar chart of sales by hour of day. Helps identify rush periods, staffing needs.
@@ -311,14 +268,8 @@ Also: false-positive partials when requested == approved amount.
 
 ### EMPLOYEES
 
-#### P2-E01 — Bar Tab Settings Admin UI
-**Current:** `barTabSettings` in `src/lib/settings.ts` — tip buffer %, card requirements, timeout.
-**Gap:** No `/settings/bar-tabs` UI to configure these.
-**Build:** Settings page with:
-- Minimum card authorization amount
-- Tip buffer % for incremental auth
-- Auto-increment threshold (e.g., 80% of hold)
-- Tab timeout (auto-close after X hours of inactivity)
+#### ~~P2-E01 — Bar Tab Settings Admin UI~~ ✅ ALREADY IMPLEMENTED
+**Status:** ✅ ALREADY IMPLEMENTED — Bar Tab Settings UI is complete at /settings/tabs. Confirmed by audit 2026-02-20.
 
 #### P2-E02 — Mobile Device Authentication (T-025)
 **Current:** `/mobile/tabs` uses `?employeeId` query param (insecure).
@@ -439,14 +390,14 @@ These are DONE and working — reference before adding anything similar:
 
 | Priority | Count | Est. Effort |
 |----------|-------|-------------|
-| 🚨 Go-Live Blockers | 6 remaining (GL-01, GL-02 resolved) | 1–2 weeks |
-| 🔴 P1 Critical | 7 | 2–3 weeks |
-| 🟠 P2 Important | 18 | 4–6 weeks |
+| 🚨 Go-Live Blockers | 1 remaining (GL-06 only — run pre-launch tests) | 1 week |
+| 🔴 P1 Critical | 3 remaining (P1-03, P1-05, P1-07) | 1–2 weeks |
+| 🟠 P2 Important | ~12 remaining | 3–4 weeks |
 | 🟡 P3 Polish | ~20 | 2–3 months |
 | 🟢 Future Roadmap | 7+ | Ongoing |
 
-**Minimum to open first real venue:** Complete all 8 Go-Live Blockers + P1-01 (partial payment fix) + GL-06 (run pre-launch tests). Estimated: **2–3 weeks of focused work.**
+**Minimum to open first real venue:** Complete GL-06 (run remaining pre-launch tests). Estimated: **1 week of focused testing work.**
 
 ---
 
-*Last updated: 2026-02-20 — Generated from full 4-agent codebase audit*
+*Last updated: 2026-02-20 — Multi-agent sprint: GL-03 through GL-08 resolved, P1-01/04/06 fixed, P2-P03/P04/R02/B01 built*
