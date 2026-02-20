@@ -5,6 +5,52 @@
 
 ---
 
+## 2026-02-20 (PM3) — Datacap Certification: GetDevicesInfo + Level II (Skills 390–391)
+
+### Session Summary
+Implemented the final two Datacap certification gaps: GetDevicesInfo (UDP broadcast discovery of all readers on the network) and Level II interchange qualification (customer code + tax). 0 TypeScript errors. Used a 2-agent parallel team.
+
+### Commits (POS — `gwi-pos`)
+
+| Commit | Description |
+|--------|-------------|
+| `e46d997` | feat(datacap): GetDevicesInfo + Level II — certification tests 1.0 + 3.11 |
+
+### Deployments
+
+| App | URL | Status |
+|-----|-----|--------|
+| POS | barpos.restaurant | Auto-deployed via Vercel (commit e46d997) |
+
+### Features Delivered
+
+**GetDevicesInfo (Skill 390 — Test 1.0)**
+- `discoverAllDevices(timeoutMs)` in `discovery.ts` — UDP broadcast to `255.255.255.255:9001`, collects all `"<SN> is at: <IP>"` responses, deduplicates by serial number
+- `GET /api/datacap/discover?timeoutMs=5000` — scan entire local subnet for readers (cap 15s)
+- `POST /api/datacap/discover` — find specific reader by serial number (wraps existing `discoverDevice()`)
+
+**Level II Interchange (Skill 391 — Test 3.11)**
+- `customerCode?: string` on `SaleParams` + `DatacapRequestFields` (17-char max enforced at XML layer)
+- `taxAmount` accepted by `POST /api/datacap/sale` → routed to `amounts.tax`
+- `<CustomerCode>` XML tag emitted in `buildRequest()`
+- `<Level2Status>` parsed from processor response → returned in sale API response
+- Simulator returns `<Level2Status>Accepted</Level2Status>` when `customerCode` present
+
+### Certification Progress — COMPLETE
+
+| Test | Case | Status |
+|------|------|--------|
+| 1.0 | GetDevicesInfo | ✅ Done |
+| 3.11 | Level II (tax + customer code) | ✅ Done |
+
+**Final pass rate: ~26/27 (96%)** — only ForceOffline real-device test remains (needs hardware)
+
+### Skill Docs Created
+- `docs/skills/390-GET-DEVICES-INFO.md`
+- `docs/skills/391-LEVEL-II-INTERCHANGE.md`
+
+---
+
 ## 2026-02-20 (PM2) — Datacap Store-and-Forward / SAF (Skill 389)
 
 ### Session Summary
