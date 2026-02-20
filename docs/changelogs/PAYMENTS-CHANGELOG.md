@@ -1,5 +1,19 @@
 # Payments Domain Changelog
 
+## 2026-02-20 — Datacap Card Re-Entry + Token Display
+
+### New Features
+
+- **Card re-entry detection**: `open-tab` route performs two-stage `RecordNo` lookup — before and after `EMVPreAuth` — to detect returning cards and prevent duplicate holds. See Skill 384.
+- **DC4 token display**: `OrderCard.recordNo` now displayed (truncated as `DC4:ABCD1234…`) in `MultiCardBadges` full mode and `TabNamePromptModal` success banner.
+- **Auth hold display**: Auth hold amount shown in card pills (`$100 hold`) and tab name modal.
+
+### Schema
+
+- `OrderCard.recordNo`: added `@@index([recordNo])` — DB index now active in Postgres.
+
+---
+
 ## 2026-02-18 — Multi-Card Tab Payments
 
 ### New Features

@@ -5,6 +5,67 @@
 
 ---
 
+## 2026-02-20 — Card Re-Entry by Token, Real-Time Tabs, Bartender Speed (Skills 382–384)
+
+### Session Summary
+Built full card-based tab re-entry using Datacap RecordNo token (two-stage server-side detection, zero double holds), real-time TabsPanel socket subscriptions, bartender fire-and-forget speed optimizations, instant new-tab modal, MultiCardBadges full redesign with brand theming and DC4 token display, and fixed void-tab missing socket dispatch. Used a 3-agent parallel team for implementation.
+
+### Commits (POS — `gwi-pos`)
+
+| Commit | Description |
+|--------|-------------|
+| `f391a03` | feat(tabs): card re-entry by token, live TabsPanel sockets, void-tab fix |
+
+### Deployments
+
+| App | URL | Status |
+|-----|-----|--------|
+| POS | barpos.restaurant | Auto-deployed via Vercel (commit f391a03) |
+
+### Features Delivered
+
+**Card Re-Entry by Datacap Token (Skill 384)**
+- Swiping an existing tab's card now detects the open tab via `RecordNo` — no duplicate tab, no double hold
+- Stage 1: RecordNo checked after `CollectCardData` (zero new hold for returning vaulted cards)
+- Stage 2: RecordNo checked after `EMVPreAuth` — new hold voided immediately if existing tab found
+- `CardFirstTabFlow`: new `existing_tab_found` state with "Open Tab" / "Different Card" UI
+
+**Bartender Speed Optimizations (Skill 383)**
+- Send to existing tab: fire-and-forget — UI clears instantly, all network ops run in background
+- New tab card modal: appears immediately with "Preparing Tab…" spinner while shell creates in background
+- `CardFirstTabFlow` now accepts `orderId: string | null` and auto-starts when ID arrives
+
+**MultiCardBadges Card Pill (Skill 382)**
+- Brand-specific dark color theming: Visa=blue-950, MC=red-950, AMEX=emerald-950, Discover=orange-950
+- Three modes: compact (tab list), default (medium pill), full (all fields + DC4 token)
+- Shows cardholder name, auth hold amount, DC4 token (truncated: `DC4:ABCD1234…`)
+- `TabsPanel` shows cardholder name + hold under single-card tabs
+
+**Real-Time TabsPanel**
+- `TabsPanel` subscribes to `tab:updated` + `orders:list-changed` via `useEvents()`
+- All bartender terminals update instantly when any tab opens, closes, or is voided
+
+### Bug Fixes
+
+| Fix | File | Impact |
+|-----|------|--------|
+| `void-tab` missing `dispatchTabUpdated` | `void-tab/route.ts` | Voided tabs now disappear in real time on all terminals |
+| TabsPanel only refreshed on manual trigger | `TabsPanel.tsx` | Now socket-driven — no stale lists |
+
+### Schema Changes
+
+| Change | Migration |
+|--------|-----------|
+| `OrderCard`: `@@index([recordNo])` | `npm run db:push` applied ✅ |
+
+### Skill Docs Created
+
+- `docs/skills/382-MULTICARD-BADGES-CARD-PILL.md`
+- `docs/skills/383-BARTENDER-SPEED-OPTIMIZATIONS.md`
+- `docs/skills/384-CARD-REENTRY-BY-TOKEN.md`
+
+---
+
 ## 2026-02-19 (PM) — Device Fleet Management & Live Venue Fixes
 
 ### Session Summary

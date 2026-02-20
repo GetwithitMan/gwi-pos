@@ -1,5 +1,57 @@
 # Tabs & Bottle Service Domain Changelog
 
+## 2026-02-20 — Card Re-Entry by Token, Real-Time TabsPanel, Speed Optimizations (Skills 382–384)
+
+### New Features
+
+- **Card re-entry by Datacap token**: When a guest's card is swiped for a new tab, the system checks `RecordNo` (Datacap vault token) against existing open tabs. If match found, bartender is prompted to open the existing tab — no duplicate tab, no double hold.
+  - Stage 1: checked before `EMVPreAuth` (zero new hold for returning cards)
+  - Stage 2: checked after `EMVPreAuth` if Stage 1 missed — new hold voided immediately
+  - `CardFirstTabFlow`: new `existing_tab_found` state with "Open Tab" / "Different Card" UI
+
+- **Real-time TabsPanel**: Tab list now subscribes to `tab:updated` + `orders:list-changed` socket events via `useEvents()`. Tabs appear and disappear across all bartender terminals instantly without manual refresh.
+
+- **Instant new-tab modal**: Tapping "+ New Tab" now opens the card reader modal immediately (shows "Preparing Tab…" spinner) while the order shell is created in the background. Previously blocked ~400ms before modal appeared.
+
+- **Fire-and-forget Start Tab**: Sending items to an existing tab now clears the UI instantly with an optimistic toast. All network operations (verify card, append items, send to kitchen, auto-increment) run in the background.
+
+- **MultiCardBadges redesign**: Full cardholder name, DC4 token (truncated), auth hold amount, and brand-specific dark color theming (Visa=blue-950, MC=red-950, AMEX=emerald-950, Discover=orange-950). Three display modes: compact, default, full.
+
+### Bug Fixes
+
+| Fix | Impact |
+|-----|--------|
+| `void-tab` missing `dispatchTabUpdated` | Voided tabs now disappear in real time on all terminals |
+| Tab list only refreshed via `refreshTrigger` | Now also socket-driven — no stale lists across terminals |
+
+### Schema
+
+- `OrderCard`: added `@@index([recordNo])` for fast token lookup
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `prisma/schema.prisma` | `@@index([recordNo])` on `OrderCard` |
+| `src/app/api/orders/[id]/open-tab/route.ts` | Two-stage RecordNo detection |
+| `src/components/tabs/CardFirstTabFlow.tsx` | `existing_tab_found` state, null orderId, "Preparing" spinner |
+| `src/app/(pos)/orders/page.tsx` | Fire-and-forget start tab, instant new-tab modal, existing-tab handler |
+| `src/app/(pos)/orders/OrderPageModals.tsx` | Render gate no longer requires `cardTabOrderId` |
+| `src/components/tabs/TabsPanel.tsx` | Socket subscriptions via `useEvents()` |
+| `src/app/api/orders/[id]/void-tab/route.ts` | Added missing `dispatchTabUpdated` |
+| `src/components/tabs/MultiCardBadges.tsx` | Full redesign — brand palette, 3 modes, token display |
+| `src/app/api/tabs/route.ts` | Returns `OrderCard[]`, `tabStatus`, `tabNickname`, `isBottleService` |
+| `src/hooks/useCardTabFlow.ts` | Added `recordNo`, `authAmount` to `tabCardInfo` |
+| `src/components/tabs/TabNamePromptModal.tsx` | Shows auth hold + DC4 token |
+
+### Skill Docs
+
+- `docs/skills/382-MULTICARD-BADGES-CARD-PILL.md`
+- `docs/skills/383-BARTENDER-SPEED-OPTIMIZATIONS.md`
+- `docs/skills/384-CARD-REENTRY-BY-TOKEN.md`
+
+---
+
 ## 2026-02-18 — Multi-Card Tab Support + Bug Fixes
 
 ### New Features
