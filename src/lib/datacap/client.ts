@@ -397,6 +397,7 @@ export class DatacapClient {
         recordNumberRequested: params.requestRecordNo !== false,
         frequency: 'OneTime',
         cardHolderId: 'Allow_V2',
+        forceOffline: params.forceOffline,
       }
 
       // Tip handling
@@ -450,6 +451,7 @@ export class DatacapClient {
         recordNumberRequested: params.requestRecordNo !== false,
         frequency: 'OneTime',
         cardHolderId: 'Allow_V2',
+        forceOffline: params.forceOffline,
       }
 
       const xml = buildRequest(fields)
@@ -876,6 +878,58 @@ export class DatacapClient {
       merchantId: base.merchantId!,
       operatorId: base.operatorId!,
       tranCode: TRAN_CODES.BATCH_CLOSE,
+    }
+
+    const xml = buildAdminRequest(fields)
+    const response = await this.send(reader, xml)
+    return this.handleResponse(readerId, response)
+  }
+
+  // ─── Store-and-Forward (SAF) ─────────────────────────────────────────────
+
+  /**
+   * Query the reader's SAF queue statistics
+   * Returns count and total amount of transactions stored offline on the reader
+   * Datacap certification test 18.2
+   *
+   * @param readerId - Payment reader ID
+   * @returns Datacap response with safCount and safAmount
+   */
+  async safStatistics(readerId: string): Promise<DatacapResponse> {
+    const reader = await getReaderInfo(readerId)
+    const seqNo = await getSequenceNo(readerId)
+    const base = this.buildBaseFields(reader, seqNo)
+
+    const fields: DatacapRequestFields = {
+      ...base,
+      merchantId: base.merchantId!,
+      operatorId: base.operatorId!,
+      tranCode: TRAN_CODES.SAF_STATISTICS,
+    }
+
+    const xml = buildAdminRequest(fields)
+    const response = await this.send(reader, xml)
+    return this.handleResponse(readerId, response)
+  }
+
+  /**
+   * Forward all offline-stored SAF transactions to the processor
+   * Called when connectivity is restored or manually by admin
+   * Datacap certification test 18.3
+   *
+   * @param readerId - Payment reader ID
+   * @returns Datacap response with safForwarded count
+   */
+  async safForwardAll(readerId: string): Promise<DatacapResponse> {
+    const reader = await getReaderInfo(readerId)
+    const seqNo = await getSequenceNo(readerId)
+    const base = this.buildBaseFields(reader, seqNo)
+
+    const fields: DatacapRequestFields = {
+      ...base,
+      merchantId: base.merchantId!,
+      operatorId: base.operatorId!,
+      tranCode: TRAN_CODES.SAF_FORWARD_ALL,
     }
 
     const xml = buildAdminRequest(fields)

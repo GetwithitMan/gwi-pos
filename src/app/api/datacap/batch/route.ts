@@ -19,11 +19,25 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const response = await client.batchSummary(readerId)
     const error = parseError(response)
 
+    // Also check SAF queue — fire-and-forget, fail silently
+    let safCount = 0
+    let safAmount = 0
+    try {
+      const safResponse = await client.safStatistics(readerId)
+      safCount = parseInt(safResponse.safCount || '0', 10)
+      safAmount = parseFloat(safResponse.safAmount || '0')
+    } catch {
+      // SAF not supported or reader error — ignore
+    }
+
     return Response.json({
       data: {
         success: response.cmdStatus === 'Success',
         batchNo: response.batchNo,
         transactionCount: response.batchItemCount,
+        safCount,
+        safAmount,
+        hasSAFPending: safCount > 0,
         error: error ? { code: error.code, message: error.text } : null,
       },
     })

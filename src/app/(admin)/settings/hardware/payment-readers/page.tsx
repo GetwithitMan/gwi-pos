@@ -14,6 +14,8 @@ import {
   XCircleIcon,
   SignalIcon,
   SpeakerWaveIcon,
+  ArrowUpTrayIcon,
+  QueueListIcon,
 } from '@heroicons/react/24/outline'
 import { toast } from '@/stores/toast-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -44,6 +46,11 @@ interface ReaderFormData {
   verificationType: 'SERIAL_HANDSHAKE' | 'IP_ONLY'
 }
 
+interface SAFStats {
+  count: number
+  amount: number
+}
+
 const DEFAULT_FORM_DATA: ReaderFormData = {
   name: '',
   serialNumber: '',
@@ -64,6 +71,9 @@ export default function PaymentReadersPage() {
   const [error, setError] = useState('')
   const [pingingId, setPingingId] = useState<string | null>(null)
   const [verifyingId, setVerifyingId] = useState<string | null>(null)
+  const [safStats, setSafStats] = useState<Record<string, SAFStats | null>>({})
+  const [safCheckingId, setSafCheckingId] = useState<string | null>(null)
+  const [safForwardingId, setSafForwardingId] = useState<string | null>(null)
 
   const fetchReaders = useCallback(async () => {
     if (!locationId) return
@@ -203,6 +213,56 @@ export default function PaymentReadersPage() {
       toast.error('Failed to verify reader')
     } finally {
       setVerifyingId(null)
+    }
+  }
+
+  const handleCheckSAF = async (reader: PaymentReader) => {
+    if (!locationId) return
+    setSafCheckingId(reader.id)
+    try {
+      const res = await fetch(
+        `/api/datacap/saf/statistics?locationId=${locationId}&readerId=${reader.id}`
+      )
+      const data = await res.json()
+      if (data.data) {
+        setSafStats(prev => ({
+          ...prev,
+          [reader.id]: { count: data.data.safCount, amount: data.data.safAmount },
+        }))
+      }
+    } catch {
+      toast.error('Failed to check SAF queue')
+    } finally {
+      setSafCheckingId(null)
+    }
+  }
+
+  const handleForwardSAF = async (reader: PaymentReader) => {
+    if (!locationId) return
+    setSafForwardingId(reader.id)
+    try {
+      const res = await fetch('/api/datacap/saf/forward', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ locationId, readerId: reader.id }),
+      })
+      const data = await res.json()
+      if (data.data?.success) {
+        const forwarded = data.data.safForwarded || 0
+        toast.success(
+          forwarded > 0
+            ? `Forwarded ${forwarded} offline transaction${forwarded !== 1 ? 's' : ''}`
+            : 'SAF queue is empty'
+        )
+        // Refresh stats after forwarding
+        setSafStats(prev => ({ ...prev, [reader.id]: { count: 0, amount: 0 } }))
+      } else {
+        toast.error('SAF forward failed — check reader connection')
+      }
+    } catch {
+      toast.error('Failed to forward SAF queue')
+    } finally {
+      setSafForwardingId(null)
     }
   }
 
@@ -359,6 +419,57 @@ export default function PaymentReadersPage() {
                   {reader.lastError}
                 </div>
               )}
+
+              {/* SAF Queue Status */}
+              {(() => {
+                const stats = safStats[reader.id]
+                if (!reader.isOnline && stats === undefined) return null
+                return (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                        <QueueListIcon className="w-3.5 h-3.5" />
+                        SAF Queue
+                      </span>
+                      {stats == null ? (
+                        <button
+                          onClick={() => handleCheckSAF(reader)}
+                          disabled={safCheckingId === reader.id || !reader.isOnline}
+                          className="text-xs text-blue-600 hover:text-blue-700 disabled:opacity-50 flex items-center gap-1"
+                        >
+                          {safCheckingId === reader.id ? (
+                            <ArrowPathIcon className="w-3 h-3 animate-spin" />
+                          ) : null}
+                          Check
+                        </button>
+                      ) : stats.count > 0 ? (
+                        <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+                          {stats.count} pending · ${stats.amount.toFixed(2)}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-green-600 flex items-center gap-1">
+                          <CheckCircleIcon className="w-3.5 h-3.5" />
+                          Clear
+                        </span>
+                      )}
+                    </div>
+                    {stats != null && stats.count > 0 && (
+                      <button
+                        onClick={() => handleForwardSAF(reader)}
+                        disabled={safForwardingId === reader.id || !reader.isOnline}
+                        className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-amber-900 bg-amber-50 border border-amber-200 hover:bg-amber-100 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {safForwardingId === reader.id ? (
+                          <ArrowPathIcon className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <ArrowUpTrayIcon className="w-3.5 h-3.5" />
+                        )}
+                        {safForwardingId === reader.id ? 'Forwarding...' : 'Forward Now'}
+                      </button>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Actions */}
               <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100">

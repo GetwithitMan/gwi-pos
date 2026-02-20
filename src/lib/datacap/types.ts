@@ -120,6 +120,8 @@ export interface DatacapRequestFields {
   collectData?: boolean
   // Simulator-only: override response scenario (dev/testing)
   simScenario?: 'decline' | 'error' | 'partial'
+  // Force transaction offline (SAF storage on reader — certification test 18.x)
+  forceOffline?: boolean
 }
 
 // ─── Response ────────────────────────────────────────────────────────────────
@@ -160,6 +162,11 @@ export interface DatacapResponse {
   batchItemCount?: string
   // Signature
   signatureData?: string
+  // SAF (Store-and-Forward) fields
+  safCount?: string       // Number of transactions queued offline on reader
+  safAmount?: string      // Total amount of queued SAF transactions
+  safForwarded?: string   // Number forwarded in SAF_ForwardAll response
+  storedOffline?: boolean // True when transaction was stored offline (not processed online)
   // Raw XML for debugging
   rawXml: string
 }
@@ -183,12 +190,14 @@ export interface SaleParams {
   tipSuggestions?: number[]
   requestRecordNo?: boolean
   allowPartialAuth?: boolean
+  forceOffline?: boolean  // Force SAF storage (for certification test 18.x)
 }
 
 export interface PreAuthParams {
   invoiceNo: string
   amount: number
   requestRecordNo?: boolean
+  forceOffline?: boolean
 }
 
 export interface CaptureParams {

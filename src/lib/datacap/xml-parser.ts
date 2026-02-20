@@ -146,6 +146,14 @@ export function parseResponse(xml: string): DatacapResponse {
   // Signature
   const signatureData = extractTag(xml, 'SignatureData')
 
+  // SAF fields
+  const safCount = extractTag(xml, 'SAFCount')
+  const safAmount = extractTag(xml, 'SAFAmount')
+  const safForwarded = extractTag(xml, 'SAFForwarded')
+  // Stored offline detection: reader stores transaction when processor unreachable
+  const storedOffline = textResponse.toUpperCase().includes('STORED') ||
+    extractTag(xml, 'StoredOffline') === 'Yes'
+
   return {
     cmdStatus,
     dsixReturnCode,
@@ -172,6 +180,10 @@ export function parseResponse(xml: string): DatacapResponse {
     batchNo,
     batchItemCount,
     signatureData,
+    safCount,
+    safAmount,
+    safForwarded,
+    storedOffline,
     rawXml: xml,
   }
 }
