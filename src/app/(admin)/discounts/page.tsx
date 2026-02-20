@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -33,7 +34,7 @@ interface DiscountRule {
 export default function DiscountsPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/discounts' })
 
   const crud = useAdminCRUD<DiscountRule>({
     apiBase: '/api/discounts',
@@ -75,16 +76,12 @@ export default function DiscountsPage() {
   })
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/discounts')
-    }
-  }, [isAuthenticated, router])
-
-  useEffect(() => {
     if (employee?.location?.id) {
       loadItems()
     }
   }, [employee?.location?.id, loadItems])
+
+  if (!hydrated) return null
 
   const resetForm = () => {
     setFormData({

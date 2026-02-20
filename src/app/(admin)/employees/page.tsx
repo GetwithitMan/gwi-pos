@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Modal } from '@/components/ui/modal'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from '@/stores/toast-store'
 import { AdminPageHeader } from '@/components/admin/AdminPageHeader'
@@ -38,7 +39,7 @@ interface Employee {
 export default function EmployeesPage() {
   const router = useRouter()
   const currentEmployee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard({ redirectUrl: '/login?redirect=/employees' })
   const [roles, setRoles] = useState<Role[]>([])
   const [isPageLoading, setIsPageLoading] = useState(true)
   const [showInactive, setShowInactive] = useState(false)
@@ -81,12 +82,6 @@ export default function EmployeesPage() {
     hireDate: '',
     color: '#3B82F6',
   })
-
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login?redirect=/employees')
-    }
-  }, [isAuthenticated, router])
 
   // Custom loadData: employees need includeInactive param + parallel roles fetch
   const loadData = useCallback(async () => {
@@ -288,7 +283,7 @@ export default function EmployeesPage() {
     )
   })
 
-  if (!isAuthenticated || !currentEmployee) {
+  if (!hydrated || !currentEmployee) {
     return null
   }
 

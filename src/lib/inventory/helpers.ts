@@ -69,21 +69,35 @@ export function getModifierMultiplier(
   }
 
   // Handle multiplier instructions (use settings if available, else defaults)
+  // Note: Use explicit null/undefined checks — `||` would treat a location's
+  // explicit 0 value as falsy and incorrectly fall back to the default.
   switch (normalized) {
     case 'LITE':
     case 'LIGHT':
     case 'EASY':
-    case 'HALF':
-      return toNumber(settings?.multiplierLite) || Number(DEFAULT_MULTIPLIERS.multiplierLite)
+    case 'HALF': {
+      const lite = settings?.multiplierLite
+      return (lite !== null && lite !== undefined && !isNaN(Number(lite)))
+        ? Number(lite)
+        : DEFAULT_MULTIPLIERS.multiplierLite
+    }
 
     case 'EXTRA':
     case 'DOUBLE':
-    case 'HEAVY':
-      return toNumber(settings?.multiplierExtra) || Number(DEFAULT_MULTIPLIERS.multiplierExtra)
+    case 'HEAVY': {
+      const extra = settings?.multiplierExtra
+      return (extra !== null && extra !== undefined && !isNaN(Number(extra)))
+        ? Number(extra)
+        : DEFAULT_MULTIPLIERS.multiplierExtra
+    }
 
     case 'TRIPLE':
-    case '3X':
-      return toNumber(settings?.multiplierTriple) || Number(DEFAULT_MULTIPLIERS.multiplierTriple)
+    case '3X': {
+      const triple = settings?.multiplierTriple
+      return (triple !== null && triple !== undefined && !isNaN(Number(triple)))
+        ? Number(triple)
+        : DEFAULT_MULTIPLIERS.multiplierTriple
+    }
 
     case 'ADD':
     case 'NORMAL':

@@ -744,21 +744,29 @@ export function FloorPlanEditor({
             title: 'Seat Collision Warning',
             message: `${collisionCount} seat(s) would collide with: ${collisionTypes}${collisionCount > 3 ? '...' : ''}\n\nGenerate seats anyway? They may overlap.`,
             action: async () => {
-              const forceResponse = await fetch(`/api/tables/${tableId}/seats/auto-generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  count: table.capacity,
-                  seatPattern: table.seatPattern,
-                  replaceExisting: true,
-                  checkCollisions: true,
-                  forceGenerate: true,
-                }),
-              });
+              try {
+                const forceResponse = await fetch(`/api/tables/${tableId}/seats/auto-generate`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    count: table.capacity,
+                    seatPattern: table.seatPattern,
+                    replaceExisting: true,
+                    checkCollisions: true,
+                    forceGenerate: true,
+                  }),
+                });
 
-              if (forceResponse.ok) {
+                if (!forceResponse.ok) {
+                  const errData = await forceResponse.json().catch(() => ({}));
+                  throw new Error(errData.error || `Failed (HTTP ${forceResponse.status})`);
+                }
+
                 await fetchTables();
                 setTimeout(() => setRefreshKey((prev) => prev + 1), 50);
+              } catch (error) {
+                toast.error(`Failed to generate seats: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                logger.error('Force seat generation failed:', { tableId, error });
               }
             },
           });
@@ -902,16 +910,33 @@ export function FloorPlanEditor({
       message: 'Reset the floor plan to default? This will delete all fixtures.',
       action: async () => {
         if (useDatabase) {
-          // Delete all elements
-          for (const el of dbElements) {
-            await fetch(`/api/floor-plan-elements/${el.id}`, { method: 'DELETE' });
-          }
+          // Capture original state for rollback
+          const originalElements = [...dbElements];
+          // Optimistic update - clear UI immediately
           setDbElements([]);
+          setSelectedFixtureId(null);
+
+          try {
+            const results = await Promise.allSettled(
+              originalElements.map(el =>
+                fetch(`/api/floor-plan-elements/${el.id}`, { method: 'DELETE' })
+              )
+            );
+            const failures = results.filter(r => r.status === 'rejected');
+            if (failures.length > 0) {
+              throw new Error(`${failures.length} element(s) failed to delete`);
+            }
+          } catch (error) {
+            // Rollback - restore elements that may not have been deleted
+            setDbElements(originalElements);
+            toast.error(`Failed to reset floor plan: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            logger.error('Floor plan reset failed:', error);
+          }
         } else {
           const fixtures = FloorCanvasAPI.getFixtures(selectedRoomId);
           fixtures.forEach((f) => FloorCanvasAPI.removeFixture(f.id));
+          setSelectedFixtureId(null);
         }
-        setSelectedFixtureId(null);
         setRefreshKey((prev) => prev + 1);
       },
     });
@@ -1152,11 +1177,14 @@ export function FloorPlanEditor({
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ locationId, name }),
                       });
-                      if (res.ok) {
-                        fetchSections();
+                      if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.error || `Failed (HTTP ${res.status})`);
                       }
+                      fetchSections();
                     } catch (e) {
                       logger.error('Failed to create section:', e);
+                      toast.error(`Failed to create section: ${e instanceof Error ? e.message : 'Unknown error'}`);
                     }
                   }
                 }}
@@ -1202,11 +1230,14 @@ export function FloorPlanEditor({
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ locationId, name }),
                       });
-                      if (res.ok) {
-                        fetchSections();
+                      if (!res.ok) {
+                        const errData = await res.json().catch(() => ({}));
+                        throw new Error(errData.error || `Failed (HTTP ${res.status})`);
                       }
+                      fetchSections();
                     } catch (e) {
                       logger.error('Failed to create section:', e);
+                      toast.error(`Failed to create section: ${e instanceof Error ? e.message : 'Unknown error'}`);
                     }
                   }
                 }}

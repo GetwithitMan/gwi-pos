@@ -69,9 +69,8 @@ export function DatacapPaymentProcessor({
     onSuccess: (result) => {
       // Check for partial approval
       if (result.isPartialApproval) {
-        const remainingBalance = result.amountRequested - result.amountAuthorized
         setPartialResult({ ...result, tipAmount })
-        onPartialApproval?.({ ...result, tipAmount, remainingBalance })
+        // onPartialApproval fires only when user clicks "Accept Partial" below
       } else {
         onSuccess({ ...result, tipAmount })
       }
@@ -105,6 +104,7 @@ export function DatacapPaymentProcessor({
     await processPayment({
       orderId,
       amount: totalToCharge,
+      purchaseAmount: amount, // Pre-tip amount for accurate partial approval detection
       tipAmount,
       tipMode: externalTipMode || 'none',
     })

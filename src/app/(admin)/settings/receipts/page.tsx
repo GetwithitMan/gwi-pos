@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/stores/auth-store'
+import { useAuthenticationGuard } from '@/hooks/useAuthenticationGuard'
 import { toast } from '@/stores/toast-store'
 import type { ReceiptSettings } from '@/lib/settings'
 import { type GlobalReceiptSettings, DEFAULT_GLOBAL_RECEIPT_SETTINGS } from '@/types/print'
@@ -61,7 +62,7 @@ function SettingsCard({ title, children }: { title: string; children: React.Reac
 export default function ReceiptSettingsPage() {
   const router = useRouter()
   const employee = useAuthStore(s => s.employee)
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const hydrated = useAuthenticationGuard()
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -79,13 +80,6 @@ export default function ReceiptSettingsPage() {
   const [receiptDisplay, setReceiptDisplay] = useState<GlobalReceiptSettings>(
     JSON.parse(JSON.stringify(DEFAULT_GLOBAL_RECEIPT_SETTINGS))
   )
-
-  // ──── Auth redirect ────
-  useEffect(() => {
-    if (!isAuthenticated) {
-      router.push('/login')
-    }
-  }, [isAuthenticated, router])
 
   // ──── Load settings ────
   const loadSettings = useCallback(async () => {

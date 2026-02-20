@@ -1361,7 +1361,7 @@ export function PaymentModal({
                 const partialPayment: PendingPayment = {
                   method: selectedMethod === 'debit' ? 'debit' : 'credit',
                   amount: result.amountAuthorized,
-                  tipAmount: result.tipAmount,
+                  tipAmount: 0, // Tip is already included in amountAuthorized — don't double-count
                   cardBrand: result.cardBrand || 'card',
                   cardLast4: result.cardLast4 || '0000',
                   datacapRecordNo: result.recordNo,

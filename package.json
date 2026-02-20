@@ -18,6 +18,8 @@
     "db:studio": "dotenv -e .env.local -- prisma studio",
     "fix-orphaned-labels": "npx tsx scripts/fix-orphaned-seat-labels.ts",
     "test": "playwright test",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "test:ui": "playwright test --ui",
     "test:floor-plan": "playwright test floor-plan.spec.ts",
     "test:headed": "playwright test --headed",
@@ -74,7 +76,8 @@
     "eslint-config-next": "16.1.5",
     "prisma": "6.19.2",
     "tsx": "^4.21.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.0.18"
   },
   "browserslist": [
     "chrome >= 108",

@@ -91,6 +91,7 @@ interface UseDatacapReturn {
   processPayment: (params: {
     orderId: string
     amount: number
+    purchaseAmount?: number
     tipAmount?: number
     tipMode?: string
     tranType?: 'Sale' | 'Auth'
@@ -361,6 +362,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
   const processPayment = useCallback(async (params: {
     orderId: string
     amount: number
+    purchaseAmount?: number
     tipAmount?: number
     tipMode?: string
     tranType?: 'Sale' | 'Auth'
@@ -464,7 +466,9 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         const txResult = await txResponse.json()
 
         // Parse amounts for partial approval detection
-        const amountRequested = params.amount
+        // Use purchaseAmount (pre-tip) when available to avoid false-positive partials
+        // where the reader returns purchase-only authorization (excluding tip)
+        const amountForPartialCheck = params.purchaseAmount ?? params.amount
         const amountAuthorized = parseFloat(
           txResult.amountAuthorized || txResult.AmountAuthorized ||
           txResult.AuthorizedAmount || txResult.Amount || params.amount.toString()
@@ -472,7 +476,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
         // Use cent-level tolerance to avoid false-positive partials from floating-point rounding
         // e.g., $65.82 requested vs $65.82 authorized should NOT be flagged as partial
         const isPartialApproval = amountAuthorized > 0 &&
-          (amountRequested - amountAuthorized) > 0.01
+          (amountForPartialCheck - amountAuthorized) > 0.01
 
         // Parse Datacap response
         const result: DatacapResult = {
@@ -486,7 +490,7 @@ export function useDatacap(options: UseDatacapOptions): UseDatacapReturn {
           responseMessage: txResult.responseMessage || txResult.ResponseMessage || txResult.Message,
 
           // Partial Approval tracking
-          amountRequested,
+          amountRequested: params.amount,
           amountAuthorized,
           isPartialApproval,
 

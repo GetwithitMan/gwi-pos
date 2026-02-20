@@ -20,6 +20,56 @@ const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOSTNAME || 'localhost'
 const port = parseInt(process.env.PORT || '3005', 10)
 
+// ============================================================================
+// EOD Scheduler — runs stale order cleanup daily at 4 AM
+// ============================================================================
+
+function startEodScheduler() {
+  const EOD_HOUR = 4 // 4 AM local time
+
+  function msUntilNext4AM(): number {
+    const now = new Date()
+    const next = new Date(now)
+    next.setHours(EOD_HOUR, 0, 0, 0)
+    if (next <= now) {
+      next.setDate(next.getDate() + 1)
+    }
+    return next.getTime() - now.getTime()
+  }
+
+  async function runEodCleanup() {
+    const locationId = process.env.POS_LOCATION_ID
+    if (!locationId) {
+      // Cloud/dev mode without a fixed location — skip automatic cleanup
+      return
+    }
+
+    try {
+      const url = `http://localhost:${port}/api/system/cleanup-stale-orders?locationId=${locationId}`
+      const res = await fetch(url, { method: 'POST' })
+      const data = await res.json()
+      if (data.data?.closedCount > 0) {
+        console.log(`[EOD] Cleaned up ${data.data.closedCount} stale draft orders`)
+      }
+    } catch (err) {
+      console.error('[EOD] Stale order cleanup failed:', err)
+    }
+  }
+
+  function scheduleNext() {
+    const delay = msUntilNext4AM()
+    const nextRun = new Date(Date.now() + delay)
+    console.log(`[EOD] Next stale-order cleanup scheduled for ${nextRun.toLocaleString()}`)
+
+    setTimeout(async () => {
+      await runEodCleanup()
+      scheduleNext() // Reschedule for next day
+    }, delay)
+  }
+
+  scheduleNext()
+}
+
 async function main() {
   const app = next({ dev, hostname, port })
   const handle = app.getRequestHandler()
@@ -59,6 +109,7 @@ async function main() {
     console.log(`[Server] Socket.io: ws://${hostname}:${port}/api/socket`)
     console.log(`[Server] Mode: ${dev ? 'development' : 'production'}`)
     startCloudEventWorker()
+    startEodScheduler()
   })
 }
 

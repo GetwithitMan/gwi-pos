@@ -96,6 +96,28 @@ export async function deductInventoryForVoidedItem(
                 },
               },
             },
+            // Liquor recipes from Liquor Builder (RecipeIngredient -> BottleProduct -> InventoryItem)
+            recipeIngredients: {
+              where: { deletedAt: null },
+              include: {
+                bottleProduct: {
+                  include: {
+                    inventoryItem: {
+                      select: {
+                        id: true,
+                        name: true,
+                        category: true,
+                        department: true,
+                        storageUnit: true,
+                        costPerUnit: true,
+                        yieldCostPerUnit: true,
+                        currentStock: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
         modifiers: {
@@ -234,6 +256,32 @@ export async function deductInventoryForVoidedItem(
             }
           }
         }
+      }
+    }
+
+    // Process liquor recipe ingredients (RecipeIngredient -> BottleProduct -> InventoryItem)
+    // This handles cocktails created via the Liquor Builder
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recipeIngredients = (orderItem.menuItem as any)?.recipeIngredients
+    if (recipeIngredients && Array.isArray(recipeIngredients)) {
+      for (const ing of recipeIngredients) {
+        // Get the linked inventory item from the bottle product
+        const inventoryItem = ing.bottleProduct?.inventoryItem
+        if (!inventoryItem) continue
+
+        // Skip if this inventory item was explicitly removed with "NO" modifier
+        if (removedIngredientIds.has(inventoryItem.id)) {
+          continue
+        }
+
+        // Calculate pour quantity in oz
+        // pourCount * itemQty * (pourSizeOz or location default 1.5oz)
+        const pourCount = toNumber(ing.pourCount) || 1
+        const pourSizeOz = toNumber(ing.pourSizeOz) || toNumber(ing.bottleProduct?.pourSizeOz) || 1.5
+        const totalOz = pourCount * pourSizeOz * itemQty
+
+        // Add usage - inventory is tracked in oz for liquor items
+        addUsage(inventoryItem, totalOz)
       }
     }
 

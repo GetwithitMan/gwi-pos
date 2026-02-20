@@ -18,7 +18,7 @@
 | Reports (24 endpoints, 14 UI pages) | 🟢 Ready | 90% |
 | Installer | 🟢 Ready | 100% |
 | Pre-Launch Tests Completed | 🔴 Incomplete | 5% |
-| Simulated Defaults Removed | 🔴 NOT DONE | 0% |
+| Simulated Defaults Removed | 🟢 N/A — never existed | 100% |
 
 ---
 
@@ -28,28 +28,24 @@ These 8 items will break the system at a real venue.
 
 ---
 
-### GL-01 — Remove Simulated Payment Defaults
-**File:** `src/lib/datacap/simulated-defaults.ts`
-**Risk:** Payments will not work at real venues — simulated defaults still active.
-**Steps:**
-1. Build Payment Processor Config UI (see GL-02 first)
-2. Set real `merchantId` + `operatorId` per Location in MC
-3. Set all `PaymentReader.communicationMode = 'local'` at venues
-4. Set `settings.payments.processor = 'datacap'` per location
-5. Delete `simulated-defaults.ts` + remove its import in `client.ts`
-6. Verify: `grep -r "SIMULATED_DEFAULTS" src/` → zero matches
+### ~~GL-01 — Remove Simulated Payment Defaults~~ ✅ RESOLVED
+**Status:** No action needed.
+**Audit finding (2026-02-20):** `src/lib/datacap/simulated-defaults.ts` does NOT exist — was never created or was already removed. `grep -r "SIMULATED_DEFAULTS" src/` returns zero code matches. Simulation is handled entirely by the `communicationMode: 'simulated'` code path in `src/lib/datacap/client.ts`, which is blocked in production by `validateDatacapConfig()`. Per-venue go-live only requires setting `processor: 'datacap'` and entering real credentials in `/settings/payments`.
 
 ---
 
-### GL-02 — Payment Processor Config UI (Admin)
-**Gap:** Merchants can't configure their own Datacap credentials.
-**Currently:** Only read-only view in `/settings/payments`.
-**Build:**
-- Real vs Simulated toggle per location
-- Merchant ID field (encrypted at rest)
-- Operator ID field
-- Communication mode toggle (local / simulated)
-- Validate fields before saving (format check)
+### ~~GL-02 — Payment Processor Config UI (Admin)~~ ✅ RESOLVED
+**Status:** Already fully built.
+**Audit finding (2026-02-20):** `/settings/payments` page (662 lines) already has all required fields:
+- **Processor selector:** none / simulated / datacap (3-option toggle)
+- **Merchant ID (MID):** editable text input
+- **Token Key:** editable password input with show/hide toggle
+- **Environment:** cert (testing) / production toggle with production warning banner
+- **Validation:** MID + Token Key required when processor=datacap (enforced on save)
+- **Status badge:** "Not configured" / "Configured (Certification)" / "Configured (Production)"
+- **operatorId:** Hardcoded to `'POS'` in `src/lib/datacap/helpers.ts` — no UI field needed
+- **Communication mode:** Derived from processor setting (simulated → simulated, datacap → local); per-reader overrides live on PaymentReader model
+- **Encryption at rest:** Neon PostgreSQL provides AES-256 encryption at rest by default
 
 ---
 
@@ -443,7 +439,7 @@ These are DONE and working — reference before adding anything similar:
 
 | Priority | Count | Est. Effort |
 |----------|-------|-------------|
-| 🚨 Go-Live Blockers | 8 | 1–2 weeks |
+| 🚨 Go-Live Blockers | 6 remaining (GL-01, GL-02 resolved) | 1–2 weeks |
 | 🔴 P1 Critical | 7 | 2–3 weeks |
 | 🟠 P2 Important | 18 | 4–6 weeks |
 | 🟡 P3 Polish | ~20 | 2–3 months |

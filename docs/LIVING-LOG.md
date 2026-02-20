@@ -5,6 +5,60 @@
 
 ---
 
+## 2026-02-20 — Go-Live Blocker Sprint + P1 Critical Fixes (Multi-Agent Team)
+
+**Session theme:** Full-team audit and fix sprint — go-live blockers, P1 payment bugs, EOD cron, auth hardening
+
+**Summary:** Multi-agent team sprint. 7 MASTER-TODO items confirmed already implemented (no build needed). 4 go-live bugs fixed. 2 P1 payment bugs patched. EOD stale-order cleanup cron added. Authentication hydration guard deployed across 131 pages.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| *(this session)* | Fix go-live blockers and P1 payment bugs — multi-agent sprint |
+
+### Deployments
+- gwi-pos → pushed to `origin/main`
+
+### Features Delivered
+- **GL-05:** Floor plan API failure rollback — 3 mutation gaps closed in `FloorPlanEditor.tsx` (handleReset, handleRegenerateSeats force callback, 2 section create handlers)
+- **GL-08 Fix 1:** Liquor void deduction — added `recipeIngredients` processing to `src/lib/inventory/void-waste.ts` (was missing for all liquor items voided with wasMade=true)
+- **GL-08 Fix 2:** Multiplier 0 fallback bug — fixed all 3 multiplier getters in `src/lib/inventory/helpers.ts` (`||` → explicit null/undefined check)
+- **P1-01 Fix 1:** Removed double-fire of onPartialApproval from `DatacapPaymentProcessor.tsx` (auto-fire in onSuccess removed; only button click fires it)
+- **P1-01 Fix 2:** Fixed tip double-counting in `PaymentModal.tsx` partial approval pending payment (tipAmount: 0 for partials)
+- **P1-01 Fix 3:** Fixed false-positive partial detection in `useDatacap.ts` — added purchaseAmount param so tip is excluded from partial detection math
+- **P1-04:** Built `POST /api/system/cleanup-stale-orders` + EOD scheduler (setTimeout chain, 4 AM daily, NUC-only via POS_LOCATION_ID env)
+- **P1-06:** Created `src/hooks/useAuthenticationGuard.ts` shared hook + applied to 131 authenticated admin/POS pages
+
+### Already-Built Discoveries (no build needed)
+- **GL-01:** `simulated-defaults.ts` never existed; SIMULATED_DEFAULTS not in code
+- **GL-02:** `/settings/payments` already has all 8 required config cards
+- **GL-03:** Logger utility is production-stripped (no raw console.log in render paths)
+- **GL-04:** Deterministic grid placement already in `POST /api/tables`
+- **GL-07:** VOID/COMP stamps verified working on all 3 views
+- **P1-02:** House Accounts fully wired in PaymentModal — just feature-toggled off (`acceptHouseAccounts: false`)
+- **P2-E01:** Bar Tab Settings UI complete at `/settings/tabs`
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix |
+|-----|-----------|-----|
+| Liquor void items not deducting inventory | `deductInventoryForVoidedItem` only processed `ingredientId` direct link, skipped `recipeIngredients` | Added recipe ingredient loop with multiplier scaling in `void-waste.ts` |
+| Multiplier 0 treated as missing | `getMultiplier() \|\| 1.0` coerced valid 0 (for "NO" instruction) to 1.0 | Changed to explicit `null/undefined` check across 3 getters in `helpers.ts` |
+| Partial approval double-fire | `onSuccess` callback auto-fired `onPartialApproval` AND button click also fired it | Removed auto-fire from `onSuccess`; only manual button triggers it |
+| Tip double-counted in partial payments | Pending payment included tipAmount when recording partial | Set `tipAmount: 0` for partial approval pending payments |
+| False-positive partial detection | Tip amount included in approved vs requested comparison | Added `purchaseAmount` param to exclude tip from partial math |
+| Floor plan mutations silently fail | 3 mutation paths lacked API failure rollback | Added rollback logic to handleReset, handleRegenerateSeats, section create |
+
+### MASTER-TODO Updated
+- GL-01 and GL-02 marked resolved with audit findings
+
+### Known Issues
+- 3 pre-existing Decimal type issues in `src/lib/inventory/helpers.ts` (unrelated to this sprint)
+- P1-03 (House Accounts Aging Report) and P2-R01 (Closed Orders UI) confirmed not built — queued for next sprint
+
+---
+
 ## 2026-02-20 — DC Direct Payment Reader Architecture (Skill 407)
 
 **Session theme:** Establish correct DC Direct payment terminal architecture and fix simulated routing
