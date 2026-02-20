@@ -45,15 +45,22 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     const locationSettings = parseSettings(await getLocationSettings(locationId))
     const dayStartTime = locationSettings.businessDay.dayStartTime
 
-    // Build date filter using business day boundaries
-    const dateFilter: { createdAt?: { gte?: Date; lte?: Date } } = {}
-    if (startDate) {
-      const startRange = getBusinessDayRange(startDate, dayStartTime)
-      dateFilter.createdAt = { ...dateFilter.createdAt, gte: startRange.start }
-    }
-    if (endDate) {
-      const endRange = getBusinessDayRange(endDate, dayStartTime)
-      dateFilter.createdAt = { ...dateFilter.createdAt, lte: endRange.end }
+    // Build date filter with businessDayDate OR-fallback
+    const dateFilter: Record<string, unknown> = {}
+    if (startDate || endDate) {
+      const dateRange: { gte?: Date; lte?: Date } = {}
+      if (startDate) {
+        const startRange = getBusinessDayRange(startDate, dayStartTime)
+        dateRange.gte = startRange.start
+      }
+      if (endDate) {
+        const endRange = getBusinessDayRange(endDate, dayStartTime)
+        dateRange.lte = endRange.end
+      }
+      dateFilter.OR = [
+        { businessDayDate: dateRange },
+        { businessDayDate: null, createdAt: dateRange },
+      ]
     }
 
     // Build employee filter

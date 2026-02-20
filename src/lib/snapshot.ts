@@ -206,7 +206,7 @@ export async function getFloorPlanSnapshot(locationId: string): Promise<Snapshot
 
     // Open orders count — current business day only, exclude child splits
     db.order.count({
-      where: { locationId, status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null, createdAt: { gte: businessDayStart } },
+      where: { locationId, status: { in: ['open', 'split'] }, deletedAt: null, parentOrderId: null, OR: [{ businessDayDate: { gte: businessDayStart } }, { businessDayDate: null, createdAt: { gte: businessDayStart } }] },
     }),
   ])
 

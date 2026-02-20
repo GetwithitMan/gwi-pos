@@ -1,0 +1,1481 @@
+﻿Virtual Gift API
+Datacap Gift Specification
+Notice: This document contains information proprietary to Datacap Systems Inc. The only acceptable use for the information contained herein is to interface third party systems exclusively to Datacap’s ePay server and Tran products. Any other use is strictly prohibited.
+dsiPDCX®, dsiEMVUS®, dsiEMVX®, Pay API™, EasyCheckout™. dsiEMVAndroid™, dsiEMVApple™, DSIEMVClientX®, DSIClientX®, DataTran™, NETePay™, NETePay Hosted™, TranCloud™, dsiTranCloud™, DC Direct™, DIALePay™, GIFTePay™, ePay™, ePay Administrator™, DataTran™, DialTran™, IPTran™, IPTranLT™, TwinTran™, AutoLoad™, NoLoad™, PSCS™, DatacapConnect™, dsiPDCiOS™, dsiPDCAndroid™ and Datacap names and logos and all related trademarks, trade names, and other intellectual property are the property of Datacap Systems Inc. and cannot be used without its express prior written permission. All other names or trademarks are the property of the other owners.
+
+About
+What is Virtual Gift?
+Virtual Gift API enables merchants to create persistent gift card storefronts. The web pages remain active and can be used by multiple customers over time. Unlike single-use payment requests, gift card pages are designed to be permanent points of sale for virtual gift cards.
+Key Features
+1. Create branded gift card purchase pages
+2. Support multiple payment methods (Credit/Debit, ACH) with Apple Pay and Google Pay support for card payments
+3. Three delivery options: Email, SMS, or Print (for hand delivery)
+4. Schedule gift card delivery for future dates
+5. Customize occasions, amounts, and messaging
+6. Embed as widgets/iframes in your own website
+7. Receive webhook notifications on purchases
+ Full gift card page example 
+
+	Virtual Gift page with custom logo and colors
+	URLs
+Type
+	URL
+	Certification
+	https://paylink-cert.dcap.com/api/v1/giftcard
+	Production
+	https://paylink.dcap.com/api/v1/giftcard
+	Authorization
+The authorization is the same as V2 Pay API. which consists of Basic Authorization on all endpoints as Authorization: Basic BASE64(eCommerceMID:ApiKey) API Key acquired via the endpoint /AcquireInitialApiKey and rotated via the endpoint /AcquireApiKey. All Gift Card API requests require HTTP Basic Authentication using your Datacap merchant credentials. Refer to Pay API authorization for more info.
+Important Note: The merchant must be authorized to issue gift cards. The Virtual Gift API validates this by performing a test transaction during page creation.
+Operations
+The following operations are supported for virtual gift.
+Operation
+	HTTP Method
+	URL
+	Create new gift card page
+	POST
+	/giftcard
+	Gift card page details
+	GET
+	/giftcard/{giftCardPageId}
+	Update a gift card page
+	PUT
+	/giftcard/{giftCardPageId}
+	Disable purchases
+	PUT
+	/giftcard/{giftCardPageId}/archive
+	Return gift card transactions for specific page
+	GET
+	/giftcard/{giftCardPageId}/transactions
+	Retry delivery of gift card
+	PUT
+	/giftcard/{giftCardPageId}/{transactionID}/retryDelivery
+	Generate QR code image
+	GET
+	/qrcode/gift/{publicLinkId}
+	Customer-facing gift card page
+	GET
+	/giftcard/{publicLinkId}
+	Embedded/iframe version
+	GET
+	/giftcard/{publicLinkId}?widget=true
+	Create Page
+Creates a gift card page to purchase virtual gift cards and deliver via email, SMS or print to the recipient.
+POST /giftcard
+Implementation Notes:
+1. Payment Type must be CreditDebit or ACH.
+2. Gift cards cannot be purchased with another gift card. PaymentType Gift is not supported.
+3. The merchant must be authorized to issue gift cards. The Virtual Gift API validates this by performing a test transaction during page creation.
+Virtual Gift Page Properties
+A virtual gift card page POST request supports the following properties:
+1. displayProperties - Controls the visual aspect of the gift card page. displayProperties is required
+2. customizationProperties - for or the gift card-specific settings. Required
+3. paymenttypes - Includes properties for accepted payment methods.
+4. supportedDeliveryMethods - includes properties for gift card delivery to recipient. At least one method is required.
+5. webhookUrl - includes properties to include url to receive purchase notifications.
+6. apikeys - required for SMS delivery and includes properties for the Twilio credentials.
+7. widgetoptions - option for iframe/widget embedding.
+Basic Request
+* json
+{
+  "displayProperties": {
+    "merchantName": "Shore to Please Coffee Shop"
+  },
+  "customizationProperties": {
+    "minimumAmount": 5.00,
+    "maximumAmount": 50.00
+   },
+  "supportedDeliveryMethods": [
+    "Email"
+    ],
+  "paymentTypes": [
+    {
+      "merchantId": "LORIDCHAL0EP",
+      "paymentType": "CreditDebit"
+    }
+  ]
+}
+
+ Minimum required fields to generate a gift card page 
+
+	Basic Virtual Gift page with no customization
+	Basic Response
+If successful, a /giftcard request to generate a page will return the following type of response.
+* json
+{
+    "giftCardPageId": "01KFGG57ASXGJGAG51BDY16A4Q",
+    "publicLinkId": "5obwPe3ZoMg-45",
+    "publicLinkUrl": "https://paylink-cert.dcap.com/giftcard/5obwPe3ZoMg-45",
+    "publicLinkQRCodeUrl": "https://paylink-cert.dcap.com/api/v1/giftqrcode/5obwPe3ZoMg-45",
+    "publicLinkEmbeddedUrl": "https://paylink-cert.dcap.com/giftcard/5obwPe3ZoMg-45?widget=true",
+    "status": "Active",
+    "paymentTypes": [
+        "CreditDebit"
+    ],
+    "createdAt": "2026-01-21T14:43:23.5599518Z",
+    "updatedAt": null,
+    "archivedAt": null,
+    "displayProperties": {
+        "merchantName": "Shore to Please Coffee Shop",
+        "pageTitle": "Gift Cards",
+        "description": "Send a personalized gift card!",
+        "requireGoogleCaptcha": true,
+        "lightModeColorScheme": null
+    },
+    "customizationProperties": {
+        "minimumAmount": 5.0,
+        "maximumAmount": 50.0,
+        "presetAmounts": [
+            25.0,
+            50.0
+        ],
+        "availableOccasions": [
+            {
+                "occasion": "Birthday",
+                "imageUrl": null
+            },
+            {
+                "occasion": "FathersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Graduation",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Holidays",
+                "imageUrl": null
+            },
+            {
+                "occasion": "JustBecause",
+                "imageUrl": null
+            },
+            {
+                "occasion": "MothersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "ThankYou",
+                "imageUrl": null
+            }
+        ],
+        "allowCustomMessages": true,
+        "requireRecipientInfo": true
+    },
+    "supportedDeliveryMethods": [
+        "Email"
+    ]
+}
+
+ Purchaser Receipt 
+
+	Virtual Gift Receipt
+	displayProperties
+Options to control the visual aspect of the gift card page.
+Property
+	Type
+	Description
+	merchantName *
+	string
+	The business name displayed on the page. Max length 250 characters.
+	pageTitle
+	string
+	Page title or heading. Default value is “Gift Cards”. Max length 2000 characters.
+	description
+	string
+	Descriptive text to include below the title. Max length 2000 characters.
+	thankYouMessage
+	string
+	Message to display after a successful purchase. Max length 2000 characters.
+	receiptHeader
+	string
+	Header text on email receipts. Max length 2000 characters.
+	smsReceiptMessage
+	string
+	Message for SMS receipts. Max length 100 characters.
+	giftHeader
+	string
+	Heading to display when recipient receives gift card. Max length 200 characters.
+	requireGoogleCaptcha
+	boolean
+	Enables ReCAPTCHA protection. Default value is true.
+	faviconSvgUrl
+	string URL
+	For SVG favicon URL
+	favicon32x32Url
+	string URL
+	32x32 pixel favicon URL
+	favicon180x180Url
+	string URL
+	180x180 pixel favicon URL (Apple touch icon)
+	favicon192x192Url
+	string URL
+	192x192 pixel favicon URL (Android)
+	favicon512x512Url
+	string URL
+	512x512 pixel favicon URL
+	lightModeColorScheme
+	object
+	Colors for light mode
+	darkModeColorScheme
+	object
+	Colors for dark mode
+	* Required fields
+Color Schemes
+Both LightModeColorScheme and DarkModeColorScheme are supported and utilize the same structure. All the color values must be valid hex colors (e.g., #ffffff):
+LightModeColorScheme request example
+* json
+{   
+  "lightModeColorScheme": {
+  "bodyBackgroundColor": "#ffffff",
+  "headerBackgroundColor": "#1a1a2e",
+  "calloutBackgroundColor": "#f5f5f5",
+  "headerLogoUrl": "https://example.com/logo.png",
+  "fontColor": "#333333",
+  "headerFontColor": "#ffffff",
+  "buttonColorUnselected": "#e0e0e0",
+  "buttonColorHover": "#c0c0c0",
+  "buttonColorSelected": "#007bff",
+  "buttonTextColor": "#333333",
+  "buttonTextColorHover": "#000000",
+  "buttonTextColorSelected": "#ffffff"
+  }
+}
+The light and dark mode color schemes consist of the following properties.
+Property
+	Type
+	Description
+	bodyBackgroundColor
+	string
+	hex color code of the main page background color.
+	headerBackgroundColor
+	string
+	hex color code for header/banner background.
+	calloutBackgroundColor
+	string
+	hex color code of the callout section area.
+	headerLogoUrl
+	string
+	logo image URL displayed in header color.
+	fontColor
+	string
+	hex color code of the main font.
+	headerFontColor
+	string
+	hex color code of the header font.
+	buttonColorUnselected
+	string
+	hex color code of the unselected button
+	buttonColorHover
+	string
+	hex color code of the hovered button
+	buttonColorSelected
+	string
+	hex color code of the selected button
+	buttonTextColor
+	string
+	hex color code of the text on button
+	buttonTextColorHover
+	string
+	hex color code of the text on button hover
+	buttonTextColorSelected
+	string
+	hex color code of the text on button selected
+	displayProperties request example
+* json
+  "displayProperties": {
+    "merchantName": "My Store",
+    "pageTitle": "Purchase a eGift Card",
+    "description": "Need a last minute gift? Purchase an eGift card!",
+    "thankYouMessage": "Thank you for your purchase!",
+    "receiptHeader": "eGift Receipt",
+    "smsReceiptMessage": "Your gift card has been sent!",
+    "giftHeader": "You received a gift card",
+    "requireGoogleCaptcha": true,
+    "lightModeColorScheme": {
+      "bodyBackgroundColor": "#faf9f6",
+      "headerBackgroundColor": "#2c3e50",
+      "calloutBackgroundColor": "#ecf0f1",
+      "headerLogoUrl": "https://mystore.com/logo-light.png",
+      "fontColor": "#2c3e50",
+      "headerFontColor": "#ffffff",
+      "buttonColorUnselected": "#bdc3c7",
+      "buttonColorHover": "#95a5a6",
+      "buttonColorSelected": "#e74c3c",
+      "buttonTextColor": "#2c3e50",
+      "buttonTextColorHover": "#ffffff",
+      "buttonTextColorSelected": "#ffffff"
+    },
+    "darkModeColorScheme": {
+      "bodyBackgroundColor": "#1a1a2e",
+      "headerBackgroundColor": "#16213e",
+      "calloutBackgroundColor": "#0f3460",
+      "headerLogoUrl": "https://mystore.com/logo-dark.png",
+      "fontColor": "#e8e8e8",
+      "headerFontColor": "#ffffff",
+      "buttonColorUnselected": "#0f3460",
+      "buttonColorHover": "#16213e",
+      "buttonColorSelected": "#e94560",
+      "buttonTextColor": "#e8e8e8",
+      "buttonTextColorHover": "#ffffff",
+      "buttonTextColorSelected": "#ffffff"
+    }
+},
+customizationProperties
+Properties to customize the gift card specific settings and add custom images
+Implementation Notes
+1. The availableOccasions text button values cannot be changed.
+2. Use the imageURL to upload a custom gift card image in .png or .jpg format. The dimensions of the custom images should be 874 X 620. For the image to properly display, ensure the URL for the image is publicly accessible and is hosted supporting TLS.
+Property
+	Type
+	Description
+	minimumAmount *
+	decimal
+	Minimum gift card amount. Default value is 5.00. Validates value is between 1.00-10,000.00.
+	maximumAmount *
+	decimal
+	Maximum gift card amount. Default value is 1000.00.
+	presetAmounts
+	array[decimal]
+	Optionally include preset amount buttons
+	availableOccasions
+	array[object]
+	Values are “JustBecause”, “Birthday”, “Holidays”, “ThankYou”, “FathersDay”, “MothersDay” and “Graduation”. If not specified, default will display all 7 occasions.
+	allowCustomMessages
+	boolean
+	Allows customer to add personal message. Default value is “true”.
+	requireRecipientInfo
+	boolean
+	Requires recipient name in “To” field. Default value is “true”.
+	* Required field
+Image Hosting
+Datacap will host your images at no additional cost. Use https://imagehost.dcap.com/ for free image hosting.
+customizationProperties request
+* json
+"customizationProperties": {
+    "minimumAmount": 25.00,
+    "maximumAmount": 500.00,
+    "presetAmounts": [25.00, 50.00, 100.00, 200.00, 500.00],
+    "allowCustomMessages": true,
+    "requireRecipientInfo": true,
+    "availableOccasions": [
+      {
+        "occasion": "JustBecause",
+        "imageUrl": "https://datacapsystems.com/wp-content/uploads/Custom.png"
+      },
+      {
+        "occasion": "Holidays"
+      },
+      {
+        "occasion": "ThankYou"
+      },
+      {
+        "occasion": "Birthday"
+      },
+      {
+        "occasion": "FathersDay"
+      },
+      {
+        "occasion": "MothersDay"
+      },
+      {
+        "occasion": "Graduation"
+      }
+    ]
+},
+paymentTypes
+To specify the acceptable payment types for purchasing a virtual gift card.
+Property
+	Type
+	Description
+	merchantID *
+	string
+	Datacap Merchant ID for this payment type.
+	paymentType *
+	string
+	Valid values are “CreditDebit” and “ACH” only.
+	presetAmounts
+	array[decimal]
+	Optionally include preset amount buttons
+	googlePayBusinessId
+	string
+	Google Pay Merchant ID for paymentType CreditDebit.
+	applePayMid
+	string
+	Apple Pay Merchant ID for paymentType CreditDebit
+	* Required field
+paymentTypes request example
+* json
+"paymentTypes": [
+  {
+    "merchantId": "DEMODCHAL2EP",
+    "paymentType": "CreditDebit",
+    "googlePayBusinessId": "GOOGLE_PAY_ID",
+    "applePayMid": "APPLE_PAY_MID"
+  },
+  {
+    "merchantId": "DEMODCHAL2EK",
+    "paymentType": "ACH"
+  }
+]
+supportedDeliveryMethods
+To specify how the gift card is delivered to the recipient.
+Implementation Notes:
+1. At least one method is required.
+2. apiKeys are only required for SMS delivery.
+3. Email and SMS support options for immediate and scheduled delivery. Print delivery is immediate only.
+4. Scheduled delivery minimum requirement is next day delivery and cannot be scheduled for same day. scheduledDeliveryDate is included in the purchase request if selected. The purchaser can still view receipt immediately.
+Property
+	Type
+	Description
+	Email
+	string
+	send via email to recipient. Email address required at the time of purchase . Supports immediate or scheduled delivery methods.
+	SMS
+	string
+	send via text message (MMS). Recipient phone required at time of purchase. Twilio credentials required. Supports immediate or scheduled delivery methods.
+	Print
+	string
+	displays gift card details for printing. Purchase receives full card details to hand deliver to recipient. Immediately delivery only.
+	supportedDeliveryMethods request
+* json
+"supportedDeliveryMethods": [
+    "Email",
+    "Print",
+      "SMS"
+],
+apiKeys
+The SMS delivery method will require apiKeys that include the Twilio account credentials.
+Property
+	Type
+	Description
+	twilioAccountSid
+	string
+	Your Twilio Account SID.
+	twilioApiKey
+	string
+	Twilio API Key or SubAccount SID.
+	twilioApiSecret
+	string
+	Twilio API Secret
+	twilioFromPhoneNumber
+	string
+	Phone number to send from (E.164 format)
+	apiKeys request example
+* json
+"apiKeys": {
+  "twilioAccountSid": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "twilioApiKey": "SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "twilioApiSecret": "your_api_secret",
+  "twilioFromPhoneNumber": "+15551234567"
+}
+webhookEndpoints
+To configure a webhook to receive notifications when a gift card is purchased.
+Implementation Notes
+1. Gift card number and CVV are only included for Print delivery method. For email and SMS delivery, the fields returned in response are null.
+2. Available events: payment.initiated, payment.abandoned, payment.failed, payment.completed, gift_card.scheduled, gift_card.delivered, gift_card.initiated, gift_card.abandoned, widget.loaded
+3. If secret is provided, webhook requests will include HMAC-SHA256 signatures for verification. Longer passwords are more secure
+Property
+	Type
+	Description
+	url *
+	string
+	Valid webhook URL.
+	events *
+	string
+	List of event types supported. Use “*” for all events.
+	secret
+	string
+	Optional secret for HMAC-SHA256 webhook signature generation
+	* fields Required
+webhookEndpoints request
+* json
+ "webhookEndpoints": [
+        {
+            "url": "{{url_base}}/webhooktest/receive",
+            "secret": "XXXXXXXXXXXXXXXXXXXX",
+            "events": ["*"]
+        }
+    ]
+webhookEndpoints response
+* json
+{
+  "transactionId": "01J3R9SEG4SBP8XAVB4J5F0ZYE",
+  "giftCardPageId": "01J3R9SEG4SBP8XAVB4J5F0ZYE",
+  "publicLinkId": "5VEJvxFr8RZ-21",
+  "merchantId": "DEMODCHAL2EP",
+  "status": "Completed",
+  "paymentTypeUsed": "CreditDebit",
+  "giftCardData": {
+    "to": "Tech Support",
+    "from": "Integration Support",
+    "message": "Thank you!",
+    "amount": 50.00,
+    "occasion": "Birthday",
+    "deliveryMethod": "Email",
+    "recipientEmail": "support@dcap.com",
+    "recipientPhone": null,
+    "receiptEmail": "integrationsupport@dcap.com",
+    "scheduledDeliveryDate": null
+  },
+  "giftCardNumber": null,
+  "giftCardCvv": null,
+  "giftCardLast4": "1234",
+  "giftCardBalance": 50.00,
+  "thankYouMessage": "Thank you for your purchase!",
+  "paidAt": "2025-01-15T14:30:00Z",
+  "deliveryMethods": [
+    {
+      "deliveryType": "Email",
+      "deliveryAddress": "support@dcap.com",
+      "recipient": "Recipient",
+      "deliveredAt": "2025-01-15T14:30:05Z"
+    }
+  ]
+}
+widgetOptions
+Option for configuring iframe/widget embedding
+Implementation Notes
+1. Optionally handle postMessage events for integration:
+   * widget_ready - Page loaded and ready
+   * height_change - Content height changed (includes height in data)
+   * payment_success - Purchase completed successfully
+   * payment_error - Purchase failed
+Property
+	Type
+	Description
+	allowedParentDomains *
+	array[string]
+	Domains allowed to embed this page. Domain format:
+Exact match: https://example.com
+Wildcard subdomain: https://*.example.com
+With port: https://localhost:3000
+	hideHeader
+	boolean
+	Hides the header in widget mode. Default value is true.
+	hideFooter
+	boolean
+	Hide the footer in widget mode. Default value is true.
+	compactMode
+	boolean
+	Uses minimal/compact layout. Default value is false
+	enablePostMessages
+	boolean
+	Enable postMessage communication with parent. Default value is true.
+	* fields Required
+widgetOptions request example
+* json
+{
+  "displayProperties": {
+    "merchantName": "E-Commerce Store"
+  },
+  "customizationProperties": {
+    "minimumAmount": 25.00,
+    "maximumAmount": 500.00,
+    "presetAmounts": [25.00, 50.00, 100.00, 250.00]
+  },
+  "supportedDeliveryMethods": ["Email"],
+  "paymentTypes": [
+    {
+      "merchantId": "DEMODCHAL0EP",
+      "paymentType": "CreditDebit"
+    }
+  ],
+  "widgetOptions": {
+    "allowedParentDomains": [
+      "https://www.myecommercestore.com",
+      "https://*.myecommercestore.com"
+    ],
+    "hideHeader": true,
+    "hideFooter": true,
+    "compactMode": false,
+    "enablePostMessages": true
+  }
+}
+Embedding the widget
+* plaintext
+<iframe
+  src="https://example.com/giftcard/5VEJvxFr8RZ-21?widget=true"
+  width="100%"
+  height="800"
+  frameborder="0"
+  allow="payment"
+></iframe>
+Full Request/Response example
+Click the link to test creating a gift card page.
+/V1/giftcard
+Request
+* json
+POST /api/v1/giftcard HTTP/1.1
+Host: paylink-cert.dcap.com
+Content-Type: application/json
+Authorization: ••••••
+Content-Length: 2977
+
+
+{
+  "displayProperties": {
+    "merchantName": "Online Retail Shop",
+    "pageTitle": "Purchase a eGift Card",
+    "description": "Need a last minute gift? Purchase an eGift card!",
+    "thankYouMessage": "Thank you for your purchase!",
+    "receiptHeader": "Online Retail Shop eGift Receipt",
+    "smsReceiptMessage": "Your gift card has been sent!",
+    "giftHeader": "You received a gift card",
+    "requireGoogleCaptcha": true,
+    "lightModeColorScheme": {
+      "bodyBackgroundColor": "#f6f8faff",
+      "headerBackgroundColor": "#2d2c50ff",
+      "calloutBackgroundColor": "#ecf0f1",
+      "headerLogoUrl": "https://example.com/logo-light.png",
+      "fontColor": "#2c3e50",
+      "headerFontColor": "#202020ff",
+      "buttonColorUnselected": "#36a1c2ff",
+      "buttonColorHover": "#95a5a6",
+      "buttonColorSelected": "#e74c3c",
+      "buttonTextColor": "#2c3e50",
+      "buttonTextColorHover": "#ffffff",
+      "buttonTextColorSelected": "#ffffff"
+    },
+    "darkModeColorScheme": {
+      "bodyBackgroundColor": "#1a1a2e",
+      "headerBackgroundColor": "#16213e",
+      "calloutBackgroundColor": "#0f3460",
+      "headerLogoUrl": "https://example.com/logo-dark.png",
+      "fontColor": "#e8e8e8",
+      "headerFontColor": "#ffffff",
+      "buttonColorUnselected": "#0f3460",
+      "buttonColorHover": "#16213e",
+      "buttonColorSelected": "#e94560",
+      "buttonTextColor": "#e8e8e8",
+      "buttonTextColorHover": "#ffffff",
+      "buttonTextColorSelected": "#ffffff"
+    }
+  },
+  "customizationProperties": {
+    "minimumAmount": 10.00,
+    "maximumAmount": 250.00,
+    "presetAmounts": [10.00, 25.00, 50.00, 100.00, 250.00],
+    "allowCustomMessages": true,
+    "requireRecipientInfo": true,
+    "availableOccasions": [
+      {
+        "occasion": "Birthday"
+      },
+      {
+        "occasion": "Graduation"
+      },
+
+
+      {
+        "occasion": "ThankYou"
+      },
+      {
+        "occasion": "JustBecause"
+      },
+      {
+        "occasion": "FathersDay"
+      },
+      {
+        "occasion": "MothersDay"
+      },
+      {
+        "occasion": "Graduation"
+      },
+      {
+        "occasion": "Holidays"
+      }
+    ]
+  },
+  "supportedDeliveryMethods": [
+    "Email",
+    "SMS",
+    "Print"
+  ],
+  "paymentTypes": [
+    {
+      "merchantId": "LORIDCHAL0EP",
+      "paymentType": "CreditDebit"
+    }
+  ],
+  "apiKeys": {
+        "TwilioAccountSid": "AXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX8",
+        "TwilioApiKey": "SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX9",
+        "TwilioApiSecret": "aXXXXXXXXXXXXXXXXXXXXXXXXXXY",
+        "TwilioFromPhoneNumber": "+12159978989"
+    },
+  "widgetOptions": {
+        "hideHeader": true,
+        "hideFooter": true,
+        "allowedParentDomains": ["http://localhost:5232", "https://merchantwebsite.com"]
+    },
+    "webhookEndpoints": [
+        {
+            "url": "https://webhook.site/d2b25e28-9948-4d68-aaea-b8697a9e8109",
+            "secret": "ABCD1234",
+            "events": ["*"]
+        }
+    ]
+}
+
+ Full gift card page example 
+
+	Virtual Gift Page
+	Response
+* json
+{
+    "giftCardPageId": "01KFGMPF82A4MS3C9MQJN84QD1",
+    "publicLinkId": "6iY77YPWYr7-45",
+    "publicLinkUrl": "https://paylink-cert.dcap.com/giftcard/6iY77YPWYr7-45",
+    "publicLinkQRCodeUrl": "https://paylink-cert.dcap.com/api/v1/giftqrcode/6iY77YPWYr7-45",
+    "publicLinkEmbeddedUrl": "https://paylink-cert.dcap.com/giftcard/6iY77YPWYr7-45?widget=true",
+    "status": "Active",
+    "paymentTypes": [
+        "CreditDebit"
+    ],
+    "createdAt": "2026-01-21T16:02:43.0185897Z",
+    "updatedAt": null,
+    "archivedAt": null,
+    "displayProperties": {
+        "merchantName": "Online Retail Shop",
+        "pageTitle": "Purchase a eGift Card",
+        "description": "Need a last minute gift? Purchase an eGift card!",
+        "thankYouMessage": "Thank you for your purchase!",
+        "receiptHeader": "Online Retail Shop eGift Receipt",
+        "smsReceiptMessage": "Your gift card has been sent!",
+        "giftHeader": "You received a gift card",
+        "requireGoogleCaptcha": true,
+        "lightModeColorScheme": {
+            "bodyBackgroundColor": "#faf9f6",
+            "headerBackgroundColor": "#2c3e50",
+            "calloutBackgroundColor": "#ecf0f1",
+            "headerLogoUrl": "https://example.com/logo-light.png",
+            "fontColor": "#2c3e50",
+            "headerFontColor": "#ffffffff",
+            "buttonColorUnselected": "#bdc3c7",
+            "buttonColorHover": "#95a5a6",
+            "buttonColorSelected": "#e74c3c",
+            "buttonTextColor": "#2c3e50",
+            "buttonTextColorHover": "#ffffff",
+            "buttonTextColorSelected": "#ffffff"
+        },
+        "darkModeColorScheme": {
+            "bodyBackgroundColor": "#1a1a2e",
+            "headerBackgroundColor": "#16213e",
+            "calloutBackgroundColor": "#0f3460",
+            "headerLogoUrl": "https://example.com/logo-dark.png",
+            "fontColor": "#e8e8e8",
+            "headerFontColor": "#ffffff",
+            "buttonColorUnselected": "#0f3460",
+            "buttonColorHover": "#16213e",
+            "buttonColorSelected": "#e94560",
+            "buttonTextColor": "#e8e8e8",
+            "buttonTextColorHover": "#ffffff",
+            "buttonTextColorSelected": "#ffffff"
+        }
+    },
+    "customizationProperties": {
+        "minimumAmount": 10.0,
+        "maximumAmount": 250.0,
+        "presetAmounts": [
+            10.0,
+            25.0,
+            50.0,
+            100.0,
+            250.0
+        ],
+        "availableOccasions": [
+            {
+                "occasion": "JustBecause",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Holidays",
+                "imageUrl": null
+            },
+            {
+                "occasion": "ThankYou",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Birthday",
+                "imageUrl": null
+            },
+            {
+                "occasion": "FathersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "MothersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Graduation",
+                "imageUrl": null
+            }
+        ],
+        "allowCustomMessages": true,
+        "requireRecipientInfo": true
+    },
+    "supportedDeliveryMethods": [
+        "Email",
+        "SMS",
+        "Print"
+    ],
+    "widgetOptions": {
+        "allowedParentDomains": [
+            "http://localhost:5232",
+            "https://merchantwebsite.com"
+        ],
+        "hideHeader": true,
+        "hideFooter": true,
+        "compactMode": false,
+        "enablePostMessages": true
+    }
+}
+
+ Purchaser Receipt 
+
+	 Purchaser Receipt 
+
+Recipient SMS Example
+	Purchaser Receipt
+	
+
+	Page Management
+The following operations are supported after the gift card page has been created.
+Operation
+	HTTP Method
+	URL
+	Gift card page details
+	GET
+	/giftcard/{giftCardPageId}
+	Update a gift card page
+	PUT
+	/giftcard/{giftCardPageId}
+	Disable purchases
+	PUT
+	/giftcard/{giftCardPageId}/archive
+	Return gift card transactions for specific page
+	GET
+	/giftcard/{giftCardPageId}/transactions
+	Retry delivery of gift card
+	PUT
+	/giftcard/{giftCardPageId}/{transactionID}/retryDelivery
+	Generate QR code image
+	GET
+	/qrcode/gift/{publicLinkId}
+	Customer-facing gift card page
+	GET
+	/giftcard/{publicLinkId}
+	Embedded/iframe version
+	GET
+	/giftcard/{publicLinkId}?widget=true
+	Page Details
+GET /giftcard/{giftCardPageId}
+Retrieves the specific gift card page details
+Request example
+* json
+GET /api/v1/giftcard/01KF435JPXV2PQH33TSVZANBPY HTTP/1.1
+Host: paylink-cert.dcap.com
+Authorization: ••••••
+
+
+Response example
+* json
+{
+    "giftCardPageId": "01KF435JPXV2PQH33TSVZANBPY",
+    "publicLinkId": "6XF2k4OMLoc-45",
+    "publicLinkUrl": "https://paylink-cert.dcap.com/giftcard/6XF2k4OMLoc-45",
+    "publicLinkQRCodeUrl": "https://paylink-cert.dcap.com/api/v1/giftqrcode/6XF2k4OMLoc-45",
+    "publicLinkEmbeddedUrl": "https://paylink-cert.dcap.com/giftcard/6XF2k4OMLoc-45?widget=true",
+    "status": "Active",
+    "paymentTypes": [
+        "CreditDebit"
+    ],
+    "createdAt": "2026-01-16T19:05:30.5794808Z",
+    "updatedAt": null,
+    "archivedAt": null,
+    "displayProperties": {
+        "merchantName": "My Store",
+        "pageTitle": "Purchase a eGift Card",
+        "description": "Need a last minute gift? Purchase an eGift card!",
+        "thankYouMessage": "Thank you for your purchase!",
+        "receiptHeader": "eGift Receipt",
+        "smsReceiptMessage": "Your gift card has been sent!",
+        "giftHeader": "You received a gift card",
+        "requireGoogleCaptcha": true,
+        "lightModeColorScheme": {
+            "bodyBackgroundColor": "#faf9f6",
+            "headerBackgroundColor": "#2c3e50",
+            "calloutBackgroundColor": "#ecf0f1",
+            "headerLogoUrl": "https://example.com/logo-light.png",
+            "fontColor": "#2c3e50",
+            "headerFontColor": "#ffffff",
+            "buttonColorUnselected": "#bdc3c7",
+            "buttonColorHover": "#95a5a6",
+            "buttonColorSelected": "#e74c3c",
+            "buttonTextColor": "#2c3e50",
+            "buttonTextColorHover": "#ffffff",
+            "buttonTextColorSelected": "#ffffff"
+        },
+        "darkModeColorScheme": {
+            "bodyBackgroundColor": "#1a1a2e",
+            "headerBackgroundColor": "#16213e",
+            "calloutBackgroundColor": "#0f3460",
+            "headerLogoUrl": "https://example.com/logo-dark.png",
+            "fontColor": "#e8e8e8",
+            "headerFontColor": "#ffffff",
+            "buttonColorUnselected": "#0f3460",
+            "buttonColorHover": "#16213e",
+            "buttonColorSelected": "#e94560",
+            "buttonTextColor": "#e8e8e8",
+            "buttonTextColorHover": "#ffffff",
+            "buttonTextColorSelected": "#ffffff"
+        }
+    },
+    "customizationProperties": {
+        "minimumAmount": 10.0,
+        "maximumAmount": 250.0,
+        "presetAmounts": [
+            10.0,
+            25.0,
+            50.0,
+            100.0,
+            250.0
+        ],
+        "availableOccasions": [
+            {
+                "occasion": "JustBecause",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Holidays",
+                "imageUrl": null
+            },
+            {
+                "occasion": "ThankYou",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Birthday",
+                "imageUrl": null
+            },
+            {
+                "occasion": "FathersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "MothersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Graduation",
+                "imageUrl": null
+            }
+        ],
+        "allowCustomMessages": true,
+        "requireRecipientInfo": true
+    },
+    "supportedDeliveryMethods": [
+        "Email",
+        "Print"
+    ],
+    "widgetOptions": {
+        "allowedParentDomains": [
+            "http://localhost:5232",
+            "https://example.org",
+            "https://iframetester.com"
+        ],
+        "hideHeader": true,
+        "hideFooter": true,
+        "compactMode": false,
+        "enablePostMessages": true
+    }
+}
+Update Page
+PUT /giftcard/{giftCardPageId}
+Updates to an existing gift card page with the values specified
+Request example
+* json
+PUT /api/v1/giftcard/01KF435JPXV2PQH33TSVZANBPY HTTP/1.1
+Host: paylink-cert.dcap.com
+Content-Type: application/json
+Authorization: ••••••
+Content-Length: 2593
+
+
+{
+  "displayProperties": {
+    "merchantName": "My Store",
+    "pageTitle": "Purchase an eGift Card",
+    "description": "Need a last minute gift? Purchase an eGift card!",
+    "thankYouMessage": "Thank you for your purchase!",
+    "receiptHeader": "eGift Receipt",
+    "smsReceiptMessage": "Your gift card has been sent!",
+    "giftHeader": "You received a gift card",
+    "requireGoogleCaptcha": true,
+    "lightModeColorScheme": {
+      "bodyBackgroundColor": "#faf9f6",
+      "headerBackgroundColor": "#2c3e50",
+      "calloutBackgroundColor": "#ecf0f1",
+      "headerLogoUrl": "https://example.com/logo-light.png",
+      "fontColor": "#2c3e50",
+      "headerFontColor": "#ffffff",
+      "buttonColorUnselected": "#bdc3c7",
+      "buttonColorHover": "#95a5a6",
+      "buttonColorSelected": "#e74c3c",
+      "buttonTextColor": "#2c3e50",
+      "buttonTextColorHover": "#ffffff",
+      "buttonTextColorSelected": "#ffffff"
+    },
+    "darkModeColorScheme": {
+      "bodyBackgroundColor": "#1a1a2e",
+      "headerBackgroundColor": "#16213e",
+      "calloutBackgroundColor": "#0f3460",
+      "headerLogoUrl": "https://example.com/logo-dark.png",
+      "fontColor": "#e8e8e8",
+      "headerFontColor": "#ffffff",
+      "buttonColorUnselected": "#0f3460",
+      "buttonColorHover": "#16213e",
+      "buttonColorSelected": "#e94560",
+      "buttonTextColor": "#e8e8e8",
+      "buttonTextColorHover": "#ffffff",
+      "buttonTextColorSelected": "#ffffff"
+    }
+  },
+  "customizationProperties": {
+    "minimumAmount": 10.00,
+    "maximumAmount": 250.00,
+    "presetAmounts": [10.00, 25.00, 50.00, 100.00, 250.00],
+    "allowCustomMessages": true,
+    "requireRecipientInfo": true,
+    "availableOccasions": [
+      {
+        "occasion": "Holidays",
+      },
+      {
+        "occasion": "Birthday"
+      },
+      {
+        "occasion": "FathersDay"
+      },
+      {
+        "occasion": "MothersDay"
+      },
+      {
+        "occasion": "Graduation"
+      },
+      {
+      "occasion": "JustBecause"
+      "imageUrl": "https://datacapsystems.com/wp-content/uploads/Custom.png"
+      }
+    ]
+  },
+  "supportedDeliveryMethods": [
+    "Email"
+
+
+  ],
+  "paymentTypes": [
+    {
+      "merchantId": "DEMODCHAL0EP",
+      "paymentType": "CreditDebit"
+    }
+  ],
+  "widgetOptions": {
+        "hideHeader": true,
+        "hideFooter": true,
+        "allowedParentDomains": ["http://localhost:5232", "https://example.org", "https://iframetester.com"]
+    },
+    "webhookEndpoints": [
+        {
+            "url": "https://webhook.site/d2b25e28-9948-4d68-aaea-b8697a9e8109",
+            "secret": "ABCD1234",
+            "events": ["*"]
+        }
+    ]
+}
+Response Example
+* json
+{
+    "giftCardPageId": "01KF435JPXV2PQH33TSVZANBPY",
+    "publicLinkId": "6XF2k4OMLoc-45",
+    "publicLinkUrl": "https://paylink-cert.dcap.com/giftcard/6XF2k4OMLoc-45",
+    "publicLinkQRCodeUrl": "https://paylink-cert.dcap.com/api/v1/giftqrcode/6XF2k4OMLoc-45",
+    "publicLinkEmbeddedUrl": "https://paylink-cert.dcap.com/giftcard/6XF2k4OMLoc-45?widget=true",
+    "status": "Active",
+    "paymentTypes": [
+        "CreditDebit"
+    ],
+    "createdAt": "2026-01-16T19:05:30.5794808Z",
+    "updatedAt": null,
+    "archivedAt": null,
+    "displayProperties": {
+        "merchantName": "My Store",
+        "pageTitle": "Purchase an eGift Card",
+        "description": "Need a last minute gift? Purchase an eGift card!",
+        "thankYouMessage": "Thank you for your purchase!",
+        "receiptHeader": "eGift Receipt",
+        "smsReceiptMessage": "Your gift card has been sent!",
+        "giftHeader": "You received a gift card",
+        "requireGoogleCaptcha": true,
+        "lightModeColorScheme": {
+            "bodyBackgroundColor": "#faf9f6",
+            "headerBackgroundColor": "#2c3e50",
+            "calloutBackgroundColor": "#ecf0f1",
+            "headerLogoUrl": "https://example.com/logo-light.png",
+            "fontColor": "#2c3e50",
+            "headerFontColor": "#ffffff",
+            "buttonColorUnselected": "#bdc3c7",
+            "buttonColorHover": "#95a5a6",
+            "buttonColorSelected": "#e74c3c",
+            "buttonTextColor": "#2c3e50",
+            "buttonTextColorHover": "#ffffff",
+            "buttonTextColorSelected": "#ffffff"
+        },
+        "darkModeColorScheme": {
+            "bodyBackgroundColor": "#1a1a2e",
+            "headerBackgroundColor": "#16213e",
+            "calloutBackgroundColor": "#0f3460",
+            "headerLogoUrl": "https://example.com/logo-dark.png",
+            "fontColor": "#e8e8e8",
+            "headerFontColor": "#ffffff",
+            "buttonColorUnselected": "#0f3460",
+            "buttonColorHover": "#16213e",
+            "buttonColorSelected": "#e94560",
+            "buttonTextColor": "#e8e8e8",
+            "buttonTextColorHover": "#ffffff",
+            "buttonTextColorSelected": "#ffffff"
+        }
+    },
+    "customizationProperties": {
+        "minimumAmount": 10.00,
+        "maximumAmount": 250.00,
+        "presetAmounts": [
+            10.00,
+            25.00,
+            50.00,
+            100.00,
+            250.00
+        ],
+        "availableOccasions": [
+            {
+                "occasion": "Holidays",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Birthday",
+                "imageUrl": null
+            },
+            {
+                "occasion": "FathersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "MothersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Graduation",
+                "imageUrl": null
+            }
+        ],
+        "allowCustomMessages": true,
+        "requireRecipientInfo": true
+    },
+    "supportedDeliveryMethods": [
+        "Email"
+    ],
+    "widgetOptions": {
+        "allowedParentDomains": [
+            "http://localhost:5232",
+            "https://example.org",
+            "https://iframetester.com"
+        ],
+        "hideHeader": true,
+        "hideFooter": true,
+        "compactMode": false,
+        "enablePostMessages": true
+    }
+}
+Archive Page
+PUT /giftcard/{giftCardPageId}/archive
+Archives gift card pages and disables purchases
+Request example
+* json
+PUT /api/v1/giftcard/01KF435JPXV2PQH33TSVZANBPY/archive HTTP/1.1
+Host: paylink-cert.dcap.com
+Content-Type: application/json
+Authorization: ••••••
+Cookie: ARRAffinity=c7d76f37c6c6853632f7cf7df12f78d660893f3ccd06ca0c174805f9afb25421; ARRAffinitySameSite=c7d76f37c6c6853632f7cf7df12f78d660893f3ccd06ca0c174805f9afb25421
+Content-Length: 1133
+
+
+{
+  "displayProperties": {
+    "merchantName": "My store",
+    "pageTitle": "Purchase a Gift Card",
+    "description": "Purchase a my store gift card for the holidays",
+    "thankYouMessage": "Thank you for purchasing a gift card from my store",
+    "receiptHeader": "Gift Card Receipt",
+    "smsReceiptMessage": "Your gift card has been sent!",
+    "giftHeader": "You received a gift card",
+    "requireGoogleCaptcha": true
+  },
+  "customizationProperties": {
+    "minimumAmount": 10,
+    "maximumAmount": 250,
+    "allowCustomMessages": true,
+    "requireRecipientInfo": true,
+    "availableOccasions": [
+      {
+        "occasion": "JustBecause"
+      },
+      {
+        "occasion": "Birthday"
+      },
+      {
+        "occasion": "ThankYou"
+      },
+      {
+        "occasion": "FathersDay"
+      },
+      {
+        "occasion": "MothersDay"
+      },
+      {
+        "occasion": "Graduation"
+      }
+    ]
+  },
+  "supportedDeliveryMethods": [
+    "Email",
+    "Print"
+  ],
+  "paymentTypes": [
+    {
+      "merchantId": "LORIDCHAL0EP",
+      "paymentType": "CreditDebit"
+    }
+  ]
+}
+Response example
+* json
+{
+    "giftCardPageId": "01KF435JPXV2PQH33TSVZANBPY",
+    "publicLinkId": "6XF2k4OMLoc-45",
+    "publicLinkUrl": "https://paylink-cert.dcap.com/giftcard/6XF2k4OMLoc-45",
+    "publicLinkQRCodeUrl": "https://paylink-cert.dcap.com/api/v1/giftqrcode/6XF2k4OMLoc-45",
+    "publicLinkEmbeddedUrl": "https://paylink-cert.dcap.com/giftcard/6XF2k4OMLoc-45?widget=true",
+    "status": "Archived",
+    "paymentTypes": [
+        "CreditDebit"
+    ],
+    "createdAt": "2026-01-16T19:05:30.5794808Z",
+    "updatedAt": null,
+    "archivedAt": null,
+    "displayProperties": {
+        "merchantName": "My Store",
+        "pageTitle": "Purchase a eGift Card",
+        "description": "Need a last minute gift? Purchase an eGift card!",
+        "thankYouMessage": "Thank you for your purchase!",
+        "receiptHeader": "eGift Receipt",
+        "smsReceiptMessage": "Your gift card has been sent!",
+        "giftHeader": "You received a gift card",
+        "requireGoogleCaptcha": true,
+        "lightModeColorScheme": {
+            "bodyBackgroundColor": "#faf9f6",
+            "headerBackgroundColor": "#2c3e50",
+            "calloutBackgroundColor": "#ecf0f1",
+            "headerLogoUrl": "https://example.com/logo-light.png",
+            "fontColor": "#2c3e50",
+            "headerFontColor": "#ffffff",
+            "buttonColorUnselected": "#bdc3c7",
+            "buttonColorHover": "#95a5a6",
+            "buttonColorSelected": "#e74c3c",
+            "buttonTextColor": "#2c3e50",
+            "buttonTextColorHover": "#ffffff",
+            "buttonTextColorSelected": "#ffffff"
+        },
+        "darkModeColorScheme": {
+            "bodyBackgroundColor": "#1a1a2e",
+            "headerBackgroundColor": "#16213e",
+            "calloutBackgroundColor": "#0f3460",
+            "headerLogoUrl": "https://example.com/logo-dark.png",
+            "fontColor": "#e8e8e8",
+            "headerFontColor": "#ffffff",
+            "buttonColorUnselected": "#0f3460",
+            "buttonColorHover": "#16213e",
+            "buttonColorSelected": "#e94560",
+            "buttonTextColor": "#e8e8e8",
+            "buttonTextColorHover": "#ffffff",
+            "buttonTextColorSelected": "#ffffff"
+        }
+    },
+    "customizationProperties": {
+        "minimumAmount": 10.0,
+        "maximumAmount": 250.0,
+        "presetAmounts": [
+            10.0,
+            25.0,
+            50.0,
+            100.0,
+            250.0
+        ],
+        "availableOccasions": [
+            {
+                "occasion": "Holidays",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Birthday",
+                "imageUrl": null
+            },
+            {
+                "occasion": "FathersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "MothersDay",
+                "imageUrl": null
+            },
+            {
+                "occasion": "Graduation",
+                "imageUrl": null
+            }
+        ],
+        "allowCustomMessages": true,
+        "requireRecipientInfo": true
+    },
+    "supportedDeliveryMethods": [
+        "Email"
+    ],
+    "widgetOptions": {
+        "allowedParentDomains": [
+            "http://localhost:5232",
+            "https://example.org",
+            "https://iframetester.com"
+        ],
+        "hideHeader": true,
+        "hideFooter": true,
+        "compactMode": false,
+        "enablePostMessages": true
+    }
+}
+Gift Card Page Transactions
+Returns gift card transaction for specific page
+GET /giftcard/{giftCardPageId}/transactions
+Request example
+* json
+GET /api/v1/giftcard/GET/api/v1/giftcard/01KESMFPZTTMS7KS037X5X5CZG/Transactions HTTP/1.1
+Host: paylink-cert.dcap.com
+Authorization: ••••••
+Retry Delivery
+Retries delivery of gift card that has failed or was not delivered
+PUT /giftcard/{giftCardPageId}/{transactionID}/retryDelivery
+First retry occurs 15 seconds after failure. Second retry occurs 30 seconds after first retry. Third retry occurs 120 seconds after second retry.
+Request example
+* json
+PUT /api/v1/giftcard/01KEEW0DVXV2YQ14EY7CASY651/01KEEW35AMCHHCRDQTXDAQ1P4D/retryDelivery HTTP/1.1
+Host: paylink-cert.dcap.com
+Authorization: ••••••
+Generating QR Code
+Generates QR code image for gift card page
+GET v1/qrcode/gift/{publicLinkId}
+Use publicLinkQRCodeUrl for print materials:
+1. In-store signage
+2. Business cards
+3. Receipts
+4. Marketing collateral
+ Scan to buy gift card 
+
+Request example
+* json
+GET /api/v1/qrcode/gift/65Uuwf0tXU0-45 HTTP/1.1
+Host: paylink-cert.dcap.com
+Authorization: ••••••
+Customer-facing page
+For sharing the publicLinkUrl directly with customers
+GET /giftcard/{publicLinkId}
+Use Cases include:
+1. Email campaigns
+2. Social media posts
+3. Website buttons/links
+Example: Buy a Gift Card
+Request example
+* json
+GET /api/v1/giftcard/65Uuwf0tXU0-45 HTTP/1.1
+Host: paylink-cert.dcap.com
+Embedded/iframe version
+Embed directly within your website
+GET /giftcard/{publicLinkId}?widget=true
+* json
+GET /api/v1/giftcard/5Uuwf0tXU0-45?widget=true HTTP/1.1
+Host: paylink-cert.dcap.com
+Authorization: ••••••
+Error Handling
+HTTP Status Codes
+Error Code
+	Description
+	201
+	Gift card page created successfully
+	200
+	Request successful
+	400
+	Invalid request data / validation error
+	401
+	Authentication failed
+	404
+	Gift card page not found
+	422
+	Business logic validation failed
+	429
+	Rate limit exceeded
+	500
+	Internal server error
+	Common Errors
+Error
+	Cause
+	Solution
+	At least one payment type must be allowed
+	Empty paymentTypes array
+	Add at least one payment type
+	Gift cards cannot be purchased with other gift cards
+	Gift payment type specified
+	Only use CreditDebit or ACH
+	At least one delivery method must be supported
+	Empty supportedDeliveryMethods
+	Add at least one delivery method
+	Minimum amount must be between $1.00 and $10,000.00
+	Invalid minimumAmount
+	Use amount within range
+	Maximum amount must be between $1.00 and $10,000.00
+	Invalid maximumAmount
+	Use amount within range
+	Each preset amount must be between $1.00 and $10,000.00
+	Invalid value in presetAmounts
+	Ensure all amounts in range
+	Gift card amount must be at least $X.XX
+	Purchase amount below page minimum
+	Use amount >= minimumAmount
+	Gift card amount cannot exceed $X.XX
+	Purchase amount above page maximum
+	Use amount <= maximumAmount
+	Gift Card Page ID must be a valid ULID value
+	Malformed page ID in URL
+	Use valid ULID format
+	Twilio API keys required for SMS delivery
+	SMS enabled without Twilio
+	Add apiKeys with Twilio credentials
+	AllowedParentDomains is required for widget mode
+	Missing widgetOptions.allowedParentDomains
+	Add parent domains for iframe
+	Invalid domain format… must use HTTPS
+	Non-HTTPS domain in allowedParentDomains
+	Use HTTPS URLs only
+	Merchant not authorized to issue gift cards
+	MID cannot create gift cards
+	Contact Datacap to enable gift cards
+	Payment successful but gift card creation failed
+	Gift card API failure after payment

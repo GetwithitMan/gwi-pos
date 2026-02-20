@@ -1631,6 +1631,9 @@ model Order {
   offlineTimestamp DateTime? // When order was created offline
   offlineTerminalId String?  // Which terminal created this offline
 
+  // Business day tracking (orders at 1 AM belong to previous day's business day)
+  businessDayDate DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   // Sync fields (for cloud sync and soft deletes)
@@ -1669,6 +1672,7 @@ model Order {
   @@index([locationId, orderType, status])
   @@index([locationId, paidAt])
   @@index([locationId, createdAt, status])
+  @@index([locationId, businessDayDate])
 }
 
 model OrderItem {

@@ -693,6 +693,7 @@ CREATE TABLE "Order" (
     "tabStatus" TEXT,
     "customFields" JSONB,
     "status" TEXT NOT NULL DEFAULT 'open',
+    "version" INTEGER NOT NULL DEFAULT 1,
     "openedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "sentAt" TIMESTAMP(3),
     "paidAt" TIMESTAMP(3),
@@ -3439,6 +3440,19 @@ CREATE TABLE "ServerRegistrationToken" (
     CONSTRAINT "ServerRegistrationToken_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "cloud_event_queue" (
+    "id" TEXT NOT NULL,
+    "venueId" TEXT NOT NULL,
+    "eventType" TEXT NOT NULL,
+    "body" JSONB NOT NULL,
+    "nextRetryAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "cloud_event_queue_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "Location_slug_key" ON "Location"("slug");
 
@@ -5012,6 +5026,9 @@ CREATE INDEX "OrderCard_locationId_idx" ON "OrderCard"("locationId");
 CREATE INDEX "OrderCard_status_idx" ON "OrderCard"("status");
 
 -- CreateIndex
+CREATE INDEX "OrderCard_recordNo_idx" ON "OrderCard"("recordNo");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "DigitalReceipt_orderId_key" ON "DigitalReceipt"("orderId");
 
 -- CreateIndex
@@ -5121,6 +5138,9 @@ CREATE INDEX "ServerRegistrationToken_locationId_idx" ON "ServerRegistrationToke
 
 -- CreateIndex
 CREATE INDEX "ServerRegistrationToken_locationId_status_expiresAt_idx" ON "ServerRegistrationToken"("locationId", "status", "expiresAt");
+
+-- CreateIndex
+CREATE INDEX "cloud_event_queue_nextRetryAt_idx" ON "cloud_event_queue"("nextRetryAt");
 
 -- AddForeignKey
 ALTER TABLE "Location" ADD CONSTRAINT "Location_organizationId_fkey" FOREIGN KEY ("organizationId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

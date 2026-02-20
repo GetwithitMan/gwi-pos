@@ -205,14 +205,17 @@ export const GET = withVenue(async function GET(request: NextRequest) {
           ...(employeeId ? { employeeId } : {}),
         },
       }),
-      // 5. Commission from orders
+      // 5. Commission from orders (businessDayDate OR-fallback)
       db.order.findMany({
         where: {
           locationId,
           status: { in: ['completed', 'paid'] },
-          createdAt: { gte: periodStart, lte: periodEnd },
           commissionTotal: { gt: 0 },
           ...(employeeId ? { employeeId } : {}),
+          OR: [
+            { businessDayDate: { gte: periodStart, lte: periodEnd } },
+            { businessDayDate: null, createdAt: { gte: periodStart, lte: periodEnd } },
+          ],
         },
       }),
     ])

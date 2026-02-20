@@ -20,6 +20,7 @@ import { allocateTipsForPayment } from '@/lib/domain/tips'
 import { withVenue } from '@/lib/with-venue'
 import { emitCloudEvent } from '@/lib/cloud-events'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
+import { getCurrentBusinessDay } from '@/lib/business-day'
 
 /**
  * Resolve which drawer and shift should be attributed for a cash payment.
@@ -257,6 +258,11 @@ export const POST = withVenue(withTiming(async function POST(
 
     // Get settings for rounding
     const settings = parseSettings(order.location.settings)
+
+    // Compute current business day start for promotion on pay
+    const locSettingsRaw = order.location.settings as Record<string, unknown> | null
+    const dayStartTime = (locSettingsRaw?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+    const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
     // Calculate how much is already paid
     const alreadyPaid = order.payments
@@ -826,8 +832,10 @@ export const POST = withVenue(withTiming(async function POST(
       status?: string
       paidAt?: Date
       closedAt?: Date
+      businessDayDate: Date
     } = {
       tipTotal: newTipTotal,
+      businessDayDate: businessDayStart,
     }
 
     // Set primary payment method based on first/largest payment

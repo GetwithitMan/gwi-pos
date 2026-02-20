@@ -26,13 +26,18 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build date filter
+    // Build date filters (orderDateFilter uses businessDayDate OR-fallback for Order queries)
     const dateFilter: { createdAt?: { gte?: Date; lte?: Date } } = {}
-    if (startDate) {
-      dateFilter.createdAt = { ...dateFilter.createdAt, gte: new Date(startDate) }
-    }
-    if (endDate) {
-      dateFilter.createdAt = { ...dateFilter.createdAt, lte: new Date(endDate + 'T23:59:59') }
+    const orderDateFilter: Record<string, unknown> = {}
+    if (startDate || endDate) {
+      const dateRange: { gte?: Date; lte?: Date } = {}
+      if (startDate) dateRange.gte = new Date(startDate)
+      if (endDate) dateRange.lte = new Date(endDate + 'T23:59:59')
+      dateFilter.createdAt = dateRange
+      orderDateFilter.OR = [
+        { businessDayDate: dateRange },
+        { businessDayDate: null, createdAt: dateRange },
+      ]
     }
 
     // Get all active employees
@@ -52,7 +57,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         locationId,
         status: { in: ['completed', 'paid'] },
-        ...dateFilter,
+        ...orderDateFilter,
         ...(employeeId ? { employeeId } : {}),
       },
       include: {

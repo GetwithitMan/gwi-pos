@@ -226,6 +226,7 @@ export function OpenOrdersPanel({
   const [sortBy, setSortBy] = useState<SortOption>('newest')
   const [showSortMenu, setShowSortMenu] = useState(false)
   const [ageFilter, setAgeFilter] = useState<'all' | 'today' | 'previous' | 'declined'>('all')
+  const [previousDayCount, setPreviousDayCount] = useState<number | null>(null)
   const [viewStyle, setViewStyle] = useState<'card' | 'condensed'>('card')
   const [datePreset, setDatePreset] = useState<DatePreset>('today')
   const [closedOrderModalOrder, setClosedOrderModalOrder] = useState<OpenOrder | null>(null)
@@ -245,7 +246,9 @@ export function OpenOrdersPanel({
       const response = await fetch(url, { cache: 'no-store' })
       if (response.ok) {
         const data = await response.json()
-        setOrders(data.data?.orders || [])
+        const fetched = data.data?.orders || []
+        setOrders(fetched)
+        if (forPreviousDay) setPreviousDayCount(fetched.length)
       }
     } catch (error) {
       console.error('Failed to load orders:', error)
@@ -257,6 +260,16 @@ export function OpenOrdersPanel({
   useEffect(() => {
     if (locationId) loadOrders(ageFilter === 'previous')
   }, [locationId, refreshTrigger, ageFilter, loadOrders])
+
+  // Background fetch: keep previous-day count fresh so the chip shows a count badge
+  // even before the user clicks it. Runs on mount and when orders refresh.
+  useEffect(() => {
+    if (!locationId || ageFilter === 'previous') return // already loaded via loadOrders above
+    fetch(`/api/orders/open?locationId=${locationId}&summary=true&previousDay=true`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setPreviousDayCount((data.data?.orders || []).length) })
+      .catch(() => {})
+  }, [locationId, refreshTrigger, ageFilter])
 
   // Ref to avoid stale closure when reading orders inside socket handler
   const ordersRef = useRef(orders)
@@ -418,6 +431,11 @@ export function OpenOrdersPanel({
     return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
   }
 
+  const formatDateStarted = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+
   const getOrderDisplayName = (order: OpenOrder): { primary: string; secondary: string | null } => {
     let primary = `Order #${order.displayNumber || order.orderNumber}`
     let secondary: string | null = null
@@ -533,6 +551,11 @@ export function OpenOrdersPanel({
             {order.reopenedAt && (
               <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold ${dark ? 'bg-orange-600/30 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
                 🔓 Reopened
+              </span>
+            )}
+            {(ageFilter === 'previous' || order.isRolledOver) && (
+              <span className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-xs font-bold ${dark ? 'bg-red-600/30 text-red-300' : 'bg-red-100 text-red-700'}`}>
+                📅 {formatDateStarted(order.createdAt)}
               </span>
             )}
           </div>
@@ -670,6 +693,11 @@ export function OpenOrdersPanel({
             const badge = getAgeBadge(order, dark)
             return badge ? <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${badge.cls}`}>{badge.text}</span> : null
           })()}
+          {(ageFilter === 'previous' || order.isRolledOver) && (
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${dark ? 'bg-red-600/30 text-red-300' : 'bg-red-100 text-red-700'}`}>
+              📅 {formatDateStarted(order.createdAt)}
+            </span>
+          )}
           {order.isCaptureDeclined && (
             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold animate-pulse ${dark ? 'bg-red-600/40 text-red-300' : 'bg-red-100 text-red-700'}`}>
               Card Declined
@@ -917,7 +945,7 @@ export function OpenOrdersPanel({
                       : dark ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                   }`}
                 >
-                  {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'previous' ? 'Previous Day' : 'Declined'}
+                  {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'previous' ? `Previous Day${previousDayCount != null && previousDayCount > 0 ? ` (${previousDayCount})` : ''}` : 'Declined'}
                 </button>
               ))}
             </div>

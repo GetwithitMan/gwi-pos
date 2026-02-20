@@ -12,6 +12,7 @@ import { getLocationSettings } from '@/lib/location-cache'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
 import { withTiming, getTimingFromRequest } from '@/lib/with-timing'
+import { getCurrentBusinessDay } from '@/lib/business-day'
 
 // POST - Create a new order
 export const POST = withVenue(withTiming(async function POST(request: NextRequest) {
@@ -34,6 +35,12 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
     today.setHours(0, 0, 0, 0)
     const tomorrow = new Date(today)
     tomorrow.setDate(tomorrow.getDate() + 1)
+
+    // Compute business day for this order
+    const locationRec = await db.location.findFirst({ where: { id: locationId }, select: { settings: true } })
+    const locSettings = locationRec?.settings as Record<string, unknown> | null
+    const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+    const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
     // === FAST PATH: Draft shell creation (no items) ===
     // When items is empty, create a lightweight order shell without tax/commission/totals computation.
@@ -81,6 +88,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
           commissionTotal: 0,
           notes: notes || null,
           customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
+          businessDayDate: businessDayStart,
         },
       })
 
@@ -322,6 +330,7 @@ export const POST = withVenue(withTiming(async function POST(request: NextReques
         commissionTotal,
         notes: notes || null,
         customFields: customFields ? (customFields as Prisma.InputJsonValue) : Prisma.JsonNull,
+        businessDayDate: businessDayStart,
         items: {
           create: orderItems,
         },

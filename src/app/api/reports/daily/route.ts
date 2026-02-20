@@ -63,8 +63,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.order.findMany({
         where: {
           locationId,
-          createdAt: { gte: startOfDay, lte: endOfDay },
           status: { in: ['completed', 'closed', 'paid'] },
+          OR: [
+            { businessDayDate: { gte: startOfDay, lte: endOfDay } },
+            { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
+          ],
         },
         include: {
           items: {
@@ -106,8 +109,11 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       db.order.findMany({
         where: {
           locationId,
-          createdAt: { gte: startOfDay, lte: endOfDay },
           status: 'voided',
+          OR: [
+            { businessDayDate: { gte: startOfDay, lte: endOfDay } },
+            { businessDayDate: null, createdAt: { gte: startOfDay, lte: endOfDay } },
+          ],
         },
         include: {
           items: {

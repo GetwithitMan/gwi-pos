@@ -27,13 +27,16 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // Build date filter on order
-    const dateFilter: { createdAt?: { gte?: Date; lte?: Date } } = {}
-    if (startDate) {
-      dateFilter.createdAt = { ...dateFilter.createdAt, gte: new Date(startDate) }
-    }
-    if (endDate) {
-      dateFilter.createdAt = { ...dateFilter.createdAt, lte: new Date(endDate + 'T23:59:59') }
+    // Build date filter on order with businessDayDate OR-fallback
+    const dateFilter: Record<string, unknown> = {}
+    if (startDate || endDate) {
+      const dateRange: { gte?: Date; lte?: Date } = {}
+      if (startDate) dateRange.gte = new Date(startDate)
+      if (endDate) dateRange.lte = new Date(endDate + 'T23:59:59')
+      dateFilter.OR = [
+        { businessDayDate: dateRange },
+        { businessDayDate: null, createdAt: dateRange },
+      ]
     }
 
     // Get all order discounts with related data

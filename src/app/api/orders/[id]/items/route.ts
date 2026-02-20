@@ -7,6 +7,7 @@ import { parseSettings } from '@/lib/settings'
 import { apiError, ERROR_CODES, getErrorMessage } from '@/lib/api/error-responses'
 import { dispatchOrderTotalsUpdate, dispatchOpenOrdersChanged, dispatchFloorPlanUpdate, dispatchOrderItemAdded } from '@/lib/socket-dispatch'
 import { withVenue } from '@/lib/with-venue'
+import { getCurrentBusinessDay } from '@/lib/business-day'
 
 // Helper to check if a string is a valid CUID (for real modifier IDs)
 function isValidModifierId(modId: string) {
@@ -116,6 +117,19 @@ export const POST = withVenue(async function POST(
 
       if (existingOrder.status !== 'open' && existingOrder.status !== 'draft') {
         throw new Error('Cannot modify a closed order')
+      }
+
+      // Promote businessDayDate to current business day when items are added
+      try {
+        const locSettings = existingOrder.location.settings as Record<string, unknown> | null
+        const dayStartTime = (locSettings?.businessDay as Record<string, unknown> | null)?.dayStartTime as string | undefined ?? '04:00'
+        const businessDayStart = getCurrentBusinessDay(dayStartTime).start
+
+        if (!existingOrder.businessDayDate || existingOrder.businessDayDate < businessDayStart) {
+          await tx.order.update({ where: { id: orderId }, data: { businessDayDate: businessDayStart } })
+        }
+      } catch (promoErr) {
+        console.warn('[BusinessDay] Failed to promote businessDayDate on item add:', promoErr)
       }
 
       // Fetch menu items to get commission settings

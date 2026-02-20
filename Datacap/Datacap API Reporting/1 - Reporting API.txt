@@ -1,0 +1,527 @@
+﻿Reporting API
+Resource Reference Guide
+Notice: This document contains information proprietary to Datacap Systems Inc. The only acceptable use for the information contained herein is to interface third party systems exclusively to Datacap’s ePay server and Tran products. Any other use is strictly prohibited.
+dsiPDCX®, dsiEMVUS®, dsiEMVX®, Pay API™, EasyCheckout™. dsiEMVAndroid™, dsiEMVApple™, DSIEMVClientX®, DSIClientX®, DataTran™, NETePay™, NETePay Hosted™, TranCloud™, dsiTranCloud™, DC Direct™, DIALePay™, GIFTePay™, ePay™, ePay Administrator™, DataTran™, DialTran™, IPTran™, IPTranLT™, TwinTran™, AutoLoad™, NoLoad™, PSCS™, DatacapConnect™, dsiPDCiOS™, dsiPDCAndroid™ and Datacap names and logos and all related trademarks, trade names, and other intellectual property are the property of Datacap Systems Inc. and cannot be used without its express prior written permission. All other names or trademarks are the property of the other owners.
+
+What is Reporting API?
+Datacap’s reporting API allows partners to build custom reporting solutions for all transactions (credit/debit/prepaid/eCommerce) utilizing Datacap interfaces via NETePay Hosted™.
+Alternatively, you can use Datacap’s Reportal dashboard for all your reporting needs. To use, Datacap’s reporting dashboard, login to Datacap’s Reportal.
+Datacap’s Reportal is also white-label ready. Submit company assets here to white-label Datacap’s Reportal.
+
+
+ Datacap Reportal dashboard 
+
+URL
+Type
+	V2 URL
+	V3 URL
+	Certification
+	https://reporting-cert.dcap.com/v2/
+	https://reporting-cert.dcap.com/v3/
+	Production
+	https://reporting.dcap.com/v2/
+	https://reporting.dcap.com/v3/
+	Getting Started with Reporting API
+Authorization
+Authorization is easy, just insert your API key in the Authorization header. Not specifying an API key will send back response code “Unauthorized”.
+How to find your API key
+1. Login to your Reportal account.
+2. Navigate to the Settings page by using the navigation menu on the left side of the dashboard.
+3. Under the Reporting API section, you will see an API key. If there is not an API key present, you will need to generate one by clicking on “Generate Reporting API Key”.
+4. Verify that it’s enabled. If it’s disabled, click “Enable Reporting API Key”.
+5. Copy your API key.
+6. Use your API key and relevant parameters using the Credit and Datacap Gift links below to test requests/responses.
+ Reporting API Key 
+
+V2 Reporting
+Credit Reports
+Click the links below to view request/response examples based on your API key and relevant parameters.
+* POST /V2/Credit/TransactionSummaries High-level data for all transactions in a specified date range.
+* POST /V2/Credit/TransactionDetails High-level and detailed data for all transactions in a specified date range.
+* POST /V2/Credit/TransactionTotals Totals the transaction totals by card brand and trancode.
+Datacap Gift Reports
+Click the links below to view request/response examples based on your API key and relevant parameters.
+* POST /V2/DatacapGift/TransactionSummaries High-level data for all transactions in a given date range.
+* POST /V2/DatacapGift/TransactionDetails High-level and detailed data for all transactions in a given date range.
+* POST /V2/DatacapGift/AccountTransactionSummaries High-level data for all transactions through a specific account in a given date range.
+* POST /V2/DatacapGift/AccountTransactionDetails High-level and detailed data for all transactions through a specific account in a given date range.
+* POST /V2/DatacapGift/BusinessCreditCurrent Current Datacap Gift credit for business-owned accounts.
+* POST /V2/DatacapGift/BusinessCreditEffective Effective Datacap Gift credit for business-owned accounts.
+* POST /V2/DatacapGift/BusinessLiabilityCurrent Current Datacap Gift liability for business-owned accounts.
+* POST /V2/DatacapGift/BusinessLiabilityEffective Effective Datacap Gift liability for business-owned accounts.
+* POST /V2/DatacapGift/BusinessReconciliation Net change in Datacap Gift liability partitioned by group.
+Datacap Account Updater Reports
+Click the links below to view request/response examples based on your API key and relevant parameters.
+* POST /V2/AccountUpdate/GetPIDLookup Returns current details about a specific payment id enrolled in account updater. Supports two versions of a PID “big” and “small”. Both PID versions point to the same data, the larger simply serves to obfuscate the small “true” PID. PIDs of either type must be included in the format with “PID:” preceding the numeric PID. The minimum length of a big PID is 15 chars.
+Example Parameters
+Parameters vary by reporting type. For parameter requirements, please refer to the links above.
+Enrolled Account Statuses
+Status Message
+	Definition
+	Card Updated
+	The card’s Primary Account Number (PAN) or other account details have changed. This can be due to a new account creation, a lost or stolen card, a cardholder upgrade (e.g., to Platinum), or a portfolio change (e.g., the card was moved from one bank to another).
+	Expiration Updated
+	The card’s expiration date has been updated, but the Primary Account Number (PAN) remains the same.
+	Payment Method Closed
+	The cardholder’s account has been permanently closed and is no longer active.
+	Contact Card Holder
+	The issuer determines that the merchant should reach out directly to the cardholder for updated account information.
+	Card Non-Participating
+	The card’s BIN (the first 6-8 digits) is not part of the Account Updater service.
+	Card Unknown
+	The card is from a participating BIN, but the network could not find a match at this time.
+	Card Enrolled
+	A card is successfully enrolled in the Account Updater service. It also serves as a “no change” notification, confirming that the stored PAN and expiration date are still correct.
+	Card Opt Out
+	The cardholder has chosen not to participate in the Account Updater service.
+	Card Enrollment Failed
+	The card could not be registered with the Account Updater service.
+	Response Messages
+HTTP Status Code
+	Reason
+	Response Model
+	Headers
+	200
+	Successful query.
+	
+
+	
+
+	400
+	Missing and/or invalid parameters.
+	
+
+	
+
+	200
+	Invalid API key and/or missing access to Merchant ID.
+	
+
+	
+
+	V3 Reporting
+V3 Reporting empowers users to generate queries using search criteria and parameters filters within a specified date range to retrieve transaction and billing information.
+Health Check
+Click the link below to view request/response examples based on your API key and relevant parameters.
+* GET /V3/Health Indicates availability of the database/API.
+Transaction Queries
+Click the link below to view request/response examples based on your API key and relevant parameters.
+* POST /V3/Credit/Transactions/Query Allows for transaction querying with wide scope and high-granularity.
+Billing Queries
+Click the link below to view request/response examples based on your API key and relevant parameters.
+* POST /V3/BillingReconciliation/TransactionDetails Allows for querying by merchant to retrieve total count of TranCodes and the list of unique TranCodes with count for each in the date range provided.
+Account Updater Queries
+Click the links below to view request/response examples based on your API key and relevant parameters.
+* POST /V3/AccountUpdater/Pids Allows for querying by merchant to retreive list of associated PIDs.
+* POST /V3/AccountUpdater/Billing/Summary Allows for querying by merchant to retreive the number of API calls and updates in date range provided.
+* POST /V3/AccountUpdater/Billing/Details Allows for querying by merchant to retrieve a summary and detailed breakdown of inserts, updates, and deletes by PID in date range provided.
+Network Token Queries
+Click the links below to view request/response examples based on your API key and relevant parameters.
+* POST /V3/NetworkToken/MerchantsWithNwks Get list of merchants with Network Tokens.
+* POST /V3/NetworkToken/Nwks Get all Network Tokens for the merchant.
+* POST /V3/NetworkToken/Billing/Summary Get billing summary for the merchant.
+* POST /V3/NetworkToken/Billing/Details Get detailed billing information for the merchant.
+Required Fields
+Field
+	Type
+	Description
+	startDate
+	DateTime
+	Start date for the query range (ISO 8601 format)
+	endDate
+	DateTime
+	End date for the query range (ISO 8601 format)
+	merchant
+	string
+	Merchant identifier
+	Optional Fields
+Field
+	Type
+	Default
+	Description
+	searchCriteria
+	array
+	null
+	Groups of SearchParameters used to build complex queries
+	searchParameters
+	array
+	null
+	Groups of related search items
+	select
+	array
+	[]
+	Fields to return in the response. Empty array returns all fields
+	pageSize
+	integer
+	20
+	Number of results per page (1-200)
+	pageNumber
+	integer
+	1
+	Page number for pagination (1-based)
+	continuationToken
+	string
+	null
+	Token for efficient pagination from previous response
+	SearchCriteria Structure
+SearchCriteria can be omitted, but this will result in all transactions in the date range being returned. For any searching or filtering, there must be at least one value in the SearchCriteria.
+SearchParameters
+SearchParameters can be omitted, but this will result in all transactions in the date range being returned. To search or filter, there must be at least one SearchParameter.
+* json
+{
+  "field": "Response.DSIXReturnCode",
+  "operator": "=",
+  "value": "000000"
+}
+Supported Operators
+Operator
+	Description
+	Example Value
+	Equals or =
+	Exact match
+	"000000"
+	NotEquals or !=
+	Not equal to
+	"000000"
+	IsEmpty
+	Field is empty or null
+	N/A
+	IsNotEmpty
+	Field has a value
+	N/A
+	IsGreaterThan or >
+	Greater than
+	100
+	IsGreaterThanOrEqualTo or >=
+	Greater than or equal
+	100
+	IsLessThan or <
+	Less than
+	100
+	IsLessThanOrEqualTo or <=
+	Less than or equal
+	100
+	Contains
+	Contains value(s)
+	"Sale" or ["Sale", "Return"]
+	Numeric Fields
+The following fields are automatically handled as numeric values: - Response.Authorize - Request.Authorize - Request.Purchase - Response.Purchase - Response.Gratuity - Request.Gratuity
+SearchParameters Structure
+SearchParameters allow complex queries with AND/OR logic.
+* json
+{
+  "SearchParameters": [
+    {
+      "field": "Request.TranCode",
+      "operator": "=",
+      "value": "Sale",
+      "combineWithNextParameter": "AND"
+    }
+  ]
+}
+SearchCriteria Properties
+Property
+	Type
+	Default
+	Description
+	SearchParameters
+	array
+	Required
+	List of individual search parameters
+	combineWithNextParameter
+	string
+	"AND"
+	How to combine search parameters within this group ("AND" or "OR")
+	SearchParameters are evaluated left to right and combineWithNextParameter connects a SearchParameter with the SearchParameter to the right
+Select Capabilities
+The select field allows you to specify which fields to return in the response. This reduces response size and improves performance.
+Field Notation
+Use dot notation to specify nested fields: - "Request.TranCode" - "Response.DSIXReturnCode" - "Request.PayAPI"
+Example Select Usage
+* json
+{
+  "select": [
+    "Request.TranCode",
+    "Response.TranCode",
+    "Response.DSIXReturnCode",
+    "Response.Purchase"
+  ]
+}
+Response Format
+* json
+{
+  "transactions": [
+    {
+      "Request": {
+        "TranCode": "Sale"
+      },
+      "Response": {
+        "TranCode": "Sale",
+        "DSIXReturnCode": "000000",
+        "Purchase": "150.00"
+      }
+    }
+  ],
+  "continuationToken": "eyJ0b2tlbiI6IjEyMzQ1In0=",
+  "pageSize": 20,
+  "pageNumber": 1,
+  "queryTimingMs": 145,
+  "hasMore": true
+}
+Response Fields
+Field
+	Type
+	Description
+	transactions
+	array
+	Array of transaction objects matching the query
+	continuationToken
+	string
+	Token for retrieving the next page of results
+	pageSize
+	integer
+	Number of results returned
+	pageNumber
+	integer
+	Current page number
+	queryTimingMs
+	integer
+	Query execution time in milliseconds
+	hasMore
+	boolean
+	Indicates if more results are available
+	Example Requests
+* json
+{
+  "startDate": "2025-01-01",
+  "endDate": "2025-01-31",
+  "merchant": "YOUR MERCHANT",
+  "searchCriteria": [
+    {
+      "searchParameters": [
+        {
+          "field": "Response.CardType",
+          "operator": "equals",
+          "value": "VISA",
+          "combineWithNextParameter": "AND"
+        },
+        {
+          "field": "Response.Authorize",
+          "operator": "isgreaterthan",
+          "value": "500"
+        }
+      ]
+    }
+  ],
+  "pageSize": 30
+}
+Multiple Search Criteria Groups with OR
+Find transactions that match any of several different criteria groups.
+* json
+{
+  "startDate": "2025-01-01",
+  "endDate": "2025-01-31",
+  "merchant": "YOUR MERCHANT",
+  "searchCriteria": [
+    {
+      "searchParameters": [
+        {
+          "field": "Response.CardType",
+          "operator": "equals",
+          "value": "AMEX"
+        }
+      ],
+      "combineWithNextSearchCriteria": "OR"
+    },
+    {
+      "searchParameters": [
+        {
+          "field": "Response.Authorize",
+          "operator": "isgreaterthan",
+          "value": "20"
+        }
+      ]
+    }
+  ],
+  "pageSize": 50
+}
+Multiple Search Criteria Groups with AND
+Find transactions that match multiple separate conditions.
+* json
+{
+  "startDate": "2025-01-01",
+  "endDate": "2025-01-31",
+  "merchant": "YOUR MERCHANT",
+  "searchCriteria": [
+    {
+      "searchParameters": [
+        {
+          "field": "Response.CardType",
+          "operator": "equals",
+          "value": "VISA"
+        }
+      ],
+      "combineWithNextSearchCriteria": "AND"
+    },
+    {
+      "searchParameters": [
+        {
+          "field": "Response.Authorize",
+          "operator": "isgreaterthan",
+          "value": "250"
+        }
+      ]
+    }
+  ],
+  "pageSize": 35
+}
+Complex Multi-Level Query
+Find high-value transactions (Visa OR Mastercard) AND (> $500 OR specific error code).
+* json
+{
+  "startDate": "2025-01-01",
+  "endDate": "2025-07-31",
+  "merchant": "YOUR MERCHANT",
+  "searchCriteria": [
+    {
+      "searchParameters": [
+        {
+          "field": "Response.CardType",
+          "operator": "equals",
+          "value": "VISA",
+          "combineWithNextParameter": "OR"
+        },
+        {
+          "field": "Response.CardType",
+          "operator": "equals",
+          "value": "M/C"
+        }
+      ],
+      "combineWithNextSearchCriteria": "AND"
+    },
+    {
+      "searchParameters": [
+        {
+          "field": "Response.Authorize",
+          "operator": "isgreaterthan",
+          "value": "50",
+          "combineWithNextParameter": "OR"
+        },
+        {
+          "field": "Response.DSIXReturnCode",
+          "operator": "equals",
+          "value": "000000"
+        }
+      ]
+    }
+  ],
+  "pageSize": 25
+}
+Field Selection (Column Filtering)
+* json
+{
+  "startDate": "2025-01-01",
+  "endDate": "2025-07-31",
+  "merchant": "YOUR MERCHANT",
+  "searchCriteria": [
+    {
+      "searchParameters": [
+        {
+          "field": "Response.Authorize",
+          "operator": "isgreaterthan",
+          "value": "100"
+        }
+      ]
+    }
+  ],
+  "select": [
+    "Response.Authorize",
+    "Response.CardType",
+    "Response.DSIXReturnCode",
+    "Request.TransactionTime"
+  ],
+  "pageSize": 30
+}
+Select Columns With Complex Query
+* json
+{
+  "startDate": "2025-01-01",
+  "endDate": "2025-07-31",
+  "merchant": "YOUR MERCHANT",
+  "searchCriteria": [
+    {
+      "searchParameters": [
+        {
+          "field": "Response.DSIXReturnCode",
+          "operator": "equals",
+          "value": "004005",
+          "combineWithNextParameter": "OR"
+        },
+        {
+          "field": "Response.DSIXReturnCode",
+          "operator": "equals",
+          "value": "002604"
+        }
+      ]
+    }
+  ],
+  "select": [
+    "Response.DSIXReturnCode",
+    "Response.AuthResponseText",
+    "Request.TransactionTime"
+  ],
+  "pageSize": 50
+}
+Changelog
+Check below for changes/features added by version number/date. To get the latest releases in your inbox, subscribe/connect to the Dev Portal RSS feed: https://dsidevportal.com/rss.xml
+
+Updated V3 Examples (11/19/2025)
+The following changes were made on 11/19/2025:
+
+1. Added the following example requests:
+   * Billing queries
+   * Card Account Updater queries
+
+
+
+________________
+
+
+
+
+
+Updated V3 Examples (08/28/2025)
+The following changes were made on 08/28/2025:
+
+1. Added the following example requests:
+   * Multiple Search Criteria Groups with OR
+   * Multiple Search Criteria Groups with AND
+   * Complex Multi-Level Query
+   * Field Selection (Column Filtering)
+2. Added SearchCriteria Structure
+
+
+
+________________
+
+
+
+
+
+Added V3 Querying (08/20/2025)
+The following changes were made on 08/20/2025:
+
+1. Added V3 Querying and V3 reporting URLs.
+
+
+
+________________
+
+
+
+
+
+Added TransactionTotals endpoint (10/25/2023)
+The following changes were made on 10/25/2023:
+
+1. Added the TransactionTotals endpoint to Credit Reports.

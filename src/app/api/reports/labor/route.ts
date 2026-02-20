@@ -294,9 +294,13 @@ export const GET = withVenue(async function GET(request: NextRequest) {
     try {
       const salesFilter: Record<string, unknown> = { locationId, status: { in: ['completed', 'paid'] } }
       if (startDate || endDate) {
-        salesFilter.createdAt = {}
-        if (startDate) (salesFilter.createdAt as Record<string, Date>).gte = new Date(startDate)
-        if (endDate) (salesFilter.createdAt as Record<string, Date>).lte = new Date(endDate + 'T23:59:59')
+        const dateRange: Record<string, Date> = {}
+        if (startDate) dateRange.gte = new Date(startDate)
+        if (endDate) dateRange.lte = new Date(endDate + 'T23:59:59')
+        salesFilter.OR = [
+          { businessDayDate: dateRange },
+          { businessDayDate: null, createdAt: dateRange },
+        ]
       }
       const salesAgg = await db.order.aggregate({
         where: salesFilter,

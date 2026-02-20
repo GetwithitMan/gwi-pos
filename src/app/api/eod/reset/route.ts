@@ -68,7 +68,7 @@ export const POST = withVenue(async function POST(request: NextRequest) {
       where: {
         locationId,
         status: 'open',
-        createdAt: { lt: currentBusinessDayStart },
+        OR: [{ businessDayDate: { lt: currentBusinessDayStart } }, { businessDayDate: null, createdAt: { lt: currentBusinessDayStart } }],
         deletedAt: null,
       },
       select: {
@@ -264,7 +264,7 @@ export const GET = withVenue(async function GET(request: NextRequest) {
       where: {
         locationId,
         status: 'open',
-        createdAt: { lt: getBusinessDayStart },
+        OR: [{ businessDayDate: { lt: getBusinessDayStart } }, { businessDayDate: null, createdAt: { lt: getBusinessDayStart } }],
         deletedAt: null,
       },
     })

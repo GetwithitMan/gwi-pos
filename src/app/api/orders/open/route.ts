@@ -37,11 +37,13 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
     const businessDayStart = getCurrentBusinessDay(dayStartTime).start
 
     // Date filter: current day by default; prior days when previousDay=true; no filter when rolledOver=true
-    let businessDayFilter: { createdAt?: { gte: Date } | { lt: Date } } = {}
+    // Uses businessDayDate with OR fallback to createdAt for orders that pre-date the field
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let businessDayFilter: Record<string, any> = {}
     if (previousDay) {
-      businessDayFilter = { createdAt: { lt: businessDayStart } }
+      businessDayFilter = { OR: [{ businessDayDate: { lt: businessDayStart } }, { businessDayDate: null, createdAt: { lt: businessDayStart } }] }
     } else if (rolledOver !== 'true') {
-      businessDayFilter = { createdAt: { gte: businessDayStart } }
+      businessDayFilter = { OR: [{ businessDayDate: { gte: businessDayStart } }, { businessDayDate: null, createdAt: { gte: businessDayStart } }] }
     }
 
     // Summary mode: lightweight response for sidebar/list views
@@ -231,7 +233,7 @@ export const GET = withVenue(withTiming(async function GET(request: NextRequest)
         locationId,
         status: { in: ['open', 'sent', 'in_progress', 'split'] },
         deletedAt: null,
-        ...(businessDayStart ? { createdAt: { gte: businessDayStart } } : {}),
+        ...(businessDayStart ? { OR: [{ businessDayDate: { gte: businessDayStart } }, { businessDayDate: null, createdAt: { gte: businessDayStart } }] } : {}),
         ...(employeeId ? { employeeId } : {}),
         ...(orderType ? { orderType } : {}),
         ...(rolledOver === 'true' ? { rolledOverAt: { not: null } } : {}),
