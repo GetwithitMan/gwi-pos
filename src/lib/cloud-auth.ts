@@ -87,6 +87,50 @@ export async function verifyCloudToken(
   }
 }
 
+/**
+ * Sign a venue-local token using Web Crypto (edge-compatible).
+ * Generates a token in the same format as MC's pos-access tokens
+ * so that verifyCloudToken() can validate it.
+ */
+export async function signVenueToken(
+  payload: Omit<CloudTokenPayload, 'iat' | 'exp'>,
+  secret: string,
+  expiresInSeconds = 8 * 60 * 60
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const fullPayload: CloudTokenPayload = {
+    ...payload,
+    iat: now,
+    exp: now + expiresInSeconds,
+  }
+
+  const encoder = new TextEncoder()
+  const headerB64 = base64urlEncodeBytes(encoder.encode(JSON.stringify({ alg: 'HS256', typ: 'JWT' })))
+  const payloadB64 = base64urlEncodeBytes(encoder.encode(JSON.stringify(fullPayload)))
+
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+
+  const signatureBuffer = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    encoder.encode(`${headerB64}.${payloadB64}`)
+  )
+
+  const signatureB64 = base64urlEncodeBytes(new Uint8Array(signatureBuffer))
+  return `${headerB64}.${payloadB64}.${signatureB64}`
+}
+
+function base64urlEncodeBytes(bytes: Uint8Array): string {
+  const binary = Array.from(bytes).map((b) => String.fromCharCode(b)).join('')
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '')
+}
+
 function base64urlDecode(str: string): Uint8Array {
   const padded = str + '='.repeat((4 - (str.length % 4)) % 4)
   const binary = atob(padded.replace(/-/g, '+').replace(/_/g, '/'))

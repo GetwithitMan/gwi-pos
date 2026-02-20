@@ -93,10 +93,13 @@ export async function middleware(request: NextRequest) {
   // Only approved users from Mission Control can access
   // ═══════════════════════════════════════════════════════════
   if (isCloud && venueSlug) {
-    // Always allow: cloud auth endpoint (creates the session)
+    // Always allow: auth endpoints (no session required)
     if (
       pathname === '/auth/cloud' ||
-      pathname.startsWith('/api/auth/cloud')
+      pathname.startsWith('/api/auth/cloud') ||
+      pathname === '/admin-login' ||
+      pathname.startsWith('/api/auth/venue-login') ||
+      pathname.startsWith('/api/auth/venue-setup')
     ) {
       const headers = new Headers(request.headers)
       headers.set('x-venue-slug', venueSlug)
@@ -108,20 +111,16 @@ export async function middleware(request: NextRequest) {
     const sessionToken = request.cookies.get('pos-cloud-session')?.value
 
     if (!sessionToken) {
-      // No session → redirect to Mission Control for authentication
-      return NextResponse.redirect(
-        `${MISSION_CONTROL_URL}/pos-access/${venueSlug}`
-      )
+      // No session → redirect to venue-local admin login
+      return NextResponse.redirect(new URL('/admin-login', request.url))
     }
 
     // Validate JWT token (signature + expiry + slug match)
     const payload = await verifyCloudToken(sessionToken, PROVISION_API_KEY)
 
     if (!payload || payload.slug !== venueSlug) {
-      // Invalid or expired session → clear cookie, redirect to MC
-      const response = NextResponse.redirect(
-        `${MISSION_CONTROL_URL}/pos-access/${venueSlug}`
-      )
+      // Invalid or expired session → clear cookie, redirect to admin-login
+      const response = NextResponse.redirect(new URL('/admin-login', request.url))
       response.cookies.delete('pos-cloud-session')
       return response
     }
