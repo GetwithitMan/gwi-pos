@@ -66,6 +66,21 @@ export const POST = withVenue(async function POST(request: NextRequest) {
     const response = await client.batchClose(readerId)
     const error = parseError(response)
 
+    // Write batch close info for heartbeat to report to Mission Control
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const fs = require('fs') as typeof import('fs')
+      const batchInfo = {
+        closedAt: new Date().toISOString(),
+        batchNo: response.batchNo || null,
+        status: response.cmdStatus === 'Success' ? 'closed' : 'failed',
+        itemCount: response.batchItemCount ? parseInt(String(response.batchItemCount), 10) : null,
+      }
+      fs.writeFileSync('/opt/gwi-pos/last-batch.json', JSON.stringify(batchInfo))
+    } catch {
+      // Non-critical — NUC-only path, will fail in dev/Vercel which is fine
+    }
+
     return Response.json({
       data: {
         success: response.cmdStatus === 'Success',

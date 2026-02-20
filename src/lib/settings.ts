@@ -86,6 +86,11 @@ export interface TipBankSettings {
   allowEmployeeCreatedGroups: boolean  // If false, only admin-defined templates are used
 }
 
+export interface AutoRebootSettings {
+  enabled: boolean
+  delayMinutes: number
+}
+
 export interface BusinessDaySettings {
   dayStartTime: string         // HH:MM format, default "04:00"
   enforceClockOut: boolean     // Force clock-out by day boundary (default: true)
@@ -373,6 +378,7 @@ export interface LocationSettings {
   posDisplay: POSDisplaySettings
   clockOut: ClockOutSettings
   businessDay: BusinessDaySettings
+  autoReboot: AutoRebootSettings
   receiptDisplay: GlobalReceiptSettings  // Controls WHAT features are available in the Visual Editor
   localDataRetention?: 'daily' | 'weekly' | 'biweekly' | 'monthly' | '60days' | '90days'
 }
@@ -546,6 +552,10 @@ export const DEFAULT_SETTINGS: LocationSettings = {
     batchAtDayEnd: true,
     graceMinutes: 15,
   },
+  autoReboot: {
+    enabled: false,
+    delayMinutes: 15,
+  },
   receiptDisplay: DEFAULT_GLOBAL_RECEIPT_SETTINGS,
   localDataRetention: 'monthly',
 }
@@ -620,6 +630,10 @@ export function mergeWithDefaults(partial: Partial<LocationSettings> | null | un
     businessDay: {
       ...DEFAULT_SETTINGS.businessDay,
       ...(partial.businessDay || {}),
+    },
+    autoReboot: {
+      ...DEFAULT_SETTINGS.autoReboot,
+      ...(partial.autoReboot || {}),
     },
     receiptDisplay: mergeGlobalReceiptSettings(partial.receiptDisplay),
     localDataRetention: partial.localDataRetention ?? DEFAULT_SETTINGS.localDataRetention,
