@@ -1188,6 +1188,14 @@ These skills emerged during development and are now part of the system:
 | 400 | BATCH-MONITORING | DONE | Payments / MC Fleet | - | Live batch status API; MC BatchStatusCard + fleet dashboard; unadjusted tips alert; 24h no-batch warning |
 | 401 | AUTO-REBOOT-AFTER-BATCH | DONE | Infrastructure / MC Config | - | AutoRebootCard in MC Config; SCHEDULE_REBOOT fleet command after batch close; configurable delay |
 
+### Orders / Business Day
+
+| # | Name | Date | Summary |
+|---|------|------|---------|
+| 402 | Open Orders Business Day Filter | 2026-02-20 | Fixed open orders panel to filter by current business day; fixed EOD reset hardcoded 24h window |
+| 403 | Previous Day Open Orders Panel | 2026-02-20 | Previous Day filter fetches prior-day orders from API; date badge on stale cards; count on chip |
+| 404 | Business Day Date on Orders | 2026-02-20 | businessDayDate field promotes on item-add/pay so revenue reports on payment day not open day |
+
 ---
 
 ## Next Session Priority (2026-02-11+)

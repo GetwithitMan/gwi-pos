@@ -5,6 +5,48 @@
 
 ---
 
+## 2026-02-20 — Business Day Tracking + Previous Day Orders UX
+
+**Session theme:** Accurate business-day attribution for orders + previous-day stale tab improvements
+
+**Summary:** Fixed open orders panel to respect the venue's business day rollover time. Added Previous Day filter, stale-tab date badges, and count chip. Introduced `businessDayDate` field on orders so revenue lands on the day a tab is closed (not opened), with promotion on item-add and pay. Updated all 10 report routes.
+
+### Commits — gwi-pos
+
+| Hash | Description |
+|------|-------------|
+| `c7af5ef` | Fix open orders business day filter — was showing all open orders regardless of date |
+| `4687312` | Previous Day open orders: server-side fetch, date badge on stale cards, count chip |
+| `e2bf8e5` | Add businessDayDate to orders — revenue reports on payment day, not open day |
+
+### Deployments
+- gwi-pos → Vercel (barpos.restaurant / *.ordercontrolcenter.com) — pushed e2bf8e5
+
+### Features Delivered
+- Open orders panel now filters by current business day (respects 4 AM rollover)
+- "Previous Day" chip shows count of stale open tabs
+- Stale order cards show "📅 Feb 19 · 5:33 PM" badge so servers know when a tab was opened
+- Previous-day tabs that get touched (item added) automatically promote to Today
+- Revenue always reported on the day an order is paid, not the day it was opened
+- All 10 report routes updated for accurate business-day attribution
+
+### Bug Fixes
+
+| Bug | Fix |
+|-----|-----|
+| Open orders showed yesterday's orders | Added businessDayStart filter to /api/orders/open |
+| Snapshot count badge showed 3 but panel showed 0 | Added businessDayStart filter to snapshot.ts count |
+| EOD reset used hardcoded 24h window | Replaced with getCurrentBusinessDay() boundary |
+| Previous Day filter showed nothing | Fixed: now fetches ?previousDay=true from API |
+| Revenue on wrong day when tab spans midnight | Fixed: businessDayDate promotes to payment day |
+
+### Skills
+- Skill 402: Open Orders Business Day Filter
+- Skill 403: Previous Day Open Orders Panel
+- Skill 404: Business Day Date on Orders
+
+---
+
 ## 2026-02-20 — Self-Updating Sync Agent + Batch Monitoring + Auto-Reboot (Skills 399-401)
 
 **Session Summary:** Built three interconnected infrastructure features: the sync agent now self-updates on every deploy (no more SSH-to-fix-NUCs), Mission Control now shows live batch status per venue (with unadjusted tip warnings and 24h no-batch alerts), and servers can automatically reboot after the nightly Datacap batch closes.
