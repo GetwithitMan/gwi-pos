@@ -15,6 +15,7 @@ Ran a full 3-lens forensic audit of the entire Datacap integration (data flow, c
 | Commit | Description |
 |--------|-------------|
 | `894e5fe` | fix(datacap): forensic audit fixes — simulator accuracy, error handling, edge cases |
+| `970d940` | docs: forensic audit fixes session log (PM4) |
 
 ### Deployments
 
